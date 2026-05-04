@@ -1,4 +1,6 @@
-# Test configuration (non-secret values only — secrets go in .env)
+# ────────────────────────────────────────────────────────────
+# Browser & test framework configuration
+# ────────────────────────────────────────────────────────────
 browser:
   headless: false       # Set to true for CI runs
   slow_mo: 100          # Milliseconds between actions (helps you SEE what's happening)
@@ -9,7 +11,9 @@ browser:
 
 base_url: https://www.saucedemo.com
 
+# ────────────────────────────────────────────────────────────
 # Test data (intentionally in plain config — not secrets)
+# ────────────────────────────────────────────────────────────
 test_users:
   standard:
     username: standard_user
@@ -20,3 +24,24 @@ test_users:
   problem:
     username: problem_user
     password: secret_sauce
+
+# ────────────────────────────────────────────────────────────
+# Agent configuration
+# ────────────────────────────────────────────────────────────
+agents:
+  agent1_analyst:
+    # Stories must match ALL of these to be processed by --scan mode
+    selection:
+      issue_type: "Story"
+      allowed_statuses:
+        - "To Do"          # Adjust to match YOUR Jira workflow if different
+        - "In Progress"
+      required_labels:
+        - "ai-ready"
+      excluded_labels:
+        - "ai-processed"   # Idempotency marker
+        - "ai-skip"        # Manual escape hatch — humans can opt-out
+    # After successful processing, apply this label
+    completion_label: "ai-processed"
+    # Max stories to process per scan run (safety cap)
+    max_stories_per_run: 10

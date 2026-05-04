@@ -10,9 +10,10 @@ langchain==0.3.7
 langgraph==0.2.45
 langchain-google-genai==2.0.4
 pydantic==2.9.2
+tenacity==9.1.4
 
 # Integrations
-jira==3.8.0
+jira>=3.10.5
 PyGithub==2.4.0
 requests==2.32.3
 
