@@ -1,0 +1,22 @@
+# Test configuration (non-secret values only — secrets go in .env)
+browser:
+  headless: false       # Set to true for CI runs
+  slow_mo: 100          # Milliseconds between actions (helps you SEE what's happening)
+  viewport:
+    width: 1280
+    height: 720
+  timeout: 30000        # 30 seconds default
+
+base_url: https://www.saucedemo.com
+
+# Test data (intentionally in plain config — not secrets)
+test_users:
+  standard:
+    username: standard_user
+    password: secret_sauce
+  locked_out:
+    username: locked_out_user
+    password: secret_sauce
+  problem:
+    username: problem_user
+    password: secret_sauce
