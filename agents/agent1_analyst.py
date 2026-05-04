@@ -1,10 +1,21 @@
 """
-Agent 1: Requirement Analyst
-─────────────────────────────
-- Reads a Jira story (or scans for labeled stories)
-- Generates manual test cases via LLM
-- Creates them as Jira "Test Case" issues, linked to the parent story
-- Marks story with completion label for idempotency
+Agent 1 — Analyst.
+
+Role:
+    The Analyst reads a user story (requirement) from Jira, uses an LLM to
+    derive comprehensive manual test cases (positive, negative, edge cases),
+    and creates them as linked "Test Case" issues in Jira.
+
+Position in pipeline:
+    [Agent 1: Analyst] → Agent 2: Coder → Agent 3: Reviewer → Agent 4: Runner → Agent 5: Reporter
+
+Inputs:
+    - A Jira story key (manual mode), OR
+    - All stories matching a config-driven JQL filter (scan mode).
+
+Outputs:
+    - Jira "Test Case" issues, linked to the parent story.
+    - Idempotency marker: parent story tagged with 'ai-processed'.
 
 Usage:
     # Dev mode — process one specific story
@@ -33,7 +44,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%H:%M:%S",
 )
-logger = logging.getLogger("agent1")
+logger = logging.getLogger("agent1_analyst")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -52,7 +63,7 @@ def load_agent_config(agent_key: str = "agent1_analyst") -> dict:
 
 
 # ─────────────────────────────────────────────────────────────
-# Core agent workflow
+# Core agent workflow (Read → Reason → Act → Return)
 # ─────────────────────────────────────────────────────────────
 def run(story_id: str, dry_run: bool = False) -> dict:
     """
@@ -65,16 +76,16 @@ def run(story_id: str, dry_run: bool = False) -> dict:
     Returns:
         Dict with story_id, test_cases_generated, test_case_keys, status.
     """
-    logger.info(f"=== Agent 1 starting for {story_id} (dry_run={dry_run}) ===")
+    logger.info(f"=== Agent 1 (Analyst) starting for {story_id} (dry_run={dry_run}) ===")
 
-    # 1. INPUT
+    # 1. INPUT: fetch the story
     jira = JiraClient()
     story = jira.get_story(story_id)
     logger.info(f"Story: {story['summary']}")
 
     story_text = f"Title: {story['summary']}\n\nDescription:\n{story['description']}"
 
-    # 2. REASON
+    # 2. REASON: call LLM with structured output
     prompt_template = load_prompt()
     user_prompt = prompt_template.replace("{story_text}", story_text)
 
@@ -89,7 +100,7 @@ def run(story_id: str, dry_run: bool = False) -> dict:
     for i, tc in enumerate(test_case_list.test_cases, 1):
         logger.info(f"  {i}. [{tc.test_type}] {tc.title}")
 
-    # 3. ACT
+    # 3. ACT: create Jira tickets (unless dry-run)
     created_keys = []
     if dry_run:
         logger.warning("DRY RUN — skipping Jira ticket creation")
@@ -98,7 +109,7 @@ def run(story_id: str, dry_run: bool = False) -> dict:
             issue = jira.create_test_case(tc, parent_story_key=story_id)
             created_keys.append(issue.key)
 
-    # 4. OUTPUT
+    # 4. OUTPUT: return state for orchestrator / next agent
     result = {
         "story_id": story_id,
         "story_summary": story["summary"],
@@ -107,7 +118,7 @@ def run(story_id: str, dry_run: bool = False) -> dict:
         "status": "tests_drafted" if not dry_run else "tests_drafted_dry_run",
     }
 
-    logger.info(f"=== Agent 1 complete for {story_id}. Created: {created_keys} ===")
+    logger.info(f"=== Agent 1 (Analyst) complete for {story_id}. Created: {created_keys} ===")
     return result
 
 
@@ -117,7 +128,7 @@ def run(story_id: str, dry_run: bool = False) -> dict:
 def print_summary(results: list[dict]) -> None:
     """Pretty-print a summary of all stories processed."""
     print("\n" + "=" * 60)
-    print(f"✅ Agent 1 finished — processed {len(results)} story(ies)")
+    print(f"✅ Agent 1 (Analyst) finished — processed {len(results)} story(ies)")
     for r in results:
         status_marker = "✅" if "failed" not in r["status"] else "❌"
         print(f"\n{status_marker} {r['story_id']} — {r['story_summary']}")
@@ -130,7 +141,7 @@ def print_summary(results: list[dict]) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Agent 1: Generate manual test cases from Jira stories"
+        description="Agent 1 (Analyst): Generate manual test cases from Jira stories"
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
@@ -191,7 +202,6 @@ def main():
 
                 except Exception as e:
                     logger.error(f"Failed processing {story['key']}: {e}", exc_info=True)
-                    # Continue with others — don't let one failure stop the batch
                     results.append({
                         "story_id": story["key"],
                         "story_summary": story["summary"],
@@ -203,7 +213,7 @@ def main():
             print_summary(results)
 
     except Exception as e:
-        logger.error(f"Agent 1 failed: {type(e).__name__}: {e}", exc_info=True)
+        logger.error(f"Agent 1 (Analyst) failed: {type(e).__name__}: {e}", exc_info=True)
         sys.exit(1)
 
 

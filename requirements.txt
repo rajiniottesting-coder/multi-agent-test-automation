@@ -1,22 +1,104 @@
-# Test framework
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║          Multi-Agent Test Automation — Python Dependencies               ║
+# ║  Each section explains WHY the package is needed, not just what it is.   ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 🎭 BROWSER AUTOMATION & TEST FRAMEWORK
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Playwright — modern browser automation (Microsoft).
+# Drives Chromium/Firefox/WebKit headlessly or with UI.
+# Why this and not Selenium? Faster, auto-waits, better DX, built-in tracing.
 playwright==1.48.0
+
+# Pytest — the de-facto Python testing framework.
+# Provides fixtures, assertions, parametrization, plugin ecosystem.
 pytest==8.3.3
+
+# pytest-bdd — BDD plugin for pytest.
+# Lets us write Gherkin .feature files (Given/When/Then) and map each
+# step to Python functions. Enables business-readable tests.
 pytest-bdd==7.3.0
+
+# pytest-playwright — official integration of Playwright with pytest.
+# Adds the `page`, `browser`, `context` fixtures and CLI flags.
 pytest-playwright==0.5.2
+
+# Allure for pytest — generates rich HTML test reports.
+# Captures screenshots, traces, durations, and trends across runs.
 allure-pytest==2.13.5
 
-# LLM + agents
-langchain==0.3.7
-langgraph==0.2.45
-langchain-google-genai==2.0.4
-pydantic==2.9.2
-tenacity==9.1.4
 
-# Integrations
+# ─────────────────────────────────────────────────────────────────────────────
+# 🤖 LLM & AGENT ORCHESTRATION
+# ─────────────────────────────────────────────────────────────────────────────
+
+# LangChain — high-level abstractions over LLM APIs.
+# We use it for: prompt templates, structured output, message types.
+# Standardizes how all 5 agents talk to Gemini.
+langchain==0.3.7
+
+# LangGraph — state machine library for orchestrating multi-agent workflows.
+# Each agent is a node; edges define transitions; supports human-in-the-loop
+# interrupts. We use this in Day 5 to wire all agents into one pipeline.
+langgraph==0.2.45
+
+# LangChain wrapper for Google Gemini.
+# Bridges Gemini's API into LangChain's standard interface so we can
+# swap LLMs (e.g., to OpenAI/Claude) without rewriting agents.
+langchain-google-genai==2.0.4
+
+# Pydantic — data validation library used everywhere in our agents.
+# Defines the SHAPE of LLM outputs so we never trust raw text from the LLM.
+# If Gemini returns malformed data, Pydantic raises a clear error.
+pydantic==2.9.2
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 🔌 EXTERNAL SERVICE INTEGRATIONS
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Jira Python SDK — official Atlassian-supported client.
+# Used by JiraClient to read stories, create Test Case issues, manage labels.
+# >=3.10.5 required because Atlassian removed the legacy /rest/api/2/search
+# endpoint in 2025; older versions raise HTTP 410 errors.
 jira>=3.10.5
+
+# PyGithub — GitHub REST API client.
+# Used by Agent 2 (Coder) on Day 4 to create branches, commit files,
+# and open pull requests programmatically.
 PyGithub==2.4.0
+
+# Requests — HTTP client. Indirect dependency for many libraries above,
+# but we list it explicitly because we may use it for ad-hoc HTTP calls.
 requests==2.32.3
 
-# Config & utils
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ⚙️ CONFIGURATION & UTILITIES
+# ─────────────────────────────────────────────────────────────────────────────
+
+# python-dotenv — loads `.env` files into os.environ at runtime.
+# Keeps secrets out of code; pairs with `.env.example` for documentation.
 python-dotenv==1.0.1
+
+# PyYAML — read/write YAML files.
+# config.yaml uses YAML for human-friendly config (browsers, test users,
+# per-agent selection rules).
 pyyaml==6.0.2
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 🛡️ TRANSITIVE / IMPLICIT DEPENDENCIES (commented for clarity)
+# These are pulled in by the packages above and don't need explicit pins:
+#
+#   - tenacity            (auto-installed by langchain; we use it directly
+#                          for @retry decorators in agents/llm_client.py)
+#   - google-api-core     (Gemini error types like ResourceExhausted)
+#   - SQLAlchemy          (LangChain memory backends — not used yet)
+#   - aiohttp / httpx     (async HTTP for langchain)
+#   - Pillow              (image handling, used by jira lib for attachments)
+#
+# If any of these break, we can pin them explicitly.
+# ─────────────────────────────────────────────────────────────────────────────

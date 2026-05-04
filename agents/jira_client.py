@@ -81,8 +81,7 @@ class JiraClient:
         jql = " AND ".join(jql_parts)
         logger.info(f"Searching Jira with JQL: {jql}")
 
-        # issues = self.client.search_issues(jql, maxResults=max_results)
-        # Use the new search API method (Atlassian removed the legacy /rest/api/2/search endpoint)
+        # Use the new search API method (Atlassian removed legacy /rest/api/2/search)
         issues = self.client.enhanced_search_issues(jql, maxResults=max_results)
 
         results = [

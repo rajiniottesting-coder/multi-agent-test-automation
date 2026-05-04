@@ -27,21 +27,31 @@ test_users:
 
 # ────────────────────────────────────────────────────────────
 # Agent configuration
+# Each agent has its own selection rules and completion markers.
+# Naming convention: agent<N>_<role> reflects pipeline order.
 # ────────────────────────────────────────────────────────────
 agents:
+  # Agent 1 — Analyst: Jira story → manual test cases
   agent1_analyst:
-    # Stories must match ALL of these to be processed by --scan mode
     selection:
       issue_type: "Story"
       allowed_statuses:
-        - "To Do"          # Adjust to match YOUR Jira workflow if different
+        - "To Do"
         - "In Progress"
       required_labels:
         - "ai-ready"
       excluded_labels:
-        - "ai-processed"   # Idempotency marker
-        - "ai-skip"        # Manual escape hatch — humans can opt-out
-    # After successful processing, apply this label
+        - "ai-processed"   # idempotency marker
+        - "ai-skip"        # human override / opt-out
     completion_label: "ai-processed"
-    # Max stories to process per scan run (safety cap)
     max_stories_per_run: 10
+
+  # Future agents will be configured here:
+  # agent2_coder:
+  #   selection: ...
+  # agent3_reviewer:
+  #   selection: ...
+  # agent4_runner:
+  #   selection: ...
+  # agent5_reporter:
+  #   selection: ...

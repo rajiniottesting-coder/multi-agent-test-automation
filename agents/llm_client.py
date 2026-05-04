@@ -21,7 +21,7 @@ class LLMClient:
     def __init__(self, temperature: float = 0.2):
         model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
         self.model_name = model_name
-        # temperature=0 → deterministic; small temp adds slight creativity (good for test ideas)
+        # temperature=0 → deterministic; small temp adds slight creativity
         self.llm = ChatGoogleGenerativeAI(model=model_name, temperature=temperature)
         logger.info(f"LLM initialized: {model_name} (temp={temperature})")
 
@@ -41,7 +41,6 @@ class LLMClient:
         Call the LLM and parse output into the given Pydantic schema.
         Retries up to 3 times on rate-limit (429) with exponential backoff.
         """
-        # `with_structured_output` makes Gemini return JSON conforming to the schema.
         structured_llm = self.llm.with_structured_output(output_schema)
 
         messages = [
