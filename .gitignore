@@ -216,3 +216,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project specific
+.env
+venv/
+reports/
+allure-results/
+allure-report/
+.pytest_cache/
+*.log
+.DS_Store
+.vscode/
+.idea/
