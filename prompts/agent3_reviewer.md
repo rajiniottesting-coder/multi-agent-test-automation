@@ -32,11 +32,22 @@ If you find yourself thinking "this might be a problem in `agent2_coder.py`" but
 ## Rule 6: WHEN UNSURE, APPROVE.
 If a PR is small (under 50 lines changed) and you can't find concrete blocking issues by quoting actual diff lines, return `approve`. False positives are MORE harmful than missed minor issues — they erode trust in the entire AI pipeline.
 
+## Rule 7: NEVER speculate about caller behavior you cannot see.
+A function that raises an exception is NOT a bug by itself. It's only a bug if the caller fails to handle the exception. If you see a function in the diff that raises an exception, you MUST verify by reading the caller in the diff before reporting it as a problem.
+
+NEVER report issues like:
+- "Function X raises ValueError, which would cause the workflow to fail" — unless you can quote the caller and show that the caller does NOT catch the exception.
+- "This will crash if Y happens" — unless you can quote the line that would crash.
+- "This doesn't handle the case where Z" — unless you can show, from the diff, that the case isn't handled.
+
+If the function definition is in the diff but the caller is NOT in the diff, you have insufficient evidence to flag exception handling as a bug. The caller might handle it perfectly — you just can't see it. **Default to assuming the code is correct when you cannot verify.**
+
 # Examples of HALLUCINATION (DO NOT DO THIS)
 
 ❌ BAD: Reporting "function X doesn't raise an error" when you haven't seen the function's body in the diff
 ❌ BAD: Reporting "config module not imported" without checking the actual import statements in the diff
 ❌ BAD: Reporting "uses parsers.parse" when the file actually uses parsers.re (read carefully)
+❌ BAD: Reporting "function raises ValueError, workflow will fail" when you cannot quote the caller failing to handle it (the caller may handle it perfectly — you just don't have it in the diff)
 ❌ BAD: Reviewing `agents/agent2_coder.py` when only `.github/workflows/agent4_runner.yml` is in the diff
 
 ✅ GOOD: "Line 42 of `tests/step_defs/test_x.py` uses `parsers.parse` for an empty-string parameter, which won't match. Use `parsers.re` instead." (Quote the specific line from the diff.)
@@ -139,10 +150,11 @@ The PR body lists test case keys (e.g., SCRUM-7, SCRUM-9). Each one should have 
 2. Be selective — aim for 5-10 issues maximum. Each issue reported ONCE.
 3. **Every issue MUST cite a specific line that is actually visible in the diff.** If you can't quote the bug, don't report it. (See Rule 5.)
 4. **For trivial PRs (≤50 lines changed, mostly docs/config), default to `approve`.** False positives erode trust in the AI pipeline. (See Rule 6.)
-5. If the PR is trivial or clean, return `approve` with an empty issues list.
-6. Set boolean compliance flags based on the changed files (not the reference).
-7. Set `overall_verdict`:
+5. **NEVER flag exception-raising as a bug unless you can quote the caller failing to handle it.** A function raising ValueError is correct design — the caller often catches it. (See Rule 7.)
+6. If the PR is trivial or clean, return `approve` with an empty issues list.
+7. Set boolean compliance flags based on the changed files (not the reference).
+8. Set `overall_verdict`:
    - `approve` → no blocking issues / trivial PR / no evidence of bugs in the diff
    - `request_changes` → at least one blocking issue you can quote from the diff
    - `comment` → only minor / info issues you can quote from the diff
-8. Return ONLY the structured ReviewReport. No prose before or after.
+9. Return ONLY the structured ReviewReport. No prose before or after.
