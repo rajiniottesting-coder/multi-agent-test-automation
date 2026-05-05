@@ -36,8 +36,8 @@ on:
 
 permissions:
   contents: read
-  checks: write          # to publish test result checks on the PR
-  pull-requests: write
+  checks: write          # legacy permission; not strictly needed with check_run: false (kept for safety)
+  pull-requests: write   # not strictly needed with comment_mode: off (kept for safety)
 
 jobs:
   test:
@@ -114,9 +114,26 @@ jobs:
           path: reports/
           retention-days: 14
 
-      - name: Publish test results as PR check
+      - name: Publish test results to job summary
+        # Test result summary belongs to Agent 4 (the runner). However, GitHub's
+        # Check Status API has a long-standing limitation: when multiple workflows
+        # run on the same commit, the API attributes check runs to an arbitrary
+        # workflow — which previously caused "Test Results" to display under
+        # "Agent 3 - Reviewer" instead of Agent 4. See:
+        #   https://github.com/EnricoMi/publish-unit-test-result-action/issues/12
+        #
+        # Fix: disable the broken Check Run API call (`check_run: false`) and
+        # disable PR comments (`comment_mode: off`). This keeps the rich test
+        # summary as a JOB SUMMARY on Agent 4's workflow run page — correctly
+        # attributed because job summaries are scoped to the running job, not
+        # the misbehaving Check Run API.
+        #
+        # Trade-off: Test Results no longer appears as a separate PR check.
+        # Visible at: PR → Checks → "Agent 4 - Runner / Run Tests" → Summary.
         if: always()
         uses: EnricoMi/publish-unit-test-result-action@v2
         with:
           files: reports/junit.xml
           check_name: "Test Results"
+          check_run: false       # disable misattributed PR check
+          comment_mode: off      # don't auto-post PR comments (Agent 5 owns Jira)
