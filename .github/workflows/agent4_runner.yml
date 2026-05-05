@@ -1,27 +1,37 @@
 # ─────────────────────────────────────────────────────────────
-# Agent 4 (Runner) — automatic test execution on PRs
+# Agent 4 (Runner) + Agent 5 (Reporter) — combined CI workflow
 #
-# This is the "dynamic analysis" half of our PR check pipeline:
-#   - Agent 3 (Reviewer) statically analyzes code → catches bugs by reading
-#   - Agent 4 (Runner) actually runs the tests → catches bugs by execution
+# This workflow handles BOTH test execution (Agent 4) and Jira reporting
+# (Agent 5) in two sequential jobs within a single workflow file. Both
+# jobs appear as separate checks on the PR:
 #
-# Both Agent 3 and Agent 4 run in parallel on every PR. After Agent 4
-# completes, the SEPARATE Agent 5 workflow (agent5_reporter.yml) is
-# triggered automatically via workflow_run — keeping each agent visible
-# as its own CI check on the PR.
+#   ✅ Agent 4 - Runner / Run Tests              (test execution)
+#   ✅ Agent 4 - Runner / Post Results to Jira   (Agent 5's reporting)
+#
+# WHY ONE WORKFLOW (not split into two):
+#   We previously tried splitting Agent 5 into its own workflow with a
+#   `workflow_run` trigger, but that has two architectural problems:
+#     1. workflow_run-triggered workflows DON'T appear as PR checks
+#        (they only show in the Actions tab — design choice by GitHub)
+#     2. workflow_run runs in a different event context, making PR/branch
+#        detection more fragile (silent failures when story key can't be
+#        resolved from the workflow_run event payload)
+#
+#   Combining both into one workflow with two jobs (`test` and `report`,
+#   with `report` depending on `test`) gives us:
+#     - Both visible as PR checks (what users actually want)
+#     - Reliable PR/branch detection (real pull_request event context)
+#     - Simpler artifact passing (job-to-job within same workflow_run id)
+#
+# COSMETIC TRADE-OFF:
+#   Agent 5's check displays as "Agent 4 - Runner / Post Results to Jira"
+#   instead of "Agent 5 - Reporter / Post Results to Jira". This is because
+#   GitHub labels checks as "<workflow-name> / <job-name>". Acceptable
+#   trade-off for getting visibility + reliability.
 #
 # WHEN THIS RUNS:
 #   - PR opened, synchronized (new commits), or reopened
 #   - Manual trigger via Actions tab → workflow_dispatch
-#
-# WHAT IT DOES:
-#   1. Checkout PR branch
-#   2. Setup Python 3.13 + cache pip dependencies
-#   3. Install Python deps + Playwright browsers
-#   4. Run pytest (CI=true forces headless mode automatically)
-#   5. Save PR number alongside reports (so Agent 5 can find it)
-#   6. Upload test report (HTML + JUnit XML) as artifact for Agent 5
-#   7. Publish JUnit results as a PR check
 # ─────────────────────────────────────────────────────────────
 
 name: Agent 4 - Runner
@@ -36,12 +46,12 @@ on:
 
 permissions:
   contents: read
-  # No checks: write needed — we write to GITHUB_STEP_SUMMARY directly
-  # (which doesn't need any special permission), not the Check Status API.
-  # No pull-requests: write needed either — Agent 5 owns Jira posting,
-  # and we don't post PR comments from this workflow.
+  pull-requests: write   # Agent 5 may need to read PR metadata
 
 jobs:
+  # ─────────────────────────────────────────────────────────────
+  # Job 1: Run the Playwright tests
+  # ─────────────────────────────────────────────────────────────
   test:
     name: Run Tests
     runs-on: ubuntu-latest
@@ -79,18 +89,13 @@ jobs:
 
       - name: Install Playwright browsers
         # `--with-deps` installs the OS-level libs Chromium needs (libnss, etc.).
-        # The browser binary itself is restored from cache when the key matches —
-        # `playwright install` is idempotent and skips already-installed browsers.
-        # We still run it (vs. conditional skip) because OS-level apt packages
-        # are NOT cached and need to be reinstalled fresh each run.
+        # The browser binary itself is restored from cache when the key matches.
+        # OS-level apt packages are NOT cached and need to be reinstalled fresh.
         run: playwright install --with-deps chromium
 
       - name: Run tests
         # CI=true is auto-set by GitHub Actions, which our conftest.py uses
         # to force headless mode (overriding config.yaml's headless: false).
-        # We also generate two report formats:
-        #   - HTML: human-readable, viewable as artifact
-        #   - JUnit XML: parseable, used for the GitHub check annotation
         run: |
           pytest tests/ \
             --html=reports/pytest-report.html \
@@ -98,17 +103,10 @@ jobs:
             --junit-xml=reports/junit.xml \
             -v
 
-      - name: Save PR metadata for Agent 5
-        # When Agent 5 is triggered by workflow_run, it doesn't have direct
-        # access to the original PR event payload. We bundle the PR number
-        # with the artifact so Agent 5 can read it. (head_branch is derivable
-        # from the workflow_run event, but PR number is harder to get.)
-        if: always() && github.event_name == 'pull_request'
-        run: |
-          mkdir -p reports
-          echo "${{ github.event.pull_request.number }}" > reports/pr_number.txt
-
       - name: Upload test report
+        # Required because the `report` job runs on a separate runner and
+        # needs to download junit.xml to feed into Agent 5.
+        # Also useful as a PR artifact for human inspection.
         if: always()  # upload report even if tests failed (we want to see WHY)
         uses: actions/upload-artifact@v4
         with:
@@ -117,28 +115,14 @@ jobs:
           retention-days: 14
 
       - name: Write test summary to Agent 4's run page
-        # Why inline Python instead of a third-party action?
-        # The popular EnricoMi/publish-unit-test-result-action and
-        # dorny/test-reporter both use GitHub's Check Status API, which has a
-        # long-standing bug: when multiple workflows run on the same commit
-        # (we have Agent 3 + Agent 4 in parallel), the API attributes the
-        # check run to an arbitrary workflow. This caused "Test Results" to
-        # display under "Agent 3 - Reviewer" instead of Agent 4.
-        #
-        # See: https://github.com/EnricoMi/publish-unit-test-result-action/issues/12
-        #
-        # Solution: write the summary directly to $GITHUB_STEP_SUMMARY. Job
-        # summaries are scoped to the executing job (NOT the buggy Check API),
-        # so they're always correctly attributed to Agent 4.
-        #
-        # Visible at: PR → Checks → "Agent 4 - Runner / Run Tests" → scroll
-        # down to the green "Summary" section at the top.
+        # Inline Python that parses junit.xml and writes a markdown summary
+        # to $GITHUB_STEP_SUMMARY. Replaces the buggy EnricoMi action.
+        # Visible at: PR → Checks → "Run Tests" → Summary section at top.
         if: always()  # run even when pytest fails — failures need reporting
         run: |
           python3 << 'PYEOF'
           """Parse junit.xml and write a markdown test summary to the GitHub
-          Actions job summary page. Falls back gracefully if junit.xml is
-          missing (e.g., pytest crashed before writing it)."""
+          Actions job summary page."""
           import os
           import xml.etree.ElementTree as ET
           from pathlib import Path
@@ -150,8 +134,6 @@ jobs:
               print("Not running in GitHub Actions (no GITHUB_STEP_SUMMARY). Skipping.")
               raise SystemExit(0)
 
-          # If junit.xml is missing, write a minimal placeholder summary
-          # rather than crash — the test step itself already failed loudly.
           if not junit_path.exists():
               with open(summary_path, "a", encoding="utf-8") as f:
                   f.write("## ❌ Test Results\n\n")
@@ -161,8 +143,6 @@ jobs:
 
           tree = ET.parse(junit_path)
           root = tree.getroot()
-          # JUnit XML has either <testsuites> at root with one or more <testsuite>,
-          # or just a single <testsuite>. pytest produces the former.
           suites = root.findall("testsuite") if root.tag == "testsuites" else [root]
 
           total = sum(int(s.get("tests", 0)) for s in suites)
@@ -172,7 +152,6 @@ jobs:
           duration = sum(float(s.get("time", 0)) for s in suites)
           passed = total - failures - errors - skipped
 
-          # Pick a status emoji based on outcome
           if failures == 0 and errors == 0:
               status_emoji = "✅"
               status_text = f"All {total} tests passed"
@@ -180,7 +159,6 @@ jobs:
               status_emoji = "❌"
               status_text = f"{failures + errors} of {total} tests failed"
 
-          # Build markdown
           lines = []
           lines.append(f"## {status_emoji} Test Results")
           lines.append("")
@@ -195,7 +173,6 @@ jobs:
           lines.append(f"| **Total** | **{total}** |")
           lines.append("")
 
-          # Detail any failures
           failed_cases = []
           for suite in suites:
               for case in suite.findall("testcase"):
@@ -207,7 +184,6 @@ jobs:
                       issue = failure if failure is not None else error
                       msg = (issue.get("message") or issue.text or "").strip()
                       first_line = msg.splitlines()[0] if msg else "(no message)"
-                      # Truncate to keep summary readable
                       if len(first_line) > 200:
                           first_line = first_line[:197] + "..."
                       failed_cases.append((f"{classname}::{name}", first_line))
@@ -226,8 +202,68 @@ jobs:
           with open(summary_path, "a", encoding="utf-8") as f:
               f.write("\n".join(lines) + "\n")
 
-          # Also print to log for debugging
           print(f"Test summary written: {total} total, {passed} passed, "
                 f"{failures} failed, {errors} errored, {skipped} skipped, "
                 f"{duration:.2f}s")
           PYEOF
+
+  # ─────────────────────────────────────────────────────────────
+  # Job 2: Agent 5 — Post test results back to Jira
+  # ─────────────────────────────────────────────────────────────
+  # `needs: test` means this runs AFTER the test job completes.
+  # `if: always() && github.event_name == 'pull_request'` ensures:
+  #   - Run even if tests failed (failed tests need to be reported too)
+  #   - Skip on workflow_dispatch (no PR context, no story key to find)
+  #
+  # Visible on PR as: "Agent 4 - Runner / Post Results to Jira"
+  report:
+    name: Post Results to Jira
+    needs: test
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download test reports from test job
+        # The `test` job uploaded reports/ as an artifact. We download it
+        # here so Agent 5 can parse junit.xml. Same workflow run, so no
+        # cross-workflow auth/run-id complexity needed.
+        uses: actions/download-artifact@v4
+        with:
+          name: pytest-report-${{ github.run_id }}
+          path: reports/
+
+      - name: Run Agent 5 (Reporter)
+        # Agent 5 reads:
+        #   - PR branch from GITHUB_HEAD_REF (auto-set by GHA on pull_request)
+        #   - PR number from PR_NUMBER env var (set explicitly here)
+        #   - junit.xml from the downloaded artifact
+        #   - Workflow context from GITHUB_* vars (auto-set)
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          JIRA_URL: ${{ secrets.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+          # PR_NUMBER is read directly from the pull_request event — no
+          # need for the artifact-passing workaround we used in the
+          # workflow_run version. Real PR event context is available here.
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          python -m agents.agent5_reporter --reports-dir reports/
