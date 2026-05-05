@@ -88,6 +88,13 @@ class CodeGenerationOutput(BaseModel):
 # Field names chosen to be unambiguous and LLM-friendly.
 # Required boolean compliance flags ensure the LLM produces a
 # complete checklist every time, not just a free-form list of issues.
+#
+# max_length=20 on the issues list is a Day 5 fix:
+# Gemini sometimes enters "repetition collapse" when reviewing low-content
+# PRs (e.g., a 1-line README change), generating dozens of duplicate
+# best-practice complaints until it runs out of token budget. Pydantic's
+# max_length cap stops this at the schema level — the LLM is constrained
+# to produce at most 20 issues, so it MUST be selective.
 # ─────────────────────────────────────────────────────────────
 
 class ReviewIssue(BaseModel):
@@ -135,7 +142,9 @@ class ReviewReport(BaseModel):
     )
     issues: list[ReviewIssue] = Field(
         default_factory=list,
-        description="List of issues found. Empty list means no issues."
+        max_length=20,  # Day 5 fix: prevent repetition-collapse blowing the token budget
+        description="List of issues found. Empty list means no issues. MAX 20 — be selective; "
+                    "report each distinct issue ONCE, do not duplicate."
     )
     style_compliance: bool = Field(
         ...,

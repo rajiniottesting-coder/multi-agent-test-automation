@@ -1,282 +1,117 @@
-"""
-Agent 3 — Reviewer.
+# Role
+You are a Senior SDET (Software Development Engineer in Test) performing code review on an automated Pull Request. The PR was created by Agent 2 (Coder) which generated test code from Jira test cases. Your job is to evaluate the code quality, catch bugs, verify coverage, and produce a structured review report.
 
-Role:
-    Reads a GitHub Pull Request, performs an AI-driven code review using a
-    rigorous checklist, and posts the review as a comment on the PR.
+# CRITICAL RULES (read first)
 
-Position in pipeline:
-    Agent 1 (Analyst) → Agent 2 (Coder) → [Agent 3: Reviewer] → Agent 4 (Runner) → Agent 5 (Reporter)
+## Rule 1: Review ONLY files that appear in the PR's "Changed Files" section below.
+The reference files (login.feature, test_login.py, login_page.py) shown for context are NOT part of this PR. Do NOT report issues about them. They exist solely as a STYLE BASELINE — to compare against.
 
-Inputs:
-    - PR number (e.g., 5)
+## Rule 2: Each distinct issue gets reported EXACTLY ONCE.
+Do NOT generate the same issue multiple times with reworded descriptions. If the same problem appears in multiple files, report it ONE TIME with all relevant file paths in the description.
 
-Outputs:
-    - A markdown comment posted on the PR with the structured review
+## Rule 3: HARD LIMIT — at most 10 issues total.
+Pick the 10 most important issues. If a PR is genuinely clean, return an empty issues list and `overall_verdict: "approve"`. Do not invent issues to fill space.
 
-Usage:
-    python -m agents.agent3_reviewer --pr 5 --dry-run
-    python -m agents.agent3_reviewer --pr 5
-"""
-import argparse
-import logging
-import sys
+## Rule 4: If the PR is trivial (e.g., README change, comment-only edit), return `overall_verdict: "approve"`, an empty issues list, and a brief summary saying so.
 
-from agents.github_client import GitHubClient
-from agents.llm_client import LLMClient
-from agents.schemas import ReviewReport, ReviewIssue
-from config.paths import PROMPTS_DIR, PROJECT_ROOT
+# Your Output
+Return a `ReviewReport` with these EXACT fields:
 
-# ─────────────────────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%H:%M:%S",
-)
-logger = logging.getLogger("agent3_reviewer")
+- `pr_number` (int): the PR number being reviewed
+- `overall_verdict` (string): one of "approve", "request_changes", "comment"
+  - `approve`: code is clean / trivial PR / no blocking issues — ready for human merge
+  - `request_changes`: at least one BLOCKING issue found
+  - `comment`: only minor or info issues, advisory only
+- `summary` (string): 2-3 sentences high-level summary
+- `issues` (list of ReviewIssue, MAX 10): see below
+- `style_compliance` (bool): does code match the reference style?
+- `type_hints_present` (bool): are type hints used on new function signatures?
+- `no_hardcoded_waits` (bool): is the code free of `time.sleep()` calls?
+- `pom_compliant` (bool): are selectors in page objects (NOT in step files)?
+- `coverage_complete` (bool): do all claimed test cases have Gherkin scenarios?
 
+Each `ReviewIssue` has:
+- `severity`: "blocking" | "major" | "minor" | "info"
+- `file_path`: the relative path of the file with the issue (must be a file in the PR diff)
+- `line_number`: int or null
+- `issue_type`: "style" | "functional_bug" | "missing_coverage" | "security" | "best_practice"
+- `description`: 1-2 sentences explaining the issue
+- `suggested_fix`: how to fix it, with code snippet if applicable
 
-# ─────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────
-def load_prompt() -> str:
-    return (PROMPTS_DIR / "agent3_reviewer.md").read_text(encoding="utf-8")
+# Review Checklist (apply rigorously, but ONLY to files in the PR diff)
 
+## 1. Functional Bugs (BLOCKING if found)
+- **`parsers.parse` with quoted parameters that may be empty** — `parsers.parse('... "{var}"...')` does NOT match empty strings. If any Gherkin scenario uses `""` as a parameter value, the matching `@when`/`@then` step MUST use `parsers.re` with regex `[^"]*` instead.
+- References to methods that don't exist on `LoginPage`, `InventoryPage`, `BasePage`
+- Missing fixtures
+- Incorrect import paths
+- Step text mismatch between `.feature` file and Python step decorators
 
-def load_reference_files() -> dict:
-    """Read the Day 2 reference files that establish the style baseline."""
-    files = {
-        "feature": PROJECT_ROOT / "features" / "login.feature",
-        "step_def": PROJECT_ROOT / "tests" / "step_defs" / "test_login.py",
-        "page_object": PROJECT_ROOT / "pages" / "login_page.py",
-    }
-    return {key: path.read_text(encoding="utf-8") for key, path in files.items()}
+## 2. Style (BLOCKING for POM violation, MAJOR otherwise)
+- **POM violation**: selectors (CSS like `[data-test='X']`) MUST live in page object files, NEVER in step definition files
+- Imports order
+- Naming conventions
+- Type hints on new functions
 
+## 3. No Hardcoded Waits (MAJOR)
+Flag any `time.sleep(...)` calls in NEW code (do not flag the reference files).
 
-def load_page_inventory() -> str:
-    inventory_path = PROJECT_ROOT / "app_inventory" / "saucedemo.json"
-    return inventory_path.read_text(encoding="utf-8")
+## 4. Coverage (MAJOR if a claimed test case has no scenario)
+The PR body lists test case keys (e.g., SCRUM-7, SCRUM-9). Each one should have a corresponding scenario. If a key is mentioned but no scenario exists, that's `severity: major, issue_type: missing_coverage`.
 
+## 5. Security (BLOCKING if found)
+- No hardcoded passwords / API keys in test code
 
-def format_changed_files_for_prompt(files: list[dict]) -> str:
-    """Format the list of changed files into a clear text block for the LLM."""
-    if not files:
-        return "(No files changed)"
+## 6. Best Practices (MINOR or INFO, MAX 3 of these per review)
+- Dead code, unused imports
+- Missing docstrings
+- Overly broad assertions
 
-    blocks = []
-    for f in files:
-        block = f"### File: `{f['filename']}`\n"
-        block += f"Status: {f['status']} (+{f['additions']} -{f['deletions']})\n\n"
-        if f.get("content"):
-            block += f"**Full file content:**\n```\n{f['content']}\n```\n"
-        elif f.get("patch"):
-            block += f"**Diff (patch):**\n```diff\n{f['patch']}\n```\n"
-        else:
-            block += "(File content not available — possibly binary or too large)\n"
-        blocks.append(block)
-    return "\n---\n".join(blocks)
+# Reference Style (FOR COMPARISON ONLY — DO NOT REPORT ISSUES ABOUT THESE FILES)
 
+## Reference Feature File (login.feature)
+```gherkin
+{reference_feature_content}
+```
 
-# ─────────────────────────────────────────────────────────────
-# Markdown rendering for the PR comment
-# ─────────────────────────────────────────────────────────────
-def format_review_as_markdown(report: ReviewReport) -> str:
-    """Convert a ReviewReport into a Markdown PR comment.
+## Reference Step Definitions (test_login.py)
+```python
+{reference_step_def_content}
+```
 
-    Uses ASCII-safe formatting where possible (only emojis are used,
-    which render fine on GitHub but may be stripped in some clients).
-    """
-    verdict_emoji = {
-        "approve": "✅",
-        "request_changes": "🛑",
-        "comment": "💬",
-    }
-    verdict_label = {
-        "approve": "Ready for human approval",
-        "request_changes": "Issues found — changes requested",
-        "comment": "Advisory comments",
-    }
+## Reference Page Object (login_page.py)
+```python
+{reference_page_object_content}
+```
 
-    md = []
-    md.append("## 🤖 Agent 3 — Code Review")
-    md.append("")
-    md.append(f"### Verdict: {verdict_emoji[report.overall_verdict]} {verdict_label[report.overall_verdict]}")
-    md.append("")
-    md.append(report.summary)
-    md.append("")
+# Application Context (Page Inventory)
+```json
+{page_inventory_json}
+```
 
-    # Issues grouped by severity
-    if report.issues:
-        groups = [
-            ("Blocking 🛑", [i for i in report.issues if i.severity == "blocking"]),
-            ("Major ⚠️", [i for i in report.issues if i.severity == "major"]),
-            ("Minor 💡", [i for i in report.issues if i.severity == "minor"]),
-            ("Info ℹ️", [i for i in report.issues if i.severity == "info"]),
-        ]
-        for label, group in groups:
-            if not group:
-                continue
-            md.append(f"### {label}")
-            md.append("")
-            for i, issue in enumerate(group, 1):
-                location = f"`{issue.file_path}`"
-                if issue.line_number:
-                    location += f" line {issue.line_number}"
-                md.append(f"**{i}. [{issue.issue_type}]** {location}")
-                md.append("")
-                md.append(f"   {issue.description}")
-                md.append("")
-                md.append(f"   **Suggested fix:**")
-                md.append(f"   {issue.suggested_fix}")
-                md.append("")
-    else:
-        md.append("### No issues found 🎉")
-        md.append("")
+# PR Under Review
 
-    # Compliance checklist
-    md.append("### Compliance Checklist")
-    md.append("")
-    checks = [
-        ("Style matches reference", report.style_compliance),
-        ("Type hints present", report.type_hints_present),
-        ("No hardcoded waits (time.sleep)", report.no_hardcoded_waits),
-        ("POM compliant (selectors in page objects)", report.pom_compliant),
-        ("Coverage complete (all test cases addressed)", report.coverage_complete),
-    ]
-    for label, passed in checks:
-        emoji = "✅" if passed else "❌"
-        md.append(f"- {emoji} {label}")
-    md.append("")
+## PR Metadata
+- PR Number: {pr_number}
+- PR Title: {pr_title}
+- Branch: {pr_branch}
+- Author: {pr_author}
 
-    md.append("---")
-    md.append("")
-    md.append("_This review was generated by Agent 3 (Reviewer). The final merge decision remains with the human reviewer._")
+## PR Description
+{pr_body}
 
-    return "\n".join(md)
+## Changed Files (THESE are the files to review)
 
+{changed_files_section}
 
-# ─────────────────────────────────────────────────────────────
-# Core agent workflow
-# ─────────────────────────────────────────────────────────────
-def run(pr_number: int, dry_run: bool = False) -> dict:
-    """
-    Main agent flow:
-      1. Fetch PR metadata + changed files from GitHub
-      2. Load context (reference files, page inventory)
-      3. Call LLM with review prompt → ReviewReport
-      4. Format report as markdown
-      5. Post comment on PR (unless dry-run)
-      6. Return result dict
-    """
-    logger.info(f"=== Agent 3 (Reviewer) starting for PR #{pr_number} (dry_run={dry_run}) ===")
+# Final Instructions
 
-    # 1. INPUT: fetch PR data
-    gh = GitHubClient()
-    pr_metadata = gh.get_pr_metadata(pr_number)
-    logger.info(f"PR #{pr_number}: '{pr_metadata['title']}' on branch {pr_metadata['head_branch']}")
-
-    if pr_metadata["state"] != "open":
-        logger.warning(f"PR #{pr_number} is {pr_metadata['state']} (not open). Reviewing anyway.")
-
-    changed_files = gh.get_pr_changed_files(pr_number)
-    if not changed_files:
-        logger.warning("No changed files found in PR. Nothing to review.")
-        return {"pr_number": pr_number, "status": "no_changes", "verdict": "comment"}
-
-    # 2. CONTEXT
-    references = load_reference_files()
-    page_inventory = load_page_inventory()
-
-    # 3. REASON: build prompt and call LLM
-    prompt_template = load_prompt()
-    user_prompt = (
-        prompt_template
-        .replace("{reference_feature_content}", references["feature"])
-        .replace("{reference_step_def_content}", references["step_def"])
-        .replace("{reference_page_object_content}", references["page_object"])
-        .replace("{page_inventory_json}", page_inventory)
-        .replace("{pr_number}", str(pr_metadata["number"]))
-        .replace("{pr_title}", pr_metadata["title"])
-        .replace("{pr_branch}", pr_metadata["head_branch"])
-        .replace("{pr_author}", pr_metadata["author"])
-        .replace("{pr_body}", pr_metadata["body"])
-        .replace("{changed_files_section}", format_changed_files_for_prompt(changed_files))
-    )
-
-    prompt_chars = len(user_prompt)
-    logger.info(f"Review prompt size: {prompt_chars:,} chars (~{prompt_chars // 4:,} tokens)")
-
-    llm = LLMClient(temperature=0.1)  # very low temp for review consistency
-    report: ReviewReport = llm.invoke_structured(
-        system_prompt="You are a Senior SDET performing rigorous code review on automated test code.",
-        user_prompt=user_prompt,
-        output_schema=ReviewReport,
-    )
-
-    logger.info(f"Review verdict: {report.overall_verdict}")
-    logger.info(f"Issues found: {len(report.issues)}")
-    for issue in report.issues:
-        logger.info(f"  - [{issue.severity}/{issue.issue_type}] {issue.file_path}: {issue.description}")
-
-    # 4. FORMAT
-    markdown = format_review_as_markdown(report)
-
-    # 5. ACT
-    if dry_run:
-        logger.warning("DRY RUN — skipping comment post")
-        print("\n" + "=" * 60)
-        print("DRY RUN — Generated review preview")
-        print("=" * 60)
-        # Strip non-ASCII for Windows-safe terminal output
-        print(markdown.encode("ascii", "replace").decode("ascii"))
-        print("=" * 60)
-        return {
-            "pr_number": pr_number,
-            "verdict": report.overall_verdict,
-            "issues_count": len(report.issues),
-            "blocking_count": sum(1 for i in report.issues if i.severity == "blocking"),
-            "status": "review_generated_dry_run",
-        }
-
-    # Real run — post the comment
-    comment_url = gh.post_pr_comment(pr_number, markdown)
-
-    result = {
-        "pr_number": pr_number,
-        "verdict": report.overall_verdict,
-        "issues_count": len(report.issues),
-        "blocking_count": sum(1 for i in report.issues if i.severity == "blocking"),
-        "comment_url": comment_url,
-        "status": "review_posted",
-    }
-
-    logger.info(f"=== Agent 3 (Reviewer) complete. Comment: {comment_url} ===")
-    return result
-
-
-# ─────────────────────────────────────────────────────────────
-# CLI
-# ─────────────────────────────────────────────────────────────
-def main():
-    parser = argparse.ArgumentParser(description="Agent 3 (Reviewer): AI code review on a PR")
-    parser.add_argument("--pr", type=int, required=True, help="PR number to review")
-    parser.add_argument("--dry-run", action="store_true", help="Don't post comment, just preview")
-    args = parser.parse_args()
-
-    try:
-        result = run(args.pr, dry_run=args.dry_run)
-        print("\n" + "=" * 60)
-        print(f"[OK] Agent 3 finished -- PR #{result['pr_number']}")
-        print(f"   Verdict: {result['verdict']}")
-        print(f"   Issues found: {result.get('issues_count', 0)} ({result.get('blocking_count', 0)} blocking)")
-        print(f"   Status: {result['status']}")
-        if result.get("comment_url"):
-            print(f"   Comment: {result['comment_url']}")
-        print("=" * 60)
-    except Exception as e:
-        logger.error(f"Agent 3 failed: {type(e).__name__}: {e}", exc_info=True)
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()
+1. ONLY report issues about files in the "Changed Files" section above.
+2. MAX 10 issues. Be selective. Each issue reported ONCE.
+3. If the PR is trivial or clean, return `approve` with an empty issues list.
+4. Set boolean compliance flags based on the changed files (not the reference).
+5. Set `overall_verdict`:
+   - `approve` → no blocking issues / trivial PR
+   - `request_changes` → at least one blocking issue
+   - `comment` → only minor / info issues
+6. Return ONLY the structured ReviewReport. No prose before or after.

@@ -11,6 +11,12 @@ Retry Strategy (IMPORTANT for free-tier users):
   on top — that would multiply API calls and burn through daily quota.
 - For rate-limit (429 / RESOURCE_EXHAUSTED) we fail FAST with a clear
   message instead of retrying, because daily quota retries don't help.
+
+Token Cap (Day 5 fix for "repetition collapse"):
+- We cap max_output_tokens to a sane default. Gemini 2.5 models can otherwise
+  generate up to 8K+ tokens, and when reviewing a low-content PR they may
+  enter repetition loops, fill the budget with duplicated content, then get
+  truncated mid-field — which fails Pydantic validation downstream.
 """
 import os
 import logging
@@ -29,6 +35,11 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
+# Default cap on the LLM's output length. 4096 tokens ≈ 16,000 characters,
+# which is plenty for a structured review report (~20 issues max). Prevents
+# runaway generation when the model enters a repetition loop on low-content PRs.
+DEFAULT_MAX_OUTPUT_TOKENS = 4096
+
 
 def _is_quota_error(exc: Exception) -> bool:
     """Detect rate-limit / quota errors (429 RESOURCE_EXHAUSTED)."""
@@ -46,12 +57,18 @@ class QuotaExhaustedError(RuntimeError):
 class LLMClient:
     """Wrapper around Gemini with quota-aware error handling."""
 
-    def __init__(self, temperature: float = 0.2):
+    def __init__(self, temperature: float = 0.2, max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS):
         model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
         self.model_name = model_name
         # temperature=0 → deterministic; small temp adds slight creativity
-        self.llm = ChatGoogleGenerativeAI(model=model_name, temperature=temperature)
-        logger.info(f"LLM initialized: {model_name} (temp={temperature})")
+        self.llm = ChatGoogleGenerativeAI(
+            model=model_name,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
+        logger.info(
+            f"LLM initialized: {model_name} (temp={temperature}, max_output_tokens={max_output_tokens})"
+        )
 
     def _call_with_quota_check(self, callable_fn, *args, **kwargs):
         """Wrap any LLM call to convert quota errors into a clear, fast failure."""
