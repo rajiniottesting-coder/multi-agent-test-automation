@@ -51,6 +51,21 @@ def config():
 
 
 @pytest.fixture(scope="session")
+def base_url(config) -> str:
+    """The application base URL — single source of truth.
+
+    Priority:
+      1. BASE_URL env var (explicit override — useful for pointing tests at
+         dev/staging/prod without changing config.yaml)
+      2. config.yaml `base_url` (the default for local dev)
+
+    Page objects receive this via their open() method, so the URL is never
+    hardcoded in pages/ or tests/.
+    """
+    return os.getenv("BASE_URL") or config["base_url"]
+
+
+@pytest.fixture(scope="session")
 def playwright_instance():
     """One Playwright instance for the whole test run."""
     with sync_playwright() as p:

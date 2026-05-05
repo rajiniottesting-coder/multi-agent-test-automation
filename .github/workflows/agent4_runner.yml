@@ -5,9 +5,10 @@
 #   - Agent 3 (Reviewer) statically analyzes code → catches bugs by reading
 #   - Agent 4 (Runner) actually runs the tests → catches bugs by execution
 #
-# Both run in parallel on every PR. Together they form belt-and-suspenders
-# coverage: some bugs only static review catches (style, missing assertions),
-# some bugs only execution catches (selector mismatches, timing issues).
+# Both Agent 3 and Agent 4 run in parallel on every PR. After Agent 4
+# completes, the SEPARATE Agent 5 workflow (agent5_reporter.yml) is
+# triggered automatically via workflow_run — keeping each agent visible
+# as its own CI check on the PR.
 #
 # WHEN THIS RUNS:
 #   - PR opened, synchronized (new commits), or reopened
@@ -18,13 +19,9 @@
 #   2. Setup Python 3.13 + cache pip dependencies
 #   3. Install Python deps + Playwright browsers
 #   4. Run pytest (CI=true forces headless mode automatically)
-#   5. Upload test report (HTML + JUnit XML) as artifact
-#   6. PR shows ✅ green check or ❌ red X based on test outcome
-#
-# REQUIRED REPO SECRETS:
-#   - None for the test runner itself!
-#   - Tests use SauceDemo (a public demo site) so no credentials needed.
-#   - If your tests ever need secrets, add them as repo secrets and map here.
+#   5. Save PR number alongside reports (so Agent 5 can find it)
+#   6. Upload test report (HTML + JUnit XML) as artifact for Agent 5
+#   7. Publish JUnit results as a PR check
 # ─────────────────────────────────────────────────────────────
 
 name: Agent 4 - Runner
@@ -39,8 +36,10 @@ on:
 
 permissions:
   contents: read
-  checks: write          # to publish test result checks on the PR
-  pull-requests: write   # in case we want to comment results in future
+  # No checks: write needed — we write to GITHUB_STEP_SUMMARY directly
+  # (which doesn't need any special permission), not the Check Status API.
+  # No pull-requests: write needed either — Agent 5 owns Jira posting,
+  # and we don't post PR comments from this workflow.
 
 jobs:
   test:
@@ -67,9 +66,23 @@ jobs:
           # pytest-html generates a self-contained HTML report — handy as a PR artifact
           pip install pytest-html
 
+      - name: Cache Playwright browsers
+        # Playwright's browser binary (Chromium) is ~300 MB and takes ~2-3 min
+        # to download. Caching it between runs saves significant CI time.
+        # Cache key includes OS and requirements.txt hash — if either changes,
+        # we re-download (e.g., a new Playwright version may need a new binary).
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+
       - name: Install Playwright browsers
-        # `--with-deps` installs the OS-level libs Chromium needs (libnss, etc.)
-        # The browser binaries are cached automatically on subsequent runs.
+        # `--with-deps` installs the OS-level libs Chromium needs (libnss, etc.).
+        # The browser binary itself is restored from cache when the key matches —
+        # `playwright install` is idempotent and skips already-installed browsers.
+        # We still run it (vs. conditional skip) because OS-level apt packages
+        # are NOT cached and need to be reinstalled fresh each run.
         run: playwright install --with-deps chromium
 
       - name: Run tests
@@ -85,6 +98,16 @@ jobs:
             --junit-xml=reports/junit.xml \
             -v
 
+      - name: Save PR metadata for Agent 5
+        # When Agent 5 is triggered by workflow_run, it doesn't have direct
+        # access to the original PR event payload. We bundle the PR number
+        # with the artifact so Agent 5 can read it. (head_branch is derivable
+        # from the workflow_run event, but PR number is harder to get.)
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          mkdir -p reports
+          echo "${{ github.event.pull_request.number }}" > reports/pr_number.txt
+
       - name: Upload test report
         if: always()  # upload report even if tests failed (we want to see WHY)
         uses: actions/upload-artifact@v4
@@ -93,9 +116,118 @@ jobs:
           path: reports/
           retention-days: 14
 
-      - name: Publish test results as PR check
-        if: always()
-        uses: EnricoMi/publish-unit-test-result-action@v2
-        with:
-          files: reports/junit.xml
-          check_name: "Agent 4 — Test Results"
+      - name: Write test summary to Agent 4's run page
+        # Why inline Python instead of a third-party action?
+        # The popular EnricoMi/publish-unit-test-result-action and
+        # dorny/test-reporter both use GitHub's Check Status API, which has a
+        # long-standing bug: when multiple workflows run on the same commit
+        # (we have Agent 3 + Agent 4 in parallel), the API attributes the
+        # check run to an arbitrary workflow. This caused "Test Results" to
+        # display under "Agent 3 - Reviewer" instead of Agent 4.
+        #
+        # See: https://github.com/EnricoMi/publish-unit-test-result-action/issues/12
+        #
+        # Solution: write the summary directly to $GITHUB_STEP_SUMMARY. Job
+        # summaries are scoped to the executing job (NOT the buggy Check API),
+        # so they're always correctly attributed to Agent 4.
+        #
+        # Visible at: PR → Checks → "Agent 4 - Runner / Run Tests" → scroll
+        # down to the green "Summary" section at the top.
+        if: always()  # run even when pytest fails — failures need reporting
+        run: |
+          python3 << 'PYEOF'
+          """Parse junit.xml and write a markdown test summary to the GitHub
+          Actions job summary page. Falls back gracefully if junit.xml is
+          missing (e.g., pytest crashed before writing it)."""
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          junit_path = Path("reports/junit.xml")
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+
+          if not summary_path:
+              print("Not running in GitHub Actions (no GITHUB_STEP_SUMMARY). Skipping.")
+              raise SystemExit(0)
+
+          # If junit.xml is missing, write a minimal placeholder summary
+          # rather than crash — the test step itself already failed loudly.
+          if not junit_path.exists():
+              with open(summary_path, "a", encoding="utf-8") as f:
+                  f.write("## ❌ Test Results\n\n")
+                  f.write("**No junit.xml found.** The test run did not produce a report — "
+                          "see the 'Run tests' step output above for the actual error.\n")
+              raise SystemExit(0)
+
+          tree = ET.parse(junit_path)
+          root = tree.getroot()
+          # JUnit XML has either <testsuites> at root with one or more <testsuite>,
+          # or just a single <testsuite>. pytest produces the former.
+          suites = root.findall("testsuite") if root.tag == "testsuites" else [root]
+
+          total = sum(int(s.get("tests", 0)) for s in suites)
+          failures = sum(int(s.get("failures", 0)) for s in suites)
+          errors = sum(int(s.get("errors", 0)) for s in suites)
+          skipped = sum(int(s.get("skipped", 0)) for s in suites)
+          duration = sum(float(s.get("time", 0)) for s in suites)
+          passed = total - failures - errors - skipped
+
+          # Pick a status emoji based on outcome
+          if failures == 0 and errors == 0:
+              status_emoji = "✅"
+              status_text = f"All {total} tests passed"
+          else:
+              status_emoji = "❌"
+              status_text = f"{failures + errors} of {total} tests failed"
+
+          # Build markdown
+          lines = []
+          lines.append(f"## {status_emoji} Test Results")
+          lines.append("")
+          lines.append(f"**{status_text}** in {duration:.2f}s")
+          lines.append("")
+          lines.append("| Status | Count |")
+          lines.append("|---|---|")
+          lines.append(f"| ✅ Passed | {passed} |")
+          lines.append(f"| ❌ Failed | {failures} |")
+          lines.append(f"| 💥 Errored | {errors} |")
+          lines.append(f"| ⏭️ Skipped | {skipped} |")
+          lines.append(f"| **Total** | **{total}** |")
+          lines.append("")
+
+          # Detail any failures
+          failed_cases = []
+          for suite in suites:
+              for case in suite.findall("testcase"):
+                  failure = case.find("failure")
+                  error = case.find("error")
+                  if failure is not None or error is not None:
+                      classname = case.get("classname", "")
+                      name = case.get("name", "")
+                      issue = failure if failure is not None else error
+                      msg = (issue.get("message") or issue.text or "").strip()
+                      first_line = msg.splitlines()[0] if msg else "(no message)"
+                      # Truncate to keep summary readable
+                      if len(first_line) > 200:
+                          first_line = first_line[:197] + "..."
+                      failed_cases.append((f"{classname}::{name}", first_line))
+
+          if failed_cases:
+              lines.append("### Failures")
+              lines.append("")
+              for test_name, msg in failed_cases:
+                  lines.append(f"- **`{test_name}`**")
+                  lines.append(f"  - {msg}")
+              lines.append("")
+
+          lines.append("---")
+          lines.append("_Generated by Agent 4 (Runner)._")
+
+          with open(summary_path, "a", encoding="utf-8") as f:
+              f.write("\n".join(lines) + "\n")
+
+          # Also print to log for debugging
+          print(f"Test summary written: {total} total, {passed} passed, "
+                f"{failures} failed, {errors} errored, {skipped} skipped, "
+                f"{duration:.2f}s")
+          PYEOF

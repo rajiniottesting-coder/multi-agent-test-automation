@@ -1,0 +1,129 @@
+# ─────────────────────────────────────────────────────────────
+# Agent 5 (Reporter) — posts test results to Jira
+#
+# This is the FINAL agent in the pipeline:
+#   Agent 1 (Analyst) → Agent 2 (Coder) → Agent 3 (Reviewer)
+#                                      → Agent 4 (Runner) → [Agent 5: Reporter]
+#
+# Position: closes the feedback loop by writing test results back
+# to the Jira story that originally requested the work.
+#
+# WHY A SEPARATE WORKFLOW:
+#   This used to live as a second job inside agent4_runner.yml.
+#   Splitting it lets Agent 5 appear as its own check on the PR
+#   ("Agent 5 - Reporter / Post Results to Jira") instead of
+#   being mislabeled under "Agent 4 - Runner". Five agents,
+#   five visible CI steps — the demo narrative is clear.
+#
+# WHEN THIS RUNS:
+#   - Automatically after the "Agent 4 - Runner" workflow completes
+#     (via workflow_run trigger), regardless of pass/fail. Failed
+#     tests need reporting too — arguably more so.
+#
+# WHAT IT DOES:
+#   1. Wait for Agent 4 to finish (workflow_run delivers the event)
+#   2. Skip if Agent 4 wasn't triggered by a pull_request
+#   3. Checkout this repo (need Python code to run Agent 5)
+#   4. Download Agent 4's reports/ artifact (junit.xml + pr_number.txt)
+#   5. Read PR number from saved metadata, set as env var
+#   6. Run Agent 5 with full CI context (PR link, commit, run URL)
+#
+# REQUIRED REPO SECRETS:
+#   - GOOGLE_API_KEY      — Gemini for the LLM summary
+#   - JIRA_URL            — e.g. https://yoursite.atlassian.net
+#   - JIRA_EMAIL          — your Atlassian account email
+#   - JIRA_API_TOKEN      — token from id.atlassian.com → API tokens
+#   - JIRA_PROJECT_KEY    — your Jira project key (e.g., SCRUM, PROD)
+#
+# See docs/CONFIGURATION.md for the full env-var reference.
+# ─────────────────────────────────────────────────────────────
+
+name: Agent 5 - Reporter
+
+on:
+  workflow_run:
+    workflows: ["Agent 4 - Runner"]
+    types:
+      - completed
+
+permissions:
+  contents: read
+  actions: read          # to download artifacts from the triggering run
+  pull-requests: write   # to post comments on the original PR if needed
+
+jobs:
+  report:
+    name: Post Results to Jira
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Skip when the triggering Agent 4 wasn't from a PR (e.g.,
+    # workflow_dispatch). Agent 5 needs PR context to find the story.
+    if: github.event.workflow_run.event == 'pull_request'
+
+    steps:
+      - name: Checkout repository
+        # Use the head_branch from the triggering workflow run, not the
+        # default. This ensures we run with the same code that was tested.
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download test reports from Agent 4 run
+        # workflow_run gives us the run_id of the triggering Agent 4 run.
+        # We use it to download the artifact uploaded by THAT run.
+        # Note: cross-run artifact download requires actions/download-artifact@v4
+        # with run-id and github-token. The default GITHUB_TOKEN works.
+        uses: actions/download-artifact@v4
+        with:
+          name: pytest-report-${{ github.event.workflow_run.id }}
+          path: reports/
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read PR number from artifact
+        id: pr_meta
+        run: |
+          if [ -f reports/pr_number.txt ]; then
+            PR=$(cat reports/pr_number.txt | tr -d '[:space:]')
+            echo "Found PR number: $PR"
+            echo "pr_number=$PR" >> "$GITHUB_OUTPUT"
+          else
+            echo "Warning: reports/pr_number.txt not found. Agent 5 will rely on branch-name parsing."
+            echo "pr_number=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Agent 5 (Reporter)
+        # Agent 5 detects:
+        #   - Story key from the head branch name (auto/PROJ-123-feature → PROJ-123)
+        #   - PR number from PR_NUMBER env var (saved in artifact above)
+        #   - Commit SHA from GITHUB_SHA — we override to use the triggering
+        #     run's head_sha so the commit link points at the actually-tested code
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          JIRA_URL: ${{ secrets.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+          # Override default GITHUB_* values with the triggering run's context
+          PR_NUMBER: ${{ steps.pr_meta.outputs.pr_number }}
+          GITHUB_SHA: ${{ github.event.workflow_run.head_sha }}
+          # GITHUB_RUN_ID points at THIS workflow's run by default. We override
+          # to the triggering Agent 4 run so the workflow link in the Jira
+          # comment goes to the test results, not to the reporter run.
+          GITHUB_RUN_ID: ${{ github.event.workflow_run.id }}
+          # GITHUB_HEAD_REF: workflow_run sets head_branch but Python code
+          # reads GITHUB_HEAD_REF, so wire it through.
+          GITHUB_HEAD_REF: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          python -m agents.agent5_reporter --reports-dir reports/

@@ -19,8 +19,8 @@ Outputs:
 
 Usage:
     # Dev mode — process one specific story
-    python -m agents.agent1_analyst --story SCRUM-3 --dry-run
-    python -m agents.agent1_analyst --story SCRUM-3
+    python -m agents.agent1_analyst --story PROJ-123 --dry-run
+    python -m agents.agent1_analyst --story PROJ-123
 
     # Production mode — process all stories matching config criteria
     python -m agents.agent1_analyst --scan --dry-run
@@ -146,7 +146,7 @@ def main():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "--story",
-        help="Process a specific story by key (e.g., SCRUM-3) — for dev/testing",
+        help="Process a specific story by key (e.g., PROJ-123) — for dev/testing",
     )
     group.add_argument(
         "--scan",

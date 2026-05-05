@@ -21,8 +21,25 @@ class JiraClient:
         self.url = os.getenv("JIRA_URL")
         self.email = os.getenv("JIRA_EMAIL")
         self.token = os.getenv("JIRA_API_TOKEN")
-        self.project_key = os.getenv("JIRA_PROJECT_KEY", "SCRUM")
+        # JIRA_PROJECT_KEY is REQUIRED (no silent fallback).
+        # A misconfigured deployment that quietly defaults to a wrong project
+        # is far worse than failing fast with a clear error.
+        self.project_key = os.getenv("JIRA_PROJECT_KEY")
         self._client: Optional[JIRA] = None
+
+        if not all([self.url, self.email, self.token, self.project_key]):
+            missing = [
+                name for name, val in [
+                    ("JIRA_URL", self.url),
+                    ("JIRA_EMAIL", self.email),
+                    ("JIRA_API_TOKEN", self.token),
+                    ("JIRA_PROJECT_KEY", self.project_key),
+                ] if not val
+            ]
+            raise RuntimeError(
+                f"JiraClient: missing required env var(s): {', '.join(missing)}. "
+                f"See .env.example or docs/CONFIGURATION.md."
+            )
 
     @property
     def client(self) -> JIRA:
@@ -174,3 +191,23 @@ class JiraClient:
             logger.info(f"Added label '{label}' to {issue_key}")
         else:
             logger.info(f"Label '{label}' already on {issue_key} — skipped")
+
+    def add_comment(self, issue_key: str, body: str) -> str:
+        """Post a comment on a Jira issue and return the comment URL.
+
+        Used by Agent 5 (Reporter) to post test run summaries.
+
+        Args:
+            issue_key: e.g., "PROJ-123" (any Jira project key + number)
+            body: Markdown body of the comment. Jira Cloud renders Markdown
+                  reasonably well via the v3 API; for v2 APIs, headings and
+                  some formatting may render literally.
+
+        Returns:
+            URL to the created comment, suitable for logs and the agent's return value.
+        """
+        comment = self.client.add_comment(issue_key, body)
+        # Comment URL format: https://<site>/browse/<issue>?focusedCommentId=<id>
+        comment_url = f"{self.url}/browse/{issue_key}?focusedCommentId={comment.id}"
+        logger.info(f"Posted comment on {issue_key}: {comment_url}")
+        return comment_url
