@@ -32,26 +32,38 @@ allure-pytest==2.13.5
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 🤖 LLM & AGENT ORCHESTRATION
+#
+# IMPORTANT: All these packages must be on the same major version (1.x).
+# In Dec 2025, langchain-google-genai 4.0.0 was released using the unified
+# google-genai SDK. It needs langchain-core 1.x, which needs langchain 1.x.
+# Upgrading any one of these requires upgrading all of them together.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # LangChain — high-level abstractions over LLM APIs.
 # We use it for: prompt templates, structured output, message types.
 # Standardizes how all 5 agents talk to Gemini.
-langchain==0.3.7
+langchain>=1.0,<2.0
+
+# langchain-core — the foundation that everything else builds on.
+# Pinned to 1.x to match langchain-google-genai 4.x requirements.
+langchain-core>=1.0,<2.0
 
 # LangGraph — state machine library for orchestrating multi-agent workflows.
 # Each agent is a node; edges define transitions; supports human-in-the-loop
-# interrupts. We use this in Day 5 to wire all agents into one pipeline.
-langgraph==0.2.45
+# interrupts. We use this in Day 6 to wire all agents into one pipeline.
+langgraph>=1.0,<2.0
 
 # LangChain wrapper for Google Gemini.
-# Bridges Gemini's API into LangChain's standard interface so we can
-# swap LLMs (e.g., to OpenAI/Claude) without rewriting agents.
-langchain-google-genai>=4.0.0
+# CRITICAL: must be >= 4.0.0 because earlier versions don't support the
+# json_schema method for with_structured_output(), which is essential for
+# reliable structured output with Gemini 2.5 models. Earlier versions
+# silently return None when the model doesn't call the tool.
+langchain-google-genai>=4.0.0,<5.0
+
 # Pydantic — data validation library used everywhere in our agents.
 # Defines the SHAPE of LLM outputs so we never trust raw text from the LLM.
 # If Gemini returns malformed data, Pydantic raises a clear error.
-pydantic==2.9.2
+pydantic>=2.9
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -67,11 +79,16 @@ jira>=3.10.5
 # PyGithub — GitHub REST API client.
 # Used by Agent 2 (Coder) on Day 4 to create branches, commit files,
 # and open pull requests programmatically.
-PyGithub==2.4.0
+# Used by Agent 3 (Reviewer) on Day 5 to read PRs and post review comments.
+PyGithub>=2.4
 
 # Requests — HTTP client. Indirect dependency for many libraries above,
 # but we list it explicitly because we may use it for ad-hoc HTTP calls.
-requests==2.32.3
+requests>=2.32
+
+# Tenacity — explicit dependency for our @retry decorators in llm_client.py.
+# Auto-installed by langchain, but we list it because we use it directly.
+tenacity>=8.0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -80,21 +97,20 @@ requests==2.32.3
 
 # python-dotenv — loads `.env` files into os.environ at runtime.
 # Keeps secrets out of code; pairs with `.env.example` for documentation.
-python-dotenv==1.0.1
+python-dotenv>=1.0
 
 # PyYAML — read/write YAML files.
 # config.yaml uses YAML for human-friendly config (browsers, test users,
 # per-agent selection rules).
-pyyaml==6.0.2
+pyyaml>=6.0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 🛡️ TRANSITIVE / IMPLICIT DEPENDENCIES (commented for clarity)
 # These are pulled in by the packages above and don't need explicit pins:
 #
-#   - tenacity            (auto-installed by langchain; we use it directly
-#                          for @retry decorators in agents/llm_client.py)
-#   - google-api-core     (Gemini error types like ResourceExhausted)
+#   - google-genai        (Gemini API errors come from google.genai.errors;
+#                          installed automatically by langchain-google-genai 4.x)
 #   - SQLAlchemy          (LangChain memory backends — not used yet)
 #   - aiohttp / httpx     (async HTTP for langchain)
 #   - Pillow              (image handling, used by jira lib for attachments)
