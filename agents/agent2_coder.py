@@ -311,6 +311,13 @@ def run(story_id: str, dry_run: bool = False) -> dict:
         }
 
     # Real run
+    # Validate that the LLM generated a branch name with a Jira key in it.
+    # Without a key in the branch, Agent 5 (Reporter) won't be able to
+    # post results back to the right Jira story. Better to catch this
+    # NOW (before pushing) than to have a silent gap downstream.
+    from config import assert_valid_branch_for_pipeline
+    assert_valid_branch_for_pipeline(output.branch_name)
+
     gh = GitHubClient()
     gh.create_branch(output.branch_name, from_branch="main")
 

@@ -29,6 +29,11 @@ pytest-playwright==0.5.2
 # Captures screenshots, traces, durations, and trends across runs.
 allure-pytest==2.13.5
 
+# pytest-html — self-contained single-file HTML report.
+# Used by Agent 4 (Runner) for human-readable artifact uploaded to GitHub Actions.
+# Read by Agent 5 (Reporter) is via junit.xml, not this HTML.
+pytest-html==4.1.1
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 🤖 LLM & AGENT ORCHESTRATION

@@ -208,6 +208,58 @@ These aren't agents — they're **shared infrastructure** every agent uses.
 
 ---
 
+## Configuration & Secret Management
+
+> **Quick links:** [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) for the full env-var reference, [`docs/BRANCH_NAMING.md`](docs/BRANCH_NAMING.md) for the branch convention.
+
+The project separates **what changes per deployment** from **what's the same everywhere** using three distinct layers. Mixing these layers is the most common source of bugs in CI/CD systems, so it's worth being explicit about which goes where.
+
+### Layer 1: Secrets (`.env` locally, GitHub Secrets in CI)
+
+Anything that would be a security risk if committed.
+
+- **Local development:** lives in `.env` (gitignored, never committed)
+- **CI:** lives in **GitHub repository secrets** (Settings → Secrets and variables → Actions), exposed to workflows via `${{ secrets.NAME }}`
+- **Examples:** `JIRA_API_TOKEN`, `GOOGLE_API_KEY`, `GITHUB_TOKEN`
+
+A committed `.env.example` file documents the *shape* of `.env` (variable names with placeholder values) so a new contributor knows what to set up. The real `.env` is never committed.
+
+**Naming gotcha:** GitHub reserves the `GITHUB_*` prefix for its own auto-injected secrets. Custom secrets named `GITHUB_REPO` are rejected on creation, so the project uses `GH_REPO` as the secret name and the workflow YAML maps it to `GITHUB_REPO` for the Python code. Application code stays clean; the rename is contained to the workflow file.
+
+### Layer 2: Non-Secret Configuration (`config/config.yaml`)
+
+Things that vary by environment but aren't sensitive: browser settings, base URLs, test data, agent selection rules.
+
+These are committed to the repo because seeing them in version control is a feature, not a bug — code review can catch a bad default, and rolling back is `git revert`. The `BASE_URL` env var can override `config.yaml` for cases like pointing tests at a staging environment without editing the config file.
+
+### Layer 3: Code Constants (in source files)
+
+Things that are **part of the design** and shouldn't change without a code review: locator strings (`USERNAME_INPUT = "[data-test='username']"`), schema field names, default timeouts that are tied to specific page behavior.
+
+The rule of thumb: if changing the value would break an assumption elsewhere in the code, it belongs in the code. If multiple deployments would use different values for the same behavior, it belongs in `config.yaml`. If revealing it would create a security risk, it belongs in `.env` / GitHub Secrets.
+
+### Single Source of Truth: Base URL
+
+Page objects don't hardcode the application URL. The `base_url` pytest fixture in `tests/conftest.py` reads from `config.yaml` (with optional `BASE_URL` env override) and is injected into page objects through their `open()` method:
+
+```python
+@given("I am on the SauceDemo login page")
+def open_login_page(login_page, base_url):
+    login_page.open(base_url)
+```
+
+Result: pointing the suite at a different environment is a single config change, not a code edit across multiple files.
+
+### Fail-Fast Validation: `validate_required_env()`
+
+`config/__init__.py` provides a `validate_required_env(["VAR1", "VAR2"])` helper that agents can call at startup. If any required variable is missing, the agent raises `MissingEnvVarError` with a clear message naming the missing variables — instead of failing late with a cryptic 401 from Jira or a `NoneType` error deep in a tool call.
+
+Each adapter client (`JiraClient`, `GitHubClient`) also validates its own required vars in its `__init__`. The startup validator complements that by failing before *any* expensive operation happens.
+
+---
+
+
+
 ## Why This Is "Multi-Agent" and Not Just Scripts
 
 A reasonable question: *aren't these just Python scripts that call Gemini?*
@@ -253,3 +305,7 @@ Things this design would support cleanly:
 - **Webhooks instead of polling** — replace cron-based scan mode with Jira webhooks → no agent changes
 - **More agents** — adding a "PerformanceTester" or "AccessibilityChecker" agent is a new file in `agents/` plus an entry in `config.yaml`
 - **Multi-environment runs** — Agent 4 (Runner) could pick `dev` vs `staging` vs `prod` based on PR target branch
+- **Pre-commit secret scanning** — tools like `detect-secrets` or `gitleaks` as a git hook would catch accidentally committed credentials before they reach the remote. Currently relies on developer discipline + `.gitignore`.
+- **GitHub Environments for staged secrets** — for a multi-stage deployment (dev/staging/prod), GitHub's "Environments" feature lets secrets be scoped per environment with optional manual approval gates. Overkill for one demo target; valuable for production rollout.
+- **Single source of truth for selectors** — selectors currently live in two places: `pages/*.py` (used by test execution) and `app_inventory/*.json` (used as context for AI agents). Both sets must be kept in sync manually. A future improvement would auto-generate the JSON from the page object classes (using AST inspection) so the Python files remain the single authoritative source. For now, this is a deliberate trade-off: the JSON file's structure is optimized for LLM consumption and includes metadata (like `selector_strategy`, `common_errors`) that would clutter page object classes.
+- **Shared step definitions** — `tests/step_defs/test_login.py` and `tests/step_defs/test_login_validation.py` currently duplicate the `@given("I am on the SauceDemo login page")` step and a few others. The pytest-bdd-idiomatic fix is to move shared steps into `tests/conftest.py` or a `tests/step_defs/common_steps.py` module so they're auto-discovered across all feature files. Worth doing once a third feature file is added — at two files the duplication is tolerable.

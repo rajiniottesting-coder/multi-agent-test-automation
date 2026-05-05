@@ -30,8 +30,8 @@ def inventory_page(page):
 # === GIVEN steps ===
 
 @given("I am on the SauceDemo login page")
-def open_login_page(login_page):
-    login_page.open()
+def open_login_page(login_page, base_url):
+    login_page.open(base_url)
 
 
 # === WHEN steps ===

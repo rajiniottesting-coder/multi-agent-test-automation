@@ -50,7 +50,7 @@ Each agent has a **human approval gate** — agents propose, humans dispose. Thi
 | 4️⃣ | **Runner** | Build/Release Engineer | Smart test execution (smoke vs regression based on changes) |
 | 5️⃣ | **Reporter** | QA Lead | Analyzes results, summarizes failures in Jira, publishes dashboard |
 
-📐 For deep-dive details on each agent, see [ARCHITECTURE.md](./ARCHITECTURE.md).
+📐 For deep-dive details on each agent, see [ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 
 ---
 
@@ -167,7 +167,10 @@ multi-agent-test-automation/
 ├── .gitignore
 ├── pytest.ini                       # Pytest configuration
 ├── requirements.txt                 # Python dependencies (documented)
-├── ARCHITECTURE.md                  # Deep-dive on agents and design
+├── docs/
+│   ├── ARCHITECTURE.md              # Deep-dive on agents and design
+│   ├── BRANCH_NAMING.md             # Branch convention reference
+│   └── CONFIGURATION.md             # Env-var and secret reference
 └── README.md                        # ← You are here
 ```
 

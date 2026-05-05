@@ -50,7 +50,7 @@ class FilePlan(BaseModel):
     purpose: str = Field(..., description="One-sentence justification for this file")
     related_test_cases: list[str] = Field(
         default_factory=list,
-        description="Jira test case keys this file addresses (e.g., ['SCRUM-7', 'SCRUM-9'])"
+        description="Jira test case keys this file addresses (e.g., ['PROJ-7', 'PROJ-9'])"
     )
 
 
@@ -171,4 +171,80 @@ class ReviewReport(BaseModel):
     coverage_complete: bool = Field(
         ...,
         description="All claimed test cases have corresponding Gherkin scenarios?"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Schemas for Agent 5 (Reporter)
+#
+# Agent 5 reads JUnit XML produced by Agent 4 (Runner), summarizes results,
+# and posts a friendly comment to the parent Jira story.
+#
+# IMPORTANT for LLM compatibility (lesson from Day 5):
+#   - No max_length on lists (Gemini's constrained-decoding can't compile maxItems)
+#   - No regex patterns or format constraints on strings
+#   - Quantity caps go in post-processing, not the schema
+# ─────────────────────────────────────────────────────────────
+
+class TestResult(BaseModel):
+    """A single test case result parsed from JUnit XML.
+
+    Note: this schema is NOT used as LLM structured output. It's a plain
+    data model for Python code that parses JUnit XML. The LLM only sees
+    the aggregated RunReport and produces JiraCommentDraft.
+    """
+    name: str = Field(..., description="Test method name (e.g., 'test_successful_login')")
+    classname: str = Field(..., description="Module path (e.g., 'tests.step_defs.test_login')")
+    status: Literal["passed", "failed", "error", "skipped"] = Field(
+        ...,
+        description="passed=test ran and asserted true, failed=assertion failed, "
+                    "error=test setup/teardown crashed, skipped=intentionally not run"
+    )
+    duration_seconds: float = Field(default=0.0, description="How long the test took")
+    failure_message: Optional[str] = Field(
+        default=None,
+        description="First line of the failure/error message; None if passed/skipped"
+    )
+
+
+class RunReport(BaseModel):
+    """Aggregated test run summary parsed from JUnit XML.
+
+    Built by Python code (not the LLM). Passed to the LLM as context
+    so it can write a contextual comment.
+    """
+    total: int = Field(..., description="Total tests run")
+    passed: int = Field(..., description="Tests that passed")
+    failed: int = Field(..., description="Tests that failed (assertion errors)")
+    errors: int = Field(default=0, description="Tests that errored (setup/teardown crashes)")
+    skipped: int = Field(default=0, description="Tests intentionally skipped")
+    duration_seconds: float = Field(default=0.0, description="Total run time")
+    results: list[TestResult] = Field(default_factory=list, description="Per-test details")
+    # Context that helps Agent 5 build a useful comment:
+    pr_number: Optional[int] = Field(default=None, description="PR that triggered this run")
+    pr_url: Optional[str] = Field(default=None, description="Link to the PR")
+    workflow_run_url: Optional[str] = Field(default=None, description="Link to the GHA run")
+    html_report_url: Optional[str] = Field(default=None, description="Link to pytest HTML report artifact")
+    commit_sha: Optional[str] = Field(default=None, description="Commit SHA that was tested")
+
+
+class JiraCommentDraft(BaseModel):
+    """The LLM's output: a Jira comment ready to post.
+
+    Why a structured output (not raw text):
+      - Forces the LLM to give us exactly what we need
+      - Title is useful for logs and audit trails
+      - body_markdown is what gets posted; Jira renders Markdown via ADF
+        (Atlassian Document Format) for newer Cloud APIs
+    """
+    title: str = Field(
+        ...,
+        description="One-line headline for logs (e.g., 'All 9 tests passed' or "
+                    "'2 of 9 tests failed — login validation issues')"
+    )
+    body_markdown: str = Field(
+        ...,
+        description="The full comment to post on the Jira story, in Markdown. "
+                    "Should include: pass/fail summary, link to PR, link to test report, "
+                    "and (if any) brief notes on what failed."
     )
