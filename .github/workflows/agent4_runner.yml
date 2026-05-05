@@ -11,7 +11,7 @@
 #
 # WHEN THIS RUNS:
 #   - PR opened, synchronized (new commits), or reopened
-#   - Manual trigger via Actions tab → workflow_dispatch
+#   - Manual trigger via Actions tab → workflow_dispatch!!
 #
 # WHAT IT DOES:
 #   1. Checkout PR branch
