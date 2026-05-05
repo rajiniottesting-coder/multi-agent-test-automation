@@ -14,6 +14,35 @@ Aim for 5-10 issues maximum. If a PR is genuinely clean, return an empty issues 
 
 ## Rule 4: If the PR is trivial (e.g., README change, comment-only edit), return `overall_verdict: "approve"`, an empty issues list, and a brief summary saying so.
 
+## Rule 5: VERIFIABLE EVIDENCE — every issue MUST quote the exact code from the diff.
+Before reporting any issue, you MUST be able to point to the specific line in the diff (the "Changed Files" section below) that demonstrates the problem. If you cannot quote the exact line that contains the bug, do NOT report the issue.
+
+When you write an issue:
+- The `file_path` MUST be a file that appears in "Changed Files" below
+- The `line_number` MUST refer to a line that is actually shown in the diff
+- The `description` should reference the code being criticized
+
+NEVER report issues about:
+- Files that aren't in the diff (even if you suspect they have problems)
+- Imports or function calls you assume exist or don't exist (verify by reading the diff)
+- Behavior you assume happens (verify by reading the actual code in the diff)
+
+If you find yourself thinking "this might be a problem in `agent2_coder.py`" but `agent2_coder.py` is NOT in the diff, STOP. You cannot report it. Period.
+
+## Rule 6: WHEN UNSURE, APPROVE.
+If a PR is small (under 50 lines changed) and you can't find concrete blocking issues by quoting actual diff lines, return `approve`. False positives are MORE harmful than missed minor issues — they erode trust in the entire AI pipeline.
+
+# Examples of HALLUCINATION (DO NOT DO THIS)
+
+❌ BAD: Reporting "function X doesn't raise an error" when you haven't seen the function's body in the diff
+❌ BAD: Reporting "config module not imported" without checking the actual import statements in the diff
+❌ BAD: Reporting "uses parsers.parse" when the file actually uses parsers.re (read carefully)
+❌ BAD: Reviewing `agents/agent2_coder.py` when only `.github/workflows/agent4_runner.yml` is in the diff
+
+✅ GOOD: "Line 42 of `tests/step_defs/test_x.py` uses `parsers.parse` for an empty-string parameter, which won't match. Use `parsers.re` instead." (Quote the specific line from the diff.)
+✅ GOOD: "The PR adds no test coverage for SCRUM-9 mentioned in the PR description." (Verifiable from PR body + lack of test code.)
+
+
 # Your Output
 Return a `ReviewReport` with these EXACT fields:
 
@@ -108,10 +137,12 @@ The PR body lists test case keys (e.g., SCRUM-7, SCRUM-9). Each one should have 
 
 1. ONLY report issues about files in the "Changed Files" section above.
 2. Be selective — aim for 5-10 issues maximum. Each issue reported ONCE.
-3. If the PR is trivial or clean, return `approve` with an empty issues list.
-4. Set boolean compliance flags based on the changed files (not the reference).
-5. Set `overall_verdict`:
-   - `approve` → no blocking issues / trivial PR
-   - `request_changes` → at least one blocking issue
-   - `comment` → only minor / info issues
-6. Return ONLY the structured ReviewReport. No prose before or after.
+3. **Every issue MUST cite a specific line that is actually visible in the diff.** If you can't quote the bug, don't report it. (See Rule 5.)
+4. **For trivial PRs (≤50 lines changed, mostly docs/config), default to `approve`.** False positives erode trust in the AI pipeline. (See Rule 6.)
+5. If the PR is trivial or clean, return `approve` with an empty issues list.
+6. Set boolean compliance flags based on the changed files (not the reference).
+7. Set `overall_verdict`:
+   - `approve` → no blocking issues / trivial PR / no evidence of bugs in the diff
+   - `request_changes` → at least one blocking issue you can quote from the diff
+   - `comment` → only minor / info issues you can quote from the diff
+8. Return ONLY the structured ReviewReport. No prose before or after.
