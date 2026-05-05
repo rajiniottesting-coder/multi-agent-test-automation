@@ -1,12 +1,13 @@
 """
 Step definitions for features/login-validation.feature.
-Each @given/@when/@then maps an English line to a Python action.
+This file implements validation scenarios for the login page,
+such as empty username or password fields.
 """
 import pytest
 from pytest_bdd import scenarios, given, when, then, parsers
 
 from pages.login_page import LoginPage
-from pages.inventory_page import InventoryPage
+from pathlib import Path
 from config.paths import feature_path
 
 
@@ -18,51 +19,43 @@ scenarios(str(feature_path("login-validation")))
 
 @pytest.fixture
 def login_page(page):
+    """Fixture for the LoginPage object."""
     return LoginPage(page)
-
-
-@pytest.fixture
-def inventory_page(page):
-    return InventoryPage(page)
 
 
 # === GIVEN steps ===
 
 @given("I am on the SauceDemo login page")
 def open_login_page(login_page, base_url):
+    """Navigate to the SauceDemo login page."""
     login_page.open(base_url)
 
 
 # === WHEN steps ===
-#
-# NOTE: Use parsers.re instead of parsers.parse here.
-# parsers.parse('"{username}"') does NOT match an empty string between the
-# quotes — when username or password is "", the parser returns None and
-# pytest-bdd raises StepDefinitionNotFoundError for the empty-field scenarios.
-# parsers.re with the regex character class [^"]* explicitly allows empty
-# matches, so all six combinations of empty/non-empty inputs work.
-@when(parsers.re(r'I log in with username "(?P<username>[^"]*)" and password "(?P<password>[^"]*)"'))
-def login_with_credentials(login_page, username, password):
-    login_page.login_as(username, password)
+
+@when("I attempt to log in with an empty username and password")
+def login_with_empty_credentials(login_page):
+    """Attempt to log in with both username and password fields empty."""
+    login_page.login_as("", "")
+
+
+@when(parsers.parse('I attempt to log in with username "{username}" and an empty password'))
+def login_with_empty_password(login_page, username):
+    """Attempt to log in with a given username and an empty password."""
+    login_page.login_as(username, "")
+
+
+@when(parsers.parse('I attempt to log in with an empty username and password "{password}"'))
+def login_with_empty_username(login_page, password):
+    """Attempt to log in with an empty username and a given password."""
+    login_page.login_as("", password)
 
 
 # === THEN steps ===
 
-@then("I should be redirected to the inventory page")
-def verify_inventory_page(inventory_page):
-    assert inventory_page.is_loaded(), \
-        f"Expected inventory page, but URL is: {inventory_page.page.url}"
-
-
-@then(parsers.parse('I should see the page title "{expected_title}"'))
-def verify_page_title(inventory_page, expected_title):
-    actual = inventory_page.get_page_title_text()
-    assert actual == expected_title, \
-        f"Expected title '{expected_title}', but got '{actual}'"
-
-
 @then(parsers.parse('I should see the error message "{expected_message}"'))
 def verify_error_message(login_page, expected_message):
+    """Verify that the expected error message is displayed."""
     actual = login_page.get_error_message()
     assert actual == expected_message, \
         f"Expected error '{expected_message}', but got '{actual}'"
