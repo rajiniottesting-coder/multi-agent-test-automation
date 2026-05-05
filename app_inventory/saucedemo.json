@@ -1,0 +1,82 @@
+{
+  "app_name": "SauceDemo",
+  "base_url": "https://www.saucedemo.com",
+  "description": "E-commerce demo site for automation practice. Login, browse, cart, checkout flows.",
+
+  "test_users": {
+    "standard": "standard_user / secret_sauce — normal user, all flows work",
+    "locked_out": "locked_out_user / secret_sauce — receives lockout error on login",
+    "problem": "problem_user / secret_sauce — UI bugs intentionally present",
+    "performance_glitch": "performance_glitch_user / secret_sauce — slow page loads"
+  },
+
+  "pages": {
+    "login": {
+      "url": "/",
+      "page_object_file": "pages/login_page.py",
+      "page_object_class": "LoginPage",
+      "elements": {
+        "username_input": "[data-test='username']",
+        "password_input": "[data-test='password']",
+        "login_button": "[data-test='login-button']",
+        "error_message": "[data-test='error']"
+      },
+      "key_methods": ["open()", "login_as(username, password)", "get_error_message()"]
+    },
+
+    "inventory": {
+      "url": "/inventory.html",
+      "page_object_file": "pages/inventory_page.py",
+      "page_object_class": "InventoryPage",
+      "elements": {
+        "page_title": "[data-test='title']",
+        "inventory_container": "[data-test='inventory-container']",
+        "shopping_cart_link": "[data-test='shopping-cart-link']",
+        "sort_dropdown": "[data-test='product-sort-container']",
+        "add_to_cart_buttons": "[data-test^='add-to-cart-']",
+        "remove_buttons": "[data-test^='remove-']",
+        "cart_badge": "[data-test='shopping-cart-badge']"
+      },
+      "key_methods": ["is_loaded()", "get_page_title_text()"],
+      "implementation_status": "partial — only is_loaded and get_page_title_text exist; cart actions need to be added"
+    },
+
+    "cart": {
+      "url": "/cart.html",
+      "page_object_file": "pages/cart_page.py (NOT YET CREATED)",
+      "page_object_class": "CartPage",
+      "elements": {
+        "cart_items": "[data-test='inventory-item']",
+        "checkout_button": "[data-test='checkout']",
+        "continue_shopping_button": "[data-test='continue-shopping']",
+        "remove_button": "[data-test^='remove-']"
+      },
+      "implementation_status": "NOT YET CREATED — Coder may need to generate this page object"
+    }
+  },
+
+  "common_errors": {
+    "invalid_credentials": "Epic sadface: Username and password do not match any user in this service",
+    "locked_out": "Epic sadface: Sorry, this user has been locked out.",
+    "missing_username": "Epic sadface: Username is required",
+    "missing_password": "Epic sadface: Password is required"
+  },
+
+  "selector_strategy": {
+    "preferred": "data-test attributes (always exist on SauceDemo)",
+    "format": "[data-test='exact-name']",
+    "avoid": ["IDs (some are generated)", "CSS class names (may change)", "XPath (brittle)"]
+  },
+
+  "test_patterns": {
+    "framework": "Playwright + pytest-bdd + POM",
+    "feature_files_in": "features/",
+    "step_definitions_in": "tests/step_defs/",
+    "page_objects_in": "pages/",
+    "naming_convention": {
+      "feature_file": "<flow>.feature (e.g., login.feature, cart.feature)",
+      "step_file": "test_<flow>.py (e.g., test_login.py)",
+      "page_class": "<Flow>Page (e.g., LoginPage, InventoryPage)"
+    }
+  }
+}

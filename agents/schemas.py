@@ -6,6 +6,10 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
+# ─────────────────────────────────────────────────────────────
+# Schemas for Agent 1 (Analyst)
+# ─────────────────────────────────────────────────────────────
+
 class TestStep(BaseModel):
     """A single step inside a test case."""
     step_number: int = Field(..., description="1-indexed step order")
@@ -29,3 +33,127 @@ class TestCaseList(BaseModel):
     """A collection of test cases generated from one story."""
     story_summary: str = Field(..., description="Brief summary of the story analyzed")
     test_cases: list[TestCase] = Field(..., min_length=1, description="At least one test case")
+
+
+# ─────────────────────────────────────────────────────────────
+# Schemas for Agent 2 (Coder) — TWO-STAGE APPROACH
+# ─────────────────────────────────────────────────────────────
+
+class FilePlan(BaseModel):
+    """Stage 1 metadata for a file to be generated. NO actual content here."""
+    file_path: str = Field(..., description="Project-relative file path (e.g., 'features/cart.feature')")
+    file_type: Literal["feature", "step_definitions", "page_object", "other"] = Field(
+        default="other",
+        description="Kind of file: feature, step_definitions, page_object, or other"
+    )
+    is_new_file: bool = Field(default=True, description="True if creating new, False if updating existing")
+    purpose: str = Field(..., description="One-sentence justification for this file")
+    related_test_cases: list[str] = Field(
+        default_factory=list,
+        description="Jira test case keys this file addresses (e.g., ['SCRUM-7', 'SCRUM-9'])"
+    )
+
+
+class CodePlan(BaseModel):
+    """Stage 1 output: the full plan, but NO code content. Code comes in Stage 2."""
+    feature_name: str = Field(..., description="Short kebab-case name (e.g., 'login-validation')")
+    branch_name: str = Field(..., description="Git branch name, format: 'auto/<jira-key>-<feature>'")
+    pr_title: str = Field(..., description="Concise PR title")
+    pr_body: str = Field(..., description="Markdown PR body explaining what was generated")
+    files_to_create: list[FilePlan] = Field(..., min_length=1, description="Files to create or modify")
+    notes: str = Field(default="", description="Caveats, assumptions, or items needing human attention")
+
+
+class GeneratedFile(BaseModel):
+    """A complete generated file (plan + content)."""
+    file_path: str
+    content: str
+    is_new_file: bool = True
+    purpose: str = ""
+
+
+class CodeGenerationOutput(BaseModel):
+    """Final output of Agent 2 after both stages complete."""
+    feature_name: str
+    branch_name: str
+    pr_title: str
+    pr_body: str
+    files: list[GeneratedFile]
+    notes: str = ""
+
+
+# ─────────────────────────────────────────────────────────────
+# Schemas for Agent 3 (Reviewer)
+#
+# Field names chosen to be unambiguous and LLM-friendly.
+# Required boolean compliance flags ensure the LLM produces a
+# complete checklist every time, not just a free-form list of issues.
+# ─────────────────────────────────────────────────────────────
+
+class ReviewIssue(BaseModel):
+    """A single issue found during code review."""
+    severity: Literal["blocking", "major", "minor", "info"] = Field(
+        ...,
+        description="blocking=must fix before merge, major=important but not blocking, "
+                    "minor=nice-to-have, info=FYI / observation"
+    )
+    file_path: str = Field(
+        ...,
+        description="Project-relative path of the file with the issue (e.g., 'tests/step_defs/test_login.py')"
+    )
+    line_number: Optional[int] = Field(
+        default=None,
+        description="Line number (1-indexed), or null if file-level issue with no specific line"
+    )
+    issue_type: Literal["style", "functional_bug", "missing_coverage", "security", "best_practice"] = Field(
+        ...,
+        description="Category: style=formatting/naming, functional_bug=test will fail, "
+                    "missing_coverage=test case not addressed, security=credentials/injection, "
+                    "best_practice=could be cleaner"
+    )
+    description: str = Field(
+        ...,
+        description="What the issue is, in 1-2 sentences"
+    )
+    suggested_fix: str = Field(
+        ...,
+        description="How to fix it. Include corrected code snippet if helpful."
+    )
+
+
+class ReviewReport(BaseModel):
+    """Output of Agent 3 (Reviewer) for one Pull Request."""
+    pr_number: int = Field(..., description="The PR number being reviewed")
+    overall_verdict: Literal["approve", "request_changes", "comment"] = Field(
+        ...,
+        description="approve=ready to merge, request_changes=blocking issues found, "
+                    "comment=advisory only (minor or info issues)"
+    )
+    summary: str = Field(
+        ...,
+        description="2-3 sentence high-level summary of the review"
+    )
+    issues: list[ReviewIssue] = Field(
+        default_factory=list,
+        description="List of issues found. Empty list means no issues."
+    )
+    style_compliance: bool = Field(
+        ...,
+        description="Does the code follow the reference style (POM, naming, imports)?"
+    )
+    type_hints_present: bool = Field(
+        ...,
+        description="Are type hints used consistently on new function signatures?"
+    )
+    no_hardcoded_waits: bool = Field(
+        ...,
+        description="Code is free of time.sleep() and similar hardcoded waits?"
+    )
+    pom_compliant: bool = Field(
+        ...,
+        description="Selectors live in page objects (not in step definition files)?"
+    )
+    coverage_complete: bool = Field(
+        ...,
+        description="All claimed test cases have corresponding Gherkin scenarios?"
+    )

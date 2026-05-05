@@ -1,0 +1,92 @@
+# ─────────────────────────────────────────────────────────────
+# Agent 3 (Reviewer) — automatic PR review via GitHub Actions
+#
+# WHEN THIS RUNS:
+#   - A new pull request is opened
+#   - A new commit is pushed to an existing PR (synchronize event)
+#   - You manually trigger it from the Actions tab (workflow_dispatch)
+#
+# WHAT IT DOES:
+#   1. Checks out the PR's branch
+#   2. Sets up Python 3.13 + caches pip dependencies
+#   3. Installs project dependencies
+#   4. Runs Agent 3, which:
+#      - Reads the PR (uses GITHUB_EVENT_PATH for PR number auto-detection)
+#      - Calls Gemini to perform code review
+#      - Posts the review as a comment on the PR
+#
+# REQUIRED REPO SECRETS (set under Settings → Secrets and variables → Actions):
+#   - GOOGLE_API_KEY    : your Gemini API key
+#   - GITHUB_REPO       : repo full name, e.g. "rajiniottesting-coder/multi-agent-test-automation"
+#                         (note: NOT the same as GITHUB_TOKEN, which GitHub provides automatically)
+#   - JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN, JIRA_PROJECT_KEY (only if you ever want this
+#     workflow to also access Jira — not strictly needed for Agent 3 but kept for symmetry
+#     with the rest of the project)
+#
+# THE TWO TOKENS — important distinction:
+#   - GITHUB_TOKEN: built-in, auto-provided by GitHub Actions. Used by Agent 3
+#                   to read the PR and post comments. We map it via env below.
+#   - GOOGLE_API_KEY: must be added as a repo secret. Used to call Gemini.
+# ─────────────────────────────────────────────────────────────
+
+name: Agent 3 - Reviewer
+
+on:
+  pull_request:
+    types:
+      - opened          # PR newly opened
+      - synchronize     # New commit pushed to PR
+      - reopened        # PR reopened
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to review (manual run only)"
+        required: true
+        type: number
+
+# Permissions needed for the built-in GITHUB_TOKEN:
+permissions:
+  contents: read         # to read repo files
+  pull-requests: write   # to read PR details and post comments
+
+jobs:
+  review:
+    name: AI Code Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # For PR events, check out the PR's head ref (so we have the latest code)
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"  # auto-caches based on requirements.txt hash
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Agent 3 (Reviewer)
+        env:
+          # Map GitHub-provided + repo secrets into the env Agent 3 expects
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ secrets.GITHUB_REPO }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash-lite' }}
+          # PR_NUMBER is auto-set when triggered by pull_request events, but for
+          # manual workflow_dispatch we need to override:
+          PR_NUMBER: ${{ github.event.inputs.pr_number }}
+          # Jira creds — kept here for forward-compat (Agent 5 will need these)
+          JIRA_URL: ${{ secrets.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+        run: |
+          python -m agents.agent3_reviewer

@@ -47,8 +47,7 @@ langgraph==0.2.45
 # LangChain wrapper for Google Gemini.
 # Bridges Gemini's API into LangChain's standard interface so we can
 # swap LLMs (e.g., to OpenAI/Claude) without rewriting agents.
-langchain-google-genai==2.0.4
-
+langchain-google-genai>=4.0.0
 # Pydantic — data validation library used everywhere in our agents.
 # Defines the SHAPE of LLM outputs so we never trust raw text from the LLM.
 # If Gemini returns malformed data, Pydantic raises a clear error.
