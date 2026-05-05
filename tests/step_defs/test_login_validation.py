@@ -34,8 +34,14 @@ def open_login_page(login_page):
 
 
 # === WHEN steps ===
-
-@when(parsers.parse('I log in with username "{username}" and password "{password}"'))
+#
+# NOTE: Use parsers.re instead of parsers.parse here.
+# parsers.parse('"{username}"') does NOT match an empty string between the
+# quotes — when username or password is "", the parser returns None and
+# pytest-bdd raises StepDefinitionNotFoundError for the empty-field scenarios.
+# parsers.re with the regex character class [^"]* explicitly allows empty
+# matches, so all six combinations of empty/non-empty inputs work.
+@when(parsers.re(r'I log in with username "(?P<username>[^"]*)" and password "(?P<password>[^"]*)"'))
 def login_with_credentials(login_page, username, password):
     login_page.login_as(username, password)
 
@@ -57,22 +63,6 @@ def verify_page_title(inventory_page, expected_title):
 
 @then(parsers.parse('I should see the error message "{expected_message}"'))
 def verify_error_message(login_page, expected_message):
-    actual = login_page.get_error_message()
-    assert actual == expected_message, \
-        f"Expected error '{expected_message}', but got '{actual}'"
-
-
-@then("I should see the validation error for empty username")
-def verify_empty_username_error(login_page):
-    expected_message = "Epic sadface: Username is required"
-    actual = login_page.get_error_message()
-    assert actual == expected_message, \
-        f"Expected error '{expected_message}', but got '{actual}'"
-
-
-@then("I should see the validation error for empty password")
-def verify_empty_password_error(login_page):
-    expected_message = "Epic sadface: Password is required"
     actual = login_page.get_error_message()
     assert actual == expected_message, \
         f"Expected error '{expected_message}', but got '{actual}'"
