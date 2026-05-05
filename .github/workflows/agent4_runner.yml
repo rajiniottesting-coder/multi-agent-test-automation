@@ -64,9 +64,23 @@ jobs:
           # pytest-html generates a self-contained HTML report — handy as a PR artifact
           pip install pytest-html
 
+      - name: Cache Playwright browsers
+        # Playwright's browser binary (Chromium) is ~300 MB and takes ~2-3 min
+        # to download. Caching it between runs saves significant CI time.
+        # Cache key includes OS and requirements.txt hash — if either changes,
+        # we re-download (e.g., a new Playwright version may need a new binary).
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+
       - name: Install Playwright browsers
-        # `--with-deps` installs the OS-level libs Chromium needs (libnss, etc.)
-        # The browser binaries are cached automatically on subsequent runs.
+        # `--with-deps` installs the OS-level libs Chromium needs (libnss, etc.).
+        # The browser binary itself is restored from cache when the key matches —
+        # `playwright install` is idempotent and skips already-installed browsers.
+        # We still run it (vs. conditional skip) because OS-level apt packages
+        # are NOT cached and need to be reinstalled fresh each run.
         run: playwright install --with-deps chromium
 
       - name: Run tests
