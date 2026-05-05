@@ -18,16 +18,20 @@ Inputs:
 
 Outputs:
     - A markdown comment posted on the PR with the structured review
+
+Day 5 hardening: post-processing dedup+cap on issues list (instead of
+schema-level max_length, which Gemini's constrained-decoding can't compile).
 """
 import argparse
 import json
 import logging
 import os
+import re
 import sys
 
 from agents.github_client import GitHubClient
 from agents.llm_client import LLMClient
-from agents.schemas import ReviewReport
+from agents.schemas import ReviewReport, ReviewIssue
 from config.paths import PROMPTS_DIR, PROJECT_ROOT
 
 # ─────────────────────────────────────────────────────────────
@@ -37,6 +41,13 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("agent3_reviewer")
+
+# Cap on the number of issues we keep. Gemini sometimes enters a "repetition
+# loop" on low-content PRs and generates dozens of duplicate complaints.
+# We cap and dedupe in post-processing rather than in the Pydantic schema
+# because Gemini's constrained-decoding can't handle maxItems on complex
+# nested arrays (it errors with "too many states for serving").
+MAX_ISSUES = 10
 
 
 # ─────────────────────────────────────────────────────────────
@@ -52,18 +63,15 @@ def resolve_pr_number(cli_arg_pr: int | None) -> int:
 
     Raises ValueError if no PR number can be determined.
     """
-    # 1. CLI arg wins
     if cli_arg_pr is not None:
         logger.info(f"PR number from --pr CLI arg: {cli_arg_pr}")
         return cli_arg_pr
 
-    # 2. GitHub Actions event payload
     event_path = os.getenv("GITHUB_EVENT_PATH")
     if event_path and os.path.exists(event_path):
         try:
             with open(event_path) as f:
                 event = json.load(f)
-            # pull_request events have the number at top level AND inside pull_request key
             pr_num = event.get("number") or event.get("pull_request", {}).get("number")
             if pr_num:
                 logger.info(f"PR number from GITHUB_EVENT_PATH: {pr_num}")
@@ -71,7 +79,6 @@ def resolve_pr_number(cli_arg_pr: int | None) -> int:
         except (json.JSONDecodeError, KeyError, ValueError) as e:
             logger.warning(f"Could not parse GITHUB_EVENT_PATH: {e}")
 
-    # 3. Explicit env var fallback
     env_pr = os.getenv("PR_NUMBER")
     if env_pr:
         logger.info(f"PR number from PR_NUMBER env var: {env_pr}")
@@ -81,6 +88,70 @@ def resolve_pr_number(cli_arg_pr: int | None) -> int:
         "Could not determine PR number. Provide one of: "
         "--pr <N> CLI arg, GITHUB_EVENT_PATH (CI), or PR_NUMBER env var."
     )
+
+
+# ─────────────────────────────────────────────────────────────
+# Post-processing: deduplicate and cap the issues list
+# ─────────────────────────────────────────────────────────────
+def _normalize_description(text: str) -> str:
+    """Normalize a description to a stable fingerprint for dedup.
+
+    Steps:
+      - lowercase
+      - collapse whitespace
+      - strip trailing digits/punctuation (catches reworded "...variant 2"/"...item 5")
+      - take first 40 chars as the fingerprint key
+
+    Without this normalization, the LLM can defeat dedup by adding numeric
+    suffixes or trivial wording differences late in the description.
+    """
+    s = text.lower().strip()
+    s = re.sub(r"\s+", " ", s)         # collapse whitespace
+    s = re.sub(r"[\d\W]+$", "", s)     # strip trailing digits/punctuation
+    return s[:40]
+
+
+def dedupe_and_cap_issues(report: ReviewReport, max_issues: int = MAX_ISSUES) -> ReviewReport:
+    """De-duplicate near-identical issues and cap the list at max_issues.
+
+    Why this exists:
+        Gemini occasionally enters a repetition loop on low-content PRs,
+        generating dozens of nearly-identical "best practice" complaints.
+        We can't constrain this in the schema (Gemini's structured output
+        can't compile maxItems on complex arrays), so we post-process here.
+
+    De-duplication fingerprint:
+        (file_path, issue_type, severity, normalized first 40 chars of description)
+        Description is lowercased, whitespace-collapsed, and trailing
+        digits/punctuation stripped — so "...variant 2" and "...variant 11"
+        produce the same fingerprint.
+    """
+    if not report.issues:
+        return report
+
+    seen = set()
+    deduped: list[ReviewIssue] = []
+    for issue in report.issues:
+        fingerprint = (
+            issue.file_path,
+            issue.issue_type,
+            issue.severity,
+            _normalize_description(issue.description),
+        )
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        deduped.append(issue)
+        if len(deduped) >= max_issues:
+            break
+
+    if len(deduped) < len(report.issues):
+        logger.warning(
+            f"Issues list reduced: {len(report.issues)} -> {len(deduped)} "
+            f"(deduped/capped at {max_issues})"
+        )
+
+    return report.model_copy(update={"issues": deduped})
 
 
 # ─────────────────────────────────────────────────────────────
@@ -148,7 +219,6 @@ def format_review_as_markdown(report: ReviewReport) -> str:
     md.append(report.summary)
     md.append("")
 
-    # Issues grouped by severity
     if report.issues:
         groups = [
             ("Blocking 🛑", [i for i in report.issues if i.severity == "blocking"]),
@@ -176,7 +246,6 @@ def format_review_as_markdown(report: ReviewReport) -> str:
         md.append("### No issues found 🎉")
         md.append("")
 
-    # Compliance checklist
     md.append("### Compliance Checklist")
     md.append("")
     checks = [
@@ -247,6 +316,9 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
         output_schema=ReviewReport,
     )
 
+    # 3b. POST-PROCESS: dedupe and cap (handles Gemini repetition collapse)
+    report = dedupe_and_cap_issues(report, max_issues=MAX_ISSUES)
+
     logger.info(f"Review verdict: {report.overall_verdict}")
     logger.info(f"Issues found: {len(report.issues)}")
     for issue in report.issues:
@@ -271,7 +343,6 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
             "status": "review_generated_dry_run",
         }
 
-    # Real run
     comment_url = gh.post_pr_comment(pr_number, markdown)
 
     result = {

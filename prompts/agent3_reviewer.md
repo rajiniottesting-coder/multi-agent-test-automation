@@ -9,8 +9,8 @@ The reference files (login.feature, test_login.py, login_page.py) shown for cont
 ## Rule 2: Each distinct issue gets reported EXACTLY ONCE.
 Do NOT generate the same issue multiple times with reworded descriptions. If the same problem appears in multiple files, report it ONE TIME with all relevant file paths in the description.
 
-## Rule 3: HARD LIMIT — at most 10 issues total.
-Pick the 10 most important issues. If a PR is genuinely clean, return an empty issues list and `overall_verdict: "approve"`. Do not invent issues to fill space.
+## Rule 3: Be selective — pick only the most important issues.
+Aim for 5-10 issues maximum. If a PR is genuinely clean, return an empty issues list and `overall_verdict: "approve"`. Do not invent issues to fill space.
 
 ## Rule 4: If the PR is trivial (e.g., README change, comment-only edit), return `overall_verdict: "approve"`, an empty issues list, and a brief summary saying so.
 
@@ -23,7 +23,7 @@ Return a `ReviewReport` with these EXACT fields:
   - `request_changes`: at least one BLOCKING issue found
   - `comment`: only minor or info issues, advisory only
 - `summary` (string): 2-3 sentences high-level summary
-- `issues` (list of ReviewIssue, MAX 10): see below
+- `issues` (list of ReviewIssue): see below
 - `style_compliance` (bool): does code match the reference style?
 - `type_hints_present` (bool): are type hints used on new function signatures?
 - `no_hardcoded_waits` (bool): is the code free of `time.sleep()` calls?
@@ -62,7 +62,7 @@ The PR body lists test case keys (e.g., SCRUM-7, SCRUM-9). Each one should have 
 ## 5. Security (BLOCKING if found)
 - No hardcoded passwords / API keys in test code
 
-## 6. Best Practices (MINOR or INFO, MAX 3 of these per review)
+## 6. Best Practices (MINOR or INFO — at most 3 of these per review)
 - Dead code, unused imports
 - Missing docstrings
 - Overly broad assertions
@@ -107,7 +107,7 @@ The PR body lists test case keys (e.g., SCRUM-7, SCRUM-9). Each one should have 
 # Final Instructions
 
 1. ONLY report issues about files in the "Changed Files" section above.
-2. MAX 10 issues. Be selective. Each issue reported ONCE.
+2. Be selective — aim for 5-10 issues maximum. Each issue reported ONCE.
 3. If the PR is trivial or clean, return `approve` with an empty issues list.
 4. Set boolean compliance flags based on the changed files (not the reference).
 5. Set `overall_verdict`:

@@ -89,12 +89,17 @@ class CodeGenerationOutput(BaseModel):
 # Required boolean compliance flags ensure the LLM produces a
 # complete checklist every time, not just a free-form list of issues.
 #
-# max_length=20 on the issues list is a Day 5 fix:
-# Gemini sometimes enters "repetition collapse" when reviewing low-content
-# PRs (e.g., a 1-line README change), generating dozens of duplicate
-# best-practice complaints until it runs out of token budget. Pydantic's
-# max_length cap stops this at the schema level — the LLM is constrained
-# to produce at most 20 issues, so it MUST be selective.
+# IMPORTANT: We deliberately do NOT use Pydantic's max_length on the
+# `issues` list. While valid Python, it translates to a JSON schema
+# `maxItems` constraint that Gemini's constrained-decoding engine
+# cannot compile when the array contains complex objects (it produces
+# "too many states for serving" — error 400 INVALID_ARGUMENT).
+#
+# Instead, we cap and de-duplicate the issues list AFTER the LLM
+# response in agent3_reviewer.py. This keeps the schema simple and
+# Gemini-compatible while still preventing repetition collapse.
+# See https://ai.google.dev/gemini-api/docs/structured-output for the
+# subset of JSON Schema features Gemini supports.
 # ─────────────────────────────────────────────────────────────
 
 class ReviewIssue(BaseModel):
@@ -140,11 +145,12 @@ class ReviewReport(BaseModel):
         ...,
         description="2-3 sentence high-level summary of the review"
     )
+    # NOTE: No max_length here — see module docstring for why.
+    # Cap is enforced in agent3_reviewer.py post-processing.
     issues: list[ReviewIssue] = Field(
         default_factory=list,
-        max_length=20,  # Day 5 fix: prevent repetition-collapse blowing the token budget
-        description="List of issues found. Empty list means no issues. MAX 20 — be selective; "
-                    "report each distinct issue ONCE, do not duplicate."
+        description="List of issues found. Empty list means no issues. "
+                    "Be selective: report each distinct issue ONCE, max 10 total."
     )
     style_compliance: bool = Field(
         ...,
