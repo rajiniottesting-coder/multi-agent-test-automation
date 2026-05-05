@@ -174,8 +174,12 @@ def gather_ci_context(report: RunReport, cli_pr: int | None = None) -> RunReport
 
     pr_url = f"https://github.com/{repo}/pull/{pr_number}" if (repo and pr_number) else None
     workflow_run_url = f"https://github.com/{repo}/actions/runs/{run_id}" if (repo and run_id) else None
-    # Note: HTML report is uploaded as an artifact; we link to the run page where it can be downloaded
-    html_report_url = workflow_run_url
+    # The HTML report is uploaded as an artifact attached to the workflow run.
+    # GitHub doesn't expose a direct "download artifact" URL without an API call,
+    # but the run page has an Artifacts section at the bottom — anchoring with
+    # #artifacts auto-scrolls the user there. One extra click vs. a direct link,
+    # but no GitHub API call needed (which would require auth + run-id mapping).
+    html_report_url = f"{workflow_run_url}#artifacts" if workflow_run_url else None
 
     return report.model_copy(update={
         "pr_number": pr_number,
@@ -221,8 +225,10 @@ def build_final_comment(prose_body: str, report: RunReport) -> str:
     if report.workflow_run_url:
         detail_lines.append(f"- [View Actions run]({report.workflow_run_url})")
     if report.html_report_url and report.html_report_url != report.workflow_run_url:
-        # Only include if it's a different URL — otherwise it's a duplicate of "View Actions run"
-        detail_lines.append(f"- [Download HTML report]({report.html_report_url})")
+        # The link goes to the run page's #artifacts anchor — user clicks the
+        # artifact zip there to download the HTML report. One extra click vs.
+        # a direct download URL, but no API/auth needed.
+        detail_lines.append(f"- [Download HTML report]({report.html_report_url}) (scroll to Artifacts section)")
 
     if detail_lines:
         parts.append("")  # blank line

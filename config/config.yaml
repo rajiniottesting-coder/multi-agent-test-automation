@@ -46,12 +46,35 @@ agents:
     completion_label: "ai-processed"
     max_stories_per_run: 10
 
-  # Future agents will be configured here:
-  # agent2_coder:
-  #   selection: ...
+  # Agent 2 — Coder: approved test cases → Playwright code + PR
+  #
+  # Human-approval gate: a parent story must have BOTH `ai-processed`
+  # (Agent 1 finished) AND `human-approved` (you reviewed the test cases
+  # in Jira and approved them) before Agent 2 picks it up.
+  #
+  # This is the architectural checkpoint that keeps a human in the loop
+  # at the highest-value review point — between AI proposing test cases
+  # and AI writing the code that implements them. Catching a bad test
+  # case here is cheap; catching it after Agent 2 has generated 200 lines
+  # of code is wasteful.
+  agent2_coder:
+    selection:
+      issue_type: "Story"
+      allowed_statuses:
+        - "To Do"
+        - "In Progress"
+      required_labels:
+        - "ai-processed"   # Agent 1 finished generating Test Case issues
+        - "human-approved" # You approved the test cases in Jira
+      excluded_labels:
+        - "ai-coded"       # Agent 2 already opened a PR for this story
+        - "ai-skip"        # human override / opt-out (same as Agent 1)
+    completion_label: "ai-coded"   # marker so the same story isn't processed twice
+    max_stories_per_run: 5         # cost-cap: each scan won't cost more than ~5x the per-story budget
+
   # agent3_reviewer:
-  #   selection: ...
+  #   selection: ...    # (currently triggered by GitHub PR events, not Jira)
   # agent4_runner:
-  #   selection: ...
+  #   selection: ...    # (currently triggered by GitHub PR events)
   # agent5_reporter:
-  #   selection: ...
+  #   selection: ...    # (currently triggered after Agent 4 in same workflow)

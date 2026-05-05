@@ -1,0 +1,119 @@
+# ─────────────────────────────────────────────────────────────
+# Agent 2 (Coder) — manual trigger via GitHub Actions UI
+#
+# This workflow runs Agent 2 in CI when a human clicks "Run workflow"
+# from the Actions tab. It is the production path for Agent 2.
+#
+# WHEN THIS RUNS:
+#   - Manually triggered from GitHub Actions UI (workflow_dispatch)
+#   - Optional inputs: process a single story or scan for all approved
+#
+# WHY MANUAL TRIGGER (not automatic):
+#   Agent 2 generates code and opens PRs — those are write actions with
+#   real cost (LLM tokens) and real consequences (PRs visible to your
+#   team). A human-clicked button is the safest production trigger:
+#     - You decide WHEN to spend tokens
+#     - You confirm AGAIN that the queued stories should be processed
+#     - Misclicked Jira labels can't accidentally fire a costly run
+#
+#   Future enhancement: scheduled trigger (cron) once we trust the queue.
+#
+# HUMAN-APPROVAL GATE:
+#   Agent 2's selection criteria (in config/config.yaml) require BOTH:
+#     - `ai-processed`   (Agent 1 finished generating Test Case issues)
+#     - `human-approved` (you reviewed the test cases on Jira and approved)
+#   AND must NOT have:
+#     - `ai-coded`       (Agent 2 already produced a PR — idempotency)
+#     - `ai-skip`        (manual override / opt-out)
+#
+#   This is the architectural checkpoint: AI proposes test cases,
+#   human approves on Jira, AI implements. Catching a bad test case
+#   here is cheap; catching it after Agent 2 generates code is wasteful.
+#
+# ─────────────────────────────────────────────────────────────
+
+name: Agent 2 - Coder
+
+on:
+  workflow_dispatch:
+    inputs:
+      story_key:
+        description: "Optional: process a single story (e.g., SCRUM-13). Leave blank to scan all approved stories."
+        required: false
+        default: ""
+      dry_run:
+        description: "Dry run — generate code but don't open PR"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write       # Agent 2 creates branches and commits
+  pull-requests: write  # Agent 2 opens PRs
+
+jobs:
+  generate:
+    name: Generate Test Code
+    runs-on: ubuntu-latest
+    timeout-minutes: 10  # cap: 5 stories × ~90s/story + setup overhead
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Agent 2 reads reference test files from the working tree, so we
+          # checkout main (the latest reviewed code base) as the source-of-truth
+          # for what "good" Playwright code looks like.
+          ref: main
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Agent 2
+        # Agent 2 needs read+write access to:
+        #   - Jira (read approved stories, mark them ai-coded)
+        #   - GitHub (create branches, commit files, open PRs)
+        #   - Google Gemini (LLM calls for Stage 1 plan + Stage 2 file generation)
+        env:
+          # LLM credentials
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+
+          # Jira credentials
+          JIRA_URL: ${{ secrets.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+
+          # GitHub credentials — Agent 2's GitHubClient reads these env names.
+          # GitHub reserves the GITHUB_* prefix for built-in vars/secrets, so
+          # users can't create a secret named GITHUB_REPO. We store the repo
+          # name as `GH_REPO` and map it to `GITHUB_REPO` inside the runner.
+          # GITHUB_TOKEN is auto-provided by the runner (no secret needed); the
+          # `permissions:` block above grants it the access Agent 2 requires.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ secrets.GH_REPO }}
+        run: |
+          # Pick the right CLI flags based on workflow inputs:
+          #   - With story_key:     process that one story
+          #   - Without story_key:  scan mode (process all approved)
+          # The dry_run flag is plumbed through from the workflow input.
+          DRY_RUN_FLAG=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
+
+          if [ -n "${{ github.event.inputs.story_key }}" ]; then
+            echo "Mode: single story (${{ github.event.inputs.story_key }})"
+            python -m agents.agent2_coder --story "${{ github.event.inputs.story_key }}" $DRY_RUN_FLAG
+          else
+            echo "Mode: scan (process all stories matching config.yaml selection)"
+            python -m agents.agent2_coder --scan $DRY_RUN_FLAG
+          fi
