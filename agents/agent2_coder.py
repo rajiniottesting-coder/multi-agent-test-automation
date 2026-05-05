@@ -341,6 +341,16 @@ def run(story_id: str, dry_run: bool = False) -> dict:
         base_branch="main",
     )
 
+    # Idempotency marker: tag the parent story so the next --scan run skips it.
+    # Without this, every scheduled scan would re-process the same approved
+    # story over and over (wasting LLM tokens and creating duplicate PRs).
+    # Reads completion_label from config so it stays consistent with the
+    # excluded_labels filter that find_stories_to_process() uses.
+    config = load_agent_config()
+    completion_label = config.get("completion_label", "ai-coded")
+    jira.add_label(story_id, completion_label)
+    logger.info(f"Marked {story_id} with label '{completion_label}' (idempotency)")
+
     result = {
         "story_id": story_id,
         "files_generated": len(output.files),
@@ -366,6 +376,8 @@ def main():
 
     try:
         if args.story:
+            # Single-story mode: process one specific story by key.
+            # Used for development, debugging, and manual runs.
             result = run(args.story, dry_run=args.dry_run)
             print("\n" + "=" * 60)
             print(f"[OK] Agent 2 finished -- story: {result['story_id']}")
@@ -375,8 +387,68 @@ def main():
                 print(f"   PR: {result['pr_url']}")
             print("=" * 60)
         else:
-            logger.error("Scan mode for Agent 2 not yet implemented -- use --story KEY for now")
-            sys.exit(1)
+            # Scan mode: read selection criteria from config.yaml, find all
+            # eligible stories (those with required labels, missing excluded
+            # labels), and process each one. Used in CI for batch runs.
+            #
+            # Eligibility criteria for Agent 2 (defined in config.yaml):
+            #   - issue_type = Story
+            #   - status in (To Do, In Progress)
+            #   - has labels: ai-processed, human-approved
+            #   - does NOT have labels: ai-coded, ai-skip
+            #
+            # This is the human-approval gate: stories only become eligible
+            # after a human has reviewed Agent 1's output on Jira and added
+            # the `human-approved` label.
+            config = load_agent_config()
+            selection = config.get("selection", {})
+            max_stories = config.get("max_stories_per_run", 5)
+
+            if not selection:
+                logger.error(
+                    "No 'selection' config found for agent2_coder in config.yaml. "
+                    "Add an 'agents.agent2_coder.selection' block or use --story KEY instead."
+                )
+                sys.exit(1)
+
+            jira = JiraClient()
+            stories = jira.find_stories_to_process(selection, max_results=max_stories)
+
+            if not stories:
+                logger.info(
+                    f"No stories found matching: required={selection.get('required_labels', [])}, "
+                    f"excluded={selection.get('excluded_labels', [])}. "
+                    f"Tip: ensure parent story has both 'ai-processed' (Agent 1 done) "
+                    f"and 'human-approved' (you reviewed) labels."
+                )
+                print("\n[OK] Agent 2 scan complete -- no stories to process.")
+                sys.exit(0)
+
+            logger.info(f"Found {len(stories)} stories to process: {[s['key'] for s in stories]}")
+            results = []
+            for story in stories:
+                try:
+                    result = run(story["key"], dry_run=args.dry_run)
+                    results.append(result)
+                except Exception as e:
+                    # One story failing should not abort the whole batch —
+                    # log, record, and move on. Common causes: LLM rate limit,
+                    # GitHub PR conflict, story has no linked Test Cases.
+                    logger.error(f"Failed processing {story['key']}: {e}", exc_info=True)
+                    results.append({
+                        "story_id": story["key"],
+                        "status": "failed",
+                        "error": str(e),
+                    })
+
+            # Summary across all stories processed in this scan
+            print("\n" + "=" * 60)
+            print(f"[OK] Agent 2 scan finished -- processed {len(results)} stories")
+            for r in results:
+                status_marker = "OK" if r.get("status") == "pr_opened" else "??"
+                pr_info = f" -> {r.get('pr_url')}" if r.get("pr_url") else ""
+                print(f"   [{status_marker}] {r.get('story_id')}: {r.get('status')}{pr_info}")
+            print("=" * 60)
     except Exception as e:
         logger.error(f"Agent 2 failed: {type(e).__name__}: {e}", exc_info=True)
         sys.exit(1)
