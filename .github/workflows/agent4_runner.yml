@@ -1,0 +1,101 @@
+# ─────────────────────────────────────────────────────────────
+# Agent 4 (Runner) — automatic test execution on PRs
+#
+# This is the "dynamic analysis" half of our PR check pipeline:
+#   - Agent 3 (Reviewer) statically analyzes code → catches bugs by reading
+#   - Agent 4 (Runner) actually runs the tests → catches bugs by execution
+#
+# Both run in parallel on every PR. Together they form belt-and-suspenders
+# coverage: some bugs only static review catches (style, missing assertions),
+# some bugs only execution catches (selector mismatches, timing issues).
+#
+# WHEN THIS RUNS:
+#   - PR opened, synchronized (new commits), or reopened
+#   - Manual trigger via Actions tab → workflow_dispatch
+#
+# WHAT IT DOES:
+#   1. Checkout PR branch
+#   2. Setup Python 3.13 + cache pip dependencies
+#   3. Install Python deps + Playwright browsers
+#   4. Run pytest (CI=true forces headless mode automatically)
+#   5. Upload test report (HTML + JUnit XML) as artifact
+#   6. PR shows ✅ green check or ❌ red X based on test outcome
+#
+# REQUIRED REPO SECRETS:
+#   - None for the test runner itself!
+#   - Tests use SauceDemo (a public demo site) so no credentials needed.
+#   - If your tests ever need secrets, add them as repo secrets and map here.
+# ─────────────────────────────────────────────────────────────
+
+name: Agent 4 - Runner
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+  workflow_dispatch: {}  # allow manual triggering from Actions tab
+
+permissions:
+  contents: read
+  checks: write          # to publish test result checks on the PR
+  pull-requests: write   # in case we want to comment results in future
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          # pytest-html generates a self-contained HTML report — handy as a PR artifact
+          pip install pytest-html
+
+      - name: Install Playwright browsers
+        # `--with-deps` installs the OS-level libs Chromium needs (libnss, etc.)
+        # The browser binaries are cached automatically on subsequent runs.
+        run: playwright install --with-deps chromium
+
+      - name: Run tests
+        # CI=true is auto-set by GitHub Actions, which our conftest.py uses
+        # to force headless mode (overriding config.yaml's headless: false).
+        # We also generate two report formats:
+        #   - HTML: human-readable, viewable as artifact
+        #   - JUnit XML: parseable, used for the GitHub check annotation
+        run: |
+          pytest tests/ \
+            --html=reports/pytest-report.html \
+            --self-contained-html \
+            --junit-xml=reports/junit.xml \
+            -v
+
+      - name: Upload test report
+        if: always()  # upload report even if tests failed (we want to see WHY)
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report-${{ github.run_id }}
+          path: reports/
+          retention-days: 14
+
+      - name: Publish test results as PR check
+        if: always()
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: reports/junit.xml
+          check_name: "Agent 4 — Test Results"
