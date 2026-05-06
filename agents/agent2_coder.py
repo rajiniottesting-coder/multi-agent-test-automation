@@ -13,14 +13,21 @@ Architecture (TWO-STAGE):
              the response (handles markdown fences).
 
 Defenses:
-    - Reserved-path guard: refuses to overwrite reference files even if
-      the LLM plans to.
+    - Reserved-path guard: refuses to overwrite reference files even if the
+      LLM plans to. Reserved paths come from app_under_test config — NOT
+      hardcoded — so the framework works for any app.
+    - Filename-consistency validator: catches mismatches between feature
+      file names and step-def feature_path() arguments.
+    - Step-definition coverage validator: catches Gherkin steps without
+      matching @given/@when/@then decorators.
+    - Branch-name validator: ensures every PR branch contains a Jira key.
     - Dry-run mode: preview without touching GitHub.
     - Windows-safe printing: ASCII-only output (no emoji) to work in cp1252.
 
 Usage:
     python -m agents.agent2_coder --story SCRUM-5 --dry-run
     python -m agents.agent2_coder --story SCRUM-5
+    python -m agents.agent2_coder --scan
 """
 import argparse
 import logging
@@ -28,6 +35,7 @@ import re
 import sys
 import yaml
 
+from agents.app_context import AppContext
 from agents.jira_client import JiraClient
 from agents.github_client import GitHubClient
 from agents.llm_client import LLMClient
@@ -38,9 +46,15 @@ from agents.test_inventory import (
     validate_filename_consistency,
     validate_step_definitions_complete,
 )
-from config.paths import PROMPTS_DIR, CONFIG_YAML, PROJECT_ROOT, FEATURES_DIR
+from config import (
+    REQUIRED_GITHUB_ENV_VARS,
+    REQUIRED_JIRA_ENV_VARS,
+    REQUIRED_LLM_ENV_VARS,
+    assert_valid_branch_for_pipeline,
+    validate_required_env,
+)
+from config.paths import PROMPTS_DIR, CONFIG_YAML, FEATURES_DIR
 
-# ---------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -50,36 +64,31 @@ logger = logging.getLogger("agent2_coder")
 
 
 # ---------------------------------------------------------------------------
-# Reserved paths — these belong to the Day 2 reference test suite and must
-# never be overwritten by Agent 2. If the LLM plans to touch them, we abort.
+# Path helpers
 # ---------------------------------------------------------------------------
-RESERVED_PATHS = {
-    "features/login.feature",
-    "tests/step_defs/test_login.py",
-    "pages/login_page.py",
-    "pages/inventory_page.py",
-    "pages/base_page.py",
-}
-
-
-def normalize_path(p: str) -> str:
+def _normalize_path(p: str) -> str:
     """Convert backslashes to forward slashes and strip leading ./ for comparison."""
-    p = p.replace("\\", "/").lstrip("./")
-    return p
+    return p.replace("\\", "/").lstrip("./")
 
 
-def validate_no_reserved_paths(plan: CodePlan) -> None:
-    """Raise ValueError if the plan tries to modify reference files."""
-    collisions = []
-    for fp in plan.files_to_create:
-        if normalize_path(fp.file_path) in RESERVED_PATHS:
-            collisions.append(fp.file_path)
+def validate_no_reserved_paths(plan: CodePlan, ctx: AppContext) -> None:
+    """Raise ValueError if the plan tries to modify any reserved file.
+
+    Reserved paths come from `app_under_test.reserved_paths` in config.yaml,
+    so this check stays correct regardless of which app is being tested.
+    """
+    reserved = ctx.reserved_paths_normalized()
+    collisions = [
+        fp.file_path for fp in plan.files_to_create
+        if _normalize_path(fp.file_path) in reserved
+    ]
     if collisions:
         raise ValueError(
             f"LLM tried to overwrite reserved reference files: {collisions}. "
-            f"These files are protected. The LLM should have used different "
-            f"file paths (e.g., 'features/login-validation.feature' instead "
-            f"of 'features/login.feature'). Consider tightening the prompt."
+            f"These files are protected by app_under_test.reserved_paths in "
+            f"config.yaml. The LLM should have used different file paths "
+            f"(e.g., 'features/<theme>-validation.feature' instead of an "
+            f"existing reference file). Consider tightening the prompt."
         )
 
 
@@ -90,41 +99,31 @@ def load_prompt(prompt_file: str) -> str:
     return (PROMPTS_DIR / prompt_file).read_text(encoding="utf-8")
 
 
-def load_reference_files() -> dict:
-    """Read the Day 2 reference files that the LLM will mimic."""
-    files = {
-        "feature": PROJECT_ROOT / "features" / "login.feature",
-        "step_def": PROJECT_ROOT / "tests" / "step_defs" / "test_login.py",
-        "page_object": PROJECT_ROOT / "pages" / "login_page.py",
-    }
-    return {key: path.read_text(encoding="utf-8") for key, path in files.items()}
-
-
-def load_page_inventory() -> str:
-    inventory_path = PROJECT_ROOT / "app_inventory" / "saucedemo.json"
-    return inventory_path.read_text(encoding="utf-8")
-
-
 def load_test_cases_for_story(jira: JiraClient, story_key: str) -> list[dict]:
-    jql = f'project = {jira.project_key} AND issuetype = "Test Case" AND issue in linkedIssues("{story_key}")'
+    jql = (
+        f'project = {jira.project_key} AND issuetype = "Test Case" '
+        f'AND issue in linkedIssues("{story_key}")'
+    )
     logger.info(f"Fetching test cases linked to {story_key}: {jql}")
     issues = jira.client.enhanced_search_issues(jql, maxResults=50)
 
-    test_cases = []
-    for issue in issues:
-        test_cases.append({
+    test_cases = [
+        {
             "key": issue.key,
             "summary": issue.fields.summary,
             "description": issue.fields.description or "",
-        })
+        }
+        for issue in issues
+    ]
     logger.info(f"Found {len(test_cases)} test cases linked to {story_key}")
     return test_cases
 
 
 def format_test_cases_for_prompt(test_cases: list[dict]) -> str:
-    blocks = []
-    for tc in test_cases:
-        blocks.append(f"## {tc['key']}: {tc['summary']}\n\n{tc['description']}\n")
+    blocks = [
+        f"## {tc['key']}: {tc['summary']}\n\n{tc['description']}\n"
+        for tc in test_cases
+    ]
     return "\n---\n".join(blocks)
 
 
@@ -143,6 +142,12 @@ def load_agent_config(agent_key: str = "agent2_coder") -> dict:
     return full_config.get("agents", {}).get(agent_key, {})
 
 
+def _build_reserved_paths_block(ctx: AppContext) -> str:
+    """Render the reserved-paths list as a markdown bullet block for the
+    Stage 1 plan prompt."""
+    return "\n".join(f"- `{p}` -- RESERVED" for p in ctx.reserved_paths)
+
+
 # ---------------------------------------------------------------------------
 # STAGE 1: Build the plan
 # ---------------------------------------------------------------------------
@@ -151,11 +156,17 @@ def build_plan(
     test_cases: list[dict],
     references: dict,
     page_inventory: str,
+    ctx: AppContext,
 ) -> CodePlan:
     """Stage 1: Get a structured plan describing what files to create. NO code yet."""
     prompt_template = load_prompt("agent2_coder_plan.md")
     user_prompt = (
         prompt_template
+        .replace("{app_name}", ctx.name)
+        .replace("{reserved_paths_block}", _build_reserved_paths_block(ctx))
+        .replace("{reference_feature_path}", ctx.reference_feature)
+        .replace("{reference_step_def_path}", ctx.reference_step_def)
+        .replace("{reference_page_object_path}", ctx.reference_page_object)
         .replace("{reference_feature_content}", references["feature"])
         .replace("{reference_step_def_content}", references["step_def"])
         .replace("{reference_page_object_content}", references["page_object"])
@@ -164,7 +175,10 @@ def build_plan(
     )
 
     prompt_chars = len(user_prompt)
-    logger.info(f"Stage 1 (plan) prompt size: {prompt_chars:,} chars (~{prompt_chars // 4:,} tokens)")
+    logger.info(
+        f"Stage 1 (plan) prompt size: {prompt_chars:,} chars "
+        f"(~{prompt_chars // 4:,} tokens)"
+    )
 
     plan: CodePlan = llm.invoke_structured(
         system_prompt="You are a Senior Test Automation Engineer (SDET).",
@@ -177,7 +191,7 @@ def build_plan(
         logger.info(f"  - {fp.file_path} [{fp.file_type}] -- {fp.purpose}")
 
     # Defensive guard: refuse if the LLM planned to overwrite reference files
-    validate_no_reserved_paths(plan)
+    validate_no_reserved_paths(plan, ctx)
     return plan
 
 
@@ -191,19 +205,26 @@ def generate_file_content(
     test_cases: list[dict],
     references: dict,
     page_inventory: str,
+    ctx: AppContext,
 ) -> str:
     """Stage 2: For ONE file in the plan, get its full content as raw text."""
-    related_test_cases = [tc for tc in test_cases if tc["key"] in file_plan.related_test_cases]
+    related_test_cases = [
+        tc for tc in test_cases if tc["key"] in file_plan.related_test_cases
+    ]
     if not related_test_cases:
         related_test_cases = test_cases
 
     prompt_template = load_prompt("agent2_coder_generate.md")
     user_prompt = (
         prompt_template
+        .replace("{app_name}", ctx.name)
         .replace("{file_path}", file_plan.file_path)
         .replace("{file_type}", file_plan.file_type)
         .replace("{file_purpose}", file_plan.purpose)
         .replace("{feature_name}", plan.feature_name)
+        .replace("{reference_feature_path}", ctx.reference_feature)
+        .replace("{reference_step_def_path}", ctx.reference_step_def)
+        .replace("{reference_page_object_path}", ctx.reference_page_object)
         .replace("{reference_feature_content}", references["feature"])
         .replace("{reference_step_def_content}", references["step_def"])
         .replace("{reference_page_object_content}", references["page_object"])
@@ -222,6 +243,132 @@ def generate_file_content(
 
 
 # ---------------------------------------------------------------------------
+# Helpers for the run() workflow — extracted to keep run() readable
+# ---------------------------------------------------------------------------
+def _select_new_test_cases(
+    test_cases: list[dict],
+    is_regenerate: bool,
+) -> tuple[list[dict], list[dict]]:
+    """Filter out test cases already covered by existing scenarios.
+
+    Returns (new_test_cases, skipped_test_cases). In regenerate mode, dedup
+    is bypassed and all test cases are returned as new.
+    """
+    if is_regenerate:
+        logger.info(
+            f"Regeneration mode: bypassing dedup check. "
+            f"All {len(test_cases)} test cases will be regenerated from scratch."
+        )
+        return test_cases, []
+
+    inventory = scan_features_dir(FEATURES_DIR)
+    new_cases, skipped = filter_duplicate_test_cases(test_cases, inventory)
+
+    if skipped:
+        logger.info(
+            f"Dedup: {len(skipped)} of {len(test_cases)} test cases "
+            f"already covered by existing scenarios. Skipping these."
+        )
+        for skip in skipped:
+            tc = skip["test_case"]
+            logger.info(
+                f"  - {tc.get('key', '?')}: '{tc.get('summary', '?')}' "
+                f"already covered by '{skip['matched_scenario']}' "
+                f"in {skip['matched_file']}"
+            )
+
+    return new_cases, skipped
+
+
+def _validate_generated_files(
+    generated_files: list[GeneratedFile],
+    story_id: str,
+) -> None:
+    """Run filename-consistency and step-def coverage validators.
+
+    These catch the two failure modes Agent 2 has historically had:
+      - PR #7: kebab-case feature filename vs snake_case feature_path() ref
+      - PR #9: feature steps without matching @given/@when/@then decorators
+
+    Raises ValueError if either validator finds problems.
+    """
+    consistency_errors = validate_filename_consistency(generated_files)
+    if consistency_errors:
+        logger.error(
+            f"Filename consistency check FAILED with "
+            f"{len(consistency_errors)} error(s):"
+        )
+        for err in consistency_errors:
+            logger.error(f"  - {err}")
+        raise ValueError(
+            f"Filename consistency validation failed for {story_id}: "
+            f"{len(consistency_errors)} mismatch(es) between feature files "
+            f"and step definitions. See logs for details."
+        )
+
+    coverage_errors = validate_step_definitions_complete(generated_files)
+    if coverage_errors:
+        logger.error(
+            f"Step definition coverage check FAILED with "
+            f"{len(coverage_errors)} error(s):"
+        )
+        for err in coverage_errors:
+            logger.error(f"  - {err}")
+        raise ValueError(
+            f"Step definition coverage validation failed for {story_id}: "
+            f"{len(coverage_errors)} feature step(s) without matching "
+            f"@given/@when/@then decorator(s). See logs for details."
+        )
+
+
+def _print_dry_run_preview(output: CodeGenerationOutput) -> None:
+    """ASCII-safe preview of generated code (Windows cp1252 compatible)."""
+    print("\n" + "=" * 60)
+    print("DRY RUN -- Generated code preview")
+    print("=" * 60)
+    print(f"\n[Branch]    {output.branch_name}")
+    print(f"[PR Title]  {output.pr_title}")
+    print(f"[Feature]   {output.feature_name}")
+
+    print(f"\n[PR Body]")
+    print("-" * 60)
+    print(output.pr_body.encode("ascii", "replace").decode("ascii"))
+
+    if output.notes:
+        print(f"\n[Notes from LLM]")
+        print("-" * 60)
+        print(output.notes.encode("ascii", "replace").decode("ascii"))
+
+    for f in output.files:
+        print(f"\n{'=' * 60}")
+        status = "NEW" if f.is_new_file else "UPDATE"
+        print(f"[FILE]  {f.file_path}  ({status})")
+        if f.purpose:
+            print(f"   Purpose: {f.purpose.encode('ascii', 'replace').decode('ascii')}")
+        print(f"   Size: {len(f.content)} chars")
+        print(f"   Preview (first 30 lines):")
+        print(f"{'-' * 60}")
+        lines = f.content.split("\n")
+        for i, line in enumerate(lines[:30], 1):
+            safe_line = line.encode("ascii", "replace").decode("ascii")
+            print(f"   {i:3} | {safe_line}")
+        if len(lines) > 30:
+            print(f"   ... (and {len(lines) - 30} more lines)")
+
+
+def _resolve_unused_revision_branch(gh: GitHubClient, base_branch: str) -> str:
+    """Find the lowest unused -revN suffix for a regeneration branch.
+
+    Starts from rev2 (rev1 = original). Used so the original PR stays open
+    as historical record while the regen creates a new branch + PR.
+    """
+    rev_n = 2
+    while gh.branch_exists(f"{base_branch}-rev{rev_n}"):
+        rev_n += 1
+    return f"{base_branch}-rev{rev_n}"
+
+
+# ---------------------------------------------------------------------------
 # Core agent workflow
 # ---------------------------------------------------------------------------
 def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> dict:
@@ -231,14 +378,17 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
         story_id: Jira story key (e.g., "SCRUM-5")
         dry_run: If True, don't create branch/commits/PR. Print preview.
         is_regenerate: If True, this is a REGENERATION run triggered by the
-            `ai-regenerate` label. Behavior changes:
-              - Dedup check is SKIPPED (LLM regenerates everything fresh)
-              - Branch name gets a `-revN` suffix (preserves old PR)
-              - On success: removes `ai-regenerate` label (one-shot signal)
-              - On success: still adds `ai-coded` (back to normal state)
+            `ai-regenerate` label. Skips dedup, uses -revN branch suffix,
+            removes the regenerate label after success.
     """
     mode_label = "REGENERATE" if is_regenerate else "normal"
-    logger.info(f"=== Agent 2 (Coder) starting for {story_id} (mode={mode_label}, dry_run={dry_run}) ===")
+    logger.info(
+        f"=== Agent 2 (Coder) starting for {story_id} "
+        f"(mode={mode_label}, dry_run={dry_run}) ==="
+    )
+
+    ctx = AppContext.load()
+    logger.info(f"App under test: {ctx.name} ({ctx.base_url})")
 
     # 1. INPUT
     jira = JiraClient()
@@ -249,61 +399,20 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
         logger.warning(f"No Test Cases linked to {story_id}. Run Agent 1 first.")
         return {"story_id": story_id, "status": "no_test_cases", "files_generated": 0}
 
-    # 1b. DEDUPLICATION CHECK
-    # Before spending LLM tokens, check if any test cases are already covered
-    # by existing scenarios in features/. This solves the duplicate-coverage
-    # problem we saw on PR #7 where Agent 2 generated `login-validation.feature`
-    # alongside the existing `login.feature`.
-    #
-    # Three outcomes:
-    #   - All test cases new → continue with full flow (no change from before)
-    #   - Some duplicates    → log them, continue with only new cases
-    #   - All duplicates     → skip PR creation entirely, mark ai-coded
-    #
-    # REGENERATE BYPASS:
-    #   When is_regenerate=True, the user explicitly asked for fresh code
-    #   even if scenarios already exist. We skip the inventory scan entirely
-    #   and treat all test cases as "new". This is the simplest, safest
-    #   implementation — no special-case branches in the filter logic.
-    if is_regenerate:
-        logger.info(
-            f"Regeneration mode: bypassing dedup check. All {len(test_cases)} "
-            "test cases will be regenerated from scratch."
-        )
-        new_test_cases = test_cases
-        skipped_test_cases = []
-    else:
-        inventory = scan_features_dir(FEATURES_DIR)
-        new_test_cases, skipped_test_cases = filter_duplicate_test_cases(test_cases, inventory)
-
-    if skipped_test_cases:
-        logger.info(
-            f"Dedup: {len(skipped_test_cases)} of {len(test_cases)} test cases "
-            f"already covered by existing scenarios. Skipping these."
-        )
-        for skip in skipped_test_cases:
-            tc = skip["test_case"]
-            logger.info(
-                f"  - {tc.get('key', '?')}: '{tc.get('summary', '?')}' "
-                f"already covered by '{skip['matched_scenario']}' "
-                f"in {skip['matched_file']}"
-            )
+    # 1b. DEDUP (skipped in regenerate mode)
+    new_test_cases, skipped_test_cases = _select_new_test_cases(test_cases, is_regenerate)
 
     if not new_test_cases:
-        # Every approved test case is already covered. The honest thing is
-        # to do nothing — no PR needed, no LLM cost wasted. We still mark
-        # the parent story 'ai-coded' so it doesn't keep coming back in scans.
+        # Every approved test case is already covered. No work needed.
         logger.info(
             f"All {len(test_cases)} test cases for {story_id} are already covered "
             "by existing scenarios. No new code generation needed."
         )
-
         if not dry_run:
-            config = load_agent_config()
-            completion_label = config.get("completion_label", "ai-coded")
+            agent_config = load_agent_config()
+            completion_label = agent_config.get("completion_label", "ai-coded")
             jira.add_label(story_id, completion_label)
             logger.info(f"Marked {story_id} with label '{completion_label}' (no work needed)")
-
         return {
             "story_id": story_id,
             "status": "skipped_all_duplicates",
@@ -311,29 +420,26 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
             "skipped_count": len(skipped_test_cases),
         }
 
-    # From here on, use new_test_cases instead of test_cases — the LLM only
-    # needs to know about cases that need code. Sending duplicates would
-    # waste tokens AND risk the LLM regenerating them anyway.
     if len(new_test_cases) < len(test_cases):
         logger.info(
             f"Generating code for {len(new_test_cases)} new case(s); "
             f"{len(skipped_test_cases)} skipped as duplicates."
         )
 
-    # 2. CONTEXT
-    references = load_reference_files()
-    page_inventory = load_page_inventory()
+    # 2. CONTEXT — read references and inventory once
+    references = ctx.load_reference_files()
+    page_inventory = ctx.load_page_inventory_json()
     llm = LLMClient(temperature=0.2)
 
-    # 3. STAGE 1
-    plan = build_plan(llm, new_test_cases, references, page_inventory)
+    # 3. STAGE 1: PLAN
+    plan = build_plan(llm, new_test_cases, references, page_inventory, ctx)
 
-    # 4. STAGE 2
+    # 4. STAGE 2: GENERATE PER-FILE CONTENT
     generated_files: list[GeneratedFile] = []
     for file_plan in plan.files_to_create:
         try:
             content = generate_file_content(
-                llm, file_plan, plan, new_test_cases, references, page_inventory
+                llm, file_plan, plan, new_test_cases, references, page_inventory, ctx,
             )
             generated_files.append(GeneratedFile(
                 file_path=file_plan.file_path,
@@ -354,126 +460,31 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
         notes=plan.notes,
     )
 
-    # 4b. VALIDATE FILENAME CONSISTENCY
-    # Catches the bug we hit on PR #7 where the LLM generated:
-    #   features/login-validation.feature   (kebab-case)
-    #   test_login_validation.py uses feature_path("login_validation") (snake_case)
-    # which made pytest-bdd fail with FileNotFoundError at test collection.
-    #
-    # The prompt was updated in Phase 4 to enforce snake_case throughout,
-    # but LLMs occasionally drift. Validating here is defense-in-depth —
-    # we'd rather fail loudly NOW than ship a broken PR.
-    consistency_errors = validate_filename_consistency(generated_files)
-    if consistency_errors:
-        logger.error(f"Filename consistency check FAILED with {len(consistency_errors)} error(s):")
-        for err in consistency_errors:
-            logger.error(f"  - {err}")
-        raise ValueError(
-            f"Filename consistency validation failed for {story_id}: "
-            f"{len(consistency_errors)} mismatch(es) between feature files "
-            f"and step definitions. See logs for details. The LLM produced "
-            f"step defs that reference feature files not in this batch -- "
-            f"opening this PR would create immediately-broken tests."
-        )
-
-    # PHASE 8: Step Definition Coverage Validator (ADR-010)
-    # ----------------------------------------------------------------
-    # The PR #9 incident: the LLM generated a feature file with step
-    # phrases, but forgot to generate matching @given/@when/@then
-    # decorators in the step def file. Tests then failed at collection
-    # time with `StepDefinitionNotFoundError`.
-    #
-    # This validator pairs each generated .feature file with its
-    # corresponding test_*.py and verifies every Gherkin step has a
-    # matching decorator. Hard-fails if any step is uncovered.
-    #
-    # Reusable across projects -- understands pytest-bdd's grammar
-    # (And/But inheritance, parsers.parse() placeholders, etc.) with
-    # no domain-specific assumptions.
-    coverage_errors = validate_step_definitions_complete(generated_files)
-    if coverage_errors:
-        logger.error(f"Step definition coverage check FAILED with {len(coverage_errors)} error(s):")
-        for err in coverage_errors:
-            logger.error(f"  - {err}")
-        raise ValueError(
-            f"Step definition coverage validation failed for {story_id}: "
-            f"{len(coverage_errors)} feature step(s) without matching "
-            f"@given/@when/@then decorator(s). See logs for details. "
-            f"The LLM produced a feature file with step phrases that have "
-            f"no corresponding step definitions -- opening this PR would "
-            f"create tests that fail at collection time with "
-            f"StepDefinitionNotFoundError."
-        )
+    # 4b. VALIDATORS
+    _validate_generated_files(generated_files, story_id)
 
     # 5. ACT
     if dry_run:
         logger.warning("DRY RUN -- skipping branch/commit/PR creation")
-        # NOTE: All print output below uses ASCII-only (no emoji) to be
-        # compatible with Windows PowerShell's default cp1252 codepage.
-        print("\n" + "=" * 60)
-        print("DRY RUN -- Generated code preview")
-        print("=" * 60)
-        print(f"\n[Branch]    {output.branch_name}")
-        print(f"[PR Title]  {output.pr_title}")
-        print(f"[Feature]   {output.feature_name}")
-
-        print(f"\n[PR Body]")
-        print("-" * 60)
-        # Strip any non-cp1252 chars from LLM output for safe printing
-        print(output.pr_body.encode("ascii", "replace").decode("ascii"))
-
-        if output.notes:
-            print(f"\n[Notes from LLM]")
-            print("-" * 60)
-            print(output.notes.encode("ascii", "replace").decode("ascii"))
-
-        for f in output.files:
-            print(f"\n{'=' * 60}")
-            status = "NEW" if f.is_new_file else "UPDATE"
-            print(f"[FILE]  {f.file_path}  ({status})")
-            if f.purpose:
-                print(f"   Purpose: {f.purpose.encode('ascii', 'replace').decode('ascii')}")
-            print(f"   Size: {len(f.content)} chars")
-            print(f"   Preview (first 30 lines):")
-            print(f"{'-' * 60}")
-            lines = f.content.split("\n")
-            for i, line in enumerate(lines[:30], 1):
-                # Replace any non-printable chars for safe terminal output
-                safe_line = line.encode("ascii", "replace").decode("ascii")
-                print(f"   {i:3} | {safe_line}")
-            if len(lines) > 30:
-                print(f"   ... (and {len(lines) - 30} more lines)")
-
+        _print_dry_run_preview(output)
         return {
             "story_id": story_id,
             "files_generated": len(output.files),
             "status": "code_generated_dry_run",
         }
 
-    # Real run
-    # Validate that the LLM generated a branch name with a Jira key in it.
-    # Without a key in the branch, Agent 5 (Reporter) won't be able to
-    # post results back to the right Jira story. Better to catch this
-    # NOW (before pushing) than to have a silent gap downstream.
-    from config import assert_valid_branch_for_pipeline
+    # Real run — branch must contain a Jira key for downstream agents to work
     assert_valid_branch_for_pipeline(output.branch_name)
 
     gh = GitHubClient()
 
     # REGENERATE: append -revN suffix so we don't reuse the existing branch.
-    # This preserves the old PR as historical record (user closes manually).
-    # We find the lowest unused N starting from 2 (rev1 = original).
     if is_regenerate:
-        base_branch = output.branch_name
-        rev_n = 2
-        while gh.branch_exists(f"{base_branch}-rev{rev_n}"):
-            rev_n += 1
-        new_branch_name = f"{base_branch}-rev{rev_n}"
+        new_branch_name = _resolve_unused_revision_branch(gh, output.branch_name)
         logger.info(
-            f"Regeneration: changed branch from '{base_branch}' to "
+            f"Regeneration: changed branch from '{output.branch_name}' to "
             f"'{new_branch_name}' to preserve old PR as historical record"
         )
-        # Update output so all downstream uses match (commits, PR head)
         output.branch_name = new_branch_name
 
     gh.create_branch(output.branch_name, from_branch="main")
@@ -498,22 +509,14 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
         base_branch="main",
     )
 
-    # Idempotency marker: tag the parent story so the next --scan run skips it.
-    # Without this, every scheduled scan would re-process the same approved
-    # story over and over (wasting LLM tokens and creating duplicate PRs).
-    # Reads completion_label from config so it stays consistent with the
-    # excluded_labels filter that find_stories_to_process() uses.
-    config = load_agent_config()
-    completion_label = config.get("completion_label", "ai-coded")
+    # Idempotency markers: tag the parent story so the next --scan run skips it.
+    agent_config = load_agent_config()
+    completion_label = agent_config.get("completion_label", "ai-coded")
     jira.add_label(story_id, completion_label)
     logger.info(f"Marked {story_id} with label '{completion_label}' (idempotency)")
 
-    # REGENERATE: clean up the ai-regenerate label so it acts as a one-shot
-    # signal. Without this, the story would re-trigger regeneration on every
-    # scan run. The user adds ai-regenerate to mean "redo this once" — we
-    # honor that by removing it after we're done.
     if is_regenerate:
-        regenerate_label = config.get("regenerate_label", "ai-regenerate")
+        regenerate_label = agent_config.get("regenerate_label", "ai-regenerate")
         jira.remove_label(story_id, regenerate_label)
         logger.info(f"Removed label '{regenerate_label}' from {story_id} (one-shot consumed)")
 
@@ -532,18 +535,42 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+def _print_scan_summary(results: list[dict]) -> None:
+    print("\n" + "=" * 60)
+    print(f"[OK] Agent 2 scan finished -- processed {len(results)} stories")
+    for r in results:
+        status = r.get("status", "unknown")
+        if status == "pr_opened":
+            marker = "OK"
+        elif status == "skipped_all_duplicates":
+            marker = "SKIP"
+        elif status == "failed":
+            marker = "FAIL"
+        else:
+            marker = "??"
+        pr_info = f" -> {r.get('pr_url')}" if r.get("pr_url") else ""
+        print(f"   [{marker}] {r.get('story_id')}: {status}{pr_info}")
+    print("=" * 60)
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Agent 2 (Coder): Generate test code from Jira test cases")
+    parser = argparse.ArgumentParser(
+        description="Agent 2 (Coder): Generate test code from Jira test cases"
+    )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--story", help="Process all test cases of a specific story")
     group.add_argument("--scan", action="store_true", help="Scan mode (config-driven)")
-    parser.add_argument("--dry-run", action="store_true", help="Don't create branch/PR, just preview")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Don't create branch/PR, just preview")
     args = parser.parse_args()
+
+    # Fast-fail on missing config — much clearer than a 401 deep in a tool call
+    validate_required_env(
+        REQUIRED_JIRA_ENV_VARS + REQUIRED_LLM_ENV_VARS + REQUIRED_GITHUB_ENV_VARS
+    )
 
     try:
         if args.story:
-            # Single-story mode: process one specific story by key.
-            # Used for development, debugging, and manual runs.
             result = run(args.story, dry_run=args.dry_run)
             print("\n" + "=" * 60)
             print(f"[OK] Agent 2 finished -- story: {result['story_id']}")
@@ -552,130 +579,88 @@ def main():
             if result.get("pr_url"):
                 print(f"   PR: {result['pr_url']}")
             print("=" * 60)
+            return
+
+        # Scan mode: two passes (normal + regenerate).
+        agent_config = load_agent_config()
+        normal_selection = agent_config.get("selection", {})
+        regen_selection = agent_config.get("regenerate_selection", {})
+        max_stories = agent_config.get("max_stories_per_run", 5)
+
+        if not normal_selection:
+            logger.error(
+                "No 'selection' config found for agent2_coder in config.yaml. "
+                "Add an 'agents.agent2_coder.selection' block or use --story KEY instead."
+            )
+            sys.exit(1)
+
+        jira = JiraClient()
+
+        logger.info("Scan pass 1/2: looking for first-time stories (normal mode)")
+        normal_stories = jira.find_stories_to_process(normal_selection, max_results=max_stories)
+
+        regen_stories = []
+        if regen_selection:
+            logger.info("Scan pass 2/2: looking for stories with ai-regenerate label")
+            regen_stories = jira.find_stories_to_process(regen_selection, max_results=max_stories)
         else:
-            # Scan mode: read selection criteria from config.yaml, find all
-            # eligible stories, and process each one. Used in CI for batch runs.
-            #
-            # Two passes (Phase 6):
-            #   1. NORMAL pass — stories ready for first-time coding
-            #      (ai-processed AND human-approved AND NOT ai-coded AND NOT ai-skip
-            #       AND NOT ai-regenerate)
-            #
-            #   2. REGENERATE pass — stories where the user updated the test
-            #      cases and labeled the story ai-regenerate to redo the code
-            #      (ai-processed AND human-approved AND ai-regenerate AND NOT ai-skip)
-            #
-            # We deliberately keep the two configs separate (rather than OR-ing
-            # them in JQL) because the runtime BEHAVIOR differs (regen bypasses
-            # dedup, uses -revN branch). Two queries → two passes is cleaner
-            # and more debuggable.
-            config = load_agent_config()
-            normal_selection = config.get("selection", {})
-            regen_selection = config.get("regenerate_selection", {})
-            max_stories = config.get("max_stories_per_run", 5)
-
-            if not normal_selection:
-                logger.error(
-                    "No 'selection' config found for agent2_coder in config.yaml. "
-                    "Add an 'agents.agent2_coder.selection' block or use --story KEY instead."
-                )
-                sys.exit(1)
-
-            jira = JiraClient()
-
-            # Pass 1: Normal-mode candidates
-            logger.info("Scan pass 1/2: looking for first-time stories (normal mode)")
-            normal_stories = jira.find_stories_to_process(normal_selection, max_results=max_stories)
-
-            # Pass 2: Regenerate-mode candidates (only if regen_selection is configured)
-            regen_stories = []
-            if regen_selection:
-                logger.info("Scan pass 2/2: looking for stories with ai-regenerate label")
-                regen_stories = jira.find_stories_to_process(regen_selection, max_results=max_stories)
-            else:
-                logger.info(
-                    "No 'regenerate_selection' config — skipping regen pass. "
-                    "Add 'agents.agent2_coder.regenerate_selection' to enable."
-                )
-
-            total_count = len(normal_stories) + len(regen_stories)
-            if total_count == 0:
-                logger.info(
-                    f"No stories found in either pass. "
-                    f"Normal mode: required={normal_selection.get('required_labels', [])}, "
-                    f"excluded={normal_selection.get('excluded_labels', [])}. "
-                    f"Regen mode: requires 'ai-regenerate' label. "
-                    f"Tip: ensure parent story has 'ai-processed' (Agent 1 done) "
-                    f"and 'human-approved' (you reviewed) labels."
-                )
-                print("\n[OK] Agent 2 scan complete -- no stories to process.")
-                sys.exit(0)
-
             logger.info(
-                f"Found {len(normal_stories)} normal + {len(regen_stories)} regen "
-                f"= {total_count} stories to process. "
-                f"Normal: {[s['key'] for s in normal_stories]}. "
-                f"Regen: {[s['key'] for s in regen_stories]}."
+                "No 'regenerate_selection' config — skipping regen pass. "
+                "Add 'agents.agent2_coder.regenerate_selection' to enable."
             )
 
-            results = []
+        total_count = len(normal_stories) + len(regen_stories)
+        if total_count == 0:
+            logger.info(
+                f"No stories found. "
+                f"Normal: required={normal_selection.get('required_labels', [])}, "
+                f"excluded={normal_selection.get('excluded_labels', [])}. "
+                f"Regen requires 'ai-regenerate'. "
+                f"Tip: ensure parent story has 'ai-processed' AND 'human-approved' labels."
+            )
+            print("\n[OK] Agent 2 scan complete -- no stories to process.")
+            sys.exit(0)
 
-            # Process normal-mode stories first
-            for story in normal_stories:
-                try:
-                    result = run(story["key"], dry_run=args.dry_run, is_regenerate=False)
-                    results.append(result)
-                except Exception as e:
-                    # One story failing should not abort the whole batch —
-                    # log, record, and move on.
-                    logger.error(f"Failed processing {story['key']} (normal): {e}", exc_info=True)
-                    results.append({
-                        "story_id": story["key"],
-                        "status": "failed",
-                        "mode": "normal",
-                        "error": str(e),
-                    })
+        logger.info(
+            f"Found {len(normal_stories)} normal + {len(regen_stories)} regen "
+            f"= {total_count} stories to process."
+        )
 
-            # Process regenerate-mode stories
-            for story in regen_stories:
-                # Defensive: skip if same story already appeared in normal pass.
-                # Shouldn't happen given our exclusion lists, but if config is
-                # misconfigured we don't want to double-process.
-                if any(r.get("story_id") == story["key"] for r in results):
-                    logger.warning(
-                        f"Skipping {story['key']} in regen pass — already processed in normal pass. "
-                        "Check config: regenerate_selection should require ai-regenerate label."
-                    )
-                    continue
+        results = []
+        for story in normal_stories:
+            try:
+                result = run(story["key"], dry_run=args.dry_run, is_regenerate=False)
+                results.append(result)
+            except Exception as e:
+                logger.error(f"Failed processing {story['key']} (normal): {e}", exc_info=True)
+                results.append({
+                    "story_id": story["key"],
+                    "status": "failed",
+                    "mode": "normal",
+                    "error": str(e),
+                })
 
-                try:
-                    result = run(story["key"], dry_run=args.dry_run, is_regenerate=True)
-                    results.append(result)
-                except Exception as e:
-                    logger.error(f"Failed processing {story['key']} (regen): {e}", exc_info=True)
-                    results.append({
-                        "story_id": story["key"],
-                        "status": "failed",
-                        "mode": "regenerate",
-                        "error": str(e),
-                    })
+        for story in regen_stories:
+            if any(r.get("story_id") == story["key"] for r in results):
+                logger.warning(
+                    f"Skipping {story['key']} in regen pass — already processed in normal pass. "
+                    "Check config: regenerate_selection should require ai-regenerate label."
+                )
+                continue
+            try:
+                result = run(story["key"], dry_run=args.dry_run, is_regenerate=True)
+                results.append(result)
+            except Exception as e:
+                logger.error(f"Failed processing {story['key']} (regen): {e}", exc_info=True)
+                results.append({
+                    "story_id": story["key"],
+                    "status": "failed",
+                    "mode": "regenerate",
+                    "error": str(e),
+                })
 
-            # Summary across all stories processed in this scan
-            print("\n" + "=" * 60)
-            print(f"[OK] Agent 2 scan finished -- processed {len(results)} stories")
-            for r in results:
-                status = r.get("status", "unknown")
-                if status == "pr_opened":
-                    status_marker = "OK"
-                elif status == "skipped_all_duplicates":
-                    status_marker = "SKIP"
-                elif status == "failed":
-                    status_marker = "FAIL"
-                else:
-                    status_marker = "??"
-                pr_info = f" -> {r.get('pr_url')}" if r.get("pr_url") else ""
-                print(f"   [{status_marker}] {r.get('story_id')}: {status}{pr_info}")
-            print("=" * 60)
+        _print_scan_summary(results)
+
     except Exception as e:
         logger.error(f"Agent 2 failed: {type(e).__name__}: {e}", exc_info=True)
         sys.exit(1)

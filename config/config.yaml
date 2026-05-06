@@ -1,18 +1,61 @@
 # ────────────────────────────────────────────────────────────
+# Application Under Test (AUT) — single source of truth
+# ────────────────────────────────────────────────────────────
+# All app-specific knowledge lives here. To onboard a new app:
+#   1. Edit this section (name, base_url, inventory_file, references)
+#   2. Drop a new <name>.json into app_inventory/
+#   3. Drop your reference .feature, step-def .py, and page-object .py
+#      into the locations listed under `reference_files` below
+#   4. Update prompts/app_context.md with app-specific guidance for
+#      Agent 1's analyst prompt
+#
+# No agent code changes are needed. See docs/GUIDE.md "Onboarding a
+# new app" section for the full checklist.
+app_under_test:
+  name: "SauceDemo"
+  base_url: "https://www.saucedemo.com"
+
+  # Page inventory: a JSON file describing pages, selectors, methods.
+  # See app_inventory/saucedemo.json as the canonical example. The
+  # JSON shape is documented in docs/APP_INVENTORY_SCHEMA.md.
+  inventory_file: "app_inventory/saucedemo.json"
+
+  # Reference files: existing tests Agent 2 mimics for style and Agent 3
+  # uses as the style baseline. These are NOT edited by the agents —
+  # they're the human-written gold standard the LLM learns from.
+  reference_files:
+    feature: "features/login.feature"
+    step_def: "tests/step_defs/test_login.py"
+    page_object: "pages/login_page.py"
+
+  # Reserved paths: files Agent 2 must NEVER overwrite. Always include
+  # the reference files above plus any other "do-not-touch" assets
+  # (the BasePage class, shared utilities, etc.).
+  reserved_paths:
+    - "features/login.feature"
+    - "tests/step_defs/test_login.py"
+    - "pages/login_page.py"
+    - "pages/inventory_page.py"
+    - "pages/base_page.py"
+
+# ────────────────────────────────────────────────────────────
 # Browser & test framework configuration
 # ────────────────────────────────────────────────────────────
 browser:
-  headless: false       # Set to true for CI runs
+  headless: false       # Set to true for CI runs (auto-overridden by CI=true env var)
   slow_mo: 100          # Milliseconds between actions (helps you SEE what's happening)
   viewport:
     width: 1280
     height: 720
   timeout: 30000        # 30 seconds default
 
+# Legacy alias — agents now read from app_under_test.base_url, but this
+# is kept so conftest.py (which uses BASE_URL env var fallback) still works.
 base_url: https://www.saucedemo.com
 
 # ────────────────────────────────────────────────────────────
 # Test data (intentionally in plain config — not secrets)
+# Move these to your app's inventory file or remove for non-SauceDemo apps.
 # ────────────────────────────────────────────────────────────
 test_users:
   standard:
@@ -52,27 +95,12 @@ agents:
   # (Agent 1 finished) AND `human-approved` (you reviewed the test cases
   # in Jira and approved them) before Agent 2 picks it up.
   #
-  # This is the architectural checkpoint that keeps a human in the loop
-  # at the highest-value review point — between AI proposing test cases
-  # and AI writing the code that implements them. Catching a bad test
-  # case here is cheap; catching it after Agent 2 has generated 200 lines
-  # of code is wasteful.
-  # AI-REGENERATE LABEL (Phase 6):
-  #   When you modify an existing test case (e.g., add new validations
-  #   or change expected outcomes), you can force Agent 2 to regenerate
-  #   code by adding the `ai-regenerate` label to the parent story.
-  #
-  #   In regenerate mode, Agent 2:
-  #     - Skips the dedup check (regenerates all approved cases fresh)
-  #     - Creates a new branch with -rev2/-rev3/... suffix
-  #     - Removes the `ai-regenerate` label after success (one-shot signal)
-  #     - Re-adds `ai-coded` (back to normal state)
-  #   The old PR stays open as historical record (close manually).
+  # AI-REGENERATE LABEL:
+  #   When you modify an existing test case, you can force Agent 2 to
+  #   regenerate code by adding the `ai-regenerate` label. In that mode,
+  #   Agent 2 skips the dedup check, creates a new branch with -rev2/
+  #   -rev3/... suffix, and removes the label after success (one-shot).
   agent2_coder:
-    # Selection criteria for FIRST-TIME processing of a story.
-    # Notice ai-regenerate is in excluded_labels here — that's intentional.
-    # If a story has BOTH ai-coded and ai-regenerate, it should be picked up
-    # by regenerate_selection below (not by this normal scan).
     selection:
       issue_type: "Story"
       allowed_statuses:
@@ -83,12 +111,9 @@ agents:
         - "human-approved" # You approved the test cases in Jira
       excluded_labels:
         - "ai-coded"       # Agent 2 already opened a PR for this story
-        - "ai-skip"        # human override / opt-out (same as Agent 1)
+        - "ai-skip"        # human override / opt-out
         - "ai-regenerate"  # belongs in regenerate_selection, not normal scan
 
-    # Selection criteria for REGENERATION mode (Phase 6).
-    # When ai-regenerate is on a story, we ignore the ai-coded marker
-    # (so the story can be re-processed) but still respect ai-skip.
     regenerate_selection:
       issue_type: "Story"
       allowed_statuses:
@@ -101,13 +126,10 @@ agents:
       excluded_labels:
         - "ai-skip"
 
-    completion_label: "ai-coded"        # marker so the same story isn't processed twice
-    regenerate_label: "ai-regenerate"   # label that signals "redo this story"
-    max_stories_per_run: 5              # cost-cap: each scan won't cost more than ~5x the per-story budget
+    completion_label: "ai-coded"
+    regenerate_label: "ai-regenerate"
+    max_stories_per_run: 5
 
-  # agent3_reviewer:
-  #   selection: ...    # (currently triggered by GitHub PR events, not Jira)
-  # agent4_runner:
-  #   selection: ...    # (currently triggered by GitHub PR events)
-  # agent5_reporter:
-  #   selection: ...    # (currently triggered after Agent 4 in same workflow)
+  # agent3_reviewer:  # triggered by GitHub PR events, no Jira selection needed
+  # agent4_runner:    # triggered by GitHub PR events (CI workflow only — no .py file)
+  # agent5_reporter:  # triggered after Agent 4 in same workflow

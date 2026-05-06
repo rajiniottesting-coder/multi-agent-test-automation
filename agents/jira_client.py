@@ -136,7 +136,14 @@ class JiraClient:
         return new_issue
 
     def _link_to_story(self, test_case_key: str, story_key: str) -> None:
-        """Create a 'Relates' link between Test Case and Story."""
+        """Create a 'Relates' link between Test Case and Story.
+
+        Note: failures here are NOT silently swallowed. A missing link means
+        Agent 2 won't find the test cases later (it queries by linkedIssues).
+        We log at ERROR level and re-raise — the caller can decide whether
+        to abort the batch or continue with a partial result.
+        """
+        from jira.exceptions import JIRAError
         try:
             self.client.create_issue_link(
                 type="Relates",
@@ -144,8 +151,13 @@ class JiraClient:
                 outwardIssue=story_key,
             )
             logger.info(f"Linked {test_case_key} → {story_key}")
-        except Exception as e:
-            logger.warning(f"Could not link {test_case_key} to {story_key}: {e}")
+        except JIRAError as e:
+            logger.error(
+                f"Failed to link {test_case_key} → {story_key}: "
+                f"{e.status_code} {e.text}. Agent 2 may not find this test "
+                f"case when scanning for linked issues."
+            )
+            raise
 
     @staticmethod
     def _format_test_case_description(tc: TestCase) -> str:

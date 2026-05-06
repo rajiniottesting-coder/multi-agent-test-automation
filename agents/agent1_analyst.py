@@ -31,14 +31,17 @@ import logging
 import sys
 import yaml
 
+from agents.app_context import AppContext
 from agents.jira_client import JiraClient
 from agents.llm_client import LLMClient
 from agents.schemas import TestCaseList
+from config import (
+    REQUIRED_JIRA_ENV_VARS,
+    REQUIRED_LLM_ENV_VARS,
+    validate_required_env,
+)
 from config.paths import PROMPTS_DIR, CONFIG_YAML
 
-# ─────────────────────────────────────────────────────────────
-# Logging
-# ─────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -55,6 +58,28 @@ def load_prompt(prompt_file: str = "agent1_analyst.md") -> str:
     return (PROMPTS_DIR / prompt_file).read_text(encoding="utf-8")
 
 
+def load_app_context_block() -> str:
+    """Load the app-specific context block (test users, error messages, etc.)
+    that gets injected into the analyst's prompt.
+
+    This file is the ONE place to put app-specific guidance for the analyst.
+    For a new app, edit prompts/app_context.md — no Python code changes.
+
+    Returns an empty string if app_context.md is missing (the prompt still
+    works, just with less app-specific guidance).
+    """
+    path = PROMPTS_DIR / "app_context.md"
+    if not path.exists():
+        logger.warning(
+            f"prompts/app_context.md not found — Agent 1 will run with the "
+            f"generic prompt only. Create this file to add app-specific "
+            f"context (test users, known error messages, app URL, etc.) "
+            f"so the analyst produces more concrete test cases."
+        )
+        return ""
+    return path.read_text(encoding="utf-8")
+
+
 def load_agent_config(agent_key: str = "agent1_analyst") -> dict:
     """Load this agent's config section from config.yaml."""
     with open(CONFIG_YAML) as f:
@@ -66,17 +91,11 @@ def load_agent_config(agent_key: str = "agent1_analyst") -> dict:
 # Core agent workflow (Read → Reason → Act → Return)
 # ─────────────────────────────────────────────────────────────
 def run(story_id: str, dry_run: bool = False) -> dict:
-    """
-    Process a single story end-to-end:
-      1. Fetch story from Jira
-      2. Call LLM to generate test cases
-      3. Create Jira Test Case issues (unless dry-run)
-      4. Return result dict
-
-    Returns:
-        Dict with story_id, test_cases_generated, test_case_keys, status.
-    """
+    """Process a single story end-to-end."""
     logger.info(f"=== Agent 1 (Analyst) starting for {story_id} (dry_run={dry_run}) ===")
+
+    ctx = AppContext.load()
+    logger.info(f"App under test: {ctx.name} ({ctx.base_url})")
 
     # 1. INPUT: fetch the story
     jira = JiraClient()
@@ -87,7 +106,14 @@ def run(story_id: str, dry_run: bool = False) -> dict:
 
     # 2. REASON: call LLM with structured output
     prompt_template = load_prompt()
-    user_prompt = prompt_template.replace("{story_text}", story_text)
+    app_context_block = load_app_context_block()
+    user_prompt = (
+        prompt_template
+        .replace("{app_name}", ctx.name)
+        .replace("{app_base_url}", ctx.base_url)
+        .replace("{app_context}", app_context_block)
+        .replace("{story_text}", story_text)
+    )
 
     llm = LLMClient(temperature=0.3)
     test_case_list: TestCaseList = llm.invoke_structured(
@@ -109,27 +135,9 @@ def run(story_id: str, dry_run: bool = False) -> dict:
             issue = jira.create_test_case(tc, parent_story_key=story_id)
             created_keys.append(issue.key)
 
-    # 3b. IDEMPOTENCY MARKER
-    # Tag the parent story with 'ai-processed' so the next --scan run skips it.
-    # Without this, every scheduled scan would re-process the same approved
-    # story over and over (wasting LLM tokens and creating duplicate Test Cases).
-    #
-    # WHY THIS LIVES IN run() (NOT main()):
-    #   The original implementation only added the label in main()'s --scan
-    #   branch. That meant `run()` called directly (--story mode, manual
-    #   testing, future imports) would produce Test Cases without marking
-    #   the parent — leaving the story in an inconsistent state where Agent 2
-    #   couldn't pick it up (Agent 2's selection requires ai-processed).
-    #
-    #   Moving it here makes the contract single: "run() finishes its work
-    #   AND records that fact." Matches Agent 2's pattern of adding ai-coded
-    #   inside its own run().
-    #
-    # Reads completion_label from config so it stays consistent with the
-    # excluded_labels filter that find_stories_to_process() uses.
-    if not dry_run:
-        config = load_agent_config()
-        completion_label = config.get("completion_label", "ai-processed")
+        # IDEMPOTENCY MARKER: tag parent story so the next --scan run skips it.
+        agent_config = load_agent_config()
+        completion_label = agent_config.get("completion_label", "ai-processed")
         jira.add_label(story_id, completion_label)
         logger.info(f"Marked {story_id} with label '{completion_label}' (idempotency)")
 
@@ -184,58 +192,53 @@ def main():
     )
     args = parser.parse_args()
 
+    # Fast-fail on missing config
+    validate_required_env(REQUIRED_JIRA_ENV_VARS + REQUIRED_LLM_ENV_VARS)
+
     try:
         if args.story:
-            # ─── Manual mode: bypass selection logic ───
             logger.info(f"Manual mode: processing {args.story}")
             result = run(args.story, dry_run=args.dry_run)
             print_summary([result])
+            return
 
-        else:
-            # ─── Scan mode: config-driven selection ───
-            config = load_agent_config()
-            selection = config.get("selection", {})
-            max_stories = config.get("max_stories_per_run", 10)
-            # Note: completion_label is no longer read here; run() handles
-            # labeling internally so both --story and --scan modes are consistent.
+        # Scan mode: config-driven selection
+        agent_config = load_agent_config()
+        selection = agent_config.get("selection", {})
+        max_stories = agent_config.get("max_stories_per_run", 10)
 
-            if not selection:
-                logger.error("No 'selection' config found for agent1_analyst in config.yaml")
-                sys.exit(1)
+        if not selection:
+            logger.error("No 'selection' config found for agent1_analyst in config.yaml")
+            sys.exit(1)
 
-            jira = JiraClient()
-            stories = jira.find_stories_to_process(selection, max_results=max_stories)
+        jira = JiraClient()
+        stories = jira.find_stories_to_process(selection, max_results=max_stories)
 
-            if not stories:
-                logger.info("No stories match selection criteria. Nothing to do.")
-                print("\n✅ Scan complete — 0 stories needed processing.")
-                return
+        if not stories:
+            logger.info("No stories match selection criteria. Nothing to do.")
+            print("\n✅ Scan complete — 0 stories needed processing.")
+            return
 
-            logger.info(f"Will process {len(stories)} stories:")
-            for s in stories:
-                logger.info(f"  - {s['key']} [{s['status']}] {s['summary']}")
+        logger.info(f"Will process {len(stories)} stories:")
+        for s in stories:
+            logger.info(f"  - {s['key']} [{s['status']}] {s['summary']}")
 
-            results = []
-            for story in stories:
-                try:
-                    # run() now handles its own ai-processed labeling internally
-                    # (see Phase 7 fix to Agent 1 — previously this was here in main()
-                    # which caused --story mode to skip labeling and stuck SCRUM-5
-                    # in an inconsistent state).
-                    result = run(story["key"], dry_run=args.dry_run)
-                    results.append(result)
+        results = []
+        for story in stories:
+            try:
+                result = run(story["key"], dry_run=args.dry_run)
+                results.append(result)
+            except Exception as e:
+                logger.error(f"Failed processing {story['key']}: {e}", exc_info=True)
+                results.append({
+                    "story_id": story["key"],
+                    "story_summary": story["summary"],
+                    "test_cases_generated": 0,
+                    "test_case_keys": [],
+                    "status": f"failed: {type(e).__name__}",
+                })
 
-                except Exception as e:
-                    logger.error(f"Failed processing {story['key']}: {e}", exc_info=True)
-                    results.append({
-                        "story_id": story["key"],
-                        "story_summary": story["summary"],
-                        "test_cases_generated": 0,
-                        "test_case_keys": [],
-                        "status": f"failed: {type(e).__name__}",
-                    })
-
-            print_summary(results)
+        print_summary(results)
 
     except Exception as e:
         logger.error(f"Agent 1 (Analyst) failed: {type(e).__name__}: {e}", exc_info=True)

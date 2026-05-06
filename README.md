@@ -1,26 +1,21 @@
 # 🤖 Multi-Agent AI Test Automation
 
-A 7-day demo project showcasing how **5 specialized AI agents** collaborate to automate the entire software testing lifecycle — from requirement analysis to test execution and reporting — with human-in-the-loop checkpoints at every critical step.
+A reusable framework where **5 specialized AI agents** collaborate to automate the entire software testing lifecycle — from requirement analysis to test execution and reporting — with human-in-the-loop checkpoints at every critical step.
 
-> **Built as a hands-on exploration of agentic AI, modern test automation, and CI/CD orchestration — using only free tools.**
+> **App-agnostic by design.** This framework was built for SauceDemo as the demo app, but the agent code has zero app-specific knowledge. Onboarding a new application means editing one config block — never agent code.
 
 ---
 
-## 📚 Table of Contents
+## 📚 Documentation
 
-- [What This Project Does](#-what-this-project-does)
-- [The 5 Agents](#-the-5-agents)
-- [Architecture](#-architecture)
-- [Tech Stack](#️-tech-stack)
-- [Project Structure](#-project-structure)
-- [Getting Started](#-getting-started)
-- [How to Run Each Agent](#-how-to-run-each-agent)
-- [Project Roadmap](#-project-roadmap)
-- [Key Concepts Demonstrated](#-key-concepts-demonstrated)
-- [Design Principles Applied](#️-design-principles-applied)
-- [Secrets Management](#-secrets-management)
-- [Troubleshooting](#-troubleshooting)
-- [Lessons Learned](#-lessons-learned-so-far)
+| Doc | Purpose |
+|---|---|
+| **[docs/GUIDE.md](./docs/GUIDE.md)** | Architecture, agent deep-dives, configuration, branch naming, human-approval gates, onboarding a new app — **everything in one place** |
+| [docs/ARCHITECTURE_DIAGRAM.md](./docs/ARCHITECTURE_DIAGRAM.md) | Mermaid diagrams: pipeline flow, component view, Agent 2 sequence, label lifecycle |
+| [docs/APP_INVENTORY_SCHEMA.md](./docs/APP_INVENTORY_SCHEMA.md) | JSON schema for `app_inventory/<app>.json` |
+| [docs/ADR-008-pat_for_cascade.md](./docs/ADR-008-pat_for_cascade.md) | Architecture Decision Record: GitHub PAT for cross-workflow cascade |
+| [docs/ADR-009-deduplication.md](./docs/ADR-009-deduplication.md) | Architecture Decision Record: Agent 2 dedup engine |
+| [CHANGES.md](./CHANGES.md) | Refactor notes — what changed, why, how to adapt |
 
 ---
 
@@ -32,56 +27,58 @@ Given a user story in Jira, this system autonomously:
 2. **Generates automation code** in Playwright + BDD style, opens a Pull Request
 3. **Reviews the code** for quality issues, posts comments
 4. **Executes the tests** with smart selection (smoke vs full regression)
-5. **Reports the results** with AI-summarized failures and a public dashboard
+5. **Reports the results** with AI-summarized failures back to Jira
 
 Each agent has a **human approval gate** — agents propose, humans dispose. This is collaborative AI, not full autonomy.
 
-**Application under test:** [SauceDemo](https://www.saucedemo.com) — a free, stable demo e-commerce site designed for automation practice.
+**Default app under test:** [SauceDemo](https://www.saucedemo.com) — a free, stable demo e-commerce site for automation practice. Swap to your own app via `config.yaml` (see [GUIDE.md → Onboarding a new app](./docs/GUIDE.md#onboarding-a-new-app)).
 
 ---
 
 ## 🤖 The 5 Agents
 
-| # | Agent | Role Analogy | What It Does |
+| # | Agent | Role | Implementation |
 |:-:|---|---|---|
-| 1️⃣ | **Analyst** | Business Analyst / QA Lead | Jira Story → Manual Test Cases (Positive / Negative / Edge) |
-| 2️⃣ | **Coder** | Test Automation Engineer (SDET) | Test Cases → Playwright + BDD code → opens PR on GitHub |
-| 3️⃣ | **Reviewer** | Senior Engineer | Reviews PR for POM compliance, anti-patterns, missing assertions |
-| 4️⃣ | **Runner** | Build/Release Engineer | Smart test execution (smoke vs regression based on changes) |
-| 5️⃣ | **Reporter** | QA Lead | Analyzes results, summarizes failures in Jira, publishes dashboard |
+| 1️⃣ | **Analyst** | Reads Jira story → creates manual test cases | `agents/agent1_analyst.py` |
+| 2️⃣ | **Coder** | Test cases → Playwright code → opens PR | `agents/agent2_coder.py` |
+| 3️⃣ | **Reviewer** | AI code review on the PR | `agents/agent3_reviewer.py` |
+| 4️⃣ | **Runner** | Executes tests on PR (CI workflow only — no Python module) | `.github/workflows/agent4_runner.yml` |
+| 5️⃣ | **Reporter** | Summarizes results back to Jira | `agents/agent5_reporter.py` |
 
-📐 For deep-dive details on each agent, see [ARCHITECTURE.md](./docs/ARCHITECTURE.md).
+> **Why is Agent 4 only a workflow file?** It's pure CI orchestration: run pytest, parse junit.xml, upload artifacts. No LLM calls, no API decisions. Putting that logic in Python would just wrap a shell command. The workflow file IS Agent 4. See [GUIDE.md → Agent 4](./docs/GUIDE.md#agent-4-runner-) for details.
 
 ---
 
 ## 🏗️ Architecture
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│  JIRA Cloud (Free)                                                   │
-│   - Story (the requirement)                                          │
-│   - Test Case (manual test, generated by Agent 1)                    │
-│   - Labels: ai-ready → ai-processed (idempotency markers)            │
-└────────────────────────────┬─────────────────────────────────────────┘
-                             │
-                             ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│  LangGraph Orchestrator (runs locally OR on GitHub Actions)          │
-│                                                                      │
-│   AGENT 1 (Analyst) ──▶ creates Test Cases in Jira                   │
-│            │            🛑 [HUMAN: review in Jira → approve]         │
-│            ▼                                                         │
-│   AGENT 2 (Coder)  ───▶ generates code, opens PR on GitHub           │
-│            │            🛑 [HUMAN: review PR → request/approve]      │
-│            ▼                                                         │
-│   AGENT 3 (Reviewer) ─▶ AI review posted as PR comments              │
-│            │            🛑 [HUMAN: final approval + merge]           │
-│            ▼                                                         │
-│   AGENT 4 (Runner)  ──▶ GitHub Actions runs tests on merge           │
-│            ▼                                                         │
-│   AGENT 5 (Reporter) ─▶ analyzes results, comments on Jira,          │
-│                         publishes Allure HTML report                 │
-└──────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    Story["📋 Jira Story<br/>label: ai-ready"]
+    A1["🤖 Agent 1: Analyst"]
+    H1{{"🛑 Human: review<br/>label: human-approved"}}
+    A2["🤖 Agent 2: Coder"]
+    PR["🔀 GitHub PR"]
+    A3["🤖 Agent 3: Reviewer"]
+    H2{{"🛑 Human: PR review + merge"}}
+    A4["🤖 Agent 4: Runner<br/>(GitHub Actions)"]
+    A5["🤖 Agent 5: Reporter"]
+    Result["📊 Jira comment<br/>label: tests-run"]
+
+    Story --> A1
+    A1 -->|"Test Cases<br/>+ ai-processed"| H1
+    H1 --> A2
+    A2 -->|"code +<br/>ai-coded"| PR
+    PR --> A3
+    A3 -->|"AI review comment"| PR
+    PR --> H2
+    H2 --> A4
+    A4 -->|"junit.xml"| A5
+    A5 --> Result
+
+    classDef agent fill:#4a90e2,stroke:#2c5aa0,color:#fff
+    classDef human fill:#f5a623,stroke:#b07415,color:#fff
+    class A1,A2,A3,A4,A5 agent
+    class H1,H2 human
 ```
 
 **Key flow points:**
@@ -89,6 +86,8 @@ Each agent has a **human approval gate** — agents propose, humans dispose. Thi
 - Each agent stops at a checkpoint — humans review before the next agent runs
 - Idempotency labels prevent re-processing the same story twice
 - All secrets stay in `.env` (never committed); placeholders live in `.env.example`
+
+For a deeper breakdown — including agent inputs/outputs, design rationale, and the human-approval gate semantics — see [GUIDE.md → Architecture](./docs/GUIDE.md#architecture). For more diagrams (component view, Agent 2 sequence, label state machine), see [ARCHITECTURE_DIAGRAM.md](./docs/ARCHITECTURE_DIAGRAM.md).
 
 ---
 
@@ -99,16 +98,16 @@ Each agent has a **human approval gate** — agents propose, humans dispose. Thi
 | Layer | Tool | Purpose |
 |---|---|---|
 | **LLM** | Google Gemini 2.5 Flash | Reasoning engine for all agents |
-| **Agent orchestration** | LangGraph + LangChain | State machine wiring agents together |
 | **Output validation** | Pydantic | Type-safe schemas for LLM outputs |
 | **Test framework** | Playwright + Python | Cross-browser automation |
 | **BDD** | pytest-bdd | Gherkin → Python step mapping |
 | **Design pattern** | Page Object Model (POM) | Maintainable test code |
 | **Project tracking** | Jira Cloud (Free tier) | Stories, Test Cases, workflow gates |
 | **Source control** | GitHub | Code + PR-based human gates |
-| **CI/CD** | GitHub Actions | Test execution on merge (2000 free min/month) |
-| **Reporting** | Allure + Playwright HTML | Rich HTML reports with traces |
-| **App under test** | [SauceDemo](https://www.saucedemo.com) | Free demo site for automation practice |
+| **CI/CD** | GitHub Actions | Test execution on merge |
+| **Reporting** | pytest-html + JUnit XML | Reports to PR + Jira |
+
+LangChain / LangGraph are listed in `requirements.txt` for future orchestration work but are not currently load-bearing — agents are wired together via GitHub Actions workflows, not LangGraph state machines.
 
 ---
 
@@ -118,59 +117,52 @@ Each agent has a **human approval gate** — agents propose, humans dispose. Thi
 multi-agent-test-automation/
 │
 ├── agents/                          # AI agents (numbered by pipeline order)
-│   ├── __init__.py
-│   ├── agent1_analyst.py            # ✅ Day 3: Story → Test Cases
-│   ├── agent2_coder.py              # 🚧 Day 4: Test Cases → Code + PR
-│   ├── agent3_reviewer.py           # ⏳ Day 5: AI code review
-│   ├── agent4_runner.py             # ⏳ Day 5: Smart test execution
-│   ├── agent5_reporter.py           # ⏳ Day 6: Result analysis
+│   ├── agent1_analyst.py            # Story → Test Cases
+│   ├── agent2_coder.py              # Test Cases → Code + PR
+│   ├── agent3_reviewer.py           # AI code review
+│   ├── agent5_reporter.py           # Result analysis → Jira
+│   ├── app_context.py               # AUT config loader (NEW — central decoupling point)
 │   ├── jira_client.py               # Jira API wrapper (Adapter pattern)
-│   ├── llm_client.py                # Gemini wrapper with auto-retries
-│   └── schemas.py                   # Pydantic data contracts
-│
-├── orchestrator/                    # LangGraph wiring (Day 5)
-│   └── pipeline.py
+│   ├── github_client.py             # GitHub API wrapper
+│   ├── llm_client.py                # Gemini wrapper with quota handling
+│   ├── schemas.py                   # Pydantic data contracts
+│   └── test_inventory.py            # Gherkin parsing + dedup + validators
 │
 ├── pages/                           # Page Object Model classes
-│   ├── __init__.py
-│   ├── base_page.py
-│   ├── login_page.py
-│   └── inventory_page.py
-│
 ├── features/                        # Gherkin .feature files
-│   └── login.feature
-│
 ├── tests/
-│   ├── __init__.py
 │   ├── conftest.py                  # Playwright fixtures
-│   └── step_defs/
-│       ├── __init__.py
-│       └── test_login.py            # Reference test (used as few-shot example)
+│   ├── step_defs/                   # Step definitions
+│   └── unit/                        # Unit tests for the framework itself
 │
 ├── config/
-│   ├── __init__.py
+│   ├── __init__.py                  # Env validation, branch-name helpers
 │   ├── paths.py                     # Centralized path resolution
-│   └── config.yaml                  # Browser, test data, agent rules
+│   └── config.yaml                  # AUT config + agent rules + browser settings
 │
-├── prompts/                         # Agent prompt templates (versioned!)
-│   └── agent1_analyst.md
+├── prompts/                         # Versioned LLM prompt templates
+│   ├── agent1_analyst.md
+│   ├── agent2_coder_plan.md
+│   ├── agent2_coder_generate.md
+│   ├── agent3_reviewer.md
+│   ├── agent5_reporter.md
+│   └── app_context.md               # App-specific context block (NEW)
 │
-├── scripts/                         # Utility scripts
+├── app_inventory/                   # JSON descriptions of each AUT
+│   └── saucedemo.json
+│
+├── scripts/
 │   └── smoke_test.py                # End-to-end integration check
 │
-├── reports/                         # Allure outputs (gitignored)
-├── .github/
-│   └── workflows/                   # CI/CD pipelines (Day 4)
+├── .github/workflows/               # CI/CD pipelines
+│   ├── agent2_coder.yml
+│   ├── agent3-reviewer.yml
+│   └── agent4_runner.yml            # Agent 4 + Agent 5 (combined workflow)
 │
+├── docs/                            # GUIDE + ADRs + schema reference
 ├── .env.example                     # Secret placeholders (committed)
-├── .env                             # Real secrets (NEVER committed!)
-├── .gitignore
-├── pytest.ini                       # Pytest configuration
-├── requirements.txt                 # Python dependencies (documented)
-├── docs/
-│   ├── ARCHITECTURE.md              # Deep-dive on agents and design
-│   ├── BRANCH_NAMING.md             # Branch convention reference
-│   └── CONFIGURATION.md             # Env-var and secret reference
+├── pytest.ini
+├── requirements.txt
 └── README.md                        # ← You are here
 ```
 
@@ -179,36 +171,22 @@ multi-agent-test-automation/
 ## 🚀 Getting Started
 
 ### Prerequisites
+- Python 3.10 or higher (3.11 / 3.13 recommended)
+- Jira Cloud Free — [atlassian.com/software/jira/free](https://www.atlassian.com/software/jira/free)
+- Google Gemini API key — [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+- GitHub account with a Personal Access Token (PAT)
 
-You need accounts for these (all free):
-
-- **Python** 3.10 or higher (3.11 / 3.13 recommended)
-- **Jira Cloud Free** — sign up at [atlassian.com/software/jira/free](https://www.atlassian.com/software/jira/free)
-- **Google Gemini API key** — get one at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
-- **GitHub account** with a Personal Access Token (PAT) for Day 4
-
-### Step 1: Clone and set up Python environment
+### 1. Clone and set up Python environment
 
 ```bash
-# Clone the repo
 git clone https://github.com/rajiniottesting-coder/multi-agent-test-automation.git
 cd multi-agent-test-automation
 
-# Create a virtual environment
 python -m venv venv
-
-# Activate it
-# Windows PowerShell:
-venv\Scripts\Activate.ps1
-# Windows Command Prompt:
-venv\Scripts\activate.bat
-# Mac / Linux:
-source venv/bin/activate
-
-# Verify activation — you should see (venv) prefix in your terminal
+# Activate: source venv/bin/activate (Mac/Linux) or venv\Scripts\Activate.ps1 (Windows)
 ```
 
-### Step 2: Install dependencies
+### 2. Install dependencies
 
 ```bash
 pip install --upgrade pip
@@ -216,256 +194,113 @@ pip install -r requirements.txt
 playwright install chromium
 ```
 
-This installs Python packages and downloads the Chromium browser binary (~150 MB).
-
-### Step 3: Configure secrets
+### 3. Configure secrets
 
 ```bash
-# Mac / Linux:
-cp .env.example .env
-# Windows:
-copy .env.example .env
+cp .env.example .env   # then edit .env with real values
 ```
 
-Now open `.env` in your editor and fill in real values:
+See [GUIDE.md → Configuration](./docs/GUIDE.md#configuration) for the full env-var reference.
 
-```env
-JIRA_URL=https://yoursite.atlassian.net
-JIRA_EMAIL=your-email@example.com
-JIRA_API_TOKEN=your-jira-token-here
-JIRA_PROJECT_KEY=SCRUM
-GOOGLE_API_KEY=your-gemini-api-key-here
-GEMINI_MODEL=gemini-2.5-flash
-GITHUB_TOKEN=your-github-pat-here
-GITHUB_REPO=your-username/multi-agent-test-automation
-BASE_URL=https://www.saucedemo.com
-```
+### 4. Set up Jira
 
-⚠️ **Never commit `.env`!** It's gitignored. Real secrets only live here.
+1. Create a Jira project (Scrum template) and note its key (e.g., `SCRUM`)
+2. **Project Settings → Work Types** — add a `Test Case` work type
+3. Create a sample Story (e.g., `User Login Functionality`)
+4. Add the label `ai-ready` to that story
 
-### Step 4: Set up Jira
-
-1. Create a Jira project (Scrum template) named `AI Test Automation Demo` with key `SCRUM`
-2. Go to **Project Settings → Work Types** and add a new Work Type called `Test Case`
-3. Create a sample Story (e.g., `User Login Functionality`) and note its key (e.g., `SCRUM-3`)
-4. On that story, add the label `ai-ready`
-
-### Step 5: Verify everything connects
+### 5. Verify everything connects
 
 ```bash
 python scripts/smoke_test.py
 ```
 
-Expected output: 4 ✅ marks confirming env vars, Jira, Gemini, and Playwright all work.
+Expected: 4 ✅ marks confirming env vars, Jira, Gemini, and Playwright all work.
 
----
-
-## ▶️ How to Run Each Agent
-
-### Run the manual reference test (Day 2)
-
-This runs the human-written Playwright test for SauceDemo login — used as a quality reference for Agent 2.
+### 6. Run the reference test (sanity check)
 
 ```bash
 pytest tests/step_defs/test_login.py -v
 ```
 
-You should see a Chromium browser window open and run 3 login scenarios. All 3 pass.
+Should open a Chromium window and run 3 login scenarios — all pass.
 
-### Run Agent 1 — Analyst (Day 3) ✅
-
-**Setup in Jira:** Add label `ai-ready` to the story you want to process.
+### 7. Run the agents
 
 ```bash
-# Preview what the agent WOULD do — no Jira changes
-python -m agents.agent1_analyst --scan --dry-run
-
-# Real run — creates Test Case issues in Jira
-python -m agents.agent1_analyst --scan
-
-# Process one specific story (manual mode)
-python -m agents.agent1_analyst --story SCRUM-3
+# Agent 1: generate test cases for one story
 python -m agents.agent1_analyst --story SCRUM-3 --dry-run
+python -m agents.agent1_analyst --story SCRUM-3
+
+# Approve in Jira (add label: human-approved)
+
+# Agent 2: generate code, open PR
+python -m agents.agent2_coder --story SCRUM-3 --dry-run
+python -m agents.agent2_coder --story SCRUM-3
+
+# Agent 3: review the PR (auto-runs on PR open via GitHub Actions)
+python -m agents.agent3_reviewer --pr 5 --dry-run
+
+# Agent 4 + 5: auto-run on PR via GitHub Actions when CI is green
 ```
 
-**What you'll see:**
-- The agent fetches the story from Jira
-- Calls Gemini to generate 5–8 test cases (Positive, Negative, Edge)
-- Creates each as a Test Case issue in Jira, linked to the parent story
-- Adds `ai-processed` label so it won't re-run on the same story
+For the full lifecycle including approval gates, see [GUIDE.md → Running the pipeline](./docs/GUIDE.md#running-the-pipeline).
 
-### Run subsequent agents (Days 4–6)
+---
 
-Coming soon as the project progresses. Each agent follows the same pattern:
+## 🔁 Onboarding a new application
+
+The whole point of the recent refactor: **no Python code changes** are needed to point this at a new app. The high-level steps:
+
+1. Edit `config/config.yaml` — update the `app_under_test` block (name, base URL, reference files, reserved paths)
+2. Drop a new `app_inventory/<your-app>.json` describing pages and selectors ([schema reference](./docs/APP_INVENTORY_SCHEMA.md))
+3. Replace `prompts/app_context.md` with your app's known users, error messages, page flow
+4. Replace the reference files (`features/login.feature`, `tests/step_defs/test_login.py`, `pages/login_page.py`) with one well-written human-authored test for your app — the LLM uses these as its style baseline
+
+Full step-by-step in [GUIDE.md → Onboarding a new app](./docs/GUIDE.md#onboarding-a-new-app).
+
+---
+
+## 🧪 Running the framework's own unit tests
+
+The framework itself has unit tests (mostly for the dedup engine and validators):
 
 ```bash
-python -m agents.agent2_coder --scan       # Day 4
-python -m agents.agent3_reviewer --pr 123  # Day 5
-python -m agents.agent4_runner --commit HEAD  # Day 5
-python -m agents.agent5_reporter --run-id <id>  # Day 6
+pytest tests/unit/ -v
 ```
 
----
-
-## 📅 Project Roadmap
-
-| Day | Component | Status |
-|:-:|---|:-:|
-| 1 | Project setup, Jira/Gemini integration, env hygiene, smoke test | ✅ Done |
-| 2 | Reference test (Playwright + BDD + POM) | ✅ Done |
-| 3 | **Agent 1 (Analyst)** — Jira story → manual test cases | ✅ Done |
-| 4 | **Agent 2 (Coder)** — test cases → automation code + PR | 🚧 In progress |
-| 5 | **Agents 3 & 4** (Reviewer + Runner) + LangGraph orchestration | ⏳ Planned |
-| 6 | **Agent 5 (Reporter)** + Allure on GitHub Pages | ⏳ Planned |
-| 7 | Polish, demo video, LinkedIn post | ⏳ Planned |
-
----
-
-## 🎓 Key Concepts Demonstrated
-
-### Agentic AI patterns
-- **Read → Reason → Act → Return** loop as the agent base shape
-- **Structured LLM output** via Pydantic — never trust raw LLM text
-- **Retries with exponential backoff** for free-tier rate limits
-- **Few-shot prompting** — feeding the LLM examples to drive style
-
-### Production hygiene
-- **Idempotency markers** (`ai-processed` label) prevent duplicate work
-- **Dry-run safety** lets you preview before mutating real systems
-- **Configuration vs. code separation** — change behavior without redeploying
-- **Secret scanning** — GitHub blocked an early commit, validating our hygiene
-
-### Test automation maturity
-- **Page Object Model** — selectors live in pages, not tests
-- **BDD with Gherkin** — business-readable scenarios
-- **Pytest fixtures** — clean setup/teardown with proper scoping
-- **Centralized paths** — no `Path(__file__).parent.parent...` repetition
-
-### Resilience
-- **Vendor risk handled** — Jira API v3 migration absorbed via adapter pattern
-- **Graceful degradation** — one story failing in scan mode doesn't block others
-
-### Human-AI collaboration
-Three explicit human gates ensure AI assists but doesn't replace judgment:
-1. Jira test case approval (after Agent 1)
-2. PR review (after Agent 2)
-3. PR merge (after Agent 3)
-
----
-
-## 🏛️ Design Principles Applied
-
-| Principle | Where it shows up |
-|---|---|
-| **DRY** (Don't Repeat Yourself) | `config/paths.py`, shared `JiraClient`, `LLMClient` |
-| **Single Responsibility** | One agent per role; one method per logical action |
-| **Adapter Pattern** | `JiraClient` isolates the Atlassian SDK |
-| **Configuration over Code** | `config.yaml` for selection rules; YAML > if/else |
-| **Idempotency** | `ai-processed` label prevents re-running on same story |
-| **Defense in Depth** | 3-layer filter: status + required labels + excluded labels |
-| **Fail Loud, Recover Gracefully** | Pydantic validation crashes on bad LLM output |
-| **Audit Trail** | Logs at every step + Jira labels = "who touched what when" |
+These tests don't touch Jira, GitHub, or Gemini — fully offline.
 
 ---
 
 ## 🔐 Secrets Management
 
-This project takes secret hygiene seriously.
+Real secrets live ONLY in `.env` (gitignored). The repo ships `.env.example` as a placeholder template.
 
-### The pattern
+For CI: GitHub repo Settings → Secrets and variables → Actions. Set the same names listed in `.env.example`.
 
-| File | Contains | Committed? |
-|---|---|:-:|
-| `.env` | **REAL** secrets (API keys, tokens) | ❌ Never |
-| `.env.example` | **PLACEHOLDER** values (template) | ✅ Yes |
-| `.gitignore` | Lists files Git should ignore | ✅ Yes |
-
-### What happened during setup (a real war story)
-
-During Day 1, I accidentally pasted a real GitHub PAT into `.env.example`. GitHub's secret scanning blocked the push with a clear error:
-
-```
-remote: GITHUB PUSH PROTECTION
-remote: - GitHub Personal Access Token detected at .env.example:12
-```
-
-This validated the value of:
-- ✅ `.env.example` placeholders (no real values)
-- ✅ Pre-push secret scanning (caught it before remote)
-- ✅ The `git reset --soft` workflow to clean local history before pushing
-
-**Lessons:** Always rotate any secret that touches a file (even locally), even if Git blocked the push.
+Full reference: [GUIDE.md → Configuration](./docs/GUIDE.md#configuration).
 
 ---
 
 ## 🐛 Troubleshooting
 
-### `ResourceExhausted: 429 You exceeded your current quota`
+Common issues and fixes are in [GUIDE.md → Troubleshooting](./docs/GUIDE.md#troubleshooting). Most-frequent ones:
 
-You hit Gemini's free-tier rate limit (10 RPM, 250 RPD for `gemini-2.5-flash`).
-- The agent has automatic retries with exponential backoff (4s → 8s → 16s)
-- If it persists, wait 60 seconds and try again
-- For long demos, consider running `--scan` once per minute manually
-
-### `JIRAError: HTTP 410 — The requested API has been removed`
-
-You're on an old version of the `jira` Python library. Atlassian removed the legacy `/rest/api/2/search` endpoint in 2025. Fix:
-
-```bash
-pip install --upgrade "jira>=3.10.5"
-```
-
-The code uses `enhanced_search_issues()` which works with the new endpoint.
-
-### Smoke test fails with `'Test Case' issue type NOT found`
-
-Add the work type in Jira: **Project Settings → Work Types → Add work type → Standard → name: `Test Case`**.
-
-### `Found 0 stories matching criteria`
-
-The agent's filter didn't match any story. Check:
-- Story has the `ai-ready` label
-- Story is in `To Do` or `In Progress` status (not `Done`)
-- Story doesn't have `ai-processed` label (remove it to re-run)
-- Story is of type `Story` (not `Task` or `Bug`)
-
-### Agent runs but no Test Cases appear in Jira
-
-You probably ran with `--dry-run`. Drop the flag to actually create tickets.
+- **`MissingEnvVarError`** at startup → fill in your `.env` (see `.env.example`)
+- **Gemini quota exhausted** → free tier is 20 requests/day; switch model in `.env` or wait ~24h
+- **Jira `enhanced_search_issues` not found** → upgrade `jira>=3.10.5` (Atlassian removed the legacy endpoint)
+- **`StepDefinitionNotFoundError` at test collection** → Agent 2's validators should catch this; if it slips through, check the auto-correction logs
 
 ---
 
-## 🎯 Lessons Learned So Far
+## 🙌 Contributing & Lessons Learned
 
-1. **LLMs return text — Pydantic makes it data.** Always validate. Never trust raw LLM output.
-2. **Always have `--dry-run`.** Real-world cost: an agent gone wrong on production Jira can create 1000s of bad tickets in seconds.
-3. **Prompts are code.** They live in version control, get edited, improved, and committed with messages like "improve negative case coverage".
-4. **Retries are non-negotiable.** Free-tier APIs WILL rate-limit you. `tenacity` makes it transparent.
-5. **APIs deprecate.** Wrap third-party libraries (like `JiraClient`) so a vendor change touches one file, not fifty.
-6. **Configuration > code.** Anything that might change without a code change should be in YAML.
-7. **Idempotency markers** save you when an agent crashes mid-batch. Always use them.
-8. **GitHub's secret scanning is your friend.** It saved a credential rotation.
+This project started as a 7-day demo and has been hardened through real PR failures (PR #7's filename mismatch, PR #9's missing decorators, etc.). The patterns we found valuable:
 
----
+- **Pydantic-validated LLM output** — fail loudly, not silently
+- **Two-stage LLM calls** for code generation (plan → per-file content) — much more reliable than one big call
+- **Defensive validators** between LLM output and the PR — catches LLM drift before users see it
+- **Config-driven everything** — no app-specific code in agents
 
-## 📜 License
-
-MIT — see [LICENSE](./LICENSE) (to be added).
-
----
-
-## 👤 Author
-
-Built by [@rajiniottesting-coder](https://github.com/rajiniottesting-coder) as a hands-on exploration of AI-powered QA automation.
-
-If you found this useful or have questions, feel free to open an issue or drop a star ⭐!
-
----
-
-## 🙏 Acknowledgments
-
-- [SauceDemo](https://www.saucedemo.com) for the excellent free demo site
-- [Atlassian Jira](https://www.atlassian.com/software/jira) for free-tier access
-- [Google AI Studio](https://aistudio.google.com) for the free Gemini API
-- [Playwright](https://playwright.dev) team at Microsoft
-- [LangChain / LangGraph](https://www.langchain.com) for agent orchestration primitives
+Contributions welcome via PR. Tests must pass; new validators welcome.

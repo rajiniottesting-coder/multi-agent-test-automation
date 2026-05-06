@@ -42,6 +42,11 @@ from pathlib import Path
 from agents.jira_client import JiraClient
 from agents.llm_client import LLMClient
 from agents.schemas import RunReport, TestResult, JiraCommentDraft
+from config import (
+    REQUIRED_JIRA_ENV_VARS,
+    REQUIRED_LLM_ENV_VARS,
+    validate_required_env,
+)
 from config.paths import PROMPTS_DIR, PROJECT_ROOT
 
 # ─────────────────────────────────────────────────────────────
@@ -404,6 +409,9 @@ def main():
     )
     parser.add_argument("--dry-run", action="store_true", help="Don't post comment, just preview")
     args = parser.parse_args()
+
+    # Fast-fail on missing config
+    validate_required_env(REQUIRED_JIRA_ENV_VARS + REQUIRED_LLM_ENV_VARS)
 
     reports_dir = Path(args.reports_dir).resolve()
 
