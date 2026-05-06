@@ -100,13 +100,22 @@ jobs:
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
           JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
 
-          # GitHub credentials — Agent 2's GitHubClient reads these env names.
+          # GitHub credentials — Agent 2's GitHubClient reads GITHUB_TOKEN env.
           # GitHub reserves the GITHUB_* prefix for built-in vars/secrets, so
           # users can't create a secret named GITHUB_REPO. We store the repo
           # name as `GH_REPO` and map it to `GITHUB_REPO` inside the runner.
-          # GITHUB_TOKEN is auto-provided by the runner (no secret needed); the
-          # `permissions:` block above grants it the access Agent 2 requires.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          #
+          # CASCADE FIX (ADR-008):
+          # We use a Personal Access Token (GH_PAT) instead of the built-in
+          # GITHUB_TOKEN. GitHub deliberately suppresses pull_request events
+          # when a PR is opened by the built-in token (anti-recursion safety).
+          # That meant Agents 3/4/5 never triggered after Agent 2 opened a PR.
+          # A PAT is treated as user-equivalent — its PR creation fires events
+          # normally, restoring the cascade.
+          # See docs/ADR-008-pat-for-cascade.md for security trade-offs and
+          # rotation strategy. The PAT is scoped to this repo only with
+          # Contents:R/W + PullRequests:R/W + Metadata:R.
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           GITHUB_REPO: ${{ secrets.GH_REPO }}
         run: |
           # Pick the right CLI flags based on workflow inputs:

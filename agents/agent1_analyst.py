@@ -109,6 +109,30 @@ def run(story_id: str, dry_run: bool = False) -> dict:
             issue = jira.create_test_case(tc, parent_story_key=story_id)
             created_keys.append(issue.key)
 
+    # 3b. IDEMPOTENCY MARKER
+    # Tag the parent story with 'ai-processed' so the next --scan run skips it.
+    # Without this, every scheduled scan would re-process the same approved
+    # story over and over (wasting LLM tokens and creating duplicate Test Cases).
+    #
+    # WHY THIS LIVES IN run() (NOT main()):
+    #   The original implementation only added the label in main()'s --scan
+    #   branch. That meant `run()` called directly (--story mode, manual
+    #   testing, future imports) would produce Test Cases without marking
+    #   the parent — leaving the story in an inconsistent state where Agent 2
+    #   couldn't pick it up (Agent 2's selection requires ai-processed).
+    #
+    #   Moving it here makes the contract single: "run() finishes its work
+    #   AND records that fact." Matches Agent 2's pattern of adding ai-coded
+    #   inside its own run().
+    #
+    # Reads completion_label from config so it stays consistent with the
+    # excluded_labels filter that find_stories_to_process() uses.
+    if not dry_run:
+        config = load_agent_config()
+        completion_label = config.get("completion_label", "ai-processed")
+        jira.add_label(story_id, completion_label)
+        logger.info(f"Marked {story_id} with label '{completion_label}' (idempotency)")
+
     # 4. OUTPUT: return state for orchestrator / next agent
     result = {
         "story_id": story_id,
@@ -171,8 +195,9 @@ def main():
             # ─── Scan mode: config-driven selection ───
             config = load_agent_config()
             selection = config.get("selection", {})
-            completion_label = config.get("completion_label", "ai-processed")
             max_stories = config.get("max_stories_per_run", 10)
+            # Note: completion_label is no longer read here; run() handles
+            # labeling internally so both --story and --scan modes are consistent.
 
             if not selection:
                 logger.error("No 'selection' config found for agent1_analyst in config.yaml")
@@ -193,12 +218,12 @@ def main():
             results = []
             for story in stories:
                 try:
+                    # run() now handles its own ai-processed labeling internally
+                    # (see Phase 7 fix to Agent 1 — previously this was here in main()
+                    # which caused --story mode to skip labeling and stuck SCRUM-5
+                    # in an inconsistent state).
                     result = run(story["key"], dry_run=args.dry_run)
                     results.append(result)
-
-                    # Mark complete only if real run AND succeeded
-                    if not args.dry_run:
-                        jira.add_label(story["key"], completion_label)
 
                 except Exception as e:
                     logger.error(f"Failed processing {story['key']}: {e}", exc_info=True)
