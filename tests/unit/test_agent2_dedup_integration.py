@@ -212,7 +212,7 @@ class TestFilenameValidatorIntegration:
         if not agent2_path.exists():
             pytest.skip("agent2_coder.py not found; skipping structural check")
 
-        src = agent2_path.read_text()
+        src = agent2_path.read_text(encoding="utf-8")
 
         validate_pos = src.find("validate_filename_consistency(generated_files)")
         gh_create_branch_pos = src.find("gh.create_branch")
@@ -247,7 +247,7 @@ class TestPromptNamingConventionFix:
         if not prompt_path.exists():
             pytest.skip("Prompt file not found; skipping")
 
-        content = prompt_path.read_text()
+        content = prompt_path.read_text(encoding="utf-8")
         assert "snake_case" in content, "Prompt must specify snake_case naming"
 
     def test_critical_warning_present(self):
@@ -257,7 +257,7 @@ class TestPromptNamingConventionFix:
         if not prompt_path.exists():
             pytest.skip("Prompt file not found; skipping")
 
-        content = prompt_path.read_text()
+        content = prompt_path.read_text(encoding="utf-8")
         assert "MUST USE THE SAME" in content or "CRITICAL" in content, (
             "Prompt should warn about feature file / step def name consistency"
         )
@@ -295,7 +295,7 @@ class TestPhase6RegenerateMode:
         """The run() function must handle is_regenerate flag."""
         repo_root = Path(__file__).resolve().parent.parent.parent
         agent2_path = repo_root / "agents" / "agent2_coder.py"
-        src = agent2_path.read_text()
+        src = agent2_path.read_text(encoding="utf-8")
 
         # Bypass dedup in regenerate mode
         assert "if is_regenerate:" in src, (
@@ -331,7 +331,7 @@ class TestPhase6RegenerateMode:
         if not config_path.exists():
             pytest.skip("config.yaml not found")
 
-        content = config_path.read_text()
+        content = config_path.read_text(encoding="utf-8")
         assert "regenerate_selection:" in content, (
             "config.yaml must define agent2_coder.regenerate_selection block"
         )
@@ -343,7 +343,7 @@ class TestPhase6RegenerateMode:
         """The --scan mode should look for both normal and regen stories."""
         repo_root = Path(__file__).resolve().parent.parent.parent
         agent2_path = repo_root / "agents" / "agent2_coder.py"
-        src = agent2_path.read_text()
+        src = agent2_path.read_text(encoding="utf-8")
 
         # Two separate selection lookups
         assert "normal_selection" in src or 'config.get("selection"' in src, (

@@ -963,13 +963,60 @@ class TestValidateStepDefinitionsComplete:
         ]
         assert validate_step_definitions_complete(files) == []
 
-    def test_empty_quoted_value_matches_placeholder(self):
-        """A feature step with empty quoted values should match parameterized decorator.
-        This is the exact pattern in login validation tests."""
+    def test_empty_quoted_value_with_parsers_parse_REJECTED(self):
+        """PHASE 9: parsers.parse() does NOT match empty quoted values at runtime
+        (parse library limitation). The validator must catch this and reject —
+        otherwise tests fail at pytest-bdd collection time with
+        StepDefinitionNotFoundError. This was the PR #9 root cause."""
         feature = (
             "Feature: x\n"
             "  Scenario: y\n"
             '    When I log in with username "" and password "secret_sauce"\n'
+        )
+        step_def = (
+            "from pytest_bdd import when, parsers\n"
+            "@when(parsers.parse('I log in with username \"{u}\" and password \"{p}\"'))\n"
+            "def s1(u, p): pass\n"
+        )
+        files = [
+            self._make_file("features/x.feature", feature),
+            self._make_file("tests/step_defs/test_x.py", step_def),
+        ]
+        errors = validate_step_definitions_complete(files)
+        assert len(errors) == 1
+        # The error must contain the specific FIX hint, not just generic missing-decorator
+        assert "parsers.re" in errors[0], (
+            "Phase 9 should suggest parsers.re() as the fix, "
+            f"but got: {errors[0]}"
+        )
+
+    def test_empty_quoted_value_with_parsers_re_ACCEPTED(self):
+        """PHASE 9: parsers.re() with a regex that allows empty strings ([^"]*) 
+        correctly matches feature steps with empty quoted values at runtime."""
+        feature = (
+            "Feature: x\n"
+            "  Scenario: y\n"
+            '    When I log in with username "" and password "secret_sauce"\n'
+            '    When I log in with username "alice" and password ""\n'
+        )
+        step_def = (
+            "from pytest_bdd import when, parsers\n"
+            "@when(parsers.re(r'I log in with username \"(?P<u>[^\"]*)\" and password \"(?P<p>[^\"]*)\"'))\n"
+            "def s1(u, p): pass\n"
+        )
+        files = [
+            self._make_file("features/x.feature", feature),
+            self._make_file("tests/step_defs/test_x.py", step_def),
+        ]
+        # parsers.re matches both empty and non-empty values — validator passes
+        assert validate_step_definitions_complete(files) == []
+
+    def test_non_empty_quoted_with_parsers_parse_ACCEPTED(self):
+        """parsers.parse DOES match non-empty quoted values — only empty is the issue."""
+        feature = (
+            "Feature: x\n"
+            "  Scenario: y\n"
+            '    When I log in with username "alice" and password "secret"\n'
         )
         step_def = (
             "from pytest_bdd import when, parsers\n"
@@ -1060,7 +1107,7 @@ class TestValidateStepDefinitionsComplete:
             "def open_login(login_page, base_url):\n"
             "    login_page.open(base_url)\n"
             "\n"
-            "@when(parsers.parse('I log in with username \"{username}\" and password \"{password}\"'))\n"
+            "@when(parsers.re(r'I log in with username \"(?P<username>[^\"]*)\" and password \"(?P<password>[^\"]*)\"'))\n"
             "def login_with(login_page, username, password):\n"
             "    login_page.login_as(username, password)\n"
             "\n"

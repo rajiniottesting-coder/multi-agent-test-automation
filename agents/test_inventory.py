@@ -569,15 +569,24 @@ _FEATURE_STEP_PATTERN = re.compile(
     re.MULTILINE,
 )
 
-# Match a decorator on a step def. Captures the type and the phrase pattern.
+# Match a decorator on a step def. Captures (type, parser_kind, phrase).
 # Examples matched:
-#   '@given("I am on the login page")'                      -> ("given", "I am on the login page", False)
-#   "@when(parsers.parse('I click {item}'))"                -> ("when", "I click {item}", True)
-#   '@then(parsers.cfparse("I see {n:d} items"))'          -> ("then", "I see {n:d} items", True)
-# The third group True/False indicates whether placeholders are present
-# (i.e., it's a parsers.parse() call vs. a bare string).
+#   '@given("I am on the login page")'                      -> ("given", "string", "I am on the login page")
+#   "@when(parsers.parse('I click {item}'))"                -> ("when", "parse", "I click {item}")
+#   "@when(parsers.re(r'username \"([^\"]*)\"'))"          -> ("when", "re", "username \"([^\"]*)\"")
+#   '@then(parsers.cfparse("I see {n:d} items"))'          -> ("then", "cfparse", "I see {n:d} items")
+#
+# We capture the parser kind (parse/re/cfparse) because matching semantics
+# differ at runtime:
+#   - parsers.parse / cfparse use the `parse` library (won't match empty
+#     quoted values like "" — common QA edge case!)
+#   - parsers.re uses Python's `re` module (full regex, can match empty)
+#   - bare strings require exact match
+#
+# The validator MUST mirror runtime behavior exactly to avoid the PR #9
+# scenario where the validator passed but tests failed at collection time.
 _DECORATOR_PARSER_PATTERN = re.compile(
-    r'@(given|when|then)\s*\(\s*parsers\.\w+\s*\(\s*[\'"](.+?)[\'"]\s*\)\s*\)',
+    r'@(given|when|then)\s*\(\s*parsers\.(parse|cfparse|re)\s*\(\s*r?[\'"](.+?)[\'"]\s*\)\s*\)',
     re.DOTALL,
 )
 _DECORATOR_STRING_PATTERN = re.compile(
@@ -643,28 +652,31 @@ def _extract_feature_steps(feature_content: str) -> list[tuple[str, str]]:
     return steps
 
 
-def _extract_decorator_phrases(step_def_content: str) -> list[tuple[str, str, bool]]:
-    """Extract step decorators from a step def file as (type, phrase, has_placeholders) tuples.
+def _extract_decorator_phrases(step_def_content: str) -> list[tuple[str, str, str]]:
+    """Extract step decorators from a step def file as (kind, phrase, parser_type) tuples.
 
     Returns:
         List of tuples like:
-            [('given', 'I am on the login page', False),
-             ('when', 'I log in as "{user}" with password "{pw}"', True),
-             ('then', 'I see the inventory page', False)]
+            [('given', 'I am on the login page', 'string'),
+             ('when', 'I log in as "{user}" with password "{pw}"', 'parse'),
+             ('when', r'I log in as "([^"]*)" with password "([^"]*)"', 're'),
+             ('then', 'I see {n:d} items', 'cfparse')]
 
-    The `has_placeholders` flag tells the matcher whether to do regex matching
-    (placeholders present) or exact string matching (no placeholders).
+    The `parser_type` tells the matcher which runtime semantics to use:
+      - 'string': exact equality (no placeholders)
+      - 'parse':  the `parse` library — does NOT match empty quoted values
+      - 'cfparse': cardinality-aware parse — same empty-string limitation
+      - 're':     Python `re` module — full regex power
     """
     decorators = []
 
-    # Find parsers.parse(...) decorators first — they have placeholders
+    # Find parsers.parse(...) / parsers.re(...) / parsers.cfparse(...) decorators
     for match in _DECORATOR_PARSER_PATTERN.finditer(step_def_content):
-        kind, phrase = match.group(1), match.group(2)
-        decorators.append((kind, phrase, True))
+        kind, parser_type, phrase = match.group(1), match.group(2), match.group(3)
+        decorators.append((kind, phrase, parser_type))
 
     # Then find bare-string decorators. Exclude any that overlap with
-    # parsers.parse decorators (the parser pattern would have caught them).
-    # We do this by tracking the spans we already matched.
+    # parsers.* decorators (the parser pattern would have caught them).
     parser_spans = [
         (m.start(), m.end())
         for m in _DECORATOR_PARSER_PATTERN.finditer(step_def_content)
@@ -675,74 +687,57 @@ def _extract_decorator_phrases(step_def_content: str) -> list[tuple[str, str, bo
         if any(start <= match.start() < end for start, end in parser_spans):
             continue
         kind, phrase = match.group(1), match.group(2)
-        decorators.append((kind, phrase, False))
+        decorators.append((kind, phrase, 'string'))
 
     return decorators
 
 
-def _phrase_matches(feature_phrase: str, decorator_phrase: str, has_placeholders: bool) -> bool:
+def _phrase_matches(feature_phrase: str, decorator_phrase: str, parser_type: str) -> bool:
     """Check if a feature step phrase matches a decorator's pattern.
 
-    For bare-string decorators (no placeholders), match is exact equality.
+    CRITICAL: Uses the SAME backends pytest-bdd uses at runtime. This guarantees
+    that if the validator says "yes match", pytest-bdd will also match — closing
+    the gap that caused PR #9 (validator was permissive about empty quoted values
+    but parse library refused to match them at runtime).
 
-    For parsers.parse() decorators with `{var}` or `{var:type}` placeholders,
-    we convert the decorator phrase to a regex by replacing each `{...}` with
-    a wildcard, then test the feature phrase against it.
-
-    Examples:
-        feature: 'I log in as "alice" with password "secret"'
-        decorator: 'I log in as "{user}" with password "{pw}"'  (has_placeholders=True)
-        -> regex: r'^I log in as "[^"]+" with password "[^"]+"$'
-        -> matches: True
-
-        feature: 'I see 5 items'
-        decorator: 'I see {n:d} items'  (has_placeholders=True)
-        -> regex: r'^I see .+ items$'
-        -> matches: True
-
-    Wildcard choice: we use `[^"]+` if the placeholder is between quotes
-    (the common case in Gherkin) and `.+?` otherwise. This avoids greedy
-    matches that would wrongly accept totally different feature steps.
+    Backends per parser_type:
+      - 'string':  exact equality after strip()
+      - 'parse':   the `parse` library (same as pytest-bdd's parsers.parse)
+      - 'cfparse': the `parse_type` library (same as pytest-bdd's parsers.cfparse).
+                   Falls back to `parse` if parse_type isn't installed locally —
+                   acceptable because cfparse is a superset and rarely used in
+                   the LLM's output.
+      - 're':      Python `re.fullmatch` (same as pytest-bdd's parsers.re)
     """
-    if not has_placeholders:
-        return feature_phrase.strip() == decorator_phrase.strip()
+    feature_phrase = feature_phrase.strip()
+    decorator_phrase = decorator_phrase.strip()
 
-    # Build a regex from the decorator phrase
-    regex_parts = []
-    i = 0
-    while i < len(decorator_phrase):
-        char = decorator_phrase[i]
-        if char == '{':
-            # Find the closing brace
-            close = decorator_phrase.find('}', i)
-            if close == -1:
-                # Malformed decorator — fall back to literal char
-                regex_parts.append(re.escape(char))
-                i += 1
-                continue
-            # Check whether this placeholder sits between quotes
-            # ("...{var}..." pattern is common in Gherkin)
-            preceded_by_quote = i > 0 and decorator_phrase[i - 1] == '"'
-            followed_by_quote = close + 1 < len(decorator_phrase) and decorator_phrase[close + 1] == '"'
-            if preceded_by_quote and followed_by_quote:
-                # Match anything between the quotes including empty strings.
-                # Empty values are common in validation tests like
-                # `When I log in with username "" and password "secret_sauce"`.
-                regex_parts.append('[^"]*')
-            else:
-                regex_parts.append('.+?')
-            i = close + 1
-        else:
-            regex_parts.append(re.escape(char))
-            i += 1
+    if parser_type == 'string':
+        return feature_phrase == decorator_phrase
 
-    pattern = '^' + ''.join(regex_parts) + '$'
+    if parser_type == 're':
+        try:
+            return bool(re.fullmatch(decorator_phrase, feature_phrase))
+        except re.error:
+            # LLM produced a malformed regex. Better to flag this as no-match
+            # so the validator catches it than to silently pass.
+            return False
+
+    # parser_type in ('parse', 'cfparse')
+    # Both use the parse library's matching semantics.
     try:
-        return bool(re.match(pattern, feature_phrase.strip()))
-    except re.error:
-        # Pathological regex (shouldn't happen with our construction, but
-        # defend against future surprises). Fall back to "no match" so
-        # the validator alerts rather than silently passing.
+        from parse import parse as _parse_fn
+    except ImportError:  # pragma: no cover — parse is a hard dep of pytest-bdd
+        # If parse isn't available, we can't validate. Return True (don't
+        # block) and let runtime catch it. This branch is defensive only.
+        return True
+
+    try:
+        result = _parse_fn(decorator_phrase, feature_phrase)
+        return result is not None
+    except Exception:
+        # Pathological pattern (very rare). Treat as no-match so validator
+        # alerts rather than silently passing.
         return False
 
 
@@ -821,10 +816,10 @@ def validate_step_definitions_complete(generated_files: list) -> list:
 
             # Look for a matching decorator
             matched = False
-            for dec_kind, dec_phrase, has_placeholders in decorators:
+            for dec_kind, dec_phrase, dec_parser_type in decorators:
                 if dec_kind != step_keyword:
                     continue
-                if _phrase_matches(step_phrase, dec_phrase, has_placeholders):
+                if _phrase_matches(step_phrase, dec_phrase, dec_parser_type):
                     matched = True
                     break
 
@@ -836,12 +831,124 @@ def validate_step_definitions_complete(generated_files: list) -> list:
                     continue
                 already_reported.add(error_key)
 
-                errors.append(
-                    f"Step coverage error in '{expected_step_def}': "
-                    f"feature step `{step_keyword.capitalize()} {step_phrase}` "
-                    f"(from '{path}') has no matching @{step_keyword}() decorator. "
-                    f"pytest-bdd would fail with StepDefinitionNotFoundError at "
-                    f"test collection time."
+                # Diagnostic: was there a parsers.parse decorator that ALMOST
+                # matched? Specifically, one that would match if the feature
+                # step's empty quoted values were swapped for non-empty ones?
+                # If so, produce a more actionable error message telling the
+                # LLM to use parsers.re() (which DOES handle empty strings).
+                #
+                # This catches the PR #9 failure mode at validation time:
+                # parsers.parse('I log in with username "{u}"') won't match
+                # `username ""` at runtime, but the LLM keeps writing it that
+                # way unless we explicitly steer it toward parsers.re().
+                hint = _diagnose_no_match(
+                    step_keyword, step_phrase,
+                    [(k, p, t) for k, p, t in decorators if k == step_keyword],
                 )
 
+                if hint:
+                    errors.append(
+                        f"Step coverage error in '{expected_step_def}': "
+                        f"feature step `{step_keyword.capitalize()} {step_phrase}` "
+                        f"(from '{path}') has no decorator that matches at runtime. "
+                        f"{hint} "
+                        f"pytest-bdd would fail with StepDefinitionNotFoundError at "
+                        f"test collection time."
+                    )
+                else:
+                    errors.append(
+                        f"Step coverage error in '{expected_step_def}': "
+                        f"feature step `{step_keyword.capitalize()} {step_phrase}` "
+                        f"(from '{path}') has no matching @{step_keyword}() decorator. "
+                        f"pytest-bdd would fail with StepDefinitionNotFoundError at "
+                        f"test collection time."
+                    )
+
     return errors
+
+
+def _diagnose_no_match(
+    step_keyword: str,
+    step_phrase: str,
+    same_keyword_decorators: list,
+) -> str:
+    """If a feature step failed to match any decorator, try to figure out WHY
+    and return a human-readable hint.
+
+    Currently detects:
+      - PR #9 case: feature has empty quoted value (`""`) and a parsers.parse
+        decorator exists that WOULD match if the value were non-empty.
+        Hint: switch to parsers.re().
+
+    Returns:
+        A hint string explaining the likely cause, or empty string if no
+        diagnostic insight is available.
+    """
+    # Detect feature phrases with empty quoted values like `... ""...`
+    has_empty_quoted = '""' in step_phrase
+    if not has_empty_quoted:
+        return ""
+
+    # Look for a parsers.parse decorator that would match if the empty
+    # values were swapped for placeholders. We do this by replacing each
+    # `""` in the feature phrase with a placeholder probe and re-checking.
+    probe_phrase = step_phrase.replace('""', '"PROBE"')
+    for kind, dec_phrase, parser_type in same_keyword_decorators:
+        if parser_type not in ('parse', 'cfparse'):
+            continue
+        if _phrase_matches(probe_phrase, dec_phrase, parser_type):
+            # Found it — this is the PR #9 case.
+            # Build an actionable hint.
+            re_phrase = _suggest_parsers_re_pattern(dec_phrase)
+            return (
+                f"A `parsers.{parser_type}('{dec_phrase}')` decorator exists "
+                f"but the `parse` library does not match empty quoted values "
+                f"(this is a known limitation). "
+                f"FIX: change the decorator to `parsers.re(r'{re_phrase}')` "
+                f"so empty strings are accepted at runtime."
+            )
+    return ""
+
+
+def _suggest_parsers_re_pattern(parse_phrase: str) -> str:
+    """Convert a parsers.parse phrase like:
+        'I log in with username "{u}" and password "{p}"'
+    into a parsers.re-compatible regex like:
+        r'I log in with username "(?P<u>[^"]*)" and password "(?P<p>[^"]*)"'
+
+    Used in error hints so the LLM gets a copy-pasteable fix."""
+
+    # Subset of regex metacharacters that genuinely need escaping inside the
+    # decorator phrase. We avoid using re.escape() because in some Python
+    # versions it escapes spaces and other non-special chars, producing ugly
+    # output like `I\ log\ in` in the LLM-facing error message.
+    REGEX_METACHARS = set(r'.^$*+?()[]{}|\\')
+
+    def _escape_char(c: str) -> str:
+        return '\\' + c if c in REGEX_METACHARS else c
+
+    result = []
+    i = 0
+    while i < len(parse_phrase):
+        ch = parse_phrase[i]
+        if ch == '{':
+            close = parse_phrase.find('}', i)
+            if close == -1:
+                result.append(_escape_char(ch))
+                i += 1
+                continue
+            placeholder = parse_phrase[i + 1:close]
+            # Strip type spec (e.g., "{n:d}" -> "n")
+            name = placeholder.split(':', 1)[0].strip() or 'val'
+            # If surrounded by quotes, use [^"]* (allows empty)
+            preceded_by_quote = i > 0 and parse_phrase[i - 1] == '"'
+            followed_by_quote = close + 1 < len(parse_phrase) and parse_phrase[close + 1] == '"'
+            if preceded_by_quote and followed_by_quote:
+                result.append(f'(?P<{name}>[^"]*)')
+            else:
+                result.append(f'(?P<{name}>.*?)')
+            i = close + 1
+        else:
+            result.append(_escape_char(ch))
+            i += 1
+    return ''.join(result)

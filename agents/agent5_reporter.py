@@ -432,6 +432,23 @@ def main():
         if result.get("comment_url"):
             print(f"   Comment: {result['comment_url']}")
         print("=" * 60)
+    except FileNotFoundError as e:
+        # No junit.xml. This means Agent 4 (the test job) didn't produce a
+        # report. Possible causes:
+        #   - Agent 4 was skipped (e.g., upstream job failed/skipped)
+        #   - Agent 4 crashed before pytest ran (env error, install failure)
+        #   - Branch was checked out but tests/ dir missing
+        #
+        # We don't want Agent 5 to fail the whole workflow when it has nothing
+        # to report — a human can already see Agent 4's failure on the PR.
+        # Exit 0 with a clear log so the PR shows green for Agent 5's check.
+        logger.warning(
+            f"Skipping Agent 5: no test report available ({e}). "
+            f"This typically means Agent 4 (Runner) didn't produce junit.xml -- "
+            f"check the Agent 4 job for the underlying failure. "
+            f"Exiting cleanly so this Agent 5 check doesn't double-report the failure."
+        )
+        sys.exit(0)
     except Exception as e:
         logger.error(f"Agent 5 failed: {type(e).__name__}: {e}", exc_info=True)
         sys.exit(1)
