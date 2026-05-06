@@ -36,6 +36,7 @@ from agents.test_inventory import (
     scan_features_dir,
     filter_duplicate_test_cases,
     validate_filename_consistency,
+    validate_step_definitions_complete,
 )
 from config.paths import PROMPTS_DIR, CONFIG_YAML, PROJECT_ROOT, FEATURES_DIR
 
@@ -371,8 +372,37 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
             f"Filename consistency validation failed for {story_id}: "
             f"{len(consistency_errors)} mismatch(es) between feature files "
             f"and step definitions. See logs for details. The LLM produced "
-            f"step defs that reference feature files not in this batch — "
+            f"step defs that reference feature files not in this batch -- "
             f"opening this PR would create immediately-broken tests."
+        )
+
+    # PHASE 8: Step Definition Coverage Validator (ADR-010)
+    # ----------------------------------------------------------------
+    # The PR #9 incident: the LLM generated a feature file with step
+    # phrases, but forgot to generate matching @given/@when/@then
+    # decorators in the step def file. Tests then failed at collection
+    # time with `StepDefinitionNotFoundError`.
+    #
+    # This validator pairs each generated .feature file with its
+    # corresponding test_*.py and verifies every Gherkin step has a
+    # matching decorator. Hard-fails if any step is uncovered.
+    #
+    # Reusable across projects -- understands pytest-bdd's grammar
+    # (And/But inheritance, parsers.parse() placeholders, etc.) with
+    # no domain-specific assumptions.
+    coverage_errors = validate_step_definitions_complete(generated_files)
+    if coverage_errors:
+        logger.error(f"Step definition coverage check FAILED with {len(coverage_errors)} error(s):")
+        for err in coverage_errors:
+            logger.error(f"  - {err}")
+        raise ValueError(
+            f"Step definition coverage validation failed for {story_id}: "
+            f"{len(coverage_errors)} feature step(s) without matching "
+            f"@given/@when/@then decorator(s). See logs for details. "
+            f"The LLM produced a feature file with step phrases that have "
+            f"no corresponding step definitions -- opening this PR would "
+            f"create tests that fail at collection time with "
+            f"StepDefinitionNotFoundError."
         )
 
     # 5. ACT

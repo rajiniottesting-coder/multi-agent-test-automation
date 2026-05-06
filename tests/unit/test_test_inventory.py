@@ -21,6 +21,7 @@ from agents.test_inventory import (
     normalize_scenario_name,
     scan_features_dir,
     validate_filename_consistency,
+    validate_step_definitions_complete,
 )
 
 
@@ -770,3 +771,330 @@ class TestValidateFilenameConsistency:
         all_errors = " ".join(errors)
         assert "missing_b" in all_errors
         assert "missing_c" in all_errors
+
+# ===========================================================================
+# Phase 8: validate_step_definitions_complete
+# ===========================================================================
+# Catches the PR #9 failure mode: feature file has step phrases the LLM
+# forgot to define decorators for in the step def file.
+#
+# These tests use the same _make_file helper pattern as Phase 4 tests above.
+# ===========================================================================
+
+class TestValidateStepDefinitionsComplete:
+    """Catches missing @given/@when/@then decorators for feature steps."""
+
+    def _make_file(self, path: str, content: str = ""):
+        """Build a duck-typed object that looks like a GeneratedFile."""
+        class _Stub:
+            pass
+        s = _Stub()
+        s.file_path = path
+        s.content = content
+        return s
+
+    def test_empty_batch_no_errors(self):
+        assert validate_step_definitions_complete([]) == []
+
+    def test_complete_coverage_no_errors(self):
+        """When every feature step has a matching decorator, no errors."""
+        feature = (
+            "Feature: Login\n"
+            "  Scenario: Valid login\n"
+            '    Given I am on the login page\n'
+            '    When I log in with username "alice" and password "pw"\n'
+            "    Then I should see the dashboard\n"
+        )
+        step_def = (
+            "from pytest_bdd import given, when, then, parsers\n"
+            '@given("I am on the login page")\n'
+            "def s1(): pass\n"
+            "@when(parsers.parse('I log in with username \"{u}\" and password \"{p}\"'))\n"
+            "def s2(u, p): pass\n"
+            '@then("I should see the dashboard")\n'
+            "def s3(): pass\n"
+        )
+        files = [
+            self._make_file("features/login.feature", feature),
+            self._make_file("tests/step_defs/test_login.py", step_def),
+        ]
+        assert validate_step_definitions_complete(files) == []
+
+    def test_missing_when_decorator_caught(self):
+        """The exact PR #9 bug: feature has a When step but step def has no @when."""
+        feature = (
+            "Feature: x\n"
+            "  Scenario: y\n"
+            '    Given I am on page\n'
+            '    When I click the button\n'
+            '    Then I see results\n'
+        )
+        step_def_missing_when = (
+            "from pytest_bdd import given, then\n"
+            '@given("I am on page")\n'
+            "def s1(): pass\n"
+            '@then("I see results")\n'
+            "def s3(): pass\n"
+            "# OOPS — no @when decorator!\n"
+        )
+        files = [
+            self._make_file("features/x.feature", feature),
+            self._make_file("tests/step_defs/test_x.py", step_def_missing_when),
+        ]
+        errors = validate_step_definitions_complete(files)
+        assert len(errors) == 1
+        assert "When I click the button" in errors[0]
+        assert "@when()" in errors[0]
+
+    def test_missing_given_decorator_caught(self):
+        feature = (
+            "Feature: x\n"
+            "  Scenario: y\n"
+            '    Given I am authenticated as admin\n'
+            '    When I open settings\n'
+        )
+        step_def = (
+            "from pytest_bdd import when\n"
+            '@when("I open settings")\n'
+            "def s1(): pass\n"
+        )
+        files = [
+            self._make_file("features/x.feature", feature),
+            self._make_file("tests/step_defs/test_x.py", step_def),
+        ]
+        errors = validate_step_definitions_complete(files)
+        assert len(errors) == 1
+        assert "Given I am authenticated" in errors[0]
+
+    def test_and_keyword_inherits_then(self):
+        """`And` after a `Then` should be matched by an @then() decorator."""
+        feature = (
+            "Feature: x\n"
+            "  Scenario: y\n"
+            '    Given I am on the page\n'
+            '    When I submit the form\n'
+            '    Then I see success\n'
+            '    And I see the count "5"\n'
+        )
+        step_def = (
+            "from pytest_bdd import given, when, then, parsers\n"
+            '@given("I am on the page")\n'
+            "def s1(): pass\n"
+            '@when("I submit the form")\n'
+            "def s2(): pass\n"
+            '@then("I see success")\n'
+            "def s3(): pass\n"
+            "@then(parsers.parse('I see the count \"{n}\"'))\n"
+            "def s4(n): pass\n"
+        )
+        files = [
+            self._make_file("features/x.feature", feature),
+            self._make_file("tests/step_defs/test_x.py", step_def),
+        ]
+        # No errors — `And` inherits Then, and we have a matching @then
+        assert validate_step_definitions_complete(files) == []
+
+    def test_but_keyword_inherits_when(self):
+        """`But` after a `When` should be matched by a @when() decorator."""
+        feature = (
+            "Feature: x\n"
+            "  Scenario: y\n"
+            '    Given I am here\n'
+            '    When I do thing A\n'
+            '    But I do not do thing B\n'
+            '    Then ok\n'
+        )
+        step_def_missing_but = (
+            "from pytest_bdd import given, when, then\n"
+            '@given("I am here")\n'
+            "def s1(): pass\n"
+            '@when("I do thing A")\n'
+            "def s2(): pass\n"
+            # Missing decorator for `But I do not do thing B` (treated as When)
+            '@then("ok")\n'
+            "def s4(): pass\n"
+        )
+        files = [
+            self._make_file("features/x.feature", feature),
+            self._make_file("tests/step_defs/test_x.py", step_def_missing_but),
+        ]
+        errors = validate_step_definitions_complete(files)
+        assert len(errors) == 1
+        assert "I do not do thing B" in errors[0]
+        assert "@when()" in errors[0]
+
+    def test_background_steps_validated(self):
+        """Steps in a Background block also need decorators."""
+        feature = (
+            "Feature: x\n"
+            "  Background:\n"
+            '    Given I am logged in as admin\n'
+            "  Scenario: y\n"
+            '    When I logout\n'
+        )
+        step_def_no_bg = (
+            "from pytest_bdd import when\n"
+            '@when("I logout")\n'
+            "def s1(): pass\n"
+        )
+        files = [
+            self._make_file("features/x.feature", feature),
+            self._make_file("tests/step_defs/test_x.py", step_def_no_bg),
+        ]
+        errors = validate_step_definitions_complete(files)
+        assert len(errors) == 1
+        assert "logged in as admin" in errors[0]
+
+    def test_parameterized_step_with_quotes(self):
+        """Decorator with `parsers.parse('...{var}...')` matches feature steps with concrete values."""
+        feature = (
+            "Feature: x\n"
+            "  Scenario: y\n"
+            '    Given I have user "alice" with role "admin"\n'
+        )
+        step_def = (
+            "from pytest_bdd import given, parsers\n"
+            "@given(parsers.parse('I have user \"{name}\" with role \"{role}\"'))\n"
+            "def s1(name, role): pass\n"
+        )
+        files = [
+            self._make_file("features/x.feature", feature),
+            self._make_file("tests/step_defs/test_x.py", step_def),
+        ]
+        assert validate_step_definitions_complete(files) == []
+
+    def test_empty_quoted_value_matches_placeholder(self):
+        """A feature step with empty quoted values should match parameterized decorator.
+        This is the exact pattern in login validation tests."""
+        feature = (
+            "Feature: x\n"
+            "  Scenario: y\n"
+            '    When I log in with username "" and password "secret_sauce"\n'
+        )
+        step_def = (
+            "from pytest_bdd import when, parsers\n"
+            "@when(parsers.parse('I log in with username \"{u}\" and password \"{p}\"'))\n"
+            "def s1(u, p): pass\n"
+        )
+        files = [
+            self._make_file("features/x.feature", feature),
+            self._make_file("tests/step_defs/test_x.py", step_def),
+        ]
+        assert validate_step_definitions_complete(files) == []
+
+    def test_duplicate_missing_steps_deduplicated(self):
+        """If the same step phrase is missing in multiple scenarios, report ONCE."""
+        feature = (
+            "Feature: x\n"
+            "  Scenario: A\n"
+            '    Given I am missing this step\n'
+            "  Scenario: B\n"
+            '    Given I am missing this step\n'
+            "  Scenario: C\n"
+            '    Given I am missing this step\n'
+        )
+        step_def = ""  # nothing defined
+        files = [
+            self._make_file("features/x.feature", feature),
+            self._make_file("tests/step_defs/test_x.py", step_def),
+        ]
+        errors = validate_step_definitions_complete(files)
+        # Despite appearing in 3 scenarios, the missing step is reported once
+        assert len(errors) == 1
+
+    def test_unpaired_feature_skipped(self):
+        """A feature file without a paired step def file is the Phase 4 validator's
+        concern. This validator should silently skip it to avoid double-reporting."""
+        files = [
+            self._make_file(
+                "features/orphan.feature",
+                "Feature: x\n  Scenario: y\n    Given hello\n",
+            ),
+            # NO matching tests/step_defs/test_orphan.py
+        ]
+        errors = validate_step_definitions_complete(files)
+        assert errors == []
+
+    def test_unpaired_step_def_skipped(self):
+        """A step def file without a paired feature file in this batch is
+        also out of scope for this validator."""
+        files = [
+            self._make_file(
+                "tests/step_defs/test_orphan.py",
+                'from pytest_bdd import given\n@given("x")\ndef s(): pass\n',
+            ),
+        ]
+        errors = validate_step_definitions_complete(files)
+        assert errors == []
+
+    def test_real_world_login_validation_complete(self):
+        """End-to-end realistic example: login validation feature + complete step def.
+        Mirrors what Agent 2 should produce when generating SCRUM-5's tests."""
+        feature = (
+            "Feature: Login Validation\n"
+            "  Background:\n"
+            '    Given I am on the SauceDemo login page\n'
+            "\n"
+            "  @login @validation\n"
+            "  Scenario: Empty username\n"
+            '    When I log in with username "" and password "secret_sauce"\n'
+            '    Then I should see the error message "Username is required"\n'
+            "\n"
+            "  @login @validation\n"
+            "  Scenario: Empty password\n"
+            '    When I log in with username "standard_user" and password ""\n'
+            '    Then I should see the error message "Password is required"\n'
+        )
+        step_def = (
+            "import pytest\n"
+            "from pytest_bdd import scenarios, given, when, then, parsers\n"
+            "from pages.login_page import LoginPage\n"
+            "from config.paths import feature_path\n"
+            "scenarios(str(feature_path('login_validation')))\n"
+            "\n"
+            "@pytest.fixture\n"
+            "def login_page(page):\n"
+            "    return LoginPage(page)\n"
+            "\n"
+            '@given("I am on the SauceDemo login page")\n'
+            "def open_login(login_page, base_url):\n"
+            "    login_page.open(base_url)\n"
+            "\n"
+            "@when(parsers.parse('I log in with username \"{username}\" and password \"{password}\"'))\n"
+            "def login_with(login_page, username, password):\n"
+            "    login_page.login_as(username, password)\n"
+            "\n"
+            "@then(parsers.parse('I should see the error message \"{expected_message}\"'))\n"
+            "def verify_error(login_page, expected_message):\n"
+            "    actual = login_page.get_error_message()\n"
+            "    assert actual == expected_message\n"
+        )
+        files = [
+            self._make_file("features/login_validation.feature", feature),
+            self._make_file("tests/step_defs/test_login_validation.py", step_def),
+        ]
+        assert validate_step_definitions_complete(files) == []
+
+    def test_real_world_login_validation_with_missing_step(self):
+        """Reverse of above: same feature, but step def MISSING the @when decorator.
+        This is exactly what happened in production on PR #9."""
+        feature = (
+            "Feature: Login Validation\n"
+            "  Scenario: Empty username\n"
+            '    When I log in with username "" and password "secret_sauce"\n'
+            '    Then I should see the error message "Username is required"\n'
+        )
+        step_def_missing_when = (
+            "from pytest_bdd import scenarios, then, parsers\n"
+            "@then(parsers.parse('I should see the error message \"{msg}\"'))\n"
+            "def verify(msg): pass\n"
+            "# LLM forgot the @when!\n"
+        )
+        files = [
+            self._make_file("features/login_validation.feature", feature),
+            self._make_file("tests/step_defs/test_login_validation.py", step_def_missing_when),
+        ]
+        errors = validate_step_definitions_complete(files)
+        assert len(errors) == 1
+        assert "When I log in with username" in errors[0]
+        assert "@when()" in errors[0]

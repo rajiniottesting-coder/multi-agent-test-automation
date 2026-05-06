@@ -67,6 +67,79 @@ NO prose before or after the code block. Just the code block.
 - Define page object fixtures using `@pytest.fixture` returning the page class
 - Match step definitions exactly to the Gherkin steps (use parsers.parse for parameterized steps)
 
+### CRITICAL: Step Definition Coverage Rules (MUST FOLLOW)
+
+When generating a step def file paired with a feature file, you MUST provide
+a `@given`, `@when`, or `@then` decorator for **every distinct step phrase**
+in the feature file. Missing even one will cause `StepDefinitionNotFoundError`
+at test collection time and the system will REJECT your output.
+
+**Step 1: Read the paired feature file's steps carefully.**
+Identify every distinct step phrase (ignoring concrete data values).
+
+**Step 2: Write ONE decorator per distinct phrase.**
+The Gherkin keywords `And` and `But` inherit the previous step's type. So:
+```gherkin
+Then I should be redirected to the inventory page
+And I should see the page title "Products"
+```
+The `And` here is actually a **Then** -- you must use `@then(...)` for both.
+
+**Step 3: Use parsers.parse() for any phrase containing variable data.**
+Concrete values in feature steps (like `"standard_user"`, `"5"`, `"Products"`)
+become `{placeholder}` arguments in the decorator pattern.
+
+### Worked Example (study this carefully)
+
+Given this **feature file**:
+```gherkin
+Feature: Login Validation
+  Background:
+    Given I am on the SauceDemo login page
+
+  Scenario: Empty username field
+    When I log in with username "" and password "secret_sauce"
+    Then I should see the error message "Username is required"
+
+  Scenario: Empty password field
+    When I log in with username "standard_user" and password ""
+    Then I should see the error message "Password is required"
+```
+
+The feature has **3 distinct step phrases** (data values like `""` or
+`"standard_user"` don't make new phrases — they parameterize the same phrase):
+1. `Given I am on the SauceDemo login page`
+2. `When I log in with username "<x>" and password "<y>"`
+3. `Then I should see the error message "<msg>"`
+
+Therefore the step def file MUST contain exactly these 3 decorators:
+```python
+@given("I am on the SauceDemo login page")
+def open_login_page(login_page, base_url):
+    login_page.open(base_url)
+
+@when(parsers.parse('I log in with username "{username}" and password "{password}"'))
+def login_with_credentials(login_page, username, password):
+    login_page.login_as(username, password)
+
+@then(parsers.parse('I should see the error message "{expected_message}"'))
+def verify_error_message(login_page, expected_message):
+    actual = login_page.get_error_message()
+    assert actual == expected_message, f"Expected '{expected_message}', got '{actual}'"
+```
+
+### Self-Check Before Submitting
+
+Before returning your generated step def file, verify mentally:
+- [ ] Every Given/When/Then/And/But line in my feature file has a matching decorator
+- [ ] And/But decorators use the inherited type (e.g., `@then` after a `Then`)
+- [ ] All variable data is captured via `parsers.parse('...{var}...')`
+- [ ] The decorator phrase is the bare phrase WITHOUT the `Given/When/Then` prefix
+- [ ] No copy-paste typos between the feature step and the decorator string
+
+If any of these checks fail, fix the file before returning it. The system has
+an automated validator that will reject incomplete coverage.
+
 ## If generating a page object `.py` file:
 - Inherit from `BasePage`: `from pages.base_page import BasePage`
 - Define selectors as class constants at the top: `BUTTON_X = "[data-test='button-x']"`

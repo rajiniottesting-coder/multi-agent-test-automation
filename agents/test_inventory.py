@@ -527,3 +527,321 @@ def _try_autocorrect_feature_name(
     # (somehow several feature files normalize to the same key — would
     # be a different bug). Either way, don't guess.
     return None
+
+# ===========================================================================
+# Phase 8: Step Definition Coverage Validator (ADR-010)
+# ===========================================================================
+# This validator solves the failure mode we hit on PR #9: the LLM generated
+# a Gherkin feature file with step phrases, but FORGOT to generate matching
+# @given/@when/@then decorators in the corresponding step def file. Tests
+# then failed at collection time with `StepDefinitionNotFoundError`.
+#
+# DESIGN PRINCIPLES (so this is reusable across projects, not just SauceDemo):
+#
+#   1. NO HARDCODED PHRASES. The validator works for any feature/step def
+#      pair regardless of domain (login, cart, checkout, payment, anything).
+#
+#   2. UNDERSTANDS pytest-bdd's GRAMMAR, not just strings. Decorators with
+#      `parsers.parse('...{var}...')` are matched against feature steps by
+#      converting the placeholders to regex wildcards.
+#
+#   3. HANDLES Gherkin's `And`/`But` keywords correctly. These inherit the
+#      previous step's type (Given/When/Then), so a feature step like
+#      "And I should see the title" must match a @then decorator if the
+#      previous step was a Then.
+#
+#   4. DEFENSIVE on edge cases. Background blocks, Scenario Outline tables,
+#      tagged scenarios, comments — all handled per Gherkin spec.
+#
+#   5. PAIRS feature files with step def files via filename convention:
+#      features/login_validation.feature  <->  tests/step_defs/test_login_validation.py
+#      This convention is enforced by the existing filename validator
+#      (Phase 4), so this validator can rely on it.
+# ===========================================================================
+
+# Match a step line in a .feature file. Captures the keyword and the rest.
+# Examples matched:
+#   "  Given I am on the login page"     -> ("Given", "I am on the login page")
+#   "  When I click the button"           -> ("When", "I click the button")
+#   "  And I see the error"               -> ("And", "I see the error")
+_FEATURE_STEP_PATTERN = re.compile(
+    r'^\s*(Given|When|Then|And|But)\s+(.+?)\s*$',
+    re.MULTILINE,
+)
+
+# Match a decorator on a step def. Captures the type and the phrase pattern.
+# Examples matched:
+#   '@given("I am on the login page")'                      -> ("given", "I am on the login page", False)
+#   "@when(parsers.parse('I click {item}'))"                -> ("when", "I click {item}", True)
+#   '@then(parsers.cfparse("I see {n:d} items"))'          -> ("then", "I see {n:d} items", True)
+# The third group True/False indicates whether placeholders are present
+# (i.e., it's a parsers.parse() call vs. a bare string).
+_DECORATOR_PARSER_PATTERN = re.compile(
+    r'@(given|when|then)\s*\(\s*parsers\.\w+\s*\(\s*[\'"](.+?)[\'"]\s*\)\s*\)',
+    re.DOTALL,
+)
+_DECORATOR_STRING_PATTERN = re.compile(
+    r'@(given|when|then)\s*\(\s*[\'"](.+?)[\'"]\s*\)',
+    re.DOTALL,
+)
+
+
+def _extract_feature_steps(feature_content: str) -> list[tuple[str, str]]:
+    """Extract steps from a .feature file content as (resolved_keyword, phrase) pairs.
+
+    `And`/`But` keywords are resolved to the previous concrete keyword
+    (Given/When/Then) since pytest-bdd dispatches them that way.
+
+    Background steps ARE included — they need step defs too.
+    Scenario Outline `Examples:` tables are stripped (they're data, not steps).
+
+    Returns:
+        List of tuples like:
+            [('given', 'I am on the login page'),
+             ('when', 'I click "Login"'),
+             ('then', 'I see the dashboard'),
+             ('then', 'I see the title "Products")]   # And -> Then
+    """
+    steps = []
+    last_concrete_keyword = None  # 'given', 'when', or 'then'
+    inside_examples = False
+
+    for line in feature_content.splitlines():
+        stripped = line.strip()
+
+        # Skip blank lines and comments
+        if not stripped or stripped.startswith('#'):
+            continue
+
+        # Detect Scenario Outline data tables — skip until we hit a non-table line
+        if stripped.startswith('Examples:'):
+            inside_examples = True
+            continue
+        if inside_examples:
+            if stripped.startswith('|'):
+                continue  # data row
+            else:
+                inside_examples = False  # exited the table
+
+        # Try to match a step
+        match = _FEATURE_STEP_PATTERN.match(line)
+        if not match:
+            continue
+
+        keyword, phrase = match.group(1), match.group(2)
+        keyword_lower = keyword.lower()
+
+        if keyword_lower in ('given', 'when', 'then'):
+            last_concrete_keyword = keyword_lower
+            steps.append((keyword_lower, phrase))
+        elif keyword_lower in ('and', 'but'):
+            # Inherit previous keyword. If there's no previous (malformed
+            # feature), we record None and let downstream matching fail
+            # — that's a separate bug from missing step defs.
+            steps.append((last_concrete_keyword, phrase))
+
+    return steps
+
+
+def _extract_decorator_phrases(step_def_content: str) -> list[tuple[str, str, bool]]:
+    """Extract step decorators from a step def file as (type, phrase, has_placeholders) tuples.
+
+    Returns:
+        List of tuples like:
+            [('given', 'I am on the login page', False),
+             ('when', 'I log in as "{user}" with password "{pw}"', True),
+             ('then', 'I see the inventory page', False)]
+
+    The `has_placeholders` flag tells the matcher whether to do regex matching
+    (placeholders present) or exact string matching (no placeholders).
+    """
+    decorators = []
+
+    # Find parsers.parse(...) decorators first — they have placeholders
+    for match in _DECORATOR_PARSER_PATTERN.finditer(step_def_content):
+        kind, phrase = match.group(1), match.group(2)
+        decorators.append((kind, phrase, True))
+
+    # Then find bare-string decorators. Exclude any that overlap with
+    # parsers.parse decorators (the parser pattern would have caught them).
+    # We do this by tracking the spans we already matched.
+    parser_spans = [
+        (m.start(), m.end())
+        for m in _DECORATOR_PARSER_PATTERN.finditer(step_def_content)
+    ]
+
+    for match in _DECORATOR_STRING_PATTERN.finditer(step_def_content):
+        # Skip if this match falls inside an already-captured parser decorator
+        if any(start <= match.start() < end for start, end in parser_spans):
+            continue
+        kind, phrase = match.group(1), match.group(2)
+        decorators.append((kind, phrase, False))
+
+    return decorators
+
+
+def _phrase_matches(feature_phrase: str, decorator_phrase: str, has_placeholders: bool) -> bool:
+    """Check if a feature step phrase matches a decorator's pattern.
+
+    For bare-string decorators (no placeholders), match is exact equality.
+
+    For parsers.parse() decorators with `{var}` or `{var:type}` placeholders,
+    we convert the decorator phrase to a regex by replacing each `{...}` with
+    a wildcard, then test the feature phrase against it.
+
+    Examples:
+        feature: 'I log in as "alice" with password "secret"'
+        decorator: 'I log in as "{user}" with password "{pw}"'  (has_placeholders=True)
+        -> regex: r'^I log in as "[^"]+" with password "[^"]+"$'
+        -> matches: True
+
+        feature: 'I see 5 items'
+        decorator: 'I see {n:d} items'  (has_placeholders=True)
+        -> regex: r'^I see .+ items$'
+        -> matches: True
+
+    Wildcard choice: we use `[^"]+` if the placeholder is between quotes
+    (the common case in Gherkin) and `.+?` otherwise. This avoids greedy
+    matches that would wrongly accept totally different feature steps.
+    """
+    if not has_placeholders:
+        return feature_phrase.strip() == decorator_phrase.strip()
+
+    # Build a regex from the decorator phrase
+    regex_parts = []
+    i = 0
+    while i < len(decorator_phrase):
+        char = decorator_phrase[i]
+        if char == '{':
+            # Find the closing brace
+            close = decorator_phrase.find('}', i)
+            if close == -1:
+                # Malformed decorator — fall back to literal char
+                regex_parts.append(re.escape(char))
+                i += 1
+                continue
+            # Check whether this placeholder sits between quotes
+            # ("...{var}..." pattern is common in Gherkin)
+            preceded_by_quote = i > 0 and decorator_phrase[i - 1] == '"'
+            followed_by_quote = close + 1 < len(decorator_phrase) and decorator_phrase[close + 1] == '"'
+            if preceded_by_quote and followed_by_quote:
+                # Match anything between the quotes including empty strings.
+                # Empty values are common in validation tests like
+                # `When I log in with username "" and password "secret_sauce"`.
+                regex_parts.append('[^"]*')
+            else:
+                regex_parts.append('.+?')
+            i = close + 1
+        else:
+            regex_parts.append(re.escape(char))
+            i += 1
+
+    pattern = '^' + ''.join(regex_parts) + '$'
+    try:
+        return bool(re.match(pattern, feature_phrase.strip()))
+    except re.error:
+        # Pathological regex (shouldn't happen with our construction, but
+        # defend against future surprises). Fall back to "no match" so
+        # the validator alerts rather than silently passing.
+        return False
+
+
+def validate_step_definitions_complete(generated_files: list) -> list:
+    """Verify every step phrase in generated .feature files has a matching
+    @given/@when/@then decorator in the corresponding step def file.
+
+    PAIRING CONVENTION:
+        features/X.feature  pairs with  tests/step_defs/test_X.py
+        (This is enforced by the Phase 4 filename consistency validator.)
+
+    HARD-FAIL BEHAVIOR:
+        Returns a list of error strings — one per missing step. Empty list
+        means every step in every feature has a matching decorator. The
+        caller should ABORT the PR if errors are returned, since the tests
+        would fail at collection time with StepDefinitionNotFoundError.
+
+    REUSABLE FOR ANY PROJECT:
+        Makes no assumptions about domain (works for login, cart, checkout,
+        payment processing, anything). Understands pytest-bdd's grammar
+        including `And`/`But` keyword inheritance, parsers.parse() with
+        placeholders, and quote-bounded variable capture.
+
+    Args:
+        generated_files: List of objects with `file_path` and `content`
+                        attributes (same shape as Agent 2's
+                        `generated_files`). Both .feature files and
+                        step def .py files should be in the list.
+
+    Returns:
+        List of human-readable error messages, one per missing step
+        definition. Empty list means complete coverage.
+    """
+    errors = []
+
+    if not generated_files:
+        return errors
+
+    # Index all files by path for quick pairing
+    by_path = {}
+    for gf in generated_files:
+        path = getattr(gf, "file_path", "")
+        content = getattr(gf, "content", "") or ""
+        by_path[path] = content
+
+    # For each feature file, find its paired step def file
+    for path, content in by_path.items():
+        if not (path.startswith("features/") and path.endswith(".feature")):
+            continue
+
+        # Derive the expected step def path
+        feature_basename = path[len("features/"):-len(".feature")]
+        expected_step_def = f"tests/step_defs/test_{feature_basename}.py"
+
+        if expected_step_def not in by_path:
+            # No paired step def file in this batch. This is the Phase 4
+            # filename validator's territory — it will catch it. Skip
+            # here to avoid double-reporting.
+            continue
+
+        step_def_content = by_path[expected_step_def]
+
+        # Extract steps from feature and decorators from step def
+        feature_steps = _extract_feature_steps(content)
+        decorators = _extract_decorator_phrases(step_def_content)
+
+        # Track unique missing steps (avoid duplicate errors when the same
+        # step appears in multiple scenarios)
+        already_reported = set()
+
+        for step_keyword, step_phrase in feature_steps:
+            if step_keyword is None:
+                # Malformed feature (And/But with no preceding Given/When/Then).
+                # Out of scope for this validator.
+                continue
+
+            # Look for a matching decorator
+            matched = False
+            for dec_kind, dec_phrase, has_placeholders in decorators:
+                if dec_kind != step_keyword:
+                    continue
+                if _phrase_matches(step_phrase, dec_phrase, has_placeholders):
+                    matched = True
+                    break
+
+            if not matched:
+                # Build a stable error key so we don't report the same
+                # missing step multiple times (e.g., same step in 3 scenarios)
+                error_key = (step_keyword, step_phrase)
+                if error_key in already_reported:
+                    continue
+                already_reported.add(error_key)
+
+                errors.append(
+                    f"Step coverage error in '{expected_step_def}': "
+                    f"feature step `{step_keyword.capitalize()} {step_phrase}` "
+                    f"(from '{path}') has no matching @{step_keyword}() decorator. "
+                    f"pytest-bdd would fail with StepDefinitionNotFoundError at "
+                    f"test collection time."
+                )
+
+    return errors
