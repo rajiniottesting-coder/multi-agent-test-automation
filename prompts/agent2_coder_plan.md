@@ -63,13 +63,76 @@ These are shown so you understand the existing style and conventions. Your gener
 # Test Cases to Process
 {test_cases_text}
 
-# Naming Convention (STRICT)
-- Feature file: `features/<feature_name>.feature` where `<feature_name>` is NEW (snake_case)
-- Step definition: `tests/step_defs/test_<feature_name>.py` where `<feature_name>` is NEW (snake_case, must match feature file's name)
-- Page object: `pages/<page_name>_page.py` (only if a NEW page object is needed)
-- Branch: `auto/<jira-key>-<feature-name>` (kebab-case is fine for the BRANCH only, since Git ergonomics differ from Python imports)
+# Naming Convention (STRICT — SINGLE SOURCE OF TRUTH)
 
-CRITICAL: The feature filename and the step def `feature_path("<name>")` argument MUST USE THE SAME `<feature_name>`. If you create `features/login_validation.feature`, your step def MUST call `scenarios(str(feature_path("login_validation")))`. Mismatched names (e.g., kebab in feature, snake in step def) cause pytest-bdd to fail with FileNotFoundError at test collection time.
+**THE ONE RULE:** Pick a snake_case name for the new test set. Use it everywhere
+EXCEPT in the branch name (which uses the kebab-case form for Git ergonomics).
+
+## Step 1: Pick ONE snake_case name
+
+Examples of valid snake_case names: `login_validation`, `cart_checkout`, `payment_errors`.
+Examples of INVALID names: `login-validation` (kebab), `LoginValidation` (camel), `login validation` (space).
+
+Avoid `login` as a name — that's reserved (already covered by `login.feature`). Use a
+more specific snake_case name like `login_validation`, `login_errors`, etc.
+
+## Step 2: Use that snake_case name in EVERY file path and code reference
+
+Suppose you picked `login_validation`. Then:
+
+| What | Value | Form |
+|---|---|---|
+| Feature file path | `features/login_validation.feature` | snake_case |
+| Step def file path | `tests/step_defs/test_login_validation.py` | snake_case |
+| `feature_path()` argument | `feature_path("login_validation")` | snake_case (MUST MATCH FILENAME) |
+| Page object (if new) | `pages/login_validation_page.py` | snake_case |
+| Branch name | `auto/SCRUM-5-login-validation` | **kebab-case** (only place hyphens appear) |
+| `feature_name` in CodePlan | `login-validation` | kebab-case (for branch only — see below) |
+
+## Step 3: Inside step def files, the feature_path() argument MUST EXACTLY MATCH the feature filename
+
+This is the #1 mistake LLMs make on this task. Read this carefully.
+
+**CORRECT (this works at test collection time):**
+```python
+# In tests/step_defs/test_login_validation.py
+from tests.support.paths import feature_path
+from pytest_bdd import scenarios
+
+scenarios(str(feature_path("login_validation")))   # ← snake_case, matches features/login_validation.feature
+```
+
+**WRONG (pytest-bdd will fail with FileNotFoundError):**
+```python
+# In tests/step_defs/test_login_validation.py
+scenarios(str(feature_path("login-validation")))   # ← KEBAB! Mismatch! BREAKS!
+scenarios(str(feature_path("LoginValidation")))    # ← CAMEL! Mismatch! BREAKS!
+scenarios(str(feature_path("login_validation.feature")))  # ← extension! BREAKS!
+```
+
+**RULE:** The string inside `feature_path("...")` must be the snake_case basename
+of the feature file, with NO extension and NO directory prefix.
+
+## Why two forms exist (kebab for branch, snake for files)
+
+- **Branch names** use kebab-case because that's universal Git convention.
+- **Python files and pytest-bdd references** use snake_case because Python
+  module names cannot contain hyphens. If your test file is `test_login-validation.py`,
+  Python literally cannot import it.
+
+Both forms refer to the SAME logical name. The LLM's job is to convert between
+them correctly. To eliminate confusion, **decide the snake_case form first**,
+then mechanically replace `_` with `-` to get the kebab form for the branch.
+
+## Your CodePlan output
+
+When you produce the `CodePlan`:
+- Set `feature_name` to the **kebab-case** form (e.g., `"login-validation"`)
+  — this is used to build the branch name
+- Set every `file_path` in `files_to_create` to the **snake_case** form
+  (e.g., `"features/login_validation.feature"`)
+- Inside the step def's content (Stage 2), use the **snake_case** form for
+  `feature_path("...")` — see the CORRECT example above
 
 # Decision Process (follow this exactly)
 1. For each test case, check if it's already covered by the RESERVED reference files above.

@@ -141,24 +141,50 @@ class TestAgent2DedupIntegration:
 class TestFilenameValidatorIntegration:
     """Verifies validator catches PR-#7-style filename mismatches."""
 
-    def test_pr_seven_bug_caught(self):
-        """The exact bug pattern from PR #7 — kebab feature, snake step def."""
+    def test_pr_seven_bug_now_autocorrected(self):
+        """The exact bug pattern from PR #7 — kebab feature, snake step def.
+        After Phase 7, validator auto-corrects this rather than erroring,
+        so a small-LLM slip doesn't block PR creation. The fix is logged
+        for audit trail."""
         from agents.test_inventory import validate_filename_consistency
 
         files = [
             _make_generated_file(
-                "features/login-validation.feature",
+                "features/login-validation.feature",  # kebab
                 "Feature: Login validation\n  Scenario: Empty username\n",
             ),
             _make_generated_file(
                 "tests/step_defs/test_login_validation.py",
                 'from config.paths import feature_path\n'
-                'scenarios(str(feature_path("login_validation")))\n',
+                'scenarios(str(feature_path("login_validation")))\n',  # snake — wrong
+            ),
+        ]
+        errors = validate_filename_consistency(files)
+        # No error — auto-corrected
+        assert errors == []
+        # The step def's content should now reference the kebab form to match
+        assert 'feature_path("login-validation")' in files[1].content
+        assert 'feature_path("login_validation")' not in files[1].content
+
+    def test_unfixable_orphan_still_errors(self):
+        """If the step def references a feature name that doesn't normalize to
+        ANY available feature, validator still hard-fails. Auto-correction is
+        conservative: never guess between semantically different names."""
+        from agents.test_inventory import validate_filename_consistency
+
+        files = [
+            _make_generated_file(
+                "features/login_validation.feature",
+                "Feature: x\n",
+            ),
+            _make_generated_file(
+                "tests/step_defs/test_login_validation.py",
+                'scenarios(str(feature_path("totally_unrelated_name")))\n',
             ),
         ]
         errors = validate_filename_consistency(files)
         assert len(errors) == 1
-        assert "login_validation" in errors[0]
+        assert "totally_unrelated_name" in errors[0]
 
     def test_correct_naming_no_errors(self):
         """When LLM uses consistent snake_case, validator passes silently."""

@@ -571,8 +571,29 @@ class TestValidateFilenameConsistency:
         ]
         assert validate_filename_consistency(files) == []
 
-    def test_kebab_vs_snake_mismatch_caught(self):
-        # The exact bug from PR #7
+    def test_kebab_vs_snake_mismatch_autocorrected(self):
+        """Phase 7: kebab-vs-snake mismatch is now auto-corrected, not erored.
+        This was the original PR #7 bug. With auto-correction, the validator
+        rewrites the step def's content in place to match the feature filename."""
+        files = [
+            self._make_file(
+                "features/login_validation.feature",  # snake
+                "Feature: Login validation\n",
+            ),
+            self._make_file(
+                "tests/step_defs/test_login_validation.py",
+                'scenarios(str(feature_path("login-validation")))\n',  # kebab — wrong
+            ),
+        ]
+        errors = validate_filename_consistency(files)
+        # No error — should auto-correct
+        assert errors == []
+        # Step def content should be rewritten with the snake form
+        assert 'feature_path("login_validation")' in files[1].content
+        assert 'feature_path("login-validation")' not in files[1].content
+
+    def test_snake_to_kebab_autocorrected(self):
+        """Reverse direction: feature is kebab, step def uses snake. Same fix applies."""
         files = [
             self._make_file(
                 "features/login-validation.feature",  # kebab
@@ -580,15 +601,55 @@ class TestValidateFilenameConsistency:
             ),
             self._make_file(
                 "tests/step_defs/test_login_validation.py",
-                'scenarios(str(feature_path("login_validation")))\n',  # snake
+                'scenarios(str(feature_path("login_validation")))\n',  # snake — wrong
             ),
         ]
         errors = validate_filename_consistency(files)
-        assert len(errors) == 1
-        assert "login_validation" in errors[0]
-        assert "login-validation" in errors[0]
+        assert errors == []
+        assert 'feature_path("login-validation")' in files[1].content
+
+    def test_unambiguous_correction_with_multiple_features(self):
+        """Even when multiple feature files exist in the batch, an unambiguous
+        single-match correction should still apply."""
+        files = [
+            self._make_file(
+                "features/login_validation.feature",
+                "Feature: A\n",
+            ),
+            self._make_file(
+                "features/cart_checkout.feature",
+                "Feature: B\n",
+            ),
+            self._make_file(
+                "tests/step_defs/test_login_validation.py",
+                'scenarios(str(feature_path("login-validation")))\n',  # kebab variant of login_validation
+            ),
+        ]
+        errors = validate_filename_consistency(files)
+        # Should auto-correct because only login_validation matches when normalized
+        assert errors == []
+        assert 'feature_path("login_validation")' in files[2].content
+
+    def test_single_quotes_also_autocorrected(self):
+        """LLMs sometimes use single quotes. Auto-correction must handle both."""
+        files = [
+            self._make_file(
+                "features/login_validation.feature",
+                "Feature: x\n",
+            ),
+            self._make_file(
+                "tests/step_defs/test_login_validation.py",
+                "scenarios(str(feature_path('login-validation')))\n",  # single quotes!
+            ),
+        ]
+        errors = validate_filename_consistency(files)
+        assert errors == []
+        # The fix should use single quotes since that's what was there
+        assert "feature_path('login_validation')" in files[1].content
 
     def test_completely_missing_feature_caught(self):
+        """When the referenced feature doesn't exist AT ALL (not even via separator
+        normalization), this is a genuine bug and we still hard-fail."""
         files = [
             self._make_file(
                 "tests/step_defs/test_orphan.py",
@@ -598,6 +659,41 @@ class TestValidateFilenameConsistency:
         errors = validate_filename_consistency(files)
         assert len(errors) == 1
         assert "orphan" in errors[0]
+
+    def test_camelcase_not_autocorrected(self):
+        """We only auto-correct separator-style mismatches. CamelCase or other
+        styles are NOT guessed at — they hard-fail to alert the human."""
+        files = [
+            self._make_file(
+                "features/login_validation.feature",
+                "Feature: x\n",
+            ),
+            self._make_file(
+                "tests/step_defs/test_login_validation.py",
+                'scenarios(str(feature_path("LoginValidation")))\n',  # camel
+            ),
+        ]
+        errors = validate_filename_consistency(files)
+        # Camel doesn't normalize the same way — should NOT auto-correct
+        assert len(errors) == 1
+        assert "LoginValidation" in errors[0]
+
+    def test_totally_unrelated_name_not_autocorrected(self):
+        """Auto-correction should never guess between semantically different names."""
+        files = [
+            self._make_file(
+                "features/login_validation.feature",
+                "Feature: x\n",
+            ),
+            self._make_file(
+                "tests/step_defs/test_login_validation.py",
+                'scenarios(str(feature_path("checkout")))\n',  # totally different
+            ),
+        ]
+        errors = validate_filename_consistency(files)
+        # Should NOT auto-correct — alert the human
+        assert len(errors) == 1
+        assert "checkout" in errors[0]
 
     def test_step_def_without_feature_path_call_ignored(self):
         files = [

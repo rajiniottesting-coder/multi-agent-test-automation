@@ -331,44 +331,65 @@ _FEATURE_PATH_CALL_PATTERN = re.compile(
 def validate_filename_consistency(generated_files: list) -> list:
     """
     Verify that step definition files reference feature files that actually
-    exist in the same generation batch.
+    exist in the same generation batch. Auto-correct unambiguous mismatches
+    in-place; return errors only for ambiguous cases.
 
-    This catches the EXACT bug we hit on PR #7:
+    BACKGROUND — THE BUG THIS CATCHES:
         - features/login-validation.feature (kebab-case)
         - test_login_validation.py uses feature_path("login_validation") (snake_case)
         - pytest-bdd fails: FileNotFoundError at collection
-        - The PR LOOKS fine but tests crash
+        - The PR LOOKS fine but tests crash on `pytest --collect-only`
 
     The validator runs AFTER LLM generation, BEFORE the PR is created.
-    Failing here is loud and clean — the user gets a clear error message
-    instead of a silently-broken PR.
 
-    HOW IT WORKS:
-        For each step def file in the generation batch:
-            1. Find all `feature_path("X")` or `feature_path('X')` calls
-            2. For each X, check if `features/X.feature` exists in the batch
-            3. If not found, that's an error
+    AUTO-CORRECTION (added 2026-05-06):
+        Smaller LLMs (e.g., gemini-2.5-flash-lite) sometimes slip and use
+        kebab-case inside `feature_path()` even when the feature filename
+        is snake_case. Rather than hard-failing every time, we now attempt
+        a CONSERVATIVE auto-correction:
 
-        We do NOT check actual disk — we check the BATCH itself, because
-        the files don't exist on disk yet (they're about to be committed).
+            1. If the step def references `feature_path("login-validation")`
+               but only `login_validation` exists in the batch (variant of
+               the same name, just different separator), auto-fix the
+               step def's content to use the correct snake_case form.
+
+            2. The fix is logged loudly so the user can see the LLM's
+               mistake and the system's correction in the audit trail.
+
+            3. If the correction is AMBIGUOUS (e.g., multiple feature
+               files, no clear single match), we still hard-fail —
+               better to alert than guess wrong.
+
+    The auto-correction MUTATES `generated_files` in place. The caller's
+    `output.files_to_create` list will have the corrected content when
+    it's committed to the branch. (We do this rather than returning a
+    new list because Agent 2 already holds the reference and a swap
+    would require more invasive refactoring.)
 
     Args:
         generated_files: List of GeneratedFile objects with `file_path`
                         and `content` attributes. (Same shape as Agent 2's
-                        `generated_files` list.)
+                        `generated_files` list.) Mutated in place if
+                        auto-correction is applied.
 
     Returns:
-        List of human-readable error messages. Empty list means no errors
-        (everything consistent). Non-empty list means at least one mismatch
-        was found and the caller should ABORT (don't open a PR with
-        broken tests).
+        List of human-readable error messages for issues that COULD NOT
+        be auto-corrected. Empty list means all good (either no issues,
+        or all issues were auto-corrected). Non-empty list means at least
+        one mismatch was ambiguous and the caller should ABORT.
+
+    NOTE: To learn about auto-corrections that DID happen, the caller
+    should check the module logger (we log INFO-level messages for each
+    correction). We don't return them in a separate list to keep the
+    public signature stable — callers that don't care can ignore the
+    log lines, callers that do care can inspect the log.
     """
     errors = []
 
     if not generated_files:
         return errors
 
-    # Build a set of feature names that ARE being created in this batch.
+    # Build the set of feature names that ARE being created in this batch.
     # Strip "features/" prefix and ".feature" suffix to get the bare name
     # that step defs would reference via feature_path().
     feature_names_in_batch = set()
@@ -398,13 +419,111 @@ def validate_filename_consistency(generated_files: list) -> list:
             continue
 
         for referenced_name in matches:
-            if referenced_name not in feature_names_in_batch:
+            if referenced_name in feature_names_in_batch:
+                # Exact match — no problem
+                continue
+
+            # Mismatch detected. Can we auto-correct?
+            correction = _try_autocorrect_feature_name(
+                referenced_name, feature_names_in_batch
+            )
+
+            if correction is not None:
+                # Auto-fix: rewrite the step def's content to use the
+                # correct name. Log loudly for audit trail.
+                logger.warning(
+                    f"Auto-correcting filename mismatch in '{path}': "
+                    f"feature_path(\"{referenced_name}\") -> "
+                    f"feature_path(\"{correction}\") "
+                    f"(LLM produced wrong separator style; available "
+                    f"feature files: {sorted(feature_names_in_batch)})"
+                )
+                # Mutate gf.content in place. We replace BOTH quote styles
+                # (single and double) defensively.
+                new_content = content.replace(
+                    f'feature_path("{referenced_name}")',
+                    f'feature_path("{correction}")',
+                ).replace(
+                    f"feature_path('{referenced_name}')",
+                    f"feature_path('{correction}')",
+                )
+                # Persist the corrected content back to the GeneratedFile.
+                # Pydantic models are usually frozen; if so, this will raise
+                # and we'll fall back to error. If not frozen, the mutation
+                # sticks and the corrected content reaches the commit.
+                try:
+                    gf.content = new_content
+                    content = new_content  # so subsequent checks in this loop see the fix
+                except (AttributeError, TypeError) as exc:
+                    # Frozen / immutable model — can't mutate. Fall back to error.
+                    errors.append(
+                        f"Filename consistency error: step def '{path}' references "
+                        f"feature_path(\"{referenced_name}\"), which doesn't match any "
+                        f"feature file in this batch. Auto-correction to '{correction}' "
+                        f"was attempted but failed because the model is immutable: {exc}. "
+                        f"Available feature files in batch: "
+                        f"{sorted(feature_names_in_batch) or '[none]'}"
+                    )
+            else:
+                # Ambiguous — could not safely guess the right answer.
                 errors.append(
                     f"Filename consistency error: step def '{path}' references "
                     f"feature_path(\"{referenced_name}\"), but no "
-                    f"features/{referenced_name}.feature exists in this batch. "
+                    f"features/{referenced_name}.feature exists in this batch "
+                    f"and no unambiguous correction is available. "
                     f"Available feature files in batch: "
                     f"{sorted(feature_names_in_batch) or '[none]'}"
                 )
 
     return errors
+
+
+def _try_autocorrect_feature_name(
+    referenced: str, available: set[str]
+) -> str | None:
+    """
+    Try to find an unambiguous correction for a kebab-vs-snake-case mismatch.
+
+    Returns the corrected name if EXACTLY ONE candidate matches via
+    separator-style normalization, otherwise None.
+
+    Examples:
+        referenced="login-validation", available={"login_validation"}
+            -> returns "login_validation" (kebab→snake variant match)
+
+        referenced="login_validation", available={"login-validation"}
+            -> returns "login-validation" (snake→kebab variant match)
+
+        referenced="login-validation", available={"login_validation", "login_errors"}
+            -> returns "login_validation" (still unambiguous: only login_validation
+               matches when separators are normalized)
+
+        referenced="loginValidation", available={"login_validation"}
+            -> returns None (camelCase doesn't normalize; we don't guess)
+
+        referenced="checkout", available={"login_validation"}
+            -> returns None (totally different name; we don't guess)
+
+    DESIGN: We only auto-correct separator-style mismatches (`-` vs `_`).
+    We never guess between semantically different names. Conservative
+    correction is the principle: when in doubt, alert the human.
+    """
+    # Normalize the referenced name by replacing both - and _ with a
+    # placeholder, so "login-validation" and "login_validation" become
+    # the same canonical key.
+    def _normalize(name: str) -> str:
+        return name.replace("-", "|").replace("_", "|").lower()
+
+    referenced_key = _normalize(referenced)
+    matches = [
+        candidate for candidate in available
+        if _normalize(candidate) == referenced_key
+    ]
+
+    if len(matches) == 1:
+        return matches[0]
+
+    # Either zero matches (totally different name) or multiple matches
+    # (somehow several feature files normalize to the same key — would
+    # be a different bug). Either way, don't guess.
+    return None
