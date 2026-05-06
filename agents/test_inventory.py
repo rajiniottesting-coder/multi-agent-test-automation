@@ -1,0 +1,410 @@
+"""
+Test Inventory — scan existing .feature files to discover what's already covered.
+
+This module is the foundation of Agent 2's deduplication awareness. Before
+Agent 2 generates code for a new test case, it asks the inventory:
+"does any existing scenario already cover this?"
+
+WHY THIS EXISTS:
+    Earlier versions of Agent 2 had no awareness of existing tests. When
+    SCRUM-5 was reprocessed, Agent 2 generated `test_login_validation.py`
+    alongside the existing `test_login.py` — duplicating coverage of the
+    login feature area. This module solves that by parsing existing
+    .feature files and exposing a clean lookup API.
+
+DESIGN CHOICES:
+    1. We use simple regex parsing instead of pulling in `gherkin-official`
+       to keep dependencies minimal. The Gherkin format is stable and
+       these patterns cover everything Agent 2 generates.
+    2. Matching is by NORMALIZED scenario title (case-insensitive,
+       whitespace-collapsed). This catches obvious duplicates without
+       needing semantic similarity (which would require an LLM call).
+    3. The module is read-only. It never modifies files. Safe to call
+       from anywhere, anytime.
+    4. Empty/missing directories return empty inventory rather than
+       erroring. This keeps Agent 2's flow simple — first-ever run with
+       no features dir still works.
+
+USAGE:
+    from agents.test_inventory import scan_features_dir, find_matching_scenario
+    from config.paths import FEATURES_DIR
+
+    inventory = scan_features_dir(FEATURES_DIR)
+    match = find_matching_scenario("Successful login with standard user", inventory)
+    if match:
+        print(f"Already covered by: {match['file']} :: {match['scenario']}")
+"""
+from __future__ import annotations
+
+import logging
+import re
+from pathlib import Path
+from typing import Optional
+
+logger = logging.getLogger("test_inventory")
+
+
+# ─── Gherkin parsing patterns ───────────────────────────────────────────
+# These regexes target the pytest-bdd flavor of Gherkin we use in this repo.
+# Each pattern captures the title text (everything after the keyword + colon).
+#
+# WHY MULTILINE FLAG: scenarios start at the beginning of a line (after
+# leading whitespace). Without re.MULTILINE, ^ would only match start-of-string.
+#
+# WHY \s* INSIDE: handles indentation (Gherkin scenarios are typically
+# indented under the Feature block, so the actual `Scenario:` keyword
+# appears with leading spaces).
+
+_SCENARIO_PATTERN = re.compile(
+    r"^\s*Scenario\s*:\s*(.+?)\s*$",
+    re.MULTILINE,
+)
+
+_SCENARIO_OUTLINE_PATTERN = re.compile(
+    r"^\s*Scenario\s+Outline\s*:\s*(.+?)\s*$",
+    re.MULTILINE | re.IGNORECASE,
+)
+
+
+# ─── Public API ─────────────────────────────────────────────────────────
+
+
+def normalize_scenario_name(raw: str) -> str:
+    """
+    Normalize a scenario name for case- and whitespace-insensitive matching.
+
+    The same logical test case can be expressed as:
+        "Successful login with standard user"
+        "  Successful  login with  standard user  "
+        "successful login with standard user"
+        "SUCCESSFUL LOGIN WITH STANDARD USER"
+
+    All of these should match. This function reduces them to a canonical form:
+        - Strip leading/trailing whitespace
+        - Lowercase everything
+        - Collapse internal whitespace runs to single spaces
+
+    We deliberately do NOT remove punctuation or do stemming — those would
+    over-match and incorrectly skip legitimately new test cases.
+
+    Args:
+        raw: The scenario name as it appears in the .feature file or as a
+             Test Case title from Jira.
+
+    Returns:
+        A normalized lowercase string suitable for direct equality comparison.
+    """
+    if not raw:
+        return ""
+    # collapse all whitespace runs (tabs, newlines, multiple spaces) into single spaces
+    collapsed = re.sub(r"\s+", " ", raw)
+    return collapsed.strip().lower()
+
+
+def _parse_feature_file(feature_file: Path) -> list[str]:
+    """
+    Parse a single .feature file and extract scenario titles.
+
+    Catches both `Scenario:` and `Scenario Outline:` keywords. Comments
+    (lines starting with #) are naturally skipped because the regex
+    requires the keyword at the (whitespace-prefixed) start of a line.
+
+    Args:
+        feature_file: Path to a .feature file. Must exist.
+
+    Returns:
+        List of scenario title strings, in the order they appear in the file.
+        Returns empty list if the file has no scenarios (e.g., feature with
+        only Background or empty feature).
+    """
+    try:
+        content = feature_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as e:
+        logger.warning(f"Could not read {feature_file}: {e}")
+        return []
+
+    titles = []
+    titles.extend(_SCENARIO_PATTERN.findall(content))
+    titles.extend(_SCENARIO_OUTLINE_PATTERN.findall(content))
+
+    # Strip any quotes or trailing punctuation the LLM might have added
+    titles = [t.strip().strip('"').strip("'") for t in titles]
+
+    # Filter out empty matches (defensive — shouldn't happen with our regex)
+    titles = [t for t in titles if t]
+
+    return titles
+
+
+def scan_features_dir(features_dir: Path) -> dict:
+    """
+    Scan a features directory and build an inventory of all existing scenarios.
+
+    This is the single source of truth for "what tests already exist" in the
+    repo. Agent 2 calls this before deciding what to generate.
+
+    Args:
+        features_dir: Path to the features/ directory. May not exist yet
+                     (first-ever run); that's not an error.
+
+    Returns:
+        A dict with three keys:
+        {
+            "files": [str],                    # filenames of all .feature files found
+            "scenarios_by_file": {str: [str]}, # filename → list of scenario titles
+            "all_scenarios": [str],            # flat list of every scenario across all files
+        }
+
+        All values use ORIGINAL (un-normalized) scenario titles for human
+        readability in logs. Use `normalize_scenario_name()` before matching.
+    """
+    inventory = {
+        "files": [],
+        "scenarios_by_file": {},
+        "all_scenarios": [],
+    }
+
+    if not features_dir.exists():
+        logger.info(f"Features directory does not exist: {features_dir} (returning empty inventory)")
+        return inventory
+
+    if not features_dir.is_dir():
+        logger.warning(f"Features path is not a directory: {features_dir}")
+        return inventory
+
+    feature_files = sorted(features_dir.glob("*.feature"))
+
+    if not feature_files:
+        logger.info(f"No .feature files found in {features_dir} (returning empty inventory)")
+        return inventory
+
+    for feature_file in feature_files:
+        filename = feature_file.name
+        scenarios = _parse_feature_file(feature_file)
+
+        inventory["files"].append(filename)
+        inventory["scenarios_by_file"][filename] = scenarios
+        inventory["all_scenarios"].extend(scenarios)
+
+    logger.info(
+        f"Scanned {len(inventory['files'])} feature file(s); "
+        f"found {len(inventory['all_scenarios'])} scenario(s) total"
+    )
+    return inventory
+
+
+def find_matching_scenario(
+    test_case_title: str, inventory: dict
+) -> Optional[dict]:
+    """
+    Check whether a test case title matches any existing scenario in the inventory.
+
+    This is the decision point Agent 2 calls for each Test Case from Jira:
+    "should I generate code for this, or skip because it's already covered?"
+
+    Matching is by NORMALIZED title (see `normalize_scenario_name`). We do
+    not attempt semantic matching here — that would require an LLM call and
+    would over-match in subtle ways that incorrectly skip new coverage.
+
+    Args:
+        test_case_title: The title of the Jira Test Case being considered.
+        inventory: The inventory dict returned by `scan_features_dir`.
+
+    Returns:
+        None if no match found (test case is new, generate it).
+        Or a dict with three keys describing the match:
+        {
+            "file": str,         # which .feature file contains the existing scenario
+            "scenario": str,     # the original (un-normalized) scenario title
+            "match_type": str,   # "exact" (case/whitespace insensitive)
+        }
+    """
+    if not test_case_title:
+        return None
+
+    normalized_target = normalize_scenario_name(test_case_title)
+
+    if not normalized_target:
+        return None
+
+    for filename, scenarios in inventory.get("scenarios_by_file", {}).items():
+        for scenario in scenarios:
+            if normalize_scenario_name(scenario) == normalized_target:
+                return {
+                    "file": filename,
+                    "scenario": scenario,
+                    "match_type": "exact",
+                }
+
+    return None
+
+
+def filter_duplicate_test_cases(
+    test_cases: list, inventory: dict
+) -> tuple:
+    """
+    Split a list of test cases into 'new' (need code generation) and
+    'skipped' (already covered by existing scenarios).
+
+    This is the function Agent 2 calls to decide what work needs doing.
+    It uses `find_matching_scenario` for each test case and partitions
+    the input accordingly.
+
+    INPUT SHAPE:
+        test_cases is the list Agent 2 already produces from Jira:
+            [
+                {"key": "SCRUM-9", "summary": "...", "description": "..."},
+                {"key": "SCRUM-10", "summary": "...", "description": "..."},
+                ...
+            ]
+        We match against the `summary` field, which is the test case title.
+
+    REGENERATION SEMANTICS (Phase 6):
+        This function does NOT know about the `ai-regenerate` label. When
+        Agent 2 detects regeneration mode, it should call this function
+        with an EMPTY inventory dict — that way every test case ends up in
+        `new_cases` and gets fresh code generation. Keeping the regenerate
+        decision OUT of this function makes the function easier to test
+        and respects single-responsibility.
+
+    Args:
+        test_cases: List of test case dicts (each with at least a "summary" key).
+        inventory: Inventory dict from `scan_features_dir`.
+
+    Returns:
+        Tuple of (new_cases, skipped_cases):
+          - new_cases: list of test case dicts that have NO matching existing
+                       scenario; these are what Agent 2 should generate code for.
+          - skipped_cases: list of dicts describing skipped cases:
+              {
+                  "test_case": <original test case dict>,
+                  "matched_file": str,
+                  "matched_scenario": str,
+              }
+            Agent 2 should log these so the user can see what was skipped
+            and why. Empty list means nothing was skipped.
+
+        Note: a test case with no "summary" key or empty summary is treated
+        as "new" — we never silently skip something we can't evaluate.
+    """
+    new_cases = []
+    skipped_cases = []
+
+    if not test_cases:
+        return new_cases, skipped_cases
+
+    for tc in test_cases:
+        # Defensive: each test case should be a dict with a "summary" field.
+        # If it isn't, treat it as "new" (don't lose work) and let downstream
+        # validation catch the malformed case. Erroring here would fail an
+        # entire batch on one bad input.
+        title = tc.get("summary", "") if isinstance(tc, dict) else ""
+
+        match = find_matching_scenario(title, inventory)
+
+        if match is None:
+            # No existing scenario matches — this is genuinely new.
+            new_cases.append(tc)
+        else:
+            # An existing scenario already covers this test case.
+            # Record it so Agent 2 can log "skipped X because Y already exists".
+            skipped_cases.append({
+                "test_case": tc,
+                "matched_file": match["file"],
+                "matched_scenario": match["scenario"],
+            })
+
+    return new_cases, skipped_cases
+
+
+# ─── Filename consistency validator (Phase 4) ──────────────────────────
+
+
+# Pattern matching `feature_path("...")` or `feature_path('...')` calls in
+# Python step definition files. We extract the argument string to compare
+# against actual feature filenames.
+_FEATURE_PATH_CALL_PATTERN = re.compile(
+    r"""feature_path\s*\(\s*['"]([^'"]+)['"]\s*\)""",
+)
+
+
+def validate_filename_consistency(generated_files: list) -> list:
+    """
+    Verify that step definition files reference feature files that actually
+    exist in the same generation batch.
+
+    This catches the EXACT bug we hit on PR #7:
+        - features/login-validation.feature (kebab-case)
+        - test_login_validation.py uses feature_path("login_validation") (snake_case)
+        - pytest-bdd fails: FileNotFoundError at collection
+        - The PR LOOKS fine but tests crash
+
+    The validator runs AFTER LLM generation, BEFORE the PR is created.
+    Failing here is loud and clean — the user gets a clear error message
+    instead of a silently-broken PR.
+
+    HOW IT WORKS:
+        For each step def file in the generation batch:
+            1. Find all `feature_path("X")` or `feature_path('X')` calls
+            2. For each X, check if `features/X.feature` exists in the batch
+            3. If not found, that's an error
+
+        We do NOT check actual disk — we check the BATCH itself, because
+        the files don't exist on disk yet (they're about to be committed).
+
+    Args:
+        generated_files: List of GeneratedFile objects with `file_path`
+                        and `content` attributes. (Same shape as Agent 2's
+                        `generated_files` list.)
+
+    Returns:
+        List of human-readable error messages. Empty list means no errors
+        (everything consistent). Non-empty list means at least one mismatch
+        was found and the caller should ABORT (don't open a PR with
+        broken tests).
+    """
+    errors = []
+
+    if not generated_files:
+        return errors
+
+    # Build a set of feature names that ARE being created in this batch.
+    # Strip "features/" prefix and ".feature" suffix to get the bare name
+    # that step defs would reference via feature_path().
+    feature_names_in_batch = set()
+    for gf in generated_files:
+        path = getattr(gf, "file_path", "")
+        if path.startswith("features/") and path.endswith(".feature"):
+            bare_name = path[len("features/"):-len(".feature")]
+            feature_names_in_batch.add(bare_name)
+
+    # Now check each step def file's feature_path() calls
+    for gf in generated_files:
+        path = getattr(gf, "file_path", "")
+        content = getattr(gf, "content", "")
+
+        # Only check Python files in tests/step_defs/
+        if not path.startswith("tests/step_defs/") or not path.endswith(".py"):
+            continue
+
+        if not content:
+            continue
+
+        # Find all feature_path("name") references
+        matches = _FEATURE_PATH_CALL_PATTERN.findall(content)
+        if not matches:
+            # Step def doesn't use feature_path() — could be a helper module
+            # or pytest-bdd is wired up differently. Not our problem to flag.
+            continue
+
+        for referenced_name in matches:
+            if referenced_name not in feature_names_in_batch:
+                errors.append(
+                    f"Filename consistency error: step def '{path}' references "
+                    f"feature_path(\"{referenced_name}\"), but no "
+                    f"features/{referenced_name}.feature exists in this batch. "
+                    f"Available feature files in batch: "
+                    f"{sorted(feature_names_in_batch) or '[none]'}"
+                )
+
+    return errors
