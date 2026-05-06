@@ -57,7 +57,22 @@ agents:
   # and AI writing the code that implements them. Catching a bad test
   # case here is cheap; catching it after Agent 2 has generated 200 lines
   # of code is wasteful.
+  # AI-REGENERATE LABEL (Phase 6):
+  #   When you modify an existing test case (e.g., add new validations
+  #   or change expected outcomes), you can force Agent 2 to regenerate
+  #   code by adding the `ai-regenerate` label to the parent story.
+  #
+  #   In regenerate mode, Agent 2:
+  #     - Skips the dedup check (regenerates all approved cases fresh)
+  #     - Creates a new branch with -rev2/-rev3/... suffix
+  #     - Removes the `ai-regenerate` label after success (one-shot signal)
+  #     - Re-adds `ai-coded` (back to normal state)
+  #   The old PR stays open as historical record (close manually).
   agent2_coder:
+    # Selection criteria for FIRST-TIME processing of a story.
+    # Notice ai-regenerate is in excluded_labels here — that's intentional.
+    # If a story has BOTH ai-coded and ai-regenerate, it should be picked up
+    # by regenerate_selection below (not by this normal scan).
     selection:
       issue_type: "Story"
       allowed_statuses:
@@ -69,8 +84,26 @@ agents:
       excluded_labels:
         - "ai-coded"       # Agent 2 already opened a PR for this story
         - "ai-skip"        # human override / opt-out (same as Agent 1)
-    completion_label: "ai-coded"   # marker so the same story isn't processed twice
-    max_stories_per_run: 5         # cost-cap: each scan won't cost more than ~5x the per-story budget
+        - "ai-regenerate"  # belongs in regenerate_selection, not normal scan
+
+    # Selection criteria for REGENERATION mode (Phase 6).
+    # When ai-regenerate is on a story, we ignore the ai-coded marker
+    # (so the story can be re-processed) but still respect ai-skip.
+    regenerate_selection:
+      issue_type: "Story"
+      allowed_statuses:
+        - "To Do"
+        - "In Progress"
+      required_labels:
+        - "ai-processed"
+        - "human-approved"
+        - "ai-regenerate"
+      excluded_labels:
+        - "ai-skip"
+
+    completion_label: "ai-coded"        # marker so the same story isn't processed twice
+    regenerate_label: "ai-regenerate"   # label that signals "redo this story"
+    max_stories_per_run: 5              # cost-cap: each scan won't cost more than ~5x the per-story budget
 
   # agent3_reviewer:
   #   selection: ...    # (currently triggered by GitHub PR events, not Jira)

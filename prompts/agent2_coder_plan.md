@@ -24,7 +24,7 @@ If you plan to create a file at any of the RESERVED paths, the system will rejec
 
 # Your Output
 Return a `CodePlan` with:
-- `feature_name`: short kebab-case (e.g., `login-validation`, `cart-checkout`)
+- `feature_name`: short kebab-case slug used for the BRANCH only (e.g., `login-validation`, `cart-checkout`). Feature FILES and step def files use the snake_case form of this same slug — see Naming Convention below.
 - `branch_name`: format `auto/<jira-key>-<feature-name>` (e.g., `auto/SCRUM-5-login-validation`)
 - `pr_title`: concise PR title
 - `pr_body`: Markdown body explaining what's being added (list test cases automated)
@@ -64,16 +64,18 @@ These are shown so you understand the existing style and conventions. Your gener
 {test_cases_text}
 
 # Naming Convention (STRICT)
-- Feature file: `features/<feature-name>.feature` where `<feature-name>` is NEW (kebab-case)
-- Step definition: `tests/step_defs/test_<feature_name>.py` where `<feature_name>` is NEW (snake_case)
+- Feature file: `features/<feature_name>.feature` where `<feature_name>` is NEW (snake_case)
+- Step definition: `tests/step_defs/test_<feature_name>.py` where `<feature_name>` is NEW (snake_case, must match feature file's name)
 - Page object: `pages/<page_name>_page.py` (only if a NEW page object is needed)
-- Branch: `auto/<jira-key>-<feature-name>`
+- Branch: `auto/<jira-key>-<feature-name>` (kebab-case is fine for the BRANCH only, since Git ergonomics differ from Python imports)
+
+CRITICAL: The feature filename and the step def `feature_path("<name>")` argument MUST USE THE SAME `<feature_name>`. If you create `features/login_validation.feature`, your step def MUST call `scenarios(str(feature_path("login_validation")))`. Mismatched names (e.g., kebab in feature, snake in step def) cause pytest-bdd to fail with FileNotFoundError at test collection time.
 
 # Decision Process (follow this exactly)
 1. For each test case, check if it's already covered by the RESERVED reference files above.
 2. If yes -> add it to `notes` as "Skipped: SCRUM-X — already covered by login.feature" and DO NOT include it in `files_to_create`.
 3. For all other test cases, group them by theme into ONE feature file with a NEW name.
-4. The new feature name MUST NOT be `login` (that's reserved). Use a more specific name like `login-validation`, `login-errors`, etc.
+4. The new feature name MUST NOT be `login` (that's reserved). Use a more specific name like `login_validation`, `login_errors`, etc. (snake_case, matching the step def file pattern).
 
 # Reminder
 Return ONLY the plan. NO actual code. Just metadata about what NEW files to create. NEVER plan to modify the RESERVED paths.

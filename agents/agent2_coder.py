@@ -32,7 +32,12 @@ from agents.jira_client import JiraClient
 from agents.github_client import GitHubClient
 from agents.llm_client import LLMClient
 from agents.schemas import CodePlan, GeneratedFile, CodeGenerationOutput
-from config.paths import PROMPTS_DIR, CONFIG_YAML, PROJECT_ROOT
+from agents.test_inventory import (
+    scan_features_dir,
+    filter_duplicate_test_cases,
+    validate_filename_consistency,
+)
+from config.paths import PROMPTS_DIR, CONFIG_YAML, PROJECT_ROOT, FEATURES_DIR
 
 # ---------------------------------------------------------------------------
 logging.basicConfig(
@@ -218,9 +223,21 @@ def generate_file_content(
 # ---------------------------------------------------------------------------
 # Core agent workflow
 # ---------------------------------------------------------------------------
-def run(story_id: str, dry_run: bool = False) -> dict:
-    """Main agent flow — Stage 1 plan, then Stage 2 per-file generation."""
-    logger.info(f"=== Agent 2 (Coder) starting for {story_id} (dry_run={dry_run}) ===")
+def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> dict:
+    """Main agent flow — Stage 1 plan, then Stage 2 per-file generation.
+
+    Args:
+        story_id: Jira story key (e.g., "SCRUM-5")
+        dry_run: If True, don't create branch/commits/PR. Print preview.
+        is_regenerate: If True, this is a REGENERATION run triggered by the
+            `ai-regenerate` label. Behavior changes:
+              - Dedup check is SKIPPED (LLM regenerates everything fresh)
+              - Branch name gets a `-revN` suffix (preserves old PR)
+              - On success: removes `ai-regenerate` label (one-shot signal)
+              - On success: still adds `ai-coded` (back to normal state)
+    """
+    mode_label = "REGENERATE" if is_regenerate else "normal"
+    logger.info(f"=== Agent 2 (Coder) starting for {story_id} (mode={mode_label}, dry_run={dry_run}) ===")
 
     # 1. INPUT
     jira = JiraClient()
@@ -231,20 +248,91 @@ def run(story_id: str, dry_run: bool = False) -> dict:
         logger.warning(f"No Test Cases linked to {story_id}. Run Agent 1 first.")
         return {"story_id": story_id, "status": "no_test_cases", "files_generated": 0}
 
+    # 1b. DEDUPLICATION CHECK
+    # Before spending LLM tokens, check if any test cases are already covered
+    # by existing scenarios in features/. This solves the duplicate-coverage
+    # problem we saw on PR #7 where Agent 2 generated `login-validation.feature`
+    # alongside the existing `login.feature`.
+    #
+    # Three outcomes:
+    #   - All test cases new → continue with full flow (no change from before)
+    #   - Some duplicates    → log them, continue with only new cases
+    #   - All duplicates     → skip PR creation entirely, mark ai-coded
+    #
+    # REGENERATE BYPASS:
+    #   When is_regenerate=True, the user explicitly asked for fresh code
+    #   even if scenarios already exist. We skip the inventory scan entirely
+    #   and treat all test cases as "new". This is the simplest, safest
+    #   implementation — no special-case branches in the filter logic.
+    if is_regenerate:
+        logger.info(
+            f"Regeneration mode: bypassing dedup check. All {len(test_cases)} "
+            "test cases will be regenerated from scratch."
+        )
+        new_test_cases = test_cases
+        skipped_test_cases = []
+    else:
+        inventory = scan_features_dir(FEATURES_DIR)
+        new_test_cases, skipped_test_cases = filter_duplicate_test_cases(test_cases, inventory)
+
+    if skipped_test_cases:
+        logger.info(
+            f"Dedup: {len(skipped_test_cases)} of {len(test_cases)} test cases "
+            f"already covered by existing scenarios. Skipping these."
+        )
+        for skip in skipped_test_cases:
+            tc = skip["test_case"]
+            logger.info(
+                f"  - {tc.get('key', '?')}: '{tc.get('summary', '?')}' "
+                f"already covered by '{skip['matched_scenario']}' "
+                f"in {skip['matched_file']}"
+            )
+
+    if not new_test_cases:
+        # Every approved test case is already covered. The honest thing is
+        # to do nothing — no PR needed, no LLM cost wasted. We still mark
+        # the parent story 'ai-coded' so it doesn't keep coming back in scans.
+        logger.info(
+            f"All {len(test_cases)} test cases for {story_id} are already covered "
+            "by existing scenarios. No new code generation needed."
+        )
+
+        if not dry_run:
+            config = load_agent_config()
+            completion_label = config.get("completion_label", "ai-coded")
+            jira.add_label(story_id, completion_label)
+            logger.info(f"Marked {story_id} with label '{completion_label}' (no work needed)")
+
+        return {
+            "story_id": story_id,
+            "status": "skipped_all_duplicates",
+            "files_generated": 0,
+            "skipped_count": len(skipped_test_cases),
+        }
+
+    # From here on, use new_test_cases instead of test_cases — the LLM only
+    # needs to know about cases that need code. Sending duplicates would
+    # waste tokens AND risk the LLM regenerating them anyway.
+    if len(new_test_cases) < len(test_cases):
+        logger.info(
+            f"Generating code for {len(new_test_cases)} new case(s); "
+            f"{len(skipped_test_cases)} skipped as duplicates."
+        )
+
     # 2. CONTEXT
     references = load_reference_files()
     page_inventory = load_page_inventory()
     llm = LLMClient(temperature=0.2)
 
     # 3. STAGE 1
-    plan = build_plan(llm, test_cases, references, page_inventory)
+    plan = build_plan(llm, new_test_cases, references, page_inventory)
 
     # 4. STAGE 2
     generated_files: list[GeneratedFile] = []
     for file_plan in plan.files_to_create:
         try:
             content = generate_file_content(
-                llm, file_plan, plan, test_cases, references, page_inventory
+                llm, file_plan, plan, new_test_cases, references, page_inventory
             )
             generated_files.append(GeneratedFile(
                 file_path=file_plan.file_path,
@@ -264,6 +352,28 @@ def run(story_id: str, dry_run: bool = False) -> dict:
         files=generated_files,
         notes=plan.notes,
     )
+
+    # 4b. VALIDATE FILENAME CONSISTENCY
+    # Catches the bug we hit on PR #7 where the LLM generated:
+    #   features/login-validation.feature   (kebab-case)
+    #   test_login_validation.py uses feature_path("login_validation") (snake_case)
+    # which made pytest-bdd fail with FileNotFoundError at test collection.
+    #
+    # The prompt was updated in Phase 4 to enforce snake_case throughout,
+    # but LLMs occasionally drift. Validating here is defense-in-depth —
+    # we'd rather fail loudly NOW than ship a broken PR.
+    consistency_errors = validate_filename_consistency(generated_files)
+    if consistency_errors:
+        logger.error(f"Filename consistency check FAILED with {len(consistency_errors)} error(s):")
+        for err in consistency_errors:
+            logger.error(f"  - {err}")
+        raise ValueError(
+            f"Filename consistency validation failed for {story_id}: "
+            f"{len(consistency_errors)} mismatch(es) between feature files "
+            f"and step definitions. See logs for details. The LLM produced "
+            f"step defs that reference feature files not in this batch — "
+            f"opening this PR would create immediately-broken tests."
+        )
 
     # 5. ACT
     if dry_run:
@@ -319,6 +429,23 @@ def run(story_id: str, dry_run: bool = False) -> dict:
     assert_valid_branch_for_pipeline(output.branch_name)
 
     gh = GitHubClient()
+
+    # REGENERATE: append -revN suffix so we don't reuse the existing branch.
+    # This preserves the old PR as historical record (user closes manually).
+    # We find the lowest unused N starting from 2 (rev1 = original).
+    if is_regenerate:
+        base_branch = output.branch_name
+        rev_n = 2
+        while gh.branch_exists(f"{base_branch}-rev{rev_n}"):
+            rev_n += 1
+        new_branch_name = f"{base_branch}-rev{rev_n}"
+        logger.info(
+            f"Regeneration: changed branch from '{base_branch}' to "
+            f"'{new_branch_name}' to preserve old PR as historical record"
+        )
+        # Update output so all downstream uses match (commits, PR head)
+        output.branch_name = new_branch_name
+
     gh.create_branch(output.branch_name, from_branch="main")
 
     for f in output.files:
@@ -350,6 +477,15 @@ def run(story_id: str, dry_run: bool = False) -> dict:
     completion_label = config.get("completion_label", "ai-coded")
     jira.add_label(story_id, completion_label)
     logger.info(f"Marked {story_id} with label '{completion_label}' (idempotency)")
+
+    # REGENERATE: clean up the ai-regenerate label so it acts as a one-shot
+    # signal. Without this, the story would re-trigger regeneration on every
+    # scan run. The user adds ai-regenerate to mean "redo this once" — we
+    # honor that by removing it after we're done.
+    if is_regenerate:
+        regenerate_label = config.get("regenerate_label", "ai-regenerate")
+        jira.remove_label(story_id, regenerate_label)
+        logger.info(f"Removed label '{regenerate_label}' from {story_id} (one-shot consumed)")
 
     result = {
         "story_id": story_id,
@@ -388,23 +524,27 @@ def main():
             print("=" * 60)
         else:
             # Scan mode: read selection criteria from config.yaml, find all
-            # eligible stories (those with required labels, missing excluded
-            # labels), and process each one. Used in CI for batch runs.
+            # eligible stories, and process each one. Used in CI for batch runs.
             #
-            # Eligibility criteria for Agent 2 (defined in config.yaml):
-            #   - issue_type = Story
-            #   - status in (To Do, In Progress)
-            #   - has labels: ai-processed, human-approved
-            #   - does NOT have labels: ai-coded, ai-skip
+            # Two passes (Phase 6):
+            #   1. NORMAL pass — stories ready for first-time coding
+            #      (ai-processed AND human-approved AND NOT ai-coded AND NOT ai-skip
+            #       AND NOT ai-regenerate)
             #
-            # This is the human-approval gate: stories only become eligible
-            # after a human has reviewed Agent 1's output on Jira and added
-            # the `human-approved` label.
+            #   2. REGENERATE pass — stories where the user updated the test
+            #      cases and labeled the story ai-regenerate to redo the code
+            #      (ai-processed AND human-approved AND ai-regenerate AND NOT ai-skip)
+            #
+            # We deliberately keep the two configs separate (rather than OR-ing
+            # them in JQL) because the runtime BEHAVIOR differs (regen bypasses
+            # dedup, uses -revN branch). Two queries → two passes is cleaner
+            # and more debuggable.
             config = load_agent_config()
-            selection = config.get("selection", {})
+            normal_selection = config.get("selection", {})
+            regen_selection = config.get("regenerate_selection", {})
             max_stories = config.get("max_stories_per_run", 5)
 
-            if not selection:
+            if not normal_selection:
                 logger.error(
                     "No 'selection' config found for agent2_coder in config.yaml. "
                     "Add an 'agents.agent2_coder.selection' block or use --story KEY instead."
@@ -412,32 +552,81 @@ def main():
                 sys.exit(1)
 
             jira = JiraClient()
-            stories = jira.find_stories_to_process(selection, max_results=max_stories)
 
-            if not stories:
+            # Pass 1: Normal-mode candidates
+            logger.info("Scan pass 1/2: looking for first-time stories (normal mode)")
+            normal_stories = jira.find_stories_to_process(normal_selection, max_results=max_stories)
+
+            # Pass 2: Regenerate-mode candidates (only if regen_selection is configured)
+            regen_stories = []
+            if regen_selection:
+                logger.info("Scan pass 2/2: looking for stories with ai-regenerate label")
+                regen_stories = jira.find_stories_to_process(regen_selection, max_results=max_stories)
+            else:
                 logger.info(
-                    f"No stories found matching: required={selection.get('required_labels', [])}, "
-                    f"excluded={selection.get('excluded_labels', [])}. "
-                    f"Tip: ensure parent story has both 'ai-processed' (Agent 1 done) "
+                    "No 'regenerate_selection' config — skipping regen pass. "
+                    "Add 'agents.agent2_coder.regenerate_selection' to enable."
+                )
+
+            total_count = len(normal_stories) + len(regen_stories)
+            if total_count == 0:
+                logger.info(
+                    f"No stories found in either pass. "
+                    f"Normal mode: required={normal_selection.get('required_labels', [])}, "
+                    f"excluded={normal_selection.get('excluded_labels', [])}. "
+                    f"Regen mode: requires 'ai-regenerate' label. "
+                    f"Tip: ensure parent story has 'ai-processed' (Agent 1 done) "
                     f"and 'human-approved' (you reviewed) labels."
                 )
                 print("\n[OK] Agent 2 scan complete -- no stories to process.")
                 sys.exit(0)
 
-            logger.info(f"Found {len(stories)} stories to process: {[s['key'] for s in stories]}")
+            logger.info(
+                f"Found {len(normal_stories)} normal + {len(regen_stories)} regen "
+                f"= {total_count} stories to process. "
+                f"Normal: {[s['key'] for s in normal_stories]}. "
+                f"Regen: {[s['key'] for s in regen_stories]}."
+            )
+
             results = []
-            for story in stories:
+
+            # Process normal-mode stories first
+            for story in normal_stories:
                 try:
-                    result = run(story["key"], dry_run=args.dry_run)
+                    result = run(story["key"], dry_run=args.dry_run, is_regenerate=False)
                     results.append(result)
                 except Exception as e:
                     # One story failing should not abort the whole batch —
-                    # log, record, and move on. Common causes: LLM rate limit,
-                    # GitHub PR conflict, story has no linked Test Cases.
-                    logger.error(f"Failed processing {story['key']}: {e}", exc_info=True)
+                    # log, record, and move on.
+                    logger.error(f"Failed processing {story['key']} (normal): {e}", exc_info=True)
                     results.append({
                         "story_id": story["key"],
                         "status": "failed",
+                        "mode": "normal",
+                        "error": str(e),
+                    })
+
+            # Process regenerate-mode stories
+            for story in regen_stories:
+                # Defensive: skip if same story already appeared in normal pass.
+                # Shouldn't happen given our exclusion lists, but if config is
+                # misconfigured we don't want to double-process.
+                if any(r.get("story_id") == story["key"] for r in results):
+                    logger.warning(
+                        f"Skipping {story['key']} in regen pass — already processed in normal pass. "
+                        "Check config: regenerate_selection should require ai-regenerate label."
+                    )
+                    continue
+
+                try:
+                    result = run(story["key"], dry_run=args.dry_run, is_regenerate=True)
+                    results.append(result)
+                except Exception as e:
+                    logger.error(f"Failed processing {story['key']} (regen): {e}", exc_info=True)
+                    results.append({
+                        "story_id": story["key"],
+                        "status": "failed",
+                        "mode": "regenerate",
                         "error": str(e),
                     })
 
@@ -445,9 +634,17 @@ def main():
             print("\n" + "=" * 60)
             print(f"[OK] Agent 2 scan finished -- processed {len(results)} stories")
             for r in results:
-                status_marker = "OK" if r.get("status") == "pr_opened" else "??"
+                status = r.get("status", "unknown")
+                if status == "pr_opened":
+                    status_marker = "OK"
+                elif status == "skipped_all_duplicates":
+                    status_marker = "SKIP"
+                elif status == "failed":
+                    status_marker = "FAIL"
+                else:
+                    status_marker = "??"
                 pr_info = f" -> {r.get('pr_url')}" if r.get("pr_url") else ""
-                print(f"   [{status_marker}] {r.get('story_id')}: {r.get('status')}{pr_info}")
+                print(f"   [{status_marker}] {r.get('story_id')}: {status}{pr_info}")
             print("=" * 60)
     except Exception as e:
         logger.error(f"Agent 2 failed: {type(e).__name__}: {e}", exc_info=True)

@@ -58,6 +58,25 @@ class GitHubClient:
         self.repo.create_git_ref(ref=ref, sha=source.commit.sha)
         logger.info(f"Created branch '{branch_name}' from {from_branch} ({source.commit.sha[:7]})")
 
+    def branch_exists(self, branch_name: str) -> bool:
+        """
+        Return True if the named branch exists on the remote, False otherwise.
+
+        Used by Phase 6's regeneration logic to find the lowest unused -revN
+        suffix when generating fresh code for an already-coded story.
+
+        Distinct from create_branch's silent-skip behavior: callers may want
+        to KNOW whether a branch exists without creating one (e.g., to compute
+        the next available revision number).
+        """
+        try:
+            self.repo.get_branch(branch_name)
+            return True
+        except GithubException as e:
+            if e.status == 404:
+                return False
+            raise
+
     # ─────────────────────────────────────────────────────────
     # File operations
     # ─────────────────────────────────────────────────────────

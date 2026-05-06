@@ -192,6 +192,25 @@ class JiraClient:
         else:
             logger.info(f"Label '{label}' already on {issue_key} — skipped")
 
+    def remove_label(self, issue_key: str, label: str) -> None:
+        """
+        Remove a label from a Jira issue (preserves other labels). Idempotent
+        — if the label isn't present, this is a no-op rather than an error.
+
+        Used by Phase 6's regeneration flow: after Agent 2 successfully
+        regenerates code, we remove the `ai-regenerate` label so it acts
+        as a one-shot signal rather than persistent state. Without this
+        cleanup, the story would re-trigger regeneration on every scan.
+        """
+        issue = self.client.issue(issue_key)
+        current_labels = list(issue.fields.labels)
+        if label in current_labels:
+            current_labels.remove(label)
+            issue.update(fields={"labels": current_labels})
+            logger.info(f"Removed label '{label}' from {issue_key}")
+        else:
+            logger.info(f"Label '{label}' not on {issue_key} — nothing to remove")
+
     def add_comment(self, issue_key: str, body: str) -> str:
         """Post a comment on a Jira issue and return the comment URL.
 
