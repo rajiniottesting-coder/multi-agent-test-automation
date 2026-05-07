@@ -38,6 +38,7 @@ import yaml
 from agents.app_context import AppContext
 from agents.jira_client import JiraClient
 from agents.github_client import GitHubClient
+from agents.import_validator import validate_imports_resolvable
 from agents.llm_client import LLMClient
 from agents.schemas import CodePlan, GeneratedFile, CodeGenerationOutput
 from agents.test_inventory import (
@@ -421,13 +422,14 @@ def _validate_generated_files(
     generated_files: list[GeneratedFile],
     story_id: str,
 ) -> None:
-    """Run filename-consistency and step-def coverage validators.
+    """Run all final validators.
 
-    These catch the two failure modes Agent 2 has historically had:
+    Catches the failure modes Agent 2 has historically had:
       - PR #7: kebab-case feature filename vs snake_case feature_path() ref
       - PR #9: feature steps without matching @given/@when/@then decorators
+      - SCRUM-13: imports referencing modules that don't exist
 
-    Raises ValueError if either validator finds problems.
+    Raises ValueError if any validator finds problems.
 
     NOTE: This is the FINAL validation, run after any retry attempts.
     By the time this raises, the LLM has already been given a chance
@@ -465,24 +467,45 @@ def _validate_generated_files(
             f"steps. See logs for details."
         )
 
+    import_errors = validate_imports_resolvable(generated_files, PROJECT_ROOT)
+    if import_errors:
+        logger.error(
+            f"Import resolution check FAILED with "
+            f"{len(import_errors)} error(s) AFTER retry:"
+        )
+        for err in import_errors:
+            logger.error(f"  - {err}")
+        raise ValueError(
+            f"Import resolution validation failed for {story_id}: "
+            f"{len(import_errors)} import(s) reference module(s) that don't "
+            f"exist in the repo, in this generation batch, or in "
+            f"requirements.txt — even after the LLM was given the "
+            f"validator's feedback for self-correction. The LLM likely "
+            f"hallucinated a page object class import. See logs for details."
+        )
+
 
 # ---------------------------------------------------------------------------
 # Self-correcting retry loop (handles weak-model step coverage failures)
 # ---------------------------------------------------------------------------
-def _group_coverage_errors_by_step_def(
-    coverage_errors: list[str],
+def _group_validator_errors_by_file(
+    validator_errors: list[str],
 ) -> dict[str, list[str]]:
-    """Group validator error messages by the step def file they refer to.
+    """Group validator error messages by the file they refer to.
 
-    Each error string from validate_step_definitions_complete starts with
-    "Step coverage error in '<path>': feature step ..." — we parse that
-    out so we can target a specific file for regeneration.
+    Validator errors follow the convention: `<error type> in '<file_path>':`
+    so we extract the file path with a single regex that matches any error
+    prefix. This works for:
+      - `Step coverage error in '...':` (coverage validator)
+      - `Import resolution error in '...':` (import validator)
+      - any future validators that follow the same convention
 
-    Returns: {step_def_path: [error_messages_for_that_file]}
+    Returns: {file_path: [error_messages_for_that_file]}
     """
     grouped: dict[str, list[str]] = {}
-    pattern = re.compile(r"Step coverage error in '([^']+)':")
-    for err in coverage_errors:
+    # Match `<words> error in '<path>':` regardless of which validator emitted it
+    pattern = re.compile(r"error in '([^']+)':")
+    for err in validator_errors:
         match = pattern.search(err)
         if not match:
             # Validator returned an error in an unexpected format — skip;
@@ -491,6 +514,29 @@ def _group_coverage_errors_by_step_def(
         path = match.group(1)
         grouped.setdefault(path, []).append(err)
     return grouped
+
+
+# Backward-compat alias — older tests reference the old name
+_group_coverage_errors_by_step_def = _group_validator_errors_by_file
+
+
+def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str]:
+    """Aggregate errors from all validators that the repair loop can act on.
+
+    Currently combines:
+      - Step-definition coverage validator (missing @given/@when/@then)
+      - Import resolution validator (imports referencing non-existent modules)
+
+    Both produce errors in the `<type> error in '<path>':` format so the
+    repair loop's grouper can target the right file.
+
+    Future validators can be plumbed here as long as they emit errors in
+    the same format.
+    """
+    errors: list[str] = []
+    errors.extend(validate_step_definitions_complete(generated_files))
+    errors.extend(validate_imports_resolvable(generated_files, PROJECT_ROOT))
+    return errors
 
 
 def _attempt_step_coverage_repair(
@@ -503,57 +549,48 @@ def _attempt_step_coverage_repair(
     ctx: AppContext,
     max_retries: int = 2,
 ) -> list[GeneratedFile]:
-    """If the step-def coverage validator finds missing decorators, give the
-    LLM a second (and third) chance to fix the step def file with explicit
-    feedback about which decorators are missing.
+    """If validators find issues in the generated files, give the LLM up to
+    `max_retries` chances to fix them with explicit feedback.
 
-    This is app-agnostic: the validator already works for any feature/step
-    pair. The repair simply re-invokes Stage 2 for the BROKEN step def file
-    with an extra "Validator Feedback" section listing the missing steps.
+    Handles two failure modes today:
+      - Missing step decorators (coverage validator)
+      - Unresolvable imports (import validator)
+
+    Both kinds of errors are app-agnostic: the validators work on any
+    feature/step pair and any Python imports. The repair simply re-invokes
+    Stage 2 for the broken file with a "Validator Feedback" section.
 
     Why retry instead of hard-fail:
-        Weaker LLMs (gemini-2.5-flash-lite specifically) often skip a few
-        decorators on first generation. The validator catches it, but the
-        old behavior was to abort the whole run. That wastes the work
-        already done on feature files and page objects. Retrying ONLY the
-        broken step def file is targeted, cheap, and usually succeeds.
+        Weaker LLMs (gemini-2.5-flash-lite specifically) often slip up.
+        Validators catch it, but the old behavior was to abort the whole
+        run, wasting work already done on other files. Retrying ONLY the
+        broken file is targeted, cheap, and usually succeeds.
 
-    Cost: each retry = 1 LLM call (only the step def file). Capped at
-    `max_retries`. So worst case is 2 extra calls total per story.
-
-    Args:
-        generated_files: the current batch (mutated in place — corrected
-                         step defs replace the broken ones)
-        llm, plan, test_cases, references, page_inventory, ctx: same as
-                         the original generate_file_content arguments
-        max_retries: how many repair passes to attempt before giving up
-
-    Returns: the same list with corrected step def files swapped in.
-             If the retries don't fully fix things, returns the latest
-             attempt — _validate_generated_files will then raise.
+    Cost: each retry = 1 LLM call per broken file. Capped at `max_retries`
+    iterations. Worst case for a typical 1-broken-file run is 2 extra calls.
     """
     for attempt in range(1, max_retries + 1):
-        coverage_errors = validate_step_definitions_complete(generated_files)
-        if not coverage_errors:
+        all_errors = _collect_repairable_errors(generated_files)
+        if not all_errors:
             if attempt > 1:
                 logger.info(
-                    f"Step coverage repair succeeded after {attempt - 1} "
-                    f"retry attempt(s). All decorators now match."
+                    f"Validator repair succeeded after {attempt - 1} "
+                    f"retry attempt(s). All issues resolved."
                 )
             return generated_files
 
-        grouped = _group_coverage_errors_by_step_def(coverage_errors)
+        grouped = _group_validator_errors_by_file(all_errors)
         if not grouped:
             # Errors couldn't be parsed — let final validation handle it
             logger.warning(
-                f"Coverage validator produced {len(coverage_errors)} error(s) "
-                f"but no targetable step def file was identified. Skipping repair."
+                f"Validators produced {len(all_errors)} error(s) but no "
+                f"targetable file was identified. Skipping repair."
             )
             return generated_files
 
         logger.warning(
-            f"Step coverage check found {len(coverage_errors)} missing "
-            f"decorator(s) across {len(grouped)} file(s). "
+            f"Validators found {len(all_errors)} issue(s) across "
+            f"{len(grouped)} file(s). "
             f"Attempting repair (attempt {attempt}/{max_retries})..."
         )
 
@@ -612,10 +649,10 @@ def _attempt_step_coverage_repair(
                 )
 
     # Hit max_retries without full success — final validator will raise.
-    final_errors = validate_step_definitions_complete(generated_files)
+    final_errors = _collect_repairable_errors(generated_files)
     if final_errors:
         logger.warning(
-            f"Step coverage repair exhausted {max_retries} retry attempt(s); "
+            f"Validator repair exhausted {max_retries} retry attempt(s); "
             f"{len(final_errors)} error(s) remain. Final validator will raise."
         )
     return generated_files

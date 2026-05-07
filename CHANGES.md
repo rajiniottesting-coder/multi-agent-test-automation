@@ -4,6 +4,85 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## Hotfix v3 — Import resolution validator (2026-05-07)
+
+### What broke
+
+After hotfix v2 unblocked the step-coverage failure, the next run produced a PR that opened successfully but failed at the Agent 4 (Runner) test-collection stage:
+
+```
+ImportError while importing test module 'tests/step_defs/test_inventory_sorting.py'
+E   ModuleNotFoundError: No module named 'pages.product_detail_page'
+```
+
+The LLM had generated a step def file that imported page object classes from files that **were never planned** and **don't exist on disk**. Agent 3 (Reviewer) caught it correctly and posted a 🛑 verdict listing all the missing classes, but Agent 4 still ran (Agent 3 is advisory — it's the human's job to read the review before merging) and crashed at pytest collection time.
+
+### Why the previous validators didn't catch this
+
+The framework had three validators before v3:
+- **Filename consistency** (Phase 4) — passed: feature filename matched step def
+- **Step coverage** (Phase 8) — passed: every Gherkin step had a decorator
+- **Path policy** (v1 hotfix) — passed: no reserved files were touched
+
+None of them check that **imports inside Python files actually resolve**. The LLM hallucinated `from pages.cart_page import CartPage` and `from pages.product_detail_page import ProductDetailPage` for files that aren't in the repo and weren't planned. All three existing validators happily passed it through.
+
+### Fix — Import resolution validator
+
+A new **fourth validator** parses every generated `.py` file's import statements and checks that each imported module resolves to:
+
+1. **Python standard library** (auto-detected via `sys.stdlib_module_names`)
+2. **Third-party package in `requirements.txt`** (auto-parsed; handles dash-to-underscore name normalization)
+3. **An existing file in the repo**
+4. **A file in this generation batch** (so cross-file imports within the batch work)
+
+If none of these match → the import is broken. The validator emits an error in the same `<type> error in '<path>':` format the existing repair loop's grouper can parse, so the LLM gets a second chance to fix the import.
+
+### Why this is reusable across projects
+
+- **Pure AST analysis** — no project-specific assumptions
+- **Auto-discovers stdlib** — `sys.stdlib_module_names` is built into Python
+- **Auto-discovers third-party deps** — reads whatever's in `requirements.txt`
+- **Handles common naming aliases** — `pyyaml`/`yaml`, `PyGithub`/`github`, etc., as standard Python ecosystem facts (not project-specific)
+- **No hardcoded paths or names** — works for any app, any project
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `agents/import_validator.py` | **NEW** — parses imports via Python's `ast` module, classifies each as stdlib / third-party / repo-internal / planned-in-batch / unresolvable. Emits errors in the format the repair loop already understands. |
+| `agents/agent2_coder.py` | Renamed `_group_coverage_errors_by_step_def` → `_group_validator_errors_by_file` (with backward-compat alias) — now matches any `error in '<path>':` prefix. New `_collect_repairable_errors` aggregates output from both step-coverage and import validators. Final validator (`_validate_generated_files`) now runs the import check too. Repair loop now handles both error types in one pass. |
+| `tests/unit/test_import_validator.py` | **NEW** — 28 unit tests covering: SCRUM-13 regression scenario, stdlib imports, third-party imports, repo-internal imports, planned-in-batch imports, requirements.txt parsing, dotted module paths, edge cases (malformed source, empty input, relative imports, non-Python files). |
+| `CHANGES.md` | This entry. |
+
+### Test results
+
+- **148 unit tests pass** (was 120 before adding 28 new tests)
+- **1 unrelated pre-existing failure** still unchanged
+- **End-to-end repair simulation against the actual SCRUM-13 failure** verified: validator catches 2 broken imports, repair loop regenerates the step def file, retry produces clean imports, final validation passes
+
+### Cumulative validator coverage now
+
+The framework now defends against four LLM failure modes:
+
+| # | Validator | Catches |
+|:-:|---|---|
+| 1 | Filename consistency (Phase 4) | kebab/snake mismatches between feature files and `feature_path()` calls |
+| 2 | Step coverage (Phase 8) | Gherkin steps without matching `@given/@when/@then` |
+| 3 | Path policy (v1 hotfix) | LLM trying to overwrite reserved reference files |
+| 4 | Import resolution (v3 hotfix) | Imports referencing modules that don't exist anywhere |
+
+All four feed the same self-correcting repair loop with up to 2 retries. If retries exhaust, you get a clear final error explaining what the LLM couldn't fix.
+
+### Honest assessment
+
+I cannot promise this is the last bug. The repair loop and validators defend against the LLM mistakes I've seen in production failures so far. Tomorrow's story might surface a fifth failure mode I haven't anticipated. What I can say:
+
+- All four validators are app-agnostic — onboarding a new app changes nothing here
+- The repair pattern is extensible — adding a fifth validator is one new module + one line in `_collect_repairable_errors`
+- The error message format is stable — `<type> error in '<path>':` — so future validators integrate without touching the repair loop
+
+---
+
 ## Hotfix v2 — Self-correcting step coverage repair (2026-05-07)
 
 ### What broke
