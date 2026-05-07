@@ -28,13 +28,20 @@ app_under_test:
     step_def: "tests/step_defs/test_login.py"
     page_object: "pages/login_page.py"
 
-  # Reserved paths: files Agent 2 must NEVER overwrite. Always include
-  # the reference files above plus any other "do-not-touch" assets
-  # (the BasePage class, shared utilities, etc.).
+  # Reserved paths: files Agent 2 must NEVER overwrite or modify.
+  # These are typically the reference files used as the LLM's style baseline —
+  # if the LLM rewrites them, you lose your gold-standard examples.
   reserved_paths:
     - "features/login.feature"
     - "tests/step_defs/test_login.py"
     - "pages/login_page.py"
+
+  # Extendable paths: existing files Agent 2 MAY modify by adding new methods,
+  # but must not break or remove existing methods/signatures.
+  # Page objects belong here because they naturally grow as new features are
+  # automated (e.g., adding sort methods to InventoryPage when automating sort).
+  # The LLM is told the rules in the Stage 1 prompt; the validator checks them.
+  extendable_paths:
     - "pages/inventory_page.py"
     - "pages/base_page.py"
 

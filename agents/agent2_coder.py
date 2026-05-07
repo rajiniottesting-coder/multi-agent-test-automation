@@ -53,7 +53,7 @@ from config import (
     assert_valid_branch_for_pipeline,
     validate_required_env,
 )
-from config.paths import PROMPTS_DIR, CONFIG_YAML, FEATURES_DIR
+from config.paths import PROMPTS_DIR, CONFIG_YAML, FEATURES_DIR, PROJECT_ROOT
 
 logging.basicConfig(
     level=logging.INFO,
@@ -71,24 +71,54 @@ def _normalize_path(p: str) -> str:
     return p.replace("\\", "/").lstrip("./")
 
 
-def validate_no_reserved_paths(plan: CodePlan, ctx: AppContext) -> None:
-    """Raise ValueError if the plan tries to modify any reserved file.
+def validate_paths_against_policy(plan: CodePlan, ctx: AppContext) -> None:
+    """Enforce the two-tier file policy on the LLM's plan.
 
-    Reserved paths come from `app_under_test.reserved_paths` in config.yaml,
+    Tier 1 — RESERVED: never touched. If the plan includes any reserved path,
+        abort. These are the reference files the LLM uses as a style baseline.
+
+    Tier 2 — EXTENDABLE: may be modified to add new methods. The plan must
+        mark these with `is_new_file=False` so it's an explicit, conscious
+        modification (not an accidental overwrite). If the LLM marks an
+        extendable file as `is_new_file=True`, that means "create from
+        scratch" which would wipe existing methods — also abort.
+
+    Tier 3 — NEW: every other path. LLM creates fresh.
+
+    Reserved/extendable lists come from `app_under_test.*` in config.yaml,
     so this check stays correct regardless of which app is being tested.
     """
     reserved = ctx.reserved_paths_normalized()
-    collisions = [
-        fp.file_path for fp in plan.files_to_create
-        if _normalize_path(fp.file_path) in reserved
-    ]
-    if collisions:
+    extendable = ctx.extendable_paths_normalized()
+
+    reserved_collisions: list[str] = []
+    extendable_misclassified: list[str] = []  # marked is_new_file=True for an existing extendable file
+
+    for fp in plan.files_to_create:
+        normalized = _normalize_path(fp.file_path)
+        if normalized in reserved:
+            reserved_collisions.append(fp.file_path)
+        elif normalized in extendable and fp.is_new_file:
+            extendable_misclassified.append(fp.file_path)
+
+    if reserved_collisions:
         raise ValueError(
-            f"LLM tried to overwrite reserved reference files: {collisions}. "
-            f"These files are protected by app_under_test.reserved_paths in "
-            f"config.yaml. The LLM should have used different file paths "
-            f"(e.g., 'features/<theme>-validation.feature' instead of an "
-            f"existing reference file). Consider tightening the prompt."
+            f"LLM tried to overwrite reserved reference files: "
+            f"{reserved_collisions}. These files are protected by "
+            f"app_under_test.reserved_paths in config.yaml — they're the "
+            f"style baseline the LLM mimics, and must never be modified. "
+            f"The LLM should have used different file paths for new tests, "
+            f"or marked an extendable page object for modification instead."
+        )
+
+    if extendable_misclassified:
+        raise ValueError(
+            f"LLM marked existing extendable file(s) as new "
+            f"(is_new_file=True): {extendable_misclassified}. These are "
+            f"existing page objects listed in app_under_test.extendable_paths. "
+            f"They may be MODIFIED (is_new_file=False) to add new methods, "
+            f"but never CREATED from scratch — that would wipe existing "
+            f"methods. Fix the plan to set is_new_file=False for these files."
         )
 
 
@@ -145,7 +175,41 @@ def load_agent_config(agent_key: str = "agent2_coder") -> dict:
 def _build_reserved_paths_block(ctx: AppContext) -> str:
     """Render the reserved-paths list as a markdown bullet block for the
     Stage 1 plan prompt."""
-    return "\n".join(f"- `{p}` -- RESERVED" for p in ctx.reserved_paths)
+    if not ctx.reserved_paths:
+        return "(none — no reserved paths configured)"
+    return "\n".join(f"- `{p}` -- RESERVED (must NOT be modified)" for p in ctx.reserved_paths)
+
+
+def _build_extendable_paths_block(ctx: AppContext) -> str:
+    """Render the extendable-paths list as a markdown bullet block for the
+    Stage 1 plan prompt. Tells the LLM these existing files MAY be extended."""
+    if not ctx.extendable_paths:
+        return "(none — no extendable paths configured)"
+    return "\n".join(
+        f"- `{p}` -- EXTENDABLE (MAY add new methods; "
+        f"set is_new_file=False; do NOT remove existing methods)"
+        for p in ctx.extendable_paths
+    )
+
+
+def _read_extendable_file_content(file_path: str) -> str:
+    """Read the current content of an extendable file so Stage 2 can preserve
+    existing methods when adding new ones.
+
+    Falls back to a placeholder if the file doesn't exist on disk —
+    extendable files SHOULD exist already, but a missing file is non-fatal
+    (the LLM will just create it fresh).
+    """
+    abs_path = PROJECT_ROOT / file_path
+    if not abs_path.exists():
+        logger.warning(
+            f"Extendable file '{file_path}' not found on disk. The LLM will "
+            f"have no existing-content reference; it may create new methods "
+            f"without preserving anything. Configured under "
+            f"app_under_test.extendable_paths in config.yaml."
+        )
+        return f"# (file '{file_path}' does not exist yet — generate fresh content)"
+    return abs_path.read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +228,7 @@ def build_plan(
         prompt_template
         .replace("{app_name}", ctx.name)
         .replace("{reserved_paths_block}", _build_reserved_paths_block(ctx))
+        .replace("{extendable_paths_block}", _build_extendable_paths_block(ctx))
         .replace("{reference_feature_path}", ctx.reference_feature)
         .replace("{reference_step_def_path}", ctx.reference_step_def)
         .replace("{reference_page_object_path}", ctx.reference_page_object)
@@ -190,8 +255,8 @@ def build_plan(
     for fp in plan.files_to_create:
         logger.info(f"  - {fp.file_path} [{fp.file_type}] -- {fp.purpose}")
 
-    # Defensive guard: refuse if the LLM planned to overwrite reference files
-    validate_no_reserved_paths(plan, ctx)
+    # Defensive guard: enforce the two-tier reserved/extendable policy
+    validate_paths_against_policy(plan, ctx)
     return plan
 
 
@@ -207,12 +272,42 @@ def generate_file_content(
     page_inventory: str,
     ctx: AppContext,
 ) -> str:
-    """Stage 2: For ONE file in the plan, get its full content as raw text."""
+    """Stage 2: For ONE file in the plan, get its full content as raw text.
+
+    For files marked as extending an existing path (is_new_file=False AND
+    in extendable_paths), the current file content is injected into the
+    prompt under a dedicated section so the LLM preserves existing methods.
+    """
     related_test_cases = [
         tc for tc in test_cases if tc["key"] in file_plan.related_test_cases
     ]
     if not related_test_cases:
         related_test_cases = test_cases
+
+    # If this file is being EXTENDED (not created fresh), give the LLM
+    # the current content so it doesn't accidentally remove existing methods.
+    extendable = ctx.extendable_paths_normalized()
+    is_extending_existing = (
+        not file_plan.is_new_file
+        and _normalize_path(file_plan.file_path) in extendable
+    )
+    if is_extending_existing:
+        existing_content = _read_extendable_file_content(file_plan.file_path)
+        existing_block = (
+            f"# EXTENDING EXISTING FILE — preserve all methods below\n\n"
+            f"You are MODIFYING an existing file. The current content is shown\n"
+            f"below. You MUST keep every existing method and its signature\n"
+            f"intact. ADD new methods alongside them. Do NOT remove or rename\n"
+            f"any existing code.\n\n"
+            f"## Current content of `{file_plan.file_path}`:\n"
+            f"```python\n{existing_content}\n```\n"
+        )
+        logger.info(
+            f"Stage 2: extending existing file '{file_plan.file_path}' — "
+            f"injecting {len(existing_content)} chars of current content."
+        )
+    else:
+        existing_block = ""
 
     prompt_template = load_prompt("agent2_coder_generate.md")
     user_prompt = (
@@ -222,6 +317,7 @@ def generate_file_content(
         .replace("{file_type}", file_plan.file_type)
         .replace("{file_purpose}", file_plan.purpose)
         .replace("{feature_name}", plan.feature_name)
+        .replace("{existing_file_block}", existing_block)
         .replace("{reference_feature_path}", ctx.reference_feature)
         .replace("{reference_step_def_path}", ctx.reference_step_def)
         .replace("{reference_page_object_path}", ctx.reference_page_object)

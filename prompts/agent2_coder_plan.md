@@ -7,14 +7,41 @@ You are in Stage 1 of a two-stage workflow. In this stage you decide WHAT files 
 # Application Under Test
 **{app_name}** — see the page inventory below for selectors and pages.
 
-# CRITICAL: RESERVED FILE PATHS (DO NOT TOUCH)
-The following file paths ALREADY EXIST and are RESERVED. You MUST NEVER plan to create, modify, or overwrite them:
+# File Policy — TWO TIERS (READ CAREFULLY)
+
+There are TWO categories of existing files. The rules differ.
+
+## TIER 1: RESERVED (never touch)
+
+These files are the LLM's style baseline. You must NEVER plan to create,
+modify, or overwrite them. If you do, the system rejects your plan.
 
 {reserved_paths_block}
 
-If a test case is already covered by these files, SKIP that test case entirely. List skipped cases in `notes` with the reason. Do NOT add it to `files_to_create`.
+If a test case is already covered by a reserved file (e.g., login.feature
+already covers login), SKIP that test case — don't try to "improve" the
+reserved file. Add the skip to `notes`.
 
-If you plan to create a file at any of the RESERVED paths, the system will reject your plan and the run will FAIL. Always pick a new, descriptive name.
+## TIER 2: EXTENDABLE (may modify, additively)
+
+These files are existing page objects that grow as new features are
+automated. You MAY add new methods to them. You MUST set
+`is_new_file: false` for these in your plan.
+
+Rules for extendable files:
+- Add new methods that the new tests need (e.g., a sort method for sort tests)
+- DO NOT remove or rename existing methods
+- DO NOT change existing method signatures
+- Keep all existing imports, class structure, and constants
+- The full current file content will be shown to you in Stage 2 — preserve it
+
+{extendable_paths_block}
+
+## TIER 3: NEW FILES (any other path)
+
+For new test scenarios that the existing files don't cover, create new
+feature files, new step def files, and (if needed) new page objects.
+Set `is_new_file: true` for these.
 
 # Your Output
 Return a `CodePlan` with:
@@ -25,7 +52,9 @@ Return a `CodePlan` with:
 - `files_to_create`: list of `FilePlan` objects, each with:
   - `file_path`: project-relative path (NEVER one of the RESERVED paths above)
   - `file_type`: one of `feature`, `step_definitions`, `page_object`, `other`
-  - `is_new_file`: true if creating new (this should ALWAYS be true for valid plans)
+  - `is_new_file`: `true` for brand-new files (TIER 3); `false` when extending
+    an EXTENDABLE file (TIER 2). Setting `true` for an extendable path will
+    be rejected (it would wipe existing methods).
   - `purpose`: one-sentence justification
   - `related_test_cases`: list of Jira keys this file addresses (e.g., `["SCRUM-7", "SCRUM-9"]`)
 - `notes`: caveats, skipped test cases (with reasons), assumptions
@@ -57,9 +86,9 @@ These are shown so you understand the existing style and conventions. Your gener
 # Test Cases to Process
 {test_cases_text}
 
-# Naming Convention (STRICT -- SINGLE SOURCE OF TRUTH)
+# Naming Convention (CRITICAL — STRICT, SINGLE SOURCE OF TRUTH)
 
-**THE ONE RULE:** Pick a snake_case name for the new test set. Use it everywhere
+**THE ONE RULE:** Pick a snake_case name for the new test set. You MUST USE THE SAME name everywhere
 EXCEPT in the branch name (which uses the kebab-case form for Git ergonomics).
 
 ## Step 1: Pick ONE snake_case name
@@ -122,10 +151,13 @@ When you produce the `CodePlan`:
 - Inside the step def's content (Stage 2), use the **snake_case** form for `feature_path("...")`
 
 # Decision Process (follow this exactly)
+
 1. For each test case, check if it's already covered by the RESERVED reference files above.
 2. If yes -> add it to `notes` as "Skipped: <KEY> -- already covered by <reserved file>" and DO NOT include it in `files_to_create`.
-3. For all other test cases, group them by theme into ONE feature file with a NEW name.
+3. For all other test cases, group them by theme into ONE NEW feature file with a NEW name (TIER 3).
 4. The new feature name MUST NOT collide with any RESERVED path. Use a specific name (snake_case).
+5. If your tests need new methods on an EXTENDABLE page object (e.g., adding `select_sort_option()` to InventoryPage to test sort), include that page object in `files_to_create` with `is_new_file: false`. The system will give you the existing content in Stage 2 so you can preserve it.
+6. If your tests need a brand-new page object that doesn't exist anywhere yet (e.g., `pages/cart_page.py` for a new cart feature), include it with `is_new_file: true` (TIER 3).
 
 # Reminder
-Return ONLY the plan. NO actual code. Just metadata about what NEW files to create. NEVER plan to modify the RESERVED paths.
+Return ONLY the plan. NO actual code. Just metadata about what files to create or extend. NEVER plan to modify the RESERVED paths. EXTENDABLE paths may be modified with `is_new_file: false`.

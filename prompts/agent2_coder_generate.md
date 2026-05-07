@@ -13,6 +13,8 @@ You are in Stage 2 of a two-stage workflow. The plan has already been decided. Y
 - **Purpose:** {file_purpose}
 - **Feature this file is part of:** `{feature_name}`
 
+{existing_file_block}
+
 # Output Format (CRITICAL)
 Return the file content inside a SINGLE Markdown code block. Use the appropriate language tag:
 - For `.feature` files: ```` ```gherkin ````

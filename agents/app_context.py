@@ -64,6 +64,7 @@ class AppContext:
     reference_step_def: str
     reference_page_object: str
     reserved_paths: tuple[str, ...]
+    extendable_paths: tuple[str, ...]
 
     # ─────────────────────────────────────────────────────────────
     # Construction
@@ -114,9 +115,16 @@ class AppContext:
             logger.warning(
                 "app_under_test.reserved_paths is empty. Agent 2 will not "
                 "protect any reference files from being overwritten by the "
-                "LLM. Recommended: include at least your reference files "
-                "and BasePage."
+                "LLM. Recommended: include at least your reference files."
             )
+
+        extendable = aut.get("extendable_paths", []) or []
+        # extendable is fine to be empty — many apps may not have any
+        # page objects yet that need extending. We only log this at debug.
+        logger.debug(
+            f"AppContext: {len(reserved)} reserved path(s), "
+            f"{len(extendable)} extendable path(s)."
+        )
 
         return cls(
             name=aut["name"],
@@ -126,6 +134,7 @@ class AppContext:
             reference_step_def=ref_files["step_def"],
             reference_page_object=ref_files["page_object"],
             reserved_paths=tuple(reserved),
+            extendable_paths=tuple(extendable),
         )
 
     # ─────────────────────────────────────────────────────────────
@@ -148,6 +157,15 @@ class AppContext:
         """Reserved paths as a set of normalized strings, for membership
         tests against LLM-generated file paths."""
         return {_normalize_path(p) for p in self.reserved_paths}
+
+    def extendable_paths_normalized(self) -> set[str]:
+        """Extendable paths as a set of normalized strings.
+
+        These are existing files (typically page objects) that the LLM is
+        allowed to modify — adding new methods, but not removing or
+        breaking existing ones.
+        """
+        return {_normalize_path(p) for p in self.extendable_paths}
 
     # ─────────────────────────────────────────────────────────────
     # Content loaders (used by Agent 2 / Agent 3 prompts)
