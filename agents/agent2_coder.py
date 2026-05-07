@@ -271,12 +271,22 @@ def generate_file_content(
     references: dict,
     page_inventory: str,
     ctx: AppContext,
+    validator_feedback: list[str] | None = None,
+    previous_attempt: str | None = None,
 ) -> str:
     """Stage 2: For ONE file in the plan, get its full content as raw text.
 
     For files marked as extending an existing path (is_new_file=False AND
     in extendable_paths), the current file content is injected into the
     prompt under a dedicated section so the LLM preserves existing methods.
+
+    Repair mode (when validator_feedback is provided):
+        After a validator finds problems, this function can be called again
+        with the validator's error messages and the previous attempt's
+        content. The prompt then includes a "Validator Feedback" section
+        telling the LLM exactly what to fix. This is app-agnostic — the
+        feedback strings come from the validator, which works on any
+        feature/step pair.
     """
     related_test_cases = [
         tc for tc in test_cases if tc["key"] in file_plan.related_test_cases
@@ -309,6 +319,36 @@ def generate_file_content(
     else:
         existing_block = ""
 
+    # If this is a REPAIR call, inject validator feedback so the LLM knows
+    # exactly what to fix. The feedback strings are produced by the validator
+    # and reference specific Gherkin steps that need decorators.
+    feedback_block = ""
+    if validator_feedback:
+        feedback_lines = "\n".join(f"- {err}" for err in validator_feedback)
+        prev_attempt_block = ""
+        if previous_attempt:
+            prev_attempt_block = (
+                f"\n\n## Your previous attempt (which had the issues above):\n"
+                f"```\n{previous_attempt}\n```\n"
+                f"\nProduce a CORRECTED version of this file. Keep what was "
+                f"right; fix what the validator flagged."
+            )
+        feedback_block = (
+            f"\n\n# CRITICAL: Validator Feedback — fix these issues\n\n"
+            f"Your previous attempt at this file was rejected by the automated "
+            f"validator. The specific problems were:\n\n"
+            f"{feedback_lines}\n\n"
+            f"You MUST address every one of these issues in this regeneration. "
+            f"Re-read the feature file's steps carefully — every Given / When / "
+            f"Then / And / But line MUST have a matching @given / @when / @then "
+            f"decorator. Pay attention to the And/But inheritance rule: an `And` "
+            f"after a `Then` is itself a Then.{prev_attempt_block}\n"
+        )
+        logger.info(
+            f"  Repair mode: injecting {len(validator_feedback)} validator "
+            f"feedback item(s) into prompt for '{file_plan.file_path}'."
+        )
+
     prompt_template = load_prompt("agent2_coder_generate.md")
     user_prompt = (
         prompt_template
@@ -318,6 +358,7 @@ def generate_file_content(
         .replace("{file_purpose}", file_plan.purpose)
         .replace("{feature_name}", plan.feature_name)
         .replace("{existing_file_block}", existing_block)
+        .replace("{validator_feedback_block}", feedback_block)
         .replace("{reference_feature_path}", ctx.reference_feature)
         .replace("{reference_step_def_path}", ctx.reference_step_def)
         .replace("{reference_page_object_path}", ctx.reference_page_object)
@@ -387,6 +428,10 @@ def _validate_generated_files(
       - PR #9: feature steps without matching @given/@when/@then decorators
 
     Raises ValueError if either validator finds problems.
+
+    NOTE: This is the FINAL validation, run after any retry attempts.
+    By the time this raises, the LLM has already been given a chance
+    to self-correct via _attempt_step_coverage_repair.
     """
     consistency_errors = validate_filename_consistency(generated_files)
     if consistency_errors:
@@ -406,15 +451,174 @@ def _validate_generated_files(
     if coverage_errors:
         logger.error(
             f"Step definition coverage check FAILED with "
-            f"{len(coverage_errors)} error(s):"
+            f"{len(coverage_errors)} error(s) AFTER retry:"
         )
         for err in coverage_errors:
             logger.error(f"  - {err}")
         raise ValueError(
             f"Step definition coverage validation failed for {story_id}: "
             f"{len(coverage_errors)} feature step(s) without matching "
-            f"@given/@when/@then decorator(s). See logs for details."
+            f"@given/@when/@then decorator(s) — even after the LLM was "
+            f"given the validator's feedback for self-correction. This "
+            f"usually means the LLM model is too weak (try gemini-2.5-flash "
+            f"instead of -lite) or the feature file has unusually complex "
+            f"steps. See logs for details."
         )
+
+
+# ---------------------------------------------------------------------------
+# Self-correcting retry loop (handles weak-model step coverage failures)
+# ---------------------------------------------------------------------------
+def _group_coverage_errors_by_step_def(
+    coverage_errors: list[str],
+) -> dict[str, list[str]]:
+    """Group validator error messages by the step def file they refer to.
+
+    Each error string from validate_step_definitions_complete starts with
+    "Step coverage error in '<path>': feature step ..." — we parse that
+    out so we can target a specific file for regeneration.
+
+    Returns: {step_def_path: [error_messages_for_that_file]}
+    """
+    grouped: dict[str, list[str]] = {}
+    pattern = re.compile(r"Step coverage error in '([^']+)':")
+    for err in coverage_errors:
+        match = pattern.search(err)
+        if not match:
+            # Validator returned an error in an unexpected format — skip;
+            # final validation will still raise it, just no targeted retry.
+            continue
+        path = match.group(1)
+        grouped.setdefault(path, []).append(err)
+    return grouped
+
+
+def _attempt_step_coverage_repair(
+    generated_files: list[GeneratedFile],
+    llm: LLMClient,
+    plan: CodePlan,
+    test_cases: list[dict],
+    references: dict,
+    page_inventory: str,
+    ctx: AppContext,
+    max_retries: int = 2,
+) -> list[GeneratedFile]:
+    """If the step-def coverage validator finds missing decorators, give the
+    LLM a second (and third) chance to fix the step def file with explicit
+    feedback about which decorators are missing.
+
+    This is app-agnostic: the validator already works for any feature/step
+    pair. The repair simply re-invokes Stage 2 for the BROKEN step def file
+    with an extra "Validator Feedback" section listing the missing steps.
+
+    Why retry instead of hard-fail:
+        Weaker LLMs (gemini-2.5-flash-lite specifically) often skip a few
+        decorators on first generation. The validator catches it, but the
+        old behavior was to abort the whole run. That wastes the work
+        already done on feature files and page objects. Retrying ONLY the
+        broken step def file is targeted, cheap, and usually succeeds.
+
+    Cost: each retry = 1 LLM call (only the step def file). Capped at
+    `max_retries`. So worst case is 2 extra calls total per story.
+
+    Args:
+        generated_files: the current batch (mutated in place — corrected
+                         step defs replace the broken ones)
+        llm, plan, test_cases, references, page_inventory, ctx: same as
+                         the original generate_file_content arguments
+        max_retries: how many repair passes to attempt before giving up
+
+    Returns: the same list with corrected step def files swapped in.
+             If the retries don't fully fix things, returns the latest
+             attempt — _validate_generated_files will then raise.
+    """
+    for attempt in range(1, max_retries + 1):
+        coverage_errors = validate_step_definitions_complete(generated_files)
+        if not coverage_errors:
+            if attempt > 1:
+                logger.info(
+                    f"Step coverage repair succeeded after {attempt - 1} "
+                    f"retry attempt(s). All decorators now match."
+                )
+            return generated_files
+
+        grouped = _group_coverage_errors_by_step_def(coverage_errors)
+        if not grouped:
+            # Errors couldn't be parsed — let final validation handle it
+            logger.warning(
+                f"Coverage validator produced {len(coverage_errors)} error(s) "
+                f"but no targetable step def file was identified. Skipping repair."
+            )
+            return generated_files
+
+        logger.warning(
+            f"Step coverage check found {len(coverage_errors)} missing "
+            f"decorator(s) across {len(grouped)} file(s). "
+            f"Attempting repair (attempt {attempt}/{max_retries})..."
+        )
+
+        for step_def_path, errors_for_this_file in grouped.items():
+            # Find the corresponding GeneratedFile to repair
+            target_idx = next(
+                (i for i, gf in enumerate(generated_files)
+                 if _normalize_path(gf.file_path) == _normalize_path(step_def_path)),
+                None,
+            )
+            if target_idx is None:
+                logger.warning(
+                    f"Validator flagged '{step_def_path}' but it's not in "
+                    f"the generated batch. Cannot repair."
+                )
+                continue
+
+            # Find the matching FilePlan for prompt context
+            target_plan = next(
+                (fp for fp in plan.files_to_create
+                 if _normalize_path(fp.file_path) == _normalize_path(step_def_path)),
+                None,
+            )
+            if target_plan is None:
+                logger.warning(
+                    f"No FilePlan found for '{step_def_path}'. Cannot repair."
+                )
+                continue
+
+            logger.info(
+                f"  Repairing '{step_def_path}' with "
+                f"{len(errors_for_this_file)} feedback item(s)..."
+            )
+            try:
+                repaired_content = generate_file_content(
+                    llm,
+                    target_plan,
+                    plan,
+                    test_cases,
+                    references,
+                    page_inventory,
+                    ctx,
+                    validator_feedback=errors_for_this_file,
+                    previous_attempt=generated_files[target_idx].content,
+                )
+                generated_files[target_idx] = GeneratedFile(
+                    file_path=generated_files[target_idx].file_path,
+                    content=repaired_content,
+                    is_new_file=generated_files[target_idx].is_new_file,
+                    purpose=generated_files[target_idx].purpose,
+                )
+            except Exception as e:
+                logger.error(
+                    f"  Repair attempt for '{step_def_path}' failed: {e}. "
+                    f"Will let final validation surface the issue."
+                )
+
+    # Hit max_retries without full success — final validator will raise.
+    final_errors = validate_step_definitions_complete(generated_files)
+    if final_errors:
+        logger.warning(
+            f"Step coverage repair exhausted {max_retries} retry attempt(s); "
+            f"{len(final_errors)} error(s) remain. Final validator will raise."
+        )
+    return generated_files
 
 
 def _print_dry_run_preview(output: CodeGenerationOutput) -> None:
@@ -556,7 +760,30 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
         notes=plan.notes,
     )
 
-    # 4b. VALIDATORS
+    # 4b. SELF-CORRECTING REPAIR (handles weak-model coverage misses)
+    # If validator finds missing decorators, give the LLM up to 2 chances
+    # to fix the broken step def file with explicit feedback. Only the
+    # broken file is regenerated (cheap), and the cap bounds total cost.
+    generated_files = _attempt_step_coverage_repair(
+        generated_files,
+        llm,
+        plan,
+        new_test_cases,
+        references,
+        page_inventory,
+        ctx,
+        max_retries=2,
+    )
+    output = CodeGenerationOutput(
+        feature_name=plan.feature_name,
+        branch_name=plan.branch_name,
+        pr_title=plan.pr_title,
+        pr_body=plan.pr_body,
+        files=generated_files,
+        notes=plan.notes,
+    )
+
+    # 4c. FINAL VALIDATION (after any repair attempts)
     _validate_generated_files(generated_files, story_id)
 
     # 5. ACT

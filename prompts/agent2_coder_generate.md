@@ -15,6 +15,8 @@ You are in Stage 2 of a two-stage workflow. The plan has already been decided. Y
 
 {existing_file_block}
 
+{validator_feedback_block}
+
 # Output Format (CRITICAL)
 Return the file content inside a SINGLE Markdown code block. Use the appropriate language tag:
 - For `.feature` files: ```` ```gherkin ````
