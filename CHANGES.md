@@ -4,6 +4,112 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## Hotfix v4 — Output token cap, feedback summarization, degraded-output detection (2026-05-07)
+
+### What broke
+
+After hotfix v3 added the import validator, the next CI run with `gemini-2.5-flash` succeeded at planning (correctly added cart_page and product_detail_page to the plan!) but failed at the step-coverage repair stage. The log showed three repair attempts that all produced ~656 chars of unparseable Python, eventually exhausting retries with all 22 step-coverage errors still present.
+
+Root causes (three separate problems compounding):
+
+1. **`max_output_tokens=4096` too small for code generation.** This cap is a sane default for structured review output (Agent 3) but step def files for complex 15-scenario stories legitimately need more. The LLM hit the token cap mid-generation and returned truncated stubs.
+
+2. **22-error feedback prompt overwhelmed the LLM.** Each error string was ~250 chars × 22 errors = 5,500 chars of nearly-identical "step X has no matching @then() decorator" repetition injected into the prompt. Smaller LLMs respond to this by getting confused and producing shorter, worse output instead of more comprehensive output.
+
+3. **No "degraded output" abort.** When the first repair produced a 656-char syntax-broken stub, the loop happily fed it back as "previous attempt" for retry #2, which produced more garbage. Burning quota on each retry.
+
+### Fix
+
+Three changes, all framework code, all app-agnostic:
+
+#### 1. Separate token cap for code generation
+
+`agents/llm_client.py` now distinguishes:
+- `DEFAULT_MAX_OUTPUT_TOKENS = 4096` — for structured outputs (CodePlan, ReviewReport)
+- `CODE_GENERATION_MAX_OUTPUT_TOKENS = 8192` — for raw text (entire source files)
+
+`invoke_text()` lazily creates a separate `ChatGoogleGenerativeAI` instance with the higher cap, cached on first call. No change needed to structured output paths.
+
+#### 2. Compact validator feedback summary
+
+New `_summarize_validator_feedback()` extracts only the actionable Gherkin step phrases (e.g., `Then the products should be sorted by name ascending`) and bullet-lists them. For >8 errors, shows the first 8 verbatim plus a count of the remaining with one explanatory sentence about the pattern.
+
+Empirical reduction on the SCRUM-12 failure: **3,377 chars → 365 chars (89% smaller)**. The LLM sees the problem clearly without drowning in repetition.
+
+#### 3. Degraded-output detection — abort early
+
+New `_is_degraded_regeneration()` runs after each repair LLM call. If the new content:
+- Is shorter than 500 characters, OR
+- Fails to parse as Python (syntax error), OR
+- Is less than 30% the size of the prior real attempt
+
+then the repair loop aborts immediately and keeps the prior content. The final validator will raise on the original errors, but we don't waste another LLM call producing more garbage.
+
+New `_looks_like_useful_python()` complements this for the "should I show the previous attempt to the LLM?" decision — if the prior is also broken, omitting it from the prompt produces better results than including it.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `agents/llm_client.py` | New `CODE_GENERATION_MAX_OUTPUT_TOKENS = 8192`. `invoke_text()` uses a separate cached LLM instance with this higher cap. |
+| `agents/agent2_coder.py` | New `_summarize_validator_feedback()`, `_looks_like_useful_python()`, `_is_degraded_regeneration()` helpers. Repair loop checks for degraded output and aborts early. Feedback prompt rewritten to be compact. |
+| `tests/unit/test_step_coverage_repair.py` | 11 new tests covering: feedback summarization (verbatim vs summarized), degraded output detection (short, syntax-broken, dramatic shrinkage), early abort behavior, real-content acceptance. Existing tests updated to use realistic Python content (>500 chars, valid syntax) since they were inadvertently testing with stubs that the new detector correctly flags. |
+| `CHANGES.md` | This entry. |
+
+### Test results
+
+- **159 unit tests pass** (up from 148)
+- **1 unrelated pre-existing failure** still unchanged (`test_empty_quoted_value_with_parsers_parse_REJECTED` — was failing in original code before any of these hotfixes)
+- Smoke-tested helpers against the actual SCRUM-12 production failure data — all detection logic works as designed
+
+### Why this is reusable across projects
+
+- **Token caps** are model-level concerns, not app-level. The constants live in `llm_client.py` and apply to any project using this framework.
+- **Feedback summarization** operates only on validator-emitted error strings — the regex pattern matches the framework's own output format, agnostic to what app the validator was run against.
+- **Degraded-output detection** uses Python AST parsing and content length thresholds. Doesn't care about the app domain.
+
+### What this fix does NOT do
+
+- Does not change the LLM's actual output quality. If `gemini-2.5-flash` can't produce a valid step def for a 15-scenario story, this fix doesn't make it produce one. What it does is **fail clearly and faster** instead of burning quota on bad retries.
+- Does not auto-split large stories. If the underlying story is too complex for the LLM to handle in one generation, you'll still see this fail — just without the wasted retries. Splitting that story into 2 smaller stories is the right human-in-the-loop response.
+
+### What to watch for in the next run
+
+The successful path looks like this in the logs:
+
+```
+LLM initialized: gemini-2.5-flash (temp=0.2, max_output_tokens=4096)
+Code generation LLM ready: gemini-2.5-flash (max_output_tokens=8192)
+...
+Stage 1 complete: 5 files planned
+...
+Generated 4500 chars for tests/step_defs/test_inventory_sorting.py
+...
+Step coverage check: OK
+Import resolution check: OK
+PR opened
+```
+
+If validators still flag issues:
+
+```
+Validators found N issue(s) across 1 file(s). Attempting repair (attempt 1/2)...
+  Repair mode: N validator error(s) summarized into ~400 chars of feedback...
+Generated 5200 chars for tests/step_defs/test_inventory_sorting.py
+Validator repair succeeded after 1 retry attempt(s).
+```
+
+If the LLM produces garbage on retry, you'll now see this clear abort:
+
+```
+Repair produced degraded output for 'tests/...' (656 chars vs prior 4500 chars,
+  syntax-valid=False). Aborting repair to avoid wasting more LLM calls.
+```
+
+Then the final validator raises with a clear message about what couldn't be fixed.
+
+---
+
 ## Hotfix v3 — Import resolution validator (2026-05-07)
 
 ### What broke

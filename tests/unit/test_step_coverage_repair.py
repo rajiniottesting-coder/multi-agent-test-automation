@@ -137,6 +137,33 @@ class TestRepairLoop:
 
     def test_succeeds_after_one_retry(self, ctx, fake_plan):
         """Validator fails once, succeeds after one repair call."""
+        # Realistic step-def content — must pass _looks_like_useful_python:
+        # >500 chars, valid Python, has @given/@when/@then.
+        prior_buggy_content = (
+            "import pytest\n"
+            "from pytest_bdd import scenarios, given, when, then, parsers\n"
+            "from pages.login_page import LoginPage\n"
+            "\n"
+            "scenarios('features/sort.feature')\n"
+            "\n"
+            "@given('I am on the login page')\n"
+            "def open_login(page):\n"
+            "    pass\n"
+            "\n"
+            "@when('I do something')\n"
+            "def do_something(page):\n"
+            "    pass\n"
+            "# Note: this file is missing the @then for 'Then missing' from the feature\n"
+            "# This is intentional for the test — the validator should flag it.\n"
+            "\n"
+        ) * 3  # repeat to reach > 500 chars
+
+        repaired_content = prior_buggy_content + (
+            "\n@then('missing')\n"
+            "def now_present(page):\n"
+            "    assert True\n"
+        )
+
         files = [
             GeneratedFile(
                 file_path="features/sort.feature",
@@ -146,7 +173,7 @@ class TestRepairLoop:
             ),
             GeneratedFile(
                 file_path="tests/step_defs/test_sort.py",
-                content="# original buggy step def with missing decorator\n",
+                content=prior_buggy_content,
                 is_new_file=True,
                 purpose="...",
             ),
@@ -164,7 +191,7 @@ class TestRepairLoop:
             return []  # second call: all clear
 
         with patch("agents.agent2_coder.validate_step_definitions_complete", side_effect=fake_validator), \
-             patch("agents.agent2_coder.generate_file_content", return_value="# corrected step def\n") as mock_gen:
+             patch("agents.agent2_coder.generate_file_content", return_value=repaired_content) as mock_gen:
             llm = MagicMock()
             result = _attempt_step_coverage_repair(
                 files, llm, fake_plan, [], {}, "{}", ctx, max_retries=2
@@ -176,41 +203,105 @@ class TestRepairLoop:
         assert len(validator_calls) == 2
         # The broken file's content was replaced
         sort_step_def = next(f for f in result if f.file_path == "tests/step_defs/test_sort.py")
-        assert sort_step_def.content == "# corrected step def\n"
+        assert sort_step_def.content == repaired_content
 
-    def test_exhausts_retries_when_repair_fails(self, ctx, fake_plan):
-        """If the LLM keeps producing broken output, give up after max_retries."""
+    def test_exhausts_retries_when_repair_fails_with_real_content(self, ctx, fake_plan):
+        """If the LLM produces realistic-looking content but it's still wrong,
+        retries continue up to max_retries."""
+        # Realistic content (>500 chars, valid Python) on every retry
+        realistic_content = (
+            "import pytest\n"
+            "from pytest_bdd import scenarios, given, when, then\n"
+            "from pages.login_page import LoginPage\n"
+            "\n"
+            "scenarios('features/sort.feature')\n"
+            "\n"
+            "@given('I am here')\n"
+            "def here(page):\n"
+            "    pass\n"
+            "# Real-looking but the validator still flags missing decorators.\n"
+            "# This simulates the LLM producing valid Python but missing\n"
+            "# coverage of every Gherkin step.\n"
+        ) * 4
+
         files = [
             GeneratedFile(
                 file_path="features/sort.feature",
-                content="...",
+                content="Feature: x",
                 is_new_file=True,
                 purpose="...",
             ),
             GeneratedFile(
                 file_path="tests/step_defs/test_sort.py",
-                content="...",
+                content=realistic_content,
                 is_new_file=True,
                 purpose="...",
             ),
         ]
-        # Validator always returns errors — LLM never converges
         persistent_error = [
             "Step coverage error in 'tests/step_defs/test_sort.py': "
             "feature step `Then x` (from 'features/sort.feature') has no matching @then() decorator. "
             "pytest-bdd would fail with StepDefinitionNotFoundError at test collection time."
         ]
         with patch("agents.agent2_coder.validate_step_definitions_complete", return_value=persistent_error), \
-             patch("agents.agent2_coder.generate_file_content", return_value="# still broken\n") as mock_gen:
+             patch("agents.agent2_coder.generate_file_content", return_value=realistic_content) as mock_gen:
             llm = MagicMock()
             result = _attempt_step_coverage_repair(
                 files, llm, fake_plan, [], {}, "{}", ctx, max_retries=2
             )
 
-        # generate_file_content called exactly max_retries times for the broken file
-        assert mock_gen.call_count == 2  # one per retry
-        # Result is returned (will be caught by final validator, not by repair)
+        # generate_file_content called exactly max_retries times
+        assert mock_gen.call_count == 2
+        # Returns generated_files for final validator to raise on
         assert result is not None
+
+    def test_aborts_early_on_degraded_output(self, ctx, fake_plan):
+        """NEW: If repair produces tiny/broken output, abort before retry 2."""
+        realistic_prior_content = (
+            "import pytest\n"
+            "from pytest_bdd import scenarios, given, when, then\n"
+            "from pages.login_page import LoginPage\n"
+            "scenarios('features/sort.feature')\n"
+            "@given('something')\n"
+            "def s(p): pass\n"
+        ) * 5  # > 500 chars, parses fine
+
+        files = [
+            GeneratedFile(
+                file_path="features/sort.feature",
+                content="Feature: x",
+                is_new_file=True,
+                purpose="...",
+            ),
+            GeneratedFile(
+                file_path="tests/step_defs/test_sort.py",
+                content=realistic_prior_content,
+                is_new_file=True,
+                purpose="...",
+            ),
+        ]
+        persistent_error = [
+            "Step coverage error in 'tests/step_defs/test_sort.py': "
+            "feature step `Then x` (from 'features/sort.feature') has no matching @then() decorator. "
+            "pytest-bdd would fail with StepDefinitionNotFoundError at test collection time."
+        ]
+        # LLM returns truncated stub on first repair — should trigger abort
+        truncated_garbage = "Here's the corrected file:\n```python\nimport"
+        with patch("agents.agent2_coder.validate_step_definitions_complete", return_value=persistent_error), \
+             patch("agents.agent2_coder.generate_file_content", return_value=truncated_garbage) as mock_gen:
+            llm = MagicMock()
+            result = _attempt_step_coverage_repair(
+                files, llm, fake_plan, [], {}, "{}", ctx, max_retries=2
+            )
+
+        # Repair aborts after first degraded output — only 1 call, not 2
+        assert mock_gen.call_count == 1, (
+            f"Expected early abort after degraded output, but LLM was called "
+            f"{mock_gen.call_count} times. Degradation detection isn't working."
+        )
+        # Original prior content should be preserved
+        sort_step_def = next(f for f in result if f.file_path == "tests/step_defs/test_sort.py")
+        assert sort_step_def.content == realistic_prior_content
 
     def test_only_broken_files_regenerated(self, ctx, fake_plan):
         """Repair should not re-generate files that aren't flagged."""
@@ -352,7 +443,122 @@ class TestGenerateFileContentRepairMode:
         )
         assert result == "# corrected step def\n"
         prompt = captured_prompt[0]
-        assert "Validator Feedback" in prompt
+        assert "Fix these validation issues" in prompt
+        # Step phrases get extracted from the verbose error strings
         assert "Then x" in prompt
         assert "When y" in prompt
-        assert "# original buggy" in prompt  # previous attempt shown
+        # Previous attempt is NOT shown when it's not parseable Python
+        # (the test passes "# original buggy" which is just a comment, not real code)
+
+
+# ─────────────────────────────────────────────────────────────
+# Hotfix v4 helpers — feedback summarization + degraded output detection
+# ─────────────────────────────────────────────────────────────
+
+from agents.agent2_coder import (
+    _summarize_validator_feedback,
+    _looks_like_useful_python,
+    _is_degraded_regeneration,
+)
+
+
+class TestFeedbackSummarization:
+    """Compact validator errors so the LLM doesn't drown in repetition."""
+
+    def test_few_errors_listed_verbatim(self):
+        errors = [
+            "Step coverage error in 'tests/x.py': feature step `Then a` (from 'features/x.feature') has no matching @then() decorator. ...",
+            "Step coverage error in 'tests/x.py': feature step `When b` (from 'features/x.feature') has no matching @when() decorator. ...",
+        ]
+        summary = _summarize_validator_feedback(errors)
+        assert "Then a" in summary
+        assert "When b" in summary
+        # Small enough to be readable
+        assert len(summary) < 300
+
+    def test_many_errors_summarized(self):
+        """22 errors get truncated with a count of remaining."""
+        errors = [
+            f"Step coverage error in 'tests/x.py': feature step `Step {i}` (from 'features/x.feature') has no matching @when() decorator. ..."
+            for i in range(22)
+        ]
+        summary = _summarize_validator_feedback(errors)
+        # First 8 shown verbatim
+        assert "Step 0" in summary
+        assert "Step 7" in summary
+        # Remainder summarized
+        assert "and 14 more" in summary
+        # Compact relative to original
+        verbatim_size = sum(len(e) for e in errors)
+        assert len(summary) < verbatim_size * 0.2  # > 80% reduction
+
+    def test_empty_list(self):
+        assert _summarize_validator_feedback([]) == ""
+
+    def test_non_step_coverage_errors(self):
+        """Import errors don't have `feature step` pattern — should still extract first 150 chars."""
+        errors = [
+            "Import resolution error in 'tests/x.py': line 7 has `import pages.foo` but module does not exist on disk."
+        ]
+        summary = _summarize_validator_feedback(errors)
+        assert "pages.foo" in summary or "module does not exist" in summary
+
+
+class TestDegradedOutputDetection:
+    """Recognize when the LLM has given up producing useful content."""
+
+    def test_real_code_accepted(self):
+        good = (
+            "import pytest\nfrom pytest_bdd import given\n"
+            "@given('x')\ndef x(p): pass\n"
+        ) * 10
+        assert _looks_like_useful_python(good) is True
+        assert _is_degraded_regeneration(good, good) is False
+
+    def test_tiny_output_degraded(self):
+        """Output under 500 chars is treated as a stub."""
+        assert _looks_like_useful_python("# tiny") is False
+        assert _is_degraded_regeneration("# tiny", "x" * 1000) is True
+
+    def test_empty_output_degraded(self):
+        assert _is_degraded_regeneration("", "x" * 1000) is True
+
+    def test_syntax_error_degraded(self):
+        """Truncated mid-statement output fails to parse."""
+        truncated = "Here's the file:\n```python\nimport pytest\nfrom pytest_bdd "  # cuts off
+        assert _looks_like_useful_python(truncated) is False
+        assert _is_degraded_regeneration(truncated, "x" * 1000) is True
+
+    def test_dramatic_size_reduction_degraded(self):
+        """If new content is < 30% of prior real code, it's a degradation signal."""
+        prior = (
+            "import pytest\nfrom pytest_bdd import given\n"
+            "@given('x')\ndef x(p): pass\n"
+        ) * 20  # ~1500 chars
+        # New attempt is ~600 chars but valid Python
+        new = (
+            "import pytest\n"
+            "from pytest_bdd import given\n"
+            "@given('y')\n"
+            "def y(p): pass\n"
+        ) * 10  # ~700 chars - greater than 30% threshold, so NOT degraded
+        # That should NOT be flagged
+        assert _is_degraded_regeneration(new, prior) is False
+
+        # But a 20-line response when prior was 200 lines — degraded
+        very_small = "import pytest\n@given('x')\ndef x(p): pass\n" * 3
+        assert len(very_small) < 0.3 * len(prior)
+        assert _is_degraded_regeneration(very_small, prior) is True
+
+    def test_handles_no_prior_content(self):
+        """If there's no useful prior content, only check absolute thresholds."""
+        # Reasonable output (>500 chars), no prior to compare to
+        good = (
+            "import pytest\n"
+            "@given('x')\n"
+            "def x(p): pass\n"
+        ) * 20  # > 500 chars
+        assert _is_degraded_regeneration(good, "") is False
+
+        # Tiny output is still degraded regardless of prior
+        assert _is_degraded_regeneration("# stub", "") is True

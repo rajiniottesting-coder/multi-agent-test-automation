@@ -30,6 +30,7 @@ Usage:
     python -m agents.agent2_coder --scan
 """
 import argparse
+import ast
 import logging
 import re
 import sys
@@ -214,6 +215,112 @@ def _read_extendable_file_content(file_path: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Helpers for the self-correcting repair loop
+# ---------------------------------------------------------------------------
+# Maximum number of validator errors to show verbatim in the feedback prompt.
+# Beyond this we summarize, because dumping 20+ verbose error messages into
+# the prompt confuses smaller LLMs and they produce truncated output.
+_MAX_FEEDBACK_ERRORS_VERBATIM = 8
+
+# Below this length, regenerated content is treated as "the LLM gave up".
+# Real step def files are at least 1500 chars; under 500 means the LLM
+# returned a stub or fragment.
+_DEGRADED_OUTPUT_CHAR_THRESHOLD = 500
+
+
+def _summarize_validator_feedback(errors: list[str]) -> str:
+    """Compact validator errors into a prompt-friendly summary.
+
+    For small error counts (<= _MAX_FEEDBACK_ERRORS_VERBATIM) we just
+    extract the salient bit — the Gherkin step phrase that needs a
+    decorator — and bullet-list them. For large counts we show the
+    first N verbatim plus a count of the remaining, so the LLM sees
+    the *pattern* rather than getting buried in repetition.
+
+    This is app-agnostic — operates only on the validator's own
+    error strings, no project-specific knowledge.
+    """
+    # Try to extract just the actionable phrase from each error string
+    # (the part after "feature step `..." up to the closing backtick)
+    step_phrase_pattern = re.compile(r"feature step `([^`]+)`")
+
+    extracted: list[str] = []
+    for err in errors:
+        match = step_phrase_pattern.search(err)
+        if match:
+            extracted.append(match.group(1))
+        else:
+            # Non-step-coverage error (e.g., import error) — keep first 150 chars
+            extracted.append(err.split(":", 2)[-1].strip()[:150])
+
+    if len(extracted) <= _MAX_FEEDBACK_ERRORS_VERBATIM:
+        return "\n".join(f"  - {phrase}" for phrase in extracted)
+
+    head = "\n".join(
+        f"  - {phrase}" for phrase in extracted[:_MAX_FEEDBACK_ERRORS_VERBATIM]
+    )
+    remaining = len(extracted) - _MAX_FEEDBACK_ERRORS_VERBATIM
+    return (
+        f"{head}\n"
+        f"  ... and {remaining} more similar error(s). The pattern is the "
+        f"same: each Gherkin step in the feature file needs a matching "
+        f"decorator. Re-read the feature file and write a decorator for "
+        f"every Given / When / Then / And / But line."
+    )
+
+
+def _looks_like_useful_python(content: str) -> bool:
+    """Quick check: does this look like real, parseable Python code?
+
+    Returns False if content is too short, doesn't have any decorators
+    suggesting it's a step def, or fails to parse at all. Used to decide
+    whether to show a previous attempt to the LLM (broken prior attempts
+    confuse it more than they help).
+    """
+    if not content or len(content) < _DEGRADED_OUTPUT_CHAR_THRESHOLD:
+        return False
+    if "@given" not in content and "@when" not in content and "@then" not in content:
+        # Probably not a step def file at all — could be a page object,
+        # which we don't want to gate on this. Just check it parses.
+        pass
+    try:
+        ast.parse(content)
+    except SyntaxError:
+        return False
+    return True
+
+
+def _is_degraded_regeneration(new_content: str, prior_content: str) -> bool:
+    """Detect if a regeneration produced clearly worse output than before.
+
+    Signals of degradation:
+      - New content fails to parse as Python (LLM gave up mid-output)
+      - New content is dramatically smaller than prior (truncated stub)
+
+    Used to abort the repair loop early instead of compounding garbage
+    on garbage. App-agnostic — looks only at the output itself.
+    """
+    if not new_content or len(new_content) < _DEGRADED_OUTPUT_CHAR_THRESHOLD:
+        return True
+
+    try:
+        ast.parse(new_content)
+    except SyntaxError:
+        return True
+
+    # If new content is less than 30% the size of the prior real attempt,
+    # that's a strong signal the LLM is producing fragments
+    if (
+        prior_content
+        and _looks_like_useful_python(prior_content)
+        and len(new_content) < 0.3 * len(prior_content)
+    ):
+        return True
+
+    return False
+
+
+# ---------------------------------------------------------------------------
 # STAGE 1: Build the plan
 # ---------------------------------------------------------------------------
 def build_plan(
@@ -325,29 +432,35 @@ def generate_file_content(
     # and reference specific Gherkin steps that need decorators.
     feedback_block = ""
     if validator_feedback:
-        feedback_lines = "\n".join(f"- {err}" for err in validator_feedback)
+        feedback_summary = _summarize_validator_feedback(validator_feedback)
+
+        # Only show previous attempt if it looks like real code. A tiny or
+        # syntactically-broken previous attempt only confuses the LLM further;
+        # better to ask for a fresh generation guided by the feedback alone.
         prev_attempt_block = ""
-        if previous_attempt:
+        if previous_attempt and _looks_like_useful_python(previous_attempt):
             prev_attempt_block = (
                 f"\n\n## Your previous attempt (which had the issues above):\n"
                 f"```\n{previous_attempt}\n```\n"
                 f"\nProduce a CORRECTED version of this file. Keep what was "
                 f"right; fix what the validator flagged."
             )
+
         feedback_block = (
-            f"\n\n# CRITICAL: Validator Feedback — fix these issues\n\n"
-            f"Your previous attempt at this file was rejected by the automated "
-            f"validator. The specific problems were:\n\n"
-            f"{feedback_lines}\n\n"
-            f"You MUST address every one of these issues in this regeneration. "
-            f"Re-read the feature file's steps carefully — every Given / When / "
-            f"Then / And / But line MUST have a matching @given / @when / @then "
-            f"decorator. Pay attention to the And/But inheritance rule: an `And` "
-            f"after a `Then` is itself a Then.{prev_attempt_block}\n"
+            f"\n\n# CRITICAL: Fix these validation issues\n\n"
+            f"Your previous attempt was rejected. Issues:\n\n"
+            f"{feedback_summary}\n\n"
+            f"REQUIREMENTS:\n"
+            f"- Every Gherkin step in the feature file MUST have a matching "
+            f"  @given/@when/@then decorator (And/But inherits from prior keyword)\n"
+            f"- Output a COMPLETE, working Python file — not a fragment\n"
+            f"- Use parsers.parse() for parameterized steps, plain strings otherwise"
+            f"{prev_attempt_block}\n"
         )
         logger.info(
-            f"  Repair mode: injecting {len(validator_feedback)} validator "
-            f"feedback item(s) into prompt for '{file_plan.file_path}'."
+            f"  Repair mode: {len(validator_feedback)} validator error(s) "
+            f"summarized into {len(feedback_summary)} chars of feedback for "
+            f"'{file_plan.file_path}'."
         )
 
     prompt_template = load_prompt("agent2_coder_generate.md")
@@ -625,6 +738,7 @@ def _attempt_step_coverage_repair(
                 f"{len(errors_for_this_file)} feedback item(s)..."
             )
             try:
+                prior_content = generated_files[target_idx].content
                 repaired_content = generate_file_content(
                     llm,
                     target_plan,
@@ -634,8 +748,22 @@ def _attempt_step_coverage_repair(
                     page_inventory,
                     ctx,
                     validator_feedback=errors_for_this_file,
-                    previous_attempt=generated_files[target_idx].content,
+                    previous_attempt=prior_content,
                 )
+                # If the LLM produced clearly-degraded output (truncated stub,
+                # syntax errors, fraction of prior size), the prior attempt
+                # is actually our best bet. Keep it and abort the repair loop
+                # so we don't compound garbage on garbage.
+                if _is_degraded_regeneration(repaired_content, prior_content):
+                    logger.error(
+                        f"  Repair produced degraded output for "
+                        f"'{step_def_path}' ({len(repaired_content)} chars vs "
+                        f"prior {len(prior_content)} chars, syntax-valid="
+                        f"{_looks_like_useful_python(repaired_content)}). "
+                        f"Aborting repair to avoid wasting more LLM calls. "
+                        f"Final validator will raise on the prior attempt."
+                    )
+                    return generated_files
                 generated_files[target_idx] = GeneratedFile(
                     file_path=generated_files[target_idx].file_path,
                     content=repaired_content,

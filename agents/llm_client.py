@@ -40,6 +40,12 @@ T = TypeVar("T", bound=BaseModel)
 # runaway generation when the model enters a repetition loop on low-content PRs.
 DEFAULT_MAX_OUTPUT_TOKENS = 4096
 
+# Larger cap for raw-text code generation. Step definition files for complex
+# stories (15+ scenarios with @when/@then decorators each) can legitimately be
+# 600+ lines. Splitting these would break the existing file-per-feature
+# convention. 8192 tokens ≈ 32,000 characters; covers worst-case real files.
+CODE_GENERATION_MAX_OUTPUT_TOKENS = 8192
+
 
 def _is_quota_error(exc: Exception) -> bool:
     """Detect rate-limit / quota errors (429 RESOURCE_EXHAUSTED)."""
@@ -132,13 +138,33 @@ class LLMClient:
         where structured output is fragile (e.g., entire source files
         with triple-quoted docstrings).
 
+        Uses a larger output token limit than structured calls because
+        code files are long and truncated output produces invalid Python
+        that fails downstream validation.
+
         Raises:
             QuotaExhaustedError: if API quota is hit
         """
+        # Use a dedicated LLM instance with a higher token budget for code.
+        # Cached on first call so we don't reconstruct on every invocation.
+        if not hasattr(self, "_text_llm"):
+            self._text_llm = ChatGoogleGenerativeAI(
+                model=self.model_name,
+                temperature=0.2,
+                max_output_tokens=CODE_GENERATION_MAX_OUTPUT_TOKENS,
+            )
+            logger.info(
+                f"Code generation LLM ready: {self.model_name} "
+                f"(max_output_tokens={CODE_GENERATION_MAX_OUTPUT_TOKENS})"
+            )
+
         messages = [
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_prompt),
         ]
-        logger.info(f"Calling LLM (text mode, model={self.model_name})...")
-        response = self._call_with_quota_check(self.llm.invoke, messages)
+        logger.info(
+            f"Calling LLM (text mode, model={self.model_name}, "
+            f"max_output_tokens={CODE_GENERATION_MAX_OUTPUT_TOKENS})..."
+        )
+        response = self._call_with_quota_check(self._text_llm.invoke, messages)
         return response.content
