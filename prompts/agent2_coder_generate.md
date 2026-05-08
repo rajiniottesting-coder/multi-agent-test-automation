@@ -68,6 +68,8 @@ NO prose before or after the code block. Just the code block.
 - Include `Background:` if all scenarios share setup
 - Each scenario gets a `@tag` line
 - Use parameterized values in steps where appropriate (e.g., `username "X" and password "Y"`)
+- **CRITICAL — exactly one Scenario per input test case.** The "Test Cases This File Should Address" section lists N test cases. Your feature file MUST have exactly N `Scenario:` blocks (or `Scenario Outline:` blocks) — one for each test case. Do NOT add extra scenarios for "completeness," edge cases, or related flows that aren't in the test cases. Do NOT skip any test case.
+- **Keep step phrases minimal.** Use the SAME step phrases across scenarios when the action is the same — that way one decorator covers multiple scenarios. If three scenarios all begin with the same Given step, write that exact phrase three times verbatim. Do NOT vary phrasing for the same underlying action (e.g., "Given I am logged in" vs "Given I have logged in" vs "Given the user is signed in" — those would need three separate decorators even though they describe the same step). Variation in phrasing multiplies decorator count and increases the chance of missing one.
 
 ## If generating a step definitions `.py` file:
 - Import: `pytest`, `pytest_bdd` (scenarios, given, when, then, parsers), and any page objects needed
