@@ -15,6 +15,8 @@ You are in Stage 2 of a two-stage workflow. The plan has already been decided. Y
 
 {existing_file_block}
 
+{sibling_page_objects_block}
+
 {validator_feedback_block}
 
 # Output Format (CRITICAL)
@@ -73,6 +75,7 @@ NO prose before or after the code block. Just the code block.
   Example: `scenarios(str(feature_path("feature_name")))`  (snake_case, no extension)
 - Define page object fixtures using `@pytest.fixture` returning the page class
 - Match step definitions exactly to the Gherkin steps (use parsers.parse for parameterized steps)
+- **CRITICAL — use EXACT page-object method names.** If a "Page Object Methods Available" section exists above, every method you call on a page-object fixture MUST appear EXACTLY in that list. Do NOT invent variations like adding `_link` or `_in_menu` to method names. If the method you need isn't listed, you must add it to the page object — not call a method that doesn't exist.
 
 ### CRITICAL: Step Definition Coverage Rules (MUST FOLLOW)
 

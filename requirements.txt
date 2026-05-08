@@ -21,6 +21,14 @@ pytest==8.3.3
 # step to Python functions. Enables business-readable tests.
 pytest-bdd==7.3.0
 
+# parse — explicit pin so our step-definition validator can use the SAME
+# matching semantics pytest-bdd uses at runtime. This library is a
+# transitive dep of pytest-bdd, but we pin it explicitly because Agent 2's
+# `_phrase_matches()` validator imports it directly to detect the
+# `parsers.parse('...{u}...')` + empty quoted value `""` failure mode.
+# Without this, the validator silently passes broken code.
+parse>=1.20.0
+
 # pytest-playwright — official integration of Playwright with pytest.
 # Adds the `page`, `browser`, `context` fixtures and CLI flags.
 pytest-playwright==0.5.2

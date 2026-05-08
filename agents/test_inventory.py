@@ -727,9 +727,17 @@ def _phrase_matches(feature_phrase: str, decorator_phrase: str, parser_type: str
     # Both use the parse library's matching semantics.
     try:
         from parse import parse as _parse_fn
-    except ImportError:  # pragma: no cover — parse is a hard dep of pytest-bdd
-        # If parse isn't available, we can't validate. Return True (don't
-        # block) and let runtime catch it. This branch is defensive only.
+    except ImportError:
+        # parse should always be available in production (transitive dep of
+        # pytest-bdd, and explicitly listed in requirements.txt). If it's
+        # missing, we cannot validate parse() decorators correctly. Log a
+        # WARNING so this is visible in CI logs, then conservatively return
+        # True so we don't block valid code in non-pytest-bdd environments.
+        # This branch should never hit in production but exists as a safety net.
+        logger.warning(
+            "The 'parse' library is not installed. Cannot validate "
+            "parsers.parse() decorators. Install with: pip install parse"
+        )
         return True
 
     try:

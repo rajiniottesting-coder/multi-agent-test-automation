@@ -40,6 +40,7 @@ from agents.app_context import AppContext
 from agents.jira_client import JiraClient
 from agents.github_client import GitHubClient
 from agents.import_validator import validate_imports_resolvable
+from agents.method_resolution_validator import validate_method_resolution
 from agents.llm_client import LLMClient
 from agents.schemas import CodePlan, GeneratedFile, CodeGenerationOutput
 from agents.test_inventory import (
@@ -214,6 +215,114 @@ def _read_extendable_file_content(file_path: str) -> str:
     return abs_path.read_text(encoding="utf-8")
 
 
+def _build_sibling_page_object_context(
+    already_generated: list[GeneratedFile],
+) -> str:
+    """Build a method-signature summary of page-object files already generated
+    in this batch.
+
+    Why this exists (Hotfix v5):
+        When the LLM generates `inventory_page.py` and `test_logout.py` in
+        the same Agent 2 run, it tends to "forget" the exact method names
+        it used in the page object by the time it writes the step def.
+        Result: AttributeError at test time (e.g., page object defines
+        `click_logout()` but step def calls `click_logout_link()`).
+
+        Injecting the actual method signatures from already-generated
+        sibling files into the step-def prompt gives the LLM ground truth
+        to copy from instead of guessing.
+
+    This is a PREVENTION mechanism. The method_resolution_validator is
+    the DETECTION safety net that catches what the prompt misses.
+
+    Args:
+        already_generated: GeneratedFile objects produced earlier in this
+            batch. Page-object files are extracted; everything else
+            ignored.
+
+    Returns:
+        A markdown block summarizing each page-object class's method
+        signatures. Empty string if no page objects are in the batch yet.
+    """
+    import ast as _ast
+
+    page_objects: list[tuple[str, str, list[str]]] = []
+    for f in already_generated:
+        path = getattr(f, "file_path", "")
+        content = getattr(f, "content", "")
+        if not path.startswith("pages/") or not path.endswith(".py"):
+            continue
+        if not content:
+            continue
+        try:
+            tree = _ast.parse(content)
+        except SyntaxError:
+            continue
+        for node in _ast.walk(tree):
+            if not isinstance(node, _ast.ClassDef):
+                continue
+            method_sigs: list[str] = []
+            for item in node.body:
+                if isinstance(item, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+                    if item.name.startswith("_"):
+                        continue
+                    # Build a simple signature string
+                    args = [a.arg for a in item.args.args if a.arg != "self"]
+                    sig = f"{item.name}({', '.join(args)})"
+                    method_sigs.append(sig)
+            if method_sigs:
+                page_objects.append((node.name, path, method_sigs))
+
+    if not page_objects:
+        return ""
+
+    lines = [
+        "# Page Object Methods Available in This Batch (USE THESE EXACT NAMES)",
+        "",
+        "The following page-object classes were generated earlier in this run.",
+        "If your step definitions call methods on these classes, you MUST use",
+        "the EXACT method names listed below. Do not invent variations.",
+        "",
+    ]
+    for class_name, path, sigs in page_objects:
+        lines.append(f"## `{class_name}` (in `{path}`)")
+        lines.append("```python")
+        for sig in sigs:
+            lines.append(f"    def {sig}: ...")
+        lines.append("```")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def _sort_files_for_generation(
+    files_to_create: list,
+) -> list:
+    """Return file plans reordered so page objects come BEFORE step
+    definitions.
+
+    Why: when generating step-def files, the prompt can include the
+    actual method signatures from page-object files already generated
+    in this batch (see `_build_sibling_page_object_context`). For that
+    to work, the page objects need to be generated first.
+
+    Order within each group is preserved so that any plan-encoded
+    intent (e.g., "feature first, then steps") still applies within
+    its category.
+
+    Order:
+        1. feature files
+        2. page_object files
+        3. step_definitions files
+        4. everything else
+    """
+    order = {"feature": 0, "page_object": 1, "step_definitions": 2, "other": 3}
+    return sorted(
+        files_to_create,
+        key=lambda fp: (order.get(getattr(fp, "file_type", "other"), 3), 0),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Helpers for the self-correcting repair loop
 # ---------------------------------------------------------------------------
@@ -381,12 +490,18 @@ def generate_file_content(
     ctx: AppContext,
     validator_feedback: list[str] | None = None,
     previous_attempt: str | None = None,
+    already_generated: list[GeneratedFile] | None = None,
 ) -> str:
     """Stage 2: For ONE file in the plan, get its full content as raw text.
 
     For files marked as extending an existing path (is_new_file=False AND
     in extendable_paths), the current file content is injected into the
     prompt under a dedicated section so the LLM preserves existing methods.
+
+    For step-definitions files, when `already_generated` contains page-
+    object files from earlier in this batch, their method signatures are
+    injected so the LLM uses the exact method names (preventing the
+    cross-file naming mismatches that v5 was created to address).
 
     Repair mode (when validator_feedback is provided):
         After a validator finds problems, this function can be called again
@@ -463,6 +578,19 @@ def generate_file_content(
             f"'{file_plan.file_path}'."
         )
 
+    # Build the sibling page-object methods block (Hotfix v5 prevention).
+    # Only relevant for step-definitions files — feature files and page
+    # objects don't need it.
+    sibling_block = ""
+    if file_plan.file_type == "step_definitions" and already_generated:
+        sibling_block = _build_sibling_page_object_context(already_generated)
+        if sibling_block:
+            logger.info(
+                f"Stage 2: injecting method signatures from "
+                f"{sum(1 for f in already_generated if f.file_path.startswith('pages/'))} "
+                f"sibling page-object file(s) into step-def prompt."
+            )
+
     prompt_template = load_prompt("agent2_coder_generate.md")
     user_prompt = (
         prompt_template
@@ -473,6 +601,7 @@ def generate_file_content(
         .replace("{feature_name}", plan.feature_name)
         .replace("{existing_file_block}", existing_block)
         .replace("{validator_feedback_block}", feedback_block)
+        .replace("{sibling_page_objects_block}", sibling_block)
         .replace("{reference_feature_path}", ctx.reference_feature)
         .replace("{reference_step_def_path}", ctx.reference_step_def)
         .replace("{reference_page_object_path}", ctx.reference_page_object)
@@ -597,6 +726,25 @@ def _validate_generated_files(
             f"hallucinated a page object class import. See logs for details."
         )
 
+    method_errors = validate_method_resolution(generated_files, PROJECT_ROOT)
+    if method_errors:
+        logger.error(
+            f"Method resolution check FAILED with "
+            f"{len(method_errors)} error(s) AFTER retry:"
+        )
+        for err in method_errors:
+            logger.error(f"  - {err}")
+        raise ValueError(
+            f"Method resolution validation failed for {story_id}: "
+            f"{len(method_errors)} step-def method call(s) reference page-object "
+            f"method(s) that don't exist on the corresponding class — even "
+            f"after the LLM was given the validator's feedback for self-"
+            f"correction. The LLM likely used inconsistent method names "
+            f"between the page object and the step def file (e.g., defined "
+            f"`click_logout()` in the page object but called "
+            f"`click_logout_link()` in the step def). See logs for details."
+        )
+
 
 # ---------------------------------------------------------------------------
 # Self-correcting retry loop (handles weak-model step coverage failures)
@@ -639,8 +787,11 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     Currently combines:
       - Step-definition coverage validator (missing @given/@when/@then)
       - Import resolution validator (imports referencing non-existent modules)
+      - Method resolution validator (calls to methods that don't exist on
+        the page object class — catches cross-file naming inconsistency
+        and hallucinated methods)
 
-    Both produce errors in the `<type> error in '<path>':` format so the
+    All produce errors in the `<type> error in '<path>':` format so the
     repair loop's grouper can target the right file.
 
     Future validators can be plumbed here as long as they emit errors in
@@ -649,6 +800,7 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     errors: list[str] = []
     errors.extend(validate_step_definitions_complete(generated_files))
     errors.extend(validate_imports_resolvable(generated_files, PROJECT_ROOT))
+    errors.extend(validate_method_resolution(generated_files, PROJECT_ROOT))
     return errors
 
 
@@ -739,6 +891,11 @@ def _attempt_step_coverage_repair(
             )
             try:
                 prior_content = generated_files[target_idx].content
+                # Pass siblings (excluding the one being repaired) so the
+                # repair prompt also gets accurate method signatures.
+                siblings_for_repair = [
+                    f for i, f in enumerate(generated_files) if i != target_idx
+                ]
                 repaired_content = generate_file_content(
                     llm,
                     target_plan,
@@ -749,6 +906,7 @@ def _attempt_step_coverage_repair(
                     ctx,
                     validator_feedback=errors_for_this_file,
                     previous_attempt=prior_content,
+                    already_generated=siblings_for_repair,
                 )
                 # If the LLM produced clearly-degraded output (truncated stub,
                 # syntax errors, fraction of prior size), the prior attempt
@@ -900,11 +1058,17 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     plan = build_plan(llm, new_test_cases, references, page_inventory, ctx)
 
     # 4. STAGE 2: GENERATE PER-FILE CONTENT
+    # Order page objects BEFORE step definitions so the step-def prompt
+    # can include the actual method signatures from page objects already
+    # generated in this batch (Hotfix v5 — prevents cross-file naming
+    # mismatches like `click_logout()` vs `click_logout_link()`).
+    ordered_files = _sort_files_for_generation(plan.files_to_create)
     generated_files: list[GeneratedFile] = []
-    for file_plan in plan.files_to_create:
+    for file_plan in ordered_files:
         try:
             content = generate_file_content(
                 llm, file_plan, plan, new_test_cases, references, page_inventory, ctx,
+                already_generated=generated_files,
             )
             generated_files.append(GeneratedFile(
                 file_path=file_plan.file_path,
