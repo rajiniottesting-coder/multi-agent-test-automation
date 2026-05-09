@@ -829,7 +829,7 @@ def _attempt_step_coverage_repair(
     references: dict,
     page_inventory: str,
     ctx: AppContext,
-    max_retries: int = 2,
+    max_retries: int = 4,
 ) -> list[GeneratedFile]:
     """If validators find issues in the generated files, give the LLM up to
     `max_retries` chances to fix them with explicit feedback.
@@ -1118,7 +1118,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
         references,
         page_inventory,
         ctx,
-        max_retries=2,
+        max_retries=4,
     )
     output = CodeGenerationOutput(
         feature_name=plan.feature_name,
