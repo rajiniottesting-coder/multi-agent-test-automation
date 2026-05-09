@@ -749,6 +749,111 @@ def _phrase_matches(feature_phrase: str, decorator_phrase: str, parser_type: str
         return False
 
 
+def validate_feature_file_structure(generated_files: list) -> list:
+    """Catch malformed Gherkin: steps outside any Scenario/Background/Examples block.
+
+    pytest-bdd raises `FeatureError: Step definition outside of a Scenario or a
+    Background.` at test collection time when a feature file has step keywords
+    (Given/When/Then/And/But) appearing at the top level of the file rather
+    than inside one of:
+        - Scenario:
+        - Scenario Outline:
+        - Background:
+        - Example: / Scenarios: (Gherkin synonyms)
+
+    This is a different bug class from the step-coverage check. The step
+    coverage validator confirms every step has a matching decorator; this
+    one confirms every step is inside a valid containing block.
+
+    HOW IT WORKS:
+        Gherkin uses indentation (and blank lines) to delimit blocks.
+        A `Background:` block ends when a less-or-equally-indented non-step
+        line appears (typically `Scenario:` or another block keyword), or
+        when a step appears that ISN'T further indented than the block
+        opener. We track the indent of the most recent block opener and
+        treat any step at <= that indent as outside the block.
+
+    REUSABLE FOR ANY PROJECT:
+        Pure Gherkin grammar check. No app/domain assumptions.
+
+    Args:
+        generated_files: Each must have `.file_path` and `.content`.
+
+    Returns:
+        List of human-readable error strings, one per orphan step. Empty
+        list means every step is inside a valid block.
+    """
+    errors = []
+    BLOCK_OPENERS = {
+        "scenario", "scenario outline", "scenario template",
+        "background",
+        "example", "examples", "scenarios",
+        "rule",
+    }
+    STEP_KEYWORDS = {"given", "when", "then", "and", "but", "*"}
+
+    for f in generated_files:
+        path = getattr(f, "file_path", "") or ""
+        content = getattr(f, "content", "") or ""
+        if not path.endswith(".feature"):
+            continue
+
+        block_indent = None  # indent level of the most recent block opener; None = outside any block
+        in_examples_table = False  # special case: data table rows starting with |
+
+        for line_no, raw in enumerate(content.splitlines(), start=1):
+            # Compute indent of this line
+            indent = len(raw) - len(raw.lstrip())
+            stripped = raw.strip()
+
+            if not stripped or stripped.startswith("#"):
+                continue  # blank lines and comments don't change state
+
+            # Tag lines like @smoke don't change block state
+            if stripped.startswith("@"):
+                continue
+
+            # Data-table rows (inside Examples)
+            if stripped.startswith("|"):
+                continue
+
+            # If a line is at <= the block opener's indent and is NOT a step,
+            # the previous block has ended.
+            if block_indent is not None and indent <= block_indent:
+                # The block has ended. New tokens decide what's next.
+                block_indent = None
+                in_examples_table = False
+
+            # Look for keywords with ':' first (Feature/Scenario/Background/etc.)
+            head = stripped.split(":", 1)[0].strip().lower() if ":" in stripped else ""
+
+            if head == "feature":
+                block_indent = None  # Feature line itself is not a step container
+                continue
+
+            if head in BLOCK_OPENERS:
+                block_indent = indent
+                in_examples_table = (head in ("example", "examples", "scenarios"))
+                continue
+
+            # Now check for step keywords.
+            first_token = stripped.split(None, 1)[0].lower()
+            if first_token in STEP_KEYWORDS:
+                if block_indent is None:
+                    errors.append(
+                        f"Gherkin structure error in '{path}': step on line "
+                        f"{line_no} (`{stripped[:80]}`) appears outside any "
+                        f"Scenario/Background/Examples block. pytest-bdd "
+                        f"would fail at test collection time with: 'Step "
+                        f"definition outside of a Scenario or a Background.' "
+                        f"FIX: move this step inside a `Scenario:` or "
+                        f"`Background:` block, or remove it if it was added "
+                        f"by mistake."
+                    )
+
+    return errors
+
+
 def validate_step_definitions_complete(generated_files: list) -> list:
     """Verify every step phrase in generated .feature files has a matching
     @given/@when/@then decorator in the corresponding step def file.

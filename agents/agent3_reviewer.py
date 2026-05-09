@@ -292,7 +292,13 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
     prompt_chars = len(user_prompt)
     logger.info(f"Review prompt size: {prompt_chars:,} chars (~{prompt_chars // 4:,} tokens)")
 
-    llm = LLMClient(temperature=0.1)
+    # max_output_tokens=8192 (not the default 4096): ReviewReport has 7
+    # required scalar fields plus an `issues` list where each issue carries
+    # 5 required fields (severity, file_path, line_number, issue_type,
+    # description, suggested_fix). With 5+ issues the JSON exceeds 4K and
+    # truncates mid-object — Pydantic then rejects it with "Field required"
+    # validation errors. 8K leaves comfortable headroom.
+    llm = LLMClient(temperature=0.1, max_output_tokens=8192)
     report: ReviewReport = llm.invoke_structured(
         system_prompt="You are a Senior SDET performing rigorous code review on automated test code.",
         user_prompt=user_prompt,

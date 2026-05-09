@@ -32,6 +32,7 @@ import pytest
 
 from agents.test_inventory import (
     validate_filename_consistency,
+    validate_feature_file_structure,
     validate_step_definitions_complete,
 )
 from agents.import_validator import validate_imports_resolvable
@@ -140,7 +141,97 @@ class TestFilenameConsistency:
 
 
 # =============================================================================
-# 2. Step coverage (PR #9 — missing decorators)
+# 2. Gherkin structure (PR #14 regression — orphan And step at line 10)
+# =============================================================================
+class TestFeatureFileStructure:
+    """Every step keyword (Given/When/Then/And/But/*) must be inside a
+    Scenario, Scenario Outline, Background, Examples, or Rule block. Steps
+    appearing at the top level of the .feature file cause pytest-bdd to
+    fail at collection time with `FeatureError: Step definition outside of
+    a Scenario or a Background.`
+    """
+
+    def test_well_formed_feature_passes(self):
+        feature = gf("features/x.feature", textwrap.dedent("""
+            Feature: x
+              Background:
+                Given I am logged in
+              Scenario: y
+                When I click button
+                Then I see result
+        """).strip())
+        assert validate_feature_file_structure([feature]) == []
+
+    def test_orphan_and_step_caught_pr14_regression(self):
+        """The exact shape of the PR #14 failure: an `And` step floating
+        between Background and Scenario blocks, outside any container."""
+        feature = gf("features/inventory_menu_and_logout.feature", textwrap.dedent("""
+            Feature: Inventory menu and logout
+
+              Background:
+                Given I am logged in as "standard_user"
+                When I navigate to the inventory page
+                Then I should see the inventory items
+
+              And I should see the page title "Products"
+
+              Scenario: Verify burger menu present
+                Then I should see the burger menu icon
+        """).strip())
+        errors = validate_feature_file_structure([feature])
+        assert len(errors) == 1
+        # Error must reference the offending line and the FeatureError
+        assert "outside any" in errors[0]
+        assert "I should see the page title" in errors[0]
+        assert "pytest-bdd" in errors[0]
+
+    def test_orphan_given_at_top_level(self):
+        feature = gf("features/x.feature", textwrap.dedent("""
+            Feature: x
+              Given some orphaned setup
+
+              Scenario: y
+                When I do x
+        """).strip())
+        errors = validate_feature_file_structure([feature])
+        assert len(errors) == 1
+        assert "Given some orphaned setup" in errors[0]
+
+    def test_scenario_outline_examples_table_accepted(self):
+        """Steps inside Scenario Outline + its Examples: data table
+        (which contains | rows) must NOT be flagged as orphans."""
+        feature = gf("features/x.feature", textwrap.dedent("""
+            Feature: x
+              Scenario Outline: parametrized
+                Given I am logged in as "<user>"
+                When I do something
+                Then I see "<result>"
+              Examples:
+                | user      | result  |
+                | alice     | OK      |
+                | bob       | FAIL    |
+        """).strip())
+        assert validate_feature_file_structure([feature]) == []
+
+    def test_rule_block_accepted(self):
+        """Gherkin 6+ Rule blocks contain Scenarios and are valid containers."""
+        feature = gf("features/x.feature", textwrap.dedent("""
+            Feature: x
+              Rule: y
+                Scenario: z
+                  Given I am here
+                  Then I see something
+        """).strip())
+        assert validate_feature_file_structure([feature]) == []
+
+    def test_only_inspects_feature_files(self):
+        """Non-.feature files are ignored even if they look Gherkin-ish."""
+        not_a_feature = gf("docs/x.md", "Given a markdown doc\nWhen reading\nThen no error")
+        assert validate_feature_file_structure([not_a_feature]) == []
+
+
+# =============================================================================
+# 3. Step coverage (PR #9 — missing decorators)
 # =============================================================================
 class TestStepCoverage:
     """Every Gherkin step must have a matching @given/@when/@then decorator."""

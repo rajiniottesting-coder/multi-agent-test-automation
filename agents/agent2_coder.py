@@ -47,6 +47,7 @@ from agents.test_inventory import (
     scan_features_dir,
     filter_duplicate_test_cases,
     validate_filename_consistency,
+    validate_feature_file_structure,
     validate_step_definitions_complete,
 )
 from config import (
@@ -691,6 +692,21 @@ def _validate_generated_files(
             f"and step definitions. See logs for details."
         )
 
+    structure_errors = validate_feature_file_structure(generated_files)
+    if structure_errors:
+        logger.error(
+            f"Feature file structure check FAILED with "
+            f"{len(structure_errors)} error(s):"
+        )
+        for err in structure_errors:
+            logger.error(f"  - {err}")
+        raise ValueError(
+            f"Feature file structure validation failed for {story_id}: "
+            f"{len(structure_errors)} step(s) appear outside any "
+            f"Scenario/Background/Examples block. pytest-bdd would fail at "
+            f"test collection time. See logs for details."
+        )
+
     coverage_errors = validate_step_definitions_complete(generated_files)
     if coverage_errors:
         logger.error(
@@ -798,6 +814,7 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     the same format.
     """
     errors: list[str] = []
+    errors.extend(validate_feature_file_structure(generated_files))
     errors.extend(validate_step_definitions_complete(generated_files))
     errors.extend(validate_imports_resolvable(generated_files, PROJECT_ROOT))
     errors.extend(validate_method_resolution(generated_files, PROJECT_ROOT))
