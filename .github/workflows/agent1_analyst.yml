@@ -1,0 +1,124 @@
+# ─────────────────────────────────────────────────────────────
+# Agent 1 (Analyst) — manual + scheduled trigger
+#
+# WHEN THIS RUNS:
+#   1. Manually triggered from GitHub Actions UI (workflow_dispatch)
+#      - Optional inputs: process a single story or scan all `ai-ready`
+#   2. Automatically on a business-hours cron schedule:
+#      - Every 15 minutes, Mon-Fri 9:00-18:00 UTC
+#      - Calls `--scan` to find stories matching config.yaml selection
+#      - Skips weekends/nights to avoid idle CI minutes outside work hours
+#
+# WHAT IT DOES:
+#   For each Story with label `ai-ready` (and not `ai-processed` or
+#   `ai-skip`), Agent 1 calls Gemini to draft Jira Test Case issues
+#   (typically 3-5 per story), links them to the parent Story, and
+#   adds the `ai-processed` label so the next scan skips it.
+#
+# COST PROFILE:
+#   - Idle scan (no matching stories): ~30-40 sec runner time, $0 LLM
+#   - Per processed story: ~$0.05-0.15 in Gemini tokens
+#   - max_stories_per_run is capped at 2 in config.yaml for safety
+#
+# WHY BUSINESS HOURS ONLY:
+#   24/7 cron at */15 would consume ~3,800 idle runner minutes/month
+#   on top of the GitHub free-tier 2,000-minute allowance for private
+#   repos. Restricting to weekday business hours cuts that ~75% to
+#   ~960 idle minutes — well within free tier. If you need after-hours
+#   processing, expand the cron range or trigger manually.
+#
+# REQUIRED REPO SECRETS:
+#   - GOOGLE_API_KEY  (Gemini API key, paid tier recommended for Pro)
+#   - JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN, JIRA_PROJECT_KEY
+#
+# REQUIRED REPO VARIABLES (Settings → Secrets and variables → Variables):
+#   - GEMINI_MODEL  (e.g., gemini-2.5-pro, gemini-2.5-flash)
+#
+# NOTE: Agent 1 does NOT push code or open PRs — it only writes to Jira.
+#   No GitHub PAT or contents:write permission is needed here.
+# ─────────────────────────────────────────────────────────────
+
+name: Agent 1 - Analyst
+
+on:
+  workflow_dispatch:
+    inputs:
+      story_key:
+        description: "Optional: process a single story (e.g., SCRUM-30). Leave blank to scan all ai-ready stories."
+        required: false
+        default: ""
+      dry_run:
+        description: "Dry run — generate test case drafts but don't create Jira tickets"
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    # Every 15 minutes, Mon-Fri 9:00-18:00 UTC.
+    # NOTE: GitHub Actions cron may be delayed up to 15 min during high
+    # platform load — effective worst-case latency is ~30 min.
+    - cron: "*/15 9-18 * * 1-5"
+
+# Agent 1 only writes to Jira — no contents/pull-requests permissions needed.
+permissions:
+  contents: read
+
+# Prevent overlapping scans. If a previous scan is still running when the
+# next cron fires, the new run waits in a queue rather than starting in
+# parallel. Without this, two concurrent scans could race to label the
+# same story and create duplicate Jira test case issues.
+concurrency:
+  group: agent1-analyst
+  cancel-in-progress: false
+
+jobs:
+  analyze:
+    name: Draft Test Cases
+    runs-on: ubuntu-latest
+    timeout-minutes: 10  # cap: 2 stories × ~2 min/story + setup overhead
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Agent 1
+        env:
+          # LLM credentials
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash-lite' }}
+
+          # Jira credentials
+          JIRA_URL: ${{ secrets.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+        run: |
+          # Pick the right CLI mode based on trigger:
+          #   - workflow_dispatch with story_key → process that single story
+          #   - workflow_dispatch with no story_key → scan mode
+          #   - schedule (cron) → always scan mode (no inputs available)
+          DRY_RUN_FLAG=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
+
+          if [ -n "${{ github.event.inputs.story_key }}" ]; then
+            echo "Mode: single story (${{ github.event.inputs.story_key }}) — manual trigger"
+            python -m agents.agent1_analyst --story "${{ github.event.inputs.story_key }}" $DRY_RUN_FLAG
+          else
+            echo "Mode: scan (process up to max_stories_per_run from config.yaml)"
+            echo "Trigger: ${{ github.event_name }}"
+            python -m agents.agent1_analyst --scan $DRY_RUN_FLAG
+          fi

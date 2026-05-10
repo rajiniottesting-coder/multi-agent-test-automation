@@ -46,10 +46,23 @@ on:
         required: false
         type: boolean
         default: false
+  schedule:
+    # Every 15 minutes, Mon-Fri 9:00-18:00 UTC. Aligned with Agent 1's
+    # cron so the two agents process the same story within roughly the
+    # same business-hours window. NOTE: GitHub Actions cron may be
+    # delayed up to 15 min during platform load.
+    - cron: "*/15 9-18 * * 1-5"
 
 permissions:
   contents: write       # Agent 2 creates branches and commits
   pull-requests: write  # Agent 2 opens PRs
+
+# Prevent overlapping scans. Without this, two concurrent runs could
+# race to create the same branch / push the same files / open the
+# same PR, producing weird half-states or duplicate PRs.
+concurrency:
+  group: agent2-coder
+  cancel-in-progress: false
 
 jobs:
   generate:

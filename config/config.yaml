@@ -94,7 +94,12 @@ agents:
         - "ai-processed"   # idempotency marker
         - "ai-skip"        # human override / opt-out
     completion_label: "ai-processed"
-    max_stories_per_run: 10
+    # CAP for automated cron scans (Day 8): keep blast radius small if a
+    # mislabel ever fires the cron unintentionally. Each Agent 1 run on a
+    # story creates 3-5 Jira test case issues, which a human has to clean
+    # up if they were unintended. With cap=2, a worst-case mislabel costs
+    # ~$0.30 of LLM and ~10 garbage Jira tickets to clean up — recoverable.
+    max_stories_per_run: 2
 
   # Agent 2 — Coder: approved test cases → Playwright code + PR
   #
@@ -135,7 +140,12 @@ agents:
 
     completion_label: "ai-coded"
     regenerate_label: "ai-regenerate"
-    max_stories_per_run: 5
+    # CAP for automated cron scans (Day 8): same reasoning as Agent 1.
+    # Each Agent 2 run on a story spends ~$0.10-0.30 in LLM tokens and
+    # opens a PR. With cap=2, worst-case mislabel costs ~$0.60 and 2 PRs
+    # to close — recoverable. The human-approved label gate is still the
+    # primary protection; this cap is the secondary safety net.
+    max_stories_per_run: 2
 
   # agent3_reviewer:  # triggered by GitHub PR events, no Jira selection needed
   # agent4_runner:    # triggered by GitHub PR events (CI workflow only — no .py file)
