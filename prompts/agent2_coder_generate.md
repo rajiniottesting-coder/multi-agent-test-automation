@@ -56,10 +56,11 @@ NO prose before or after the code block. Just the code block.
 1. **POM compliance:** If this is a step definition file, NEVER put selectors in it -- they live in page objects.
 2. **No hardcoded waits:** Never use `time.sleep()`. Use Playwright's auto-wait.
 3. **Meaningful assertions:** Every Then step must assert something concrete with a clear failure message.
-4. **Use selectors from the page inventory:** the inventory above lists the exact selectors to use.
-5. **Imports order:** stdlib -> third-party -> project (consistent with reference).
-6. **Type hints:** Use them on new methods (matches reference).
-7. **Pytest markers in feature files:** Add appropriate tags like `@smoke`, `@negative`, `@<theme>`.
+4. **URL comparisons must normalise trailing slashes.** Browsers add a trailing slash to root-path navigations (`https://site.com` → `https://site.com/`), so a strict `assert page.url == base_url` will fail at runtime even when the user is on the correct page. Always strip trailing slashes on BOTH sides before comparing, e.g. `assert page.url.rstrip("/") == base_url.rstrip("/")`. This applies to any URL equality check — login pages, redirect targets, deep-link assertions. For prefix checks use `page.url.startswith(...)`; for path checks use `urllib.parse.urlparse(page.url).path`.
+5. **Use selectors from the page inventory:** the inventory above lists the exact selectors to use.
+6. **Imports order:** stdlib -> third-party -> project (consistent with reference).
+7. **Type hints:** Use them on new methods (matches reference).
+8. **Pytest markers in feature files:** Add appropriate tags like `@smoke`, `@negative`, `@<theme>`.
 
 # File-Type-Specific Rules
 

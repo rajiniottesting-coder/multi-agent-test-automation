@@ -261,6 +261,11 @@ def resolve_story_key(cli_arg: str | None, pr_branch: str | None = None) -> str:
          like PROJ-123, e.g., 'auto/PROJ-123-feature' or 'feature/PROJ-99-foo')
       4. Raise — we can't guess
 
+    Branch names like 'auto/SCRUM-23-...' embed the *test case* key, not the
+    user story. After the initial resolution we ask Jira whether that key is
+    a Test Case linked to a parent Story; if so we escalate to the Story so
+    run-summary comments land where humans expect to read them.
+
     See docs/BRANCH_NAMING.md for the full branch convention.
     """
     if cli_arg:
@@ -276,6 +281,17 @@ def resolve_story_key(cli_arg: str | None, pr_branch: str | None = None) -> str:
         from config import extract_jira_key
         key = extract_jira_key(pr_branch)
         if key:
+            # Escalate to parent Story when the branch encoded a Test Case key.
+            # Best-effort: any failure here keeps the original key.
+            try:
+                from agents.jira_client import JiraClient
+                parent = JiraClient().get_parent_story_key(key)
+                if parent:
+                    return parent
+            except Exception as e:
+                logger.warning(
+                    f"Parent-story lookup failed for {key}; commenting on it directly. ({e})"
+                )
             return key
 
     raise ValueError(

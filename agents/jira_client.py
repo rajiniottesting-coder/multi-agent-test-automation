@@ -242,3 +242,49 @@ class JiraClient:
         comment_url = f"{self.url}/browse/{issue_key}?focusedCommentId={comment.id}"
         logger.info(f"Posted comment on {issue_key}: {comment_url}")
         return comment_url
+
+    def get_parent_story_key(self, issue_key: str) -> Optional[str]:
+        """Return the parent Story key for a Test Case, or None if not applicable.
+
+        Used by Agent 5 (Reporter) to ensure run-summary comments land on the
+        user-facing Story (e.g. SCRUM-20) instead of the implementation-detail
+        Test Case (e.g. SCRUM-23) extracted from a feature branch name.
+
+        Resolution logic:
+          - If `issue_key` itself is a Story (or anything that's not a Test Case),
+            return None — caller should keep the original key.
+          - If `issue_key` is a Test Case, scan its issuelinks for a "Relates"
+            link pointing OUT to a Story and return that Story's key.
+          - If the test case has no Story-typed parent, return None and let the
+            caller fall back. We never raise here — Agent 5 should still post
+            *somewhere* even if link resolution fails.
+        """
+        try:
+            issue = self.client.issue(issue_key, fields="issuetype,issuelinks")
+        except Exception as e:
+            logger.warning(f"Could not fetch {issue_key} for parent lookup: {e}")
+            return None
+
+        issue_type = getattr(issue.fields.issuetype, "name", "") or ""
+        if issue_type.lower() != "test case":
+            # Already a Story (or Bug, Task, etc.) — no walking needed.
+            return None
+
+        # create_test_case() builds links as inwardIssue=test_case, outwardIssue=story
+        # with type "Relates", so the parent appears on `outwardIssue` of the link.
+        for link in getattr(issue.fields, "issuelinks", []) or []:
+            outward = getattr(link, "outwardIssue", None)
+            if outward is None:
+                continue
+            outward_type = getattr(outward.fields.issuetype, "name", "") or ""
+            if outward_type.lower() == "story":
+                logger.info(
+                    f"Resolved test-case {issue_key} → parent story {outward.key}"
+                )
+                return outward.key
+
+        logger.info(
+            f"{issue_key} is a Test Case but has no Story-typed outward link; "
+            f"will comment on {issue_key} itself."
+        )
+        return None
