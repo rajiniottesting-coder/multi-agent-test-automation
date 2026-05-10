@@ -10,6 +10,8 @@ class InventoryPage(BasePage):
     PAGE_TITLE = "[data-test='title']"
     INVENTORY_CONTAINER = "[data-test='inventory-container']"
     SHOPPING_CART_LINK = "[data-test='shopping-cart-link']"
+    BURGER_MENU_BUTTON = "#react-burger-menu-btn"
+    LOGOUT_LINK = "[data-test='logout-sidebar-link']"
 
     # === URL ===
     URL_PATH = "/inventory.html"
@@ -21,3 +23,8 @@ class InventoryPage(BasePage):
     def get_page_title_text(self) -> str:
         """Return the visible page title (e.g., 'Products')."""
         return self.page.locator(self.PAGE_TITLE).inner_text()
+
+    def logout(self) -> None:
+        """Open the burger menu and click the logout link."""
+        self.page.click(self.BURGER_MENU_BUTTON)
+        self.page.click(self.LOGOUT_LINK)
