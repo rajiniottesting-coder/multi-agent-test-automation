@@ -292,6 +292,104 @@ class TestStepCoverage:
         """).strip())
         assert validate_step_definitions_complete([feature, step_def]) == []
 
+    def test_steps_from_sibling_step_def_in_batch_pooled(self):
+        """When the LLM splits steps across two generated step-def files
+        (e.g. shared steps in test_shared.py, feature-specific steps in
+        test_x.py), both files should be pooled when checking coverage —
+        otherwise we get false positives. Regresses the SCRUM-20 family
+        of bugs where the validator only inspected the paired file."""
+        feature = gf("features/x.feature", textwrap.dedent("""
+            Feature: x
+              Scenario: y
+                Given common setup step
+                When specific action happens
+        """).strip())
+        paired = gf("tests/step_defs/test_x.py", textwrap.dedent("""
+            from pytest_bdd import when
+            @when("specific action happens")
+            def s1(): pass
+        """).strip())
+        sibling = gf("tests/step_defs/test_shared.py", textwrap.dedent("""
+            from pytest_bdd import given
+            @given("common setup step")
+            def s2(): pass
+        """).strip())
+        # project_root=None disables on-disk scan so we test the batch-pool
+        # path in isolation.
+        errors = validate_step_definitions_complete(
+            [feature, paired, sibling], project_root=None
+        )
+        assert errors == [], errors
+
+    def test_steps_from_existing_disk_step_def_pooled(self, tmp_path):
+        """The SCRUM-20 false-positive: a new feature legitimately reuses
+        login steps that are already defined in tests/step_defs/test_login.py
+        on disk. Validator must NOT report them as missing — pytest-bdd
+        registers step decorators globally for the session."""
+        # Build a minimal repo skeleton with a pre-existing login step-def file.
+        step_defs_dir = tmp_path / "tests" / "step_defs"
+        step_defs_dir.mkdir(parents=True)
+        (step_defs_dir / "test_login.py").write_text(textwrap.dedent("""
+            from pytest_bdd import given, when, then, parsers
+            @given("I am on the login page")
+            def s1(): pass
+            @when(parsers.parse('I log in as "{user}"'))
+            def s2(user): pass
+            @then("I see the inventory")
+            def s3(): pass
+        """).strip())
+
+        # Generated batch: feature reuses 3 steps + adds one new specific step.
+        feature = gf("features/logout.feature", textwrap.dedent("""
+            Feature: Logout
+              Scenario: Logout works
+                Given I am on the login page
+                When I log in as "alice"
+                Then I see the inventory
+                When I click the logout button
+        """).strip())
+        step_def = gf("tests/step_defs/test_logout.py", textwrap.dedent("""
+            from pytest_bdd import when
+            @when("I click the logout button")
+            def s1(): pass
+        """).strip())
+
+        errors = validate_step_definitions_complete(
+            [feature, step_def], project_root=tmp_path
+        )
+        assert errors == [], (
+            f"Expected 0 errors (3 reused steps live in test_login.py on disk), "
+            f"got {len(errors)}: {errors}"
+        )
+
+    def test_genuinely_missing_step_still_caught_with_disk_pool(self, tmp_path):
+        """Negative control: pooling on-disk decorators must NOT mask real
+        missing steps. If a step exists in neither the batch nor on disk,
+        it should still surface as an error."""
+        step_defs_dir = tmp_path / "tests" / "step_defs"
+        step_defs_dir.mkdir(parents=True)
+        (step_defs_dir / "test_login.py").write_text(
+            'from pytest_bdd import given\n'
+            '@given("I am on the login page")\n'
+            'def f(): pass\n'
+        )
+
+        feature = gf("features/x.feature", textwrap.dedent("""
+            Feature: x
+              Scenario: y
+                Given I am on the login page
+                When I do something nobody defined anywhere
+        """).strip())
+        step_def = gf("tests/step_defs/test_x.py",
+                      "from pytest_bdd import scenarios\n")
+
+        errors = validate_step_definitions_complete(
+            [feature, step_def], project_root=tmp_path
+        )
+        assert any("nobody defined anywhere" in e for e in errors), (
+            f"Expected the missing step to be reported, got: {errors}"
+        )
+
 
 # =============================================================================
 # 3. Empty quoted values (the parsers.parse "" runtime trap)

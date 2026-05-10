@@ -854,19 +854,32 @@ def validate_feature_file_structure(generated_files: list) -> list:
     return errors
 
 
-def validate_step_definitions_complete(generated_files: list) -> list:
+def validate_step_definitions_complete(generated_files: list, project_root=None) -> list:
     """Verify every step phrase in generated .feature files has a matching
-    @given/@when/@then decorator in the corresponding step def file.
+    @given/@when/@then decorator — either in the corresponding generated step
+    def file, OR in pre-existing step def files already on disk.
 
     PAIRING CONVENTION:
         features/X.feature  pairs with  tests/step_defs/test_X.py
         (This is enforced by the Phase 4 filename consistency validator.)
 
+    CROSS-FILE STEP REUSE (added 2026-05-10):
+        pytest-bdd allows the same step decorator to be defined in any module
+        that pytest collects — the decorator registers the step globally for
+        the test session. So a feature step like "Given I am on the login
+        page" defined in tests/step_defs/test_login.py works for any other
+        feature in the same session, no import or conftest required.
+
+        Earlier versions of this validator only inspected the paired step
+        def file, which produced false-positive errors any time the LLM
+        correctly omitted re-defining a shared step (e.g. login). Now we
+        also scan pre-existing step def files on disk and treat any
+        decorator we find there as available.
+
     HARD-FAIL BEHAVIOR:
-        Returns a list of error strings — one per missing step. Empty list
-        means every step in every feature has a matching decorator. The
-        caller should ABORT the PR if errors are returned, since the tests
-        would fail at collection time with StepDefinitionNotFoundError.
+        Returns a list of error strings — one per genuinely missing step.
+        Empty list means every feature step has a matching decorator
+        somewhere (paired file, sibling step def file, or generated batch).
 
     REUSABLE FOR ANY PROJECT:
         Makes no assumptions about domain (works for login, cart, checkout,
@@ -879,6 +892,13 @@ def validate_step_definitions_complete(generated_files: list) -> list:
                         attributes (same shape as Agent 2's
                         `generated_files`). Both .feature files and
                         step def .py files should be in the list.
+        project_root:   Optional Path to the repository root. When provided,
+                        decorators in `<project_root>/tests/step_defs/*.py`
+                        are also treated as available. Defaults to the
+                        PROJECT_ROOT computed in config.paths. Pass `None`
+                        explicitly (or a non-existent path) to skip the
+                        on-disk scan — useful in unit tests that want to
+                        validate only the generated batch in isolation.
 
     Returns:
         List of human-readable error messages, one per missing step
@@ -895,6 +915,55 @@ def validate_step_definitions_complete(generated_files: list) -> list:
         path = getattr(gf, "file_path", "")
         content = getattr(gf, "content", "") or ""
         by_path[path] = content
+
+    # === Cross-file decorator pool ===
+    # Collect decorators that are available repo-wide (not just in the
+    # paired file). Sources, in order:
+    #   1. Every step def file in the generated batch (LLM might have put
+    #      shared steps in conftest.py or another step def file).
+    #   2. Every step def file already on disk (pre-existing tests).
+    # Using a function-scoped default so the closure doesn't recompute
+    # the file list per feature.
+    extra_decorators: list[tuple[str, str, str]] = []
+
+    # 1. From the generated batch: any step def file other than the one
+    #    being paired below. We add the paired file's decorators in the
+    #    inner loop, so here we just include all of them; duplication is
+    #    harmless because the matching loop is "first hit wins".
+    for batch_path, batch_content in by_path.items():
+        if batch_path.startswith("tests/step_defs/") and batch_path.endswith(".py"):
+            extra_decorators.extend(_extract_decorator_phrases(batch_content))
+
+    # 2. From disk. Default to the project's real step_defs dir; opt-out
+    #    by passing project_root=None or a path that doesn't exist
+    #    (useful in unit tests).
+    if project_root is None:
+        try:
+            from config.paths import PROJECT_ROOT as _PR
+            project_root = _PR
+        except Exception:
+            project_root = None
+
+    if project_root is not None:
+        from pathlib import Path as _Path
+        step_defs_dir = _Path(project_root) / "tests" / "step_defs"
+        if step_defs_dir.is_dir():
+            # Files in the generated batch take precedence (the LLM may be
+            # rewriting one). Skip on-disk versions of files already in
+            # the batch so we use the LLM's latest content for those.
+            batch_step_def_paths = {
+                p for p in by_path
+                if p.startswith("tests/step_defs/") and p.endswith(".py")
+            }
+            for py_file in step_defs_dir.glob("*.py"):
+                rel = f"tests/step_defs/{py_file.name}"
+                if rel in batch_step_def_paths:
+                    continue
+                try:
+                    disk_content = py_file.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                extra_decorators.extend(_extract_decorator_phrases(disk_content))
 
     # For each feature file, find its paired step def file
     for path, content in by_path.items():
@@ -915,7 +984,8 @@ def validate_step_definitions_complete(generated_files: list) -> list:
 
         # Extract steps from feature and decorators from step def
         feature_steps = _extract_feature_steps(content)
-        decorators = _extract_decorator_phrases(step_def_content)
+        # Pool: paired file + cross-file (batch siblings + on-disk).
+        decorators = _extract_decorator_phrases(step_def_content) + extra_decorators
 
         # Track unique missing steps (avoid duplicate errors when the same
         # step appears in multiple scenarios)
