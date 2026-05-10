@@ -620,6 +620,25 @@ def generate_file_content(
     )
     content = extract_code_from_response(response)
     logger.info(f"  Generated {len(content)} chars for {file_plan.file_path}")
+
+    # Empty-output guard (Day 8 fix). Pro models can return HTTP 200 with
+    # near-zero visible content when their thinking budget is exhausted on
+    # complex prompts. Without this guard, Agent 2 logs "success", commits a
+    # 1-char file, opens a PR, and only Agent 3 (or a human reviewer) catches
+    # the empty file. We refuse to proceed: <30 chars cannot be a valid
+    # feature, page object, or step-def file (the smallest valid feature is
+    # roughly "Feature: x\nScenario: y\nGiven z\n" ~ 35 chars).
+    MIN_CONTENT_CHARS = 30
+    if len(content.strip()) < MIN_CONTENT_CHARS:
+        raise ValueError(
+            f"LLM returned suspiciously short content for "
+            f"'{file_plan.file_path}' ({len(content)} chars). This usually "
+            f"means the model exhausted its output token budget on internal "
+            f"reasoning ('thinking') before producing visible output. "
+            f"For Pro models, ensure max_output_tokens is at least 32768 "
+            f"(see _code_gen_max_output_tokens in llm_client.py). "
+            f"Aborting before we commit an empty file."
+        )
     return content
 
 

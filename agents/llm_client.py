@@ -43,7 +43,23 @@ DEFAULT_MAX_OUTPUT_TOKENS = 4096
 # Larger cap for raw-text code generation. Step definition files for complex
 # stories (15+ scenarios with @when/@then decorators each) can legitimately be
 # 600+ lines. Splitting these would break the existing file-per-feature
-# convention. 8192 tokens ≈ 32,000 characters; covers worst-case real files.
+# convention.
+#
+# IMPORTANT — Pro models use "thinking" tokens (Day 8 fix):
+#   gemini-2.5-pro and 3.x Pro models spend output tokens on internal
+#   chain-of-thought reasoning BEFORE producing visible content. The
+#   max_output_tokens cap applies to thinking + visible output combined.
+#   For multi-constraint code generation prompts, Pro can burn most of
+#   its 8K budget on thinking and emit zero or near-zero visible chars
+#   (the agent then logs "Generated 1 chars" and commits an empty file).
+#   We give Pro a much larger budget to absorb the reasoning overhead.
+#   Flash/Flash-Lite don't think extensively, so they're capped lower.
+def _code_gen_max_output_tokens(model_name: str) -> int:
+    if "pro" in (model_name or "").lower():
+        return 32768   # Pro: ~24K reasoning + 8K visible output worst case
+    return 8192        # Flash/Lite: visible output only
+
+# Kept for backwards compat with older imports; prefer the helper above.
 CODE_GENERATION_MAX_OUTPUT_TOKENS = 8192
 
 
@@ -147,15 +163,18 @@ class LLMClient:
         """
         # Use a dedicated LLM instance with a higher token budget for code.
         # Cached on first call so we don't reconstruct on every invocation.
+        # Token budget depends on model: Pro's reasoning tokens require
+        # significantly more headroom than Flash's visible-only output.
+        cap = _code_gen_max_output_tokens(self.model_name)
         if not hasattr(self, "_text_llm"):
             self._text_llm = ChatGoogleGenerativeAI(
                 model=self.model_name,
                 temperature=0.2,
-                max_output_tokens=CODE_GENERATION_MAX_OUTPUT_TOKENS,
+                max_output_tokens=cap,
             )
             logger.info(
                 f"Code generation LLM ready: {self.model_name} "
-                f"(max_output_tokens={CODE_GENERATION_MAX_OUTPUT_TOKENS})"
+                f"(max_output_tokens={cap})"
             )
 
         messages = [
@@ -164,7 +183,7 @@ class LLMClient:
         ]
         logger.info(
             f"Calling LLM (text mode, model={self.model_name}, "
-            f"max_output_tokens={CODE_GENERATION_MAX_OUTPUT_TOKENS})..."
+            f"max_output_tokens={cap})..."
         )
         response = self._call_with_quota_check(self._text_llm.invoke, messages)
         return response.content

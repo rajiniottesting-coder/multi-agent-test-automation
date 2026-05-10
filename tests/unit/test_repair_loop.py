@@ -275,3 +275,65 @@ class TestDegradedOutputDetection:
 
         kept = next(f for f in result if f.file_path == "tests/step_defs/test_logout.py")
         assert kept.content == prior_good
+
+
+# ---------------------------------------------------------------------------
+# Empty-output guard (Day 8 fix for Pro thinking-token exhaustion)
+# ---------------------------------------------------------------------------
+class TestEmptyOutputGuard:
+    """Pro models can return HTTP 200 with near-zero content when their
+    thinking budget is exhausted before producing visible output. The guard
+    in generate_file_content() must reject that, not silently commit empty
+    files like PR #16 did."""
+
+    REFS = {"feature": "Feature: ref\n", "step_def": "# ref\n", "page_object": "# ref\n"}
+
+    def test_one_char_output_rejected(self, ctx, plan):
+        """The exact PR #16 failure mode: 1-char output must raise, not return."""
+        from agents.agent2_coder import generate_file_content
+
+        file_plan = plan.files_to_create[0]
+        llm = MagicMock()
+        llm.invoke_text.return_value = "\n"  # 1 char, like the real failure
+
+        with pytest.raises(ValueError, match="suspiciously short"):
+            generate_file_content(
+                llm=llm, file_plan=file_plan, plan=plan,
+                test_cases=[], references=self.REFS,
+                page_inventory="", ctx=ctx,
+            )
+
+    def test_empty_string_output_rejected(self, ctx, plan):
+        """Edge case: completely empty response."""
+        from agents.agent2_coder import generate_file_content
+
+        file_plan = plan.files_to_create[0]
+        llm = MagicMock()
+        llm.invoke_text.return_value = ""
+
+        with pytest.raises(ValueError, match="suspiciously short"):
+            generate_file_content(
+                llm=llm, file_plan=file_plan, plan=plan,
+                test_cases=[], references=self.REFS,
+                page_inventory="", ctx=ctx,
+            )
+
+    def test_real_content_passes(self, ctx, plan):
+        """Negative control: a real-sized file must NOT trigger the guard."""
+        from agents.agent2_coder import generate_file_content
+
+        file_plan = plan.files_to_create[0]
+        llm = MagicMock()
+        llm.invoke_text.return_value = (
+            "Feature: Logout\n"
+            "  Scenario: User logs out\n"
+            "    Given I am on the inventory page\n"
+            "    When I click the logout link\n"
+            "    Then I should be on the login page\n"
+        )
+        result = generate_file_content(
+            llm=llm, file_plan=file_plan, plan=plan,
+            test_cases=[], references=self.REFS,
+            page_inventory="", ctx=ctx,
+        )
+        assert "Logout" in result
