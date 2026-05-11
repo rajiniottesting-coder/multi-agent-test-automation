@@ -186,4 +186,86 @@ class LLMClient:
             f"max_output_tokens={cap})..."
         )
         response = self._call_with_quota_check(self._text_llm.invoke, messages)
-        return response.content
+
+        # ─────────────────────────────────────────────────────────────
+        # DIAGNOSTIC LOGGING (Day 9): when content is suspiciously short,
+        # dump everything we can about WHY the model returned empty output.
+        # This is read-only — does NOT change return value or raise. The
+        # downstream empty-content guard in agent2_coder still fires.
+        #
+        # We previously assumed the 1-char output was caused by Pro's
+        # thinking-token budget being exhausted. Bumping the budget from
+        # 8K to 32K didn't fix it, which means the root cause is something
+        # else: a safety filter trip, a finish_reason we're not handling,
+        # the response being on `additional_kwargs` instead of `content`,
+        # or something model-specific to Gemini 2.5 Pro.
+        # ─────────────────────────────────────────────────────────────
+        content = response.content or ""
+
+        # Always log token usage — cheap, useful regardless
+        try:
+            usage = getattr(response, "usage_metadata", None) or {}
+            if usage:
+                # Pro reports thoughts_token_count separately from
+                # output_token_count for thinking models
+                logger.info(
+                    "Token usage: input=%s output=%s thoughts=%s total=%s",
+                    usage.get("input_tokens", "?"),
+                    usage.get("output_tokens", "?"),
+                    usage.get("output_token_details", {}).get("reasoning", "?")
+                        if isinstance(usage.get("output_token_details"), dict) else "?",
+                    usage.get("total_tokens", "?"),
+                )
+        except Exception as e:
+            logger.debug(f"Could not extract usage_metadata: {e}")
+
+        # Suspicious-output diagnostic dump
+        if len(content.strip()) < 30:
+            logger.error(
+                "─── DIAGNOSTIC: LLM returned suspiciously short content ───"
+            )
+            logger.error("Content length: %d chars", len(content))
+            logger.error("Content (repr, first 200 chars): %r", content[:200])
+
+            # response_metadata holds finish_reason and provider-specific fields
+            try:
+                meta = getattr(response, "response_metadata", None) or {}
+                # Log everything — we don't know in advance which key matters
+                for key, value in meta.items():
+                    val_str = str(value)
+                    # Truncate huge values to keep log readable
+                    if len(val_str) > 500:
+                        val_str = val_str[:500] + f"... ({len(val_str)} total chars)"
+                    logger.error("response_metadata[%r] = %s", key, val_str)
+                if not meta:
+                    logger.error("response_metadata is empty or missing")
+            except Exception as e:
+                logger.error("Could not extract response_metadata: %s", e)
+
+            # additional_kwargs sometimes carries the real payload when
+            # content is empty (LangChain quirk with some providers)
+            try:
+                extras = getattr(response, "additional_kwargs", None) or {}
+                if extras:
+                    for key, value in extras.items():
+                        val_str = str(value)
+                        if len(val_str) > 500:
+                            val_str = val_str[:500] + f"... ({len(val_str)} total chars)"
+                        logger.error("additional_kwargs[%r] = %s", key, val_str)
+                else:
+                    logger.error("additional_kwargs is empty or missing")
+            except Exception as e:
+                logger.error("Could not extract additional_kwargs: %s", e)
+
+            # Full response repr as last-resort fallback
+            try:
+                full_repr = repr(response)
+                if len(full_repr) > 2000:
+                    full_repr = full_repr[:2000] + f"... ({len(full_repr)} total chars)"
+                logger.error("Full response repr: %s", full_repr)
+            except Exception as e:
+                logger.error("Could not repr response: %s", e)
+
+            logger.error("─── END DIAGNOSTIC ───")
+
+        return content
