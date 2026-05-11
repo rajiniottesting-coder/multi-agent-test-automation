@@ -31,9 +31,12 @@ Usage:
 """
 import argparse
 import ast
+import hashlib
 import logging
 import re
 import sys
+from dataclasses import dataclass, field
+from typing import Optional
 import yaml
 
 from agents.app_context import AppContext
@@ -65,6 +68,282 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("agent2_coder")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# INCREMENTAL UPDATE SUPPORT (ai-update label)
+# ═══════════════════════════════════════════════════════════════════════════
+# This section provides the building blocks for the surgical-update flow:
+#
+#   - JIRA marker comments: `# JIRA: SCRUM-22 (hash: a4f9c2e1)` above each
+#     Scenario, used to identify which scenario belongs to which Test Case
+#     and whether the Test Case description has changed since the scenario
+#     was last generated.
+#
+#   - Feature file surgeon: parses Gherkin into scenario blocks, splices/
+#     appends/removes individual scenarios while preserving the rest of
+#     the file byte-for-byte.
+#
+# These could live in separate modules but are inlined here to minimize
+# file-count changes at this stage of the project. The section is
+# self-contained — only stdlib + already-imported modules — and could be
+# extracted into its own file later without changing call sites (other
+# than imports).
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Regex anchored on the JIRA marker comment. Tolerates extra whitespace.
+# Examples it matches:
+#   "# JIRA: SCRUM-22 (hash: a4f9c2e1)"
+#   "    # JIRA: PROJ-7 (hash: abcdef12)"
+# Does NOT match without the hash — we want to distinguish OUR markers
+# from human-added Jira-key comments.
+_JIRA_MARKER_RE = re.compile(
+    r"^\s*#\s*JIRA:\s*([A-Z][A-Z0-9_]*-\d+)\s*\(hash:\s*([0-9a-f]{8})\s*\)\s*$",
+    re.IGNORECASE,
+)
+
+# Keywords that start a top-level block within a feature file.
+# Order matters: "Scenario Outline" must be checked before "Scenario".
+_GHERKIN_BLOCK_KEYWORDS = (
+    "Scenario Outline:",
+    "Scenario:",
+    "Background:",
+    "Examples:",
+)
+
+
+def compute_description_hash(description: str) -> str:
+    """Stable 8-char hex hash of a Test Case description.
+
+    Whitespace is normalized before hashing so trivial reformatting in
+    Jira (extra blank lines, trailing spaces) doesn't trigger spurious
+    updates.
+    """
+    if description is None:
+        description = ""
+    normalized = re.sub(r"\s+", " ", description).strip()
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    return digest[:8]
+
+
+def format_marker(jira_key: str, description: str) -> str:
+    """Build a JIRA marker comment line (no trailing newline)."""
+    h = compute_description_hash(description)
+    return f"# JIRA: {jira_key} (hash: {h})"
+
+
+def parse_marker(line: str) -> Optional[tuple[str, str]]:
+    """Parse a single line as a JIRA marker.
+
+    Returns (jira_key, hash) if the line is a marker, else None.
+    """
+    m = _JIRA_MARKER_RE.match(line or "")
+    if not m:
+        return None
+    return m.group(1).upper(), m.group(2).lower()
+
+
+@dataclass
+class ScenarioBlock:
+    """A parsed block of lines from a feature file.
+
+    Lines include their trailing newline so they can be reassembled
+    losslessly via "".join(b.lines).
+    """
+    kind: str
+    lines: list[str] = field(default_factory=list)
+    jira_key: Optional[str] = None
+    jira_hash: Optional[str] = None
+    marker_line_index: Optional[int] = None
+
+    def text(self) -> str:
+        return "".join(self.lines)
+
+
+def _starts_block(line: str) -> bool:
+    stripped = line.lstrip()
+    return any(stripped.startswith(kw) for kw in _GHERKIN_BLOCK_KEYWORDS)
+
+
+def _build_block(lines: list[str]) -> ScenarioBlock:
+    if not lines:
+        return ScenarioBlock(kind="header", lines=[])
+    first = lines[0].lstrip()
+    if first.startswith("Scenario Outline:") or first.startswith("Scenario:"):
+        kind = "scenario"
+    elif first.startswith("Background:"):
+        kind = "background"
+    elif first.startswith("Examples:"):
+        kind = "examples"
+    else:
+        kind = "header"
+    return ScenarioBlock(kind=kind, lines=list(lines))
+
+
+def _migrate_marker_from_previous(
+    previous_blocks: list[ScenarioBlock],
+    header_lines: list[str],
+    current_block: ScenarioBlock,
+) -> None:
+    """Pull a JIRA marker comment from the end of the previous block onto
+    the current block, so each scenario owns its own marker.
+
+    Also handles the case where the marker is already inside current_block
+    (typical for content the LLM just generated for us in
+    `_generate_single_scenario`).
+    """
+    # 1. Marker already inside current_block?
+    for idx, line in enumerate(current_block.lines):
+        if _starts_block(line):
+            break
+        parsed = parse_marker(line)
+        if parsed:
+            current_block.jira_key, current_block.jira_hash = parsed
+            current_block.marker_line_index = idx
+            return
+
+    # 2. Marker at the trailing edge of the previous owner?
+    source_lines = previous_blocks[-1].lines if previous_blocks else header_lines
+    j = len(source_lines) - 1
+    while j >= 0 and source_lines[j].strip() == "":
+        j -= 1
+    if j < 0:
+        return
+    parsed = parse_marker(source_lines[j])
+    if not parsed:
+        return
+    candidate = source_lines[j]
+    del source_lines[j]
+    current_block.lines.insert(0, candidate)
+    current_block.jira_key, current_block.jira_hash = parsed
+    current_block.marker_line_index = 0
+
+
+def parse_feature_file(content: str) -> tuple[list[str], list[ScenarioBlock]]:
+    """Split a feature file's content into (header_lines, blocks).
+
+    The original content can be reassembled losslessly:
+        "".join(header_lines) + "".join(b.text() for b in blocks)
+    """
+    if not content:
+        return [], []
+    lines = content.splitlines(keepends=True)
+    first_block_idx = next(
+        (i for i, line in enumerate(lines) if _starts_block(line)), None
+    )
+    if first_block_idx is None:
+        return lines, []
+    header = lines[:first_block_idx]
+    body = lines[first_block_idx:]
+    block_starts = [i for i, line in enumerate(body) if _starts_block(line)]
+    blocks: list[ScenarioBlock] = []
+    for idx, start in enumerate(block_starts):
+        end = block_starts[idx + 1] if idx + 1 < len(block_starts) else len(body)
+        block = _build_block(body[start:end])
+        _migrate_marker_from_previous(blocks, header, block)
+        blocks.append(block)
+    return header, blocks
+
+
+def splice_scenario(
+    original_content: str,
+    jira_key: str,
+    new_scenario_text: str,
+    new_hash: str,  # accepted for caller sanity-check; not enforced
+) -> str:
+    """Replace the scenario block owned by `jira_key` with new content.
+
+    Returns the modified file content. If jira_key is not found, returns
+    the original content unchanged (callers should treat as 'append').
+
+    Raises ValueError if `new_scenario_text` doesn't carry a marker
+    matching jira_key — refusing to splice unmarkered content prevents
+    orphan scenarios.
+    """
+    _new_hash = new_hash  # explicit no-op; documents intent
+    header, blocks = parse_feature_file(original_content)
+
+    # Sanity-check the replacement before mutating anything
+    new_block_lines = new_scenario_text.splitlines(keepends=True)
+    new_block = _build_block(new_block_lines)
+    _migrate_marker_from_previous([], [], new_block)
+    if new_block.jira_key != jira_key:
+        raise ValueError(
+            f"Replacement scenario text claims JIRA key {new_block.jira_key!r} "
+            f"but caller asked to splice {jira_key!r}. Refusing to splice — "
+            "this would create an orphan scenario."
+        )
+
+    target_idx = next(
+        (i for i, b in enumerate(blocks) if b.jira_key == jira_key), None
+    )
+    if target_idx is None:
+        logger.warning(
+            f"Cannot splice scenario for {jira_key}: no existing block "
+            "with that JIRA marker found. Caller should append, not splice."
+        )
+        return original_content
+
+    blocks[target_idx] = new_block
+    return "".join(header) + "".join(b.text() for b in blocks)
+
+
+def append_scenario(original_content: str, new_scenario_text: str) -> str:
+    """Append a brand-new scenario block to the end of a feature file."""
+    if not original_content.endswith("\n"):
+        original_content += "\n"
+    if not new_scenario_text.startswith("\n"):
+        new_scenario_text = "\n" + new_scenario_text
+    return original_content + new_scenario_text
+
+
+def remove_scenario(original_content: str, jira_key: str) -> str:
+    """Remove the scenario block owned by `jira_key`. No-op if absent."""
+    header, blocks = parse_feature_file(original_content)
+    survivors = [b for b in blocks if b.jira_key != jira_key]
+    if len(survivors) == len(blocks):
+        logger.info(f"remove_scenario: no block found for {jira_key}, no-op.")
+        return original_content
+    return "".join(header) + "".join(b.text() for b in survivors)
+
+
+def classify_test_cases(test_cases: list[dict], feature_content: str) -> dict:
+    """Classify each Test Case as unchanged/modified/new + find orphans.
+
+    Returns a dict with keys: unchanged, modified, new (lists of test
+    case dicts) and orphan_keys (list of Jira keys present in the file
+    but with no matching current Test Case).
+    """
+    _h, blocks = parse_feature_file(feature_content or "")
+    file_hashes: dict[str, str] = {
+        b.jira_key: (b.jira_hash or "") for b in blocks if b.jira_key
+    }
+    unchanged, modified, new = [], [], []
+    jira_keys_seen: set[str] = set()
+
+    for tc in test_cases:
+        key = tc["key"]
+        jira_keys_seen.add(key)
+        current_hash = compute_description_hash(tc.get("description", ""))
+        if key not in file_hashes:
+            new.append(tc)
+        elif file_hashes[key] == current_hash:
+            unchanged.append(tc)
+        else:
+            modified.append(tc)
+
+    orphan_keys = sorted(k for k in file_hashes.keys() if k not in jira_keys_seen)
+    return {
+        "unchanged": unchanged,
+        "modified": modified,
+        "new": new,
+        "orphan_keys": orphan_keys,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# END INCREMENTAL UPDATE SUPPORT
+# ═══════════════════════════════════════════════════════════════════════════
 
 
 # ---------------------------------------------------------------------------
@@ -1028,6 +1307,416 @@ def _resolve_unused_revision_branch(gh: GitHubClient, base_branch: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# JIRA marker injection (used by both normal mode and regen mode)
+# ---------------------------------------------------------------------------
+def _ensure_jira_markers_on_feature_files(
+    generated_files: list, test_cases: list[dict]
+) -> list:
+    """Inject `# JIRA: <KEY> (hash: <H>)` markers above each Scenario in
+    every generated feature file. Idempotent: existing correct markers
+    are not duplicated; existing markers with stale hashes are refreshed.
+
+    Scenarios whose title matches no Test Case summary are left
+    unmarkered (fail loud later, not guess).
+    """
+    if not test_cases:
+        return generated_files
+
+    def _norm(s: str) -> str:
+        return re.sub(r"\s+", " ", (s or "").strip().lower())
+
+    title_to_tc = {_norm(tc.get("summary", "")): tc for tc in test_cases}
+
+    rewritten = []
+    for gf in generated_files:
+        if not gf.file_path.endswith(".feature"):
+            rewritten.append(gf)
+            continue
+        new_content = _inject_markers_into_feature(gf.content, title_to_tc)
+        if new_content != gf.content:
+            logger.info(f"Injected JIRA markers into {gf.file_path}")
+        rewritten.append(GeneratedFile(
+            file_path=gf.file_path,
+            content=new_content,
+            is_new_file=gf.is_new_file,
+            purpose=gf.purpose,
+        ))
+    return rewritten
+
+
+def _inject_markers_into_feature(content: str, title_to_tc: dict) -> str:
+    """Add/refresh JIRA markers above each scenario, idempotently."""
+    def _norm(s: str) -> str:
+        return re.sub(r"\s+", " ", (s or "").strip().lower())
+
+    lines = content.splitlines(keepends=True)
+    out: list[str] = []
+    for line in lines:
+        stripped = line.lstrip()
+        is_scenario = (
+            stripped.startswith("Scenario Outline:")
+            or stripped.startswith("Scenario:")
+        )
+        if not is_scenario:
+            out.append(line)
+            continue
+
+        # Most recent non-blank line in `out` — is it already a marker?
+        j = len(out) - 1
+        while j >= 0 and out[j].strip() == "":
+            j -= 1
+        existing_marker = parse_marker(out[j]) if j >= 0 else None
+
+        _kw, _, title = stripped.partition(":")
+        tc = title_to_tc.get(_norm(title))
+        indent = line[: len(line) - len(line.lstrip())]
+
+        if existing_marker is not None:
+            # Refresh the hash if we can match the title to a current TC
+            if tc is not None:
+                fresh = format_marker(tc["key"], tc.get("description", ""))
+                old_indent = out[j][: len(out[j]) - len(out[j].lstrip())]
+                out[j] = f"{old_indent}{fresh}\n"
+            out.append(line)
+            continue
+
+        if tc is not None:
+            out.append(f"{indent}{format_marker(tc['key'], tc.get('description', ''))}\n")
+        out.append(line)
+    return "".join(out)
+
+
+# ---------------------------------------------------------------------------
+# Incremental update flow (ai-update label) — surgical scenario splicing
+# ---------------------------------------------------------------------------
+def _find_unused_update_branch(gh: GitHubClient, base_branch: str) -> str:
+    """Find the lowest unused -updateN suffix for an incremental-update branch."""
+    n = 2
+    while gh.branch_exists(f"{base_branch}-update{n}"):
+        n += 1
+    return f"{base_branch}-update{n}"
+
+
+def _locate_feature_file_for_story(
+    story_id: str, test_cases: list[dict]
+) -> Optional[str]:
+    """Find the feature file on `main` containing scenarios for this story.
+
+    Looks for a file whose existing JIRA markers reference any Test Case
+    key linked to this Story. Returns the project-relative path or None
+    if no such file exists.
+    """
+    _ = story_id  # currently used only for logging context
+    inventory = scan_features_dir()
+    test_keys = {tc["key"] for tc in test_cases}
+    for filename in inventory.get("scenarios_by_file", {}).keys():
+        full_path = FEATURES_DIR / filename
+        if not full_path.exists():
+            continue
+        content = full_path.read_text(encoding="utf-8")
+        _h, blocks = parse_feature_file(content)
+        markers_in_file = {b.jira_key for b in blocks if b.jira_key}
+        if markers_in_file & test_keys:
+            return f"features/{filename}"
+    return None
+
+
+def _generate_single_scenario(
+    llm: LLMClient,
+    feature_file_path: str,
+    test_case: dict,
+    ctx: AppContext,  # reserved for future use; intentionally unused for now
+    existing_feature_content: str,
+) -> str:
+    """Ask the LLM for ONE Scenario block for ONE Test Case."""
+    _ = ctx  # reserved
+    jira_key = test_case["key"]
+    summary = test_case.get("summary", "")
+    description = test_case.get("description", "")
+    marker = format_marker(jira_key, description)
+
+    system = (
+        "You are a Senior SDET. Produce ONE Gherkin Scenario block — "
+        "no Feature header, no Background, no Examples, no surrounding text."
+    )
+    user = (
+        f"Existing feature file `{feature_file_path}` (for style and context only):\n"
+        f"```gherkin\n{existing_feature_content}\n```\n\n"
+        f"Generate ONE Scenario block for Jira Test Case {jira_key}:\n"
+        f"  Summary: {summary}\n"
+        f"  Description:\n{description}\n\n"
+        "Hard requirements for the output:\n"
+        f"  1. The VERY FIRST line of your output MUST be exactly:\n     {marker}\n"
+        "  2. The SECOND line MUST be `  Scenario: <title>` (two-space indent).\n"
+        "  3. Steps follow on subsequent lines with four-space indent.\n"
+        "  4. Do NOT emit Feature:, Background:, or Examples: keywords.\n"
+        "  5. Reuse step phrasing that already exists in the file when applicable, "
+        "to avoid forcing new step-definition functions.\n"
+    )
+    response = llm.invoke_text(system_prompt=system, user_prompt=user)
+    return extract_code_from_response(response)
+
+
+def _regenerate_step_defs_whole(
+    llm: LLMClient,
+    feature_file_path: str,
+    new_feature_content: str,
+    step_defs_path: str,
+    ctx: AppContext,
+    references: dict,
+    page_inventory: str,
+) -> str:
+    """Regenerate the step-defs file whole based on the spliced feature."""
+    from agents.schemas import FilePlan
+
+    _h, blocks = parse_feature_file(new_feature_content)
+    synthetic_tcs = []
+    for b in blocks:
+        if b.kind != "scenario":
+            continue
+        title = ""
+        for line in b.lines:
+            stripped = line.lstrip()
+            if stripped.startswith("Scenario:") or stripped.startswith("Scenario Outline:"):
+                title = stripped.split(":", 1)[1].strip()
+                break
+        synthetic_tcs.append({
+            "key": b.jira_key or "UNKNOWN",
+            "summary": title or "scenario",
+            "description": b.text(),
+        })
+
+    file_plan = FilePlan(
+        file_path=step_defs_path,
+        file_type="step_definitions",
+        purpose=f"Regenerated step defs after scenario splice in {feature_file_path}",
+        is_new_file=False,
+    )
+    minimal_plan = CodePlan(
+        feature_name="incremental-update",
+        branch_name="auto/placeholder",
+        pr_title="placeholder",
+        pr_body="placeholder",
+        files_to_create=[file_plan],
+        notes="Step-def regeneration triggered by ai-update.",
+    )
+    return generate_file_content(
+        llm, file_plan, minimal_plan,
+        synthetic_tcs, references, page_inventory, ctx,
+    )
+
+
+def run_update(story_id: str, dry_run: bool = False) -> dict:
+    """Surgical incremental-update flow triggered by the `ai-update` label.
+
+    Reads the existing feature file on main, classifies linked Test Cases
+    as unchanged/modified/new, regenerates only the changed scenarios,
+    splices them in, opens a new PR on an auto/...-updateN branch.
+    """
+    logger.info(
+        f"=== Agent 2 (Coder) UPDATE mode for {story_id} (dry_run={dry_run}) ==="
+    )
+    ctx = AppContext.load()
+    logger.info(f"App under test: {ctx.name} ({ctx.base_url})")
+
+    jira = JiraClient()
+    jira.get_story(story_id)
+    test_cases = load_test_cases_for_story(jira, story_id)
+    if not test_cases:
+        logger.warning(f"No Test Cases linked to {story_id}. Run Agent 1 first.")
+        return {"story_id": story_id, "status": "no_test_cases", "files_generated": 0}
+
+    feature_file_path = _locate_feature_file_for_story(story_id, test_cases)
+    if feature_file_path is None:
+        logger.error(
+            f"ai-update mode requires existing scenarios for {story_id} carrying "
+            "JIRA markers, but none were found. This story has never been "
+            "processed with markers — use normal mode or ai-regenerate to do "
+            "an initial markered generation."
+        )
+        return {
+            "story_id": story_id,
+            "status": "no_markered_file",
+            "files_generated": 0,
+        }
+    logger.info(f"Update target feature file: {feature_file_path}")
+
+    gh = GitHubClient()
+    try:
+        existing_content = gh.get_file_content(feature_file_path, branch="main")
+    except Exception as e:
+        logger.error(f"Could not read {feature_file_path} from main: {e}")
+        raise
+
+    classification = classify_test_cases(test_cases, existing_content)
+    logger.info(
+        "Classification: unchanged=%d modified=%d new=%d orphan=%d",
+        len(classification["unchanged"]),
+        len(classification["modified"]),
+        len(classification["new"]),
+        len(classification["orphan_keys"]),
+    )
+    for tc in classification["modified"]:
+        logger.info(f"  MODIFIED: {tc['key']} — {tc.get('summary', '')}")
+    for tc in classification["new"]:
+        logger.info(f"  NEW:      {tc['key']} — {tc.get('summary', '')}")
+    for key in classification["orphan_keys"]:
+        logger.info(f"  ORPHAN:   {key} (will be removed from feature file)")
+
+    if not classification["modified"] and not classification["new"] and not classification["orphan_keys"]:
+        logger.info(
+            f"All {len(test_cases)} test cases for {story_id} are unchanged and "
+            "no orphan scenarios. Nothing to update — exiting without a PR."
+        )
+        if not dry_run:
+            agent_config = load_agent_config()
+            update_label = agent_config.get("update_label", "ai-update")
+            try:
+                jira.remove_label(story_id, update_label)
+                logger.info(f"Removed label '{update_label}' from {story_id} (no-op consumed)")
+            except Exception as e:
+                logger.warning(f"Could not remove label '{update_label}': {e}")
+        return {
+            "story_id": story_id,
+            "status": "noop_all_unchanged",
+            "scenarios_modified": 0,
+            "scenarios_added": 0,
+            "scenarios_removed": 0,
+            "files_generated": 0,
+        }
+
+    references = ctx.load_reference_files()
+    page_inventory = ctx.load_page_inventory_json()
+    llm = LLMClient(temperature=0.2)
+
+    spliced_content = existing_content
+
+    # Remove orphans FIRST so they don't confuse the LLM about which steps exist.
+    for orphan_key in classification["orphan_keys"]:
+        spliced_content = remove_scenario(spliced_content, orphan_key)
+
+    for tc in classification["modified"]:
+        logger.info(f"Generating replacement scenario for {tc['key']}...")
+        new_scenario_text = _generate_single_scenario(
+            llm, feature_file_path, tc, ctx, spliced_content
+        )
+        new_hash = compute_description_hash(tc.get("description", ""))
+        spliced_content = splice_scenario(
+            spliced_content, tc["key"], new_scenario_text, new_hash
+        )
+
+    for tc in classification["new"]:
+        logger.info(f"Generating new scenario for {tc['key']}...")
+        new_scenario_text = _generate_single_scenario(
+            llm, feature_file_path, tc, ctx, spliced_content
+        )
+        spliced_content = append_scenario(spliced_content, new_scenario_text)
+
+    feature_stem = feature_file_path.split("/")[-1].rsplit(".", 1)[0]
+    step_defs_path = f"tests/step_defs/test_{feature_stem}.py"
+    logger.info(f"Regenerating {step_defs_path} based on spliced feature file...")
+    new_step_defs_content = _regenerate_step_defs_whole(
+        llm, feature_file_path, spliced_content,
+        step_defs_path, ctx, references, page_inventory,
+    )
+
+    generated_files = [
+        GeneratedFile(
+            file_path=feature_file_path,
+            content=spliced_content,
+            is_new_file=False,
+            purpose="Incremental update: spliced scenario changes",
+        ),
+        GeneratedFile(
+            file_path=step_defs_path,
+            content=new_step_defs_content,
+            is_new_file=False,
+            purpose="Incremental update: regenerated step defs",
+        ),
+    ]
+
+    _validate_generated_files(generated_files, story_id)
+
+    base_branch = f"auto/{story_id}-{feature_stem.replace('_', '-')}"
+    update_branch = _find_unused_update_branch(gh, base_branch)
+    pr_title = f"feat({feature_stem}): incremental update to test scenarios"
+    mod_keys = [tc["key"] for tc in classification["modified"]]
+    new_keys = [tc["key"] for tc in classification["new"]]
+    pr_body_parts = ["This PR contains a surgical update to existing test scenarios."]
+    if mod_keys:
+        pr_body_parts.append(f"\n**Modified scenarios:** {', '.join(mod_keys)}")
+    if new_keys:
+        pr_body_parts.append(f"\n**New scenarios:** {', '.join(new_keys)}")
+    if classification["orphan_keys"]:
+        pr_body_parts.append(
+            f"\n**Removed scenarios (no longer in Jira):** "
+            f"{', '.join(classification['orphan_keys'])}"
+        )
+    pr_body_parts.append(
+        "\n\nUnchanged scenarios are preserved byte-for-byte. "
+        "Page objects are not modified by ai-update; if new methods are "
+        "needed, use the `ai-regenerate` label for a full regeneration."
+    )
+    pr_body = "".join(pr_body_parts)
+
+    if dry_run:
+        logger.warning("DRY RUN -- skipping branch/commit/PR creation")
+        print(f"\n[DRY RUN] Would create branch: {update_branch}")
+        print(f"[DRY RUN] PR title: {pr_title}")
+        print(f"[DRY RUN] Files to commit:")
+        for gf in generated_files:
+            print(f"  - {gf.file_path} ({len(gf.content)} chars)")
+        return {
+            "story_id": story_id,
+            "status": "update_dry_run",
+            "scenarios_modified": len(mod_keys),
+            "scenarios_added": len(new_keys),
+            "scenarios_removed": len(classification["orphan_keys"]),
+            "files_generated": len(generated_files),
+            "branch_name": update_branch,
+        }
+
+    assert_valid_branch_for_pipeline(update_branch)
+    gh.create_branch(update_branch, from_branch="main")
+    for gf in generated_files:
+        gh.create_or_update_file(
+            path=gf.file_path,
+            content=gf.content,
+            commit_message=f"chore(update): {gf.purpose}",
+            branch=update_branch,
+        )
+    pr_url = gh.open_pull_request(
+        head_branch=update_branch,
+        base_branch="main",
+        title=pr_title,
+        body=pr_body,
+    )
+
+    agent_config = load_agent_config()
+    update_label = agent_config.get("update_label", "ai-update")
+    try:
+        jira.remove_label(story_id, update_label)
+        logger.info(f"Removed label '{update_label}' from {story_id} (one-shot consumed)")
+    except Exception as e:
+        logger.warning(f"Could not remove label '{update_label}': {e}")
+
+    logger.info(
+        f"=== Agent 2 UPDATE complete for {story_id}. "
+        f"Modified={len(mod_keys)} New={len(new_keys)} Removed={len(classification['orphan_keys'])} ==="
+    )
+    return {
+        "story_id": story_id,
+        "status": "update_pr_opened",
+        "scenarios_modified": len(mod_keys),
+        "scenarios_added": len(new_keys),
+        "scenarios_removed": len(classification["orphan_keys"]),
+        "files_generated": len(generated_files),
+        "branch_name": update_branch,
+        "pr_url": pr_url,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Core agent workflow
 # ---------------------------------------------------------------------------
 def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> dict:
@@ -1148,6 +1837,15 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
         notes=plan.notes,
     )
 
+    # 4d. INJECT JIRA MARKERS into feature files. Markers are
+    # deterministic comment lines above each Scenario naming the Jira
+    # Test Case + hash. Prerequisite for the ai-update flow to identify
+    # which scenario maps to which Test Case. Injected here (post-gen)
+    # rather than relying on the LLM to emit them — deterministic > persuaded.
+    generated_files = _ensure_jira_markers_on_feature_files(
+        generated_files, new_test_cases
+    )
+
     # 4c. FINAL VALIDATION (after any repair attempts)
     _validate_generated_files(generated_files, story_id)
 
@@ -1250,6 +1948,10 @@ def main():
     group.add_argument("--scan", action="store_true", help="Scan mode (config-driven)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Don't create branch/PR, just preview")
+    parser.add_argument("--update", action="store_true",
+                        help="Treat --story as an INCREMENTAL UPDATE: splice "
+                             "only modified/new scenarios, leave others untouched. "
+                             "Requires existing JIRA markers in the feature file.")
     args = parser.parse_args()
 
     # Fast-fail on missing config — much clearer than a 401 deep in a tool call
@@ -1259,7 +1961,10 @@ def main():
 
     try:
         if args.story:
-            result = run(args.story, dry_run=args.dry_run)
+            if args.update:
+                result = run_update(args.story, dry_run=args.dry_run)
+            else:
+                result = run(args.story, dry_run=args.dry_run)
             print("\n" + "=" * 60)
             print(f"[OK] Agent 2 finished -- story: {result['story_id']}")
             print(f"   Files generated: {result.get('files_generated', 0)}")
@@ -1269,10 +1974,11 @@ def main():
             print("=" * 60)
             return
 
-        # Scan mode: two passes (normal + regenerate).
+        # Scan mode: three passes (normal + regenerate + update).
         agent_config = load_agent_config()
         normal_selection = agent_config.get("selection", {})
         regen_selection = agent_config.get("regenerate_selection", {})
+        update_selection = agent_config.get("update_selection", {})
         max_stories = agent_config.get("max_stories_per_run", 5)
 
         if not normal_selection:
@@ -1284,12 +1990,12 @@ def main():
 
         jira = JiraClient()
 
-        logger.info("Scan pass 1/2: looking for first-time stories (normal mode)")
+        logger.info("Scan pass 1/3: looking for first-time stories (normal mode)")
         normal_stories = jira.find_stories_to_process(normal_selection, max_results=max_stories)
 
         regen_stories = []
         if regen_selection:
-            logger.info("Scan pass 2/2: looking for stories with ai-regenerate label")
+            logger.info("Scan pass 2/3: looking for stories with ai-regenerate label")
             regen_stories = jira.find_stories_to_process(regen_selection, max_results=max_stories)
         else:
             logger.info(
@@ -1297,13 +2003,24 @@ def main():
                 "Add 'agents.agent2_coder.regenerate_selection' to enable."
             )
 
-        total_count = len(normal_stories) + len(regen_stories)
+        update_stories = []
+        if update_selection:
+            logger.info("Scan pass 3/3: looking for stories with ai-update label")
+            update_stories = jira.find_stories_to_process(update_selection, max_results=max_stories)
+        else:
+            logger.info(
+                "No 'update_selection' config — skipping update pass. "
+                "Add 'agents.agent2_coder.update_selection' to enable incremental updates."
+            )
+
+        total_count = len(normal_stories) + len(regen_stories) + len(update_stories)
         if total_count == 0:
             logger.info(
                 f"No stories found. "
                 f"Normal: required={normal_selection.get('required_labels', [])}, "
                 f"excluded={normal_selection.get('excluded_labels', [])}. "
                 f"Regen requires 'ai-regenerate'. "
+                f"Update requires 'ai-update'. "
                 f"Tip: ensure parent story has 'ai-processed' AND 'human-approved' labels."
             )
             print("\n[OK] Agent 2 scan complete -- no stories to process.")
@@ -1311,7 +2028,7 @@ def main():
 
         logger.info(
             f"Found {len(normal_stories)} normal + {len(regen_stories)} regen "
-            f"= {total_count} stories to process."
+            f"+ {len(update_stories)} update = {total_count} stories to process."
         )
 
         results = []
@@ -1344,6 +2061,25 @@ def main():
                     "story_id": story["key"],
                     "status": "failed",
                     "mode": "regenerate",
+                    "error": str(e),
+                })
+
+        for story in update_stories:
+            if any(r.get("story_id") == story["key"] for r in results):
+                logger.warning(
+                    f"Skipping {story['key']} in update pass — already processed earlier. "
+                    "Check config: update_selection should require ai-update and exclude ai-regenerate."
+                )
+                continue
+            try:
+                result = run_update(story["key"], dry_run=args.dry_run)
+                results.append(result)
+            except Exception as e:
+                logger.error(f"Failed processing {story['key']} (update): {e}", exc_info=True)
+                results.append({
+                    "story_id": story["key"],
+                    "status": "failed",
+                    "mode": "update",
                     "error": str(e),
                 })
 

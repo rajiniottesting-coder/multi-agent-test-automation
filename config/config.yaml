@@ -125,6 +125,7 @@ agents:
         - "ai-coded"       # Agent 2 already opened a PR for this story
         - "ai-skip"        # human override / opt-out
         - "ai-regenerate"  # belongs in regenerate_selection, not normal scan
+        - "ai-update"      # belongs in update_selection, not normal scan
 
     regenerate_selection:
       issue_type: "Story"
@@ -137,9 +138,30 @@ agents:
         - "ai-regenerate"
       excluded_labels:
         - "ai-skip"
+        - "ai-update"      # if both set, ai-regenerate wins (full regen)
+
+    # INCREMENTAL UPDATE (ai-update label):
+    #   Surgical alternative to ai-regenerate. Only modified/new scenarios
+    #   are regenerated; unchanged scenarios are preserved byte-for-byte.
+    #   Requires existing JIRA markers in the feature file — first-time
+    #   stories MUST go through normal mode or ai-regenerate first to
+    #   establish markers. The label is consumed one-shot after success.
+    update_selection:
+      issue_type: "Story"
+      allowed_statuses:
+        - "To Do"
+        - "In Progress"
+      required_labels:
+        - "ai-processed"
+        - "human-approved"
+        - "ai-update"
+      excluded_labels:
+        - "ai-skip"
+        - "ai-regenerate"  # exclusive — only one mode per scan
 
     completion_label: "ai-coded"
     regenerate_label: "ai-regenerate"
+    update_label: "ai-update"
     # CAP for automated cron scans (Day 8): same reasoning as Agent 1.
     # Each Agent 2 run on a story spends ~$0.10-0.30 in LLM tokens and
     # opens a PR. With cap=2, worst-case mislabel costs ~$0.60 and 2 PRs
