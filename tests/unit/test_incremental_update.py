@@ -201,6 +201,14 @@ class TestFeatureFileSurgeon:
 # Marker injection helper
 # ─────────────────────────────────────────────────────────────────
 class TestMarkerInjection:
+    """Tests for `_inject_markers_into_feature` and `_ensure_jira_markers_on_feature_files`.
+
+    These cover the post-v12b-bug-fix behavior:
+      - Order-based positional pairing (robust to LLM paraphrasing)
+      - Token-similarity safety check (≥ 0.3) for new injections
+      - Existing markers refreshed by their existing key (reorder-safe)
+    """
+
     SCENARIOS_WITHOUT_MARKERS = (
         "Feature: Test\n"
         "\n"
@@ -220,15 +228,13 @@ class TestMarkerInjection:
 
     def test_injects_markers_on_unmarkered_file(self):
         from agents.agent2_coder import _inject_markers_into_feature
-        title_to_tc = {tc["summary"].lower(): tc for tc in self.TEST_CASES}
-        out = _inject_markers_into_feature(self.SCENARIOS_WITHOUT_MARKERS, title_to_tc)
+        out = _inject_markers_into_feature(self.SCENARIOS_WITHOUT_MARKERS, self.TEST_CASES)
         assert "# JIRA: SCRUM-1" in out
         assert "# JIRA: SCRUM-2" in out
 
     def test_marker_appears_above_scenario_with_same_indent(self):
         from agents.agent2_coder import _inject_markers_into_feature
-        title_to_tc = {tc["summary"].lower(): tc for tc in self.TEST_CASES}
-        out = _inject_markers_into_feature(self.SCENARIOS_WITHOUT_MARKERS, title_to_tc)
+        out = _inject_markers_into_feature(self.SCENARIOS_WITHOUT_MARKERS, self.TEST_CASES)
         lines = out.splitlines()
         for i, line in enumerate(lines):
             if "Scenario: First" in line:
@@ -240,6 +246,7 @@ class TestMarkerInjection:
             pytest.fail("First scenario not found in output")
 
     def test_idempotent_existing_markers_refreshed_not_duplicated(self):
+        """Existing markers get hash refreshed, never duplicated."""
         from agents.agent2_coder import (
             _inject_markers_into_feature, format_marker, compute_description_hash,
         )
@@ -248,11 +255,10 @@ class TestMarkerInjection:
             f"  {format_marker('SCRUM-1', 'OLD description')}\n"
             "  Scenario: first scenario title\n    Then x\n"
         )
-        title_to_tc = {"first scenario title": {
-            "key": "SCRUM-1", "summary": "first scenario title",
-            "description": "NEW description"
-        }}
-        out = _inject_markers_into_feature(content, title_to_tc)
+        test_cases = [
+            {"key": "SCRUM-1", "summary": "first scenario title", "description": "NEW description"}
+        ]
+        out = _inject_markers_into_feature(content, test_cases)
         # Marker refreshed, not duplicated
         assert out.count("# JIRA: SCRUM-1") == 1
         old_h = compute_description_hash("OLD description")
@@ -260,17 +266,121 @@ class TestMarkerInjection:
         assert new_h in out
         assert old_h not in out
 
-    def test_unmatched_scenario_left_unmarkered(self):
+    def test_unmatched_scenario_left_unmarkered_when_multiple_pairs(self):
+        """With multiple scenarios, low title-similarity skips that pair safely."""
         from agents.agent2_coder import _inject_markers_into_feature
         content = (
             "Feature: T\n\n"
-            "  Scenario: A scenario the LLM invented\n    Then x\n"
+            "  Scenario: complete nonsense xyz qrt\n    Then x\n"
+            "\n"
+            "  Scenario: totally unrelated foo bar baz\n    Then y\n"
         )
-        title_to_tc = {"completely different title": {
-            "key": "SCRUM-99", "summary": "completely different title", "description": "z"
-        }}
-        out = _inject_markers_into_feature(content, title_to_tc)
+        # Test cases whose summaries don't match scenario titles at all
+        test_cases = [
+            {"key": "SCRUM-99", "summary": "user logs into the system", "description": "z"},
+            {"key": "SCRUM-100", "summary": "checkout flow completes successfully", "description": "z"},
+        ]
+        out = _inject_markers_into_feature(content, test_cases)
+        # With 2 pairs of low similarity, both skip rather than mislabel
         assert "# JIRA:" not in out
+
+    def test_pro_paraphrasing_still_matches_via_token_overlap(self):
+        """REGRESSION: Pro adds 'Verify' prefix and reorders words. Old code
+        used exact-string match and silently failed. New code uses token
+        overlap and succeeds."""
+        from agents.agent2_coder import _inject_markers_into_feature
+        # Pro's scenarios (with "Verify" prefix, reworded)
+        content = (
+            "Feature: T\n\n"
+            "  Scenario: Verify successful logout from inventory page\n    Then x\n"
+            "\n"
+            "  Scenario: User cannot access inventory page once logged out\n    Then y\n"
+        )
+        # Jira summaries (the originals)
+        test_cases = [
+            {"key": "SCRUM-21", "summary": "Successful logout from the inventory page", "description": "a"},
+            {"key": "SCRUM-22", "summary": "User cannot access inventory page after logging out", "description": "b"},
+        ]
+        out = _inject_markers_into_feature(content, test_cases)
+        assert "# JIRA: SCRUM-21" in out, "Paraphrased title should still match SCRUM-21 positionally"
+        assert "# JIRA: SCRUM-22" in out, "Paraphrased title should still match SCRUM-22 positionally"
+
+    def test_single_pair_always_accepted_no_similarity_gate(self):
+        """If there's only one scenario and one test case, accept the pairing
+        unconditionally — there's no ambiguity to guard against."""
+        from agents.agent2_coder import _inject_markers_into_feature
+        content = "Feature: T\n\n  Scenario: complete nonsense\n    Then x\n"
+        test_cases = [
+            {"key": "SCRUM-1", "summary": "completely different summary", "description": "z"}
+        ]
+        out = _inject_markers_into_feature(content, test_cases)
+        assert "# JIRA: SCRUM-1" in out
+
+    def test_count_mismatch_uses_min_with_warning(self):
+        """If scenario count != test case count, pair the first min(N, M)."""
+        from agents.agent2_coder import _inject_markers_into_feature
+        # 3 scenarios but only 2 test cases
+        content = (
+            "Feature: T\n\n"
+            "  Scenario: logout flow\n    Then x\n\n"
+            "  Scenario: session cleared\n    Then y\n\n"
+            "  Scenario: extra scenario the llm invented\n    Then z\n"
+        )
+        test_cases = [
+            {"key": "SCRUM-1", "summary": "logout flow", "description": "a"},
+            {"key": "SCRUM-2", "summary": "session cleared", "description": "b"},
+        ]
+        out = _inject_markers_into_feature(content, test_cases)
+        assert "# JIRA: SCRUM-1" in out
+        assert "# JIRA: SCRUM-2" in out
+        # Third scenario must stay unmarkered (no test case for it)
+        scenario_3_line = "Scenario: extra scenario"
+        before_s3 = out[: out.find(scenario_3_line)]
+        # The JIRA line immediately preceding "Scenario: extra" should NOT be a marker for it
+        assert out.count("# JIRA:") == 2
+
+    def test_existing_marker_preserves_its_key_not_position(self):
+        """REGRESSION-PREP: If a scenario already carries marker SCRUM-22,
+        and test_cases are provided in order [SCRUM-21, SCRUM-22, SCRUM-23],
+        the marker should stay SCRUM-22 (refresh hash) even if the scenario
+        appears at position 0. Protects against ai-update reorders relabelling."""
+        from agents.agent2_coder import _inject_markers_into_feature, format_marker
+        content = (
+            "Feature: T\n\n"
+            f"  {format_marker('SCRUM-22', 'old desc')}\n"
+            "  Scenario: session cleared\n    Then x\n\n"
+            "  Scenario: logout flow\n    Then y\n"
+        )
+        test_cases = [
+            # Note: SCRUM-21 listed FIRST positionally, but the scenario
+            # already says SCRUM-22 via its marker. We expect SCRUM-22 to
+            # stick.
+            {"key": "SCRUM-21", "summary": "logout flow", "description": "a"},
+            {"key": "SCRUM-22", "summary": "session cleared", "description": "new desc"},
+        ]
+        out = _inject_markers_into_feature(content, test_cases)
+        # SCRUM-22 still attached to "session cleared", hash refreshed
+        idx_s22 = out.find("Scenario: session cleared")
+        marker_region = out[:idx_s22]
+        assert "# JIRA: SCRUM-22" in marker_region
+        assert "# JIRA: SCRUM-21" not in marker_region
+
+    def test_orphan_marker_left_alone(self):
+        """If a scenario carries marker SCRUM-999 but SCRUM-999 isn't in
+        test_cases (deleted from Jira), the orphan marker stays — let
+        ai-update's remove_scenario handle cleanup."""
+        from agents.agent2_coder import _inject_markers_into_feature, format_marker
+        content = (
+            "Feature: T\n\n"
+            f"  {format_marker('SCRUM-999', 'orphan')}\n"
+            "  Scenario: orphan scenario\n    Then x\n"
+        )
+        test_cases = [
+            {"key": "SCRUM-1", "summary": "different one", "description": "a"}
+        ]
+        out = _inject_markers_into_feature(content, test_cases)
+        # Orphan stays — ai-update flow handles orphan cleanup, not injection
+        assert "# JIRA: SCRUM-999" in out
 
     def test_non_feature_files_passed_through(self):
         from agents.agent2_coder import _ensure_jira_markers_on_feature_files
@@ -284,3 +394,19 @@ class TestMarkerInjection:
         out = _ensure_jira_markers_on_feature_files([gf], self.TEST_CASES)
         assert out[0].content == "class Foo: pass"
         assert out[0].file_path == "pages/inventory_page.py"
+
+    def test_title_similarity_token_overlap(self):
+        """Direct unit test for the similarity helper."""
+        from agents.agent2_coder import _title_similarity
+        # Identical content → high similarity
+        assert _title_similarity("logout from inventory", "logout from inventory") > 0.9
+        # Paraphrased but same content words → still good
+        assert _title_similarity(
+            "Verify successful logout from inventory page",
+            "Successful logout from the inventory page"
+        ) > 0.5
+        # Completely different → low
+        assert _title_similarity("user login flow", "checkout payment") < 0.2
+        # Empty input → 0
+        assert _title_similarity("", "anything") == 0.0
+        assert _title_similarity("anything", "") == 0.0
