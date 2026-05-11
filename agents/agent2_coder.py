@@ -909,6 +909,25 @@ def generate_file_content(
     # roughly "Feature: x\nScenario: y\nGiven z\n" ~ 35 chars).
     MIN_CONTENT_CHARS = 30
     if len(content.strip()) < MIN_CONTENT_CHARS:
+        # Diagnostic dump (Day 9): the llm_client diagnostic checks raw
+        # response length, but extract_code_from_response can reduce a
+        # long-but-empty response (e.g., preamble + empty fence) to 1
+        # char. That bypasses the upstream diagnostic. Dump everything
+        # we know HERE, where we definitely have the problem in hand.
+        logger.error("─── EMPTY OUTPUT DIAGNOSTIC ───")
+        logger.error("file_path=%s", file_plan.file_path)
+        logger.error("raw response length: %d chars", len(response))
+        # Show raw response in chunks so long preambles are visible. Cap
+        # at 3000 chars total to keep logs readable.
+        raw_for_log = response if len(response) <= 3000 else (
+            response[:1500] + f"\n... [truncated {len(response) - 3000} chars] ...\n" + response[-1500:]
+        )
+        logger.error("raw response (repr):\n%r", raw_for_log)
+        logger.error("post-extraction content (repr): %r", content)
+        # Also count fences — empty fence pair is the most common shape
+        fence_count = response.count("```")
+        logger.error("triple-backtick count in raw response: %d (pairs of empty fences = bad)", fence_count)
+        logger.error("─── END EMPTY OUTPUT DIAGNOSTIC ───")
         raise ValueError(
             f"LLM returned suspiciously short content for "
             f"'{file_plan.file_path}' ({len(content)} chars). This usually "
@@ -916,7 +935,8 @@ def generate_file_content(
             f"reasoning ('thinking') before producing visible output. "
             f"For Pro models, ensure max_output_tokens is at least 32768 "
             f"(see _code_gen_max_output_tokens in llm_client.py). "
-            f"Aborting before we commit an empty file."
+            f"See the EMPTY OUTPUT DIAGNOSTIC block above for the raw "
+            f"response. Aborting before we commit an empty file."
         )
     return content
 
