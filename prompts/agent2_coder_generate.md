@@ -78,7 +78,10 @@ NO prose before or after the code block. Just the code block.
   Example: `scenarios(str(feature_path("feature_name")))`  (snake_case, no extension)
 - Define page object fixtures using `@pytest.fixture` returning the page class
 - Match step definitions exactly to the Gherkin steps (use parsers.parse for parameterized steps)
-- **CRITICAL — use EXACT page-object method names.** If a "Page Object Methods Available" section exists above, every method you call on a page-object fixture MUST appear EXACTLY in that list. Do NOT invent variations like adding `_link` or `_in_menu` to method names. If the method you need isn't listed, you must add it to the page object — not call a method that doesn't exist.
+- **CRITICAL — use EXACT page-object names for BOTH methods AND attributes.** Every name you access on a page-object fixture — whether it's a method call `page_obj.do_something()` or an attribute read `page_obj.SOME_CONSTANT` — must exist on that page object class (or its base class).
+  - If a "Page Object Methods Available" section exists above, the listed names are the ONLY ones you may use on existing/reserved page objects. Do not invent variations.
+  - If you're generating a NEW page object alongside this step def file in the same batch, write down (in your head) every method AND every class-level constant you'll reference from the step def, THEN make sure ALL of them appear in the page object you generate. A common failure: the step def reads `obj.SIDE_MENU` but the page object only declares `BURGER_MENU` — that's a missing-attribute crash at runtime.
+  - Selectors / locators belong as class-level constants on the page object (e.g., `BURGER_MENU = "..."`), never inline in the step def. If your step def needs to reference a locator, declare it on the page object FIRST.
 
 ### CRITICAL: Step Definition Coverage Rules (MUST FOLLOW)
 
@@ -196,6 +199,7 @@ parser choice for empty-value scenarios.
 - Define selectors as class constants at the top: `BUTTON_X = "[data-test='button-x']"` (or whichever selector strategy your inventory uses)
 - Define methods describing user intent (e.g., `click_checkout()`, not `click_button_x()`)
 - Add docstrings to public methods
+- **COMPLETENESS — the page object MUST define every method AND every class-level constant that any step def file in this batch references on it.** Before finishing this page object, check the step def files being generated alongside it. If a step def calls `inv.click_logout()` or reads `inv.SIDE_MENU` against this page object, both `click_logout` method AND `SIDE_MENU` constant must be present here. A page object that's missing a referenced name will fail at runtime with `AttributeError`. Audit yourself: for each method and attribute referenced from outside, is it declared in this file (or inherited from BasePage)?
 
 # Reminder
 - Output ONLY the code block. No explanation prose.
