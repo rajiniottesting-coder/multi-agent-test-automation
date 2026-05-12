@@ -1,0 +1,50 @@
+name: Keep Alive (scheduler wake)
+
+# WHY THIS WORKFLOW EXISTS
+# ────────────────────────
+# GitHub Actions documents `schedule` as "best effort". On free personal
+# accounts, scheduled workflows get deprioritized under platform load and
+# silently stop firing if the repository has been quiet. Any push to main
+# re-registers the scheduler and wakes things back up.
+#
+# This workflow runs once a day, touches a single timestamp file, and
+# pushes the change. That keeps the scheduler awake without polluting
+# real history (it's all in `.github/keep-alive/`) and without touching
+# any production code or running any LLM calls.
+#
+# If you ever notice cron jobs silently missing again, push any commit
+# manually to wake the scheduler — that's all this workflow does
+# automatically.
+
+on:
+  schedule:
+    # Daily at 02:00 UTC (07:30 IST) — well before the business-hours
+    # window when real cron jobs need to fire (9-18 UTC for Agent 1/2).
+    - cron: "0 2 * * *"
+  workflow_dispatch:  # also runnable manually
+
+permissions:
+  contents: write   # needed to push the timestamp update
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update timestamp and push
+        run: |
+          mkdir -p .github/keep-alive
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .github/keep-alive/last-ping.txt
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/keep-alive/last-ping.txt
+          # Only commit + push if something actually changed
+          if ! git diff --staged --quiet; then
+            git commit -m "chore(keep-alive): scheduler ping $(date -u +%FT%TZ)"
+            git push origin main
+          else
+            echo "No changes — keep-alive ran but file already up to date"
+          fi
