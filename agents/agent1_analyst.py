@@ -141,6 +141,28 @@ def run(story_id: str, dry_run: bool = False) -> dict:
         jira.add_label(story_id, completion_label)
         logger.info(f"Marked {story_id} with label '{completion_label}' (idempotency)")
 
+        # ONE-SHOT TRIGGER CLEANUP: remove the trigger label(s) that brought
+        # this story into Agent 1's scope. After successful run, those labels
+        # are stale — completion_label is the new state. Mirrors Agent 2's
+        # one-shot pattern for ai-regenerate / ai-update.
+        # Configurable via `trigger_labels_to_remove` in config.yaml. Defaults
+        # to the agent's own `required_labels` so behavior is correct without
+        # explicit config. Failure to remove a label is non-fatal — we log
+        # and continue.
+        trigger_labels = agent_config.get(
+            "trigger_labels_to_remove",
+            agent_config.get("selection", {}).get("required_labels", []),
+        )
+        for label in trigger_labels:
+            try:
+                jira.remove_label(story_id, label)
+                logger.info(f"Removed trigger label '{label}' from {story_id} (one-shot consumed)")
+            except Exception as e:
+                logger.warning(
+                    f"Could not remove trigger label '{label}' from {story_id}: {e}. "
+                    "Non-fatal — story still has completion label as primary state marker."
+                )
+
     # 4. OUTPUT: return state for orchestrator / next agent
     result = {
         "story_id": story_id,

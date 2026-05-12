@@ -94,6 +94,13 @@ agents:
         - "ai-processed"   # idempotency marker
         - "ai-skip"        # human override / opt-out
     completion_label: "ai-processed"
+    # ONE-SHOT TRIGGER CLEANUP: labels removed from the parent story after
+    # Agent 1 successfully creates test cases. Keeps the label state clean —
+    # after a run, the story shows `ai-processed` only, not also the stale
+    # `ai-ready` that triggered it. If omitted, the code falls back to
+    # selection.required_labels (same set, same effect).
+    trigger_labels_to_remove:
+      - "ai-ready"
     # CAP for automated cron scans (Day 8): keep blast radius small if a
     # mislabel ever fires the cron unintentionally. Each Agent 1 run on a
     # story creates 3-5 Jira test case issues, which a human has to clean
