@@ -78,10 +78,25 @@ NO prose before or after the code block. Just the code block.
   Example: `scenarios(str(feature_path("feature_name")))`  (snake_case, no extension)
 - Define page object fixtures using `@pytest.fixture` returning the page class
 - Match step definitions exactly to the Gherkin steps (use parsers.parse for parameterized steps)
-- **CRITICAL — use EXACT page-object names for BOTH methods AND attributes.** Every name you access on a page-object fixture — whether it's a method call `page_obj.do_something()` or an attribute read `page_obj.SOME_CONSTANT` — must exist on that page object class (or its base class).
-  - If a "Page Object Methods Available" section exists above, the listed names are the ONLY ones you may use on existing/reserved page objects. Do not invent variations.
-  - If you're generating a NEW page object alongside this step def file in the same batch, write down (in your head) every method AND every class-level constant you'll reference from the step def, THEN make sure ALL of them appear in the page object you generate. A common failure: the step def reads `obj.SIDE_MENU` but the page object only declares `BURGER_MENU` — that's a missing-attribute crash at runtime.
-  - Selectors / locators belong as class-level constants on the page object (e.g., `BURGER_MENU = "..."`), never inline in the step def. If your step def needs to reference a locator, declare it on the page object FIRST.
+### Universal cross-file completeness rule
+
+This rule applies to **every** file you generate, in any direction. It is the most common failure mode of multi-file LLM code generation:
+
+> **Every name your generated code references that lives in another file in this batch (or on disk) must resolve to something actually defined in that file.**
+
+This is NOT optional and applies to all four directions of reference:
+
+1. **Step def → Feature file:** every Gherkin step phrase in the feature file MUST have a matching `@given` / `@when` / `@then` decorator in the step def. (`And` and `But` inherit the previous keyword.)
+2. **Step def → Page object:** every method call (`page_obj.do_thing()`) AND every attribute read (`page_obj.SOME_CONSTANT`) on a page-object fixture must exist as a method or class-level attribute on that page object class (or inherited from its base class).
+3. **Page object → Base class:** every `super().method()` call or `self.<base_method>()` call must exist on the BasePage / parent class.
+4. **Feature file → itself:** Background steps and Scenario Outline Examples must each have corresponding decorators in the paired step def.
+
+**Self-audit before declaring any file done:**
+- For every cross-file reference your code makes, ask: "does the thing I'm calling/reading actually exist in the file that defines it?"
+- If you're generating BOTH files in this batch, you control both sides — make them consistent.
+- If you're calling into an existing reserved file (listed in "Page Object Methods Available" if present), you MUST use names exactly as listed there. No paraphrasing, no synonyms.
+
+A missing reference is NOT a small issue — it crashes at runtime with `AttributeError`, `StepDefinitionNotFoundError`, or `NameError`. The system will REJECT outputs that fail this check.
 
 ### CRITICAL: Step Definition Coverage Rules (MUST FOLLOW)
 
@@ -104,6 +119,23 @@ The `And` here is actually a **Then** -- you must use `@then(...)` for both.
 **Step 3: Use parsers.parse() for any phrase containing variable data.**
 Concrete values in feature steps (like quoted strings or numbers)
 become `{placeholder}` arguments in the decorator pattern.
+
+**Step 4 (MANDATORY FINAL CHECK): Count and verify before you finish.**
+Before declaring this file complete, perform this exact procedure:
+
+a. Scan the feature file. List every `Given` / `When` / `Then` / `And` / `But` line.
+   Resolve `And` / `But` to its inherited keyword (Given / When / Then).
+   De-duplicate phrases that differ only in concrete data (`""` vs `"alice"` is the same phrase).
+   Call this count **N**.
+
+b. Scan your step def file. Count every `@given(...)` / `@when(...)` / `@then(...)` decorator.
+   Call this count **M**.
+
+c. **M must be ≥ N.** If M < N, you have missed steps. Stop, find the missed ones, add them. Do not submit the file until M ≥ N.
+
+d. For each Gherkin phrase, locate its matching decorator. If any phrase has no match, the file is INCOMPLETE — fix it before submitting.
+
+This step-count check is the difference between a working test run and a rejection. The validator will run this same check after you submit; you can short-circuit a wasted retry by running it yourself first.
 
 ### Worked Example (study this carefully)
 
@@ -199,7 +231,7 @@ parser choice for empty-value scenarios.
 - Define selectors as class constants at the top: `BUTTON_X = "[data-test='button-x']"` (or whichever selector strategy your inventory uses)
 - Define methods describing user intent (e.g., `click_checkout()`, not `click_button_x()`)
 - Add docstrings to public methods
-- **COMPLETENESS — the page object MUST define every method AND every class-level constant that any step def file in this batch references on it.** Before finishing this page object, check the step def files being generated alongside it. If a step def calls `inv.click_logout()` or reads `inv.SIDE_MENU` against this page object, both `click_logout` method AND `SIDE_MENU` constant must be present here. A page object that's missing a referenced name will fail at runtime with `AttributeError`. Audit yourself: for each method and attribute referenced from outside, is it declared in this file (or inherited from BasePage)?
+- **COMPLETENESS — apply the Universal Cross-File Completeness Rule.** Every method and every class-level attribute that any step def file in this batch references on this class must be defined here (or inherited from a base class). Before finishing this file, mentally walk through each step def being generated alongside: every `page_obj.something` reference — call OR attribute read — must resolve. If you see `page_obj.SOME_CONSTANT` in a step def, this page object must declare `SOME_CONSTANT = ...` as a class-level constant. Missing references crash at runtime.
 
 # Reminder
 - Output ONLY the code block. No explanation prose.
