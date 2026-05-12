@@ -52,6 +52,18 @@ on:
     # same business-hours window. NOTE: GitHub Actions cron may be
     # delayed up to 15 min during platform load.
     - cron: "*/15 9-18 * * 1-5"
+  push:
+    # FAILSAFE: also fire on every push to main. GitHub Actions cron on
+    # free personal accounts gets throttled when the repo is quiet, and
+    # silently drops scheduled ticks. A push trigger guarantees Agent 2
+    # gets a chance to run any time code lands on main — including the
+    # daily keep-alive heartbeat at 07:30 IST.
+    #
+    # Cost: each push triggers a scan. If no story matches Agent 2's
+    # filter (ai-processed + human-approved + not ai-coded), the scan
+    # exits in ~5 seconds with zero LLM cost. Real token spend only
+    # happens when there's actual work to do.
+    branches: [main]
 
 permissions:
   contents: write       # Agent 2 creates branches and commits

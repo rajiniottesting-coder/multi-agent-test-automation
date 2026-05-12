@@ -57,6 +57,11 @@ on:
     # NOTE: GitHub Actions cron may be delayed up to 15 min during high
     # platform load — effective worst-case latency is ~30 min.
     - cron: "*/15 9-18 * * 1-5"
+  push:
+    # FAILSAFE: also fire on every push to main. Same reasoning as Agent 2 —
+    # GitHub Actions cron silently drops ticks on free personal accounts.
+    # A scan with no matching stories exits in ~5 sec with zero LLM cost.
+    branches: [main]
 
 # Agent 1 only writes to Jira — no contents/pull-requests permissions needed.
 permissions:
