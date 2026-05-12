@@ -441,12 +441,33 @@ def format_test_cases_for_prompt(test_cases: list[dict]) -> str:
 
 
 def extract_code_from_response(response_text: str) -> str:
-    """Extract code from a markdown response. Handles fenced and bare code."""
+    """Extract code from a markdown response. Handles fenced and bare code.
+
+    PRO QUIRK FIX (v12e): Pro occasionally emits doubled or tripled
+    backtick fences — e.g., six backticks instead of three at fence
+    boundaries. This happens when Pro's internal reasoning included
+    nested code blocks and the final response over-escapes the fence.
+
+    Concrete example from a real failed run (May 12 cron):
+        Pro emitted: <6-backticks>gherkin\\n...content...<6-backticks>
+        Expected:    <3-backticks>gherkin\\n...content...<3-backticks>
+
+    Without normalization, the regex matches the FIRST three backticks
+    against the immediately-adjacent SECOND three backticks, capturing
+    an empty body and returning 1 char. We collapse any run of 4+
+    backticks to exactly 3 before extraction.
+
+    Safe because valid Gherkin / Python / Markdown / YAML / etc. never
+    contains a run of 4 or more consecutive backticks at a fence boundary.
+    """
+    # Normalize over-escaped fences (Pro's six-backtick variant → three).
+    normalized = re.sub(r"`{4,}", "```", response_text)
+
     pattern = r"```(?:\w+)?\n?(.*?)```"
-    matches = re.findall(pattern, response_text, re.DOTALL)
+    matches = re.findall(pattern, normalized, re.DOTALL)
     if matches:
         return matches[0].strip() + "\n"
-    return response_text.strip() + "\n"
+    return normalized.strip() + "\n"
 
 
 def load_agent_config(agent_key: str = "agent2_coder") -> dict:
