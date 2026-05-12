@@ -410,3 +410,67 @@ class TestMarkerInjection:
         # Empty input → 0
         assert _title_similarity("", "anything") == 0.0
         assert _title_similarity("anything", "") == 0.0
+
+
+# ─────────────────────────────────────────────────────────────────
+# Markdown fence extraction (v12e — Pro over-escapes backticks)
+# ─────────────────────────────────────────────────────────────────
+class TestExtractCodeFromResponse:
+    """Regression coverage for extract_code_from_response.
+
+    v12e bug: Pro occasionally emits 4+ backticks at fence boundaries
+    instead of the canonical 3. The old regex matched the first 3
+    backticks against the immediately-adjacent next 3, captured an
+    empty body, and returned 1 char. Fix: collapse runs of 4+ backticks
+    to exactly 3 before extraction.
+
+    This class doubles as a contract for the extractor — any future
+    change to it must keep all these cases passing.
+    """
+
+    def test_canonical_three_backtick_fence(self):
+        from agents.agent2_coder import extract_code_from_response
+        assert extract_code_from_response("```python\nprint('hi')\n```").strip() == "print('hi')"
+
+    def test_six_backtick_fence_normalized(self):
+        """REGRESSION (v12e): Pro's six-backtick variant must extract content."""
+        from agents.agent2_coder import extract_code_from_response
+        result = extract_code_from_response("``````python\nprint('hi')\n``````")
+        assert result.strip() == "print('hi')"
+
+    def test_exact_failing_response_from_may12_cron(self):
+        """Verbatim Pro response from the production cron failure that
+        motivated this fix. The diagnostic captured this; the regression
+        test prevents it from ever silently breaking again."""
+        from agents.agent2_coder import extract_code_from_response
+        response = (
+            '``````gherkin\nFeature: User Logout Functionality\n'
+            '  Scenario: Successful logout\n    When I log out\n'
+            '    Then I should be on the login page\n``````'
+        )
+        result = extract_code_from_response(response)
+        assert "Feature: User Logout Functionality" in result
+        assert "Scenario: Successful logout" in result
+        assert "```" not in result, "No stray backticks in extracted output"
+        assert len(result) > 100, f"Should extract real content, got {len(result)} chars"
+
+    def test_eight_backticks_also_normalized(self):
+        """Defensive: even more extreme over-escaping should still work."""
+        from agents.agent2_coder import extract_code_from_response
+        assert extract_code_from_response("````````py\nx=1\n````````").strip() == "x=1"
+
+    def test_no_fence_returns_bare_text(self):
+        """Plain text with no fence is returned trimmed (existing behavior)."""
+        from agents.agent2_coder import extract_code_from_response
+        result = extract_code_from_response("Feature: T\n  Scenario: S\n    Then x\n")
+        assert "Feature: T" in result and "Scenario: S" in result
+
+    def test_no_language_tag(self):
+        """Fence without a language tag still works."""
+        from agents.agent2_coder import extract_code_from_response
+        assert extract_code_from_response("```\nplain\n```").strip() == "plain"
+
+    def test_six_backticks_no_language_tag(self):
+        """Combination: over-escaped fence + no language tag."""
+        from agents.agent2_coder import extract_code_from_response
+        assert extract_code_from_response("``````\ncontent\n``````").strip() == "content"
