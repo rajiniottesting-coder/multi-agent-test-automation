@@ -23,3 +23,9 @@ class BasePage:
     def is_visible(self, locator: str) -> bool:
         """Check if an element is visible."""
         return self.page.locator(locator).is_visible()
+
+    def go_back(self) -> None:
+        """Navigate to the previous page in history (browser back button)."""
+        self.page.go_back()
+        # Wait for navigation to complete after going back
+        self.page.wait_for_load_state("domcontentloaded")
