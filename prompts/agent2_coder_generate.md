@@ -98,6 +98,30 @@ This is NOT optional and applies to all four directions of reference:
 
 A missing reference is NOT a small issue — it crashes at runtime with `AttributeError`, `StepDefinitionNotFoundError`, or `NameError`. The system will REJECT outputs that fail this check.
 
+### Type contract awareness — step def must respect page-object return types
+
+When a step def calls a page-object method, the **return type of that method determines what the step def can do with the result**. The page object's job is data extraction and conversion; the step def's job is assertion. Do not redo work the page object already did.
+
+Concrete rule: read the page-object method signature (the `Page Object Methods Available` block above lists return types, OR you can see them in the page object file you're generating alongside this step def). Whatever type the method returns — that's what you get. Do not assume the raw page returns strings if the method already parsed them.
+
+Examples of the failure pattern:
+
+- Page object: `def get_prices() -> list[float]: return [float(p.replace("$", "")) for p in raw]`
+  Step def WRONG: `prices = page.get_prices(); [float(p.replace("$", "")) for p in prices]` — `.replace()` on a float crashes
+  Step def RIGHT: `prices = page.get_prices()` — already floats, use them directly
+
+- Page object: `def get_item_count() -> int`
+  Step def WRONG: `count = page.get_item_count(); int(count.strip())` — can't `.strip()` an int
+  Step def RIGHT: `count = page.get_item_count()` — use directly
+
+- Page object: `def get_active_user() -> dict`
+  Step def WRONG: `user = page.get_active_user(); json.loads(user)` — already a dict
+  Step def RIGHT: `user = page.get_active_user(); user["email"]`
+
+**Self-check before submitting a step def:** for each `page_obj.method()` call, look at the page object's return type annotation. If you then call string methods (`.replace`, `.strip`, `.split`, `.lower`) or numeric methods on the result, verify the return type is actually a string or number. If the method returns a parsed/typed value, use it directly.
+
+This rule applies in any project, any domain. The page-object–step-def boundary is a contract; respect it.
+
 ### CRITICAL: Step Definition Coverage Rules (MUST FOLLOW)
 
 When generating a step def file paired with a feature file, you MUST provide
@@ -232,6 +256,19 @@ parser choice for empty-value scenarios.
 - Define methods describing user intent (e.g., `click_checkout()`, not `click_button_x()`)
 - Add docstrings to public methods
 - **COMPLETENESS — apply the Universal Cross-File Completeness Rule.** Every method and every class-level attribute that any step def file in this batch references on this class must be defined here (or inherited from a base class). Before finishing this file, mentally walk through each step def being generated alongside: every `page_obj.something` reference — call OR attribute read — must resolve. If you see `page_obj.SOME_CONSTANT` in a step def, this page object must declare `SOME_CONSTANT = ...` as a class-level constant. Missing references crash at runtime.
+
+### Locator discipline — do not invent CSS classes or DOM structures
+
+Locators reflect REAL DOM that exists on the page. Do not invent CSS classes, child elements, or pseudo-states that "feel like they should exist." Doing so causes 30-second Playwright timeouts at runtime.
+
+Common hallucination traps to avoid:
+- **Native HTML `<select>` elements** have NO `.active_option`, `.selected_option`, `.current_value`, or `.label` child elements. The selected option is read via Playwright's `locator.input_value()` for the `<select>` itself, OR by `locator.evaluate("el => el.options[el.selectedIndex].text")`. There is no child CSS class that represents "the currently selected option" — that is custom-framework behavior (Material UI, Ant Design, etc.) that does not exist by default.
+- **Native HTML `<input>` and `<textarea>`** — read values via `.input_value()`, not via fake `.value` child selectors.
+- **Custom UI frameworks** (Material UI, Bootstrap, Chakra, etc.) DO have classes like `.MuiSelect-selectMenu` or `.is-active`, but ONLY use such classes if you have evidence the page uses that framework (the existing page objects, the URL, or the "Page Object Methods Available" section will show patterns). If you have no evidence, default to native HTML access patterns.
+
+**Self-check before submitting a page object:** for every locator you defined, ask "is this an element that genuinely exists on a standard HTML page, or am I guessing at a CSS class?" If guessing, switch to a Playwright-native approach: `.input_value()`, `get_by_role()`, `get_by_text()`, `get_by_test_id()`, or `.evaluate()` with a real DOM property. The system will not reject syntactically-valid locators — they only fail at test run time — so the discipline is on you.
+
+This rule applies in any project. For any native HTML element on any page, prefer real DOM properties over invented CSS classes.
 
 # Reminder
 - Output ONLY the code block. No explanation prose.
