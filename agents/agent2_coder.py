@@ -2114,6 +2114,158 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
         notes=plan.notes,
     )
 
+    # ════════════════════════════════════════════════════════════════════
+    # 4e. ORPHAN CLEANUP (REGENERATE MODE ONLY)
+    #
+    # In regenerate mode, the LLM rewrites the feature, step defs, and
+    # page objects from scratch — but the LLM is INSTRUCTED to preserve
+    # existing page-object methods (extendable_paths rule). So if Test
+    # Cases were deleted from Jira before this regen, their page-object
+    # methods stay alive as dead code.
+    #
+    # We detect those by comparing OLD feature content (on main) with
+    # the freshly-generated NEW feature content. Methods uniquely tied
+    # to scenarios that no longer exist get commented out.
+    #
+    # Normal mode (first-time coding of a story) has no old feature
+    # to diff against, so cleanup is skipped there.
+    # ════════════════════════════════════════════════════════════════════
+    orphan_regen_step_defs: list = []
+    orphan_regen_page_methods: list = []
+    if is_regenerate:
+        try:
+            from agents.orphan_cleanup import cleanup_orphans_after_removal
+
+            _gh_for_read = GitHubClient()
+
+            # Find generated feature file content
+            new_feature_files: dict[str, str] = {}
+            new_step_def_files: dict[str, str] = {}
+            new_page_object_files: dict[str, str] = {}
+            for gf in generated_files:
+                if gf.file_path.startswith("features/") and gf.file_path.endswith(".feature"):
+                    new_feature_files[gf.file_path] = gf.content
+                elif gf.file_path.startswith("tests/step_defs/") and gf.file_path.endswith(".py"):
+                    new_step_def_files[gf.file_path] = gf.content
+                elif gf.file_path.startswith("pages/") and gf.file_path.endswith(".py"):
+                    new_page_object_files[gf.file_path] = gf.content
+
+            # For each feature file we just generated, fetch the OLD copy
+            # from main (if it exists) and run orphan detection.
+            for feature_path, new_feature_content in new_feature_files.items():
+                try:
+                    old_feature_content = _gh_for_read.get_file_content(
+                        feature_path, branch="main"
+                    )
+                except Exception:
+                    # File didn't exist on main → brand-new feature, no orphans possible
+                    logger.debug(
+                        f"Regenerate: feature {feature_path} is new on main; "
+                        f"no orphan detection needed."
+                    )
+                    continue
+
+                # Use the existing classify_test_cases logic to find orphan keys
+                old_classification = classify_test_cases(test_cases, old_feature_content)
+                orphan_keys = old_classification["orphan_keys"]
+                if not orphan_keys:
+                    logger.debug(
+                        f"Regenerate: no orphan Jira keys for {feature_path}; "
+                        f"no cleanup needed."
+                    )
+                    continue
+
+                logger.info(
+                    f"Regenerate: {len(orphan_keys)} orphan Jira key(s) "
+                    f"for {feature_path}: {orphan_keys}"
+                )
+
+                # Read page object files that we did NOT regenerate (LLM left them
+                # alone). These need orphan-method scanning too.
+                extendable = ctx.extendable_paths_normalized()
+                all_page_object_files: dict[str, str] = dict(new_page_object_files)
+                for ext_path in extendable:
+                    if ext_path in all_page_object_files:
+                        continue  # already have the freshly-generated version
+                    if not ext_path.startswith("pages/") or not ext_path.endswith(".py"):
+                        continue
+                    try:
+                        all_page_object_files[ext_path] = _gh_for_read.get_file_content(
+                            ext_path, branch="main"
+                        )
+                    except Exception as e:
+                        logger.debug(f"Could not read {ext_path}: {e}")
+
+                reserved = {"pages/base_page.py"}  # universal helpers — never orphan
+
+                (
+                    _,
+                    updated_pages,
+                    orphan_defs,
+                    orphan_methods,
+                ) = cleanup_orphans_after_removal(
+                    old_feature_content=old_feature_content,
+                    new_feature_content=new_feature_content,
+                    removed_jira_keys=orphan_keys,
+                    step_def_files=new_step_def_files,
+                    page_object_files=all_page_object_files,
+                    reserved_file_paths=reserved,
+                )
+
+                orphan_regen_step_defs.extend(orphan_defs)
+                orphan_regen_page_methods.extend(orphan_methods)
+
+                # Apply page-object updates: if any page file got commented edits,
+                # add or replace it in generated_files.
+                for path, new_content in updated_pages.items():
+                    if path not in all_page_object_files:
+                        continue
+                    if new_content == all_page_object_files[path]:
+                        continue  # unchanged
+                    # Update or append to generated_files
+                    replaced = False
+                    for i, gf in enumerate(generated_files):
+                        if gf.file_path == path:
+                            generated_files[i] = GeneratedFile(
+                                file_path=path,
+                                content=new_content,
+                                is_new_file=False,
+                                purpose=f"{gf.purpose} (+ orphan method(s) commented out)",
+                            )
+                            replaced = True
+                            break
+                    if not replaced:
+                        generated_files.append(GeneratedFile(
+                            file_path=path,
+                            content=new_content,
+                            is_new_file=False,
+                            purpose="Regenerate: orphan method(s) commented out",
+                        ))
+
+            if orphan_regen_step_defs or orphan_regen_page_methods:
+                logger.info(
+                    f"Regenerate orphan cleanup: {len(orphan_regen_step_defs)} dead "
+                    f"step def(s), {len(orphan_regen_page_methods)} dead page method(s) "
+                    f"detected and annotated."
+                )
+                # Rebuild `output` to include the page-object edits
+                output = CodeGenerationOutput(
+                    feature_name=plan.feature_name,
+                    branch_name=plan.branch_name,
+                    pr_title=plan.pr_title,
+                    pr_body=plan.pr_body,
+                    files=generated_files,
+                    notes=plan.notes,
+                )
+        except Exception as e:
+            logger.warning(
+                f"Regenerate orphan cleanup failed with {type(e).__name__}: {e}. "
+                f"Continuing with regeneration; page objects may contain dead methods. "
+                f"You can run with `ai-update` later to clean them up."
+            )
+            orphan_regen_step_defs = []
+            orphan_regen_page_methods = []
+
     # 4c. FINAL VALIDATION (after any repair attempts)
     _validate_generated_files(generated_files, story_id)
 
@@ -2156,6 +2308,29 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
         output.pr_body
         + f"\n\n---\n*This PR was automatically generated by Agent 2 (Coder) from {story_id}.*"
     )
+    # If regen orphan cleanup found anything, append it to the PR body.
+    if is_regenerate and (orphan_regen_step_defs or orphan_regen_page_methods):
+        orphan_section_parts = ["\n\n---\n## Orphan code cleanup (regenerate mode)\n"]
+        if orphan_regen_step_defs:
+            funcs = ", ".join(f"`{o.function_name}`" for o in orphan_regen_step_defs)
+            orphan_section_parts.append(
+                f"\n**Orphan step definitions detected (omitted from regeneration):** {funcs}\n"
+            )
+        if orphan_regen_page_methods:
+            methods = ", ".join(
+                f"`{o.class_name}.{o.method_name}`"
+                for o in orphan_regen_page_methods
+            )
+            orphan_section_parts.append(
+                f"\n**Orphan page methods (commented out for human review):** {methods}\n"
+                f"\n> ⚠️ Orphan page-object methods were detected because their "
+                f"underlying Jira Test Cases were deleted before this regeneration. "
+                f"They are commented out with `# AI-ORPHAN:` banners. Review the "
+                f"page object diffs — if a method might be useful for upcoming "
+                f"scenarios, uncomment it. Otherwise delete it in a follow-up commit.\n"
+            )
+        pr_body_with_footer = pr_body_with_footer + "".join(orphan_section_parts)
+
     pr_url = gh.open_pull_request(
         title=output.pr_title,
         body=pr_body_with_footer,
