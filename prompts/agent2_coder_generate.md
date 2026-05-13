@@ -132,7 +132,8 @@ at test collection time and the system will REJECT your output.
 **Step 1: Read the paired feature file's steps carefully.**
 Identify every distinct step phrase (ignoring concrete data values).
 
-**Step 2: Write ONE decorator per distinct phrase.**
+**Step 2: Write ONE decorator per distinct phrase, with EXACT text match.**
+
 The Gherkin keywords `And` and `But` inherit the previous step's type. So:
 ```gherkin
 Then I should be redirected to the home page
@@ -140,9 +141,39 @@ And I should see the page title "Welcome"
 ```
 The `And` here is actually a **Then** -- you must use `@then(...)` for both.
 
+**CRITICAL — phrase text must match the feature file word-for-word, with no paraphrasing or substitutions.** Pytest-bdd matches step decorators to Gherkin lines by exact text comparison (after parameter substitution). A single word difference causes `StepDefinitionNotFoundError`.
+
+Examples of phrase mismatches that WILL fail:
+- Feature: `Then I should be redirected to the inventory page` ← exact words
+- Step def WRONG: `@then("I should be on the inventory page")` ← "be on" vs "be redirected to" — FAILS
+- Step def RIGHT: `@then("I should be redirected to the inventory page")` ← exact match — PASSES
+
+- Feature: `When I click the Submit button` ← exact words
+- Step def WRONG: `@when("I press the Submit button")` ← "press" vs "click" — FAILS
+- Step def RIGHT: `@when("I click the Submit button")` ← exact match — PASSES
+
+When in doubt, **copy the Gherkin phrase character-for-character** into the decorator string. Do not summarize, rephrase, or "improve" the wording.
+
 **Step 3: Use parsers.parse() for any phrase containing variable data.**
 Concrete values in feature steps (like quoted strings or numbers)
 become `{placeholder}` arguments in the decorator pattern.
+
+**CRITICAL — preserve the punctuation around placeholders, including QUOTES.** If the Gherkin step has the value in quotes, the parsers.parse pattern must ALSO have quotes around the placeholder. If the value is bare (no quotes), the placeholder must be bare.
+
+Examples (study these — they catch the #1 most common parsers.parse mistake):
+
+- Feature: `When I sort by "Price (low to high)"`  ← value is QUOTED
+- Decorator WRONG: `@when(parsers.parse('I sort by {option}'))` ← captures `"Price (low to high)"` INCLUDING the quote characters
+- Decorator RIGHT: `@when(parsers.parse('I sort by "{option}"'))` ← captures just `Price (low to high)` without quotes
+
+- Feature: `Then the products should be sorted by "name" in "ascending" order`  ← values are QUOTED
+- Decorator WRONG: `@then(parsers.parse('the products should be sorted by {key} in {direction} order'))` ← later `if key == "name"` will FAIL because captured value is `'"name"'` with literal quotes
+- Decorator RIGHT: `@then(parsers.parse('the products should be sorted by "{key}" in "{direction}" order'))` ← `key == "name"` works correctly
+
+- Feature: `When I add 3 items to cart`  ← value is BARE (no quotes)
+- Decorator RIGHT: `@when(parsers.parse('I add {count:d} items to cart'))` ← bare placeholder for bare integer
+
+**Quick check after writing each parsers.parse decorator:** look at the same phrase in the feature file. Are the placeholder values wrapped in `"..."`? If YES, your pattern needs `"{...}"`. If NO, your pattern needs bare `{...}`. Mirror the feature file's quoting exactly.
 
 **Step 4 (MANDATORY FINAL CHECK): Count and verify before you finish.**
 Before declaring this file complete, perform this exact procedure:
@@ -269,6 +300,61 @@ Common hallucination traps to avoid:
 **Self-check before submitting a page object:** for every locator you defined, ask "is this an element that genuinely exists on a standard HTML page, or am I guessing at a CSS class?" If guessing, switch to a Playwright-native approach: `.input_value()`, `get_by_role()`, `get_by_text()`, `get_by_test_id()`, or `.evaluate()` with a real DOM property. The system will not reject syntactically-valid locators — they only fail at test run time — so the discipline is on you.
 
 This rule applies in any project. For any native HTML element on any page, prefer real DOM properties over invented CSS classes.
+
+### BasePage helpers — use these instead of inventing patterns
+
+`BasePage` (which every page object inherits from) provides Playwright-native helpers for the patterns LLMs most often get wrong. PREFER calling these over rolling your own logic; they handle the edge cases (timing, async updates, type conversion) correctly.
+
+Available helpers on `self.<method>()` from any page object subclass:
+
+**For `<select>` dropdowns:**
+- `self.get_select_value(locator)` → returns the `value` attribute of the selected option (e.g., `"lohi"`)
+- `self.get_select_label(locator)` → returns the visible TEXT of the selected option (e.g., `"Price low-high"`)
+- `self.select_by_label(locator, label)` → selects by visible text AND waits for the change to register
+- `self.select_by_value(locator, value)` → selects by value attribute AND waits for the change
+
+**For `<input>` / `<textarea>`:**
+- `self.get_input_value(locator)` → returns the current user-facing value
+
+**For lists of elements:**
+- `self.get_all_texts(locator)` → returns `list[str]` of inner text from all matches, stripped
+- `self.get_count(locator)` → returns the number of matching elements
+
+**For waiting:**
+- `self.wait_visible(locator)` → waits for an element to become visible (raises on timeout)
+- `self.wait_for_text(locator, expected_text)` → waits for element text to match (raises on timeout)
+- `self.wait_for_url_contains(substring)` → waits for URL to contain substring
+
+**For visibility checks:**
+- `self.is_visible(locator)` → returns True/False (doesn't raise)
+
+**Example of using these correctly in a page object method:**
+
+```python
+class MyPage(BasePage):
+    SORT_SELECT = "[data-test='sort-select']"
+    PRODUCT_NAMES = "[data-test='product-name']"
+
+    def sort_by(self, option_label: str) -> None:
+        """Sort the list by visible option text; waits for the change to apply."""
+        self.select_by_label(self.SORT_SELECT, option_label)
+
+    def get_current_sort_label(self) -> str:
+        """Return the visible text of the currently selected sort option."""
+        return self.get_select_label(self.SORT_SELECT)
+
+    def get_product_names(self) -> list[str]:
+        """Return all visible product names as a list of strings."""
+        return self.get_all_texts(self.PRODUCT_NAMES)
+```
+
+If you find yourself writing:
+- `self.page.locator(some_select).evaluate("el => el.options...")` → use `get_select_label` instead
+- `self.page.locator(some_select).input_value()` → use `get_select_value` instead
+- `[t.strip() for t in self.page.locator(...).all_inner_texts()]` → use `get_all_texts` instead
+- `self.page.select_option(...)` followed by your own wait → use `select_by_label` or `select_by_value` instead
+
+These helpers exist so each page object stays small and reads like business intent. Use them.
 
 # Reminder
 - Output ONLY the code block. No explanation prose.
