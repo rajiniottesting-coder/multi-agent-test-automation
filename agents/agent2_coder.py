@@ -1756,6 +1756,97 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
         step_defs_path, ctx, references, page_inventory,
     )
 
+    # ════════════════════════════════════════════════════════════════════
+    # ORPHAN CLEANUP — detect dead page-object methods left behind by
+    # the removed scenarios, and comment them out (NOT delete) so the
+    # human reviewer sees the audit trail. App-agnostic.
+    #
+    # This entire block is wrapped in try/except: orphan cleanup is a
+    # nice-to-have. If it fails for any reason (network, parsing, etc.),
+    # we log and continue with the surgical update without it. The PR
+    # opens either way.
+    # ════════════════════════════════════════════════════════════════════
+    from agents.orphan_cleanup import cleanup_orphans_after_removal
+
+    orphan_step_defs_found: list = []
+    orphan_page_methods_found: list = []
+    modified_page_files: dict[str, str] = {}
+
+    if classification["orphan_keys"]:
+        try:
+            # Collect ALL step def files in the project (not just the one we
+            # regenerated) so that orphan detection sees the full picture.
+            all_step_def_files: dict[str, str] = {step_defs_path: new_step_defs_content}
+            try:
+                existing_step_def_paths = gh.list_files_in_directory(
+                    "tests/step_defs", branch="main"
+                )
+            except (AttributeError, Exception) as e:
+                logger.debug(
+                    f"Could not list sibling step_def files for orphan detection: {e}. "
+                    f"Falling back to single-file detection."
+                )
+                existing_step_def_paths = []
+
+            for sd_path in existing_step_def_paths:
+                if sd_path == step_defs_path or not sd_path.endswith(".py"):
+                    continue
+                if sd_path.endswith("/__init__.py"):
+                    continue
+                try:
+                    all_step_def_files[sd_path] = gh.get_file_content(sd_path, branch="main")
+                except Exception:
+                    logger.debug(f"Could not read {sd_path}, skipping.")
+
+            # Collect page object files we are ALLOWED to modify
+            # (extendable_paths from app config). base_page.py is excluded
+            # via reserved_file_paths because it holds universal helpers.
+            extendable = ctx.extendable_paths_normalized()
+            page_object_files: dict[str, str] = {}
+            for ext_path in extendable:
+                if not ext_path.startswith("pages/") or not ext_path.endswith(".py"):
+                    continue
+                try:
+                    page_object_files[ext_path] = gh.get_file_content(ext_path, branch="main")
+                except Exception as e:
+                    logger.debug(f"Could not read {ext_path}: {e}")
+
+            reserved = {"pages/base_page.py"}  # universal helpers — never orphan
+
+            (
+                _,
+                updated_pages,
+                orphan_step_defs_found,
+                orphan_page_methods_found,
+            ) = cleanup_orphans_after_removal(
+                old_feature_content=existing_content,
+                new_feature_content=spliced_content,
+                removed_jira_keys=classification["orphan_keys"],
+                step_def_files=all_step_def_files,
+                page_object_files=page_object_files,
+                reserved_file_paths=reserved,
+            )
+
+            # If any page object files were modified, record them for the PR.
+            for path, new_content in updated_pages.items():
+                if path in page_object_files and new_content != page_object_files[path]:
+                    modified_page_files[path] = new_content
+
+            logger.info(
+                f"Orphan cleanup: detected {len(orphan_step_defs_found)} dead step def(s), "
+                f"{len(orphan_page_methods_found)} dead page method(s); "
+                f"{len(modified_page_files)} page file(s) modified."
+            )
+        except Exception as e:
+            logger.warning(
+                f"Orphan cleanup failed with {type(e).__name__}: {e}. "
+                f"Continuing with surgical update; page objects unchanged. "
+                f"You can run with `ai-regenerate` later to do a full regen."
+            )
+            orphan_step_defs_found = []
+            orphan_page_methods_found = []
+            modified_page_files = {}
+
     generated_files = [
         GeneratedFile(
             file_path=feature_file_path,
@@ -1770,6 +1861,13 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
             purpose="Incremental update: regenerated step defs",
         ),
     ]
+    for page_path, page_content in modified_page_files.items():
+        generated_files.append(GeneratedFile(
+            file_path=page_path,
+            content=page_content,
+            is_new_file=False,
+            purpose="Incremental update: orphan method(s) commented out",
+        ))
 
     _validate_generated_files(generated_files, story_id)
 
@@ -1788,10 +1886,32 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
             f"\n**Removed scenarios (no longer in Jira):** "
             f"{', '.join(classification['orphan_keys'])}"
         )
+    if orphan_step_defs_found:
+        orphan_func_names = ", ".join(
+            f"`{o.function_name}`" for o in orphan_step_defs_found
+        )
+        pr_body_parts.append(
+            f"\n**Orphan step definitions detected and removed by regeneration:** "
+            f"{orphan_func_names}"
+        )
+    if orphan_page_methods_found:
+        orphan_method_summary = ", ".join(
+            f"`{o.class_name}.{o.method_name}`" for o in orphan_page_methods_found
+        )
+        pr_body_parts.append(
+            f"\n**Orphan page methods (commented out for human review):** "
+            f"{orphan_method_summary}"
+        )
+        pr_body_parts.append(
+            "\n\n> ⚠️ Orphan page-object methods were detected and commented "
+            "out with `# AI-ORPHAN:` banners. Review the page object diffs — "
+            "if a method might be useful for upcoming scenarios, uncomment it. "
+            "Otherwise delete it in a follow-up commit."
+        )
     pr_body_parts.append(
         "\n\nUnchanged scenarios are preserved byte-for-byte. "
-        "Page objects are not modified by ai-update; if new methods are "
-        "needed, use the `ai-regenerate` label for a full regeneration."
+        "If new page-object methods are needed for surviving scenarios, "
+        "use the `ai-regenerate` label for a full regeneration."
     )
     pr_body = "".join(pr_body_parts)
 

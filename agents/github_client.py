@@ -116,6 +116,22 @@ class GitHubClient:
         contents = self.repo.get_contents(path, ref=branch)
         return base64.b64decode(contents.content).decode("utf-8")
 
+    def list_files_in_directory(self, path: str, branch: str = "main") -> list[str]:
+        """List file paths in a directory. Returns repo-relative paths.
+
+        Used by orphan-cleanup to find sibling step-def files. Returns
+        empty list if the directory does not exist on the branch.
+        """
+        try:
+            contents = self.repo.get_contents(path, ref=branch)
+        except Exception as e:
+            logger.debug(f"list_files_in_directory({path!r}, {branch!r}) failed: {e}")
+            return []
+        if not isinstance(contents, list):
+            # A single file was returned (path resolved to a file, not dir)
+            return [contents.path]
+        return [c.path for c in contents if c.type == "file"]
+
     # ─────────────────────────────────────────────────────────
     # Pull request operations
     # ─────────────────────────────────────────────────────────
