@@ -44,7 +44,7 @@ jobs:
           # Only commit + push if something actually changed
           if ! git diff --staged --quiet; then
             git commit -m "chore(keep-alive): scheduler ping $(date -u +%FT%TZ)"
-            git push origin main
+            git push origin main:ping-status --force
           else
             echo "No changes — keep-alive ran but file already up to date"
           fi
