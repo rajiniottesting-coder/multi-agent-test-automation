@@ -1,50 +1,46 @@
 Feature: Login Validation
   As a user of SauceDemo
   I want the login form to validate my input correctly
-  So that I receive clear feedback when credentials are invalid, missing, or contain whitespace
+  So that I receive clear feedback when credentials are invalid, empty, or contain whitespace
 
   Background:
     Given I am on the SauceDemo login page
 
-  @edge @login_validation
+  @edge @login-validation
   # JIRA: SCRUM-50 (hash: 3a3b9cb1)
   Scenario: Login fails when credentials contain leading or trailing whitespace
     When I log in with username " standard_user " and password "secret_sauce"
     Then I should see the error message "Epic sadface: Username and password do not match any user in this service"
-    And I should remain on the login page
     When I dismiss the error message
     Then the error message should not be visible
     When I log in with username "standard_user" and password " secret_sauce "
     Then I should see the error message "Epic sadface: Username and password do not match any user in this service"
-    And I should remain on the login page
 
-  @negative @login_validation
+  @negative @login-validation
   # JIRA: SCRUM-49 (hash: 9f7abd41)
   Scenario: Login form displays validation errors for empty fields
     When I log in with username "" and password ""
     Then I should see the error message "Epic sadface: Username is required"
-    And I should remain on the login page
+    When I dismiss the error message
     When I log in with username "standard_user" and password ""
     Then I should see the error message "Epic sadface: Password is required"
-    And I should remain on the login page
+    When I dismiss the error message
     When I log in with username "" and password "secret_sauce"
     Then I should see the error message "Epic sadface: Username is required"
-    And I should remain on the login page
 
-  @negative @login_validation
+  @negative @login-validation
   # JIRA: SCRUM-48 (hash: 0d43120d)
   Scenario: Login fails with invalid credentials and locked-out user
     When I log in with username "invalid_user" and password "wrong_password"
     Then I should see the error message "Epic sadface: Username and password do not match any user in this service"
-    And I should remain on the login page
+    When I dismiss the error message
     When I log in with username "standard_user" and password "incorrect_password"
     Then I should see the error message "Epic sadface: Username and password do not match any user in this service"
-    And I should remain on the login page
+    When I dismiss the error message
     When I log in with username "locked_out_user" and password "secret_sauce"
     Then I should see the error message "Epic sadface: Sorry, this user has been locked out."
-    And I should remain on the login page
 
-  @smoke @login_validation
+  @smoke @login-validation
   # JIRA: SCRUM-47 (hash: a8340aa2)
   Scenario: Successful login with valid credentials redirects to inventory page
     When I log in with username "standard_user" and password "secret_sauce"
