@@ -12,16 +12,20 @@
 #   3. Installs project dependencies
 #   4. Runs Agent 3, which:
 #      - Reads the PR (uses GITHUB_EVENT_PATH for PR number auto-detection)
-#      - Calls Gemini to perform code review
+#      - Calls the LLM to perform code review
 #      - Posts the review as a comment on the PR
 #
-# REQUIRED REPO SECRETS (set under Settings → Secrets and variables → Actions):
-#   - GOOGLE_API_KEY    : your Gemini API key
+# REQUIRED REPO SECRETS (set under Settings -> Secrets and variables -> Actions):
+#   - OPENAI_API_KEY    : LLM API key / bearer token
 #   - GH_REPO           : repo full name, e.g. "rajiniottesting-coder/multi-agent-test-automation"
 #                         NOTE: NOT named GITHUB_REPO because GitHub reserves the
 #                         GITHUB_* prefix for itself and won't let you create such secrets.
 #                         We map it to env var GITHUB_REPO inside the runner.
 #   - JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN, JIRA_PROJECT_KEY (for Jira-using agents)
+#
+# REQUIRED REPO VARIABLES:
+#   - OPENAI_API_BASE   : LLM API base URL
+#   - LLM_MODEL         : model identifier (e.g., claude-opus-4-6)
 #
 # THE GITHUB_TOKEN — important:
 #   - GITHUB_TOKEN is built-in. GitHub Actions auto-provides it. Don't add as secret.
@@ -80,8 +84,9 @@ jobs:
           #   GitHub Secret: GH_REPO  →  Env Var: GITHUB_REPO  (what code reads)
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO: ${{ secrets.GH_REPO }}
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash-lite' }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'claude-opus-4-6' }}
           # PR_NUMBER auto-detected from event in Agent 3 code, but
           # for manual workflow_dispatch we override it here:
           PR_NUMBER: ${{ github.event.inputs.pr_number }}

@@ -47,18 +47,15 @@ pytest-html==4.1.1
 # 🤖 LLM & AGENT ORCHESTRATION
 #
 # IMPORTANT: All these packages must be on the same major version (1.x).
-# In Dec 2025, langchain-google-genai 4.0.0 was released using the unified
-# google-genai SDK. It needs langchain-core 1.x, which needs langchain 1.x.
 # Upgrading any one of these requires upgrading all of them together.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # LangChain — high-level abstractions over LLM APIs.
 # We use it for: prompt templates, structured output, message types.
-# Standardizes how all 5 agents talk to Gemini.
+# Standardizes how all 5 agents talk to the LLM.
 langchain>=1.0,<2.0
 
 # langchain-core — the foundation that everything else builds on.
-# Pinned to 1.x to match langchain-google-genai 4.x requirements.
 langchain-core>=1.0,<2.0
 
 # LangGraph — state machine library for orchestrating multi-agent workflows.
@@ -66,16 +63,14 @@ langchain-core>=1.0,<2.0
 # interrupts. We use this in Day 6 to wire all agents into one pipeline.
 langgraph>=1.0,<2.0
 
-# LangChain wrapper for Google Gemini.
-# CRITICAL: must be >= 4.0.0 because earlier versions don't support the
-# json_schema method for with_structured_output(), which is essential for
-# reliable structured output with Gemini 2.5 models. Earlier versions
-# silently return None when the model doesn't call the tool.
-langchain-google-genai>=4.0.0,<5.0
+# LangChain wrapper for OpenAI-compatible APIs.
+# Works with any endpoint that follows the OpenAI /v1/chat/completions spec
+# (OpenAI, Azure, Anthropic proxies, self-hosted models, etc.)
+langchain-openai>=0.3.0
 
 # Pydantic — data validation library used everywhere in our agents.
 # Defines the SHAPE of LLM outputs so we never trust raw text from the LLM.
-# If Gemini returns malformed data, Pydantic raises a clear error.
+# If the model returns malformed data, Pydantic raises a clear error.
 pydantic>=2.9
 
 
@@ -122,10 +117,10 @@ pyyaml>=6.0
 # 🛡️ TRANSITIVE / IMPLICIT DEPENDENCIES (commented for clarity)
 # These are pulled in by the packages above and don't need explicit pins:
 #
-#   - google-genai        (Gemini API errors come from google.genai.errors;
-#                          installed automatically by langchain-google-genai 4.x)
+#   - openai              (OpenAI Python SDK, installed by langchain-openai)
+#   - httpx               (async HTTP transport for openai SDK)
 #   - SQLAlchemy          (LangChain memory backends — not used yet)
-#   - aiohttp / httpx     (async HTTP for langchain)
+#   - aiohttp             (async HTTP for langchain)
 #   - Pillow              (image handling, used by jira lib for attachments)
 #
 # If any of these break, we can pin them explicitly.

@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 # Stub env so module imports don't fail on credential checks
 for v in (
-    "GOOGLE_API_KEY", "JIRA_URL", "JIRA_EMAIL", "JIRA_API_TOKEN",
+    "OPENAI_API_KEY", "JIRA_URL", "JIRA_EMAIL", "JIRA_API_TOKEN",
     "JIRA_PROJECT_KEY", "GITHUB_TOKEN", "GITHUB_REPO",
 ):
     os.environ.setdefault(v, "stub")

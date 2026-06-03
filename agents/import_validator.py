@@ -68,7 +68,7 @@ def _read_requirements(project_root: Path) -> set[str]:
     """Parse requirements.txt and return the set of top-level package names.
 
     These names are normalized to lowercase + dashes-to-underscores so
-    `langchain-google-genai` matches imports like `langchain_google_genai`.
+    `langchain-openai` matches imports like `langchain_openai`.
 
     Returns empty set if requirements.txt is missing — that's a graceful
     degradation; the validator just won't recognize third-party imports.
@@ -111,7 +111,7 @@ _KNOWN_IMPORT_ALIASES: dict[str, str] = {
     "yaml": "pyyaml",
     "dotenv": "python_dotenv",
     "jwt": "pyjwt",
-    "google": "google_genai",  # google.* parents map to google-* dists
+    "openai": "langchain_openai",  # openai.* maps to langchain-openai dist
 }
 
 

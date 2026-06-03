@@ -1,35 +1,35 @@
 """
-LLM client — wraps Gemini with retries and structured output support.
+LLM client — wraps any OpenAI-compatible LLM API with retries and structured output.
 
-IMPORTANT: This file is for langchain-google-genai >= 4.0.0.
-That version uses Gemini's native json_schema mode (constrained decoding),
-which is significantly more reliable than the old function_calling approach.
+Uses langchain-openai's ChatOpenAI, which works with ANY endpoint that
+implements the OpenAI /v1/chat/completions spec (OpenAI, Azure, Anthropic
+proxies, self-hosted models, custom API gateways, etc.).
 
-Retry Strategy (IMPORTANT for free-tier users):
-- The underlying google-genai SDK ALREADY retries on transient errors
-  (5 attempts with exponential backoff). We do NOT add another retry layer
-  on top — that would multiply API calls and burn through daily quota.
-- For rate-limit (429 / RESOURCE_EXHAUSTED) we fail FAST with a clear
-  message instead of retrying, because daily quota retries don't help.
+Configuration is via three environment variables:
+    OPENAI_API_KEY   — API key / bearer token
+    OPENAI_API_BASE  — base URL (e.g., https://api.openai.com/v1)
+    LLM_MODEL        — model identifier (e.g., gpt-4o, claude-opus-4-6)
 
-Token Cap (Day 5 fix for "repetition collapse"):
-- We cap max_output_tokens to a sane default. Gemini 2.5 models can otherwise
-  generate up to 8K+ tokens, and when reviewing a low-content PR they may
-  enter repetition loops, fill the budget with duplicated content, then get
-  truncated mid-field — which fails Pydantic validation downstream.
+Retry Strategy:
+- The underlying httpx transport retries on transient errors.
+  We do NOT add another retry layer on top — that would multiply API
+  calls and burn through quota.
+- For rate-limit (429) we fail FAST with a clear message instead of
+  retrying, because quota retries don't help.
+
+Token Cap:
+- We cap max_tokens to a sane default. Some models can otherwise
+  generate very large outputs, and when reviewing a low-content PR they
+  may enter repetition loops, fill the budget with duplicated content,
+  then get truncated mid-field — which fails Pydantic validation
+  downstream.
 """
 import os
 import logging
 from typing import Type, TypeVar
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel
-
-# google-genai 1.x error hierarchy:
-#   APIError (parent)
-#     ├── ClientError (4xx — includes 429 quota)
-#     └── ServerError (5xx — transient server issues)
-from google.genai.errors import APIError, ClientError
 
 logger = logging.getLogger(__name__)
 
@@ -45,51 +45,60 @@ DEFAULT_MAX_OUTPUT_TOKENS = 4096
 # 600+ lines. Splitting these would break the existing file-per-feature
 # convention.
 #
-# IMPORTANT — Pro models use "thinking" tokens (Day 8 fix):
-#   gemini-2.5-pro and 3.x Pro models spend output tokens on internal
-#   chain-of-thought reasoning BEFORE producing visible content. The
-#   max_output_tokens cap applies to thinking + visible output combined.
-#   For multi-constraint code generation prompts, Pro can burn most of
-#   its 8K budget on thinking and emit zero or near-zero visible chars
-#   (the agent then logs "Generated 1 chars" and commits an empty file).
-#   We give Pro a much larger budget to absorb the reasoning overhead.
-#   Flash/Flash-Lite don't think extensively, so they're capped lower.
+# This cap is intentionally generous — most modern LLMs support 16K+ output
+# tokens. If your model has a lower limit, reduce this value accordingly.
 def _code_gen_max_output_tokens(model_name: str) -> int:
-    if "pro" in (model_name or "").lower():
-        return 32768   # Pro: ~24K reasoning + 8K visible output worst case
-    return 8192        # Flash/Lite: visible output only
+    """Return a sensible max-tokens cap for code generation.
+
+    Override via LLM_CODE_GEN_MAX_TOKENS env var if your model needs
+    a different budget.
+    """
+    override = os.getenv("LLM_CODE_GEN_MAX_TOKENS")
+    if override:
+        return int(override)
+    return 16384  # generous default; works for most modern LLMs
 
 # Kept for backwards compat with older imports; prefer the helper above.
-CODE_GENERATION_MAX_OUTPUT_TOKENS = 8192
+CODE_GENERATION_MAX_OUTPUT_TOKENS = 16384
 
 
 def _is_quota_error(exc: Exception) -> bool:
-    """Detect rate-limit / quota errors (429 RESOURCE_EXHAUSTED)."""
-    msg = str(exc)
-    return "RESOURCE_EXHAUSTED" in msg or "429" in msg or "quota" in msg.lower()
+    """Detect rate-limit / quota errors (HTTP 429 or provider-specific)."""
+    msg = str(exc).lower()
+    return "429" in msg or "rate" in msg or "quota" in msg or "resource_exhausted" in msg
 
 
 class QuotaExhaustedError(RuntimeError):
-    """Raised when Gemini API daily/per-minute quota is hit. Surfaced fast
+    """Raised when the LLM API rate limit or quota is hit. Surfaced fast
     instead of retrying, because retrying within the same minute won't help
-    with daily quotas."""
+    with quota-based limits."""
     pass
 
 
 class LLMClient:
-    """Wrapper around Gemini with quota-aware error handling."""
+    """Provider-agnostic LLM wrapper with quota-aware error handling.
+
+    Works with any OpenAI-compatible API endpoint. Configure via env vars:
+        OPENAI_API_KEY   — API key / bearer token
+        OPENAI_API_BASE  — base URL of the API
+        LLM_MODEL        — model identifier
+    """
 
     def __init__(self, temperature: float = 0.2, max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS):
-        model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        model_name = os.getenv("LLM_MODEL", "claude-opus-4-6")
         self.model_name = model_name
+        api_key = os.getenv("OPENAI_API_KEY")
+        api_base = os.getenv("OPENAI_API_BASE")
         # temperature=0 → deterministic; small temp adds slight creativity
-        self.llm = ChatGoogleGenerativeAI(
+        self.llm = ChatOpenAI(
             model=model_name,
             temperature=temperature,
-            max_output_tokens=max_output_tokens,
+            max_tokens=max_output_tokens,
+            api_key=api_key,
+            base_url=api_base,
         )
         logger.info(
-            f"LLM initialized: {model_name} (temp={temperature}, max_output_tokens={max_output_tokens})"
+            f"LLM initialized: {model_name} (temp={temperature}, max_tokens={max_output_tokens})"
         )
 
     def _call_with_quota_check(self, callable_fn, *args, **kwargs):
@@ -99,12 +108,10 @@ class LLMClient:
         except Exception as e:
             if _is_quota_error(e):
                 raise QuotaExhaustedError(
-                    f"Gemini API quota exhausted for model '{self.model_name}'. "
-                    f"Free tier is 20 requests/day per model. Options: "
-                    f"(1) wait ~24h for quota reset, "
-                    f"(2) switch GEMINI_MODEL in .env to a different model "
-                    f"(e.g., 'gemini-2.5-flash-lite' has its own separate quota), "
-                    f"(3) enable billing at https://aistudio.google.com/apikey for higher limits. "
+                    f"LLM API rate limit / quota exhausted for model '{self.model_name}'. "
+                    f"Options: (1) wait for rate limit reset, "
+                    f"(2) switch LLM_MODEL in .env to a different model, "
+                    f"(3) check your API plan limits with your provider. "
                     f"Original error: {e}"
                 ) from e
             raise  # Non-quota error, propagate as-is
@@ -118,17 +125,15 @@ class LLMClient:
         """
         Call the LLM and parse output into the given Pydantic schema.
 
-        Uses Gemini's native json_schema mode (constrained decoding) — the model's
-        token generation is constrained at the API level so the output is guaranteed
-        to match the schema. This is far more reliable than function_calling mode.
+        Uses LangChain's with_structured_output() which auto-selects the best
+        method for the provider (function calling, JSON mode, etc.). The output
+        is validated against the Pydantic schema.
 
         Raises:
-            QuotaExhaustedError: if API daily/per-minute quota is hit
+            QuotaExhaustedError: if API rate limit / quota is hit
             ValueError: if LLM returns None despite quota being fine
         """
-        # Explicitly request json_schema method (it's the default in 4.x but being
-        # explicit makes the intent clear and survives library upgrades).
-        structured_llm = self.llm.with_structured_output(output_schema, method="json_schema")
+        structured_llm = self.llm.with_structured_output(output_schema)
 
         messages = [
             SystemMessage(content=system_prompt),
@@ -141,8 +146,9 @@ class LLMClient:
         if result is None:
             raise ValueError(
                 f"LLM returned None — could not produce valid {output_schema.__name__}. "
-                f"With json_schema mode this typically means: (1) safety filter blocked "
-                f"the response, or (2) the schema contains features Gemini doesn't support."
+                f"This typically means: (1) a safety filter blocked the response, "
+                f"(2) the model does not support the requested output format, or "
+                f"(3) the schema contains features the model cannot handle."
             )
 
         logger.info(f"LLM returned {type(result).__name__} successfully")
@@ -163,18 +169,18 @@ class LLMClient:
         """
         # Use a dedicated LLM instance with a higher token budget for code.
         # Cached on first call so we don't reconstruct on every invocation.
-        # Token budget depends on model: Pro's reasoning tokens require
-        # significantly more headroom than Flash's visible-only output.
         cap = _code_gen_max_output_tokens(self.model_name)
         if not hasattr(self, "_text_llm"):
-            self._text_llm = ChatGoogleGenerativeAI(
+            self._text_llm = ChatOpenAI(
                 model=self.model_name,
                 temperature=0.2,
-                max_output_tokens=cap,
+                max_tokens=cap,
+                api_key=os.getenv("OPENAI_API_KEY"),
+                base_url=os.getenv("OPENAI_API_BASE"),
             )
             logger.info(
                 f"Code generation LLM ready: {self.model_name} "
-                f"(max_output_tokens={cap})"
+                f"(max_tokens={cap})"
             )
 
         messages = [
@@ -183,22 +189,15 @@ class LLMClient:
         ]
         logger.info(
             f"Calling LLM (text mode, model={self.model_name}, "
-            f"max_output_tokens={cap})..."
+            f"max_tokens={cap})..."
         )
         response = self._call_with_quota_check(self._text_llm.invoke, messages)
 
         # ─────────────────────────────────────────────────────────────
-        # DIAGNOSTIC LOGGING (Day 9): when content is suspiciously short,
-        # dump everything we can about WHY the model returned empty output.
+        # DIAGNOSTIC LOGGING: when content is suspiciously short, dump
+        # everything we can about WHY the model returned empty output.
         # This is read-only — does NOT change return value or raise. The
         # downstream empty-content guard in agent2_coder still fires.
-        #
-        # We previously assumed the 1-char output was caused by Pro's
-        # thinking-token budget being exhausted. Bumping the budget from
-        # 8K to 32K didn't fix it, which means the root cause is something
-        # else: a safety filter trip, a finish_reason we're not handling,
-        # the response being on `additional_kwargs` instead of `content`,
-        # or something model-specific to Gemini 2.5 Pro.
         # ─────────────────────────────────────────────────────────────
         content = response.content or ""
 
@@ -206,8 +205,6 @@ class LLMClient:
         try:
             usage = getattr(response, "usage_metadata", None) or {}
             if usage:
-                # Pro reports thoughts_token_count separately from
-                # output_token_count for thinking models
                 logger.info(
                     "Token usage: input=%s output=%s thoughts=%s total=%s",
                     usage.get("input_tokens", "?"),

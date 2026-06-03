@@ -343,7 +343,7 @@ def validate_filename_consistency(generated_files: list) -> list:
     The validator runs AFTER LLM generation, BEFORE the PR is created.
 
     AUTO-CORRECTION (added 2026-05-06):
-        Smaller LLMs (e.g., gemini-2.5-flash-lite) sometimes slip and use
+        Smaller / weaker LLMs sometimes slip and use
         kebab-case inside `feature_path()` even when the feature filename
         is snake_case. Rather than hard-failing every time, we now attempt
         a CONSERVATIVE auto-correction:

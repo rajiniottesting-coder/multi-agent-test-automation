@@ -1059,8 +1059,8 @@ def _validate_generated_files(
             f"{len(coverage_errors)} feature step(s) without matching "
             f"@given/@when/@then decorator(s) — even after the LLM was "
             f"given the validator's feedback for self-correction. This "
-            f"usually means the LLM model is too weak (try gemini-2.5-flash "
-            f"instead of -lite) or the feature file has unusually complex "
+            f"usually means the LLM model is too weak (try a more capable "
+            f"model) or the feature file has unusually complex "
             f"steps. See logs for details."
         )
 
@@ -1182,7 +1182,7 @@ def _attempt_step_coverage_repair(
     Stage 2 for the broken file with a "Validator Feedback" section.
 
     Why retry instead of hard-fail:
-        Weaker LLMs (gemini-2.5-flash-lite specifically) often slip up.
+        Weaker LLMs often slip up on complex validation constraints.
         Validators catch it, but the old behavior was to abort the whole
         run, wasting work already done on other files. Retrying ONLY the
         broken file is targeted, cheap, and usually succeeds.

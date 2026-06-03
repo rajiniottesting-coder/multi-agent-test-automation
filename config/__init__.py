@@ -6,7 +6,7 @@ environment-variable validation, and branch-name validation.
 
 Usage in agents:
     from config import validate_required_env, extract_jira_key, is_valid_branch_for_pipeline
-    validate_required_env(["JIRA_URL", "JIRA_API_TOKEN", "GOOGLE_API_KEY"])
+    validate_required_env(["JIRA_URL", "JIRA_API_TOKEN", "OPENAI_API_KEY"])
     key = extract_jira_key("auto/PROJ-123-feature")  # → "PROJ-123"
 """
 import os
@@ -32,7 +32,7 @@ JIRA_KEY_PATTERN = re.compile(r"\b([A-Z][A-Z0-9_]*-\d+)\b")
 # Required environment variables for the full pipeline (every agent).
 # Centralized here so individual agents don't drift on what they require.
 REQUIRED_JIRA_ENV_VARS = ["JIRA_URL", "JIRA_EMAIL", "JIRA_API_TOKEN", "JIRA_PROJECT_KEY"]
-REQUIRED_LLM_ENV_VARS = ["GOOGLE_API_KEY"]
+REQUIRED_LLM_ENV_VARS = ["OPENAI_API_KEY", "OPENAI_API_BASE"]
 REQUIRED_GITHUB_ENV_VARS = ["GITHUB_TOKEN", "GITHUB_REPO"]
 
 

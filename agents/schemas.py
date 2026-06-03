@@ -91,15 +91,12 @@ class CodeGenerationOutput(BaseModel):
 #
 # IMPORTANT: We deliberately do NOT use Pydantic's max_length on the
 # `issues` list. While valid Python, it translates to a JSON schema
-# `maxItems` constraint that Gemini's constrained-decoding engine
-# cannot compile when the array contains complex objects (it produces
-# "too many states for serving" — error 400 INVALID_ARGUMENT).
+# `maxItems` constraint that some LLM providers' constrained-decoding
+# engines cannot compile when the array contains complex objects.
 #
 # Instead, we cap and de-duplicate the issues list AFTER the LLM
 # response in agent3_reviewer.py. This keeps the schema simple and
-# Gemini-compatible while still preventing repetition collapse.
-# See https://ai.google.dev/gemini-api/docs/structured-output for the
-# subset of JSON Schema features Gemini supports.
+# provider-compatible while still preventing repetition collapse.
 # ─────────────────────────────────────────────────────────────
 
 class ReviewIssue(BaseModel):
@@ -181,7 +178,7 @@ class ReviewReport(BaseModel):
 # and posts a friendly comment to the parent Jira story.
 #
 # IMPORTANT for LLM compatibility (lesson from Day 5):
-#   - No max_length on lists (Gemini's constrained-decoding can't compile maxItems)
+#   - No max_length on lists (some providers can't compile maxItems)
 #   - No regex patterns or format constraints on strings
 #   - Quantity caps go in post-processing, not the schema
 # ─────────────────────────────────────────────────────────────

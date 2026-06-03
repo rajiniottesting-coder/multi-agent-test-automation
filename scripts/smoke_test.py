@@ -1,5 +1,5 @@
 """
-Smoke test: verifies Jira, Gemini, and Playwright all work end-to-end.
+Smoke test: verifies Jira, LLM, and Playwright all work end-to-end.
 Run from project root: python scripts/smoke_test.py
 """
 import os
@@ -11,7 +11,7 @@ load_dotenv()
 
 def test_env_vars():
     """Make sure required env vars are present."""
-    required = ["JIRA_URL", "JIRA_EMAIL", "JIRA_API_TOKEN", "JIRA_PROJECT_KEY", "GOOGLE_API_KEY"]
+    required = ["JIRA_URL", "JIRA_EMAIL", "JIRA_API_TOKEN", "JIRA_PROJECT_KEY", "OPENAI_API_KEY"]
     missing = [v for v in required if not os.getenv(v)]
     if missing:
         print(f"❌ Missing env vars: {missing}")
@@ -37,13 +37,20 @@ def test_jira():
     else:
         print("   ⚠️  'Test Case' issue type NOT found — needs to be added")
 
-def test_gemini():
-    """Verify Gemini API key works."""
-    from langchain_google_genai import ChatGoogleGenerativeAI
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    llm = ChatGoogleGenerativeAI(model=model_name, temperature=0)
+def test_llm():
+    """Verify LLM API key and endpoint work."""
+    from langchain_openai import ChatOpenAI
+    model_name = os.getenv("LLM_MODEL", "claude-opus-4-6")
+    api_key = os.getenv("OPENAI_API_KEY")
+    api_base = os.getenv("OPENAI_API_BASE")
+    llm = ChatOpenAI(
+        model=model_name,
+        temperature=0,
+        api_key=api_key,
+        base_url=api_base,
+    )
     response = llm.invoke("Reply with exactly: PONG")
-    print(f"✅ Gemini OK — model: {model_name}, response: {response.content.strip()}")
+    print(f"✅ LLM OK — model: {model_name}, response: {response.content.strip()}")
 
 
 def test_playwright():
@@ -65,7 +72,7 @@ if __name__ == "__main__":
     try:
         test_env_vars()
         test_jira()
-        test_gemini()
+        test_llm()
         test_playwright()
         print("\n" + "=" * 50)
         print("🎉 ALL SYSTEMS GO — Day 1 setup complete!")

@@ -11,13 +11,13 @@
 #
 # WHAT IT DOES:
 #   For each Story with label `ai-ready` (and not `ai-processed` or
-#   `ai-skip`), Agent 1 calls Gemini to draft Jira Test Case issues
+#   `ai-skip`), Agent 1 calls the LLM to draft Jira Test Case issues
 #   (typically 3-5 per story), links them to the parent Story, and
 #   adds the `ai-processed` label so the next scan skips it.
 #
 # COST PROFILE:
 #   - Idle scan (no matching stories): ~30-40 sec runner time, $0 LLM
-#   - Per processed story: ~$0.05-0.15 in Gemini tokens
+#   - Per processed story: varies by LLM provider
 #   - max_stories_per_run is capped at 2 in config.yaml for safety
 #
 # WHY BUSINESS HOURS ONLY:
@@ -28,11 +28,12 @@
 #   processing, expand the cron range or trigger manually.
 #
 # REQUIRED REPO SECRETS:
-#   - GOOGLE_API_KEY  (Gemini API key, paid tier recommended for Pro)
+#   - OPENAI_API_KEY  (LLM API key / bearer token)
 #   - JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN, JIRA_PROJECT_KEY
 #
-# REQUIRED REPO VARIABLES (Settings → Secrets and variables → Variables):
-#   - GEMINI_MODEL  (e.g., gemini-2.5-pro, gemini-2.5-flash)
+# REQUIRED REPO VARIABLES (Settings -> Secrets and variables -> Variables):
+#   - OPENAI_API_BASE  (LLM API base URL)
+#   - LLM_MODEL        (e.g., claude-opus-4-6, gpt-4o)
 #
 # NOTE: Agent 1 does NOT push code or open PRs — it only writes to Jira.
 #   No GitHub PAT or contents:write permission is needed here.
@@ -99,9 +100,10 @@ jobs:
 
       - name: Run Agent 1
         env:
-          # LLM credentials
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash-lite' }}
+          # LLM credentials (any OpenAI-compatible endpoint)
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'claude-opus-4-6' }}
 
           # Jira credentials
           JIRA_URL: ${{ secrets.JIRA_URL }}

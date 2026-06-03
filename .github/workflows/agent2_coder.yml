@@ -103,18 +103,15 @@ jobs:
         # Agent 2 needs read+write access to:
         #   - Jira (read approved stories, mark them ai-coded)
         #   - GitHub (create branches, commit files, open PRs)
-        #   - Google Gemini (LLM calls for Stage 1 plan + Stage 2 file generation)
+        #   - LLM API (calls for Stage 1 plan + Stage 2 file generation)
         env:
-          # LLM credentials
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          # LLM credentials (any OpenAI-compatible endpoint)
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
 
-          # LLM model selection — defaults to gemini-2.5-flash-lite which has
-          # a separate 20 req/day quota from gemini-2.5-flash. Agent 3 already
-          # uses flash-lite by default; aligning Agent 2 here avoids quota
-          # collision and effectively doubles our daily budget across agents.
-          # If you enable billing on Google AI Studio, set the GEMINI_MODEL
-          # repository variable to override (e.g., gemini-2.5-flash, gemini-2.5-pro).
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash-lite' }}
+          # LLM model selection — override via LLM_MODEL repo variable
+          # if you want to use a different model.
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'claude-opus-4-6' }}
 
           # Jira credentials
           JIRA_URL: ${{ secrets.JIRA_URL }}

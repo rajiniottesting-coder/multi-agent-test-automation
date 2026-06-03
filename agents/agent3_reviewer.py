@@ -22,7 +22,7 @@ Outputs:
 Hardening notes:
     - Reference files and page inventory come from AppContext (config-driven),
       not hardcoded paths. Works for any app, not just SauceDemo.
-    - Post-processing dedup+cap on issues list — Gemini can produce
+    - Post-processing dedup+cap on issues list — LLMs can produce
       repetition loops on low-content PRs and `maxItems` can't be expressed
       in the structured-output schema.
 """
@@ -51,11 +51,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger("agent3_reviewer")
 
-# Cap on the number of issues we keep. Gemini sometimes enters a "repetition
-# loop" on low-content PRs and generates dozens of duplicate complaints.
+# Cap on the number of issues we keep. LLMs sometimes enter a "repetition
+# loop" on low-content PRs and generate dozens of duplicate complaints.
 # We cap and dedupe in post-processing rather than in the Pydantic schema
-# because Gemini's constrained-decoding can't handle maxItems on complex
-# nested arrays (it errors with "too many states for serving").
+# because some providers' constrained-decoding can't handle maxItems on
+# complex nested arrays.
 MAX_ISSUES = 10
 
 
@@ -305,7 +305,7 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
         output_schema=ReviewReport,
     )
 
-    # 3b. POST-PROCESS: dedupe and cap (handles Gemini repetition collapse)
+    # 3b. POST-PROCESS: dedupe and cap (handles LLM repetition collapse)
     report = dedupe_and_cap_issues(report, max_issues=MAX_ISSUES)
 
     logger.info(f"Review verdict: {report.overall_verdict}")

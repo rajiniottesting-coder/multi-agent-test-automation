@@ -267,8 +267,9 @@ For ad-hoc human branches without a key (e.g., `feature/foo`): Agent 5 detects t
 | `JIRA_EMAIL` | yes | Same | Your Jira account email |
 | `JIRA_API_TOKEN` | yes | Same | Create at id.atlassian.com → Security → API tokens |
 | `JIRA_PROJECT_KEY` | yes | Same | e.g., `SCRUM`, `PROJ` |
-| `GOOGLE_API_KEY` | yes | All agents (Gemini) | aistudio.google.com/apikey |
-| `GEMINI_MODEL` | no | Same | Defaults to `gemini-2.5-flash`. Try `-flash-lite` for separate quota |
+| `OPENAI_API_KEY` | yes | All agents (LLM) | Your LLM provider's API key |
+| `OPENAI_API_BASE` | yes | Same | Base URL of your OpenAI-compatible API endpoint |
+| `LLM_MODEL` | no | Same | Defaults to `claude-opus-4-6`. Set to your model name |
 | `GITHUB_TOKEN` | yes | Agents 2, 3 | PAT with `repo` scope |
 | `GITHUB_REPO` | yes | Same | `<owner>/<repo>` format |
 | `BASE_URL` | no | Tests at runtime | Override `config.yaml`'s base_url |
@@ -436,12 +437,12 @@ You forgot to fill in `.env` (or in CI, set the secret). Fix by copying `.env.ex
 
 Same as above but raised by `JiraClient` directly. Means the env-var validation didn't run before the agent reached `JiraClient`. Should not happen with the refactored code, but can if you call `JiraClient()` directly without going through `main()`.
 
-### `QuotaExhaustedError: Gemini API quota exhausted...`
+### `QuotaExhaustedError: LLM API rate limit / quota exhausted...`
 
-Free Gemini is 20 requests/day per model. Options:
-1. Wait ~24h for quota reset
-2. Switch `GEMINI_MODEL` in `.env` to a different model (e.g., `gemini-2.5-flash-lite` has its own separate quota)
-3. Enable billing at aistudio.google.com/apikey for higher limits
+Your LLM provider's rate limit or quota has been reached. Options:
+1. Wait for the rate limit to reset
+2. Switch `LLM_MODEL` in `.env` to a different model
+3. Check your API plan limits with your provider
 
 ### Jira `enhanced_search_issues` not found
 
