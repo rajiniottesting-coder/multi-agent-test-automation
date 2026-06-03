@@ -411,7 +411,14 @@ class TestEmptyQuotedValues:
             @when(parsers.parse('I log in with username "{u}" and password "{p}"'))
             def s1(u, p): pass
         """).strip())
-        errors = validate_step_definitions_complete([feature, step_def])
+        # Pass a non-existent project_root so the validator skips the
+        # on-disk step-def scan. Otherwise tests/step_defs/*.py on disk
+        # might contain a matching parsers.re decorator that pools into
+        # the available decorators and masks the in-batch issue. This
+        # keeps the test isolated to the in-memory batch.
+        errors = validate_step_definitions_complete(
+            [feature, step_def], project_root=Path("/nonexistent_project_root")
+        )
 
         # The `parse` library fixed empty quoted value matching in v1.22.1+.
         # Probe the actual runtime behavior so this test is resilient to
@@ -447,7 +454,10 @@ class TestEmptyQuotedValues:
             @when(parsers.re(r'I log in with username "(?P<u>[^"]*)" and password "(?P<p>[^"]*)"'))
             def s1(u, p): pass
         """).strip())
-        assert validate_step_definitions_complete([feature, step_def]) == []
+        # Same isolation as above — don't let on-disk files affect this test.
+        assert validate_step_definitions_complete(
+            [feature, step_def], project_root=Path("/nonexistent_project_root")
+        ) == []
 
 
 # =============================================================================
