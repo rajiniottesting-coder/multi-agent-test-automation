@@ -24,8 +24,10 @@ Token Cap:
   then get truncated mid-field — which fails Pydantic validation
   downstream.
 """
+import json
 import os
 import logging
+import re
 from typing import Type, TypeVar
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -66,6 +68,40 @@ def _is_quota_error(exc: Exception) -> bool:
     """Detect rate-limit / quota errors (HTTP 429 or provider-specific)."""
     msg = str(exc).lower()
     return "429" in msg or "rate" in msg or "quota" in msg or "resource_exhausted" in msg
+
+
+def _strip_markdown_fences(text: str) -> str:
+    """Remove markdown code fences (```json ... ```) if the model wrapped its output.
+
+    Models frequently wrap JSON output in markdown fences even when told
+    not to. This strips them so json.loads / Pydantic can parse the content.
+    """
+    stripped = text.strip()
+    match = re.match(r"^```(?:json|JSON)?\s*\n?(.*?)\n?\s*```$", stripped, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return stripped
+
+
+def _extract_json_object(text: str) -> str:
+    """Extract a JSON object from text that may contain preamble/postamble.
+
+    The model might return:
+        'Here is the JSON:\\n{"key": "val"}\\nLet me know if ...'
+    We find the outermost { ... } and return just that.
+    Falls back to the cleaned text if no braces found.
+    """
+    cleaned = _strip_markdown_fences(text)
+
+    # Find the first { and the last matching }
+    start = cleaned.find("{")
+    if start != -1:
+        end = cleaned.rfind("}")
+        if end != -1 and end > start:
+            return cleaned[start:end + 1]
+
+    # Fallback: return cleaned text and let Pydantic report the parse error
+    return cleaned
 
 
 class QuotaExhaustedError(RuntimeError):
@@ -125,31 +161,63 @@ class LLMClient:
         """
         Call the LLM and parse output into the given Pydantic schema.
 
-        Uses LangChain's with_structured_output() which auto-selects the best
-        method for the provider (function calling, JSON mode, etc.). The output
-        is validated against the Pydantic schema.
+        Injects the full JSON schema into the prompt so the model sees the
+        exact field names, types, and nesting it must produce. Parses the
+        raw JSON response with Pydantic directly — no reliance on provider-
+        specific tool-calling or response_format features.
+
+        This approach is provider-agnostic and works with any OpenAI-
+        compatible endpoint regardless of structured output support.
 
         Raises:
             QuotaExhaustedError: if API rate limit / quota is hit
-            ValueError: if LLM returns None despite quota being fine
+            ValueError: if LLM returns empty or unparseable output
         """
-        structured_llm = self.llm.with_structured_output(output_schema)
+        # Generate the JSON schema from the Pydantic model so the LLM sees
+        # the exact field names, types, nesting, and descriptions.
+        schema_dict = output_schema.model_json_schema()
+        schema_json = json.dumps(schema_dict, indent=2)
+
+        # Append an explicit instruction + schema to the user prompt.
+        augmented_prompt = (
+            f"{user_prompt}\n\n"
+            f"─── OUTPUT FORMAT (MANDATORY) ───\n"
+            f"You MUST respond with ONLY a single valid JSON object (not a JSON array, "
+            f"not markdown, not explanation text) that conforms to this JSON schema:\n\n"
+            f"{schema_json}\n\n"
+            f"Return ONLY the raw JSON object. No markdown fencing, no commentary."
+        )
 
         messages = [
             SystemMessage(content=system_prompt),
-            HumanMessage(content=user_prompt),
+            HumanMessage(content=augmented_prompt),
         ]
 
         logger.info(f"Calling LLM (model={self.model_name}, schema={output_schema.__name__})...")
-        result = self._call_with_quota_check(structured_llm.invoke, messages)
+        response = self._call_with_quota_check(self.llm.invoke, messages)
 
-        if result is None:
+        raw_content = response.content or ""
+        if not raw_content.strip():
             raise ValueError(
-                f"LLM returned None — could not produce valid {output_schema.__name__}. "
-                f"This typically means: (1) a safety filter blocked the response, "
-                f"(2) the model does not support the requested output format, or "
-                f"(3) the schema contains features the model cannot handle."
+                f"LLM returned empty content — could not produce {output_schema.__name__}. "
+                f"This typically means a safety filter blocked the response."
             )
+
+        # Extract JSON from response (handles markdown fences, preamble, etc.)
+        json_str = _extract_json_object(raw_content)
+
+        try:
+            result = output_schema.model_validate_json(json_str)
+        except Exception as e:
+            # Log the raw content for debugging, then raise a clear error
+            logger.error(
+                "Failed to parse LLM output as %s. Raw content (first 1000 chars): %s",
+                output_schema.__name__,
+                raw_content[:1000],
+            )
+            raise ValueError(
+                f"LLM returned invalid JSON for {output_schema.__name__}: {e}"
+            ) from e
 
         logger.info(f"LLM returned {type(result).__name__} successfully")
         return result

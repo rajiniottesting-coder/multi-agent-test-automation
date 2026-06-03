@@ -122,9 +122,17 @@ class JiraClient:
         """Create a 'Test Case' issue in Jira, linked to the parent story."""
         description = self._format_test_case_description(test_case)
 
+        # Build summary with [test_type] prefix, but avoid duplication if
+        # the LLM already included the prefix in the title.
+        prefix = f"[{test_case.test_type}]"
+        if test_case.title.startswith(prefix):
+            summary = test_case.title
+        else:
+            summary = f"{prefix} {test_case.title}"
+
         issue_dict = {
             "project": {"key": self.project_key},
-            "summary": f"[{test_case.test_type}] {test_case.title}",
+            "summary": summary,
             "description": description,
             "issuetype": {"name": "Test Case"},
         }

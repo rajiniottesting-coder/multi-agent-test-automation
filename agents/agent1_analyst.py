@@ -124,7 +124,9 @@ def run(story_id: str, dry_run: bool = False) -> dict:
 
     logger.info(f"LLM generated {len(test_case_list.test_cases)} test cases:")
     for i, tc in enumerate(test_case_list.test_cases, 1):
-        logger.info(f"  {i}. [{tc.test_type}] {tc.title}")
+        prefix = f"[{tc.test_type}]"
+        label = tc.title if tc.title.startswith(prefix) else f"{prefix} {tc.title}"
+        logger.info(f"  {i}. {label}")
 
     # 3. ACT: create Jira tickets (unless dry-run)
     created_keys = []
