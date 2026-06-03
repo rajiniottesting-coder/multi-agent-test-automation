@@ -412,8 +412,29 @@ class TestEmptyQuotedValues:
             def s1(u, p): pass
         """).strip())
         errors = validate_step_definitions_complete([feature, step_def])
-        assert len(errors) == 1
-        assert "parsers.re" in errors[0], "Error must hint parsers.re as the fix"
+
+        # The `parse` library fixed empty quoted value matching in v1.22.1+.
+        # Probe the actual runtime behavior so this test is resilient to
+        # whatever parse version is installed (no version pinning required).
+        from parse import parse as _parse_fn
+        probe = _parse_fn(
+            'I log in with username "{u}" and password "{p}"',
+            'I log in with username "" and password "secret"',
+        )
+        if probe is None:
+            # Old parse behavior (< 1.22.1): empty "" doesn't match at
+            # runtime → validator MUST flag this with a parsers.re hint.
+            assert len(errors) == 1
+            assert "parsers.re" in errors[0], (
+                "Error must hint parsers.re as the fix"
+            )
+        else:
+            # New parse behavior (>= 1.22.1): empty "" matches correctly
+            # at runtime → validator should report no errors.
+            assert errors == [], (
+                f"parse library matches empty quoted values in this "
+                f"version, so validator should report 0 errors, got: {errors}"
+            )
 
     def test_parsers_re_with_empty_pattern_passes(self):
         feature = gf("features/x.feature", textwrap.dedent("""
