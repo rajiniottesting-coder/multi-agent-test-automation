@@ -19,9 +19,13 @@
         "username_input": "[data-test='username']",
         "password_input": "[data-test='password']",
         "login_button": "[data-test='login-button']",
-        "error_message": "[data-test='error']"
+        "error_message": "[data-test='error']",
+        "error_close_button": "[data-test='error-button']"
       },
-      "key_methods": ["open()", "login_as(username, password)", "get_error_message()"]
+      "elements_notes": {
+        "error_message_vs_close_button": "IMPORTANT: [data-test='error'] is the <h3> element that holds the error text. The close (X) button is a SIBLING element, not a child. Do NOT write [data-test='error'] button or .locator('button') under the error message — that will not find anything. Use [data-test='error-button'] directly."
+      },
+      "key_methods": ["open()", "login_as(username, password)", "get_error_message()", "dismiss_error()"]
     },
 
     "inventory": {

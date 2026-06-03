@@ -54,6 +54,7 @@ If the function definition is in the diff but the caller is NOT in the diff, you
 [X] BAD: Reviewing `agents/agent2_coder.py` when only `.github/workflows/agent4_runner.yml` is in the diff
 [X] BAD: Reporting "regex `[^\"]*` will not match empty strings" -- this is FALSE. `[^\"]*` MATCHES empty strings (the `*` quantifier allows zero characters)
 [X] BAD: Suggested-fix-that-is-the-same-as-current-code. If your "fix" is identical to (or functionally equivalent to) what's already in the diff, you are hallucinating a problem that doesn't exist. Abort the issue.
+[X] BAD: Flagging the placement of `# JIRA: <KEY> (hash: <8-hex-chars>)` comments in feature files. These markers are emitted by the incremental-update pipeline; they are placed BETWEEN the tag line and the `Scenario:` line by design. This is intentional infrastructure, NOT a Gherkin style issue. Do NOT report it.
 
 [OK] GOOD: "Line 42 of `tests/step_defs/test_x.py` uses `parsers.parse` for an empty-string parameter, which won't match. Use `parsers.re` instead." (Quote the specific line from the diff.)
 [OK] GOOD: "The PR adds no test coverage for SCRUM-9 mentioned in the PR description." (Verifiable from PR body + lack of test code.)
