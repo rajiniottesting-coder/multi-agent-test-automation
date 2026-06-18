@@ -46,6 +46,10 @@ on:
         required: false
         type: boolean
         default: false
+      sprint:
+        description: "Optional: sprint name to scan (e.g. 'Sprint 10'). Leave blank to use config.yaml value. Use 'openSprints' for the currently active sprint."
+        required: false
+        default: ""
   schedule:
     # Every 15 minutes, Mon-Fri 9:00-18:00 UTC. Aligned with Agent 1's
     # cron so the two agents process the same story within roughly the
@@ -146,10 +150,17 @@ jobs:
             DRY_RUN_FLAG="--dry-run"
           fi
 
+          # Build optional --sprint flag. Only used in scan mode.
+          # Cron runs never have inputs, so this is always blank on schedule trigger.
+          SPRINT_FLAG=""
+          if [ -n "${{ github.event.inputs.sprint }}" ]; then
+            SPRINT_FLAG="--sprint ${{ github.event.inputs.sprint }}"
+          fi
+
           if [ -n "${{ github.event.inputs.story_key }}" ]; then
             echo "Mode: single story (${{ github.event.inputs.story_key }})"
             python -m agents.agent2_coder --story "${{ github.event.inputs.story_key }}" $DRY_RUN_FLAG
           else
             echo "Mode: scan (process all stories matching config.yaml selection)"
-            python -m agents.agent2_coder --scan $DRY_RUN_FLAG
+            python -m agents.agent2_coder --scan $DRY_RUN_FLAG $SPRINT_FLAG
           fi

@@ -64,7 +64,12 @@ class JiraClient:
             "labels": list(issue.fields.labels),
         }
 
-    def find_stories_to_process(self, selection_config: dict, max_results: int = 50) -> list[dict]:
+    def find_stories_to_process(
+        self,
+        selection_config: dict,
+        max_results: int = 50,
+        sprint_override: str | None = None,
+    ) -> list[dict]:
         """
         Find stories matching ALL criteria in selection_config.
 
@@ -74,7 +79,19 @@ class JiraClient:
                 "allowed_statuses": ["To Do", "In Progress"],
                 "required_labels": ["ai-ready"],
                 "excluded_labels": ["ai-processed", "ai-skip"],
+                "sprint": "Sprint 10",   # optional — scope to one sprint
             }
+
+        sprint_override: when provided, takes precedence over the "sprint"
+            key in selection_config. Used by the --sprint CLI flag so you
+            can change the active sprint without editing config.yaml.
+
+        Sprint JQL notes:
+            - Accepts the sprint NAME (e.g. "Sprint 10") or numeric sprint ID.
+            - Use the special value "openSprints" to always target the currently
+              active sprint — useful when you don't want to update config.yaml
+              at every sprint boundary.
+            - Omitting the key entirely keeps the old behaviour: all sprints.
         """
         jql_parts = [f'project = {self.project_key}']
 
@@ -94,6 +111,18 @@ class JiraClient:
         # Excluded labels (none may be present — AND NOT)
         for label in selection_config.get("excluded_labels", []):
             jql_parts.append(f'labels != "{label}"')
+
+        # Sprint scoping — priority: CLI override > config value > no filter.
+        # When absent the query spans all sprints (backward-compatible).
+        effective_sprint = sprint_override or selection_config.get("sprint")
+        if effective_sprint:
+            if effective_sprint.lower() == "opensprints":
+                jql_parts.append("sprint in openSprints()")
+            else:
+                jql_parts.append(f'sprint = "{effective_sprint}"')
+            logger.info(f"Sprint filter active: {effective_sprint!r}")
+        else:
+            logger.debug("No sprint filter — scanning across all sprints.")
 
         jql = " AND ".join(jql_parts)
         logger.info(f"Searching Jira with JQL: {jql}")

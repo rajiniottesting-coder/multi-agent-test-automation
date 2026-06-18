@@ -2395,6 +2395,19 @@ def main():
                         help="Treat --story as an INCREMENTAL UPDATE: splice "
                              "only modified/new scenarios, leave others untouched. "
                              "Requires existing JIRA markers in the feature file.")
+    parser.add_argument(
+        "--sprint",
+        default=None,
+        metavar="SPRINT",
+        help=(
+            "Override the sprint filter for this scan run only. "
+            "Accepts a sprint name (e.g. 'Sprint 10'), a numeric sprint ID, "
+            "or 'openSprints' for the currently active sprint. "
+            "Overrides the 'sprint' key in config.yaml. "
+            "Applied to all three scan passes (normal, regen, update). "
+            "Ignored when --story is used."
+        ),
+    )
     args = parser.parse_args()
 
     # Fast-fail on missing config — much clearer than a 401 deep in a tool call
@@ -2431,15 +2444,30 @@ def main():
             )
             sys.exit(1)
 
+        # Log the effective sprint so it's visible in CI logs
+        effective_sprint = args.sprint or normal_selection.get("sprint")
+        if effective_sprint:
+            logger.info(
+                f"Sprint scope: {effective_sprint!r} "
+                f"(source: {'--sprint flag' if args.sprint else 'config.yaml'}) "
+                f"— applied to all three scan passes."
+            )
+        else:
+            logger.info("Sprint scope: ALL sprints (no sprint filter configured).")
+
         jira = JiraClient()
 
         logger.info("Scan pass 1/3: looking for first-time stories (normal mode)")
-        normal_stories = jira.find_stories_to_process(normal_selection, max_results=max_stories)
+        normal_stories = jira.find_stories_to_process(
+            normal_selection, max_results=max_stories, sprint_override=args.sprint
+        )
 
         regen_stories = []
         if regen_selection:
             logger.info("Scan pass 2/3: looking for stories with ai-regenerate label")
-            regen_stories = jira.find_stories_to_process(regen_selection, max_results=max_stories)
+            regen_stories = jira.find_stories_to_process(
+                regen_selection, max_results=max_stories, sprint_override=args.sprint
+            )
         else:
             logger.info(
                 "No 'regenerate_selection' config — skipping regen pass. "
@@ -2449,7 +2477,9 @@ def main():
         update_stories = []
         if update_selection:
             logger.info("Scan pass 3/3: looking for stories with ai-update label")
-            update_stories = jira.find_stories_to_process(update_selection, max_results=max_stories)
+            update_stories = jira.find_stories_to_process(
+                update_selection, max_results=max_stories, sprint_override=args.sprint
+            )
         else:
             logger.info(
                 "No 'update_selection' config — skipping update pass. "

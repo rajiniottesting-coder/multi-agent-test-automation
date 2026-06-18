@@ -214,6 +214,18 @@ def main():
         action="store_true",
         help="Don't create Jira tickets — just print what would happen",
     )
+    parser.add_argument(
+        "--sprint",
+        default=None,
+        metavar="SPRINT",
+        help=(
+            "Override the sprint filter for this run only. "
+            "Accepts a sprint name (e.g. 'Sprint 10'), a numeric sprint ID, "
+            "or 'openSprints' to target the currently active sprint. "
+            "Overrides the 'sprint' key in config.yaml. "
+            "Only applies in --scan mode; ignored with --story."
+        ),
+    )
     args = parser.parse_args()
 
     # Fast-fail on missing config
@@ -235,8 +247,22 @@ def main():
             logger.error("No 'selection' config found for agent1_analyst in config.yaml")
             sys.exit(1)
 
+        # Log the effective sprint so it's visible in CI logs
+        effective_sprint = args.sprint or selection.get("sprint")
+        if effective_sprint:
+            logger.info(
+                f"Sprint scope: {effective_sprint!r} "
+                f"(source: {'--sprint flag' if args.sprint else 'config.yaml'})"
+            )
+        else:
+            logger.info("Sprint scope: ALL sprints (no sprint filter configured)")
+
         jira = JiraClient()
-        stories = jira.find_stories_to_process(selection, max_results=max_stories)
+        stories = jira.find_stories_to_process(
+            selection,
+            max_results=max_stories,
+            sprint_override=args.sprint,
+        )
 
         if not stories:
             logger.info("No stories match selection criteria. Nothing to do.")

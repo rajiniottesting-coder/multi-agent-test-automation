@@ -93,6 +93,15 @@ agents:
       excluded_labels:
         - "ai-processed"   # idempotency marker
         - "ai-skip"        # human override / opt-out
+      # ── SPRINT SCOPING ──────────────────────────────────────────
+      # Update this value at the start of each sprint.
+      # Options:
+      #   sprint: "Sprint 10"    ← exact sprint name (most common)
+      #   sprint: "openSprints"  ← always targets the currently active sprint
+      #   sprint: "42"           ← numeric sprint ID (if names are not unique)
+      #   (omit key)             ← no sprint filter; scans across all sprints
+      # ─────────────────────────────────────────────────────────────
+      sprint: "Sprint 0"
     completion_label: "ai-processed"
     # ONE-SHOT TRIGGER CLEANUP: labels removed from the parent story after
     # Agent 1 successfully creates test cases. Keeps the label state clean —
@@ -133,6 +142,8 @@ agents:
         - "ai-skip"        # human override / opt-out
         - "ai-regenerate"  # belongs in regenerate_selection, not normal scan
         - "ai-update"      # belongs in update_selection, not normal scan
+      # Keep in sync with agent1_analyst.selection.sprint above.
+      sprint: "Sprint 0"
 
     regenerate_selection:
       issue_type: "Story"
@@ -146,6 +157,7 @@ agents:
       excluded_labels:
         - "ai-skip"
         - "ai-update"      # if both set, ai-regenerate wins (full regen)
+      sprint: "Sprint 0"
 
     # INCREMENTAL UPDATE (ai-update label):
     #   Surgical alternative to ai-regenerate. Only modified/new scenarios
@@ -165,6 +177,7 @@ agents:
       excluded_labels:
         - "ai-skip"
         - "ai-regenerate"  # exclusive — only one mode per scan
+      sprint: "Sprint 0"
 
     completion_label: "ai-coded"
     regenerate_label: "ai-regenerate"

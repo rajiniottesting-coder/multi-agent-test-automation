@@ -53,6 +53,10 @@ on:
         required: false
         type: boolean
         default: false
+      sprint:
+        description: "Optional: sprint name to scan (e.g. 'Sprint 10'). Leave blank to use config.yaml value. Use 'openSprints' for the currently active sprint."
+        required: false
+        default: ""
   schedule:
     # Every 15 minutes, Mon-Fri 9:00-18:00 UTC.
     # NOTE: GitHub Actions cron may be delayed up to 15 min during high
@@ -120,11 +124,18 @@ jobs:
             DRY_RUN_FLAG="--dry-run"
           fi
 
+          # Build optional --sprint flag. Only used in scan mode.
+          # Cron runs never have inputs, so this is always blank on schedule trigger.
+          SPRINT_FLAG=""
+          if [ -n "${{ github.event.inputs.sprint }}" ]; then
+            SPRINT_FLAG="--sprint ${{ github.event.inputs.sprint }}"
+          fi
+
           if [ -n "${{ github.event.inputs.story_key }}" ]; then
             echo "Mode: single story (${{ github.event.inputs.story_key }}) — manual trigger"
             python -m agents.agent1_analyst --story "${{ github.event.inputs.story_key }}" $DRY_RUN_FLAG
           else
             echo "Mode: scan (process up to max_stories_per_run from config.yaml)"
             echo "Trigger: ${{ github.event_name }}"
-            python -m agents.agent1_analyst --scan $DRY_RUN_FLAG
+            python -m agents.agent1_analyst --scan $DRY_RUN_FLAG $SPRINT_FLAG
           fi
