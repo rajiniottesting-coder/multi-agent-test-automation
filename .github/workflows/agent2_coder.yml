@@ -137,7 +137,7 @@ jobs:
           # That meant Agents 3/4/5 never triggered after Agent 2 opened a PR.
           # A PAT is treated as user-equivalent — its PR creation fires events
           # normally, restoring the cascade.
-          # See docs/ADR-008-pat-for-cascade.md for security trade-offs and
+          # See docs/DECISIONS.md (ADR-008) for security trade-offs and
           # rotation strategy. The PAT is scoped to this repo only with
           # Contents:R/W + PullRequests:R/W + Metadata:R.
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
