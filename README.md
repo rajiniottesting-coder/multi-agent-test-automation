@@ -10,15 +10,12 @@ A reusable framework where **5 specialized AI agents** collaborate to automate t
 
 | Doc | Purpose |
 |---|---|
-| **[docs/GUIDE.md](./docs/GUIDE.md)** | Architecture, agent deep-dives, configuration, branch naming, human-approval gates, onboarding a new app — **everything in one place** |
-| [docs/ARCHITECTURE_DIAGRAM.md](./docs/ARCHITECTURE_DIAGRAM.md) | Mermaid diagrams: pipeline flow, component view, Agent 2 sequence, label lifecycle |
-| [docs/APP_INVENTORY_SCHEMA.md](./docs/APP_INVENTORY_SCHEMA.md) | JSON schema for `app_inventory/<app>.json` |
-| [docs/ADR-008-pat_for_cascade.md](./docs/ADR-008-pat_for_cascade.md) | Architecture Decision Record: GitHub PAT for cross-workflow cascade |
-| [docs/ADR-009-deduplication.md](./docs/ADR-009-deduplication.md) | Architecture Decision Record: Agent 2 dedup engine |
-| [docs/STATE_MANAGEMENT.md](./docs/STATE_MANAGEMENT.md) | How the pipeline tracks progress: label state machine, JIRA markers, failure recovery |
-| [docs/AI_CONCEPTS.md](./docs/AI_CONCEPTS.md) | AI/LLM concepts used (and deliberately not used), guardrails analysis, demo Q&A |
-| [docs/LESSONS_LEARNED.md](./docs/LESSONS_LEARNED.md) | Failure catalog: every production LLM failure, root cause, and permanent fix |
-| [CHANGES.md](./CHANGES.md) | Refactor notes — what changed, why, how to adapt |
+| **[docs/GUIDE.md](./docs/GUIDE.md)** | Architecture (+ Mermaid diagrams), agent deep-dives, configuration, sprint scoping, branch naming, human-approval gates, state management, onboarding a new app — **everything in one place** |
+| [docs/AI_CONCEPTS.md](./docs/AI_CONCEPTS.md) | AI/LLM concepts used (and deliberately not used), guardrails analysis, demo Q&A, and the lessons-learned failure catalog |
+| [docs/DECISIONS.md](./docs/DECISIONS.md) | Architecture Decision Records (ADR-008 PAT cascade, ADR-009 dedup engine) |
+| [docs/REUSE_FOR_NEW_PROJECT.md](./docs/REUSE_FOR_NEW_PROJECT.md) | Checklist for pointing the framework at a new application, incl. the app-inventory JSON schema |
+| [docs/TECHNICAL_DEEP_DIVE.md](./docs/TECHNICAL_DEEP_DIVE.md) | Function-level walkthrough of every agent and mechanism |
+| [CHANGES.md](./CHANGES.md) | Changelog — what changed, why, how to adapt |
 
 ---
 
@@ -90,7 +87,7 @@ flowchart TB
 - Idempotency labels prevent re-processing the same story twice
 - All secrets stay in `.env` (never committed); placeholders live in `.env.example`
 
-For a deeper breakdown — including agent inputs/outputs, design rationale, and the human-approval gate semantics — see [GUIDE.md → Architecture](./docs/GUIDE.md#architecture). For more diagrams (component view, Agent 2 sequence, label state machine), see [ARCHITECTURE_DIAGRAM.md](./docs/ARCHITECTURE_DIAGRAM.md).
+For a deeper breakdown — including agent inputs/outputs, design rationale, and the human-approval gate semantics — see [GUIDE.md → Architecture](./docs/GUIDE.md#architecture). For more diagrams (component view, Agent 2 sequence, label state machine), see [GUIDE.md → Architecture diagrams](./docs/GUIDE.md#architecture-diagrams).
 
 ---
 
@@ -256,7 +253,7 @@ For the full lifecycle including approval gates, see [GUIDE.md → Running the p
 The whole point of the recent refactor: **no Python code changes** are needed to point this at a new app. The high-level steps:
 
 1. Edit `config/config.yaml` — update the `app_under_test` block (name, base URL, reference files, reserved paths)
-2. Drop a new `app_inventory/<your-app>.json` describing pages and selectors ([schema reference](./docs/APP_INVENTORY_SCHEMA.md))
+2. Drop a new `app_inventory/<your-app>.json` describing pages and selectors ([schema reference](./docs/REUSE_FOR_NEW_PROJECT.md#app-inventory-json-schema))
 3. Replace `prompts/app_context.md` with your app's known users, error messages, page flow
 4. Replace the reference files (`features/login.feature`, `tests/step_defs/test_login.py`, `pages/login_page.py`) with one well-written human-authored test for your app — the LLM uses these as its style baseline
 

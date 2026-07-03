@@ -4,6 +4,41 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## July 2026 — Documentation consolidation (11 → 7 files) + stale reference cleanup
+
+### Why
+
+Doc count had grown to 11 standalone markdown files with overlapping scope,
+and several still referenced `test_inventory.py` (renamed to
+`gherkin_analyzer.py` in June).
+
+### Consolidation map
+
+| Merged file | Now lives in |
+|---|---|
+| docs/ARCHITECTURE_DIAGRAM.md | docs/GUIDE.md → "Architecture diagrams" |
+| docs/STATE_MANAGEMENT.md | docs/GUIDE.md → "State management deep-dive" |
+| docs/LESSONS_LEARNED.md | docs/AI_CONCEPTS.md → "Lessons learned" |
+| docs/APP_INVENTORY_SCHEMA.md | REUSE_FOR_NEW_PROJECT.md → "App inventory JSON schema" |
+| docs/ADR-008-pat_for_cascade.md | docs/DECISIONS.md (ADR content unchanged) |
+| docs/ADR-009-deduplication.md | docs/DECISIONS.md (module refs updated) |
+
+Final doc set (7): README.md and CHANGES.md at root; docs/GUIDE.md,
+docs/AI_CONCEPTS.md, docs/DECISIONS.md, docs/REUSE_FOR_NEW_PROJECT.md,
+docs/TECHNICAL_DEEP_DIVE.md.
+
+### Also in this release
+
+- Fixed all remaining `test_inventory.py` references in markdown
+  (CHANGES, TECHNICAL_DEEP_DIVE, ADR-009 content).
+- Updated pointers in code/config that referenced merged docs:
+  `agents/app_context.py` error message, `config/config.yaml` comment,
+  `.github/workflows/agent2_coder.yml` comment, README doc index,
+  GUIDE internal links.
+- No behavior change; all 96 unit tests pass.
+
+---
+
 ## June 2026 — Dynamic sprint scoping, module rename, documentation refresh
 
 ### 1. Dynamic sprint scoping (`sprint: "auto"`)
@@ -38,11 +73,11 @@ rename note rather than rewritten history.
 
 ### 3. New documentation
 
-- `docs/STATE_MANAGEMENT.md` — how the pipeline tracks progress (label state
+- `docs/STATE_MANAGEMENT.md` (since merged into docs/GUIDE.md, July 2026) — how the pipeline tracks progress (label state
   machine, sticky vs one-shot labels, JIRA hash markers, failure recovery).
 - `docs/AI_CONCEPTS.md` — which AI concepts are used and deliberately not
   used, the guardrails analysis, and a demo Q&A.
-- `docs/LESSONS_LEARNED.md` — the failure catalog: all 14 production LLM
+- `docs/LESSONS_LEARNED.md` (since merged into docs/AI_CONCEPTS.md, July 2026) — the failure catalog: all 14 production LLM
   failure modes, root causes, and where each permanent fix lives.
 
 ---
@@ -430,7 +465,7 @@ When adding `app_under_test:` for a new app:
 - ✅ Empty `orchestrator/` folder and `dry_run_output.txt` removed
 - ✅ All agents now fast-fail on missing env vars at startup
 - ✅ Silent error swallowing in `JiraClient._link_to_story` replaced with loud, re-raised errors
-- ✅ New `docs/APP_INVENTORY_SCHEMA.md` documents the page-inventory JSON shape
+- ✅ New `docs/APP_INVENTORY_SCHEMA.md` documents the page-inventory JSON shape *(since merged into REUSE_FOR_NEW_PROJECT.md, July 2026)*
 - ✅ Zero unit-test regressions: 90/90 runnable tests pass identically before and after
 
 ## Files added
@@ -440,7 +475,7 @@ When adding `app_under_test:` for a new app:
 | `agents/app_context.py` | New module — central loader for `app_under_test` config. Exposes `AppContext.load()` with helpers for reference files, page inventory, reserved paths. |
 | `prompts/app_context.md` | App-specific context block (test users, error messages, page flow). Injected into Agent 1's prompt at runtime. The single file to edit when onboarding a new app's analyst guidance. |
 | `docs/GUIDE.md` | Consolidated guide — replaces ARCHITECTURE.md + BRANCH_NAMING.md + CONFIGURATION.md + HUMAN_APPROVAL_GATE.md. |
-| `docs/APP_INVENTORY_SCHEMA.md` | Documents the JSON shape of `app_inventory/<app>.json`. |
+| `docs/APP_INVENTORY_SCHEMA.md` *(merged into REUSE_FOR_NEW_PROJECT.md, July 2026)* | Documents the JSON shape of `app_inventory/<app>.json`. |
 | `CHANGES.md` | This file. |
 
 ## Files modified
@@ -565,7 +600,7 @@ Rewritten. The previous README claimed features that did not exist (e.g., LangGr
 - `config/__init__.py`, `config/paths.py` — already app-agnostic.
 - All test files in `tests/unit/` — all 90 runnable tests pass identically before and after the refactor.
 - All workflow files in `.github/workflows/` — they delegate to Python modules, no SauceDemo references.
-- `app_inventory/saucedemo.json` — kept as the canonical example (now also documented in `docs/APP_INVENTORY_SCHEMA.md`).
+- `app_inventory/saucedemo.json` — kept as the canonical example (schema now documented in REUSE_FOR_NEW_PROJECT.md).
 - All ADRs in `docs/` — historical decision records, retained.
 
 ## Verification
@@ -592,7 +627,7 @@ That's it.
 
 ## What's intentionally NOT included in this refactor
 
-- **Splitting `test_inventory.py`** into multiple modules. Considered; deferred. The file is well-organized internally and changing imports across the codebase risks breaking tests for no reusability gain.
+- **Splitting `gherkin_analyzer.py` (then named test_inventory.py)** into multiple modules. Considered; deferred. The file is well-organized internally and changing imports across the codebase risks breaking tests for no reusability gain.
 - **LangGraph orchestration.** The empty `orchestrator/` folder was removed. Workflows currently orchestrate via GitHub Actions, which works fine for the current scope. LangGraph wiring can be added later as a real implementation, not a placeholder folder.
 - **End-to-end smoke test of the refactor.** Requires real Jira + Gemini + GitHub credentials. Verification in this refactor is via unit tests + import smoke checks. The next session is the right place for an E2E run with a fresh Jira story.
 

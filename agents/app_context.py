@@ -205,7 +205,7 @@ class AppContext:
             raise FileNotFoundError(
                 f"Page inventory file not found at {path}. "
                 f"Configured under app_under_test.inventory_file in "
-                f"config.yaml. See docs/APP_INVENTORY_SCHEMA.md for the "
+                f"config.yaml. See docs/REUSE_FOR_NEW_PROJECT.md (App inventory JSON schema) for the "
                 f"required JSON shape."
             )
         return path.read_text(encoding="utf-8")

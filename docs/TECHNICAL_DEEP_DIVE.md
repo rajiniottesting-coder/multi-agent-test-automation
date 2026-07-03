@@ -53,7 +53,7 @@ agents/
   jira_client.py                    289 lines  ← jira-python wrapper
   llm_client.py                     270 lines  ← google-genai wrapper
   schemas.py                        249 lines  ← All Pydantic models
-  test_inventory.py                1136 lines  ← Feature/step matching primitives
+  gherkin_analyzer.py              1136 lines  ← Feature/step matching primitives (renamed from test_inventory.py)
   orphan_cleanup.py                 593 lines  ← Dead-code detection (NEW)
   import_validator.py               273 lines
   method_resolution_validator.py    578 lines
@@ -299,7 +299,7 @@ Raises `ValueError` with explicit guidance if Gemini hallucinates "let me rewrit
 
 #### `_build_sibling_page_object_context(target_file, already_generated)` (line 519)
 
-Critical for cross-file consistency. When generating `test_inventory.py` (a step def file), the page object `inventory_page.py` has typically already been generated in the same run. This function:
+Critical for cross-file consistency. When generating a step-def file (e.g. `tests/step_defs/test_product_sorting.py`), the page object `inventory_page.py` has typically already been generated in the same run. This function:
 
 1. Walks `already_generated` for files matching `pages/*.py`
 2. `ast.parse()` each one
@@ -1085,9 +1085,9 @@ All validators run in `_validate_generated_files()` (line 1003) before the PR op
 
 | Validator | File | Catches |
 |---|---|---|
-| `validate_filename_consistency` | test_inventory.py:331 | Kebab-vs-snake_case feature/step_def filename mismatch |
-| `validate_feature_file_structure` | test_inventory.py:752 | Orphan Given/When/Then outside any Scenario block |
-| `validate_step_definitions_complete` | test_inventory.py:857 | Every feature step has a matching `@given/@when/@then` decorator (cross-file aware) |
+| `validate_filename_consistency` | gherkin_analyzer.py:331 | Kebab-vs-snake_case feature/step_def filename mismatch |
+| `validate_feature_file_structure` | gherkin_analyzer.py:752 | Orphan Given/When/Then outside any Scenario block |
+| `validate_step_definitions_complete` | gherkin_analyzer.py:857 | Every feature step has a matching `@given/@when/@then` decorator (cross-file aware) |
 | `validate_paths_against_policy` | agent2_coder.py:357 | Reserved path overwrite, extendable misclassification |
 | `validate_imports_resolvable` | import_validator.py | `from pages.X import Y` where X or Y doesn't exist |
 | `validate_method_calls_resolvable` | method_resolution_validator.py | `page.foo()` where page object class has no `foo` method |

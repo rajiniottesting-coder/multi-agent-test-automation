@@ -47,7 +47,7 @@ flowchart TB
     class H1,H2 human
 ```
 
-For more diagrams — component view, Agent 2 sequence, and the labels-as-state-machine — see [ARCHITECTURE_DIAGRAM.md](./ARCHITECTURE_DIAGRAM.md).
+For more diagrams — component view, Agent 2 sequence, and the labels-as-state-machine — see the "Architecture diagrams" section at the end of this guide.
 
 ### Key principles
 
@@ -98,7 +98,7 @@ Asking the LLM for both structure AND large code bodies in one call has high fai
 **Defensive features:**
 - **Reserved paths guard.** Reads `app_under_test.reserved_paths` from config. If the LLM plans to overwrite a reserved file, the run aborts. Prevents the LLM from clobbering your reference test.
 - **Branch-name validator.** Every branch must contain a Jira key (so Agent 5 can map back). Validated before pushing.
-- **Filename consistency.** If the LLM generates `features/login-validation.feature` but writes `feature_path("login_validation")` (snake/kebab mismatch), Agent 2 auto-corrects (logs the fix) or fails loudly if the correction is ambiguous. See [ADR-009](./ADR-009-deduplication.md) for details.
+- **Filename consistency.** If the LLM generates `features/login-validation.feature` but writes `feature_path("login_validation")` (snake/kebab mismatch), Agent 2 auto-corrects (logs the fix) or fails loudly if the correction is ambiguous. See [DECISIONS.md → ADR-009](./DECISIONS.md) for details.
 - **Step-def coverage.** Pairs each generated `.feature` with its `tests/step_defs/test_*.py` and verifies every Gherkin step has a matching `@given/@when/@then`. Hard-fails if any step is uncovered.
 
 **Regeneration mode:**
@@ -372,7 +372,7 @@ Selection rules come from `config.yaml`'s `agents.<name>.selection` block.
 
 ### CI cascade
 
-Once you merge the PAT cascade setup (see [ADR-008](./ADR-008-pat_for_cascade.md)), pushing a `human-approved` label to a story can auto-trigger Agent 2 in CI. Otherwise, you trigger Agent 2 manually via "Run workflow" on the Actions tab.
+Once you merge the PAT cascade setup (see [DECISIONS.md → ADR-008](./DECISIONS.md)), pushing a `human-approved` label to a story can auto-trigger Agent 2 in CI. Otherwise, you trigger Agent 2 manually via "Run workflow" on the Actions tab.
 
 ---
 
@@ -401,7 +401,7 @@ app_under_test:
 
 ### Step 2: Create `app_inventory/myshop.json`
 
-Describes the pages, selectors, and methods of your app. Use `app_inventory/saucedemo.json` as the example. The schema is documented in [APP_INVENTORY_SCHEMA.md](./APP_INVENTORY_SCHEMA.md).
+Describes the pages, selectors, and methods of your app. Use `app_inventory/saucedemo.json` as the example. The schema is documented in [REUSE_FOR_NEW_PROJECT.md → App inventory JSON schema](./REUSE_FOR_NEW_PROJECT.md).
 
 ### Step 3: Replace `prompts/app_context.md`
 
@@ -495,3 +495,336 @@ Gemini's structured-output mode failed. Two common causes:
 2. The Pydantic schema has a feature Gemini can't compile (e.g., regex pattern, complex `maxItems`)
 
 Check the schema for any constraints beyond the basics (Literal, default, min_length on lists). Per `agents/schemas.py` notes, avoid `max_length` on lists of complex objects.
+
+---
+
+## Architecture diagrams
+
+This file renders natively on GitHub when viewed in the browser. The Mermaid source is also valuable on its own — paste it into [mermaid.live](https://mermaid.live) to edit.
+
+### Pipeline overview
+
+```mermaid
+flowchart TB
+    subgraph JIRA["🎫 Jira Cloud"]
+        Story["📋 Story<br/>label: ai-ready"]
+        TC["📝 Test Cases<br/>(linked issues)"]
+    end
+
+    subgraph PIPELINE["🔄 Pipeline"]
+        A1["🤖 Agent 1: Analyst<br/>agent1_analyst.py"]
+        H1{{"🛑 Human Gate<br/>label: human-approved"}}
+        A2["🤖 Agent 2: Coder<br/>agent2_coder.py"]
+        PR["🔀 GitHub PR<br/>auto/KEY-feature-name"]
+        A3["🤖 Agent 3: Reviewer<br/>agent3_reviewer.py"]
+        H2{{"🛑 Human Gate<br/>PR review + merge"}}
+        A4["🤖 Agent 4: Runner<br/>agent4_runner.yml"]
+        A5["🤖 Agent 5: Reporter<br/>agent5_reporter.py"]
+    end
+
+    subgraph LLM["🧠 LLM"]
+        Gemini["Google Gemini 2.5 Flash<br/>+ Pydantic structured output"]
+    end
+
+    Story -->|"reads requirement"| A1
+    A1 -->|"creates 5–8 issues"| TC
+    A1 -->|"label: ai-processed"| Story
+    TC --> H1
+    H1 -->|"approved"| A2
+    A2 -->|"generates code,<br/>opens PR"| PR
+    A2 -->|"label: ai-coded"| Story
+    PR --> A3
+    A3 -->|"posts review<br/>comment"| PR
+    PR --> H2
+    H2 -->|"merged"| A4
+    A4 -->|"junit.xml +<br/>HTML report"| A5
+    A5 -->|"summary comment +<br/>label: tests-run"| Story
+
+    A1 <-.->|"prompt +<br/>structured output"| Gemini
+    A2 <-.->|"plan + per-file<br/>generation"| Gemini
+    A3 <-.->|"review prompt"| Gemini
+    A5 <-.->|"summary prompt"| Gemini
+
+    classDef agent fill:#4a90e2,stroke:#2c5aa0,color:#fff
+    classDef human fill:#f5a623,stroke:#b07415,color:#fff
+    classDef jira fill:#0052cc,stroke:#003d99,color:#fff
+    classDef llm fill:#34a853,stroke:#1e7733,color:#fff
+    classDef artifact fill:#9b9b9b,stroke:#666,color:#fff
+
+    class A1,A2,A3,A4,A5 agent
+    class H1,H2 human
+    class Story,TC jira
+    class Gemini llm
+    class PR artifact
+```
+
+### Component view
+
+```mermaid
+flowchart LR
+    subgraph CFG["⚙️ Configuration Layer"]
+        CY["config.yaml<br/>app_under_test, agents, browser"]
+        ENV[".env<br/>secrets"]
+        AC["AppContext<br/>app_context.py"]
+        CY --> AC
+        ENV --> AC
+    end
+
+    subgraph DATA["📦 Data Layer"]
+        INV["app_inventory/<app>.json<br/>pages, selectors, methods"]
+        REF["features/<ref>.feature<br/>tests/step_defs/test_<ref>.py<br/>pages/<ref>_page.py"]
+        ACMD["prompts/app_context.md<br/>app-specific analyst guidance"]
+    end
+
+    subgraph PROMPTS["📝 Prompts Layer<br/>(app-agnostic + placeholders)"]
+        P1["agent1_analyst.md"]
+        P2P["agent2_coder_plan.md"]
+        P2G["agent2_coder_generate.md"]
+        P3["agent3_reviewer.md"]
+        P5["agent5_reporter.md"]
+    end
+
+    subgraph AGENTS["🤖 Agents Layer<br/>(app-agnostic)"]
+        AG1["agent1_analyst.py"]
+        AG2["agent2_coder.py"]
+        AG3["agent3_reviewer.py"]
+        AG5["agent5_reporter.py"]
+    end
+
+    subgraph CLIENTS["🔌 External Adapters"]
+        JC["jira_client.py<br/>Jira API"]
+        GC["github_client.py<br/>GitHub API"]
+        LC["llm_client.py<br/>Gemini + retry/quota"]
+    end
+
+    AC --> AG1
+    AC --> AG2
+    AC --> AG3
+    INV -.uses.-> AC
+    REF -.uses.-> AC
+    ACMD -.uses.-> AG1
+
+    AG1 --> P1
+    AG2 --> P2P
+    AG2 --> P2G
+    AG3 --> P3
+    AG5 --> P5
+
+    AG1 --> JC
+    AG1 --> LC
+    AG2 --> JC
+    AG2 --> GC
+    AG2 --> LC
+    AG3 --> GC
+    AG3 --> LC
+    AG5 --> JC
+    AG5 --> LC
+
+    classDef cfg fill:#e8f4f8,stroke:#4a90e2
+    classDef data fill:#fef5e7,stroke:#f5a623
+    classDef prompt fill:#e8f5e9,stroke:#34a853
+    classDef agent fill:#e3f2fd,stroke:#2c5aa0
+    classDef client fill:#f3e5f5,stroke:#8e24aa
+
+    class CY,ENV,AC cfg
+    class INV,REF,ACMD data
+    class P1,P2P,P2G,P3,P5 prompt
+    class AG1,AG2,AG3,AG5 agent
+    class JC,GC,LC client
+```
+
+### Agent 2 internal flow (two-stage generation)
+
+```mermaid
+sequenceDiagram
+    participant U as User / Scan
+    participant A2 as Agent 2 (Coder)
+    participant J as Jira
+    participant L as LLM (Gemini)
+    participant V as Validators
+    participant G as GitHub
+
+    U->>A2: --story SCRUM-5
+    A2->>A2: AppContext.load()
+    A2->>J: get linked Test Cases
+    J-->>A2: list of test cases
+    A2->>A2: dedup against<br/>existing scenarios
+
+    Note over A2,L: STAGE 1 — Plan
+    A2->>L: prompt + CodePlan schema
+    L-->>A2: CodePlan (file paths,<br/>branch name, PR title)
+    A2->>A2: validate_no_reserved_paths
+
+    Note over A2,L: STAGE 2 — Per-file generation
+    loop for each file in plan
+        A2->>L: prompt + file metadata
+        L-->>A2: file content (text)
+        A2->>A2: extract from markdown fences
+    end
+
+    Note over A2,V: Hard validators
+    A2->>V: validate_filename_consistency
+    V-->>A2: errors / corrections
+    A2->>V: validate_step_definitions_complete
+    V-->>A2: errors / OK
+
+    Note over A2,G: Push & open PR
+    A2->>G: create branch
+    A2->>G: commit each file
+    A2->>G: open PR
+    G-->>A2: PR URL
+    A2->>J: label parent ai-coded
+```
+
+### State / labels lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> ai_ready: Human creates story
+    ai_ready --> ai_processed: Agent 1 runs
+
+    state human_review <<choice>>
+    ai_processed --> human_review: Human reviews TCs
+    human_review --> human_approved: ✅ Approve
+    human_review --> ai_skip: ❌ Reject
+    human_review --> ai_processed: Edit & retry
+
+    human_approved --> ai_coded: Agent 2 runs
+
+    state pr_state <<choice>>
+    ai_coded --> pr_state: Human reviews PR
+    pr_state --> tests_run: Merge → Agent 4+5 run
+    pr_state --> ai_regenerate: Request changes
+
+    ai_regenerate --> ai_coded: Agent 2 runs<br/>(rev2 branch)
+
+    tests_run --> [*]
+    ai_skip --> [*]: Story closed (skipped)
+```
+
+### Updating this diagram
+
+1. Edit the Mermaid blocks above directly in this `.md` file
+2. Preview on [mermaid.live](https://mermaid.live) to verify rendering
+3. GitHub renders Mermaid natively in `.md` files — no extra build step
+
+The `README.md` and `docs/GUIDE.md` link to this file. If you change the high-level pipeline, update both:
+- `README.md` — the ASCII art under "Architecture"
+- `docs/GUIDE.md` — the ASCII art under "Architecture"
+- This file — the Mermaid source
+
+---
+
+## State management deep-dive
+
+There is **no database, no orchestrator process, and no in-memory state**.
+All pipeline state lives in two external systems the agents read and write:
+
+1. **Jira labels** — workflow position of every story
+2. **GitHub** — code state (branches, commits, PRs, JIRA markers inside files)
+
+Any agent, at any time, can reconstruct exactly where a story is by reading
+these two sources. That's what makes the pipeline crash-safe: a workflow can
+die mid-run and the next cron tick resumes correctly, because nothing was
+"in flight" in memory — every completed step already persisted its marker.
+
+### The label state machine
+
+```
+(no labels)
+    │ human adds ai-ready
+    ▼
+[ai-ready] ──Agent 1 runs──► [ai-processed]            ai-ready REMOVED (one-shot consumed)
+    │                            │ human reviews Test Cases, adds human-approved
+    │                            ▼
+    │                    [ai-processed, human-approved]
+    │                            │ Agent 2 runs (normal mode)
+    │                            ▼
+    │            [ai-processed, human-approved, ai-coded]   ← happy-path terminal
+    │                            │
+    │              ┌─────────────┴──────────────┐
+    │              │ TC edited/deleted in Jira  │ want full rewrite
+    │              │ human adds ai-update       │ human adds ai-regenerate
+    │              ▼                            ▼
+    │      run_update() splices          run(is_regenerate=True) rewrites
+    │      ai-update REMOVED             ai-regenerate REMOVED
+    │              └─────────────┬──────────────┘
+    │                            ▼
+    │            [ai-processed, human-approved, ai-coded]   ← back to terminal
+```
+
+#### Label semantics table
+
+| Label | Type | Set by | Removed by | Meaning |
+|---|---|---|---|---|
+| `ai-ready` | one-shot trigger | human | Agent 1 on success | "Agent 1, process this" |
+| `ai-processed` | sticky marker | Agent 1 | never | "Agent 1 is done" — Agent 1 excludes it (idempotency); Agent 2 requires it (prerequisite) |
+| `human-approved` | sticky gate | human | never | "a human reviewed the test cases" — Agent 2 requires it |
+| `ai-coded` | sticky marker | Agent 2 | never | "code exists, PR opened" — normal-mode Agent 2 excludes it |
+| `ai-update` | one-shot trigger | human | Agent 2 on success | "do a surgical incremental update" |
+| `ai-regenerate` | one-shot trigger | human | Agent 2 on success | "do a full rewrite on a -revN branch" |
+| `ai-skip` | permanent opt-out | human | human | invisible to all agents |
+
+**Sticky vs one-shot is the core design idea.** Sticky labels are facts
+("this happened") and provide idempotency — cron can fire every 15 minutes
+and re-scanning is harmless because completed stories are excluded by their
+own markers. One-shot labels are commands ("do this once") and are consumed
+on success so they can't re-trigger.
+
+### How each agent knows its next step
+
+No agent decides "what's next" for the pipeline. Each agent independently
+answers one question — "is there work matching MY selection rules?" — via a
+JQL query built from config.yaml:
+
+- **Agent 1**: `labels = ai-ready AND labels != ai-processed AND labels != ai-skip`
+- **Agent 2 normal**: `labels = ai-processed AND labels = human-approved AND labels != ai-coded ...`
+- **Agent 2 regen**: `... AND labels = ai-regenerate`
+- **Agent 2 update**: `... AND labels = ai-update`
+- **Agent 3 / 4 / 5**: not Jira-driven at all — they react to GitHub PR
+  events (opened / synchronize). The PR's existence IS their trigger state.
+
+The "handoff" between agents is simply: Agent N's completion label is part
+of Agent N+1's required-label set. The pipeline order is emergent from the
+label algebra, not coded anywhere as a sequence.
+
+### Fine-grained state: JIRA markers inside feature files
+
+Labels track story-level state. Scenario-level state (which Test Case maps
+to which code, and whether it changed) lives in the feature files themselves:
+
+```gherkin
+## JIRA: SCRUM-29 (hash: a4f9c2e1)
+Scenario: Verify default sort order
+```
+
+- The **key** ties a scenario to a Jira Test Case permanently.
+- The **hash** (SHA-256 of the Jira description, first 8 chars) detects
+  edits: `classify_test_cases()` compares file hashes against live Jira and
+  buckets every TC as unchanged / modified / new / orphan. This is how
+  `ai-update` knows exactly which scenarios to touch.
+
+### What each store is authoritative for
+
+| Question | Authoritative source |
+|---|---|
+| Has Agent 1 processed this story? | Jira: `ai-processed` label |
+| May Agent 2 run? | Jira: `human-approved` present |
+| Does code exist for this story? | Jira: `ai-coded` + GitHub: `auto/<KEY>-*` branch |
+| Which scenario belongs to which TC? | GitHub: `# JIRA:` markers in .feature files |
+| Did a TC change since coding? | Hash in marker vs live Jira description |
+| Was the PR reviewed? | GitHub: Agent 3's PR comment exists |
+| Did tests pass? | GitHub: Agent 4 check status + JUnit artifact |
+| Was the result reported? | Jira: Agent 5's comment (header-signature idempotency) |
+
+### Failure recovery
+
+Because every step persists before the next begins, recovery is trivial:
+
+- Agent 1 dies after creating 2 of 4 Test Cases → `ai-processed` was not yet
+  added, so next cron re-runs the story. (Duplicate TC creation is the known
+  cost; rare in practice.)
+- Agent 2 dies before opening the PR → `ai-coded` not added → next cron
+  retries; branch creation is idempotent.
+- Agent 5 workflow re-runs → it finds its own comment header and skips.
+- Quota exhaustion mid-run → labels not consumed → automatic retry next tick.

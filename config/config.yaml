@@ -17,7 +17,7 @@ app_under_test:
 
   # Page inventory: a JSON file describing pages, selectors, methods.
   # See app_inventory/saucedemo.json as the canonical example. The
-  # JSON shape is documented in docs/APP_INVENTORY_SCHEMA.md.
+  # JSON shape is documented in docs/REUSE_FOR_NEW_PROJECT.md ("App inventory JSON schema").
   inventory_file: "app_inventory/saucedemo.json"
 
   # Reference files: existing tests Agent 2 mimics for style and Agent 3

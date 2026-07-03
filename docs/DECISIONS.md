@@ -1,16 +1,22 @@
-# ADR-009: Test Code Deduplication and Regeneration
+# Architecture Decision Records
 
-## Status
+Consolidated ADRs, newest first. Each section is an immutable decision record; later notes are appended, history is not rewritten.
+
+---
+
+## ADR-009 — Agent 2 deduplication engine
+
+### Status
 
 Accepted (2026-05-06)
 
-## Context
+### Context
 
 Agent 2 (Coder) generates Playwright + pytest-bdd test code from approved
 Jira Test Cases. During end-to-end testing on PR #7, two distinct
 architectural problems were discovered:
 
-### Problem 1: No awareness of existing tests
+#### Problem 1: No awareness of existing tests
 
 When SCRUM-5 was reprocessed, Agent 2 generated `test_login_validation.py`
 alongside the existing `test_login.py`. Agent 2 had no mechanism to
@@ -23,7 +29,7 @@ existing scenarios in `features/login.feature`. This led to:
 - **Maintenance burden** — when SauceDemo's login UI changes, multiple
   test files need updating
 
-### Problem 2: No way to handle modified test cases
+#### Problem 2: No way to handle modified test cases
 
 The natural solution to Problem 1 — "skip if already covered" — has its
 own flaw: if a user modifies a Jira Test Case (adding new validations,
@@ -37,13 +43,13 @@ The system needs both:
 
 These are related but architecturally distinct concerns.
 
-## Decision
+### Decision
 
 We implement **two separate mechanisms** addressing each concern, both
 driven by Jira labels (consistent with the existing label state machine
 established in ADR-005).
 
-### Mechanism 1: Title-Based Deduplication (skip-if-already-coded)
+#### Mechanism 1: Title-Based Deduplication (skip-if-already-coded)
 
 Before invoking the LLM, Agent 2 scans the `features/` directory and
 extracts all existing scenario titles. Each approved Test Case from Jira
@@ -61,7 +67,7 @@ because:
 2. **Determinism** — title matching is reproducible and debuggable
 3. **Conservative bias** — when in doubt, treat as "new" (don't lose work)
 
-### Mechanism 2: Explicit Regeneration via `ai-regenerate` Label
+#### Mechanism 2: Explicit Regeneration via `ai-regenerate` Label
 
 A new Jira label `ai-regenerate` signals "the test cases under this story
 were modified — please regenerate code from scratch."
@@ -85,7 +91,7 @@ request rather than amending the old one. This:
 Old PRs are NOT auto-closed. The user reviews, decides which iteration
 to merge, and closes obsolete PRs manually.
 
-## Architecture Diagram
+### Architecture Diagram
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -194,9 +200,9 @@ to merge, and closes obsolete PRs manually.
        └───────────────────┘
 ```
 
-## Alternatives Considered
+### Alternatives Considered
 
-### A. Semantic similarity matching (rejected)
+#### A. Semantic similarity matching (rejected)
 
 Use an LLM call to compare each new test case against existing scenarios.
 A match would skip generation, no match would proceed.
@@ -208,7 +214,7 @@ A match would skip generation, no match would proceed.
   as similar (they're not — they test opposite behaviors)
 - Hard to debug when wrong
 
-### B. Hash-based equivalence detection (deferred)
+#### B. Hash-based equivalence detection (deferred)
 
 Compute a hash of (title + steps + expected outcomes) for each test case.
 Store the hash in Jira (custom field or metadata file in repo). On re-scan,
@@ -220,7 +226,7 @@ compare current hash against stored value.
 - More moving parts to maintain
 - Title-based dedup + explicit ai-regenerate is sufficient for v1
 
-### C. Auto-detect modifications via Gherkin step diffing (deferred)
+#### C. Auto-detect modifications via Gherkin step diffing (deferred)
 
 Compare the generated `.feature` file's steps against the current Test
 Case's steps. If they differ, regenerate that one scenario in-place.
@@ -231,7 +237,7 @@ Case's steps. If they differ, regenerate that one scenario in-place.
 - Would require partial-file generation in Agent 2 (not currently supported)
 - Adds complexity for a small UX gain over explicit `ai-regenerate`
 
-### D. Always create new branch, never edit existing PR (chosen for Phase 6)
+#### D. Always create new branch, never edit existing PR (chosen for Phase 6)
 
 When ai-regenerate is detected, always create a NEW branch with `-revN`
 suffix instead of trying to push to an existing open PR.
@@ -243,9 +249,9 @@ suffix instead of trying to push to an existing open PR.
 - Mirrors industry-standard bot patterns (Renovate, Dependabot)
 - Simpler to implement and test
 
-## Consequences
+### Consequences
 
-### Positive
+#### Positive
 
 - **Cost reduction** — duplicate cases skipped entirely; no LLM tokens spent
 - **Cleaner test suite** — one feature file per feature area (instead of fragmented duplicates)
@@ -255,7 +261,7 @@ suffix instead of trying to push to an existing open PR.
 - **Audit trail** — old PRs preserved as history; new PRs clearly numbered
 - **Architectural clarity** — two distinct mechanisms for two distinct concerns
 
-### Negative
+#### Negative
 
 - **Title fragility** — renaming a Test Case in Jira makes Agent 2 think it's new
   (workaround: add ai-regenerate to force regeneration, or accept the new code)
@@ -266,7 +272,7 @@ suffix instead of trying to push to an existing open PR.
 - **Two separate JQL queries** in scan mode (slightly slower, but more explicit
   than a complex OR-clause)
 
-### Neutral
+#### Neutral
 
 - **No change to LLM prompts** for the dedup logic itself (prompts only changed
   for the filename consistency fix in Phase 4)
@@ -274,22 +280,22 @@ suffix instead of trying to push to an existing open PR.
 - **No external dependencies added** — pure Python regex parsing for Gherkin
   (avoids gherkin-official package)
 
-## Implementation
+### Implementation
 
 The implementation is split across six logical phases:
 
 | Phase | Component | Files |
 |-------|-----------|-------|
-| 1 | Inventory utility | `agents/test_inventory.py` (scan_features_dir, normalize, find_match) |
-| 2 | Dedup filter | `agents/test_inventory.py` (filter_duplicate_test_cases) |
+| 1 | Inventory utility | `agents/gherkin_analyzer.py` (scan_features_dir, normalize, find_match) |
+| 2 | Dedup filter | `agents/gherkin_analyzer.py` (filter_duplicate_test_cases) |
 | 3 | Agent 2 integration | `agents/agent2_coder.py` (run() with dedup check) |
-| 4 | Filename validator + prompt fix | `agents/test_inventory.py` (validate_filename_consistency), `prompts/agent2_coder_plan.md` |
-| 5 | Comprehensive test suite | `tests/unit/test_test_inventory.py`, `tests/unit/test_agent2_dedup_integration.py` |
+| 4 | Filename validator + prompt fix | `agents/gherkin_analyzer.py` (validate_filename_consistency), `prompts/agent2_coder_plan.md` |
+| 5 | Comprehensive test suite | `tests/unit/test_validators.py`, `tests/unit/test_agent2_dedup_integration.py` |
 | 6 | ai-regenerate label support | `config/config.yaml`, `agents/agent2_coder.py` (is_regenerate param), `agents/jira_client.py` (remove_label), `agents/github_client.py` (branch_exists) |
 
-## User Workflow
+### User Workflow
 
-### First-time coding (existing flow, now with dedup)
+#### First-time coding (existing flow, now with dedup)
 
 ```
 1. PM creates story SCRUM-5 with label `ai-ready`
@@ -305,7 +311,7 @@ The implementation is split across six logical phases:
    - Marks `ai-coded`
 ```
 
-### Modified test cases (new flow with ai-regenerate)
+#### Modified test cases (new flow with ai-regenerate)
 
 ```
 1. User edits Test Case SCRUM-9 on Jira (adds new validation step)
@@ -321,7 +327,7 @@ The implementation is split across six logical phases:
 4. User reviews new PR, decides to merge it or close prior PRs
 ```
 
-### Permanent skip (existing flow, unchanged)
+#### Permanent skip (existing flow, unchanged)
 
 ```
 1. User decides this story isn't a good AI candidate
@@ -329,7 +335,7 @@ The implementation is split across six logical phases:
 3. Agent 2 ignores the story in both normal and regen passes
 ```
 
-## Test Coverage
+### Test Coverage
 
 The test suite covers:
 
@@ -346,29 +352,29 @@ The test suite covers:
 
 **Total: 75 tests**, all passing in <3 seconds.
 
-## Verification
+### Verification
 
 After applying this change, verify with:
 
 ```bash
-# Unit tests pass
+## Unit tests pass
 python -m pytest tests/unit/ -v
-# Expected: 75 passed
+## Expected: 75 passed
 
-# Existing BDD tests still collect
+## Existing BDD tests still collect
 python -m pytest --collect-only -q tests/step_defs/
-# Expected: 3 tests collected
+## Expected: 3 tests collected
 
-# All modules import
+## All modules import
 python -c "import agents.agent2_coder, agents.gherkin_analyzer, agents.jira_client, agents.github_client"
-# Expected: no errors
+## Expected: no errors
 
-# Agent 2 CLI works
+## Agent 2 CLI works
 python -m agents.agent2_coder --help
-# Expected: usage message
+## Expected: usage message
 ```
 
-## Future Work
+### Future Work
 
 This design intentionally keeps scope tight. Future iterations may add:
 
@@ -381,9 +387,214 @@ This design intentionally keeps scope tight. Future iterations may add:
 
 These are deferred until concrete user feedback shows they're needed.
 
-## References
+### References
 
 - ADR-005: Jira label state machine (foundation for this work)
 - PR #7: The failed PR that triggered this design effort
 - `prompts/agent2_coder_plan.md`: Updated to enforce snake_case for files
 - `agents/gherkin_analyzer.py`: Implementation of all dedup primitives
+---
+
+## ADR-008 — GitHub PAT for cross-workflow cascade
+
+### Status
+
+Accepted (2026-05-06)
+
+### Context
+
+Agent 2 (Coder) opens pull requests on the project's GitHub repository as
+the final step of its workflow. Those PRs are intended to trigger three
+downstream workflows:
+
+- **Agent 3 (Reviewer)** — runs on `pull_request: opened/synchronize`
+- **Agent 4 (Runner)** — runs on `pull_request: opened/synchronize`
+- **Agent 5 (Reporter)** — runs as a job within Agent 4's workflow
+
+This event-driven cascade is the core of the system's choreography
+pattern (ADR-004). Without it, the human must manually trigger Agents
+3/4/5 after every Agent 2 run, defeating the purpose of automation.
+
+#### The problem we hit
+
+During end-to-end testing on PR #7 and PR #8, we observed that **no
+downstream workflows were firing** after Agent 2 successfully opened
+a PR. The PR appeared correctly on GitHub, but the "Checks 0" tab
+remained empty — Agents 3/4/5 never got the `pull_request` event.
+
+Investigation revealed this is **deliberate GitHub behavior**, not a
+bug in our code. From GitHub's official documentation:
+
+> When you use the repository's GITHUB_TOKEN to perform tasks, events
+> triggered by the GITHUB_TOKEN, with the exception of workflow_dispatch
+> and repository_dispatch, will not create a new workflow run. This
+> prevents you from accidentally creating recursive workflow runs.
+
+In plain terms: **GitHub deliberately suppresses workflow events when a
+PR is opened by the built-in `GITHUB_TOKEN`** to prevent infinite
+recursion (where Workflow A could open a PR, triggering Workflow B,
+which opens another PR, triggering Workflow A...).
+
+This is a useful safety mechanism for general-purpose automation, but
+our system architecturally REQUIRES the cascade to fire.
+
+### Decision
+
+Replace `secrets.GITHUB_TOKEN` with a fine-grained Personal Access Token
+stored as `secrets.GH_PAT` in Agent 2's workflow. GitHub treats PAT-based
+PR creation as user-equivalent (because PATs are owned by users), so
+PR events fire normally and downstream workflows trigger as expected.
+
+#### PAT Specification
+
+| Aspect | Choice |
+|---|---|
+| Token type | **Fine-grained PAT** (modern, principle of least privilege) |
+| Repository scope | **`multi-agent-test-automation` only** (single repo) |
+| Permissions | **Contents: Read and write** (create branches, commit files) |
+|  | **Pull requests: Read and write** (open PRs) |
+|  | **Metadata: Read** (auto-included, required by GitHub) |
+| Expiration | **Subject to user choice; rotation reminder set in calendar** |
+| Storage | **GitHub repo secret named `GH_PAT`** |
+
+We deliberately do NOT grant:
+- `Workflows: Write` — Agent 2 doesn't modify `.github/workflows/*`
+  files. If the LLM ever tried to, the existing `RESERVED_PATHS` check
+  in agent2_coder.py would block it. Failing safe is good.
+- `Issues: Write` — Agent 2 only operates on PRs, not issues.
+- `Actions: Write` — Agent 2 doesn't trigger workflows directly; the
+  cascade is event-driven through PR creation.
+- Org/admin access — single-repo scope is sufficient.
+
+#### Implementation
+
+Single-line change in `.github/workflows/agent2_coder.yml`:
+
+```yaml
+## BEFORE (cascade suppressed):
+GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+## AFTER (cascade fires):
+GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+```
+
+The Python code (`agents/github_client.py`) is unchanged — it reads
+`GITHUB_TOKEN` from env, we just feed it a different value.
+
+### Alternatives Considered
+
+#### A. Empty-commit workaround (rejected)
+
+After Agent 2 opens a PR, manually push an empty commit from a user
+account. The push (from the user's PAT) re-triggers `pull_request:
+synchronize` events, firing the cascade.
+
+**Why rejected:**
+- Manual, not scalable
+- Requires a human to babysit every Agent 2 run
+- Defeats the purpose of automation
+- "Empty commit to trigger CI" is an anti-pattern; reviewers shouldn't
+  see commits with no semantic value
+
+#### B. GitHub App authentication (deferred)
+
+Create a GitHub App with explicit permissions, install on the repo, use
+its short-lived installation token. Apps are treated as user-equivalent
+for event firing.
+
+**Why deferred:**
+- ~2 hours of setup vs ~5 minutes for PAT
+- More secure (auto-rotating tokens, scoped install) but overkill for
+  a single-developer side project
+- Better suited if/when this project becomes multi-developer or
+  organization-owned
+
+#### C. Scheduled trigger instead of event-driven (rejected)
+
+Replace the `pull_request` triggers on Agents 3/4/5 with `schedule:`
+(cron) triggers that periodically scan for new PRs.
+
+**Why rejected:**
+- Adds latency (5+ minute delay vs near-instant)
+- Wastes runner minutes on no-op scans
+- Loses the choreography pattern's benefits
+- Polling is an inferior pattern to events
+
+#### D. Continue with GITHUB_TOKEN + accept manual triggers (rejected)
+
+Document the limitation: "after Agent 2 opens a PR, manually trigger
+Agent 3 from the Actions UI."
+
+**Why rejected:**
+- Operationally bad
+- Removes the multi-agent automation story from the architecture
+- Not architect-quality
+
+### Consequences
+
+#### Positive
+
+- **Cascade fires automatically** — Agents 3/4/5 trigger on every Agent 2 PR
+- **Demonstrates production-grade event-driven architecture** in portfolio
+- **Single-line change** with clear documentation trail
+- **Rolling back is trivial** if PAT causes issues (revert to GITHUB_TOKEN)
+- **Aligns with industry pattern** — Renovate, Dependabot, and similar
+  bots also use PATs/Apps for the same reason
+
+#### Negative
+
+- **PR attribution shifts** — PRs now appear as opened by the PAT owner
+  (the human user) rather than `github-actions[bot]`. Mitigated by:
+  - The PR body explicitly states "*This PR was automatically generated
+    by Agent 2 (Coder) from SCRUM-X.*"
+  - Commit messages are prefixed `[Agent 2]` for clarity
+  - In a team setting, this would be a reason to prefer GitHub Apps
+    (Alternative B); for single-developer, it's acceptable
+- **Token rotation responsibility** — PATs expire (max 1 year for
+  fine-grained). A calendar reminder is set ~2 weeks before expiry to
+  prevent silent breakage.
+- **Compromise blast radius** — A leaked PAT grants write access to the
+  scoped repo. Mitigated by:
+  - Repository-scoped (not all-repos)
+  - Minimum permissions (Contents + PRs only)
+  - Stored as a GitHub secret (encrypted at rest, not visible to
+    workflow code)
+
+#### Neutral
+
+- **GitHub permissions:** Repository setting "Allow GitHub Actions to
+  create and approve pull requests" is still required (separate setting).
+  Both must be enabled.
+- **No code changes required** — Python code is portable across token types.
+
+### Rotation Strategy
+
+| When | What |
+|---|---|
+| At PAT creation | Set calendar reminder 2 weeks before expiry |
+| 2 weeks before expiry | Generate new PAT with same permissions |
+| Day of rotation | Update `GH_PAT` secret in repo, verify Agent 2 still works |
+| Day after rotation | Revoke old PAT in GitHub UI |
+
+If a rotation is missed and the PAT expires:
+- Agent 2's workflow fails on the GitHub API call (clear error in logs)
+- The system fails CLOSED (no broken PRs created)
+- Rotate and re-run — no data loss
+
+### Verification
+
+After applying this ADR's changes:
+
+1. `secrets.GH_PAT` exists in the repo
+2. `agent2_coder.yml` references `secrets.GH_PAT` (not `GITHUB_TOKEN`)
+3. Repo setting "Allow GitHub Actions to create and approve PRs" is enabled
+4. Trigger Agent 2 on a test story
+5. Confirm PR opens AND check tab shows Agent 3/4 starting within ~30 seconds
+6. Confirm Agent 5 posts comment to Jira after Agent 4 completes
+
+### References
+
+- ADR-004: Choreography over orchestration (the pattern this fix preserves)
+- GitHub docs: [Triggering a workflow from a workflow](https://docs.github.com/en/actions/using-workflows/triggering-a-workflow#triggering-a-workflow-from-a-workflow)
+- Renovate documentation on PAT requirements (similar architecture)
+- PR #7 and PR #8: Real-world incidents that motivated this ADR
