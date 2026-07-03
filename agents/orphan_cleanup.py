@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from agents.test_inventory import (
+from agents.gherkin_analyzer import (
     _extract_decorator_phrases,
     _extract_feature_steps,
     _phrase_matches,

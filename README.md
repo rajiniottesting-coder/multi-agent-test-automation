@@ -15,6 +15,9 @@ A reusable framework where **5 specialized AI agents** collaborate to automate t
 | [docs/APP_INVENTORY_SCHEMA.md](./docs/APP_INVENTORY_SCHEMA.md) | JSON schema for `app_inventory/<app>.json` |
 | [docs/ADR-008-pat_for_cascade.md](./docs/ADR-008-pat_for_cascade.md) | Architecture Decision Record: GitHub PAT for cross-workflow cascade |
 | [docs/ADR-009-deduplication.md](./docs/ADR-009-deduplication.md) | Architecture Decision Record: Agent 2 dedup engine |
+| [docs/STATE_MANAGEMENT.md](./docs/STATE_MANAGEMENT.md) | How the pipeline tracks progress: label state machine, JIRA markers, failure recovery |
+| [docs/AI_CONCEPTS.md](./docs/AI_CONCEPTS.md) | AI/LLM concepts used (and deliberately not used), guardrails analysis, demo Q&A |
+| [docs/LESSONS_LEARNED.md](./docs/LESSONS_LEARNED.md) | Failure catalog: every production LLM failure, root cause, and permanent fix |
 | [CHANGES.md](./CHANGES.md) | Refactor notes — what changed, why, how to adapt |
 
 ---
@@ -126,7 +129,7 @@ multi-agent-test-automation/
 │   ├── github_client.py             # GitHub API wrapper
 │   ├── llm_client.py                # Gemini wrapper with quota handling
 │   ├── schemas.py                   # Pydantic data contracts
-│   └── test_inventory.py            # Gherkin parsing + dedup + validators
+│   └── gherkin_analyzer.py          # Gherkin parsing + dedup + validators (renamed from test_inventory.py)
 │
 ├── pages/                           # Page Object Model classes
 ├── features/                        # Gherkin .feature files

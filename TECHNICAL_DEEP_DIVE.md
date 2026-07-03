@@ -635,7 +635,7 @@ class AppContext:
 
 This is the single point where app config is loaded. Every agent calls `AppContext.load()` once.
 
-### 9.2 `agents/test_inventory.py` (1136 lines) — feature/step matching engine
+### 9.2 `agents/gherkin_analyzer.py` (1136 lines) — feature/step matching engine (renamed from test_inventory.py)
 
 The hardest computation in the codebase. Used by:
 - Agent 2's repair loop and final validation

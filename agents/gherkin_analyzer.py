@@ -1,4 +1,6 @@
 """
+(Renamed from test_inventory.py — the old name looked like a pytest test file.)
+
 Test Inventory — scan existing .feature files to discover what's already covered.
 
 This module is the foundation of Agent 2's deduplication awareness. Before
@@ -26,7 +28,7 @@ DESIGN CHOICES:
        no features dir still works.
 
 USAGE:
-    from agents.test_inventory import scan_features_dir, find_matching_scenario
+    from agents.gherkin_analyzer import scan_features_dir, find_matching_scenario
     from config.paths import FEATURES_DIR
 
     inventory = scan_features_dir(FEATURES_DIR)
@@ -41,7 +43,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger("test_inventory")
+logger = logging.getLogger("gherkin_analyzer")
 
 
 # ─── Gherkin parsing patterns ───────────────────────────────────────────

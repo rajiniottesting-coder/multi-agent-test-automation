@@ -46,7 +46,7 @@ from agents.import_validator import validate_imports_resolvable
 from agents.method_resolution_validator import validate_method_resolution
 from agents.llm_client import LLMClient
 from agents.schemas import CodePlan, GeneratedFile, CodeGenerationOutput
-from agents.test_inventory import (
+from agents.gherkin_analyzer import (
     scan_features_dir,
     filter_duplicate_test_cases,
     validate_filename_consistency,

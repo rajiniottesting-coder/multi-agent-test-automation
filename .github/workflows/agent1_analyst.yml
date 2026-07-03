@@ -114,6 +114,8 @@ jobs:
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
           JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+          # Optional — needed only when config.yaml uses sprint: "auto".
+          JIRA_BOARD_ID: ${{ secrets.JIRA_BOARD_ID }}
         run: |
           # Pick the right CLI mode based on trigger:
           #   - workflow_dispatch with story_key → process that single story

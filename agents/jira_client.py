@@ -25,7 +25,13 @@ class JiraClient:
         # A misconfigured deployment that quietly defaults to a wrong project
         # is far worse than failing fast with a clear error.
         self.project_key = os.getenv("JIRA_PROJECT_KEY")
+        # JIRA_BOARD_ID is OPTIONAL — required only when config.yaml uses
+        # sprint: "auto". Set once in .env / GitHub secrets; it never changes
+        # unless you move to a different Jira board.
+        self.board_id = os.getenv("JIRA_BOARD_ID")
         self._client: Optional[JIRA] = None
+        # Cache so multiple scan passes in one run make only one API call.
+        self._active_sprint_cache: Optional[str] = None
 
         if not all([self.url, self.email, self.token, self.project_key]):
             missing = [
@@ -51,6 +57,58 @@ class JiraClient:
     # ─────────────────────────────────────────────────────────────
     # Story selection
     # ─────────────────────────────────────────────────────────────
+
+    # ─────────────────────────────────────────────────────────────
+    # Sprint resolution
+    # ─────────────────────────────────────────────────────────────
+
+    def get_active_sprint_name(self) -> Optional[str]:
+        """Return the name of the currently active sprint on this board.
+
+        Uses jira.sprints(board_id, state="active"). Result is cached for
+        the lifetime of this JiraClient instance so Agent 2's three scan
+        passes make only one API call.
+
+        Returns None (with a logged warning, never an exception) when:
+          - JIRA_BOARD_ID env var is not set
+          - the board has no active sprint (sprint not started in Jira)
+          - the Jira API call fails
+        Callers treat None as "no sprint filter" — degrade gracefully.
+        """
+        if self._active_sprint_cache is not None:
+            return self._active_sprint_cache
+
+        if not self.board_id:
+            logger.warning(
+                "JIRA_BOARD_ID env var not set — cannot auto-resolve active "
+                "sprint. Set JIRA_BOARD_ID (see docs/CONFIGURATION notes) or "
+                "use an explicit sprint name in config.yaml."
+            )
+            return None
+
+        try:
+            active = self.client.sprints(board_id=int(self.board_id), state="active")
+            if not active:
+                logger.warning(
+                    f"Board {self.board_id}: no active sprint found. "
+                    "Has the sprint been started in Jira?"
+                )
+                return None
+            name = active[0].name
+            if len(active) > 1:
+                logger.warning(
+                    f"Board {self.board_id} has {len(active)} active sprints; "
+                    f"using the first: {name!r}"
+                )
+            self._active_sprint_cache = name
+            logger.info(f"Auto-resolved active sprint from board {self.board_id}: {name!r}")
+            return name
+        except Exception as e:
+            logger.warning(
+                f"Could not fetch active sprint from board {self.board_id}: "
+                f"{type(e).__name__}: {e}. Sprint filter will be skipped this run."
+            )
+            return None
 
     def get_story(self, issue_key: str) -> dict:
         """Fetch a single story and return its key fields as a dict."""
@@ -113,10 +171,27 @@ class JiraClient:
             jql_parts.append(f'labels != "{label}"')
 
         # Sprint scoping — priority: CLI override > config value > no filter.
+        # Special values:
+        #   "auto"        → resolve the active sprint from Jira via JIRA_BOARD_ID
+        #   "openSprints" → Jira's dynamic JQL alias for the active sprint
+        # Anything else is treated as an exact sprint name (or numeric ID).
         # When absent the query spans all sprints (backward-compatible).
         effective_sprint = sprint_override or selection_config.get("sprint")
+
+        if effective_sprint and str(effective_sprint).lower() == "auto":
+            resolved = self.get_active_sprint_name()
+            if resolved:
+                effective_sprint = resolved
+                logger.info(f"Sprint 'auto' resolved to: {effective_sprint!r}")
+            else:
+                logger.warning(
+                    "Sprint 'auto' could not resolve the active sprint — "
+                    "scanning across all sprints this run."
+                )
+                effective_sprint = None
+
         if effective_sprint:
-            if effective_sprint.lower() == "opensprints":
+            if str(effective_sprint).lower() == "opensprints":
                 jql_parts.append("sprint in openSprints()")
             else:
                 jql_parts.append(f'sprint = "{effective_sprint}"')

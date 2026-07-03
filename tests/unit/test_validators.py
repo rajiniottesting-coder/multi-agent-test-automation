@@ -30,7 +30,7 @@ from pathlib import Path
 
 import pytest
 
-from agents.test_inventory import (
+from agents.gherkin_analyzer import (
     validate_filename_consistency,
     validate_feature_file_structure,
     validate_step_definitions_complete,

@@ -26,7 +26,7 @@ These files contain zero project-specific knowledge. Reuse as-is:
 - `agents/github_client.py` — GitHub API wrapper
 - `agents/jira_client.py` — Jira API wrapper
 - `agents/llm_client.py` — Gemini wrapper
-- `agents/test_inventory.py` — Gherkin / step-def matching primitives
+- `agents/gherkin_analyzer.py` — Gherkin / step-def matching primitives (renamed from test_inventory.py)
 - `agents/import_validator.py`, `agents/method_resolution_validator.py` — generic validators
 - `agents/schemas.py` — Pydantic models
 

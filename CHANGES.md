@@ -4,6 +4,49 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## June 2026 — Dynamic sprint scoping, module rename, documentation refresh
+
+### 1. Dynamic sprint scoping (`sprint: "auto"`)
+
+Previous state: `sprint: "Sprint 0"` was hardcoded in four config blocks and
+needed manual editing at every sprint boundary.
+
+Now: all four selection blocks use `sprint: "auto"`. At scan time,
+`JiraClient.get_active_sprint_name()` resolves the currently active sprint
+from Jira via the new **`JIRA_BOARD_ID`** env var (set once in .env / GitHub
+secrets; find the ID in your board URL). The result is cached per run so
+Agent 2's three scan passes make one API call. Resolution failures degrade
+gracefully to an all-sprints scan with a logged warning — the pipeline never
+blocks on sprint lookup.
+
+Priority order remains: `--sprint` CLI flag / workflow input > config value >
+no filter. Explicit names (`"Sprint 10"`), `"openSprints"`, and omitting the
+key all still work as before.
+
+Files: `agents/jira_client.py`, `config/config.yaml`, both agent workflow
+files (added `JIRA_BOARD_ID` to env).
+
+### 2. Renamed `agents/test_inventory.py` → `agents/gherkin_analyzer.py`
+
+The old name looked like a pytest test file (`test_*` prefix), which confused
+readers and risked accidental pytest collection. The module is the Gherkin /
+step-definition analysis engine (scenario inventory, dedup matching, step
+coverage validation) — the new name says so. All imports updated across
+`agent2_coder.py`, `orphan_cleanup.py`, and the unit test files; zero
+behavior change; all 96 unit tests pass. Historical docs (ADR-009) carry a
+rename note rather than rewritten history.
+
+### 3. New documentation
+
+- `docs/STATE_MANAGEMENT.md` — how the pipeline tracks progress (label state
+  machine, sticky vs one-shot labels, JIRA hash markers, failure recovery).
+- `docs/AI_CONCEPTS.md` — which AI concepts are used and deliberately not
+  used, the guardrails analysis, and a demo Q&A.
+- `docs/LESSONS_LEARNED.md` — the failure catalog: all 14 production LLM
+  failure modes, root causes, and where each permanent fix lives.
+
+---
+
 ## Hotfix v4 — Output token cap, feedback summarization, degraded-output detection (2026-05-07)
 
 ### What broke
@@ -514,7 +557,7 @@ Rewritten. The previous README claimed features that did not exist (e.g., LangGr
 
 ## Files retained unchanged
 
-- `agents/test_inventory.py` — has zero SauceDemo coupling. The file is internally well-organized (953 lines but with clear `# ─── ... ───` section headers separating concerns). It has thorough unit-test coverage. **Splitting it was considered and skipped** because the cost (changing imports across the codebase, risking test breakage) exceeds the benefit (no reusability gain — the file is already app-agnostic).
+- `agents/gherkin_analyzer.py` (renamed from test_inventory.py, June 2026) — has zero SauceDemo coupling. The file is internally well-organized (953 lines but with clear `# ─── ... ───` section headers separating concerns). It has thorough unit-test coverage. **Splitting it was considered and skipped** because the cost (changing imports across the codebase, risking test breakage) exceeds the benefit (no reusability gain — the file is already app-agnostic).
 - `agents/jira_client.py` (mostly) — only `_link_to_story` was tightened. The rest is a clean adapter.
 - `agents/github_client.py` — already uses targeted `GithubException`. No broad except patterns to tighten.
 - `agents/llm_client.py` — already app-agnostic.

@@ -267,6 +267,7 @@ For ad-hoc human branches without a key (e.g., `feature/foo`): Agent 5 detects t
 | `JIRA_EMAIL` | yes | Same | Your Jira account email |
 | `JIRA_API_TOKEN` | yes | Same | Create at id.atlassian.com → Security → API tokens |
 | `JIRA_PROJECT_KEY` | yes | Same | e.g., `SCRUM`, `PROJ` |
+| `JIRA_BOARD_ID` | no* | Agents 1, 2 (scan) | Numeric board ID. *Required only when config.yaml uses `sprint: "auto"`. Find it in the board URL: `.../boards/<ID>` |
 | `OPENAI_API_KEY` | yes | All agents (LLM) | Your LLM provider's API key |
 | `OPENAI_API_BASE` | yes | Same | Base URL of your OpenAI-compatible API endpoint |
 | `LLM_MODEL` | no | Same | Defaults to `claude-opus-4-6`. Set to your model name |
@@ -313,9 +314,29 @@ agents:
     max_stories_per_run: ...
 ```
 
+### Sprint scoping
+
+Every scan (Agent 1 and all three Agent 2 passes) is scoped to a sprint via
+the `sprint:` key present in each selection block:
+
+| Value | Behavior |
+|---|---|
+| `"auto"` *(default, recommended)* | Resolves the currently **active** sprint from Jira at runtime via `JIRA_BOARD_ID`. **Zero config changes at sprint boundaries** — when your Scrum master starts Sprint 11, the scans follow automatically. Degrades gracefully: if the board ID is missing or no sprint is active, a warning is logged and the scan spans all sprints. |
+| `"openSprints"` | Uses Jira's `sprint in openSprints()` JQL alias. Same effect as auto but needs no board ID; the resolved sprint name won't appear in logs. |
+| `"Sprint 10"` | Exact sprint name — pin scans to one specific sprint (useful for retro analysis or parallel-sprint boards). |
+| *(key omitted)* | No sprint filter; scans across all sprints (pre-sprint-scoping behavior). |
+
+One-off overrides without editing config: `--sprint "Sprint 10"` on the CLI
+(`python -m agents.agent1_analyst --scan --sprint "Sprint 10"`), or the
+`sprint` input in the GitHub Actions "Run workflow" dialog. Priority:
+CLI/workflow input > config.yaml > no filter.
+
+Finding your board ID: open your board in Jira; the URL contains
+`.../jira/software/projects/<KEY>/boards/<ID>` — that number is `JIRA_BOARD_ID`.
+
 ### CI secrets
 
-For GitHub Actions, set the same names listed above under repo Settings → Secrets and variables → Actions. The workflows reference them via `${{ secrets.NAME }}`.
+For GitHub Actions, set the same names listed above under repo Settings → Secrets and variables → Actions. The workflows reference them via `${{ secrets.NAME }}`. Add `JIRA_BOARD_ID` as a secret if using `sprint: "auto"`.
 
 ---
 
