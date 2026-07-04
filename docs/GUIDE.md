@@ -360,6 +360,37 @@ exact (reported by the API per call); cost is derived from the
   no pricing configured, the total is marked as a lower bound (token
   totals remain exact).
 
+#### What gets tracked when a story goes through the pipeline
+
+Cost tracking is fully automatic — no per-story action is ever needed.
+For a fresh story (e.g. SCRUM-25) the lifecycle looks like this:
+
+| Stage | You do | Tracked automatically |
+|---|---|---|
+| 1. Create story, add `ai-ready` | manual | — |
+| 2. Agent 1 picks it up (cron) | nothing | Actions log: per-call tokens + `LLM TOKEN USAGE` / `LLM COST` summaries; posts `[LLM-USAGE] agent="Agent 1 (Analyst)" ...` comment on the story |
+| 3. Review TCs, add `human-approved` | manual | — |
+| 4. Agent 2 generates code, opens PR | nothing | Summary lines + `[LLM-USAGE] agent="Agent 2 (Coder, initial)"` comment |
+| 5. Agent 3 reviews the PR | nothing | Derives the story key from the `auto/<KEY>-` branch, posts `[LLM-USAGE] agent="Agent 3 (Reviewer)"` |
+| 6. Agent 4 runs the tests | nothing | No LLM calls — correctly contributes $0 (nothing posted) |
+| 7. Agent 5 reports results | nothing | Reads all prior `[LLM-USAGE]` comments, adds its own usage, appends the **End-to-end LLM usage & cost** table (per-agent rows + TOTAL) to its report, then posts its own usage comment |
+
+When the pipeline completes, the story itself carries the answer: Agent 5's
+report shows the actual measured cost of that story — total calls, exact
+input/output tokens, and dollars at the configured rates.
+
+Rework is included in the lifetime total: a later `ai-update` or
+`ai-regenerate` run posts another ledger entry (e.g. `Agent 2 (Coder,
+incremental update)`), and the next Agent 5 report's table includes it —
+so the TOTAL reflects the story's true lifetime cost, not just the first
+pass.
+
+Prerequisites for full numbers (one-time): the two `LLM_PRICE_*`
+variables are set, runs are real (not `--dry-run`), and the pipeline
+reaches Agent 5 (the aggregate table is built by the last agent; before
+that, the individual `[LLM-USAGE]` comments are already visible on the
+story one by one).
+
 ---
 
 ## Running the pipeline
