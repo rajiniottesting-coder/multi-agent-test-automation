@@ -111,6 +111,180 @@ class QuotaExhaustedError(RuntimeError):
     pass
 
 
+# ─────────────────────────────────────────────────────────────
+# Token usage & cost tracking
+#
+# Every LLM call records its token usage here. Totals accumulate for
+# the lifetime of the process (= one agent run in CI), giving real
+# per-story cost numbers in the Actions logs instead of estimates.
+#
+# Pricing is configured via two OPTIONAL env vars (USD per 1M tokens):
+#     LLM_PRICE_INPUT_PER_1M   e.g. "3.00"
+#     LLM_PRICE_OUTPUT_PER_1M  e.g. "15.00"
+# When unset, token counts are still logged; cost shows as "n/a".
+# ─────────────────────────────────────────────────────────────
+
+class _UsageTracker:
+    """Accumulates token usage across all LLM calls in this process."""
+
+    def __init__(self):
+        self.calls = 0
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.calls_without_usage = 0  # endpoint didn't report usage
+
+    def add(self, input_tokens: int, output_tokens: int) -> None:
+        self.calls += 1
+        self.input_tokens += input_tokens
+        self.output_tokens += output_tokens
+
+    def add_unreported(self) -> None:
+        self.calls += 1
+        self.calls_without_usage += 1
+
+    @property
+    def total_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+    def reset(self) -> None:
+        self.calls = 0
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.calls_without_usage = 0
+
+    @staticmethod
+    def _prices() -> tuple:
+        """Return (price_in, price_out) in USD per 1M tokens, or (None, None)."""
+        try:
+            p_in = os.getenv("LLM_PRICE_INPUT_PER_1M")
+            p_out = os.getenv("LLM_PRICE_OUTPUT_PER_1M")
+            if p_in and p_out:
+                return float(p_in), float(p_out)
+        except ValueError:
+            logger.warning(
+                "LLM_PRICE_INPUT_PER_1M / LLM_PRICE_OUTPUT_PER_1M are set but "
+                "not numeric — cost will show as n/a."
+            )
+        return None, None
+
+    def input_cost_usd(self):
+        """Input-side cost in USD, or None if pricing env vars are unset."""
+        p_in, _ = self._prices()
+        if p_in is None:
+            return None
+        return (self.input_tokens / 1_000_000) * p_in
+
+    def output_cost_usd(self):
+        """Output-side cost in USD, or None if pricing env vars are unset."""
+        _, p_out = self._prices()
+        if p_out is None:
+            return None
+        return (self.output_tokens / 1_000_000) * p_out
+
+    def cost_usd(self):
+        """Total estimated cost in USD, or None if pricing env vars are unset."""
+        i, o = self.input_cost_usd(), self.output_cost_usd()
+        if i is None or o is None:
+            return None
+        return i + o
+
+    def cost_str(self) -> str:
+        cost = self.cost_usd()
+        if cost is None:
+            return "n/a (set LLM_PRICE_INPUT_PER_1M / LLM_PRICE_OUTPUT_PER_1M)"
+        return f"${cost:.4f}"
+
+    def summary(self) -> dict:
+        """Machine-readable snapshot (used by tests and agent result dicts)."""
+        return {
+            "llm_calls": self.calls,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "total_tokens": self.total_tokens,
+            "input_cost_usd": self.input_cost_usd(),
+            "output_cost_usd": self.output_cost_usd(),
+            "estimated_cost_usd": self.cost_usd(),
+            "calls_without_usage": self.calls_without_usage,
+        }
+
+
+_tracker = _UsageTracker()
+
+
+def _record_usage(response, label: str) -> None:
+    """Extract usage from a LangChain response and log call + running totals.
+
+    Never raises — usage tracking must not break a run.
+    """
+    try:
+        usage = getattr(response, "usage_metadata", None) or {}
+        inp = usage.get("input_tokens")
+        out = usage.get("output_tokens")
+        if inp is None or out is None:
+            _tracker.add_unreported()
+            logger.info(
+                "LLM usage [%s]: endpoint did not report token usage "
+                "(run totals so far: %d calls, %d tokens)",
+                label, _tracker.calls, _tracker.total_tokens,
+            )
+            return
+        _tracker.add(int(inp), int(out))
+        logger.info(
+            "LLM usage [%s]: in=%d out=%d | run totals: calls=%d in=%d out=%d cost=%s",
+            label, inp, out,
+            _tracker.calls, _tracker.input_tokens, _tracker.output_tokens,
+            _tracker.cost_str(),
+        )
+    except Exception as e:
+        logger.debug(f"Usage tracking failed (non-fatal): {e}")
+
+
+def get_usage_summary() -> dict:
+    """Current accumulated usage for this process. See _UsageTracker.summary()."""
+    return _tracker.summary()
+
+
+def reset_usage() -> None:
+    """Reset accumulated usage. Call between stories in scan mode so each
+    story's summary reflects only its own calls."""
+    _tracker.reset()
+
+
+def log_usage_summary(context: str) -> dict:
+    """Log token-usage and cost as two separate lines; return the summary dict.
+
+    Example log output:
+        LLM TOKEN USAGE [story SCRUM-20]: 5 calls, 48,213 input + 9,877 output = 58,090 total tokens
+        LLM COST [story SCRUM-20]: $0.2928 total (input $0.1446 + output $0.1482)
+    """
+    s = _tracker.summary()
+    # Token usage and cost are logged as SEPARATE lines: tokens are exact
+    # (reported by the API); cost is derived from configured pricing.
+    logger.info(
+        "LLM TOKEN USAGE [%s]: %d calls, %s input + %s output = %s total tokens",
+        context, s["llm_calls"],
+        f"{s['input_tokens']:,}", f"{s['output_tokens']:,}", f"{s['total_tokens']:,}",
+    )
+    if s["estimated_cost_usd"] is not None:
+        logger.info(
+            "LLM COST [%s]: $%.4f total (input $%.4f + output $%.4f)",
+            context, s["estimated_cost_usd"],
+            s["input_cost_usd"], s["output_cost_usd"],
+        )
+    else:
+        logger.info(
+            "LLM COST [%s]: n/a — set LLM_PRICE_INPUT_PER_1M / "
+            "LLM_PRICE_OUTPUT_PER_1M repo variables for cost numbers",
+            context,
+        )
+    if s["calls_without_usage"]:
+        logger.info(
+            "  (%d call(s) did not report usage — totals are a lower bound)",
+            s["calls_without_usage"],
+        )
+    return s
+
+
 class LLMClient:
     """Provider-agnostic LLM wrapper with quota-aware error handling.
 
@@ -195,6 +369,7 @@ class LLMClient:
 
         logger.info(f"Calling LLM (model={self.model_name}, schema={output_schema.__name__})...")
         response = self._call_with_quota_check(self.llm.invoke, messages)
+        _record_usage(response, f"structured:{output_schema.__name__}")
 
         raw_content = response.content or ""
         if not raw_content.strip():
@@ -269,20 +444,8 @@ class LLMClient:
         # ─────────────────────────────────────────────────────────────
         content = response.content or ""
 
-        # Always log token usage — cheap, useful regardless
-        try:
-            usage = getattr(response, "usage_metadata", None) or {}
-            if usage:
-                logger.info(
-                    "Token usage: input=%s output=%s thoughts=%s total=%s",
-                    usage.get("input_tokens", "?"),
-                    usage.get("output_tokens", "?"),
-                    usage.get("output_token_details", {}).get("reasoning", "?")
-                        if isinstance(usage.get("output_token_details"), dict) else "?",
-                    usage.get("total_tokens", "?"),
-                )
-        except Exception as e:
-            logger.debug(f"Could not extract usage_metadata: {e}")
+        # Record token usage in the run-level tracker (logs per-call + totals)
+        _record_usage(response, "text:code-gen")
 
         # Suspicious-output diagnostic dump
         if len(content.strip()) < 30:

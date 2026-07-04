@@ -117,6 +117,11 @@ jobs:
           # if you want to use a different model.
           LLM_MODEL: ${{ vars.LLM_MODEL || 'claude-opus-4-6' }}
 
+          # Optional pricing (USD per 1M tokens) for real cost numbers in logs.
+          # Set as repo Variables; leave unset to log token counts only.
+          LLM_PRICE_INPUT_PER_1M: ${{ vars.LLM_PRICE_INPUT_PER_1M }}
+          LLM_PRICE_OUTPUT_PER_1M: ${{ vars.LLM_PRICE_OUTPUT_PER_1M }}
+
           # Jira credentials
           JIRA_URL: ${{ secrets.JIRA_URL }}
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
@@ -137,7 +142,7 @@ jobs:
           # That meant Agents 3/4/5 never triggered after Agent 2 opened a PR.
           # A PAT is treated as user-equivalent — its PR creation fires events
           # normally, restoring the cascade.
-          # See docs/DECISIONS.md (ADR-008) for security trade-offs and
+          # See docs/ADR-008-pat-for-cascade.md for security trade-offs and
           # rotation strategy. The PAT is scoped to this repo only with
           # Contents:R/W + PullRequests:R/W + Metadata:R.
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}

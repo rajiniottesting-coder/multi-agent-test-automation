@@ -93,7 +93,7 @@ A: We use the same underlying patterns (chains, structured output, retries) dire
 A: Two mechanisms. Within a run: the repair loop (validator errors → retry). Across runs: a curated failure catalog (the "Lessons learned" section below, 14 entries) distilled into prompt rules and validators — permanent, token-free, version-controlled. Deliberately not a runtime memory store; see the catalog for the trade-off analysis.
 
 **Q: What does a run cost and how is cost bounded?**
-A: ~$0.10–0.30 of LLM per Agent 2 story. `max_stories_per_run: 2` caps blast radius per cron tick; the human-approval gate stops accidental mass processing.
+A: Measured, not estimated — and tokens and cost are tracked separately. Every LLM call records API-reported token usage (`agents/llm_client.py`); each story run ends with two log lines: `LLM TOKEN USAGE` (exact counts) and `LLM COST` (input + output cost from the `LLM_PRICE_INPUT_PER_1M` / `LLM_PRICE_OUTPUT_PER_1M` repo variables). For the full story cost, every LLM-using agent posts a `[LLM-USAGE]` comment to the story, and Agent 5 aggregates them into an "End-to-end LLM usage & cost" table in its final report (`agents/usage_ledger.py`) — the actual measured cost of Agent 1 + Agent 2 + Agent 3 + Agent 5 for that story in one place. Cost scales with test-case count and repair-loop retries on top of a fixed prompt-overhead floor. Bounding is separate from measurement: `max_stories_per_run: 2` caps blast radius per cron tick; the human-approval gate stops accidental mass processing.
 
 **Q: How would this scale to 50 stories a sprint?**
 A: Raise the per-run cap, or parallelize — each story is independent (own branch, own PR, no shared state). The bottleneck becomes human review of PRs, which is by design.

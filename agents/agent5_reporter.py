@@ -362,6 +362,35 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
     # This avoids the LLM rendering "View PR (None)" when fields are unavailable.
     final_body = build_final_comment(draft.body_markdown, report)
 
+    # 3c. USAGE LEDGER: log this agent's own token/cost summary, then read
+    # all [LLM-USAGE] comments posted by earlier agents (1, 2, 3) and append
+    # an end-to-end usage & cost table for the whole story to the report.
+    from agents.llm_client import log_usage_summary, reset_usage
+    from agents.usage_ledger import (
+        aggregate_story_usage, format_e2e_section, post_usage_to_story,
+    )
+    own_usage = log_usage_summary(f"story {story_key} (reporter)")
+    reset_usage()
+    try:
+        if not dry_run:
+            _ledger_jira = JiraClient()
+            prior_comments = _ledger_jira.get_comments(story_key)
+        else:
+            prior_comments = []
+        own_entry = dict(own_usage)
+        own_entry["agent"] = "Agent 5 (Reporter)"
+        agg = aggregate_story_usage(prior_comments, extra_entries=[own_entry])
+        e2e_section = format_e2e_section(agg)
+        if e2e_section:
+            final_body = final_body + "\n" + e2e_section
+            logger.info(
+                "E2E story usage: %d agent runs, %s tokens, cost %s",
+                agg["agent_runs"], f"{agg['total_tokens']:,}",
+                f"${agg['total_cost_usd']:.4f}" if agg["total_cost_usd"] is not None else "n/a",
+            )
+    except Exception as e:
+        logger.warning(f"Usage ledger aggregation failed (non-fatal): {e}")
+
     # 4. ACT: post to Jira (or preview)
     if dry_run:
         logger.warning("DRY RUN — not posting to Jira")
@@ -385,6 +414,9 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
     jira = JiraClient()
     comment_url = jira.add_comment(story_key, final_body)
     jira.add_label(story_key, "tests-run")  # idempotent — won't dup-add
+    # Record this agent's usage on the ledger too, so any later re-run or
+    # re-aggregation sees the full picture.
+    post_usage_to_story(story_key, "Agent 5 (Reporter)", own_usage, jira=jira)
 
     result = {
         "story_key": story_key,

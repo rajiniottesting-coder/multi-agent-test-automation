@@ -4,6 +4,50 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## July 2026 — LLM token & cost instrumentation + end-to-end story cost ledger
+
+Token usage and cost are now MEASURED, tracked as two separate quantities,
+and aggregated per story across all agents.
+
+### Per-run tracking (agents/llm_client.py)
+
+- A usage tracker records input/output tokens for every LLM call (both
+  structured and text mode). Per-call log lines show the call's tokens plus
+  running totals.
+- At the end of each story run, TWO separate summary lines are logged:
+  `LLM TOKEN USAGE [...]` (exact, API-reported) and `LLM COST [...]`
+  (derived from pricing, split into input + output cost). The summary dict
+  is returned in agent results under `llm_usage`.
+- Pricing comes from two optional repo Variables (USD per 1M tokens):
+  `LLM_PRICE_INPUT_PER_1M`, `LLM_PRICE_OUTPUT_PER_1M` — now exposed in all
+  four agent workflows. Unset → tokens still logged, cost shows "n/a".
+- Endpoints that don't report `usage_metadata` are counted and flagged as a
+  lower bound. Tracking never raises.
+
+### End-to-end story ledger (agents/usage_ledger.py — NEW)
+
+Each agent runs in a separate CI process, so in-memory totals can't span the
+pipeline. The Jira story itself is now the ledger:
+
+- After finishing, every LLM-using agent (1, 2, 3, 5) posts one compact,
+  machine-parseable comment: `[LLM-USAGE] agent="..." calls=N
+  input_tokens=N output_tokens=N input_cost_usd=... output_cost_usd=...
+  cost_usd=...` (skipped in dry-run; best-effort, never fails a run).
+- Agent 3 derives the story key from the `auto/<KEY>-` branch convention.
+- Agent 5 reads all prior usage comments (new `JiraClient.get_comments`),
+  adds its own usage, and appends an "End-to-end LLM usage & cost" table to
+  its test report — per-agent rows plus a TOTAL row. Partial pricing is
+  flagged as a lower bound; token totals are always exact.
+
+### Tests
+
+27 new unit tests (`test_llm_usage.py`, `test_usage_ledger.py`) — suite
+grew 96 → 123, all passing. No existing module behavior changed
+(gherkin_analyzer, orphan_cleanup, validators, app_context, schemas,
+config.yaml all untouched).
+
+---
+
 ## July 2026 — Documentation consolidation (11 → 7 files) + stale reference cleanup
 
 ### Why

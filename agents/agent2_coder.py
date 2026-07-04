@@ -1960,9 +1960,16 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
         f"=== Agent 2 UPDATE complete for {story_id}. "
         f"Modified={len(mod_keys)} New={len(new_keys)} Removed={len(classification['orphan_keys'])} ==="
     )
+    from agents.llm_client import log_usage_summary, reset_usage
+    usage = log_usage_summary(f"story {story_id} (update)")
+    reset_usage()  # per-story numbers in scan mode
+    if not dry_run:
+        from agents.usage_ledger import post_usage_to_story
+        post_usage_to_story(story_id, "Agent 2 (Coder, incremental update)", usage, jira=jira)
     return {
         "story_id": story_id,
         "status": "update_pr_opened",
+        "llm_usage": usage,
         "scenarios_modified": len(mod_keys),
         "scenarios_added": len(new_keys),
         "scenarios_removed": len(classification["orphan_keys"]),
@@ -2349,12 +2356,21 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
         jira.remove_label(story_id, regenerate_label)
         logger.info(f"Removed label '{regenerate_label}' from {story_id} (one-shot consumed)")
 
+    from agents.llm_client import log_usage_summary, reset_usage
+    usage = log_usage_summary(f"story {story_id}")
+    reset_usage()  # per-story numbers in scan mode
+    if not dry_run:
+        from agents.usage_ledger import post_usage_to_story
+        mode = "regenerate" if is_regenerate else "initial"
+        post_usage_to_story(story_id, f"Agent 2 (Coder, {mode})", usage, jira=jira)
+
     result = {
         "story_id": story_id,
         "files_generated": len(output.files),
         "branch_name": output.branch_name,
         "pr_url": pr_url,
         "status": "pr_opened",
+        "llm_usage": usage,
     }
 
     logger.info(f"=== Agent 2 (Coder) complete. PR: {pr_url} ===")

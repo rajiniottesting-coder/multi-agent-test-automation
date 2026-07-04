@@ -268,6 +268,8 @@ For ad-hoc human branches without a key (e.g., `feature/foo`): Agent 5 detects t
 | `JIRA_API_TOKEN` | yes | Same | Create at id.atlassian.com → Security → API tokens |
 | `JIRA_PROJECT_KEY` | yes | Same | e.g., `SCRUM`, `PROJ` |
 | `JIRA_BOARD_ID` | no* | Agents 1, 2 (scan) | Numeric board ID. *Required only when config.yaml uses `sprint: "auto"`. Find it in the board URL: `.../boards/<ID>` |
+| `LLM_PRICE_INPUT_PER_1M` | no | All LLM agents | USD per 1M **input** tokens (repo **Variable**, not secret — e.g. `3.00`). Enables real cost numbers in logs and the story cost ledger. Unset → tokens still logged, cost shows "n/a". |
+| `LLM_PRICE_OUTPUT_PER_1M` | no | All LLM agents | USD per 1M **output** tokens (e.g. `15.00`). Set both or neither. |
 | `OPENAI_API_KEY` | yes | All agents (LLM) | Your LLM provider's API key |
 | `OPENAI_API_BASE` | yes | Same | Base URL of your OpenAI-compatible API endpoint |
 | `LLM_MODEL` | no | Same | Defaults to `claude-opus-4-6`. Set to your model name |
@@ -336,7 +338,27 @@ Finding your board ID: open your board in Jira; the URL contains
 
 ### CI secrets
 
-For GitHub Actions, set the same names listed above under repo Settings → Secrets and variables → Actions. The workflows reference them via `${{ secrets.NAME }}`. Add `JIRA_BOARD_ID` as a secret if using `sprint: "auto"`.
+For GitHub Actions, set the same names listed above under repo Settings → Secrets and variables → Actions. The workflows reference them via `${{ secrets.NAME }}`. Add `JIRA_BOARD_ID` as a secret if using `sprint: "auto"`. The two `LLM_PRICE_*` values go on the **Variables** tab (they're not sensitive).
+
+### LLM token & cost tracking
+
+Token usage and cost are tracked as two separate quantities. Tokens are
+exact (reported by the API per call); cost is derived from the
+`LLM_PRICE_*` variables above.
+
+- **Per run:** every LLM call logs its own tokens plus running totals; each
+  story run ends with two lines in the Actions log — `LLM TOKEN USAGE [...]`
+  and `LLM COST [...]` (input + output cost shown separately).
+- **Per story, end to end:** each LLM-using agent (1, 2, 3, 5) posts a
+  machine-parseable `[LLM-USAGE]` comment on the Jira story after it
+  finishes. Agent 5 aggregates every entry and appends an
+  **"End-to-end LLM usage & cost"** table to its final test report — one
+  row per agent run plus a TOTAL row. That table is the actual measured
+  cost of taking the story from `ai-ready` to a tested, reported PR.
+- Dry runs never post ledger comments. Posting and reading are
+  best-effort: a Jira hiccup can't fail a pipeline run. If some runs had
+  no pricing configured, the total is marked as a lower bound (token
+  totals remain exact).
 
 ---
 

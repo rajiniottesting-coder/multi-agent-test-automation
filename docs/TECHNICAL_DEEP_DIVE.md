@@ -51,6 +51,7 @@ agents/
   app_context.py                    210 lines  ← Config loader (NEW — enables reuse)
   github_client.py                  229 lines  ← PyGithub wrapper
   jira_client.py                    289 lines  ← jira-python wrapper
+  usage_ledger.py                  ~230 lines  ← per-story LLM token/cost ledger (Jira comments)
   llm_client.py                     270 lines  ← google-genai wrapper
   schemas.py                        249 lines  ← All Pydantic models
   gherkin_analyzer.py              1136 lines  ← Feature/step matching primitives (renamed from test_inventory.py)

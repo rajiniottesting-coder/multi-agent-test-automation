@@ -87,6 +87,9 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
           LLM_MODEL: ${{ vars.LLM_MODEL || 'claude-opus-4-6' }}
+          # Optional pricing (USD per 1M tokens) for cost tracking
+          LLM_PRICE_INPUT_PER_1M: ${{ vars.LLM_PRICE_INPUT_PER_1M }}
+          LLM_PRICE_OUTPUT_PER_1M: ${{ vars.LLM_PRICE_OUTPUT_PER_1M }}
           # PR_NUMBER auto-detected from event in Agent 3 code, but
           # for manual workflow_dispatch we override it here:
           PR_NUMBER: ${{ github.event.inputs.pr_number }}

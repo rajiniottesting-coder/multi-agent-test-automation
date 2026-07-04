@@ -335,6 +335,23 @@ class JiraClient:
         else:
             logger.info(f"Label '{label}' not on {issue_key} — nothing to remove")
 
+    def get_comments(self, issue_key: str) -> list:
+        """Return the body text of every comment on an issue (oldest first).
+
+        Used by the usage ledger (Agent 5) to aggregate [LLM-USAGE] entries
+        posted by earlier agents. Returns [] on any failure — reading the
+        ledger is best-effort.
+        """
+        try:
+            issue = self.client.issue(issue_key, fields="comment")
+            comments = getattr(issue.fields, "comment", None)
+            if comments is None:
+                return []
+            return [getattr(c, "body", "") or "" for c in comments.comments]
+        except Exception as e:
+            logger.warning(f"Could not fetch comments for {issue_key}: {e}")
+            return []
+
     def add_comment(self, issue_key: str, body: str) -> str:
         """Post a comment on a Jira issue and return the comment URL.
 

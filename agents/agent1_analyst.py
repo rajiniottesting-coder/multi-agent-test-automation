@@ -166,12 +166,20 @@ def run(story_id: str, dry_run: bool = False) -> dict:
                 )
 
     # 4. OUTPUT: return state for orchestrator / next agent
+    from agents.llm_client import log_usage_summary, reset_usage
+    usage = log_usage_summary(f"story {story_id} (analyst)")
+    reset_usage()  # per-story numbers in scan mode
+    if not dry_run:
+        from agents.usage_ledger import post_usage_to_story
+        post_usage_to_story(story_id, "Agent 1 (Analyst)", usage, jira=jira)
+
     result = {
         "story_id": story_id,
         "story_summary": story["summary"],
         "test_cases_generated": len(test_case_list.test_cases),
         "test_case_keys": created_keys,
         "status": "tests_drafted" if not dry_run else "tests_drafted_dry_run",
+        "llm_usage": usage,
     }
 
     logger.info(f"=== Agent 1 (Analyst) complete for {story_id}. Created: {created_keys} ===")

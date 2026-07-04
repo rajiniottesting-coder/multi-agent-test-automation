@@ -109,6 +109,11 @@ jobs:
           OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
           LLM_MODEL: ${{ vars.LLM_MODEL || 'claude-opus-4-6' }}
 
+          # Optional pricing (USD per 1M tokens) for real cost numbers in logs.
+          # Set as repo Variables; leave unset to log token counts only.
+          LLM_PRICE_INPUT_PER_1M: ${{ vars.LLM_PRICE_INPUT_PER_1M }}
+          LLM_PRICE_OUTPUT_PER_1M: ${{ vars.LLM_PRICE_OUTPUT_PER_1M }}
+
           # Jira credentials
           JIRA_URL: ${{ secrets.JIRA_URL }}
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
