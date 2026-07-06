@@ -53,16 +53,33 @@ def test_llm():
     print(f"✅ LLM OK — model: {model_name}, response: {response.content.strip()}")
 
 
+def _app_base_url() -> str:
+    """Resolve the app under test's URL. Priority: BASE_URL env >
+    config.yaml app_under_test.base_url. App-agnostic by design —
+    no application URL is hardcoded in the framework."""
+    if os.getenv("BASE_URL"):
+        return os.getenv("BASE_URL")
+    import yaml
+    from pathlib import Path
+    cfg_path = Path(__file__).resolve().parent.parent / "config" / "config.yaml"
+    cfg = yaml.safe_load(open(cfg_path, encoding="utf-8"))
+    url = (cfg.get("app_under_test") or {}).get("base_url")
+    if not url:
+        print("\u274c No BASE_URL env var and no app_under_test.base_url in config.yaml")
+        sys.exit(1)
+    return url
+
+
 def test_playwright():
-    """Verify Playwright can launch a browser and reach the test site."""
+    """Verify Playwright can launch a browser and reach the app under test."""
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        page.goto(os.getenv("BASE_URL", "https://www.saucedemo.com"))
+        page.goto(_app_base_url())
         title = page.title()
         browser.close()
-    print(f"✅ Playwright OK — site title: {title}")
+    print(f"✅ Playwright OK — site title: {title!r}")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 """
 Unit tests for agents.orphan_cleanup.
 
-DESIGN PRINCIPLE: every test uses synthetic NON-SauceDemo content to
+DESIGN PRINCIPLE: every test uses synthetic app-neutral content to
 prove the cleanup logic is generic. We use banking, CMS, and finance
 shapes to verify the same code works across domains.
 """
@@ -23,7 +23,7 @@ from agents.orphan_cleanup import (
 
 
 # ════════════════════════════════════════════════════════════════════
-# Fixtures: synthetic banking app (no SauceDemo references)
+# Fixtures: synthetic banking app (no references to the demo app under test)
 # ════════════════════════════════════════════════════════════════════
 
 BANKING_FEATURE_BEFORE = textwrap.dedent("""\
@@ -600,7 +600,7 @@ class TestGenericAcrossDomains:
 
     def test_works_for_cms_publishing_app(self):
         """Same code, completely different domain (CMS), confirms zero
-        hardcoded assumptions about banking, SauceDemo, or any other app."""
+        hardcoded assumptions about banking, the demo app, or any other app."""
         cms_feature_before = textwrap.dedent("""\
             Feature: Article management
 

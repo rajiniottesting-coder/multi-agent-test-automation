@@ -50,7 +50,7 @@ def gf(path: str, content: str, is_new: bool = True) -> GeneratedFile:
 # Helper: build a fake project with the same baseline as the real repo
 @pytest.fixture
 def project_root(tmp_path: Path) -> Path:
-    """Minimal project layout matching the real SauceDemo baseline."""
+    """Minimal generic web-app project layout (login + landing page baseline)."""
     (tmp_path / "pages").mkdir()
     (tmp_path / "pages" / "__init__.py").write_text("")
     (tmp_path / "tests" / "step_defs").mkdir(parents=True)
@@ -165,15 +165,15 @@ class TestFeatureFileStructure:
     def test_orphan_and_step_caught_pr14_regression(self):
         """The exact shape of the PR #14 failure: an `And` step floating
         between Background and Scenario blocks, outside any container."""
-        feature = gf("features/inventory_menu_and_logout.feature", textwrap.dedent("""
-            Feature: Inventory menu and logout
+        feature = gf("features/dashboard_menu_and_logout.feature", textwrap.dedent("""
+            Feature: Dashboard menu and logout
 
               Background:
-                Given I am logged in as "standard_user"
-                When I navigate to the inventory page
-                Then I should see the inventory items
+                Given I am logged in as "valid_user"
+                When I navigate to the dashboard page
+                Then I should see the dashboard widgets
 
-              And I should see the page title "Products"
+              And I should see the page title "Dashboard"
 
               Scenario: Verify burger menu present
                 Then I should see the burger menu icon
@@ -698,7 +698,7 @@ class TestGeneralization:
         """Banking-app domain: page object defines `transfer_funds()`,
         step def calls `transfer_money()`. v5 must catch this just like
         it caught the logout bug — no domain-specific assumptions."""
-        # Build a banking-style project from scratch (no SauceDemo baseline)
+        # Build a banking-style project from scratch (independent of the default baseline)
         (tmp_path / "pages").mkdir()
         (tmp_path / "pages" / "__init__.py").write_text("")
         (tmp_path / "pages" / "base_page.py").write_text(textwrap.dedent("""
