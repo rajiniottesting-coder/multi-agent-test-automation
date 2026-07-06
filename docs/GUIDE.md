@@ -221,8 +221,12 @@ The gate is between Agents 1 and 2 specifically because that's the highest-lever
 | `human-approved` | "I reviewed the Test Cases and approve" | Human |
 | `ai-skip` | "Don't process this story (override)" | Human |
 | `ai-coded` | "Agent 2 finished, PR is open" | Agent 2 |
-| `ai-regenerate` | "Regenerate code for this story (one-shot)" | Human |
+| `ai-regenerate` | "Regenerate code for this story — full rewrite (one-shot)" | Human |
+| `ai-update` | "Surgically update code for changed/added/deleted Test Cases (one-shot)" | Human |
 | `tests-run` | "Agent 5 posted test results" | Agent 5 |
+
+For the full lifecycle view (sticky vs one-shot semantics, who removes what),
+see the "Label semantics table" in the State management deep-dive below.
 
 ---
 
@@ -817,6 +821,7 @@ die mid-run and the next cron tick resumes correctly, because nothing was
 | `ai-update` | one-shot trigger | human | Agent 2 on success | "do a surgical incremental update" |
 | `ai-regenerate` | one-shot trigger | human | Agent 2 on success | "do a full rewrite on a -revN branch" |
 | `ai-skip` | permanent opt-out | human | human | invisible to all agents |
+| `tests-run` | sticky marker | Agent 5 | never | "test results reported on the story" |
 
 **Sticky vs one-shot is the core design idea.** Sticky labels are facts
 ("this happened") and provide idempotency — cron can fire every 15 minutes

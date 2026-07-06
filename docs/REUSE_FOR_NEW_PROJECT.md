@@ -1,10 +1,11 @@
 # Reusing this framework for a different project
 
-> **Verification status of your local upload (May 13, 2026):** ALL FIXES PRESENT.
-> All 96 unit tests pass. v17 (type contract + locator discipline), v18 (BasePage
-> helpers + exact-matching prompt rules), and orphan cleanup (both `ai-update`
-> AND `ai-regenerate`) are deployed. Audit-confirmed: zero hardcoded SauceDemo
-> references in agent code, agent prompts, or unit-test logic.
+> **Verification status (July 2026):** ALL FIXES PRESENT. All 123 unit tests
+> pass. Deployed: v17/v18 prompt hardening, orphan cleanup (`ai-update` AND
+> `ai-regenerate`), dynamic sprint scoping (`sprint: "auto"` via JIRA_BOARD_ID),
+> and end-to-end LLM token & cost instrumentation (per-run tracker + per-story
+> ledger). Audit-confirmed: zero hardcoded SauceDemo references in agent code,
+> agent prompts, or unit-test logic.
 
 This guide explains exactly what to change to point this framework at a different application (e.g., banking app, CMS, internal portal, anything with a web UI testable by Playwright + pytest-bdd).
 
@@ -25,7 +26,8 @@ These files contain zero project-specific knowledge. Reuse as-is:
 - `agents/app_context.py` — loads app_under_test from config
 - `agents/github_client.py` — GitHub API wrapper
 - `agents/jira_client.py` — Jira API wrapper
-- `agents/llm_client.py` — Gemini wrapper
+- `agents/llm_client.py` — provider-agnostic LLM wrapper (OpenAI-compatible) + token/cost tracking
+- `agents/usage_ledger.py` — per-story LLM cost ledger (Jira comments) — fully app-agnostic
 - `agents/gherkin_analyzer.py` — Gherkin / step-def matching primitives (renamed from test_inventory.py)
 - `agents/import_validator.py`, `agents/method_resolution_validator.py` — generic validators
 - `agents/schemas.py` — Pydantic models
@@ -154,7 +156,7 @@ Confirmed by audit (search for SauceDemo terms in agent code/prompts/tests retur
 | `agents/*.py` | All 11 Python agent files | ❌ NEVER |
 | `prompts/agent*.md` | All five agent prompts (NOT app_context.md) | ❌ NEVER |
 | `pages/base_page.py` | 10 generic Playwright helpers | ❌ NEVER |
-| `tests/unit/*.py` | All 96 unit tests | ❌ NEVER |
+| `tests/unit/*.py` | All 123 unit tests | ❌ NEVER |
 | `.github/workflows/*.yml` | All 5 workflow files | ❌ NEVER |
 | `config/__init__.py`, `config/paths.py` | Config loading code | ❌ NEVER |
 | `requirements.txt`, `pytest.ini` | Dependency / pytest config | ❌ NEVER |
@@ -172,6 +174,9 @@ Confirmed by audit (search for SauceDemo terms in agent code/prompts/tests retur
 - `JIRA_PROJECT_KEY` — e.g., `ACME` (default: `SCRUM`)
 - `OPENAI_API_KEY` — LLM API key (any OpenAI-compatible endpoint)
 - `OPENAI_API_BASE` — LLM API base URL
+- `LLM_MODEL` — model id (default `claude-opus-4-6`)
+- `JIRA_BOARD_ID` — optional; required only for `sprint: "auto"` (active-sprint resolution)
+- `LLM_PRICE_INPUT_PER_1M` / `LLM_PRICE_OUTPUT_PER_1M` — optional; USD per 1M tokens for real cost numbers
 - `GITHUB_TOKEN` — usually auto-provided by Actions
 - `SLACK_WEBHOOK_URL` (optional) — for Agent 5 notifications
 
@@ -204,7 +209,7 @@ After making the six changes:
 python -m pytest tests/unit/ -q
 # Expected: 96 passed
 
-# 2. Smoke test: connections to Jira / Gemini / GitHub
+# 2. Smoke test: connections to Jira / the LLM endpoint / GitHub
 python scripts/smoke_test.py
 
 # 3. Reference test actually runs against your app
@@ -236,7 +241,8 @@ The fixes we delivered this week aren't tied to SauceDemo. Everything works for 
 | **Orphan cleanup (ai-update)** | AST + Gherkin, app-agnostic by construction. Verified against banking + CMS fixtures. |
 | **Orphan cleanup (ai-regenerate)** | Same algorithm, different wire-in. Same generic guarantees. |
 
-The 96 unit tests include:
+The 123 unit tests include:
+- 27 LLM usage-tracking and cost-ledger tests (app-agnostic by construction)
 - 20 orphan-cleanup tests using **banking** (BANK-101, AccountPage, transfer funds) and **CMS** (CMS-1, SocialPage, schedule tweet) fixtures
 - 31 validator tests using generic placeholders
 - All other tests use abstract data
@@ -292,7 +298,7 @@ Copy the whole repo. In `config/config.yaml`, change the `app_under_test` block 
 | GitHubClient.list_files_in_directory | ✅ Present |
 | Wire-in for ai-update orphan cleanup | ✅ Present |
 | Wire-in for ai-regenerate orphan cleanup | ✅ Present |
-| Unit tests | ✅ 96 passing |
+| Unit tests | ✅ 123 passing |
 | Hardcoded SauceDemo references in agent code | ✅ Zero (audited) |
 | Hardcoded SauceDemo references in agent prompts | ✅ Zero (audited) |
 

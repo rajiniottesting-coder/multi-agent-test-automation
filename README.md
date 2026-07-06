@@ -16,6 +16,8 @@ A reusable framework where **5 specialized AI agents** collaborate to automate t
 | [docs/REUSE_FOR_NEW_PROJECT.md](./docs/REUSE_FOR_NEW_PROJECT.md) | Checklist for pointing the framework at a new application, incl. the app-inventory JSON schema |
 | [docs/TECHNICAL_DEEP_DIVE.md](./docs/TECHNICAL_DEEP_DIVE.md) | Function-level walkthrough of every agent and mechanism |
 | [CHANGES.md](./CHANGES.md) | Changelog — what changed, why, how to adapt |
+| [docs/BACKLOG.md](./docs/BACKLOG.md) | Planned enhancements (module-wise context, two-tier inventory filtering) + token-efficiency playbook |
+| [docs/reference/](./docs/reference/) | File-by-file reference: AGENTS_REFERENCE, WORKFLOWS_REFERENCE, CONFIG_REFERENCE, PROMPTS_REFERENCE — every function, every design decision, with demo Q&A |
 
 ---
 
@@ -97,7 +99,7 @@ For a deeper breakdown — including agent inputs/outputs, design rationale, and
 
 | Layer | Tool | Purpose |
 |---|---|---|
-| **LLM** | Google Gemini 2.5 Flash | Reasoning engine for all agents |
+| **LLM** | Claude (Opus 4.6) via LiteLLM gateway — OpenAI-compatible, provider-agnostic | Reasoning engine for all agents |
 | **Output validation** | Pydantic | Type-safe schemas for LLM outputs |
 | **Test framework** | Playwright + Python | Cross-browser automation |
 | **BDD** | pytest-bdd | Gherkin → Python step mapping |
@@ -124,7 +126,7 @@ multi-agent-test-automation/
 │   ├── app_context.py               # AUT config loader (NEW — central decoupling point)
 │   ├── jira_client.py               # Jira API wrapper (Adapter pattern)
 │   ├── github_client.py             # GitHub API wrapper
-│   ├── llm_client.py                # Gemini wrapper with quota handling
+│   ├── llm_client.py                # Provider-agnostic LLM wrapper + token/cost tracking
 │   ├── schemas.py                   # Pydantic data contracts
 │   └── gherkin_analyzer.py          # Gherkin parsing + dedup + validators (renamed from test_inventory.py)
 │
@@ -173,7 +175,7 @@ multi-agent-test-automation/
 ### Prerequisites
 - Python 3.10 or higher (3.11 / 3.13 recommended)
 - Jira Cloud Free — [atlassian.com/software/jira/free](https://www.atlassian.com/software/jira/free)
-- Google Gemini API key — [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+- API key for an OpenAI-compatible LLM endpoint (e.g. a LiteLLM gateway; set `OPENAI_API_KEY`, `OPENAI_API_BASE`, `LLM_MODEL`)
 - GitHub account with a Personal Access Token (PAT)
 
 ### 1. Clone and set up Python environment
@@ -208,6 +210,8 @@ See [GUIDE.md → Configuration](./docs/GUIDE.md#configuration) for the full env
 2. **Project Settings → Work Types** — add a `Test Case` work type
 3. Create a sample Story (e.g., `User Login Functionality`)
 4. Add the label `ai-ready` to that story
+   (later, to rework an already-coded story: `ai-update` = surgical sync after
+   Test Case changes; `ai-regenerate` = full rewrite — see docs/GUIDE.md → Label semantics)
 
 ### 5. Verify everything connects
 
@@ -215,7 +219,7 @@ See [GUIDE.md → Configuration](./docs/GUIDE.md#configuration) for the full env
 python scripts/smoke_test.py
 ```
 
-Expected: 4 ✅ marks confirming env vars, Jira, Gemini, and Playwright all work.
+Expected: 4 ✅ marks confirming env vars, Jira, the LLM endpoint, and Playwright all work.
 
 ### 6. Run the reference test (sanity check)
 
@@ -269,7 +273,7 @@ The framework itself has unit tests (mostly for the dedup engine and validators)
 pytest tests/unit/ -v
 ```
 
-These tests don't touch Jira, GitHub, or Gemini — fully offline.
+These tests don't touch Jira, GitHub, or the LLM — fully offline.
 
 ---
 
@@ -288,7 +292,7 @@ Full reference: [GUIDE.md → Configuration](./docs/GUIDE.md#configuration).
 Common issues and fixes are in [GUIDE.md → Troubleshooting](./docs/GUIDE.md#troubleshooting). Most-frequent ones:
 
 - **`MissingEnvVarError`** at startup → fill in your `.env` (see `.env.example`)
-- **Gemini quota exhausted** → free tier is 20 requests/day; switch model in `.env` or wait ~24h
+- **LLM quota/rate-limit exhausted** → the run fast-fails (`QuotaExhaustedError`), labels stay unconsumed, and the next cron tick retries automatically once quota resets
 - **Jira `enhanced_search_issues` not found** → upgrade `jira>=3.10.5` (Atlassian removed the legacy endpoint)
 - **`StepDefinitionNotFoundError` at test collection** → Agent 2's validators should catch this; if it slips through, check the auto-correction logs
 

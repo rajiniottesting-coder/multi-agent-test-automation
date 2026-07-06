@@ -24,6 +24,7 @@
 14. [Validators — the safety net](#14-validators--the-safety-net)
 15. [Reuse architecture (config-driven design)](#15-reuse-architecture-config-driven-design)
 16. [Failure modes and recovery](#16-failure-modes-and-recovery)
+17. [Later additions — sprint scoping & cost instrumentation](#17-later-additions--sprint-scoping--cost-instrumentation)
 
 ---
 
@@ -170,7 +171,7 @@ The single-story entry point. Steps:
    - System: `prompts/agent1_analyst.md` (39 lines, generic)
    - App context: `prompts/app_context.md` (the ONLY app-specific prompt file)
    - Story content
-4. **Invoke LLM with structured schema** — `LLMClient().invoke_structured(system_prompt, user_prompt, output_schema=TestCaseList)`. This uses Gemini's function-calling mode to force JSON conforming to `TestCaseList` (defined in `schemas.py` line 32) which contains:
+4. **Invoke LLM with structured schema** — `LLMClient().invoke_structured(system_prompt, user_prompt, output_schema=TestCaseList)`. This injects the Pydantic JSON schema into the prompt and validates the reply (provider-agnostic structured output) to force JSON conforming to `TestCaseList` (defined in `schemas.py` line 32) which contains:
    ```python
    class TestCaseList(BaseModel):
        test_cases: list[TestCase]   # each has summary, description, steps, category
@@ -294,7 +295,7 @@ Two-tier file rule enforced post-Stage-1:
 | **Extendable** | `app_under_test.extendable_paths` (page objects + base_page) | May appear, MUST have `is_new_file=False` |
 | **New** | Everything else | May appear, `is_new_file=True` for fresh files |
 
-Raises `ValueError` with explicit guidance if Gemini hallucinates "let me rewrite login_page.py from scratch." This is the gate that protects your gold-standard reference files from being overwritten.
+Raises `ValueError` with explicit guidance if the LLM hallucinates "let me rewrite login_page.py from scratch." This is the gate that protects your gold-standard reference files from being overwritten.
 
 ### 5.3 Cross-file context injection (line 519)
 
@@ -1163,7 +1164,7 @@ This isolation is enforced by code, not just convention:
 - PR opens on top — may include unexpected pre-existing commits
 - Detection: PR base != latest main → flag for human review
 
-### Gemini quota exceeded
+### LLM quota / rate limit exceeded
 
 - `LLMClient._call_with_quota_check()` raises `QuotaExhaustedError`
 - Workflow fails with clear message
@@ -1200,9 +1201,34 @@ This isolation is enforced by code, not just convention:
 
 ---
 
+## 17. Later additions — sprint scoping & cost instrumentation
+
+Two features added after the sections above were written; full operator docs
+live in GUIDE.md, summarized here for completeness:
+
+**Dynamic sprint scoping.** Every scan JQL now carries a sprint clause.
+`config.yaml` sets `sprint: "auto"` in all four selection blocks;
+`JiraClient.get_active_sprint_name()` resolves the currently active sprint via
+the `JIRA_BOARD_ID` env var (cached per run; degrades to an all-sprints scan
+with a warning if unresolvable). Priority: `--sprint` CLI/workflow input >
+config value > no filter. Zero config edits at sprint boundaries.
+
+**LLM token & cost instrumentation.** `llm_client.py` hosts a process-lifetime
+`_UsageTracker`: every call records API-reported input/output tokens; each
+story run ends with two separate log lines — `LLM TOKEN USAGE [...]` (exact)
+and `LLM COST [...]` (derived from the `LLM_PRICE_INPUT_PER_1M` /
+`LLM_PRICE_OUTPUT_PER_1M` repo variables). Cross-agent story cost:
+`agents/usage_ledger.py` — each LLM-using agent posts a machine-parseable
+`[LLM-USAGE]` comment on the story (Agent 3 derives the key from the
+`auto/<KEY>-` branch); Agent 5 reads them back (`JiraClient.get_comments`),
+adds its own usage, and appends an "End-to-end LLM usage & cost" table
+(per-agent rows + TOTAL) to its test report. Posting/reading is best-effort
+and can never fail a run; missing pricing flags totals as a lower bound
+(token counts stay exact).
+
 ## Closing notes
 
-This framework is the result of about 6 weeks of iterative refinement against real Gemini 2.5 Pro output. Versions v12 through v18 each fixed a specific LLM failure mode observed in production:
+This framework is the result of iterative refinement against real production LLM output — initially Gemini 2.5 Pro, later Claude Opus via an OpenAI-compatible LiteLLM gateway (the provider swap needed zero agent-code changes). Versions v12 through v18 each fixed a specific LLM failure mode observed in production:
 
 - v12 — JSON parsing brittleness in Stage 1 (Pydantic mode introduced)
 - v12e — backtick-fence normalization
