@@ -69,7 +69,6 @@ config/
   agent2_coder.yml                         — Agent 2 trigger
   agent3-reviewer.yml                      — Agent 3 trigger
   agent4_runner.yml                        — Agent 4 + Agent 5 (combined)
-  keep-alive.yml                           — daily nudge so cron keeps firing
 
 prompts/
   agent1_analyst.md             39 lines
@@ -1072,12 +1071,13 @@ schedule:
 schedule:
   - cron: '*/15 9-18 * * 1-5'   # Same schedule, aligned
 
-# .github/workflows/keep-alive.yml
-schedule:
-  - cron: '0 2 * * *'           # Daily at 02:00 UTC
 ```
 
-**Why keep-alive:** GitHub Actions cron is "best effort" on free personal accounts — silently stops firing if the repo has been quiet. Daily nudge re-registers the scheduler.
+**Note on scheduler liveness:** GitHub Actions cron is "best effort" on free
+personal accounts and disables after ~60 days of repo inactivity. A daily
+keep-alive workflow existed for this but was removed in July 2026 — regular
+agent activity (PRs, commits) keeps the scheduler alive, and its direct
+pushes to main conflicted with branch protection (GH013).
 
 ---
 

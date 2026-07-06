@@ -61,10 +61,11 @@ on:
 # We previously added a push failsafe when GitHub Actions cron was
 # silently throttled. Per user direction, Agent 2 now runs on cron ONLY.
 # If cron throttling returns (a known platform issue for free personal
-# accounts), the keep-alive workflow's daily timestamp commit nudges
-# the scheduler back to life. If that fails too, use the
-# `workflow_dispatch` button in the Actions UI for a one-shot manual
-# run.
+# accounts), regular agent activity (PRs, commits) keeps the scheduler
+# alive. For a one-shot manual run, use the `workflow_dispatch` button
+# in the Actions UI. (A separate keep-alive workflow existed for this
+# but was removed in July 2026 — redundant with regular activity, and
+# its direct pushes to main conflicted with branch protection.)
 
 permissions:
   contents: write       # Agent 2 creates branches and commits
