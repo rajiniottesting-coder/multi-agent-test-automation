@@ -433,6 +433,32 @@ Once you merge the PAT cascade setup (see [DECISIONS.md → ADR-008](./DECISIONS
 
 ---
 
+### Test suites — what runs when
+
+Three distinct test layers exist; they have different triggers and purposes:
+
+| Suite | Trigger | Touches network? | Purpose |
+|---|---|---|---|
+| `tests/unit/` (123 tests) | Every PR — Agent 4 runs `pytest tests/`, which includes them. Also run manually (`python -m pytest tests/unit/ -q`) before committing any framework change. | No — fully offline (no Jira/GitHub/LLM) | Framework correctness: validators, markers, orphan cleanup, usage tracking, ledger |
+| `tests/step_defs/` (generated E2E) | Every PR — same Agent 4 run | Yes — drives a real browser against the app under test | Does the application work |
+| `scripts/smoke_test.py` | **Manual only** — run on first setup, after credential/`.env` changes, on a new machine, or when onboarding a new app | Yes — live Jira login, one real LLM call, one browser hit on the app's `base_url` (config-driven) | Is the *environment* wired correctly |
+
+Notes:
+- Because Agent 4 runs the whole `tests/` tree, framework unit tests execute
+  on every pipeline pass — the framework self-tests on every PR, and a broken
+  unit test turns Agent 4's check red just like an app-test failure would.
+  (If you ever prefer PR reports to show only app tests, narrow the workflow
+  command to `pytest tests/step_defs/` and keep unit tests as the manual
+  pre-commit gate.)
+- The `smoke:` marker in `pytest.ini` is unrelated to `scripts/smoke_test.py`
+  — it's a tag for flagging individual generated tests as quick health checks
+  (`pytest -m smoke`).
+- The smoke test is deliberately not scheduled: it verifies *setup*, not
+  *code*, makes live calls (small LLM cost), and setup doesn't change per
+  commit.
+
+---
+
 ## Onboarding a new app
 
 The whole point of the recent refactor: **no Python code changes** to point this at a different application. Here's the full step-by-step.
@@ -484,7 +510,7 @@ If you want a pristine repo for your app (no SauceDemo files):
 ### Step 6: Test locally
 
 ```bash
-python scripts/smoke_test.py           # verifies env + Jira + Gemini + Playwright
+python scripts/smoke_test.py           # verifies env + Jira + the LLM endpoint + Playwright
 pytest tests/step_defs/test_<your_reference>.py -v   # runs your reference test
 
 # Then with a real Jira story:
