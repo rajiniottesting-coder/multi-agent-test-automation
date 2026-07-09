@@ -89,13 +89,76 @@ def browser(playwright_instance, config) -> Browser:
 
 
 @pytest.fixture
-def page(browser, config) -> Page:
-    """Fresh browser tab (context) for each test — full isolation."""
+def page(browser, config, request) -> Page:
+    """Fresh browser tab (context) for each test — full isolation.
+
+    On test FAILURE, captures three artifacts into reports/failure-evidence/:
+      - <test>.png    a screenshot of the final page state
+      - <test>.webm   a video recording of the whole test
+      - <test>.zip    a Playwright trace (open with `playwright show-trace`)
+    On pass, nothing is written (video/trace are discarded) to keep artifact
+    size down. Requires the pytest_runtest_makereport hook below to know the
+    outcome.
+    """
+    from pathlib import Path as _Path
+    evidence_dir = _Path("reports/failure-evidence")
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+
     browser_config = config["browser"]
     context = browser.new_context(
         viewport=browser_config["viewport"],
+        record_video_dir=str(evidence_dir),   # Playwright records every test...
     )
+    context.tracing.start(screenshots=True, snapshots=True, sources=True)
     page = context.new_page()
     page.set_default_timeout(browser_config["timeout"])
+
     yield page
-    context.close()
+
+    # Decide outcome from the hook-attached report (see makereport below).
+    failed = getattr(request.node, "rep_call", None) is not None and request.node.rep_call.failed
+    safe_name = request.node.name.replace("/", "_").replace("::", "_").replace(" ", "_")
+
+    try:
+        if failed:
+            # Screenshot of final state
+            try:
+                page.screenshot(path=str(evidence_dir / f"{safe_name}.png"), full_page=True)
+            except Exception:
+                pass
+            # Trace zip
+            try:
+                context.tracing.stop(path=str(evidence_dir / f"{safe_name}.trace.zip"))
+            except Exception:
+                pass
+        else:
+            # Passing test — discard the trace (don't write a zip)
+            try:
+                context.tracing.stop()
+            except Exception:
+                pass
+    finally:
+        video = page.video
+        context.close()  # finalizes the video file on disk
+        # Keep the video only on failure; rename to the test name, else delete.
+        if video is not None:
+            try:
+                src = _Path(video.path())
+                if failed:
+                    src.replace(evidence_dir / f"{safe_name}.webm")
+                else:
+                    src.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+
+# ─────────────────────────────────────────────────────────────
+# Failure-detection hook — makes each test's outcome available to
+# fixtures (via request.node.rep_call) so the `page` fixture can
+# capture evidence only when a test fails.
+# ─────────────────────────────────────────────────────────────
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    setattr(item, f"rep_{report.when}", report)

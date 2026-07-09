@@ -93,11 +93,26 @@ jobs:
         # OS-level apt packages are NOT cached and need to be reinstalled fresh.
         run: playwright install --with-deps chromium
 
-      - name: Run tests
+      - name: Framework self-test (unit tests)
+        # Runs the framework's own 123 unit tests FIRST as a gate. If the
+        # framework itself is broken, the generated code's trustworthiness is
+        # already in question, so we fail fast before running app E2E tests.
+        # Written to a SEPARATE junit file so it never mixes into the story
+        # report (Agent 5 only reports the app tests below).
+        run: |
+          pytest tests/unit/ \
+            --junit-xml=reports/junit-unit.xml \
+            -v
+
+      - name: Run app tests (generated E2E)
         # CI=true is auto-set by GitHub Actions, which our conftest.py uses
         # to force headless mode (overriding config.yaml's headless: false).
+        # This junit.xml contains ONLY the app-under-test E2E results — it's
+        # what Agent 5 reads and reports to the Jira story, so the story's
+        # test counts reflect the feature, not framework internals.
+        if: always()  # run app tests even if unit gate failed, so we still get E2E signal
         run: |
-          pytest tests/ \
+          pytest tests/step_defs/ \
             --html=reports/pytest-report.html \
             --self-contained-html \
             --junit-xml=reports/junit.xml \

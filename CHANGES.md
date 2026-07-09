@@ -4,6 +4,27 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## July 2026 — Accurate story reporting + failure evidence capture
+
+**Report scope fix (unit vs app tests).** Agent 4 previously ran `pytest tests/`
+(unit + E2E together) into one junit.xml, so Agent 5's Jira report counted the
+123 framework unit tests alongside the story's app tests — inflating and
+confusing the numbers. Now split into two steps:
+- `pytest tests/unit/` → `reports/junit-unit.xml` — framework self-test gate
+  (runs first; failing it signals the framework itself is broken).
+- `pytest tests/step_defs/` → `reports/junit.xml` — the app E2E results Agent 5
+  reads. Story reports now reflect ONLY the feature's tests. No Agent 5 code
+  change (it still reads junit.xml, which is now app-only).
+
+**Failure evidence.** The `page` fixture in tests/conftest.py now records, on
+test FAILURE only: a full-page screenshot (`.png`), a video (`.webm`), and a
+Playwright trace (`.trace.zip`) into `reports/failure-evidence/`. Passing tests
+discard video/trace to keep artifacts small. All three ride along in the
+existing `reports/` workflow artifact for human inspection on the PR. A
+`pytest_runtest_makereport` hook exposes each test's outcome to the fixture.
+
+---
+
 ## July 2026 — LLM token & cost instrumentation + end-to-end story cost ledger
 
 Token usage and cost are now MEASURED, tracked as two separate quantities,
