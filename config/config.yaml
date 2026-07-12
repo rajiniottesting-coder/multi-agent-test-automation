@@ -35,6 +35,7 @@ app_under_test:
     - "features/login.feature"
     - "tests/step_defs/test_login.py"
     - "pages/login_page.py"
+    - "pages/base_page.py"
 
   # Extendable paths: existing files Agent 2 MAY modify by adding new methods,
   # but must not break or remove existing methods/signatures.
@@ -43,7 +44,7 @@ app_under_test:
   # The LLM is told the rules in the Stage 1 prompt; the validator checks them.
   extendable_paths:
     - "pages/inventory_page.py"
-    - "pages/base_page.py"
+    
 
 # ────────────────────────────────────────────────────────────
 # Browser & test framework configuration
