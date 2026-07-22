@@ -4,6 +4,36 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## Phase 2 — Tier 2 (app-context token savings)
+
+Both changes are backward-compatible; the SauceDemo app now ships in the module
+layout as a worked example.
+
+### Inventory minification (backlog 2.6)
+`agents/app_context.py` — `load_page_inventory_json()` minifies the inventory JSON
+at injection time (file on disk stays readable; only the prompt string is compacted).
+~15% on the SauceDemo inventory, more as inventories grow, zero information loss.
+Malformed JSON falls back to raw text with a warning (pre-2.6 behaviour); a missing
+file still raises FileNotFoundError.
+
+### Module-wise app context (backlog 2.1)
+`agents/agent1_analyst.py` `load_app_context_block()` is now module-aware and
+`agents/jira_client.py` `get_story()` returns the story's Jira Components (additive).
+If `prompts/app_context/` exists, Agent 1 injects `core.md` (always) + one
+`<component>.md` per Jira Component; otherwise the single `prompts/app_context.md`
+is used exactly as before. Matching is case/separator-insensitive; a story with no
+components (or an unknown one) safely gets all modules.
+
+SauceDemo's `app_context.md` is split into `prompts/app_context/`: `core.md` +
+`login.md` / `inventory.md` / `cart.md` / `checkout.md`. A Login story now injects
+~49% fewer context tokens than the single file. Tag stories with their Jira
+Component to realise the saving; untagged stories are unaffected (safe default).
+
+New `tests/unit/test_app_context_modules.py` — 19 tests (module selection, all safe
+defaults, minify round-trip / malformed-fallback / missing-file). Suite: 151 → **170**.
+
+---
+
 ## Phase 2 — Cross-file duplicate step-definition guard (SCRUM-54 lesson)
 
 **The failure.** A new login-adjacent feature (`test_login_edge_and_validation.py`)

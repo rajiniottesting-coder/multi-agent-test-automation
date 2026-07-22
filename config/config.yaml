@@ -6,7 +6,7 @@
 #   2. Drop a new <name>.json into app_inventory/
 #   3. Drop your reference .feature, step-def .py, and page-object .py
 #      into the locations listed under `reference_files` below
-#   4. Update prompts/app_context.md with app-specific guidance for
+#   4. Update app context (prompts/app_context.md OR prompts/app_context/ modules) for
 #      Agent 1's analyst prompt
 #
 # No agent code changes are needed. See docs/GUIDE.md "Onboarding a
