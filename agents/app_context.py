@@ -50,6 +50,100 @@ def _normalize_path(p: str) -> str:
     return p.replace("\\", "/").lstrip("./")
 
 
+def _norm_component(name: str) -> str:
+    """Normalize a component name for case/space/hyphen-insensitive matching.
+
+    Same normalization used by Agent 1's module-wise app-context loader
+    (backlog 2.1), so a story's Jira Components select inventory pages and
+    app-context modules identically. "User Management" -> "user_management".
+    """
+    return name.strip().lower().replace(" ", "_").replace("-", "_")
+
+
+# Internal inventory keys that drive our filtering but are NOT content the LLM
+# needs — stripped from the injected string to save tokens.
+_INVENTORY_META_KEYS = ("components", "always")
+
+
+def filter_inventory_by_components(
+    data: dict, components: Optional[list[str]] = None
+) -> dict:
+    """Return a copy of the inventory dict with `pages` filtered to the ones
+    relevant to `components` (backlog 2.2), and internal tagging keys stripped.
+
+    Rules (mirror the app-context module selection in backlog 2.1):
+      - A page is kept if it is flagged ``"always": true`` (shared pages such as
+        the menu) OR any of its ``components`` matches a requested component,
+        matched case/space/hyphen-insensitively.
+      - ``components`` None/empty -> keep ALL pages (default, unchanged).
+      - Requested components that match NO page -> keep ALL pages. Safe default:
+        never silently drop context.
+
+    Only the ``pages`` block is filtered; ``test_users``, ``common_errors``,
+    ``selector_strategy``, ``test_patterns`` etc. are small and always retained.
+    The ``components`` / ``always`` per-page keys and the top-level
+    ``_inventory_conventions`` note are removed from the returned dict so they
+    are not sent to the LLM. The input dict is not mutated.
+
+    Non-dict inputs or an inventory with no usable ``pages`` map are returned
+    with only the meta note stripped — no filtering, no crash.
+    """
+    if not isinstance(data, dict):
+        return data
+
+    out = {k: v for k, v in data.items() if k != "_inventory_conventions"}
+
+    pages = out.get("pages")
+    if not isinstance(pages, dict) or not pages:
+        return out
+
+    requested = {_norm_component(c) for c in (components or []) if c}
+
+    def _strip(page: dict) -> dict:
+        return {k: v for k, v in page.items() if k not in _INVENTORY_META_KEYS}
+
+    if not requested:
+        out["pages"] = {name: _strip(p) for name, p in pages.items()}
+        return out
+
+    selected: dict = {}
+    for name, page in pages.items():
+        if not isinstance(page, dict):
+            selected[name] = page
+            continue
+        if page.get("always") is True:
+            selected[name] = _strip(page)
+            continue
+        page_components = {
+            _norm_component(c) for c in (page.get("components") or [])
+        }
+        if page_components & requested:
+            selected[name] = _strip(page)
+
+    # Safe default: if the component filter matched nothing meaningful
+    # (only "always" pages, or nothing at all), fall back to the full set so
+    # the LLM is never starved of context.
+    non_always = {
+        name for name, page in pages.items()
+        if not (isinstance(page, dict) and page.get("always") is True)
+    }
+    matched_non_always = set(selected) & non_always
+    if not matched_non_always:
+        logger.info(
+            "Inventory filter: components %s matched no page — injecting the "
+            "full inventory (safe default).", list(requested),
+        )
+        out["pages"] = {name: _strip(p) for name, p in pages.items()}
+        return out
+
+    logger.info(
+        "Inventory filter: components %s selected %d/%d pages: %s",
+        list(requested), len(selected), len(pages), list(selected),
+    )
+    out["pages"] = selected
+    return out
+
+
 @dataclass(frozen=True)
 class AppContext:
     """Immutable view of the `app_under_test` block in config.yaml.
@@ -193,9 +287,36 @@ class AppContext:
             out[key] = path.read_text(encoding="utf-8")
         return out
 
-    def load_page_inventory_json(self) -> str:
-        """Read the page inventory JSON file as a raw string (for prompt
-        templates that interpolate it directly).
+    def load_page_inventory_json(self, components: Optional[list[str]] = None) -> str:
+        """Read the page inventory JSON as a raw string (for prompt templates
+        that interpolate it directly).
+
+        Two behaviours, chosen by the `components` argument:
+
+        1. **Full inventory (default, unchanged).** `components` None or empty
+           → the whole inventory is returned, byte-identical to before. Every
+           existing caller that passes no argument keeps its current behaviour.
+        2. **Component-filtered (backlog 2.2).** When a story's Jira Components
+           are passed, only the pages relevant to those components are injected,
+           plus any page flagged `"always": true` (shared pages like the menu).
+           This mirrors the module-wise app-context selection (backlog 2.1) and
+           cuts Agent 2's inventory-dominated input tokens on a tagged story.
+
+           A page is kept if any of its `components` matches a requested
+           component (case/space/hyphen-insensitive) OR it is marked
+           `"always": true`. **Safe default:** if the requested components match
+           NO page, the full inventory is returned — context is never silently
+           dropped, exactly like the app-context loader.
+
+        Either way the internal tagging keys (`components`, `always`, and the
+        top-level `_inventory_conventions` note) are stripped from the string
+        sent to the LLM — they drive our filtering, they aren't content the
+        model needs — and the result is minified (backlog 2.6). Only the
+        prompt string changes; the file on disk stays human-readable.
+
+        A file that is not valid JSON falls back to the raw text unchanged
+        (identical to pre-2.6 behaviour) so a malformed inventory can never make
+        this method start failing. A *missing* file still raises FileNotFoundError.
 
         Raises:
             FileNotFoundError: if the inventory file doesn't exist.
@@ -209,18 +330,17 @@ class AppContext:
                 f"required JSON shape."
             )
         raw = path.read_text(encoding="utf-8")
-        # Backlog 2.6 — minify at injection time. The file on disk stays
-        # human-readable; only the string sent to the LLM is compacted, which
-        # trims input tokens on every Agent 2/3 call at zero information loss.
-        # If the file is not valid JSON, fall back to the raw text unchanged
-        # (identical to pre-2.6 behaviour) so a malformed inventory can never
-        # make this method start failing.
+
+        import json
+
         try:
-            import json
-            return json.dumps(json.loads(raw), separators=(",", ":"), ensure_ascii=False)
+            data = json.loads(raw)
         except (ValueError, TypeError):
             logger.warning(
                 "Page inventory at %s is not valid JSON — injecting raw text "
-                "without minification.", path,
+                "without minification or filtering.", path,
             )
             return raw
+
+        data = filter_inventory_by_components(data, components)
+        return json.dumps(data, separators=(",", ":"), ensure_ascii=False)

@@ -1,18 +1,26 @@
 {
   "app_name": "SauceDemo",
   "base_url": "https://www.saucedemo.com",
-  "description": "E-commerce demo site for automation practice. Login, browse, cart, checkout flows.",
-
+  "description": "E-commerce demo site for automation practice. Full flow: login, browse/sort products, product detail, cart, three-step checkout, and a shared side (burger) menu available after login.",
+  "_inventory_conventions": {
+    "components": "Each page is tagged with the Jira Component(s) it belongs to (Login, Inventory, Cart, Checkout). Backlog 2.2 uses these to inject only the story-relevant pages into Agent 2's prompt. A page with \"always\": true is injected on every call regardless of component (the shared menu), analogous to app_context core.md. A story with no components — or a component that matches no page — safely gets ALL pages.",
+    "selector_source": "All selectors use SauceDemo's data-test attributes, which are stable and always present.",
+    "errors": "Prefer per-page `errors` (name -> exact message string, verbatim) over a big top-level `common_errors`. Page-level errors get filtered with their page by backlog 2.2, and keep messages next to the screen that raises them. Reserve top-level `common_errors` for truly global errors (e.g. a session-timeout banner)."
+  },
   "test_users": {
     "standard": "standard_user / secret_sauce — normal user, all flows work",
     "locked_out": "locked_out_user / secret_sauce — receives lockout error on login",
-    "problem": "problem_user / secret_sauce — UI bugs intentionally present",
-    "performance_glitch": "performance_glitch_user / secret_sauce — slow page loads"
+    "problem": "problem_user / secret_sauce — UI bugs intentionally present (broken images, form fields)",
+    "performance_glitch": "performance_glitch_user / secret_sauce — slow page loads",
+    "error": "error_user / secret_sauce — errors on some cart/checkout actions",
+    "visual": "visual_user / secret_sauce — intentional visual differences"
   },
-
   "pages": {
     "login": {
       "url": "/",
+      "components": [
+        "Login"
+      ],
       "page_object_file": "pages/login_page.py",
       "page_object_class": "LoginPage",
       "elements": {
@@ -25,53 +33,185 @@
       "elements_notes": {
         "error_message_vs_close_button": "IMPORTANT: [data-test='error'] is the <h3> element that holds the error text. The close (X) button is a SIBLING element, not a child. Do NOT write [data-test='error'] button or .locator('button') under the error message — that will not find anything. Use [data-test='error-button'] directly."
       },
-      "key_methods": ["open()", "login_as(username, password)", "get_error_message()", "dismiss_error()"]
+      "key_methods": [
+        "open()",
+        "login_as(username, password)",
+        "get_error_message()",
+        "dismiss_error()"
+      ],
+      "errors": {
+        "invalid_credentials": "Epic sadface: Username and password do not match any user in this service",
+        "locked_out": "Epic sadface: Sorry, this user has been locked out.",
+        "missing_username": "Epic sadface: Username is required",
+        "missing_password": "Epic sadface: Password is required"
+      }
     },
-
     "inventory": {
       "url": "/inventory.html",
+      "components": [
+        "Inventory"
+      ],
       "page_object_file": "pages/inventory_page.py",
       "page_object_class": "InventoryPage",
       "elements": {
         "page_title": "[data-test='title']",
         "inventory_container": "[data-test='inventory-container']",
+        "inventory_items": "[data-test='inventory-item']",
+        "inventory_item_name": "[data-test='inventory-item-name']",
+        "inventory_item_price": "[data-test='inventory-item-price']",
         "shopping_cart_link": "[data-test='shopping-cart-link']",
+        "cart_badge": "[data-test='shopping-cart-badge']",
         "sort_dropdown": "[data-test='product-sort-container']",
+        "active_sort_option": "[data-test='active-option']",
         "add_to_cart_buttons": "[data-test^='add-to-cart-']",
-        "remove_buttons": "[data-test^='remove-']",
+        "remove_buttons": "[data-test^='remove-']"
+      },
+      "elements_notes": {
+        "add_remove_button_ids": "Each product's add/remove button has a slug suffix, e.g. [data-test='add-to-cart-sauce-labs-backpack'] then it flips to [data-test='remove-sauce-labs-backpack']. Use the ^= prefix selectors for 'any product', or the exact slug for a specific one.",
+        "sort_values": "sort_dropdown is a native <select>. Option values: 'az' (Name A-Z), 'za' (Name Z-A), 'lohi' (Price low-high), 'hilo' (Price high-low). Use select_option(value=...)."
+      },
+      "key_methods": [
+        "is_loaded()",
+        "get_page_title_text()"
+      ],
+      "implementation_status": "partial — only is_loaded and get_page_title_text exist; add-to-cart, sort, and open-cart actions need to be added"
+    },
+    "inventory_item": {
+      "url": "/inventory-item.html?id=<id>",
+      "components": [
+        "Inventory"
+      ],
+      "page_object_file": "pages/inventory_item_page.py (NOT YET CREATED)",
+      "page_object_class": "InventoryItemPage",
+      "elements": {
+        "item_name": "[data-test='inventory-item-name']",
+        "item_price": "[data-test='inventory-item-price']",
+        "item_description": "[data-test='inventory-item-desc']",
+        "add_to_cart_button": "[data-test^='add-to-cart']",
+        "remove_button": "[data-test^='remove']",
+        "back_to_products_button": "[data-test='back-to-products']",
         "cart_badge": "[data-test='shopping-cart-badge']"
       },
-      "key_methods": ["is_loaded()", "get_page_title_text()"],
-      "implementation_status": "partial — only is_loaded and get_page_title_text exist; cart actions need to be added"
+      "implementation_status": "NOT YET CREATED — Coder may generate this if a story covers the product-detail page"
     },
-
     "cart": {
       "url": "/cart.html",
+      "components": [
+        "Cart"
+      ],
       "page_object_file": "pages/cart_page.py (NOT YET CREATED)",
       "page_object_class": "CartPage",
       "elements": {
+        "cart_list": "[data-test='cart-list']",
         "cart_items": "[data-test='inventory-item']",
+        "cart_item_name": "[data-test='inventory-item-name']",
+        "cart_item_price": "[data-test='inventory-item-price']",
+        "cart_quantity": "[data-test='item-quantity']",
         "checkout_button": "[data-test='checkout']",
         "continue_shopping_button": "[data-test='continue-shopping']",
-        "remove_button": "[data-test^='remove-']"
+        "remove_buttons": "[data-test^='remove-']"
       },
-      "implementation_status": "NOT YET CREATED — Coder may need to generate this page object"
+      "implementation_status": "NOT YET CREATED — Coder may generate this page object"
+    },
+    "checkout_step_one": {
+      "url": "/checkout-step-one.html",
+      "components": [
+        "Checkout"
+      ],
+      "page_object_file": "pages/checkout_step_one_page.py (NOT YET CREATED)",
+      "page_object_class": "CheckoutStepOnePage",
+      "elements": {
+        "first_name_input": "[data-test='firstName']",
+        "last_name_input": "[data-test='lastName']",
+        "postal_code_input": "[data-test='postalCode']",
+        "continue_button": "[data-test='continue']",
+        "cancel_button": "[data-test='cancel']",
+        "error_message": "[data-test='error']"
+      },
+      "elements_notes": {
+        "continue_is_input": "The Continue control is an <input type='submit'>, so [data-test='continue'] targets an input, not a <button>. Click it directly by the data-test."
+      },
+      "implementation_status": "NOT YET CREATED — customer-information form (step one of three)",
+      "errors": {
+        "missing_first_name": "Error: First Name is required",
+        "missing_last_name": "Error: Last Name is required",
+        "missing_postal_code": "Error: Postal Code is required"
+      }
+    },
+    "checkout_step_two": {
+      "url": "/checkout-step-two.html",
+      "components": [
+        "Checkout"
+      ],
+      "page_object_file": "pages/checkout_step_two_page.py (NOT YET CREATED)",
+      "page_object_class": "CheckoutStepTwoPage",
+      "elements": {
+        "cart_items": "[data-test='inventory-item']",
+        "subtotal_label": "[data-test='subtotal-label']",
+        "tax_label": "[data-test='tax-label']",
+        "total_label": "[data-test='total-label']",
+        "finish_button": "[data-test='finish']",
+        "cancel_button": "[data-test='cancel']"
+      },
+      "elements_notes": {
+        "totals_text": "subtotal/tax/total labels contain the money as text, e.g. 'Item total: $29.99', 'Tax: $2.40', 'Total: $32.39'. Assert on the numeric substring, not exact full-string equality, since values vary with cart contents."
+      },
+      "implementation_status": "NOT YET CREATED — order overview / totals (step two of three)"
+    },
+    "checkout_complete": {
+      "url": "/checkout-complete.html",
+      "components": [
+        "Checkout"
+      ],
+      "page_object_file": "pages/checkout_complete_page.py (NOT YET CREATED)",
+      "page_object_class": "CheckoutCompletePage",
+      "elements": {
+        "complete_header": "[data-test='complete-header']",
+        "complete_text": "[data-test='complete-text']",
+        "back_home_button": "[data-test='back-to-products']",
+        "pony_express_image": "[data-test='pony-express']"
+      },
+      "elements_notes": {
+        "success_text": "complete_header reads 'Thank you for your order!' on a successful checkout. This is the canonical assertion for a completed purchase."
+      },
+      "implementation_status": "NOT YET CREATED — order confirmation (step three of three)"
+    },
+    "menu": {
+      "url": "(overlay — available on every page after login)",
+      "always": true,
+      "page_object_file": "pages/base_page.py",
+      "page_object_class": "BasePage",
+      "elements": {
+        "open_menu_button": "#react-burger-menu-btn",
+        "close_menu_button": "#react-burger-cross-btn",
+        "all_items_link": "[data-test='inventory-sidebar-link']",
+        "about_link": "[data-test='about-sidebar-link']",
+        "logout_link": "[data-test='logout-sidebar-link']",
+        "reset_app_state_link": "[data-test='reset-sidebar-link']"
+      },
+      "elements_notes": {
+        "shared_menu": "This burger menu overlays every authenticated page (inventory, cart, checkout). It is tagged \"always\": true so it is injected on every Agent 2 call regardless of the story's component filter. The open/close buttons use id selectors (React Burger Menu component), which is the one place ids are acceptable on SauceDemo — the data-test attributes only appear on the links inside.",
+        "logout_returns_to_login": "logout_link navigates back to '/' (the login page)."
+      },
+      "key_methods": [
+        "open_menu()",
+        "logout()",
+        "reset_app_state()"
+      ]
     }
   },
-
   "common_errors": {
-    "invalid_credentials": "Epic sadface: Username and password do not match any user in this service",
-    "locked_out": "Epic sadface: Sorry, this user has been locked out.",
-    "missing_username": "Epic sadface: Username is required",
-    "missing_password": "Epic sadface: Password is required"
+    "_note": "Page-specific errors now live under each page's `errors` field so they ride the 2.2 component filter (a Login story injects only login errors). Put ONLY genuinely cross-cutting/global errors here."
   },
-
   "selector_strategy": {
     "preferred": "data-test attributes (always exist on SauceDemo)",
     "format": "[data-test='exact-name']",
-    "avoid": ["IDs (some are generated)", "CSS class names (may change)", "XPath (brittle)"]
+    "avoid": [
+      "IDs (some are generated; only the burger open/close buttons legitimately use ids)",
+      "CSS class names (may change)",
+      "XPath (brittle)"
+    ]
   },
-
   "test_patterns": {
     "framework": "Playwright + pytest-bdd + POM",
     "feature_files_in": "features/",

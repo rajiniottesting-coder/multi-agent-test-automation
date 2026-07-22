@@ -1,0 +1,70 @@
+# Sweeper — reliability backstop for event-driven agents (backlog 3.4)
+#
+# Agents 1 & 2 are cron-driven and self-heal. Agents 3 (review) and 4/5
+# (run + report) are fired by the one-shot `pull_request` event; if that run is
+# cancelled or never starts, the PR stalls silently. This sweeper runs hourly,
+# finds open `auto/*` PRs whose Agent-3 or Agent-4 workflow has no settled run
+# for the current commit, and reopens them to re-fire the event chain.
+#
+# It reuses the SAME PAT as Agent 2 (GH_PAT). This is essential: the built-in
+# GITHUB_TOKEN deliberately does NOT re-fire workflows, so a reopen with it would
+# be a no-op for Agents 3/4. A PAT is user-equivalent and its reopen fires the
+# event. See docs/ADR-008-pat-for-cascade.md.
+name: Sweeper (stalled-PR backstop)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Report only; take no action"
+        type: boolean
+        default: false
+  schedule:
+    # Hourly, on the hour. GitHub cron can be delayed a few minutes under load.
+    - cron: "5 * * * *"
+
+# Governs the built-in token; our script uses GH_PAT, but keep least-privilege.
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read
+
+# Never let two sweeps overlap.
+concurrency:
+  group: sweeper
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    name: Re-trigger stalled PRs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run sweeper
+        env:
+          # PAT (not the built-in token) so the reopen re-fires pull_request.
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_REPO: ${{ secrets.GH_REPO }}
+        run: |
+          DRY_RUN_FLAG=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
+          python -m scripts.sweep_stalled_prs $DRY_RUN_FLAG

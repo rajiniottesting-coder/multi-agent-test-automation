@@ -4,6 +4,94 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## Phase 2 — Tier 3 (3.1 inventory tooling, 3.4 sweeper) + page-level errors
+
+All additive — new packages, scripts, one workflow, and data. No existing agent
+code or workflow changed. Suite 218 -> **254 passing** (+36).
+
+### Inventory generation + staleness checker (backlog 3.1)
+New `inventory_tools/` package with browser-free, unit-tested logic
+(`introspect.py`: selector ranking, element naming, repeated-family collapsing,
+draft page assembly, staleness diff) and a thin Playwright layer (`browser.py`).
+Two CLIs: `scripts/generate_inventory.py` crawls the live app and emits a DRAFT
+inventory (machine-fillable fields populated; `elements_notes` / `key_methods` /
+`errors` / `components` left as visible stubs — a machine can't infer behaviour,
+intended API, or exact error strings), and `scripts/check_inventory_staleness.py`
+diffs the committed inventory against the live DOM, reporting stale selectors
+(the dangerous kind), untracked live data-tests, and unreachable pages, warning
+on pages with no `elements_notes`, and exiting non-zero under `--fail-on-drift`
+for CI gating. 22 tests in `test_inventory_introspect.py`. Requires
+`playwright install chromium` to run live.
+
+### Sweeper — stalled-PR backstop (backlog 3.4)
+`.github/workflows/sweeper.yml` (hourly cron + dispatch) runs
+`scripts/sweep_stalled_prs.py`. Cron agents (1/2) self-heal; event-driven agents
+(3 review, 4/5 run+report) don't — a cancelled or missing `pull_request` run
+strands a PR. The sweeper finds open `auto/*` PRs whose Agent-3 or Agent-4
+workflow has no settled run (success/failure/timed_out) for the current commit
+and reopens them to re-fire the event chain. It reuses Agent 2's `GH_PAT`
+deliberately: the built-in GITHUB_TOKEN does not re-fire workflows, and Agent 5's
+report job is gated on `pull_request`, so a workflow_dispatch re-run would skip
+the report — reopening re-runs the whole chain. Loop-safe: a real pass/fail is
+left alone, and each nudge drops a commit-SHA marker comment so a PR is nudged at
+most once per commit. 14 tests in `test_sweeper.py`.
+
+### Page-level errors (schema)
+`app_inventory/saucedemo.json` — page-specific error strings moved from the flat
+top-level `common_errors` into each page's new `errors` field (login errors ->
+login, checkout errors -> checkout_step_one). This keeps messages next to the
+screen that raises them and lets them ride the 2.2 component filter (a Login
+story injects only login errors). Backward compatible: nothing parses errors;
+`common_errors` is retained for genuinely cross-cutting errors. No code change.
+
+## Phase 2 — Tier 2 (batch 2: 2.2 / 2.3 / 2.4)
+
+Three enhancements, each backward-compatible and each with a safe fallback. Suite
+grew 170 -> **218 passing** (+48 tests across three new files).
+
+### Component-wise inventory filtering (backlog 2.2)
+`agents/app_context.py` gains `filter_inventory_by_components()` and a
+component-aware `load_page_inventory_json(components=None)`. When a story's Jira
+Components are passed, only the inventory pages tagged with those components are
+injected, plus any page flagged `"always": true` (shared pages such as the menu) —
+mirroring the module-wise app-context selection (2.1). Matching is
+case/space/hyphen-insensitive; the internal `components` / `always` /
+`_inventory_conventions` tagging keys are stripped from the string sent to the LLM.
+**Safe defaults:** a no-argument call is byte-identical to before, and a story with
+no components — or a component that matches no page — gets the full inventory
+(context is never silently dropped).
+
+Wired at Agent 2's two entrypoints (`run` and `run_update`), which already fetch
+the story and account for ~92% of input tokens. Agent 3 keeps the full inventory
+so a review never false-flags a filtered-out selector.
+
+`app_inventory/saucedemo.json` was completed from login-only to all eight SauceDemo
+modules (login, inventory, inventory_item, cart, checkout_step_one/two/complete,
+and the shared menu), each tagged with its Jira Component. A Login story now injects
+~56% fewer inventory characters. New `tests/unit/test_inventory_filtering.py` (18).
+
+### Error-type-aware repair prompts (backlog 2.3)
+`agents/agent2_coder.py` — the repair loop used to answer every validator failure
+with the same "add your @given/@when/@then decorator" instruction. It now classifies
+each error by its validator prefix (import resolution, method resolution, duplicate
+step-def, filename consistency, Gherkin structure, step coverage) and emits a hint
+targeted at that class, de-duplicated and in a fixed order, via
+`_classify_error()` / `_build_error_type_guidance()`. An import error is no longer
+told to add a step decorator. New `tests/unit/test_repair_error_types.py` (14).
+
+### Update-mode step-def splicing (backlog 2.4)
+`agents/agent2_coder.py` — ai-update already spliced the feature file
+scenario-by-scenario but fully regenerated the step-def file every time.
+`_splice_step_defs_incremental()` now works in tiers: **unchanged** (existing file
+already covers the spliced feature — kept as-is, zero LLM calls), **spliced** (only
+the genuinely new step functions are generated and appended, passing functions
+untouched), or **regenerated** (Tier-C fallback to the previous whole-file
+regeneration on any ambiguity — no file on main, unparseable, LLM returned nothing
+usable, still-uncovered after splice, or a duplicate-step collision). Post-splice
+re-validation plus the fallback mean a splice can never ship broken step defs.
+The step-def `GeneratedFile` purpose records which mode ran. New
+`tests/unit/test_step_def_splicing.py` (16).
+
 ## Phase 2 — Tier 2 (app-context token savings)
 
 Both changes are backward-compatible; the SauceDemo app now ships in the module

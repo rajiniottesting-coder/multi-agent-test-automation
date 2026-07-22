@@ -53,6 +53,9 @@ from agents.gherkin_analyzer import (
     validate_filename_consistency,
     validate_feature_file_structure,
     validate_step_definitions_complete,
+    _extract_feature_steps,
+    _extract_decorator_phrases,
+    _phrase_matches,
 )
 from config import (
     REQUIRED_GITHUB_ENV_VARS,
@@ -639,6 +642,106 @@ _MAX_FEEDBACK_ERRORS_VERBATIM = 8
 _DEGRADED_OUTPUT_CHAR_THRESHOLD = 500
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Backlog 2.3 — error-type-aware repair guidance
+#
+# The repair loop used to send one generic "add your missing @given/@when/@then"
+# instruction for every failure. That's the right hint for a coverage miss and
+# actively misleading for an import error or a hallucinated page method. Here we
+# classify each validator error by its emitted prefix and give the LLM a hint
+# targeted at that failure class, so a repair attempt fixes the actual problem
+# instead of guessing. Purely additive and app-agnostic: it keys only off the
+# validators' own error strings.
+# ─────────────────────────────────────────────────────────────────────────
+
+# Ordered (label, substring-that-identifies-the-class, targeted repair hint).
+# First matching substring wins, so more specific strings come first.
+_ERROR_TYPE_RULES: list[tuple[str, str, str]] = [
+    (
+        "duplicate_step",
+        "duplicate step",
+        "- DUPLICATE STEP DEFINITION: a step listed below is already defined in "
+        "another step-def file (often the reference). Do NOT re-declare it — "
+        "reuse the existing step. If a step is genuinely shared, move it into "
+        "`tests/step_defs/conftest.py` instead of redefining it here.",
+    ),
+    (
+        "import_resolution",
+        "import resolution error",
+        "- BROKEN IMPORT: an import below points at a module/name that does not "
+        "exist. Import only from files that actually exist in this repo (page "
+        "objects under `pages/`, helpers you can see). Fix the import path or "
+        "remove the import — never invent a module.",
+    ),
+    (
+        "method_resolution",
+        "method resolution error",
+        "- UNKNOWN PAGE METHOD: you called a method that does not exist on the "
+        "page-object class. Call ONLY methods shown in the page inventory / the "
+        "sibling page-object signatures above. If the behaviour is genuinely "
+        "missing, add the method to the page object rather than calling a name "
+        "that isn't there.",
+    ),
+    (
+        "filename_consistency",
+        "filename consistency error",
+        "- FILENAME MISMATCH: the step-def file references a feature/module name "
+        "that doesn't line up with its filename. Make the feature name and the "
+        "`test_<flow>.py` filename consistent, per the naming convention.",
+    ),
+    (
+        "gherkin_structure",
+        "gherkin structure error",
+        "- MALFORMED GHERKIN: a step in the feature file is not well-formed "
+        "(keyword/indentation). Emit only valid `Given/When/Then/And/But` steps "
+        "with correct indentation.",
+    ),
+    (
+        "step_coverage",
+        "step coverage error",
+        "- MISSING STEP DEFINITION: every Gherkin step in the feature file needs "
+        "a matching `@given/@when/@then` decorator (And/But inherit the previous "
+        "keyword). Add a decorated function for each step listed below. Use "
+        "`parsers.parse()` for parameterized steps and a plain string otherwise.",
+    ),
+]
+
+# Fallback hint for any error whose class we don't recognise.
+_ERROR_TYPE_FALLBACK = (
+    "- Address the validator message below exactly as stated; output a "
+    "complete, working file."
+)
+
+
+def _classify_error(error: str) -> str:
+    """Return the error-class label for a single validator error string."""
+    low = error.lower()
+    for label, needle, _hint in _ERROR_TYPE_RULES:
+        if needle in low:
+            return label
+    return "other"
+
+
+def _build_error_type_guidance(errors: list[str]) -> str:
+    """Build a de-duplicated, type-specific repair instruction block for exactly
+    the error classes present in `errors` (backlog 2.3).
+
+    Only the hints for classes that actually appear are included, in the fixed
+    order of `_ERROR_TYPE_RULES`, so the LLM sees a focused directive per real
+    failure rather than a generic catch-all. Returns the fallback hint if no
+    class is recognised, and "" for an empty error list.
+    """
+    if not errors:
+        return ""
+    present = {_classify_error(e) for e in errors}
+    hints = [hint for label, _needle, hint in _ERROR_TYPE_RULES if label in present]
+    if not hints:
+        return _ERROR_TYPE_FALLBACK
+    if "other" in present:
+        hints.append(_ERROR_TYPE_FALLBACK)
+    return "\n".join(hints)
+
+
 def _summarize_validator_feedback(errors: list[str]) -> str:
     """Compact validator errors into a prompt-friendly summary.
 
@@ -863,15 +966,17 @@ def generate_file_content(
                 f"right; fix what the validator flagged."
             )
 
+        # Backlog 2.3 — targeted guidance for the exact failure class(es) the
+        # validators flagged, instead of one generic step-coverage instruction.
+        type_guidance = _build_error_type_guidance(validator_feedback)
+
         feedback_block = (
             f"\n\n# CRITICAL: Fix these validation issues\n\n"
             f"Your previous attempt was rejected. Issues:\n\n"
             f"{feedback_summary}\n\n"
-            f"REQUIREMENTS:\n"
-            f"- Every Gherkin step in the feature file MUST have a matching "
-            f"  @given/@when/@then decorator (And/But inherits from prior keyword)\n"
-            f"- Output a COMPLETE, working Python file — not a fragment\n"
-            f"- Use parsers.parse() for parameterized steps, plain strings otherwise"
+            f"HOW TO FIX (targeted to what actually failed):\n"
+            f"{type_guidance}\n"
+            f"- Output a COMPLETE, working file — not a fragment\n"
             f"{prev_attempt_block}\n"
         )
         logger.info(
@@ -1670,6 +1775,255 @@ def _regenerate_step_defs_whole(
     )
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Backlog 2.4 — update-mode step-def splicing
+#
+# ai-update already splices the FEATURE file scenario-by-scenario. The step-def
+# file, however, was fully regenerated on every update (`_regenerate_step_defs_whole`),
+# which re-writes already-passing step functions and burns output tokens even when
+# a change added no new steps. This splice keeps the existing step-def file and
+# only adds definitions for steps the spliced feature introduces:
+#
+#   Tier A — the existing file already covers every step  -> keep it unchanged
+#            (ZERO LLM calls). The common case for value/wording tweaks.
+#   Tier B — some steps are new -> generate ONLY those functions and append them,
+#            leaving passing functions untouched.
+#   Tier C — anything ambiguous (no file on main, unparseable, LLM returned
+#            nothing usable, result still uncovered, or a duplicate collision)
+#            -> fall back to `_regenerate_step_defs_whole` (today's behaviour).
+#
+# The Tier-C fallback plus post-splice re-validation means a splice can never ship
+# broken step defs: worst case we regenerate the whole file exactly as before.
+# App-agnostic — uses only the generic Gherkin/step-def matching primitives.
+# ─────────────────────────────────────────────────────────────────────────
+
+_STEP_DECORATOR_NAMES = {"given", "when", "then"}
+
+
+def _is_parseable_step_def(content: str) -> bool:
+    """True if `content` is a real, parseable step-def file we can splice into:
+    non-empty, valid Python, and containing at least one step decorator.
+
+    Distinct from `_looks_like_useful_python` (which also enforces a minimum
+    size to detect *degraded LLM output*). A legitimate one-scenario step-def
+    file can be small, so the splice gate must not reject it on size alone.
+    """
+    if not content or not content.strip():
+        return False
+    try:
+        ast.parse(content)
+    except SyntaxError:
+        return False
+    return any(dec in content for dec in ("@given", "@when", "@then"))
+
+
+def _missing_feature_steps(
+    feature_content: str, step_def_content: str
+) -> list[tuple[str, str]]:
+    """Return the (keyword, phrase) steps in `feature_content` that have NO
+    matching decorator in `step_def_content`, de-duplicated, order-preserved.
+
+    Uses the same extraction + matching backends as the coverage validator, so
+    "covered" here means what pytest-bdd would resolve at runtime.
+    """
+    required = _extract_feature_steps(feature_content)
+    decorators = _extract_decorator_phrases(step_def_content)
+    missing: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for keyword, phrase in required:
+        if keyword is None:  # malformed And/But with no prior concrete keyword
+            continue
+        covered = any(
+            dec_kind == keyword and _phrase_matches(phrase, dec_phrase, ptype)
+            for dec_kind, dec_phrase, ptype in decorators
+        )
+        key = (keyword, phrase)
+        if not covered and key not in seen:
+            seen.add(key)
+            missing.append(key)
+    return missing
+
+
+def _extract_new_step_functions(snippet: str) -> list[str]:
+    """Extract decorated step-definition function blocks (source text, decorators
+    included) from an LLM snippet. Returns [] if it doesn't parse or has none."""
+    code = extract_code_from_response(snippet)
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return []
+    lines = code.splitlines()
+    blocks: list[str] = []
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        deco_names: set[str] = set()
+        for d in node.decorator_list:
+            f = d.func if isinstance(d, ast.Call) else d
+            name = getattr(f, "id", None) or getattr(f, "attr", None)
+            if name:
+                deco_names.add(name)
+        if not (deco_names & _STEP_DECORATOR_NAMES):
+            continue
+        start = min([node.lineno] + [d.lineno for d in node.decorator_list]) - 1
+        end = node.end_lineno
+        blocks.append("\n".join(lines[start:end]))
+    return blocks
+
+
+def _ensure_parsers_import(content: str) -> str:
+    """Insert `from pytest_bdd import parsers` after the last top-level import
+    if the content uses `parsers.` but never imports it. Best-effort; returns
+    content unchanged if no import anchor is found."""
+    lines = content.splitlines()
+    last_import = None
+    for i, line in enumerate(lines):
+        s = line.strip()
+        if s.startswith("import ") or s.startswith("from "):
+            last_import = i
+    if last_import is None:
+        return content
+    lines.insert(last_import + 1, "from pytest_bdd import parsers")
+    return "\n".join(lines)
+
+
+def _generate_missing_step_functions(
+    llm: LLMClient,
+    existing_step_defs: str,
+    feature_content: str,
+    missing_steps: list[tuple[str, str]],
+    step_defs_path: str,
+) -> str:
+    """Ask the LLM for ONLY the new step functions needed for `missing_steps`."""
+    missing_block = "\n".join(f"  - {kw.capitalize()}: {phrase}" for kw, phrase in missing_steps)
+    system = (
+        "You are a Senior SDET. Output ONLY new pytest-bdd step-definition "
+        "functions — no imports, no fixtures, no existing functions, no prose, "
+        "no markdown fences."
+    )
+    user = (
+        f"Existing step-def file `{step_defs_path}` (for style, fixtures and "
+        f"imports already available — do NOT repeat any of it):\n"
+        f"```python\n{existing_step_defs}\n```\n\n"
+        f"Feature file the steps come from (for context):\n"
+        f"```gherkin\n{feature_content}\n```\n\n"
+        f"These feature steps have NO matching decorator yet. Write ONE decorated "
+        f"function per step, and NOTHING else:\n{missing_block}\n\n"
+        "Hard requirements:\n"
+        "  1. Emit ONLY the new @given/@when/@then function(s) — no import lines, "
+        "no @pytest.fixture, no scenarios(...) call, no existing functions.\n"
+        "  2. Match the decorator keyword to the step keyword shown above.\n"
+        "  3. Reuse the page-object fixtures and `parsers` already imported in the "
+        "existing file (they are in scope). Use parsers.parse() for parameterised "
+        "steps, a plain string otherwise.\n"
+        "  4. Do NOT re-declare any step the existing file already defines.\n"
+    )
+    return llm.invoke_text(system_prompt=system, user_prompt=user)
+
+
+def _splice_step_defs_incremental(
+    llm: LLMClient,
+    gh,
+    feature_file_path: str,
+    spliced_feature_content: str,
+    step_defs_path: str,
+    ctx: AppContext,
+    references: dict,
+    page_inventory: str,
+) -> tuple[str, str]:
+    """Produce the step-def file for an ai-update by splicing (backlog 2.4).
+
+    Returns (content, mode) where mode is one of:
+      - "unchanged"   : existing file already covered the feature (0 LLM calls)
+      - "spliced"     : only the new step functions were appended
+      - "regenerated" : fell back to whole-file regeneration (Tier C)
+    """
+    def _whole() -> tuple[str, str]:
+        return (
+            _regenerate_step_defs_whole(
+                llm, feature_file_path, spliced_feature_content,
+                step_defs_path, ctx, references, page_inventory,
+            ),
+            "regenerated",
+        )
+
+    # Tier C pre-check: need a usable existing file on main to splice into.
+    try:
+        existing = gh.get_file_content(step_defs_path, branch="main")
+    except Exception as e:
+        logger.info(
+            "Splice: could not read %s from main (%s) — regenerating whole.",
+            step_defs_path, type(e).__name__,
+        )
+        return _whole()
+    if not existing or not _is_parseable_step_def(existing):
+        logger.info(
+            "Splice: existing %s is missing or not usable Python — regenerating whole.",
+            step_defs_path,
+        )
+        return _whole()
+
+    missing = _missing_feature_steps(spliced_feature_content, existing)
+
+    # Tier A: nothing new to define — keep the passing file exactly as-is.
+    if not missing:
+        logger.info(
+            "Splice: existing step defs already cover the spliced feature — "
+            "keeping %s unchanged (0 LLM calls).", step_defs_path,
+        )
+        return existing, "unchanged"
+
+    # Tier B: generate ONLY the missing step functions and append them.
+    logger.info(
+        "Splice: %d new step(s) need definitions in %s: %s",
+        len(missing), step_defs_path, [p for _, p in missing],
+    )
+    snippet = _generate_missing_step_functions(
+        llm, existing, spliced_feature_content, missing, step_defs_path
+    )
+    new_funcs = _extract_new_step_functions(snippet)
+    if not new_funcs:
+        logger.warning(
+            "Splice: LLM returned no usable step function(s) — regenerating whole."
+        )
+        return _whole()
+
+    spliced = existing.rstrip() + "\n\n\n" + "\n\n\n".join(new_funcs) + "\n"
+    if "parsers." in "\n".join(new_funcs) and "parsers" not in existing:
+        spliced = _ensure_parsers_import(spliced)
+
+    # Post-splice safety net — any doubt falls back to whole regeneration.
+    if not _is_parseable_step_def(spliced):
+        logger.warning("Splice: spliced result did not parse — regenerating whole.")
+        return _whole()
+    still_missing = _missing_feature_steps(spliced_feature_content, spliced)
+    if still_missing:
+        logger.warning(
+            "Splice: %d step(s) still uncovered after splice — regenerating whole.",
+            len(still_missing),
+        )
+        return _whole()
+    dup = validate_no_duplicate_step_definitions(
+        [GeneratedFile(
+            file_path=step_defs_path, content=spliced,
+            is_new_file=False, purpose="incremental splice",
+        )],
+        PROJECT_ROOT,
+    )
+    if dup:
+        logger.warning(
+            "Splice: duplicate step-def collision after splice — regenerating "
+            "whole. First: %s", dup[0][:140],
+        )
+        return _whole()
+
+    logger.info(
+        "Splice: appended %d new step function(s) to %s; existing functions "
+        "untouched.", len(new_funcs), step_defs_path,
+    )
+    return spliced, "spliced"
+
+
 def run_update(story_id: str, dry_run: bool = False) -> dict:
     """Surgical incremental-update flow triggered by the `ai-update` label.
 
@@ -1684,7 +2038,7 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
     logger.info(f"App under test: {ctx.name} ({ctx.base_url})")
 
     jira = JiraClient()
-    jira.get_story(story_id)
+    story = jira.get_story(story_id)
     test_cases = load_test_cases_for_story(jira, story_id)
     if not test_cases:
         logger.warning(f"No Test Cases linked to {story_id}. Run Agent 1 first.")
@@ -1750,7 +2104,9 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
         }
 
     references = ctx.load_reference_files()
-    page_inventory = ctx.load_page_inventory_json()
+    # Backlog 2.2 — inject only the pages relevant to this story's Jira
+    # Components. Safe default (no/unknown components) = full inventory.
+    page_inventory = ctx.load_page_inventory_json(story.get("components"))
     llm = LLMClient(temperature=0.2)
 
     spliced_content = existing_content
@@ -1778,11 +2134,14 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
 
     feature_stem = feature_file_path.split("/")[-1].rsplit(".", 1)[0]
     step_defs_path = f"tests/step_defs/test_{feature_stem}.py"
-    logger.info(f"Regenerating {step_defs_path} based on spliced feature file...")
-    new_step_defs_content = _regenerate_step_defs_whole(
-        llm, feature_file_path, spliced_content,
+    logger.info(f"Updating {step_defs_path} for the spliced feature file...")
+    # Backlog 2.4 — splice only the new step functions in (keeping passing ones
+    # untouched); falls back to a whole regeneration on any ambiguity.
+    new_step_defs_content, step_defs_mode = _splice_step_defs_incremental(
+        llm, gh, feature_file_path, spliced_content,
         step_defs_path, ctx, references, page_inventory,
     )
+    logger.info(f"Step-def update mode: {step_defs_mode}")
 
     # ════════════════════════════════════════════════════════════════════
     # ORPHAN CLEANUP — detect dead page-object methods left behind by
@@ -1886,7 +2245,7 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
             file_path=step_defs_path,
             content=new_step_defs_content,
             is_new_file=False,
-            purpose="Incremental update: regenerated step defs",
+            purpose=f"Incremental update: step defs ({step_defs_mode})",
         ),
     ]
     for page_path, page_content in modified_page_files.items():
@@ -2031,7 +2390,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
 
     # 1. INPUT
     jira = JiraClient()
-    jira.get_story(story_id)
+    story = jira.get_story(story_id)
     test_cases = load_test_cases_for_story(jira, story_id)
 
     if not test_cases:
@@ -2067,7 +2426,9 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
 
     # 2. CONTEXT — read references and inventory once
     references = ctx.load_reference_files()
-    page_inventory = ctx.load_page_inventory_json()
+    # Backlog 2.2 — inject only the pages relevant to this story's Jira
+    # Components. Safe default (no/unknown components) = full inventory.
+    page_inventory = ctx.load_page_inventory_json(story.get("components"))
     llm = LLMClient(temperature=0.2)
 
     # 3. STAGE 1: PLAN
