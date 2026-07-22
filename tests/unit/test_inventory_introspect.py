@@ -14,6 +14,7 @@ from inventory_tools.introspect import (
     diff_page,
     summarize_drift,
     pages_missing_notes,
+    is_unstable_strategy,
     _looks_generated_id,
 )
 
@@ -44,7 +45,70 @@ def test_rank_name_then_aria_then_placeholder():
 
 def test_rank_role_text_fallback():
     sel, strat = rank_selector("a", {}, text="Continue Shopping")
-    assert strat == "role+text" and "link" in sel
+    assert strat == "role" and "link" in sel
+
+
+# ── custom widgets: ARIA role / tabindex / contenteditable ────
+
+def test_rank_custom_widget_by_role():
+    sel, strat = rank_selector("div", {"role": "combobox", "aria-label": "Country"})
+    assert sel == "role=combobox[name='Country']" and strat == "role"
+
+
+def test_role_selector_is_stable():
+    _, strat = rank_selector("div", {"role": "switch", "aria-label": "Dark mode"})
+    assert not is_unstable_strategy(strat)
+
+
+def test_unstable_flag_on_bare_css():
+    _, strat = rank_selector("div", {})
+    assert strat == "css" and is_unstable_strategy(strat)
+
+
+def test_element_kind_from_role():
+    assert element_kind("div", {"role": "combobox"}) == "dropdown"
+    assert element_kind("div", {"role": "switch"}) == "toggle"
+    assert element_kind("div", {"role": "slider"}) == "slider"
+
+
+def test_build_captures_custom_widgets():
+    descriptors = [
+        {"tag": "div", "attrs": {"role": "combobox", "aria-label": "Country"}, "text": ""},
+        {"tag": "div", "attrs": {"tabindex": "0"}, "text": "Toggle"},
+        {"tag": "span", "attrs": {"contenteditable": "true"}, "text": ""},
+        {"tag": "div", "attrs": {}, "text": "just text noise"},   # skipped
+        {"tag": "input", "attrs": {"data-test": "email"}, "text": ""},
+    ]
+    page = build_page_entry("https://x.com/", "X", descriptors, "https://x.com")
+    assert page["elements"]["country_dropdown"] == "role=combobox[name='Country']"
+    assert len(page["elements"]) == 4          # noise div skipped, 4 widgets kept
+    assert "_unstable_selectors" in page       # tabindex/contenteditable had weak hooks
+
+
+def test_build_no_unstable_key_when_all_stable():
+    descriptors = [{"tag": "input", "attrs": {"data-test": "email"}, "text": ""}]
+    page = build_page_entry("https://x.com/", "X", descriptors, "https://x.com")
+    assert "_unstable_selectors" not in page
+
+
+# ── iframes ───────────────────────────────────────────────────
+
+def test_build_iframe_element_gets_frame_prefix():
+    descriptors = [
+        {"tag": "input", "attrs": {"data-test": "card-number"}, "text": "",
+         "frame": "iframe#checkout"},
+    ]
+    page = build_page_entry("https://x.com/pay", "Pay", descriptors, "https://x.com")
+    assert page["elements"]["card_number_input"] == \
+        "iframe#checkout >>> [data-test='card-number']"
+
+
+def test_diff_recognizes_framed_test_id_not_new():
+    inv = {"card": "iframe#checkout >>> [data-test='card-number']"}
+    live = {"iframe#checkout >>> [data-test='card-number']": 1}
+    out = diff_page("pay", inv, live, {"card-number"})
+    assert out["new_data_tests"] == []
+    assert out["missing"] == []
 
 
 def test_generated_id_detection():
@@ -222,6 +286,27 @@ def test_diff_page_custom_attr():
     out = diff_page("home", inv, live_resolved, {"search", "new-cy-widget"},
                     test_attrs=("data-cy",))
     assert out["new_data_tests"] == ["new-cy-widget"]
+
+
+def test_nameless_interactive_role_still_uses_role():
+    # a jQuery-UI slider handle: role=slider, no name -> role=slider, not bare tag
+    sel, strat = rank_selector("span", {"role": "slider"})
+    assert sel == "role=slider" and strat == "role"
+    assert not is_unstable_strategy(strat)
+
+
+def test_stable_id_div_is_captured():
+    # a drag-drop target (#draggable) is a plain div with only a stable id
+    descriptors = [{"tag": "div", "attrs": {"id": "draggable"}, "text": "Drag me"}]
+    page = build_page_entry("https://x.com/", "X", descriptors, "https://x.com")
+    assert "#draggable" in page["elements"].values()
+
+
+def test_generated_id_div_not_captured():
+    # a framework-generated id on a plain div is noise -> skipped
+    descriptors = [{"tag": "div", "attrs": {"id": "radix-42"}, "text": ""}]
+    page = build_page_entry("https://x.com/", "X", descriptors, "https://x.com")
+    assert page["elements"] == {}
 
 
 def test_pages_missing_notes():

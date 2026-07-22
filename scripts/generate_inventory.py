@@ -139,8 +139,18 @@ def main() -> int:
         "_inventory_conventions": {
             "generated": "Draft produced by scripts/generate_inventory.py (backlog 3.1). "
                          "Tag each page's `components`, add elements_notes/key_methods/errors, "
-                         "delete `_selector_strategies` and `title_seen` after review, and "
-                         "verify every selector before this replaces the real inventory.",
+                         "delete `_selector_strategies`, `_unstable_selectors` and `title_seen` "
+                         "after review, and verify every selector before this replaces the real "
+                         "inventory.",
+            "selectors": "Selectors may be: a css attribute selector ([data-test='x'], #id), "
+                         "a Playwright role locator (role=combobox[name='Country']) for custom "
+                         "widgets, a text locator (text=Submit), or an iframe-chained selector "
+                         "using ' >>> ' (iframe#pay >>> [data-test='card']) meaning "
+                         "page.frame_locator('iframe#pay').locator(\"[data-test='card']\"). "
+                         "role=/text= locators pierce open shadow DOM automatically.",
+            "_unstable_selectors": "If present on a page, these elements had no durable handle "
+                         "(only a fragile css fallback). Add a data-test in the app or replace "
+                         "with a role/label/text locator before relying on them.",
         },
         "pages": pages,
     }

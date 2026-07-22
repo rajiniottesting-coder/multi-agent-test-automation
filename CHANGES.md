@@ -4,6 +4,46 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## Phase 2 — Tier 3 follow-up: complex-locator support in the inventory tooling
+
+Extends `inventory_tools/` to handle the controls real-world apps use, still
+fully app-agnostic. Suite 259 -> **267 passing** (+8). No agent/config/workflow
+change.
+
+- **Custom widgets via ARIA role / tabindex / contenteditable / stable id.** The
+  collector no longer captures only native `input/button/select/textarea/a` +
+  test-id elements — it now also captures div/span-based widgets that carry an
+  interactive role (`combobox`, `listbox`, `switch`, `slider`, `menuitem`, …), a
+  `tabindex >= 0`, `contenteditable`, or a **non-generated `id`** (catches
+  drag-drop targets like `#draggable`). These get a churn-proof Playwright role
+  locator (`role=combobox[name='Country']`, or a nameless `role=slider` when a
+  widget has no accessible name) instead of brittle css, and `element_kind`
+  names them sensibly (combobox → dropdown, switch → toggle, …).
+- **iframe traversal.** `collect_descriptors` now walks every child frame and
+  tags each element with its frame-chain selector, emitted with a ` >>> `
+  convention: `iframe#pay >>> [data-test='card']` → 
+  `page.frame_locator('iframe#pay').locator("[data-test='card']")`. Nested frames
+  chain. The staleness checker resolves these via `frame_locator`, and framed
+  test-ids are no longer false-flagged as drift.
+- **Open shadow DOM.** The collect/test-id JS recurses into open `shadowRoot`s, so
+  web-component controls are captured (closed roots remain inaccessible by
+  design). role=/css locators pierce open shadow DOM automatically at runtime.
+- **Unstable-selector flag.** Any element whose only handle is a fragile css
+  fallback (no test-id, role, label, or text) is listed under a page's
+  `_unstable_selectors` with guidance to add a `data-test` — drift risks are now
+  visible instead of silently shipped as brittle css.
+
+What still needs a human: un-accessible custom controls (a plain `<div onClick>`
+with no role/tabindex/id/test-id can't be detected from the DOM), per-row/per-cell
+list & table handling (capture the container + a parametrized locator by hand),
+and any element the app gives no stable hook — the real fix there is adding a
+`data-test` in the app, which no crawler can manufacture. Validated in a real
+Chromium against the full control spectrum of a known practice page (native
+inputs, radios, checkboxes, single/multi selects, file inputs, jQuery-UI
+datepickers & slider, autocomplete, drag-drop, a custom combobox, an iframe, and
+an open-shadow-DOM section) — all captured; only data-table rows and the app's
+un-hooked elements remained (as expected).
+
 ## Phase 2 — Tier 3 follow-up: inventory tooling made fully app-agnostic
 
 The 3.1 inventory tools shipped working but carried a few SauceDemo-shaped

@@ -162,6 +162,8 @@ The tool is **fully app-agnostic**. Two knobs matter for a new app:
 
 The draft fills only what a machine can know (url, ranked selectors, page-object guess) and leaves `elements_notes`, `key_methods`, page-level `errors`, and `components` as **visible stubs** — a crawler can't infer behaviour, intended API, or exact error strings, so **always hand-review before committing**.
 
+**Complex locators are handled.** The generator captures native controls *and* custom widgets that carry an interactive ARIA role, `tabindex`, or `contenteditable` (React-Select, MUI, toggles, etc.), giving them a churn-proof `role=combobox[name='…']` locator; it walks **iframes** (emitting `iframe#x >>> [selector]`, which means `page.frame_locator('iframe#x').locator(...)`); and it pierces **open shadow DOM**. Anything it can only reach via a fragile css fallback is listed under a page's `_unstable_selectors` so you know to add a `data-test`. What stays manual: un-accessible custom controls (a plain `<div onClick>` with no role/test-id), per-row list/table item locators (capture the container + a parametrized locator), and elements the app gives no stable hook for.
+
 ### Change 3 — `prompts/app_context/` module folder (MANDATORY)
 
 These files ARE NOT templates — they're injected verbatim into Agent 1's prompt.

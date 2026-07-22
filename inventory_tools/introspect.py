@@ -34,6 +34,11 @@ TEST_ID_ATTRS = (
     "data-automation-id", "data-tid",
 )
 
+# Delimiter used to express "enter this iframe, then locate" in a selector
+# string: "iframe#checkout >>> [data-test='card']" (chainable for nested frames).
+# The staleness checker parses this to page.frame_locator(...).locator(...).
+FRAME_DELIM = ">>>"
+
 # ids that look framework-generated and must NOT be used as selectors.
 _GENERATED_ID = re.compile(
     r"(^:r[0-9a-z]+:$)"          # React useId ":r0:"
@@ -51,6 +56,27 @@ _IMPLICIT_ROLE = {
     "a": "link", "button": "button", "select": "combobox", "textarea": "textbox",
 }
 
+# ARIA roles that denote an interactive control. A div/span carrying one of
+# these (React-Select, MUI, Ant Design, custom toggles, etc.) is captured even
+# without a test-id, and gets a churn-proof role= selector rather than brittle
+# css. This is what lets the tool handle complex/custom widgets in any app.
+_INTERACTIVE_ROLES = {
+    "button", "link", "checkbox", "radio", "switch", "combobox", "listbox",
+    "option", "menuitem", "menuitemcheckbox", "menuitemradio", "tab", "textbox",
+    "searchbox", "slider", "spinbutton", "treeitem", "menuitemradio", "menu",
+    "menubar", "tablist", "grid", "gridcell", "row", "columnheader", "rowheader",
+    "combobox", "dialog", "radiogroup",
+}
+
+# role -> the element_kind name used as a naming suffix
+_ROLE_KIND = {
+    "combobox": "dropdown", "listbox": "dropdown", "switch": "toggle",
+    "checkbox": "checkbox", "radio": "radio", "slider": "slider",
+    "spinbutton": "spinner", "searchbox": "search", "textbox": "input",
+    "tab": "tab", "menuitem": "menuitem", "option": "option", "link": "link",
+    "button": "button", "treeitem": "treeitem", "row": "row", "gridcell": "cell",
+}
+
 
 def _looks_generated_id(value: str) -> bool:
     return bool(_GENERATED_ID.search(value or ""))
@@ -64,11 +90,13 @@ def rank_selector(tag: str, attrs: dict, text: str = "",
                   test_attrs: tuple = TEST_ID_ATTRS) -> tuple[str, str]:
     """Return (selector, strategy) picking the most stable available handle.
 
-    Priority: a dedicated test-id attribute > stable id > name > aria-label >
-    placeholder > role+text > css fallback. `test_attrs` is the ordered list of
-    test-id attributes to prefer (defaults to the common conventions). The
-    strategy label is informational (surfaced in a draft so a human can see how
-    confident the pick is).
+    Priority: test-id attribute > stable id > name > accessible role+name >
+    aria-label > placeholder > text > css fallback. Role+name (a Playwright
+    getByRole-style locator) is elevated because it is churn-proof and is the
+    right handle for custom widgets (React-Select, MUI, …) that have an ARIA
+    role but no test-id. `test_attrs` is the ordered list of test-id attributes
+    to prefer. The strategy label reveals how stable the pick is; a "css"
+    strategy means no durable hook was found (see `is_unstable_strategy`).
     """
     a = attrs or {}
     for key in test_attrs:
@@ -78,17 +106,36 @@ def rank_selector(tag: str, attrs: dict, text: str = "",
         return (f"#{a['id']}", "id")
     if a.get("name"):
         return (f"{tag}[name='{_css_escape_value(a['name'])}']", "name")
+    # accessible role + name — churn-proof, handles custom/div-based widgets.
+    role = a.get("role") or _IMPLICIT_ROLE.get(tag)
+    acc_name = (a.get("aria-label") or (text or "")).strip()
+    if role in _INTERACTIVE_ROLES:
+        if acc_name:
+            return (f"role={role}[name='{_css_escape_value(acc_name[:40])}']", "role")
+        return (f"role={role}", "role")  # nameless but churn-proof (better than bare tag)
     if a.get("aria-label"):
         return (f"{tag}[aria-label='{_css_escape_value(a['aria-label'])}']", "aria-label")
     if a.get("placeholder"):
         return (f"{tag}[placeholder='{_css_escape_value(a['placeholder'])}']", "placeholder")
-    role = a.get("role") or _IMPLICIT_ROLE.get(tag)
-    t = (text or "").strip()
-    if role and t:
-        return (f"role={role}[name='{t[:40]}']", "role+text")
+    if role and acc_name:  # non-interactive role but has a name (weak but usable)
+        return (f"role={role}[name='{_css_escape_value(acc_name[:40])}']", "role")
+    if (text or "").strip() and tag in ("a", "button"):
+        return (f"text={_css_escape_value(text.strip()[:40])}", "text")
     if a.get("type"):
         return (f"{tag}[type='{_css_escape_value(a['type'])}']", "css")
     return (tag, "css")
+
+
+# strategies that produced a durable handle; anything else ("css") is fragile.
+_STABLE_STRATEGIES = set(TEST_ID_ATTRS) | {
+    "id", "name", "role", "aria-label", "placeholder", "text", "data-test-prefix",
+}
+
+
+def is_unstable_strategy(strategy: str) -> bool:
+    """True when the only handle found is a fragile css fallback (no durable
+    attribute, role, label, or text) — the reviewer should add a data-test."""
+    return strategy not in _STABLE_STRATEGIES
 
 
 # ─────────────────────────────────────────────────────────────
@@ -111,10 +158,17 @@ def element_kind(tag: str, attrs: dict) -> str:
             "submit": "button", "button": "button", "checkbox": "checkbox",
             "radio": "radio", "password": "input", "email": "input",
         }.get(t, "input")
-    return {
+    native = {
         "button": "button", "select": "dropdown", "textarea": "input",
         "a": "link",
-    }.get(tag, "element")
+    }.get(tag)
+    if native:
+        return native
+    # custom widget: derive the kind from its ARIA role if it has one
+    role = (a.get("role") or "").lower()
+    if role in _ROLE_KIND:
+        return _ROLE_KIND[role]
+    return "element"
 
 
 def derive_element_name(tag: str, attrs: dict, text: str = "",
@@ -143,9 +197,17 @@ def derive_element_name(tag: str, attrs: dict, text: str = "",
 # Repeated-family collapsing (e.g. buy-item-<slug> -> ^= selector)
 # ─────────────────────────────────────────────────────────────
 
+def _strip_frame_prefix(selector: str) -> str:
+    """Return the element part of a (possibly frame-chained) selector."""
+    if FRAME_DELIM in selector:
+        return selector.rsplit(FRAME_DELIM, 1)[-1].strip()
+    return selector
+
+
 def _parse_test_attr(selector: str, test_attrs: tuple = TEST_ID_ATTRS):
-    """Return (attr, value) if selector is [attr='value'] for a test-id attr."""
-    m = re.match(r"\[([a-zA-Z-]+)='([^']+)'\]$", selector)
+    """Return (attr, value) if selector is [attr='value'] for a test-id attr.
+    Handles frame-chained selectors by inspecting the element part."""
+    m = re.match(r"\[([a-zA-Z-]+)='([^']+)'\]$", _strip_frame_prefix(selector))
     if m and m.group(1) in test_attrs:
         return m.group(1), m.group(2)
     return None
@@ -153,7 +215,7 @@ def _parse_test_attr(selector: str, test_attrs: tuple = TEST_ID_ATTRS):
 
 def _parse_test_prefix(selector: str, test_attrs: tuple = TEST_ID_ATTRS):
     """Return (attr, prefix) if selector is [attr^='prefix'] for a test-id attr."""
-    m = re.match(r"\[([a-zA-Z-]+)\^='([^']+)'\]$", selector)
+    m = re.match(r"\[([a-zA-Z-]+)\^='([^']+)'\]$", _strip_frame_prefix(selector))
     if m and m.group(1) in test_attrs:
         return m.group(1), m.group(2)
     return None
@@ -241,15 +303,48 @@ def guess_page_object(path: str) -> tuple[str, str]:
     return (f"pages/{stem}_page.py", cls)
 
 
+def _is_capturable(tag: str, attrs: dict, test_attrs: tuple) -> bool:
+    """Should this element become an inventory entry?
+
+    Native interactive tags, anything with a test-id, anything with an
+    interactive ARIA role, focusable custom controls (tabindex >= 0), and
+    contenteditable widgets. This is what pulls in div-based custom widgets
+    (React-Select, MUI, toggles) that older versions silently skipped.
+    """
+    a = attrs or {}
+    if tag in _INTERACTABLE_TAGS:
+        return True
+    if any(a.get(k) for k in test_attrs):
+        return True
+    if (a.get("role") or "").lower() in _INTERACTIVE_ROLES:
+        return True
+    if a.get("contenteditable") in ("", "true"):
+        return True
+    # a stable, human-authored id is an intent signal — catches id'd custom
+    # widgets and drag-drop targets (#draggable) that carry no role/tabindex.
+    if a.get("id") and not _looks_generated_id(a["id"]):
+        return True
+    ti = a.get("tabindex")
+    if ti is not None:
+        try:
+            if int(ti) >= 0:
+                return True
+        except (TypeError, ValueError):
+            pass
+    return False
+
+
 def build_page_entry(url: str, title: str, descriptors: list[dict],
                      base_url: str = "", test_attrs: tuple = TEST_ID_ATTRS) -> dict:
     """Assemble a draft page dict (schema-shaped) from DOM descriptors.
 
     Machine-fillable fields are populated (url, elements, page-object guess);
-    human-only fields are emitted as empty stubs so the gap is visible:
-    `elements_notes`, `key_methods`, and page-level `errors` (warn when notes
-    are missing rather than silently omit). `test_attrs` selects which test-id
-    attributes to prefer/track.
+    human-only fields are emitted as visible stubs (`elements_notes`,
+    `key_methods`, page-level `errors`). Captures native controls, custom
+    widgets (via ARIA role / tabindex / contenteditable), and elements inside
+    iframes (a descriptor's `frame` field becomes a `frame >>> selector` prefix)
+    and open shadow DOM. Any element whose only handle is a fragile css fallback
+    is listed under `_unstable_selectors` so the reviewer can add a data-test.
     """
     path = url_to_path(url, base_url)
     elements: dict[str, dict] = {}
@@ -259,29 +354,32 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
         tag = (d.get("tag") or "").lower()
         attrs = d.get("attrs") or {}
         text = d.get("text") or ""
-        if tag not in _INTERACTABLE_TAGS and not any(
-            attrs.get(k) for k in test_attrs
-        ):
-            continue  # skip non-interactable, non-tagged noise
+        if not _is_capturable(tag, attrs, test_attrs):
+            continue
         selector, strategy = rank_selector(tag, attrs, text, test_attrs)
+        # Element inside an iframe: prefix with the frame's own selector using
+        # the documented `>>>` frame-enter convention.
+        frame_sel = d.get("frame")
+        if frame_sel:
+            selector = f"{frame_sel} {FRAME_DELIM} {selector}"
         name = derive_element_name(tag, attrs, text, test_attrs)
-        # de-duplicate names deterministically
         final = name
         i = 2
         while final in used:
             final = f"{name}_{i}"
             i += 1
         used.add(final)
-        elements[final] = {"selector": selector, "strategy": strategy}
+        elements[final] = {"selector": selector, "strategy": strategy,
+                           "framed": bool(frame_sel)}
 
     elements = collapse_repeated_families(elements, test_attrs=test_attrs)
-    # emit selector strings (drop the strategy detail into a sibling map so the
-    # page's `elements` stays the clean name->selector shape the schema uses)
     clean_elements = {n: e["selector"] for n, e in elements.items()}
     strategies = {n: e.get("strategy", "css") for n, e in elements.items()}
+    unstable = sorted(n for n, e in elements.items()
+                      if is_unstable_strategy(e.get("strategy", "css")))
 
     pof, poc = guess_page_object(path)
-    return {
+    entry = {
         "url": path,
         "components": [],  # human tags these (drives 2.2); left empty in a draft
         "page_object_file": f"{pof} (AUTO-DRAFT — verify)",
@@ -298,6 +396,14 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
         ),
         "title_seen": title,
     }
+    if unstable:
+        entry["_unstable_selectors"] = {
+            "elements": unstable,
+            "warning": ("No durable handle found for these — only a fragile css "
+                        "fallback. Add a data-test attribute in the app, or replace "
+                        "with a role/label/text locator, before relying on them."),
+        }
+    return entry
 
 
 # ─────────────────────────────────────────────────────────────
