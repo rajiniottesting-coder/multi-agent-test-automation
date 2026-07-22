@@ -3,16 +3,20 @@
 
 Loads the inventory configured in config.yaml, visits each page, and reports
 drift: inventory selectors that no longer resolve (the dangerous kind — they
-make generated tests fail as if the test were buggy), live data-test handles not
+make generated tests fail as if the test were buggy), live test-id handles not
 in the inventory (coverage gaps), and pages that are now unreachable. Also warns
 about pages with no `elements_notes` (a machine can't author those, so a gap is
 worth surfacing).
+
+App-agnostic: the app comes from config.yaml; login fields are auto-detected by
+input type (override with --username-selector etc.); the test-id attributes come
+from --test-attrs (defaults to the common conventions).
 
 Exit code is 1 when drift is found AND --fail-on-drift is passed (for CI gating);
 otherwise 0.
 
 Examples:
-    INVENTORY_USER=standard_user INVENTORY_PASS=secret_sauce \\
+    INVENTORY_USER="$APP_USER" INVENTORY_PASS="$APP_PASS" \
       python -m scripts.check_inventory_staleness
 
     # As a CI gate:
@@ -31,10 +35,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agents.app_context import AppContext
 from inventory_tools import introspect
-from inventory_tools.browser import browser_page, login_if_configured, resolve_selectors
+from inventory_tools.browser import (
+    browser_page, do_login, resolve_selectors,
+    DEFAULT_USERNAME_SELECTOR, DEFAULT_PASSWORD_SELECTOR, DEFAULT_SUBMIT_SELECTOR,
+)
 
 
-# meta keys that are not element selectors
+# meta keys inside a page's `elements` that are not element selectors
 _NON_ELEMENT_KEYS = {"_selector_strategies"}
 
 
@@ -45,10 +52,24 @@ def _page_selectors(page: dict) -> dict[str, str]:
             if isinstance(s, str) and n not in _NON_ELEMENT_KEYS}
 
 
+def _abs(base_url: str, path_or_url: str) -> str:
+    if path_or_url.startswith("http"):
+        return path_or_url
+    return base_url + (path_or_url if path_or_url.startswith("/") else "/" + path_or_url)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Check inventory vs live app.")
+    ap.add_argument("--test-attrs",
+                    help="Comma-separated test-id attributes to track "
+                         "(default: %s)." % ",".join(introspect.TEST_ID_ATTRS))
+    # Login (all optional; auto-detected by input type unless overridden).
     ap.add_argument("--username", default=os.getenv("INVENTORY_USER"))
     ap.add_argument("--password", default=os.getenv("INVENTORY_PASS"))
+    ap.add_argument("--login-url", help="Login page URL/path (default: app root).")
+    ap.add_argument("--username-selector", default=DEFAULT_USERNAME_SELECTOR)
+    ap.add_argument("--password-selector", default=DEFAULT_PASSWORD_SELECTOR)
+    ap.add_argument("--submit-selector", default=DEFAULT_SUBMIT_SELECTOR)
     ap.add_argument("--no-login", action="store_true")
     ap.add_argument("--headed", action="store_true")
     ap.add_argument("--fail-on-drift", action="store_true",
@@ -60,30 +81,35 @@ def main() -> int:
     base_url = ctx.base_url.rstrip("/")
     inventory = json.loads(ctx.inventory_path().read_text(encoding="utf-8"))
     pages = inventory.get("pages") or {}
-    login_page = pages.get("login")
+    test_attrs = (tuple(a.strip() for a in args.test_attrs.split(",") if a.strip())
+                  if args.test_attrs else introspect.TEST_ID_ATTRS)
 
     per_page: dict[str, dict] = {}
     unreachable: list[str] = []
 
     with browser_page(headless=not args.headed) as page:
         if not args.no_login:
-            login_if_configured(page, base_url, login_page, args.username, args.password)
+            login_url = _abs(base_url, args.login_url) if args.login_url else base_url + "/"
+            do_login(page, login_url, args.username_selector,
+                     args.password_selector, args.submit_selector,
+                     args.username, args.password)
 
         for name, entry in pages.items():
             if entry.get("always"):
-                # shared overlay (menu) — no standalone URL to visit
+                # shared overlay (e.g. a global menu) — no standalone URL to visit
                 continue
             url_path = entry.get("url") or "/"
             if "<" in url_path:  # templated URL (e.g. ?id=<id>) — skip auto-visit
                 continue
             selectors = _page_selectors(entry)
-            counts, live_data_tests, reachable = resolve_selectors(
-                page, base_url + url_path, list(selectors.values())
+            counts, live_test_ids, reachable = resolve_selectors(
+                page, base_url + url_path, list(selectors.values()), test_attrs
             )
             if not reachable:
                 unreachable.append(name)
                 continue
-            per_page[name] = introspect.diff_page(name, selectors, counts, live_data_tests)
+            per_page[name] = introspect.diff_page(
+                name, selectors, counts, live_test_ids, test_attrs)
 
     report = introspect.summarize_drift(per_page, unreachable)
     report["pages_missing_notes"] = introspect.pages_missing_notes(inventory)
@@ -98,9 +124,9 @@ def main() -> int:
         if diff["missing"] or diff["new_data_tests"]:
             print(f"\n  [{pname}]")
             for m in diff["missing"]:
-                print(f"    STALE   {m['element']}: {m['selector']} → 0 matches on live page")
+                print(f"    STALE   {m['element']}: {m['selector']} -> 0 matches on live page")
             for nt in diff["new_data_tests"]:
-                print(f"    NEW     data-test='{nt}' present live but not in inventory")
+                print(f"    NEW     test-id '{nt}' present live but not in inventory")
     if report["pages_missing_notes"]:
         print(f"\n  WARN: pages with no elements_notes (author them): "
               f"{', '.join(report['pages_missing_notes'])}")

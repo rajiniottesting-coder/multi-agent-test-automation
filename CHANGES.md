@@ -4,6 +4,30 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## Phase 2 — Tier 3 follow-up: inventory tooling made fully app-agnostic
+
+The 3.1 inventory tools shipped working but carried a few SauceDemo-shaped
+defaults. This pass removes them so the tools are genuinely reusable across
+applications. Additive/refactor only — no agent, config, or workflow code
+changed. Suite 254 -> **259 passing** (+5 app-agnostic tests).
+
+- **Configurable test-id attributes.** The attribute allowlist (was hardcoded to
+  `data-test`/`data-testid`/`data-qa`) is now a `TEST_ID_ATTRS` constant with a
+  broad default (`data-test, data-testid, data-test-id, data-qa, data-cy,
+  data-automation-id, data-tid`), threaded through selector ranking, element
+  naming, family-collapsing, drift detection, and the browser collect JS, and
+  overridable per run with `--test-attrs`. Family-collapse now preserves whichever
+  attribute the app actually uses (e.g. `[data-cy^='buy-item-']`).
+- **Generic login.** Replaced the `username_input`/`password_input`/`login_button`
+  + page-key `"login"` assumption with type-based field auto-detection
+  (`input[type=password]`, etc.) and explicit `--login-url` /
+  `--username-selector` / `--password-selector` / `--submit-selector` overrides.
+- **Scrubbed docstrings.** No `SauceDemo` / `standard_user` / `secret_sauce` in
+  any generic file; examples use neutral placeholders. Audited: zero app-specific
+  keywords remain in `inventory_tools/` or the inventory scripts.
+- New tests prove the full generate→staleness pipeline on a `data-cy` app with
+  zero SauceDemo assumptions.
+
 ## Phase 2 — Tier 3 (3.1 inventory tooling, 3.4 sweeper) + page-level errors
 
 All additive — new packages, scripts, one workflow, and data. No existing agent

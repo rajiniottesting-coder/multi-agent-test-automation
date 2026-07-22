@@ -10,8 +10,10 @@ Everything you need to operate, configure, extend, and onboard new apps to this 
 4. [Branch naming](#branch-naming)
 5. [Configuration](#configuration)
 6. [Running the pipeline](#running-the-pipeline)
-7. [Onboarding a new app](#onboarding-a-new-app)
-8. [Troubleshooting](#troubleshooting)
+7. [Inventory tooling (bootstrap + staleness)](#inventory-tooling-bootstrap--staleness)
+8. [The sweeper (stalled-PR backstop)](#the-sweeper-stalled-pr-backstop)
+9. [Onboarding a new app](#onboarding-a-new-app)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -439,7 +441,7 @@ Three distinct test layers exist; they have different triggers and purposes:
 
 | Suite | Trigger | Touches network? | Purpose |
 |---|---|---|---|
-| `tests/unit/` (170 tests) | Every PR — Agent 4 runs `pytest tests/`, which includes them. Also run manually (`python -m pytest tests/unit/ -q`) before committing any framework change. | No — fully offline (no Jira/GitHub/LLM) | Framework correctness: validators, markers, orphan cleanup, usage tracking, ledger |
+| `tests/unit/` (259 tests) | Every PR — Agent 4 runs `pytest tests/`, which includes them. Also run manually (`python -m pytest tests/unit/ -q`) before committing any framework change. | No — fully offline (no Jira/GitHub/LLM) | Framework correctness: validators, markers, orphan cleanup, usage tracking, ledger, component filtering, repair routing, step-def splicing, inventory tooling, sweeper |
 | `tests/step_defs/` (generated E2E) | Every PR — same Agent 4 run | Yes — drives a real browser against the app under test | Does the application work |
 | `scripts/smoke_test.py` | **Manual only** — run on first setup, after credential/`.env` changes, on a new machine, or when onboarding a new app | Yes — live Jira login, one real LLM call, one browser hit on the app's `base_url` (config-driven) | Is the *environment* wired correctly |
 
@@ -456,6 +458,55 @@ Notes:
 - The smoke test is deliberately not scheduled: it verifies *setup*, not
   *code*, makes live calls (small LLM cost), and setup doesn't change per
   commit.
+
+---
+
+## Inventory tooling (bootstrap + staleness)
+
+The `app_inventory/<app>.json` file is the LLM's map of the application. Two
+app-agnostic CLIs keep it honest (both need `playwright install chromium`):
+
+**Bootstrap a draft** — crawl the live app and emit a first-draft inventory with
+selectors ranked and page objects guessed:
+
+```bash
+INVENTORY_USER="$APP_USER" INVENTORY_PASS="$APP_PASS" \
+  python -m scripts.generate_inventory --crawl --max-pages 20 \
+  --output app_inventory/<app>.draft.json
+```
+
+Machine-knowable fields are filled; `elements_notes`, `key_methods`, page-level
+`errors`, and `components` are left as visible stubs — **always hand-review**.
+
+**Check for drift** — diff the committed inventory against the live DOM:
+
+```bash
+python -m scripts.check_inventory_staleness --fail-on-drift
+```
+
+It flags stale selectors (the dangerous kind — they make generated tests fail as
+if the test were buggy), untracked live test-ids, and unreachable pages; warns on
+pages with no `elements_notes`; and exits non-zero under `--fail-on-drift` for CI.
+
+Both tools are app-neutral: `--test-attrs` selects the test-id attribute your app
+uses (default set covers `data-test`, `data-testid`, `data-cy`, and more), and
+login fields auto-detect by input type (override with `--login-url` /
+`--username-selector` / `--password-selector` / `--submit-selector`, or
+`--no-login`).
+
+## The sweeper (stalled-PR backstop)
+
+Cron agents (1, 2) self-heal — a failed tick retries next tick. Event-driven
+agents (3 review, 4/5 run+report) do not: if a `pull_request` run is cancelled or
+never starts, the PR stalls silently. `.github/workflows/sweeper.yml` runs hourly
+(`scripts/sweep_stalled_prs.py`), finds open `auto/*` PRs whose Agent-3 or Agent-4
+workflow has no settled run (success/failure/timed_out) for the current commit,
+and reopens them to re-fire the event chain. It reuses Agent 2's `GH_PAT` (the
+built-in token won't re-fire workflows, and Agent 5's report is gated on
+`pull_request`, so a `workflow_dispatch` re-run would skip the report). Loop-safe:
+a real pass/fail is left alone, and a commit-SHA marker comment prevents
+double-nudging. Trigger a report-only pass anytime from the Actions tab (the
+`dry_run` input). Needs the `GH_PAT` / `GH_REPO` secrets already used by Agent 2.
 
 ---
 
@@ -484,7 +535,7 @@ app_under_test:
 
 ### Step 2: Create `app_inventory/myshop.json`
 
-Describes the pages, selectors, and methods of your app. Use `app_inventory/saucedemo.json` as the example. The schema is documented in [REUSE_FOR_NEW_PROJECT.md → App inventory JSON schema](./REUSE_FOR_NEW_PROJECT.md).
+Describes the pages, selectors, and methods of your app. Use `app_inventory/saucedemo.json` as the example. The schema is documented in [REUSE_FOR_NEW_PROJECT.md → App inventory JSON schema](./REUSE_FOR_NEW_PROJECT.md). Rather than hand-writing from zero, **bootstrap a draft** with `python -m scripts.generate_inventory --crawl` (see [Inventory tooling](#inventory-tooling-bootstrap--staleness) above), then hand-review and fill the human-only fields (`elements_notes`, `key_methods`, page-level `errors`, `components`).
 
 ### Step 3: Populate `prompts/app_context/`
 

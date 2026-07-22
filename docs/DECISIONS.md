@@ -4,6 +4,136 @@ Consolidated ADRs, newest first. Each section is an immutable decision record; l
 
 ---
 
+## ADR-011 — App-agnostic inventory tooling, page-level errors, and component filtering
+
+### Status
+
+Accepted (2026-07)
+
+### Context
+
+Three related needs surfaced as the framework matured toward genuine reuse across
+applications:
+
+1. **Bootstrapping an inventory by hand is slow and error-prone.** A new app needs
+   an `app_inventory/<app>.json` describing every page's selectors. Writing it from
+   scratch — and keeping it in sync as the app changes — is tedious and drifts.
+2. **A flat top-level `common_errors` block doesn't scale.** On a large app it
+   becomes a dumping ground, and it's injected into *every* Agent 2 prompt
+   regardless of which component the story touches.
+3. **Any tooling we add must not re-couple the framework to SauceDemo**, or it adds
+   no value for the next project.
+
+### Decision
+
+- **Inventory generation + staleness (`inventory_tools/` + two CLIs).**
+  `generate_inventory.py` crawls the live app and emits a draft inventory;
+  `check_inventory_staleness.py` diffs the committed inventory against the live DOM.
+  The testable logic (selector ranking, naming, family-collapse, diff) is a pure,
+  browser-free module; a thin Playwright layer drives the browser.
+- **Machine fills only what it can know.** Draft entries populate url, ranked
+  selectors, and a page-object guess, and leave `elements_notes`, `key_methods`,
+  page-level `errors`, and `components` as *visible stubs* — a crawler cannot infer
+  behaviour, intended API, or exact error strings. The staleness checker warns on
+  pages missing `elements_notes` (make gaps visible, not silent).
+- **Page-level `errors`.** Page-specific error strings live under each page's
+  `errors` field instead of a flat `common_errors`. This keeps messages next to the
+  screen that raises them and lets them ride the 2.2 component filter automatically.
+  `common_errors` is retained for genuinely global errors. Backward compatible —
+  nothing in the framework parses errors; the whole inventory is passed to the LLM
+  as text.
+- **Component-wise filtering (2.2).** `filter_inventory_by_components` injects only
+  the pages (and their errors) whose `components` match the story, shrinking prompt
+  tokens on large apps. No/unknown components → full inventory (safe default).
+- **Zero app coupling.** The test-id attribute set is a configurable `TEST_ID_ATTRS`
+  constant (default covers `data-test`, `data-testid`, `data-cy`, and more;
+  override with `--test-attrs`); login fields auto-detect by input *type* with
+  explicit-selector overrides. Audited: no `saucedemo`/`standard_user`/`secret_sauce`
+  or element-name assumptions in any generic file.
+
+### Alternatives Considered
+
+- **A Playwright-MCP generator that reasons about the most stable selector.** More
+  powerful, but it breaks the property that only Agent 4 touches the application
+  (matters for VPN-restricted clients). Deferred until a plain script sets a
+  baseline.
+- **Keep a single `common_errors`.** Simpler, but doesn't localise or ride the 2.2
+  filter; poor fit for large apps.
+- **Hardcode `data-test` (SauceDemo's attribute).** Rejected — defeats reuse.
+
+### Consequences
+
+- New apps bootstrap an inventory in minutes and can gate CI on drift
+  (`--fail-on-drift`).
+- Large apps pay fewer prompt tokens (pages + errors filter together).
+- The generator produces a *draft*, never a finished inventory — human review of
+  the stub fields is mandatory and documented.
+- Suite grew to 259 unit tests (introspection covers `data-cy`/`data-test` DOMs).
+
+### References
+
+- `inventory_tools/introspect.py`, `inventory_tools/browser.py`
+- `scripts/generate_inventory.py`, `scripts/check_inventory_staleness.py`
+- `agents/app_context.py :: filter_inventory_by_components`
+- REUSE_FOR_NEW_PROJECT.md → App inventory JSON schema
+
+---
+
+## ADR-010 — Sweeper for stalled event-driven agents
+
+### Status
+
+Accepted (2026-07). Builds on ADR-008 (PAT cascade).
+
+### Context
+
+Cron-driven agents (1, 2) self-heal — a failed run retries on the next tick.
+Event-driven agents are different: Agent 3 (review) and Agent 4/5 (run + report)
+fire on the one-shot `pull_request` event. If that run is cancelled (or never
+starts — a throttled runner, an infra blip), the PR is **stranded**: opened but
+never reviewed, tested, or reported, with no retry. Recovery was a manual nudge.
+
+### Decision
+
+An hourly workflow (`sweeper.yml` → `scripts/sweep_stalled_prs.py`) lists open
+`auto/*` PRs and, for each, checks whether the required workflows
+(`agent3-reviewer.yml`, `agent4_runner.yml`) have a **settled** run for the current
+head commit. "Settled" = a run that reached a real verdict (success / failure /
+timed_out). A stalled PR (no run, or a cancelled/skipped run) is re-triggered.
+
+Two non-obvious choices:
+
+- **Re-trigger = reopen, not `workflow_dispatch`.** Agent 5's report job is gated on
+  `github.event_name == 'pull_request'`, so a dispatch re-run would run the tests
+  but *skip* the report. Closing-and-reopening emits a real `pull_request:reopened`
+  event, re-running the whole chain.
+- **Use the PAT (`GH_PAT`), not the built-in token.** GitHub deliberately suppresses
+  workflow events triggered by the built-in `GITHUB_TOKEN`, so a reopen with it
+  would be a no-op for Agents 3/4. The PAT is user-equivalent (same reason Agent 2
+  uses it — see ADR-008).
+
+### Alternatives Considered
+
+- **Push an empty commit** to fire `synchronize`. Works, but pollutes history with
+  no-op commits. Reopen leaves the branch clean.
+- **Treat any non-success as stalled** and retry. Rejected — a red test suite is a
+  *real result* Agent 5 should report, not a stall; retrying it would loop.
+
+### Consequences
+
+- Weekend/overnight stalls self-heal within the hour instead of going unnoticed.
+- Loop-safe: settled runs are left alone, and a commit-SHA marker comment
+  (`<!-- sweeper:nudged:{sha} -->`) prevents nudging the same commit twice.
+- Requires the `GH_PAT` / `GH_REPO` secrets already present for Agent 2.
+- 14 unit tests cover the settled/stalled classification logic.
+
+### References
+
+- `.github/workflows/sweeper.yml`, `scripts/sweep_stalled_prs.py`
+- ADR-008 (PAT cascade), `tests/unit/test_sweeper.py`
+
+---
+
 ## ADR-009 — Agent 2 deduplication engine
 
 ### Status

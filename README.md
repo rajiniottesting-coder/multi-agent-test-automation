@@ -119,15 +119,19 @@ multi-agent-test-automation/
 │
 ├── agents/                          # AI agents (numbered by pipeline order)
 │   ├── agent1_analyst.py            # Story → Test Cases
-│   ├── agent2_coder.py              # Test Cases → Code + PR
+│   ├── agent2_coder.py              # Test Cases → Code + PR (error-type-aware repair, update-mode splicing)
 │   ├── agent3_reviewer.py           # AI code review
 │   ├── agent5_reporter.py           # Result analysis → Jira
-│   ├── app_context.py               # AUT config loader (NEW — central decoupling point)
+│   ├── app_context.py               # AUT config loader + component-wise inventory filtering
 │   ├── jira_client.py               # Jira API wrapper (Adapter pattern)
 │   ├── github_client.py             # GitHub API wrapper
 │   ├── llm_client.py                # Provider-agnostic LLM wrapper + token/cost tracking
 │   ├── schemas.py                   # Pydantic data contracts
 │   └── gherkin_analyzer.py          # Gherkin parsing + dedup + validators (renamed from test_inventory.py)
+│
+├── inventory_tools/                 # App-agnostic inventory generation + staleness (browser-free logic)
+│   ├── introspect.py                # Selector ranking, naming, family-collapse, staleness diff
+│   └── browser.py                   # Thin Playwright layer (generic collect + login)
 │
 ├── pages/                           # Page Object Model classes
 ├── features/                        # Gherkin .feature files
@@ -149,16 +153,21 @@ multi-agent-test-automation/
 │   ├── agent5_reporter.md
 │   └── app_context.md               # App-specific context block (NEW)
 │
-├── app_inventory/                   # JSON descriptions of each AUT
+├── app_inventory/                   # JSON descriptions of each AUT (pages, selectors, page-level errors, components)
 │   └── saucedemo.json
 │
 ├── scripts/
-│   └── smoke_test.py                # End-to-end integration check
+│   ├── smoke_test.py                # End-to-end integration check
+│   ├── generate_inventory.py        # Bootstrap a DRAFT inventory from the live app (any app)
+│   ├── check_inventory_staleness.py # Diff committed inventory vs live DOM (CI-gateable)
+│   └── sweep_stalled_prs.py         # Re-trigger stalled event-driven PRs
 │
 ├── .github/workflows/               # CI/CD pipelines
+│   ├── agent1_analyst.yml
 │   ├── agent2_coder.yml
 │   ├── agent3-reviewer.yml
-│   └── agent4_runner.yml            # Agent 4 + Agent 5 (combined workflow)
+│   ├── agent4_runner.yml            # Agent 4 + Agent 5 (combined workflow)
+│   └── sweeper.yml                  # Hourly backstop that re-fires stalled PRs
 │
 ├── docs/                            # GUIDE + ADRs + schema reference
 ├── .env.example                     # Secret placeholders (committed)
@@ -256,9 +265,11 @@ For the full lifecycle including approval gates, see [GUIDE.md → Running the p
 The whole point of the recent refactor: **no Python code changes** are needed to point this at a new app. The high-level steps:
 
 1. Edit `config/config.yaml` — update the `app_under_test` block (name, base URL, reference files, reserved paths)
-2. Drop a new `app_inventory/<your-app>.json` describing pages and selectors ([schema reference](./docs/REUSE_FOR_NEW_PROJECT.md#app-inventory-json-schema))
+2. Drop a new `app_inventory/<your-app>.json` describing pages and selectors ([schema reference](./docs/REUSE_FOR_NEW_PROJECT.md#app-inventory-json-schema)). To get a head start, **bootstrap a draft** from the live app: `python -m scripts.generate_inventory --crawl` (add `--test-attrs data-cy,...` if your app tags elements with something other than `data-test`), then hand-review.
 3. Replace `prompts/app_context.md` with your app's known users, error messages, page flow
 4. Replace the reference files (`features/login.feature`, `tests/step_defs/test_login.py`, `pages/login_page.py`) with one well-written human-authored test for your app — the LLM uses these as its style baseline
+
+Once you're running, `python -m scripts.check_inventory_staleness --fail-on-drift` keeps your inventory honest as the app evolves. Both inventory tools are fully app-agnostic — no SauceDemo assumptions.
 
 Full step-by-step in [GUIDE.md → Onboarding a new app](./docs/GUIDE.md#onboarding-a-new-app).
 
@@ -266,10 +277,10 @@ Full step-by-step in [GUIDE.md → Onboarding a new app](./docs/GUIDE.md#onboard
 
 ## 🧪 Running the framework's own unit tests
 
-The framework itself has unit tests (mostly for the dedup engine and validators):
+The framework itself has an extensive offline unit suite (dedup engine, validators, inventory tooling, sweeper, component filtering, repair routing):
 
 ```bash
-pytest tests/unit/ -v
+pytest tests/unit/ -v   # 259 passing
 ```
 
 These tests don't touch Jira, GitHub, or the LLM — fully offline.

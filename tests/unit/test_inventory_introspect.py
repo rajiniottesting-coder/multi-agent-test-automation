@@ -181,6 +181,49 @@ def test_summarize_no_drift():
     assert rpt["has_drift"] is False
 
 
+# ── app-agnostic: custom test-id attributes ──────────────────
+
+def test_rank_selector_custom_attr_data_cy():
+    # An app that tags with data-cy (Cypress) — ranker must prefer it.
+    sel, strat = rank_selector("button", {"data-cy": "submit", "id": "x"},
+                               test_attrs=("data-cy", "data-test"))
+    assert sel == "[data-cy='submit']" and strat == "data-cy"
+
+
+def test_data_cy_in_default_set():
+    # data-cy ships in the default set, so no config needed for Cypress apps.
+    sel, _ = rank_selector("button", {"data-cy": "submit"})
+    assert sel == "[data-cy='submit']"
+
+
+def test_build_page_entry_with_custom_attrs():
+    descriptors = [
+        {"tag": "div", "attrs": {"data-cy": "menu-toggle"}, "text": ""},  # tagged div captured
+        {"tag": "input", "attrs": {"data-cy": "search"}, "text": ""},
+    ]
+    page = build_page_entry("https://x.com/", "X", descriptors, "https://x.com",
+                            test_attrs=("data-cy",))
+    assert page["elements"]["menu_toggle_element"] == "[data-cy='menu-toggle']"
+    assert page["elements"]["search_input"] == "[data-cy='search']"
+
+
+def test_family_collapse_custom_attr_preserves_attribute():
+    els = {
+        "buy_item_101_button": {"selector": "[data-cy='buy-item-101']"},
+        "buy_item_202_button": {"selector": "[data-cy='buy-item-202']"},
+    }
+    out = collapse_repeated_families(els, test_attrs=("data-cy",))
+    assert any(v["selector"] == "[data-cy^='buy-item-']" for v in out.values())
+
+
+def test_diff_page_custom_attr():
+    inv = {"search": "[data-cy='search']"}
+    live_resolved = {"[data-cy='search']": 1}
+    out = diff_page("home", inv, live_resolved, {"search", "new-cy-widget"},
+                    test_attrs=("data-cy",))
+    assert out["new_data_tests"] == ["new-cy-widget"]
+
+
 def test_pages_missing_notes():
     inv = {"pages": {
         "login": {"elements_notes": {"a": "b"}},

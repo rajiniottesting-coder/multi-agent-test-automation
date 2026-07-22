@@ -7,15 +7,20 @@ The draft fills the machine-knowable fields (url, elements, page-object guess)
 and leaves human-only fields as visible stubs (`elements_notes`, `key_methods`,
 page-level `errors`, `components`). ALWAYS hand-review before committing.
 
-Examples:
-    # Crawl SauceDemo (2 levels), logging in with standard_user:
-    INVENTORY_USER=standard_user INVENTORY_PASS=secret_sauce \\
-      python -m scripts.generate_inventory --crawl --max-pages 15 \\
-      --output app_inventory/saucedemo.draft.json
+App-agnostic: the app under test comes from config.yaml (base_url); login fields
+are auto-detected by input type (override with --username-selector etc.); the
+test-id attributes to prefer come from --test-attrs (defaults to the common
+conventions: data-test, data-testid, data-cy, ...).
 
-    # Only specific paths, no login:
-    python -m scripts.generate_inventory --urls /,/inventory.html --no-login \\
-      --output draft.json
+Examples:
+    # Crawl the configured app (2 levels), logging in via env credentials:
+    INVENTORY_USER="$APP_USER" INVENTORY_PASS="$APP_PASS" \
+      python -m scripts.generate_inventory --crawl --max-pages 15 \
+      --output app_inventory/generated.draft.json
+
+    # Specific paths, no login, app that tags elements with data-cy:
+    python -m scripts.generate_inventory --urls /,/dashboard --no-login \
+      --test-attrs data-cy,data-testid --output draft.json
 
 Requires: pip install playwright && playwright install chromium
 """
@@ -33,7 +38,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agents.app_context import AppContext
 from inventory_tools import introspect
 from inventory_tools.browser import (
-    browser_page, login_if_configured, collect_descriptors,
+    browser_page, do_login, collect_descriptors,
+    DEFAULT_USERNAME_SELECTOR, DEFAULT_PASSWORD_SELECTOR, DEFAULT_SUBMIT_SELECTOR,
 )
 
 
@@ -54,14 +60,28 @@ def _links_from(descriptors: list[dict], current_url: str, base: str) -> list[st
     return out
 
 
+def _abs(base_url: str, path_or_url: str) -> str:
+    if path_or_url.startswith("http"):
+        return path_or_url
+    return base_url + (path_or_url if path_or_url.startswith("/") else "/" + path_or_url)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Generate a draft inventory JSON.")
     ap.add_argument("--urls", help="Comma-separated paths/URLs to visit (skips crawl).")
     ap.add_argument("--crawl", action="store_true", help="BFS-crawl same-origin links.")
     ap.add_argument("--max-pages", type=int, default=20)
     ap.add_argument("--max-depth", type=int, default=2)
+    ap.add_argument("--test-attrs",
+                    help="Comma-separated test-id attributes to prefer/track "
+                         "(default: %s)." % ",".join(introspect.TEST_ID_ATTRS))
+    # Login (all optional; auto-detected by input type unless overridden).
     ap.add_argument("--username", default=os.getenv("INVENTORY_USER"))
     ap.add_argument("--password", default=os.getenv("INVENTORY_PASS"))
+    ap.add_argument("--login-url", help="Login page URL/path (default: app root).")
+    ap.add_argument("--username-selector", default=DEFAULT_USERNAME_SELECTOR)
+    ap.add_argument("--password-selector", default=DEFAULT_PASSWORD_SELECTOR)
+    ap.add_argument("--submit-selector", default=DEFAULT_SUBMIT_SELECTOR)
     ap.add_argument("--no-login", action="store_true")
     ap.add_argument("--headed", action="store_true", help="Show the browser.")
     ap.add_argument("--output", default="app_inventory/generated.draft.json")
@@ -69,27 +89,23 @@ def main() -> int:
 
     ctx = AppContext.load()
     base_url = ctx.base_url.rstrip("/")
-
-    # Reuse the committed login page selectors for login, if an inventory exists.
-    login_page = None
-    try:
-        existing = json.loads(ctx.inventory_path().read_text(encoding="utf-8"))
-        login_page = (existing.get("pages") or {}).get("login")
-    except Exception:
-        pass
+    test_attrs = (tuple(a.strip() for a in args.test_attrs.split(",") if a.strip())
+                  if args.test_attrs else introspect.TEST_ID_ATTRS)
 
     seeds = []
     if args.urls:
-        for u in args.urls.split(","):
-            u = u.strip()
-            seeds.append(u if u.startswith("http") else base_url + (u if u.startswith("/") else "/" + u))
+        seeds = [_abs(base_url, u.strip()) for u in args.urls.split(",")]
     else:
         seeds = [base_url + "/"]
 
     pages: dict[str, dict] = {}
     with browser_page(headless=not args.headed) as page:
         if not args.no_login:
-            login_if_configured(page, base_url, login_page, args.username, args.password)
+            login_url = _abs(base_url, args.login_url) if args.login_url else base_url + "/"
+            did = do_login(page, login_url, args.username_selector,
+                           args.password_selector, args.submit_selector,
+                           args.username, args.password)
+            print("  logged in." if did else "  (no login — missing creds/selectors)")
 
         queue = deque((s, 0) for s in seeds)
         seen: set[str] = set()
@@ -100,14 +116,15 @@ def main() -> int:
                 continue
             seen.add(path)
             try:
-                title, descriptors = collect_descriptors(page, url)
+                title, descriptors = collect_descriptors(page, url, test_attrs)
             except Exception as e:
                 print(f"  ! skip {url}: {type(e).__name__}: {e}", file=sys.stderr)
                 continue
             page_name = introspect._slug_to_name(
                 path.strip("/").split("?")[0].replace(".html", "") or "home"
             )
-            pages[page_name] = introspect.build_page_entry(url, title, descriptors, base_url)
+            pages[page_name] = introspect.build_page_entry(
+                url, title, descriptors, base_url, test_attrs)
             print(f"  captured {page_name}: {len(pages[page_name]['elements'])} elements ({path})")
 
             if args.crawl and depth < args.max_depth:

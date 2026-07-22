@@ -1,6 +1,6 @@
 # Reusing this framework for a different project
 
-> **Verification status (July 2026):** ALL FIXES PRESENT. All 170 unit tests
+> **Verification status (July 2026):** ALL FIXES PRESENT. All 259 unit tests
 > pass. Deployed: v17/v18 prompt hardening, orphan cleanup (`ai-update` AND
 > `ai-regenerate`), dynamic sprint scoping (`sprint: "auto"` via JIRA_BOARD_ID),
 > and end-to-end LLM token & cost instrumentation (per-run tracker + per-story
@@ -146,6 +146,22 @@ Delete `app_inventory/saucedemo.json`. Create a new JSON file describing your ap
 
 This file is what Agent 2's planner uses to understand what page objects exist and what methods they expose. Get it right or Agent 2 will hallucinate methods.
 
+**Bootstrap it, don't start from scratch.** The `scripts/generate_inventory.py` tool crawls your live app and emits a first-draft inventory with selectors already ranked and page objects guessed:
+
+```bash
+# Crawl the app configured in config.yaml, logging in via env credentials:
+INVENTORY_USER="$APP_USER" INVENTORY_PASS="$APP_PASS" \
+  python -m scripts.generate_inventory --crawl --max-pages 20 \
+  --output app_inventory/<your_app>.draft.json
+```
+
+The tool is **fully app-agnostic**. Two knobs matter for a new app:
+
+- `--test-attrs` — the test-id attributes it prefers/tracks. Defaults cover the common conventions (`data-test, data-testid, data-test-id, data-qa, data-cy, data-automation-id, data-tid`). If your app uses something else, pass it: `--test-attrs data-cy,data-qa`.
+- Login — fields are auto-detected by input type. If the form is unusual (SSO, multi-step), override with `--login-url`, `--username-selector`, `--password-selector`, `--submit-selector`, or skip with `--no-login` for public pages.
+
+The draft fills only what a machine can know (url, ranked selectors, page-object guess) and leaves `elements_notes`, `key_methods`, page-level `errors`, and `components` as **visible stubs** — a crawler can't infer behaviour, intended API, or exact error strings, so **always hand-review before committing**.
+
 ### Change 3 — `prompts/app_context/` module folder (MANDATORY)
 
 These files ARE NOT templates — they're injected verbatim into Agent 1's prompt.
@@ -228,7 +244,7 @@ Confirmed by audit (search for SauceDemo terms in agent code/prompts/tests retur
 | `agents/*.py` | All 11 Python agent files | ❌ NEVER |
 | `prompts/agent*.md` | All five agent prompts (NOT the `app_context/` modules) | ❌ NEVER |
 | `pages/base_page.py` | 10 generic Playwright helpers | ❌ NEVER |
-| `tests/unit/*.py` | All 170 unit tests | ❌ NEVER |
+| `tests/unit/*.py` | All 259 unit tests | ❌ NEVER |
 | `.github/workflows/*.yml` | All 5 workflow files | ❌ NEVER |
 | `config/__init__.py`, `config/paths.py` | Config loading code | ❌ NEVER |
 | `requirements.txt`, `pytest.ini` | Dependency / pytest config | ❌ NEVER |
@@ -280,22 +296,26 @@ After making the six changes:
 ```bash
 # 1. Unit tests still pass (proves agents + helpers + orphan cleanup still work)
 python -m pytest tests/unit/ -q
-# Expected: 170 passed
+# Expected: 259 passed
 
 # 2. Smoke test: connections to Jira / the LLM endpoint / GitHub
 python scripts/smoke_test.py
 
-# 3. Reference test actually runs against your app
+# 3. (Optional) Bootstrap / validate your inventory against the live app
+python -m scripts.generate_inventory --crawl --output app_inventory/<app>.draft.json
+python -m scripts.check_inventory_staleness --fail-on-drift
+
+# 4. Reference test actually runs against your app
 pytest tests/step_defs/test_<your_reference>.py -v --headed
 
-# 4. Agent 1 dry-run on one real Jira story
+# 5. Agent 1 dry-run on one real Jira story
 python -m agents.agent1_analyst --story <STORY-KEY> --dry-run
 
-# 5. Agent 2 dry-run on the same story (after Agent 1 created Test Cases)
+# 6. Agent 2 dry-run on the same story (after Agent 1 created Test Cases)
 python -m agents.agent2_coder --story <STORY-KEY> --dry-run
 ```
 
-If all 5 work, you can promote to live cron-based scanning.
+If all work, you can promote to live cron-based scanning.
 
 ---
 
@@ -313,17 +333,23 @@ The fixes we delivered this week aren't tied to SauceDemo. Everything works for 
 | **v18** parsers.parse quote handling | Universal `parse` library behavior |
 | **Orphan cleanup (ai-update)** | AST + Gherkin, app-agnostic by construction. Verified against banking + CMS fixtures. |
 | **Orphan cleanup (ai-regenerate)** | Same algorithm, different wire-in. Same generic guarantees. |
+| **Component-wise inventory filtering (2.2)** | Filters by the page `components` you tag — no app assumptions. Login story → only login pages/errors. |
+| **Error-type-aware repair (2.3)** | Classifies repair failures (import/method/duplicate/etc.) generically; routing rules are language-level, not app-level. |
+| **Update-mode step-def splicing (2.4)** | Splices only new steps into existing files; whole-file regen fallback. Generic pytest-bdd handling. |
+| **Inventory generation + staleness (3.1)** | `generate_inventory.py` / `check_inventory_staleness.py` are fully app-neutral: configurable `--test-attrs`, type-based login, no SauceDemo defaults. |
+| **Sweeper (3.4)** | Manages the agent pipeline (auto/* PRs, agent workflows), independent of the app under test. |
 
-The 170 unit tests include:
+The unit tests include:
 - 34 incremental-update tests (surgical `ai-update` splicing, app-agnostic)
 - 31 validator tests using generic placeholders
 - 29 per-story cost-ledger tests, including the reset-marker boundary
-- 20 orphan-cleanup tests using **banking** (BANK-101, AccountPage, transfer funds) and **CMS** (CMS-1, SocialPage, schedule tweet) fixtures
+- 27 inventory-tooling + sweeper tests (introspection on `data-cy`/`data-test` DOMs; stalled-PR classification) — never SauceDemo
+- 20 orphan-cleanup tests using **banking** (BANK-101, AccountPage) and **CMS** (CMS-1, SocialPage) fixtures
 - 19 module-wise app-context tests (core + component selection, safe-default fallback)
+- 18 component-filtering + 14 error-type-repair + 16 step-splicing tests
 - 14 duplicate step-definition guard tests (genuine cross-file collisions only)
-- 12 LLM usage-tracking tests (app-agnostic by construction)
-- 8 repair-loop tests and 3 Agent 1 label tests
-- All of these use abstract, banking, or CMS data — never SauceDemo
+- 12 LLM usage-tracking tests, 8 repair-loop tests, 3 Agent 1 label tests
+- All of these use abstract, banking, CMS, or generic-attribute data — never SauceDemo
 
 If any of these had snuck in a SauceDemo-specific assumption, the tests would fail when run.
 
@@ -357,7 +383,7 @@ The framework filters Jira issues by project key. If you set `JIRA_PROJECT_KEY=S
 
 ## One-paragraph version (if you're in a hurry)
 
-Copy the whole repo. In `config/config.yaml`, change the `app_under_test` block to point at your app and create the matching `app_inventory/<name>.json`. Populate `prompts/app_context/` — put global info in `core.md` and one `<component>.md` per Jira Component (or use a single `prompts/app_context.md` if you prefer) — with your app's known users / errors / page flow. Write ONE high-quality hand-crafted reference test (feature + step_def + page_object trio) and list those three files in `reserved_paths`. Delete the old SauceDemo files. Run `python -m pytest tests/unit/ -q` — should see 170 passed. Done. **No Python file in `agents/`, no prompt in `prompts/agent*.md`, no unit test, and no workflow file needs to change.**
+Copy the whole repo. In `config/config.yaml`, change the `app_under_test` block to point at your app and create the matching `app_inventory/<name>.json`. Populate `prompts/app_context/` — put global info in `core.md` and one `<component>.md` per Jira Component (or use a single `prompts/app_context.md` if you prefer) — with your app's known users / errors / page flow. Write ONE high-quality hand-crafted reference test (feature + step_def + page_object trio) and list those three files in `reserved_paths`. Delete the old SauceDemo files. Run `python -m pytest tests/unit/ -q` — should see 259 passed. Done. **No Python file in `agents/`, no prompt in `prompts/agent*.md`, no unit test, and no workflow file needs to change.**
 
 ---
 
@@ -376,13 +402,20 @@ Copy the whole repo. In `config/config.yaml`, change the `app_under_test` block 
 | GitHubClient.list_files_in_directory | ✅ Present |
 | Wire-in for ai-update orphan cleanup | ✅ Present |
 | Wire-in for ai-regenerate orphan cleanup | ✅ Present |
-| Unit tests | ✅ 170 passing |
+| Unit tests | ✅ 259 passing |
 | Module-wise app context (`prompts/app_context/`) | ✅ Present (core + per-component) |
 | Inventory JSON minification | ✅ Present |
+| Component-wise inventory filtering (2.2) | ✅ Present (`filter_inventory_by_components`) |
+| Error-type-aware repair (2.3) | ✅ Present (agent2_coder) |
+| Update-mode step-def splicing (2.4) | ✅ Present (agent2_coder) |
+| Inventory generation + staleness (3.1) | ✅ Present (`inventory_tools/`, 2 CLIs — app-agnostic) |
+| Page-level `errors` schema | ✅ Present (rides the 2.2 filter) |
+| Sweeper for stalled PRs (3.4) | ✅ Present (`sweeper.yml` + `sweep_stalled_prs.py`) |
 | Duplicate step-definition guard | ✅ Present (SCRUM-54 / lesson #15) |
 | Per-story ledger reset marker | ✅ Present |
 | Light-model routing (`LLM_MODEL_LIGHT`) | ✅ Wired (Agents 1 & 5) |
 | Hardcoded SauceDemo references in agent code | ✅ Zero (audited) |
+| Hardcoded SauceDemo references in inventory tooling | ✅ Zero (audited) |
 | Hardcoded SauceDemo references in agent prompts | ✅ Zero (audited) |
 
 Your local repo is ready to ship and ready to reuse.
@@ -421,18 +454,26 @@ You can use any JSON shape you want — the LLM doesn't enforce a schema. The st
   "pages": {
     "<page_alias>": {
       "url": "string — relative path",
+      "components": ["array — Jira Component(s) this page belongs to; drives 2.2 filtering"],
+      "always": "optional bool — set true for shared overlays (menus) injected regardless of component",
       "page_object_file": "string — path to existing page object .py file",
       "page_object_class": "string — Python class name",
       "elements": {
         "<element_alias>": "string — selector"
       },
+      "elements_notes": {
+        "<element_alias>": "string — behavioural quirk a machine can't infer"
+      },
       "key_methods": ["array of method signatures already implemented"],
+      "errors": {
+        "<error_alias>": "string — exact error message raised ON THIS PAGE (verbatim)"
+      },
       "implementation_status": "optional string — for partial/missing page objects"
     }
   },
 
   "common_errors": {
-    "<error_alias>": "string — exact error message text"
+    "<error_alias>": "string — ONLY genuinely global errors (e.g. session-timeout). Page-specific errors belong under each page's `errors`."
   },
 
   "selector_strategy": {
@@ -475,23 +516,27 @@ The LLM uses these aliases when picking concrete test data.
 The most important section. **Each page is a complete unit** the LLM can reason about. Include:
 
 - **`url`** — relative path. The LLM uses this to know where a page lives.
+- **`components`** — the Jira Component(s) this page belongs to (e.g. `["Login"]`, `["Checkout"]`). This drives **component-wise filtering (backlog 2.2)**: when Agent 2 processes a story tagged with a Component, only pages carrying that component are injected into the prompt, shrinking token use on large apps. A page with no `components` (or `"always": true`) is always injected — a safe default that never silently drops context.
 - **`page_object_file`** — relative path to the page object `.py` file. If the file doesn't exist yet, mark it `"... (NOT YET CREATED)"` so the LLM knows it may need to create one.
 - **`page_object_class`** — Python class name (PascalCase).
 - **`elements`** — map of semantic alias → selector string. The LLM picks elements by alias; the alias should describe intent (`login_button`), not appearance (`blue_button_top_right`).
+- **`elements_notes`** — optional map of element alias → behavioural quirk the DOM can't reveal ("disabled until all fields filled"). A machine can't author these, so the staleness checker warns when a page has none.
 - **`key_methods`** — list of method signatures already implemented on the page object. The LLM avoids reinventing these.
+- **`errors`** — exact error strings this page raises (see below). Preferred over the flat top-level `common_errors`.
 - **`implementation_status`** — optional. Use when the page object is partial or absent. Tells the LLM "you may need to extend this" or "you'll need to create this."
 
-#### `common_errors`
-The exact error message strings the app produces. The LLM uses these in `Then I should see the error message "..."` assertions. Get them character-perfect — punctuation, capitalization, and trailing periods all matter.
+#### Page-level `errors` vs top-level `common_errors`
+The exact error message strings the app produces, used in `Then I should see the error message "..."` assertions. **Prefer per-page `errors`**: put each message under the page that raises it. This keeps messages next to the screen that produces them AND lets them ride the 2.2 component filter — a Login story then injects only login errors, not the whole app's error catalogue. Reserve the top-level `common_errors` for genuinely cross-cutting errors (e.g. a global session-timeout banner). Nothing in the framework *parses* errors, so this is purely an authoring/prompt-locality choice — but on a large app it matters. Get every string character-perfect: punctuation, capitalization, and trailing periods all matter.
 
 #### `selector_strategy`
 Tells the LLM which selector type to use. Crucial for app-specific quirks:
 
-- **SauceDemo:** `[data-test='X']` (stable, always present)
+- **A `data-test`-tagged app:** `[data-test='X']` (stable, always present)
+- **A Cypress app:** `[data-cy='X']`
 - **A typical SaaS app:** might use `[role='X']` or `text=Submit`
 - **Legacy app:** might require XPath as a last resort
 
-The `avoid` list helps the LLM steer clear of brittle selectors.
+The `avoid` list helps the LLM steer clear of brittle selectors. Note: `scripts/generate_inventory.py` ranks selectors using the same preference order and accepts a `--test-attrs` flag so it can target whichever test-id attribute your app uses.
 
 #### `test_patterns`
 Reinforces the project's structural conventions. The LLM uses this section to know where to put new files. Keep the directory paths and naming patterns aligned with what `config.yaml`'s `app_under_test.reference_files` points to.
@@ -510,7 +555,18 @@ Reinforces the project's structural conventions. The LLM uses this section to kn
 
 ### Validation
 
-There is no JSON schema validator on this file — it's parsed as raw text and embedded in the prompt. The first time you'll catch errors is when generated tests fail. To smoke-test your inventory:
+There is no JSON schema validator on this file — it's parsed as raw text and embedded in the prompt. Two ways to catch problems:
+
+**Live staleness check (recommended).** `scripts/check_inventory_staleness.py` visits each page and diffs the committed inventory against the real DOM:
+
+```bash
+INVENTORY_USER="$APP_USER" INVENTORY_PASS="$APP_PASS" \
+  python -m scripts.check_inventory_staleness --fail-on-drift
+```
+
+It flags inventory selectors that no longer resolve (the dangerous kind — they make generated tests fail as if the *test* were buggy), live test-id handles missing from the inventory, and pages that are now unreachable, and warns on pages with no `elements_notes`. With `--fail-on-drift` it exits non-zero, so you can wire it into CI as a guard. Pass `--test-attrs` if your app uses a non-default test-id attribute.
+
+**Manual smoke test.** Or catch errors the first time generated tests fail:
 
 1. Write a single Jira test case that covers a known-working flow
 2. Run `agent2_coder.py --story <KEY> --dry-run`

@@ -60,6 +60,10 @@ agents/
   import_validator.py               273 lines
   method_resolution_validator.py    578 lines
 
+inventory_tools/                       — App-agnostic inventory generation + staleness (3.1)
+  introspect.py                          — PURE logic: selector ranking, naming, family-collapse, staleness diff
+  browser.py                             — Thin Playwright layer (generic collect + type-based login)
+
 config/
   __init__.py                       158 lines
   paths.py                           52 lines
@@ -69,6 +73,13 @@ config/
   agent2_coder.yml                         — Agent 2 trigger
   agent3-reviewer.yml                      — Agent 3 trigger
   agent4_runner.yml                        — Agent 4 + Agent 5 (combined)
+  sweeper.yml                              — Hourly stalled-PR backstop (3.4)
+
+scripts/
+  smoke_test.py                            — Environment wiring check
+  generate_inventory.py                    — Bootstrap a draft inventory from the live app (3.1)
+  check_inventory_staleness.py             — Diff committed inventory vs live DOM (3.1)
+  sweep_stalled_prs.py                     — Re-trigger stalled event-driven PRs (3.4)
 
 prompts/
   agent1_analyst.md             39 lines
@@ -76,15 +87,15 @@ prompts/
   agent2_coder_generate.md     361 lines  ← Stage 2 prompt (v17/v18 rules live here)
   agent3_reviewer.md           174 lines
   agent5_reporter.md            65 lines
-  app_context.md                       — APP-SPECIFIC (replace for new project)
+  app_context/                         — APP-SPECIFIC module folder (core.md + per-component)
 
 features/                              — Gherkin .feature files
 tests/step_defs/                       — pytest-bdd step definitions
-tests/unit/                            — 96 unit tests (76 baseline + 20 orphan cleanup)
+tests/unit/                            — 259 unit tests (framework self-tests)
 pages/                                 — Page Object Model classes
   base_page.py                  ← 10 generic Playwright helpers (v18)
 
-app_inventory/<app>.json               — APP-SPECIFIC (replace for new project)
+app_inventory/<app>.json               — APP-SPECIFIC (pages, selectors, page-level errors, components)
 config/config.yaml                     — App config + agent selection rules
 ```
 
@@ -768,6 +779,35 @@ Wraps PyGithub. Methods used across agents:
 | `RunReport` | Agent 5 | Container — totals + tests + CI context |
 | `JiraCommentDraft` | Agent 5 | LLM-drafted comment (summary, prose, severity) |
 
+### 9.8 `inventory_tools/` + `scripts/` inventory & sweeper tooling
+
+Two capabilities added in Tier 3, both app-agnostic (no SauceDemo assumptions):
+
+**Inventory generation + staleness (3.1).** `inventory_tools/introspect.py` holds
+the pure, browser-free logic and is fully unit-tested: `rank_selector` (test-id
+attr → stable id → name → aria/placeholder → role+text → css), `derive_element_name`,
+`collapse_repeated_families` (buckets repeated test-ids like `buy-item-*` into one
+`[<attr>^='buy-item-']`, preserving whichever attribute the app uses),
+`build_page_entry` (assembles a draft page; fills machine-knowable fields, stubs the
+human ones), and `diff_page`/`summarize_drift` (staleness). The test-id attribute set
+is the configurable `TEST_ID_ATTRS` constant. `inventory_tools/browser.py` is a thin
+Playwright layer (lazy import): `collect_descriptors`, `resolve_selectors`, and a
+generic `do_login` that takes explicit selectors (type-based defaults). Two CLIs wrap
+it: `scripts/generate_inventory.py` (crawl → draft) and
+`scripts/check_inventory_staleness.py` (diff live DOM, `--fail-on-drift` for CI).
+
+**Sweeper (3.4).** `scripts/sweep_stalled_prs.py` has a pure core —
+`workflow_settled(runs)` and `classify_pr(...)` — plus a PyGithub I/O shell reusing
+`GitHubClient`. `.github/workflows/sweeper.yml` runs it hourly. It reopens `auto/*`
+PRs whose Agent-3/Agent-4 workflow has no settled run for the head commit, using the
+PAT so the reopen re-fires the `pull_request` chain (see ADR-010). Loop-safe via a
+commit-SHA marker comment.
+
+These interact with existing modules: page `components` drive
+`app_context.filter_inventory_by_components` (2.2), and page-level `errors` ride that
+same filter. Neither adds a hard dependency to the agents — the inventory tools are
+standalone CLIs, and the sweeper operates purely on GitHub state.
+
 ---
 
 ## 10. The Jira label state machine — every label explained
@@ -1238,6 +1278,6 @@ This framework is the result of iterative refinement against real production LLM
 - v18 — BasePage helpers + exact phrase matching + parsers.parse quote handling
 - May 13 — orphan code cleanup for ai-update AND ai-regenerate
 
-Each was a real production failure, debugged from CI logs, fixed at the prompt or validator level. The 96 unit tests are the regression net. The Pydantic schemas are the type contract. The two-stage LLM call with cross-file context injection is the central engineering decision.
+Each was a real production failure, debugged from CI logs, fixed at the prompt or validator level. The 259 unit tests are the regression net. The Pydantic schemas are the type contract. The two-stage LLM call with cross-file context injection is the central engineering decision.
 
 If someone asks you "why is this framework production-grade rather than a demo," the answer is: every line was added because something went wrong, and the test that proves it works is checked in alongside it.
