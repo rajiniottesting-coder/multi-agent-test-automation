@@ -1,10 +1,13 @@
 # Reusing this framework for a different project
 
-> **Verification status (July 2026):** ALL FIXES PRESENT. All 137 unit tests
+> **Verification status (July 2026):** ALL FIXES PRESENT. All 170 unit tests
 > pass. Deployed: v17/v18 prompt hardening, orphan cleanup (`ai-update` AND
 > `ai-regenerate`), dynamic sprint scoping (`sprint: "auto"` via JIRA_BOARD_ID),
 > and end-to-end LLM token & cost instrumentation (per-run tracker + per-story
-> ledger). Audit-confirmed: zero hardcoded SauceDemo references in agent code,
+> ledger). Phase 2 (Tier 1 + Tier 2) also deployed: module-wise app context
+> (`prompts/app_context/`), inventory JSON minification, duplicate step-definition
+> guard, per-story ledger reset marker, and light-model routing (`LLM_MODEL_LIGHT`).
+> Audit-confirmed: zero hardcoded SauceDemo references in agent code,
 > agent prompts, or unit-test logic.
 
 This guide explains exactly what to change to point this framework at a different application (e.g., banking app, CMS, internal portal, anything with a web UI testable by Playwright + pytest-bdd).
@@ -99,12 +102,12 @@ ALSO update or REMOVE the `test_users:` block. SauceDemo-specific test users are
 > SauceDemo's credentials (`standard_user` / `secret_sauce`) are safe to commit:
 > they are printed on the app's own login page, published in Sauce Labs' docs, and
 > guard nothing. **Real application credentials are not.** Putting them in
-> `config.yaml` or `prompts/app_context.md` means they are:
+> `config.yaml` or any file under `prompts/app_context/` means they are:
 >
 > 1. **Committed to Git permanently** — deleting the line later does not remove it
 >    from history; that needs a history rewrite.
-> 2. **Sent to the LLM on every Agent 1 call** — `app_context.md` is injected into
->    the prompt. Most client security policies prohibit exactly this.
+> 2. **Sent to the LLM on every Agent 1 call** — the `app_context/` modules are
+>    injected into the prompt. Most client security policies prohibit exactly this.
 >
 > **The correct pattern — keep the knowledge, move the secret:**
 >
@@ -117,7 +120,7 @@ ALSO update or REMOVE the `test_users:` block. SauceDemo-specific test users are
 > ```
 >
 > ```markdown
-> <!-- app_context.md — behavioural knowledge, no secrets -->
+> <!-- prompts/app_context/login.md — behavioural knowledge, no secrets -->
 > | Username | Password | Notes |
 > |---|---|---|
 > | `admin_user`  | *(env: TEST_ADMIN_PASSWORD)*  | Full permissions; can approve |
@@ -143,14 +146,42 @@ Delete `app_inventory/saucedemo.json`. Create a new JSON file describing your ap
 
 This file is what Agent 2's planner uses to understand what page objects exist and what methods they expose. Get it right or Agent 2 will hallucinate methods.
 
-### Change 3 — `prompts/app_context.md` (MANDATORY)
+### Change 3 — `prompts/app_context/` module folder (MANDATORY)
 
-This file IS NOT a template — it's injected verbatim into Agent 1's prompt. Replace SauceDemo content with your app's:
+These files ARE NOT templates — they're injected verbatim into Agent 1's prompt.
+As of Phase 2 (backlog 2.1), app context is split into a **module folder** so a
+large app only injects the modules relevant to the story being processed:
+
+```
+prompts/app_context/
+  core.md          # ALWAYS injected — app name, base URL, global conventions
+  login.md         # injected when the story's Jira Component == "Login"
+  <component>.md   # one file per Jira Component (e.g. cart.md, checkout.md)
+```
+
+**How selection works** (`agents/agent1_analyst.py :: load_app_context_block`):
+
+- `core.md` is injected on every run.
+- For each Jira Component on the story, the matching `<component>.md` is added.
+  Matching is case/space/hyphen-insensitive: a `"User Management"` component maps
+  to `user_management.md`.
+- A story with **no** components — or a component with **no** matching file —
+  injects **ALL** modules. This is a safe default that never silently drops
+  context. (A Login-tagged story injects ~49% fewer app-context tokens than the
+  old single file.)
+- **Backward compatible:** if the `prompts/app_context/` folder does not exist,
+  the loader falls back to a single `prompts/app_context.md` file. You can start
+  with one file and split into modules later.
+
+Fill each module with your app's:
 
 - Known test users / accounts and what each does
 - Known error messages (exact wording, used in expected results)
 - Page flow / URL structure
 - Domain-specific notes the LLM needs
+
+Name each module file to match a Jira Component on your project so selection
+works. Put anything global (app name, base URL, cross-cutting rules) in `core.md`.
 
 ### Change 4 — Author ONE reference test (MANDATORY)
 
@@ -195,9 +226,9 @@ Confirmed by audit (search for SauceDemo terms in agent code/prompts/tests retur
 | Layer | What's in it | Touch? |
 |---|---|---|
 | `agents/*.py` | All 11 Python agent files | ❌ NEVER |
-| `prompts/agent*.md` | All five agent prompts (NOT app_context.md) | ❌ NEVER |
+| `prompts/agent*.md` | All five agent prompts (NOT the `app_context/` modules) | ❌ NEVER |
 | `pages/base_page.py` | 10 generic Playwright helpers | ❌ NEVER |
-| `tests/unit/*.py` | All 137 unit tests | ❌ NEVER |
+| `tests/unit/*.py` | All 170 unit tests | ❌ NEVER |
 | `.github/workflows/*.yml` | All 5 workflow files | ❌ NEVER |
 | `config/__init__.py`, `config/paths.py` | Config loading code | ❌ NEVER |
 | `requirements.txt`, `pytest.ini` | Dependency / pytest config | ❌ NEVER |
@@ -216,6 +247,7 @@ Confirmed by audit (search for SauceDemo terms in agent code/prompts/tests retur
 - `OPENAI_API_KEY` — LLM API key (any OpenAI-compatible endpoint)
 - `OPENAI_API_BASE` — LLM API base URL
 - `LLM_MODEL` — model id (default `claude-opus-4-6`)
+- `LLM_MODEL_LIGHT` — optional; lighter model for Agents 1 & 5 (e.g. `claude-sonnet-5`). Falls back to `LLM_MODEL` if unset.
 - `JIRA_BOARD_ID` — optional; required only for `sprint: "auto"` (active-sprint resolution)
 - `LLM_PRICE_INPUT_PER_1M` / `LLM_PRICE_OUTPUT_PER_1M` — optional; USD per 1M tokens for real cost numbers
 - `GITHUB_TOKEN` — usually auto-provided by Actions
@@ -248,7 +280,7 @@ After making the six changes:
 ```bash
 # 1. Unit tests still pass (proves agents + helpers + orphan cleanup still work)
 python -m pytest tests/unit/ -q
-# Expected: 96 passed
+# Expected: 170 passed
 
 # 2. Smoke test: connections to Jira / the LLM endpoint / GitHub
 python scripts/smoke_test.py
@@ -282,11 +314,16 @@ The fixes we delivered this week aren't tied to SauceDemo. Everything works for 
 | **Orphan cleanup (ai-update)** | AST + Gherkin, app-agnostic by construction. Verified against banking + CMS fixtures. |
 | **Orphan cleanup (ai-regenerate)** | Same algorithm, different wire-in. Same generic guarantees. |
 
-The 137 unit tests include:
-- 27 LLM usage-tracking and cost-ledger tests (app-agnostic by construction)
-- 20 orphan-cleanup tests using **banking** (BANK-101, AccountPage, transfer funds) and **CMS** (CMS-1, SocialPage, schedule tweet) fixtures
+The 170 unit tests include:
+- 34 incremental-update tests (surgical `ai-update` splicing, app-agnostic)
 - 31 validator tests using generic placeholders
-- All other tests use abstract data
+- 29 per-story cost-ledger tests, including the reset-marker boundary
+- 20 orphan-cleanup tests using **banking** (BANK-101, AccountPage, transfer funds) and **CMS** (CMS-1, SocialPage, schedule tweet) fixtures
+- 19 module-wise app-context tests (core + component selection, safe-default fallback)
+- 14 duplicate step-definition guard tests (genuine cross-file collisions only)
+- 12 LLM usage-tracking tests (app-agnostic by construction)
+- 8 repair-loop tests and 3 Agent 1 label tests
+- All of these use abstract, banking, or CMS data — never SauceDemo
 
 If any of these had snuck in a SauceDemo-specific assumption, the tests would fail when run.
 
@@ -320,11 +357,11 @@ The framework filters Jira issues by project key. If you set `JIRA_PROJECT_KEY=S
 
 ## One-paragraph version (if you're in a hurry)
 
-Copy the whole repo. In `config/config.yaml`, change the `app_under_test` block to point at your app and create the matching `app_inventory/<name>.json`. Replace `prompts/app_context.md` with your app's known users / errors / page flow. Write ONE high-quality hand-crafted reference test (feature + step_def + page_object trio) and list those three files in `reserved_paths`. Delete the old SauceDemo files. Run `python -m pytest tests/unit/ -q` — should see 96 passed. Done. **No Python file in `agents/`, no prompt in `prompts/agent*.md`, no unit test, and no workflow file needs to change.**
+Copy the whole repo. In `config/config.yaml`, change the `app_under_test` block to point at your app and create the matching `app_inventory/<name>.json`. Populate `prompts/app_context/` — put global info in `core.md` and one `<component>.md` per Jira Component (or use a single `prompts/app_context.md` if you prefer) — with your app's known users / errors / page flow. Write ONE high-quality hand-crafted reference test (feature + step_def + page_object trio) and list those three files in `reserved_paths`. Delete the old SauceDemo files. Run `python -m pytest tests/unit/ -q` — should see 170 passed. Done. **No Python file in `agents/`, no prompt in `prompts/agent*.md`, no unit test, and no workflow file needs to change.**
 
 ---
 
-## Summary of state on May 13, 2026
+## Summary of current state (July 2026)
 
 | Component | Status in your latest upload |
 |---|---|
@@ -339,7 +376,12 @@ Copy the whole repo. In `config/config.yaml`, change the `app_under_test` block 
 | GitHubClient.list_files_in_directory | ✅ Present |
 | Wire-in for ai-update orphan cleanup | ✅ Present |
 | Wire-in for ai-regenerate orphan cleanup | ✅ Present |
-| Unit tests | ✅ 137 passing |
+| Unit tests | ✅ 170 passing |
+| Module-wise app context (`prompts/app_context/`) | ✅ Present (core + per-component) |
+| Inventory JSON minification | ✅ Present |
+| Duplicate step-definition guard | ✅ Present (SCRUM-54 / lesson #15) |
+| Per-story ledger reset marker | ✅ Present |
+| Light-model routing (`LLM_MODEL_LIGHT`) | ✅ Wired (Agents 1 & 5) |
 | Hardcoded SauceDemo references in agent code | ✅ Zero (audited) |
 | Hardcoded SauceDemo references in agent prompts | ✅ Zero (audited) |
 

@@ -67,7 +67,7 @@ For more diagrams — component view, Agent 2 sequence, and the labels-as-state-
 
 **What it does:**
 1. Reads a Jira story (description + acceptance criteria) — manual mode (`--story KEY`) or scan mode (`--scan` reads selection criteria from config).
-2. Calls the LLM with a prompt template (`prompts/agent1_analyst.md` + `prompts/app_context.md`) and a Pydantic schema (`TestCaseList`).
+2. Calls the LLM with a prompt template (`prompts/agent1_analyst.md` + the `prompts/app_context/` modules, or a single `prompts/app_context.md`) and a Pydantic schema (`TestCaseList`).
 3. For each generated test case, creates a "Test Case" issue in Jira linked to the parent story.
 4. Tags the parent story with `ai-processed` (idempotency).
 
@@ -77,7 +77,7 @@ For more diagrams — component view, Agent 2 sequence, and the labels-as-state-
 **Why this design:**
 - Pydantic validation makes malformed LLM JSON fail loudly, not silently.
 - Dry-run mode (`--dry-run`) lets you preview without writing to Jira — essential while iterating on prompts.
-- The `prompts/app_context.md` block is the ONE place app-specific guidance lives. The main prompt template is app-agnostic.
+- The `prompts/app_context/` modules (or a single `prompts/app_context.md`) are the ONE place app-specific guidance lives. Agent 1 injects `core.md` plus the module(s) matching the story's Jira Component(s); a story with no components gets all modules. The main prompt template is app-agnostic.
 
 ### Agent 2: Coder (`agents/agent2_coder.py`)
 
@@ -439,7 +439,7 @@ Three distinct test layers exist; they have different triggers and purposes:
 
 | Suite | Trigger | Touches network? | Purpose |
 |---|---|---|---|
-| `tests/unit/` (123 tests) | Every PR — Agent 4 runs `pytest tests/`, which includes them. Also run manually (`python -m pytest tests/unit/ -q`) before committing any framework change. | No — fully offline (no Jira/GitHub/LLM) | Framework correctness: validators, markers, orphan cleanup, usage tracking, ledger |
+| `tests/unit/` (170 tests) | Every PR — Agent 4 runs `pytest tests/`, which includes them. Also run manually (`python -m pytest tests/unit/ -q`) before committing any framework change. | No — fully offline (no Jira/GitHub/LLM) | Framework correctness: validators, markers, orphan cleanup, usage tracking, ledger |
 | `tests/step_defs/` (generated E2E) | Every PR — same Agent 4 run | Yes — drives a real browser against the app under test | Does the application work |
 | `scripts/smoke_test.py` | **Manual only** — run on first setup, after credential/`.env` changes, on a new machine, or when onboarding a new app | Yes — live Jira login, one real LLM call, one browser hit on the app's `base_url` (config-driven) | Is the *environment* wired correctly |
 
@@ -486,9 +486,9 @@ app_under_test:
 
 Describes the pages, selectors, and methods of your app. Use `app_inventory/saucedemo.json` as the example. The schema is documented in [REUSE_FOR_NEW_PROJECT.md → App inventory JSON schema](./REUSE_FOR_NEW_PROJECT.md).
 
-### Step 3: Replace `prompts/app_context.md`
+### Step 3: Populate `prompts/app_context/`
 
-Put your app's known users, error messages, page flow notes, and anything else the analyst should know. This file gets injected into Agent 1's prompt.
+Put your app's known users, error messages, page flow notes, and anything else the analyst should know. App context is a **module folder**: `core.md` (always injected) plus one `<component>.md` per Jira Component (matching is case/space/hyphen-insensitive). Agent 1 injects `core.md` + the module(s) for the story's component(s); a story with no components injects all modules. A single `prompts/app_context.md` file still works as a fallback if the folder is absent.
 
 ### Step 4: Author one reference test
 
@@ -656,7 +656,7 @@ flowchart LR
     subgraph DATA["📦 Data Layer"]
         INV["app_inventory/<app>.json<br/>pages, selectors, methods"]
         REF["features/<ref>.feature<br/>tests/step_defs/test_<ref>.py<br/>pages/<ref>_page.py"]
-        ACMD["prompts/app_context.md<br/>app-specific analyst guidance"]
+        ACMD["prompts/app_context/<br/>core.md + per-component modules"]
     end
 
     subgraph PROMPTS["📝 Prompts Layer<br/>(app-agnostic + placeholders)"]
