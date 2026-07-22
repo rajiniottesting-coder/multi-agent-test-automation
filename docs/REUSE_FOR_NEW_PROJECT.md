@@ -1,6 +1,6 @@
 # Reusing this framework for a different project
 
-> **Verification status (July 2026):** ALL FIXES PRESENT. All 123 unit tests
+> **Verification status (July 2026):** ALL FIXES PRESENT. All 137 unit tests
 > pass. Deployed: v17/v18 prompt hardening, orphan cleanup (`ai-update` AND
 > `ai-regenerate`), dynamic sprint scoping (`sprint: "auto"` via JIRA_BOARD_ID),
 > and end-to-end LLM token & cost instrumentation (per-run tracker + per-story
@@ -92,7 +92,48 @@ ALSO update the legacy `base_url:` alias at line 61:
 base_url: https://bank.acme.example.com   # was: https://www.saucedemo.com
 ```
 
-ALSO update or REMOVE the `test_users:` block at lines 67-76. SauceDemo-specific test users are in there.
+ALSO update or REMOVE the `test_users:` block. SauceDemo-specific test users are in there.
+
+> **⚠️ Credentials — read before onboarding a REAL application.**
+>
+> SauceDemo's credentials (`standard_user` / `secret_sauce`) are safe to commit:
+> they are printed on the app's own login page, published in Sauce Labs' docs, and
+> guard nothing. **Real application credentials are not.** Putting them in
+> `config.yaml` or `prompts/app_context.md` means they are:
+>
+> 1. **Committed to Git permanently** — deleting the line later does not remove it
+>    from history; that needs a history rewrite.
+> 2. **Sent to the LLM on every Agent 1 call** — `app_context.md` is injected into
+>    the prompt. Most client security policies prohibit exactly this.
+>
+> **The correct pattern — keep the knowledge, move the secret:**
+>
+> ```yaml
+> # config.yaml — usernames and ROLE BEHAVIOUR are fine; passwords are not
+> test_users:
+>   admin:  { username: "admin_user",  password_env: "TEST_ADMIN_PASSWORD" }
+>   viewer: { username: "viewer_user", password_env: "TEST_VIEWER_PASSWORD" }
+>   locked: { username: "locked_user", password_env: "TEST_LOCKED_PASSWORD" }
+> ```
+>
+> ```markdown
+> <!-- app_context.md — behavioural knowledge, no secrets -->
+> | Username | Password | Notes |
+> |---|---|---|
+> | `admin_user`  | *(env: TEST_ADMIN_PASSWORD)*  | Full permissions; can approve |
+> | `locked_user` | *(env: TEST_LOCKED_PASSWORD)* | Receives lockout error on login |
+> ```
+>
+> Step definitions read the real value at runtime: `os.getenv("TEST_ADMIN_PASSWORD")`.
+> Passwords live in GitHub Secrets (CI) and `.env` (local, gitignored).
+>
+> Agent 1 still learns everything it needs — *that* a locked user exists and *what*
+> happens when it logs in — which is what drives good test-case design. It never
+> needs to know the password.
+>
+> **The same rule applies to any other secret** that might drift into these files:
+> API keys, DB connection strings, tokens. Behavioural knowledge in the prompt;
+> secrets in the environment.
 
 The `agents:` section (label selection rules, completion labels) **stays exactly the same**. The Jira label workflow is universal.
 
@@ -156,7 +197,7 @@ Confirmed by audit (search for SauceDemo terms in agent code/prompts/tests retur
 | `agents/*.py` | All 11 Python agent files | ❌ NEVER |
 | `prompts/agent*.md` | All five agent prompts (NOT app_context.md) | ❌ NEVER |
 | `pages/base_page.py` | 10 generic Playwright helpers | ❌ NEVER |
-| `tests/unit/*.py` | All 123 unit tests | ❌ NEVER |
+| `tests/unit/*.py` | All 137 unit tests | ❌ NEVER |
 | `.github/workflows/*.yml` | All 5 workflow files | ❌ NEVER |
 | `config/__init__.py`, `config/paths.py` | Config loading code | ❌ NEVER |
 | `requirements.txt`, `pytest.ini` | Dependency / pytest config | ❌ NEVER |
@@ -241,7 +282,7 @@ The fixes we delivered this week aren't tied to SauceDemo. Everything works for 
 | **Orphan cleanup (ai-update)** | AST + Gherkin, app-agnostic by construction. Verified against banking + CMS fixtures. |
 | **Orphan cleanup (ai-regenerate)** | Same algorithm, different wire-in. Same generic guarantees. |
 
-The 123 unit tests include:
+The 137 unit tests include:
 - 27 LLM usage-tracking and cost-ledger tests (app-agnostic by construction)
 - 20 orphan-cleanup tests using **banking** (BANK-101, AccountPage, transfer funds) and **CMS** (CMS-1, SocialPage, schedule tweet) fixtures
 - 31 validator tests using generic placeholders
@@ -298,7 +339,7 @@ Copy the whole repo. In `config/config.yaml`, change the `app_under_test` block 
 | GitHubClient.list_files_in_directory | ✅ Present |
 | Wire-in for ai-update orphan cleanup | ✅ Present |
 | Wire-in for ai-regenerate orphan cleanup | ✅ Present |
-| Unit tests | ✅ 123 passing |
+| Unit tests | ✅ 137 passing |
 | Hardcoded SauceDemo references in agent code | ✅ Zero (audited) |
 | Hardcoded SauceDemo references in agent prompts | ✅ Zero (audited) |
 

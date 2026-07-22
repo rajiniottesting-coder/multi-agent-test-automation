@@ -48,7 +48,7 @@ PR review (a human reads every diff before merge).
 | Validators feed errors back to the LLM for retry | **Reflexion / self-correction loop** | `_attempt_step_coverage_repair()`, max 4 retries |
 | Already-generated method signatures injected into later prompts | **Context injection (RAG-style, in-run retrieval)** | `_build_sibling_page_object_context()` — AST-extracted, not embeddings |
 | One gold-standard example the LLM mimics | **Few-shot prompting / reference-based generation** | reference_files in config.yaml |
-| 14 catalogued failures → prompt rules | **Prompt engineering as institutional memory** | the "Lessons learned" section below, prompts v12–v18 |
+| 15 catalogued failures → prompt rules + validators | **Prompt engineering as institutional memory** | the "Lessons learned" section below, prompts v12–v18 |
 | Human must approve before code gen and before merge | **Human-in-the-loop (HITL)** | `human-approved` label + PR review |
 | SHA-256 hash markers to detect changed inputs | **Content-addressable change detection** (not ML, but ask-worthy) | `# JIRA: KEY (hash: xxx)` markers |
 
@@ -90,7 +90,7 @@ A: Human-approval gate means a human reads the story and generated test cases be
 A: We use the same underlying patterns (chains, structured output, retries) directly against the API. The orchestration state lives in Jira, which beats in-memory graphs for durability and observability. Understanding the internals was also the point of the project.
 
 **Q: How does it learn from mistakes?**
-A: Two mechanisms. Within a run: the repair loop (validator errors → retry). Across runs: a curated failure catalog (the "Lessons learned" section below, 14 entries) distilled into prompt rules and validators — permanent, token-free, version-controlled. Deliberately not a runtime memory store; see the catalog for the trade-off analysis.
+A: Two mechanisms. Within a run: the repair loop (validator errors → retry). Across runs: a curated failure catalog (the "Lessons learned" section below, 15 entries) distilled into prompt rules and validators — permanent, token-free, version-controlled. Deliberately not a runtime memory store; see the catalog for the trade-off analysis.
 
 **Q: What does a run cost and how is cost bounded?**
 A: Measured, not estimated — and tokens and cost are tracked separately. Every LLM call records API-reported token usage (`agents/llm_client.py`); each story run ends with two log lines: `LLM TOKEN USAGE` (exact counts) and `LLM COST` (input + output cost from the `LLM_PRICE_INPUT_PER_1M` / `LLM_PRICE_OUTPUT_PER_1M` repo variables). For the full story cost, every LLM-using agent posts a `[LLM-USAGE]` comment to the story, and Agent 5 aggregates them into an "End-to-end LLM usage & cost" table in its final report (`agents/usage_ledger.py`) — the actual measured cost of Agent 1 + Agent 2 + Agent 3 + Agent 5 for that story in one place. Cost scales with test-case count and repair-loop retries on top of a fixed prompt-overhead floor. Bounding is separate from measurement: `max_stories_per_run: 2` caps blast radius per cron tick; the human-approval gate stops accidental mass processing.
@@ -137,6 +137,7 @@ prompts look the way they do.
 | 12 | v18 | LLM re-invented dropdown/wait patterns differently every run → inconsistent, sometimes broken | No shared primitives to call | 10 generic BasePage helpers; prompt lists them | pages/base_page.py + prompt §BasePage helpers |
 | 13 | May 2026 | Deleted Jira Test Cases left dead page-object methods forever | ai-update preserves page objects by design | Orphan detection: AST analysis, comment-out with `# AI-ORPHAN:` banners | agents/orphan_cleanup.py |
 | 14 | May 2026 | Scan picked up stories from old sprints | JQL had no sprint clause | Sprint scoping: `sprint: "auto"` resolves active sprint via JIRA_BOARD_ID | agents/jira_client.py `get_active_sprint_name()` |
+| 15 | SCRUM-54 | A new login-adjacent feature re-declared `@given("I am on the SauceDemo login page")`, already defined in the reference `test_login.py` → pytest-bdd registers steps globally across the package, so the duplicate collides at collection time (Agent 3 flagged it) | LLM re-declares common steps (navigation, login) in the new file instead of reusing the reference's existing ones — it doesn't know they're already registered package-wide | (a) prompt rule: reuse existing steps, never re-declare; (b) cross-file duplicate validator — narrowly flags only genuine (keyword, parser_type, phrase) collisions across step-def files incl. the reference | `validate_no_duplicate_step_definitions()` in gherkin_analyzer.py + prompts/agent2_coder_generate.md §rule 13 |
 
 ### Why not runtime learning (RAG over past failures, fine-tuning, etc.)?
 

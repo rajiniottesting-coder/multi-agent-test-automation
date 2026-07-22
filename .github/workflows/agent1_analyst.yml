@@ -34,6 +34,8 @@
 # REQUIRED REPO VARIABLES (Settings -> Secrets and variables -> Variables):
 #   - OPENAI_API_BASE  (LLM API base URL)
 #   - LLM_MODEL        (e.g., claude-opus-4-6, gpt-4o)
+#   - LLM_MODEL_LIGHT  (optional) cheaper model for Agents 1 & 5 only.
+#                      Agents 2 & 3 always use LLM_MODEL.
 #
 # NOTE: Agent 1 does NOT push code or open PRs — it only writes to Jira.
 #   No GitHub PAT or contents:write permission is needed here.
@@ -107,7 +109,12 @@ jobs:
           # LLM credentials (any OpenAI-compatible endpoint)
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
-          LLM_MODEL: ${{ vars.LLM_MODEL || 'claude-opus-4-6' }}
+          # Model routing (backlog 1.2). Agent 1 designs test cases — a
+          # Sonnet-class model handles this well at a fraction of Opus pricing.
+          # Kept in the Anthropic family so structured-output behaviour and the
+          # tuned prompt rules carry over unchanged. Override with the
+          # LLM_MODEL_LIGHT repo variable; falls back to LLM_MODEL, then Opus.
+          LLM_MODEL: ${{ vars.LLM_MODEL_LIGHT || vars.LLM_MODEL || 'claude-opus-4-6' }}
 
           # Optional pricing (USD per 1M tokens) for real cost numbers in logs.
           # Set as repo Variables; leave unset to log token counts only.

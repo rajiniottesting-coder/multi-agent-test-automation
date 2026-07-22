@@ -104,6 +104,35 @@ def run(story_id: str, dry_run: bool = False) -> dict:
 
     story_text = f"Title: {story['summary']}\n\nDescription:\n{story['description']}"
 
+    # ── Ledger boundary ──────────────────────────────────────────────
+    # If this story already carries usage comments, it was costed by a
+    # previous run that has since been discarded (test cases deleted and the
+    # story reset to `ai-ready`). Post a [LEDGER-RESET] boundary so Agent 5
+    # aggregates only THIS run's usage — otherwise the end-to-end cost table
+    # would sum the discarded run's tokens with the new one.
+    #
+    # Deliberately scoped to Agent 1: ai-update / ai-regenerate are rework on
+    # the same costed story, and their usage SHOULD accumulate.
+    # Best-effort — never fails the run.
+    if not dry_run:
+        from agents.usage_ledger import has_usage_comments, post_reset_to_story
+        try:
+            if has_usage_comments(jira.get_comments(story_id)):
+                logger.info(
+                    f"{story_id} already has usage entries from a previous run — "
+                    "posting ledger reset boundary."
+                )
+                post_reset_to_story(
+                    story_id,
+                    reason="story reprocessed from ai-ready",
+                    jira=jira,
+                )
+        except Exception as e:
+            logger.warning(
+                f"Usage ledger: reset check failed for {story_id}: "
+                f"{type(e).__name__}: {e}. Non-fatal — continuing."
+            )
+
     # 2. REASON: call LLM with structured output
     prompt_template = load_prompt()
     app_context_block = load_app_context_block()
