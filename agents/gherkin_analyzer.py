@@ -751,6 +751,157 @@ def _phrase_matches(feature_phrase: str, decorator_phrase: str, parser_type: str
         return False
 
 
+# ─────────────────────────────────────────────────────────────
+# Cross-file duplicate step-definition validator (SCRUM-54 lesson)
+#
+# pytest-bdd collects step definitions GLOBALLY across every module in the
+# step_defs package (each @given/@when/@then registers a fixture in the shared
+# namespace). Two files that BOTH define the same (keyword, phrase, parser_type)
+# — e.g. a new feature re-declaring `@given("I am on the login page")` that the
+# reference test_login.py already defines — produce a duplicate registration.
+# Depending on pytest-bdd's version and configuration this either raises at
+# collection or silently binds to whichever module was imported first (a
+# non-deterministic, hard-to-debug failure).
+#
+# This validator flags a duplicate ONLY when it is a genuine conflict:
+#   - Same step keyword (given/when/then, with And/But already resolved upstream)
+#   - Same parser_type (a bare string and a parsers.parse of the same text are
+#     different registrations to pytest-bdd, so we do NOT collapse them)
+#   - Byte-identical phrase after strip()
+#   - Across TWO DIFFERENT files (a duplicate within one file is a separate,
+#     rarer problem and pytest-bdd errors on it directly — not our target here)
+#
+# Deliberately NARROW to avoid false positives: parameterised steps that differ
+# only in variable NAME (`{user}` vs `{username}`) are different phrases and are
+# left alone — pytest-bdd treats them as distinct patterns, and flagging them
+# would block legitimate code.
+
+
+def validate_no_duplicate_step_definitions(
+    generated_files: list,
+    project_root=None,
+    repair_format: bool = False,
+) -> list:
+    """Detect step definitions that collide across step-def files.
+
+    Scans the generated step-def files PLUS the reference step-def file (which
+    the generated code shares a namespace with at runtime) for identical
+    (keyword, parser_type, phrase) decorators declared in more than one file.
+
+    Args:
+        generated_files: list of GeneratedFile (file_path + content).
+        project_root: repo root, used to also read the on-disk reference
+            step-def file so collisions against it are caught. If None, only
+            the generated batch is cross-checked (still catches new-vs-new).
+        repair_format: when True, emit errors in the repair loop's
+            `... error in '<generated_path>':` format so the loop can target
+            and regenerate the offending GENERATED file. The reference file is
+            never named as the repair target (it is reserved and correct).
+
+    Returns:
+        list[str]: human-readable error messages, one per genuine collision.
+        Empty list means no cross-file duplicates.
+    """
+    from pathlib import Path as _Path
+
+    # (keyword, parser_type, phrase) -> list of file paths declaring it
+    registry: dict[tuple, list[str]] = {}
+
+    def _index(path: str, content: str) -> None:
+        for kind, phrase, parser_type in _extract_decorator_phrases(content):
+            key = (kind, parser_type, phrase.strip())
+            registry.setdefault(key, [])
+            if path not in registry[key]:
+                registry[key].append(path)
+
+    # 1) Index every generated step-def file in this batch.
+    step_def_files = [
+        f for f in generated_files
+        if _gf_path(f).startswith("tests/step_defs/")
+        and _gf_path(f).endswith(".py")
+    ]
+    for f in step_def_files:
+        _index(_gf_path(f), _gf_content(f))
+
+    # 2) Also index the reference step-def file(s) already on disk — the
+    #    generated code shares pytest-bdd's global namespace with them. Only
+    #    read files that are NOT themselves being regenerated in this batch
+    #    (a regenerated file's new content is already indexed above).
+    if project_root is not None:
+        root = _Path(project_root)
+        generated_paths = {_gf_path(f) for f in step_def_files}
+        step_defs_dir = root / "tests" / "step_defs"
+        if step_defs_dir.is_dir():
+            for py in sorted(step_defs_dir.glob("*.py")):
+                rel = f"tests/step_defs/{py.name}"
+                if rel in generated_paths:
+                    continue  # superseded by generated content
+                if py.name == "__init__.py":
+                    continue
+                try:
+                    _index(rel, py.read_text(encoding="utf-8"))
+                except OSError:
+                    continue  # unreadable file — skip, don't crash the validator
+
+    # 3) Report any key declared in more than one file.
+    #    Determine which of the colliding files are GENERATED in this batch —
+    #    those are the repairable targets (the reference is reserved/correct).
+    generated_paths_set = {
+        _gf_path(f) for f in generated_files
+        if _gf_path(f).startswith("tests/step_defs/") and _gf_path(f).endswith(".py")
+    }
+
+    errors: list[str] = []
+    for (kind, parser_type, phrase), paths in sorted(registry.items()):
+        if len(paths) <= 1:
+            continue
+        kind_disp = f"@{kind}"
+        phrase_disp = phrase if len(phrase) <= 80 else phrase[:77] + "..."
+        files_disp = ", ".join(sorted(paths))
+        # Prefer to blame a generated file (repairable). If none of the
+        # colliding files are generated (both on disk), there is nothing this
+        # batch can repair — fall back to a plain message.
+        repair_target = next(
+            (p for p in sorted(paths) if p in generated_paths_set), None
+        )
+        guidance = (
+            "pytest-bdd registers step definitions globally across the "
+            "step_defs package, so two files defining the same step collide at "
+            "collection time. Fix: do NOT re-declare this step — reuse the "
+            "existing definition from the reference/other file, or move a truly "
+            "shared step into tests/step_defs/conftest.py (auto-discovered by "
+            "pytest-bdd)."
+        )
+        if repair_format and repair_target is not None:
+            # Repair-loop-targetable format: '... error in \'<path>\':'
+            errors.append(
+                f"Duplicate step-definition error in '{repair_target}': "
+                f'{kind_disp}("{phrase_disp}") [{parser_type}] is also defined in '
+                f"{files_disp}. {guidance}"
+            )
+        else:
+            errors.append(
+                f"Duplicate step definition {kind_disp}"
+                f'("{phrase_disp}") [{parser_type}] is declared in multiple '
+                f"files: {files_disp}. {guidance}"
+            )
+
+    return errors
+
+
+def _gf_path(f) -> str:
+    """Path accessor tolerant of GeneratedFile objects or plain dicts."""
+    if hasattr(f, "file_path"):
+        return f.file_path
+    return f.get("file_path", "") if isinstance(f, dict) else ""
+
+
+def _gf_content(f) -> str:
+    if hasattr(f, "content"):
+        return f.content
+    return f.get("content", "") if isinstance(f, dict) else ""
+
+
 def validate_feature_file_structure(generated_files: list) -> list:
     """Catch malformed Gherkin: steps outside any Scenario/Background/Examples block.
 

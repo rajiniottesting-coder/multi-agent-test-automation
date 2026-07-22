@@ -16,8 +16,7 @@ A reusable framework where **5 specialized AI agents** collaborate to automate t
 | [docs/REUSE_FOR_NEW_PROJECT.md](./docs/REUSE_FOR_NEW_PROJECT.md) | Checklist for pointing the framework at a new application, incl. the app-inventory JSON schema |
 | [docs/TECHNICAL_DEEP_DIVE.md](./docs/TECHNICAL_DEEP_DIVE.md) | Function-level walkthrough of every agent and mechanism |
 | [CHANGES.md](./CHANGES.md) | Changelog — what changed, why, how to adapt |
-| [docs/BACKLOG.md](./docs/BACKLOG.md) | Planned enhancements (module-wise context, two-tier inventory filtering) + token-efficiency playbook |
-| [docs/reference/](./docs/reference/) | File-by-file reference: AGENTS_REFERENCE, WORKFLOWS_REFERENCE, CONFIG_REFERENCE, PROMPTS_REFERENCE — every function, every design decision, with demo Q&A |
+| [docs/BACKLOG.md](./docs/BACKLOG.md) | Phase-2 backlog — 21 items across 4 tiers, with effort estimates and a suggested sequence |
 
 ---
 

@@ -5,10 +5,14 @@ token & cost ledger. No Jira or LLM calls; pure parse/aggregate logic.
 import pytest
 
 from agents.usage_ledger import (
+    RESET_MARKER,
     aggregate_story_usage,
     format_e2e_section,
+    format_reset_comment,
     format_usage_comment,
+    has_usage_comments,
     parse_usage_comment,
+    post_reset_to_story,
     post_usage_to_story,
 )
 
@@ -158,3 +162,143 @@ class TestPostUsageDefensive:
         assert post_usage_to_story("SCRUM-9", "Agent 2 (Coder, initial)", usage(), jira=fj) is True
         assert fj.posted[0][0] == "SCRUM-9"
         assert "[LLM-USAGE]" in fj.posted[0][1]
+
+
+# ─────────────────────────────────────────────────────────────
+# Ledger reset boundary (Phase 2 — backlog item 1.3)
+#
+# Scenario the boundary fixes: a story is fully processed (agents post usage
+# comments), then the human deletes the test cases and resets the story to
+# `ai-ready`. The old comments remain. Without a boundary, the next run's
+# aggregation sums the discarded run + the new run → inflated cost report.
+# ─────────────────────────────────────────────────────────────
+
+class _FakeJira:
+    def __init__(self):
+        self.comments = []
+
+    def add_comment(self, key, body):
+        self.comments.append((key, body))
+
+
+def test_format_reset_comment_contains_marker():
+    body = format_reset_comment("story reprocessed from ai-ready")
+    assert RESET_MARKER in body
+    assert "story reprocessed from ai-ready" in body
+
+
+def test_format_reset_comment_without_reason():
+    body = format_reset_comment()
+    assert RESET_MARKER in body
+    assert "reason=" not in body
+
+
+def test_post_reset_to_story_posts_once():
+    jira = _FakeJira()
+    assert post_reset_to_story("SCRUM-20", "restart", jira=jira) is True
+    assert len(jira.comments) == 1
+    assert RESET_MARKER in jira.comments[0][1]
+
+
+def test_post_reset_to_story_no_key_is_noop():
+    jira = _FakeJira()
+    assert post_reset_to_story("", "restart", jira=jira) is False
+    assert jira.comments == []
+
+
+def test_post_reset_to_story_never_raises():
+    class Broken:
+        def add_comment(self, *a, **kw):
+            raise RuntimeError("jira down")
+    assert post_reset_to_story("SCRUM-20", "restart", jira=Broken()) is False
+
+
+def test_aggregate_ignores_usage_before_reset():
+    """The core fix: pre-reset usage must not inflate the total."""
+    discarded = format_usage_comment("Agent 1 (Analyst)", usage(calls=1, inp=5000, out=2000))
+    boundary = format_reset_comment("story reprocessed from ai-ready")
+    current = format_usage_comment("Agent 1 (Analyst)", usage(calls=1, inp=3000, out=1000))
+
+    agg = aggregate_story_usage([discarded, boundary, current])
+
+    assert agg["agent_runs"] == 1
+    assert agg["total_input_tokens"] == 3000
+    assert agg["total_output_tokens"] == 1000
+
+
+def test_aggregate_honours_only_the_last_reset():
+    """Two restarts: only usage after the most recent boundary counts."""
+    bodies = [
+        format_usage_comment("Agent 1 (Analyst)", usage(calls=1, inp=9999, out=9999)),
+        format_reset_comment("first restart"),
+        format_usage_comment("Agent 1 (Analyst)", usage(calls=1, inp=8888, out=8888)),
+        format_reset_comment("second restart"),
+        format_usage_comment("Agent 1 (Analyst)", usage(calls=1, inp=1000, out=500)),
+        format_usage_comment("Agent 2 (Coder)", usage(calls=3, inp=2000, out=700)),
+    ]
+    agg = aggregate_story_usage(bodies)
+
+    assert agg["agent_runs"] == 2
+    assert agg["total_input_tokens"] == 3000
+    assert agg["total_output_tokens"] == 1200
+
+
+def test_aggregate_without_reset_is_unchanged():
+    """Backward compatibility: no boundary → every comment counts (old behaviour)."""
+    bodies = [
+        format_usage_comment("Agent 1 (Analyst)", usage(calls=1, inp=1000, out=500)),
+        format_usage_comment("Agent 2 (Coder)", usage(calls=3, inp=2000, out=700)),
+    ]
+    agg = aggregate_story_usage(bodies)
+
+    assert agg["agent_runs"] == 2
+    assert agg["total_input_tokens"] == 3000
+
+
+def test_aggregate_reset_with_no_usage_after_is_empty():
+    """Reset posted, run then aborted before any usage — totals are zero, not stale."""
+    bodies = [
+        format_usage_comment("Agent 1 (Analyst)", usage(calls=1, inp=5000, out=2000)),
+        format_reset_comment("restart"),
+    ]
+    agg = aggregate_story_usage(bodies)
+
+    assert agg["agent_runs"] == 0
+    assert agg["total_input_tokens"] == 0
+    assert agg["cost_complete"] is False
+
+
+def test_reset_boundary_ignores_unrelated_comments():
+    """Human comments interleaved with the ledger must not confuse the boundary."""
+    bodies = [
+        "Looks good to me, approving.",
+        format_usage_comment("Agent 1 (Analyst)", usage(calls=1, inp=5000, out=2000)),
+        format_reset_comment("restart"),
+        "Deleted the old test cases, re-running.",
+        format_usage_comment("Agent 1 (Analyst)", usage(calls=1, inp=1234, out=567)),
+    ]
+    agg = aggregate_story_usage(bodies)
+
+    assert agg["agent_runs"] == 1
+    assert agg["total_input_tokens"] == 1234
+
+
+def test_has_usage_comments_true_when_costed():
+    assert has_usage_comments([format_usage_comment("Agent 1 (Analyst)", usage())]) is True
+
+
+def test_has_usage_comments_false_when_only_human_comments():
+    assert has_usage_comments(["Please add a negative case.", "Approved."]) is False
+
+
+def test_has_usage_comments_false_after_reset_with_no_new_usage():
+    """Already reset and nothing since — Agent 1 must not post a second boundary."""
+    bodies = [
+        format_usage_comment("Agent 1 (Analyst)", usage()),
+        format_reset_comment("restart"),
+    ]
+    assert has_usage_comments(bodies) is False
+
+
+def test_has_usage_comments_empty_list():
+    assert has_usage_comments([]) is False

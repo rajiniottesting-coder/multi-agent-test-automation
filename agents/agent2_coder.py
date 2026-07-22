@@ -47,6 +47,7 @@ from agents.method_resolution_validator import validate_method_resolution
 from agents.llm_client import LLMClient
 from agents.schemas import CodePlan, GeneratedFile, CodeGenerationOutput
 from agents.gherkin_analyzer import (
+    validate_no_duplicate_step_definitions,
     scan_features_dir,
     filter_duplicate_test_cases,
     validate_filename_consistency,
@@ -1064,6 +1065,25 @@ def _validate_generated_files(
             f"steps. See logs for details."
         )
 
+    duplicate_step_errors = validate_no_duplicate_step_definitions(
+        generated_files, PROJECT_ROOT
+    )
+    if duplicate_step_errors:
+        logger.error(
+            f"Duplicate step-definition check FAILED with "
+            f"{len(duplicate_step_errors)} error(s) AFTER retry:"
+        )
+        for err in duplicate_step_errors:
+            logger.error(f"  - {err}")
+        raise ValueError(
+            f"Duplicate step-definition validation failed for {story_id}: "
+            f"{len(duplicate_step_errors)} step(s) are declared in more than "
+            f"one step-def file (including the reference). pytest-bdd registers "
+            f"step definitions globally across the package, so these collide at "
+            f"collection time. The generated feature should reuse the existing "
+            f"step rather than re-declaring it. See logs for details."
+        )
+
     import_errors = validate_imports_resolvable(generated_files, PROJECT_ROOT)
     if import_errors:
         logger.error(
@@ -1157,6 +1177,14 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     errors.extend(validate_step_definitions_complete(generated_files))
     errors.extend(validate_imports_resolvable(generated_files, PROJECT_ROOT))
     errors.extend(validate_method_resolution(generated_files, PROJECT_ROOT))
+    # Duplicate step-defs across files (SCRUM-54 lesson). repair_format=True so
+    # the loop can target and regenerate the offending GENERATED file with the
+    # feedback baked in, rather than only catching it at final validation.
+    errors.extend(
+        validate_no_duplicate_step_definitions(
+            generated_files, PROJECT_ROOT, repair_format=True
+        )
+    )
     return errors
 
 

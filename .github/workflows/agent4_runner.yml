@@ -273,7 +273,12 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
-          LLM_MODEL: ${{ vars.LLM_MODEL || 'claude-opus-4-6' }}
+          # Model routing (backlog 1.2). Agent 5 writes a short prose summary —
+          # the cheapest capable tier is sufficient. All facts, links and counts
+          # in the report are appended by Python (build_final_comment), not the
+          # model, so a lighter model cannot degrade correctness here.
+          # Override with LLM_MODEL_LIGHT; falls back to LLM_MODEL, then Opus.
+          LLM_MODEL: ${{ vars.LLM_MODEL_LIGHT || vars.LLM_MODEL || 'claude-opus-4-6' }}
           # Optional pricing (USD per 1M tokens) for cost tracking
           LLM_PRICE_INPUT_PER_1M: ${{ vars.LLM_PRICE_INPUT_PER_1M }}
           LLM_PRICE_OUTPUT_PER_1M: ${{ vars.LLM_PRICE_OUTPUT_PER_1M }}

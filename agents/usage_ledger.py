@@ -34,6 +34,15 @@ logger = logging.getLogger(__name__)
 
 USAGE_MARKER = "[LLM-USAGE]"
 
+# Boundary marker. Posted by Agent 1 when it re-processes a story that already
+# carries usage comments (i.e. the story was reset to `ai-ready` and is being
+# costed again from scratch). aggregate_story_usage() counts only the comments
+# AFTER the last reset, so a discarded run's tokens never inflate the report.
+#
+# Deliberately NOT posted for ai-update / ai-regenerate: those are rework on the
+# SAME costed story, and their tokens SHOULD accumulate into the lifetime total.
+RESET_MARKER = "[LEDGER-RESET]"
+
 # Parses the machine-readable comment line. cost fields may be a float or "n/a".
 _USAGE_RE = re.compile(
     r"\[LLM-USAGE\]\s+"
@@ -103,6 +112,65 @@ def post_usage_to_story(story_key: str, agent_name: str, usage: dict, jira=None)
         return False
 
 
+def format_reset_comment(reason: str = "") -> str:
+    """Build the ledger-reset boundary comment body."""
+    suffix = f" reason=\"{reason}\"" if reason else ""
+    return (
+        f"{RESET_MARKER}{suffix}\n\n"
+        "_Cost accounting for this story restarts here. Usage comments above this "
+        "line belong to a previous, discarded run and are excluded from the "
+        "end-to-end total._"
+    )
+
+
+def post_reset_to_story(story_key: str, reason: str = "", jira=None) -> bool:
+    """Post a ledger-reset boundary onto the story. Best-effort.
+
+    Mirrors post_usage_to_story: NEVER raises. Bookkeeping must not fail a run.
+    """
+    if not story_key:
+        logger.info("Usage ledger: no story key available — skipping reset marker.")
+        return False
+    try:
+        if jira is None:
+            from agents.jira_client import JiraClient
+            jira = JiraClient()
+        jira.add_comment(story_key, format_reset_comment(reason))
+        logger.info(f"Usage ledger: posted reset marker to {story_key} ({reason}).")
+        return True
+    except Exception as e:
+        logger.warning(
+            f"Usage ledger: could not post reset marker to {story_key}: "
+            f"{type(e).__name__}: {e}. Non-fatal — continuing."
+        )
+        return False
+
+
+def has_usage_comments(comment_bodies: list[str]) -> bool:
+    """True if any comment after the last reset is a usage entry.
+
+    Used by Agent 1 to decide whether a story has already been costed and
+    therefore needs a reset boundary before it is processed again.
+    """
+    return any(
+        parse_usage_comment(b) for b in _comments_after_last_reset(comment_bodies or [])
+    )
+
+
+def _comments_after_last_reset(comment_bodies: list[str]) -> list[str]:
+    """Return only the comments posted AFTER the last [LEDGER-RESET] marker.
+
+    Jira returns comments oldest-first, so the last marker is the most recent
+    boundary. With no marker present, every comment is returned — preserving
+    the original (pre-reset-feature) behaviour exactly.
+    """
+    last = -1
+    for i, body in enumerate(comment_bodies):
+        if RESET_MARKER in (body or ""):
+            last = i
+    return comment_bodies[last + 1:] if last >= 0 else list(comment_bodies)
+
+
 def parse_usage_comment(comment_body: str) -> Optional[dict]:
     """Parse one comment body. Returns a usage dict or None if it isn't
     a usage comment (or is malformed)."""
@@ -141,7 +209,10 @@ def aggregate_story_usage(comment_bodies: list[str], extra_entries: list[dict] |
     any entry lacked pricing, meaning the total is a lower bound).
     """
     entries: list[dict] = []
-    for body in comment_bodies or []:
+    # Only count usage posted after the most recent reset boundary. A story that
+    # was reset to `ai-ready` and re-run carries stale comments from the
+    # discarded run; summing those would inflate the reported cost.
+    for body in _comments_after_last_reset(comment_bodies or []):
         parsed = parse_usage_comment(body)
         if parsed:
             entries.append(parsed)

@@ -4,6 +4,164 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## Phase 2 — Cross-file duplicate step-definition guard (SCRUM-54 lesson)
+
+**The failure.** A new login-adjacent feature (`test_login_edge_and_validation.py`)
+re-declared `@given("I am on the SauceDemo login page")`, a step the reference
+`test_login.py` already defines. pytest-bdd registers step definitions GLOBALLY
+across the `tests/step_defs/` package, so two files declaring the same step collide
+at collection time. Agent 3 caught it as a Major advisory issue; this change makes it
+a permanent, enforced guard so it cannot silently recur.
+
+**The fix — "prompt asks, validator enforces" (the framework's standard pattern):**
+
+1. **Validator** — `validate_no_duplicate_step_definitions()` in
+   `agents/gherkin_analyzer.py`. After generation it scans the generated step-def
+   files PLUS the on-disk reference for identical decorators across files. It is
+   deliberately NARROW to avoid false positives: it flags only a genuine
+   `(keyword, parser_type, phrase)` collision across two different files. It does
+   NOT flag different phrases, different keywords, a bare string vs a `parsers.parse`
+   of the same text, parameterised steps differing only in variable name, or
+   duplicates within a single file. A regenerated file supersedes its on-disk copy,
+   so `ai-update`/`ai-regenerate` never false-positive against the stale version.
+   Wired into `_validate_generated_files()` (final gate) and, in `repair_format`,
+   into `_collect_repairable_errors()` so the repair loop can regenerate the
+   offending GENERATED file (never the reserved reference) with the feedback baked in.
+
+2. **Prompt rule** — `prompts/agent2_coder_generate.md` gains rule 13 (and a
+   reinforcement in the step-def section): do not re-declare a step the reference
+   already defines; reuse it, or move a truly shared step into
+   `tests/step_defs/conftest.py`. This reduces occurrences; the validator guarantees
+   they're caught.
+
+**Verification.** New `tests/unit/test_duplicate_step_defs.py` — 14 tests covering
+true positives (new-vs-new, new-vs-reference, parse decorators), every false-positive
+guard (different phrase/keyword/parser-type, parameterised varname, within-file dup,
+non-step-def files, regenerated-file supersession), and the repair-format contract
+(targets the generated file, matches the loop's grouper regex). Confirmed the
+validator produces ZERO errors against the current repo's existing step-defs.
+Catalogued as lesson #15 in `docs/AI_CONCEPTS.md`. Suite: 156 → **170 passing**.
+
+---
+
+## Phase 2 — Tier 2 (batch 1: low-blast-radius token savings)
+
+Both changes are **fully backward-compatible** — with no new files or folders
+added, behaviour is byte-identical to before.
+
+### Inventory minification (backlog 2.6)
+
+`agents/app_context.py` — `load_page_inventory_json()` now minifies the inventory
+JSON at injection time (`json.dumps(..., separators=(",",":"))`). The file on disk
+stays human-readable; only the string sent to the LLM is compacted, trimming input
+tokens on every Agent 2 and Agent 3 call at zero information loss. On the SauceDemo
+inventory this is ~15%; the saving grows with inventory size.
+
+**Safety:** if the inventory is not valid JSON, the method logs a warning and returns
+the raw text unchanged — identical to the pre-2.6 behaviour, so a malformed file can
+never make it start failing. A *missing* file still raises `FileNotFoundError` as
+before (only parse errors fall back).
+
+### Module-wise app context (backlog 2.1)
+
+`agents/agent1_analyst.py` — `load_app_context_block()` becomes module-aware, and
+`agents/jira_client.py` — `get_story()` now returns the story's Jira Components
+(additive; all existing keys unchanged).
+
+Two layouts, chosen automatically from the filesystem:
+
+- **Single file (default, unchanged).** `prompts/app_context.md` — the original
+  behaviour. Used whenever `prompts/app_context/` does not exist.
+- **Module-wise (opt-in).** Create `prompts/app_context/` with `core.md` plus one
+  `<component>.md` per module. Agent 1 then injects `core.md` (always) plus the files
+  matching the story's Jira Components, instead of carrying every module's rules on
+  every call. For a large app this focuses the prompt and cuts Agent-1 input tokens.
+
+Matching is case- and separator-insensitive ("User Management" → `user_management.md`).
+Safe defaults: a story with no components, or a component with no matching file,
+injects **all** modules — context is never silently dropped.
+
+**To adopt** (optional, per app): split `prompts/app_context.md` into
+`prompts/app_context/core.md` (roles, global errors, auth flow) + one file per Jira
+Component, and tag stories with their Component. Until you do, nothing changes.
+
+### Tests
+
+New `tests/unit/test_app_context_modules.py` — 19 tests covering both features:
+single-file compatibility, core-always, multi-component, name normalisation,
+all safe-default fallbacks, empty/absent folders, and for minify: valid-JSON
+round-trip, colons-in-values, unicode, malformed-fallback, and missing-file-still-raises.
+Suite: 137 → **156 passing**.
+
+---
+
+## Phase 2 — Tier 1
+
+### Ledger reset boundary — fixes a cost double-count bug (backlog 1.3)
+
+**The bug.** Deleting a story's Test Cases and resetting it to `ai-ready` left the
+previous run's `[LLM-USAGE]` comments on the story. Agent 5's next aggregation
+summed the discarded run *and* the new one, so the "End-to-end LLM usage & cost"
+table reported inflated totals.
+
+**The fix.** `agents/usage_ledger.py` gains a `[LEDGER-RESET]` boundary marker:
+`format_reset_comment()` / `post_reset_to_story()` post it (best-effort, never
+raises); `_comments_after_last_reset()` returns only comments posted after the most
+recent boundary; `aggregate_story_usage()` aggregates just that slice.
+**Backward compatible** — with no marker present every comment counts, as before.
+`has_usage_comments()` lets an agent ask "has this story been costed since the last
+boundary?".
+
+`agents/agent1_analyst.py` posts the boundary when processing a story that already
+carries usage entries. Scoped deliberately to Agent 1: `ai-update` and
+`ai-regenerate` are rework on the same costed story, so their usage *should*
+accumulate into the lifetime total — only a fresh `ai-ready` cycle restarts
+accounting. Skipped in `--dry-run`; wrapped in its own try/except so a ledger
+failure can never fail a run.
+
+14 new unit tests. Suite: 123 → **137 passing**.
+
+### Model routing (backlog 1.2)
+
+`agent1_analyst.yml` and the Agent-5 job in `agent4_runner.yml` now read
+`LLM_MODEL_LIGHT`, falling back to `LLM_MODEL` and then Opus. Agents 2 and 3 always
+use `LLM_MODEL`. **No-op until the repo variable is set** — the fallback chain
+preserves current behaviour exactly. Set `LLM_MODEL_LIGHT` (e.g.
+`claude-sonnet-4-6`) to route test design and report prose to a cheaper tier.
+
+### Gateway probe (new manual tool)
+
+`scripts/gateway_probe.py` — lists the models the LLM gateway exposes and tests
+whether Anthropic prompt caching is passed through, trying the `cache_control`
+breakpoint on both `system` and `user` message placements. Manual only; not run by
+CI. Result on the adesso hub (July 2026): 45 models available; **caching not
+passed through** — all cache counters zero on a 2,356-token prefix across both
+placements, so backlog item 1.1 is blocked pending a gateway config change.
+
+### Credential hygiene for real-app onboarding (backlog 1.5)
+
+`docs/REUSE_FOR_NEW_PROJECT.md` — the `test_users` step is now a security note.
+SauceDemo's public demo credentials are safe to commit; real ones are not, because
+`config.yaml` and `app_context.md` are committed permanently *and* `app_context.md`
+is injected into every Agent 1 prompt. Documents the env-var pattern.
+
+### Documentation accuracy
+
+- `docs/GUIDE.md` — removed 16 stale references to Google Gemini as the LLM
+  (agent descriptions, troubleshooting, and the Mermaid architecture diagrams).
+  The framework has run on Claude via an OpenAI-compatible LiteLLM gateway since
+  the provider swap; the guide still described the original Gemini build.
+- `README.md` — removed the dead `docs/reference/` index row (those files were
+  never added to the repo).
+- Test-count references updated 123 → 137.
+
+### Already in place
+
+Backlog item 1.4 (move `pages/base_page.py` to `reserved_paths`) was found already
+applied in `config/config.yaml` — no change needed.
+
+---
+
 ## July 2026 — Accurate story reporting + failure evidence capture
 
 **Report scope fix (unit vs app tests).** Agent 4 previously ran `pytest tests/`

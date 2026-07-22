@@ -67,7 +67,7 @@ For more diagrams — component view, Agent 2 sequence, and the labels-as-state-
 
 **What it does:**
 1. Reads a Jira story (description + acceptance criteria) — manual mode (`--story KEY`) or scan mode (`--scan` reads selection criteria from config).
-2. Calls Gemini with a prompt template (`prompts/agent1_analyst.md` + `prompts/app_context.md`) and a Pydantic schema (`TestCaseList`).
+2. Calls the LLM with a prompt template (`prompts/agent1_analyst.md` + `prompts/app_context.md`) and a Pydantic schema (`TestCaseList`).
 3. For each generated test case, creates a "Test Case" issue in Jira linked to the parent story.
 4. Tags the parent story with `ai-processed` (idempotency).
 
@@ -86,8 +86,8 @@ For more diagrams — component view, Agent 2 sequence, and the labels-as-state-
 **What it does:**
 1. Reads approved Test Cases from Jira (filtered by `ai-processed` AND `human-approved` labels).
 2. Optional dedup check: if any test cases are already covered by existing scenarios, skip them. (`ai-regenerate` label bypasses this.)
-3. **Stage 1 (Plan):** Calls Gemini with a Pydantic schema (`CodePlan`) — gets file paths, types, branch name, PR title. NO code yet.
-4. **Stage 2 (Generate):** For EACH file in the plan, calls Gemini in text mode to generate the file's content.
+3. **Stage 1 (Plan):** Calls the LLM with a Pydantic schema (`CodePlan`) — gets file paths, types, branch name, PR title. NO code yet.
+4. **Stage 2 (Generate):** For EACH file in the plan, calls the LLM in text mode to generate the file's content.
 5. **Validators:** Checks filename consistency (Phase 4) and step-def coverage (Phase 8). Fails loudly if either is wrong.
 6. Creates a branch (`auto/<JIRA-KEY>-<feature-name>`), commits files, opens a PR.
 7. Tags the parent story with `ai-coded`.
@@ -115,8 +115,8 @@ Add label `ai-regenerate` to a parent story. Agent 2 will:
 
 **What it does:**
 1. Reads PR metadata + changed files via PyGithub.
-2. Calls Gemini with a rigorous review prompt (`prompts/agent3_reviewer.md`) plus the reference files for style baseline.
-3. Post-processes the response: deduplicates issues (Gemini sometimes loops on low-content PRs) and caps at 10 issues.
+2. Calls the LLM with a rigorous review prompt (`prompts/agent3_reviewer.md`) plus the reference files for style baseline.
+3. Post-processes the response: deduplicates issues (LLMs sometimes loop on low-content PRs) and caps at 10 issues.
 4. Posts a markdown comment on the PR.
 
 **Triggers:**
@@ -124,7 +124,7 @@ Add label `ai-regenerate` to a parent story. Agent 2 will:
 - CI: `.github/workflows/agent3-reviewer.yml` runs on PR open/synchronize/reopen
 
 **Why post-process instead of constraining the schema?**
-Pydantic's `max_length=10` translates to JSON Schema `maxItems`, which Gemini's constrained-decoding engine cannot compile on complex object arrays (it errors with "too many states for serving"). So we let the LLM produce an unbounded list and trim it deterministically in Python after.
+Pydantic's `max_length=10` translates to JSON Schema `maxItems`, which some providers' constrained-decoding engines cannot compile on complex object arrays (it errors with "too many states for serving"). So we let the LLM produce an unbounded list and trim it deterministically in Python after.
 
 **Anti-hallucination guardrails (built into the prompt):**
 - Every issue must quote a specific line from the diff
@@ -156,7 +156,7 @@ Pydantic's `max_length=10` translates to JSON Schema `maxItems`, which Gemini's 
 **What it does:**
 1. Parses `reports/junit.xml` (produced by Agent 4) into a `RunReport`.
 2. Enriches with CI context: PR URL, workflow run URL, commit SHA, link to artifact download.
-3. Calls Gemini with a structured schema (`JiraCommentDraft`) to produce ONLY the prose summary (Python adds the deterministic links/metadata after).
+3. Calls the LLM with a structured schema (`JiraCommentDraft`) to produce ONLY the prose summary (Python adds the deterministic links/metadata after).
 4. Posts the comment to the parent Jira story (resolved from PR branch name).
 5. Tags the story with `tests-run`.
 
@@ -573,9 +573,9 @@ Most common cause: PR branch doesn't contain a Jira key. Agent 5 extracts the st
 
 ### `LLM returned None — could not produce valid <Schema>`
 
-Gemini's structured-output mode failed. Two common causes:
+Structured-output mode failed. Two common causes:
 1. A safety filter blocked the response (rare with code/test content)
-2. The Pydantic schema has a feature Gemini can't compile (e.g., regex pattern, complex `maxItems`)
+2. The Pydantic schema has a feature the provider can't compile (e.g., regex pattern, complex `maxItems`)
 
 Check the schema for any constraints beyond the basics (Literal, default, min_length on lists). Per `agents/schemas.py` notes, avoid `max_length` on lists of complex objects.
 
@@ -606,7 +606,7 @@ flowchart TB
     end
 
     subgraph LLM["🧠 LLM"]
-        Gemini["Google Gemini 2.5 Flash<br/>+ Pydantic structured output"]
+        LLM["Claude via LiteLLM gateway<br/>+ Pydantic structured output"]
     end
 
     Story -->|"reads requirement"| A1
@@ -623,10 +623,10 @@ flowchart TB
     A4 -->|"junit.xml +<br/>HTML report"| A5
     A5 -->|"summary comment +<br/>label: tests-run"| Story
 
-    A1 <-.->|"prompt +<br/>structured output"| Gemini
-    A2 <-.->|"plan + per-file<br/>generation"| Gemini
-    A3 <-.->|"review prompt"| Gemini
-    A5 <-.->|"summary prompt"| Gemini
+    A1 <-.->|"prompt +<br/>structured output"| LLM
+    A2 <-.->|"plan + per-file<br/>generation"| LLM
+    A3 <-.->|"review prompt"| LLM
+    A5 <-.->|"summary prompt"| LLM
 
     classDef agent fill:#4a90e2,stroke:#2c5aa0,color:#fff
     classDef human fill:#f5a623,stroke:#b07415,color:#fff
@@ -637,7 +637,7 @@ flowchart TB
     class A1,A2,A3,A4,A5 agent
     class H1,H2 human
     class Story,TC jira
-    class Gemini llm
+    class LLM llm
     class PR artifact
 ```
 
@@ -677,7 +677,7 @@ flowchart LR
     subgraph CLIENTS["🔌 External Adapters"]
         JC["jira_client.py<br/>Jira API"]
         GC["github_client.py<br/>GitHub API"]
-        LC["llm_client.py<br/>Gemini + retry/quota"]
+        LC["llm_client.py<br/>provider-agnostic + retry/quota"]
     end
 
     AC --> AG1
@@ -723,7 +723,7 @@ sequenceDiagram
     participant U as User / Scan
     participant A2 as Agent 2 (Coder)
     participant J as Jira
-    participant L as LLM (Gemini)
+    participant L as LLM (Claude via LiteLLM)
     participant V as Validators
     participant G as GitHub
 
