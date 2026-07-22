@@ -58,26 +58,80 @@ def load_prompt(prompt_file: str = "agent1_analyst.md") -> str:
     return (PROMPTS_DIR / prompt_file).read_text(encoding="utf-8")
 
 
-def load_app_context_block() -> str:
-    """Load the app-specific context block (test users, error messages, etc.)
-    that gets injected into the analyst's prompt.
+def load_app_context_block(components: list[str] | None = None) -> str:
+    """Load the app-specific context injected into the analyst's prompt.
 
-    This file is the ONE place to put app-specific guidance for the analyst.
-    For a new app, edit prompts/app_context.md — no Python code changes.
+    Two layouts, chosen automatically from the filesystem:
 
-    Returns an empty string if app_context.md is missing (the prompt still
-    works, just with less app-specific guidance).
+    1. **Single file (default, unchanged).** `prompts/app_context.md`. Used
+       whenever the module folder below does not exist.
+    2. **Module-wise (backlog 2.1).** If `prompts/app_context/` exists, inject
+       `core.md` (always) plus one `<component>.md` per Jira Component on the
+       story. Focuses Agent 1's prompt on the relevant module for a large app.
+       Matching is case/space/hyphen-insensitive ("User Management" ->
+       user_management.md). A story with NO components, or a component with no
+       matching file, injects ALL modules — a safe default that never silently
+       drops context.
+
+    Args:
+        components: Jira Component names on the story (from get_story). None/[]
+            -> inject everything (safe default).
+
+    Returns an empty string if no context is found at all.
     """
-    path = PROMPTS_DIR / "app_context.md"
-    if not path.exists():
+    folder = PROMPTS_DIR / "app_context"
+
+    if not folder.is_dir():
+        path = PROMPTS_DIR / "app_context.md"
+        if not path.exists():
+            logger.warning(
+                "prompts/app_context.md not found — Agent 1 will run with the "
+                "generic prompt only. Create this file (or a prompts/app_context/ "
+                "folder) to add app-specific context so the analyst produces more "
+                "concrete test cases."
+            )
+            return ""
+        return path.read_text(encoding="utf-8")
+
+    def _norm(name: str) -> str:
+        return name.strip().lower().replace(" ", "_").replace("-", "_")
+
+    module_files = {_norm(p.stem): p for p in sorted(folder.glob("*.md"))}
+
+    blocks: list[str] = []
+    core = module_files.pop("core", None)
+    if core is not None:
+        blocks.append(core.read_text(encoding="utf-8"))
+
+    requested = [_norm(c) for c in (components or [])]
+    matched = [module_files[r] for r in requested if r in module_files]
+
+    if matched:
+        for p in matched:
+            blocks.append(p.read_text(encoding="utf-8"))
+        unmatched = [r for r in requested if r not in module_files]
+        if unmatched:
+            logger.info(
+                "Module context: no file for component(s) %s — injecting matched "
+                "modules only (%s).", unmatched, [p.stem for p in matched],
+            )
+    else:
+        if requested:
+            logger.info(
+                "Module context: story components %s matched no files — "
+                "injecting all modules as a safe default.", requested,
+            )
+        for p in module_files.values():
+            blocks.append(p.read_text(encoding="utf-8"))
+
+    if not blocks:
         logger.warning(
-            f"prompts/app_context.md not found — Agent 1 will run with the "
-            f"generic prompt only. Create this file to add app-specific "
-            f"context (test users, known error messages, app URL, etc.) "
-            f"so the analyst produces more concrete test cases."
+            "prompts/app_context/ exists but contains no readable .md files — "
+            "Agent 1 will run with the generic prompt only."
         )
         return ""
-    return path.read_text(encoding="utf-8")
+
+    return "\n\n".join(blocks)
 
 
 def load_agent_config(agent_key: str = "agent1_analyst") -> dict:
@@ -135,7 +189,10 @@ def run(story_id: str, dry_run: bool = False) -> dict:
 
     # 2. REASON: call LLM with structured output
     prompt_template = load_prompt()
-    app_context_block = load_app_context_block()
+    # Pass the story's Jira Components so module-wise app context (backlog 2.1)
+    # injects only the relevant module files. Harmless in single-file mode — the
+    # components arg is simply ignored there.
+    app_context_block = load_app_context_block(story.get("components"))
     user_prompt = (
         prompt_template
         .replace("{app_name}", ctx.name)

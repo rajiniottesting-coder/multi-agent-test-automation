@@ -114,12 +114,19 @@ class JiraClient:
         """Fetch a single story and return its key fields as a dict."""
         issue = self.client.issue(issue_key)
         logger.info(f"Fetched {issue_key}: {issue.fields.summary}")
+        # Components drive module-wise app-context selection (backlog 2.1).
+        # Absent/empty on most stories — callers must treat [] as "no modules".
+        try:
+            components = [c.name for c in (issue.fields.components or [])]
+        except AttributeError:
+            components = []
         return {
             "key": issue.key,
             "summary": issue.fields.summary,
             "description": issue.fields.description or "",
             "status": issue.fields.status.name,
             "labels": list(issue.fields.labels),
+            "components": components,
         }
 
     def find_stories_to_process(

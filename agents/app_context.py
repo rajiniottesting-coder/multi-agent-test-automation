@@ -208,4 +208,19 @@ class AppContext:
                 f"config.yaml. See docs/REUSE_FOR_NEW_PROJECT.md (App inventory JSON schema) for the "
                 f"required JSON shape."
             )
-        return path.read_text(encoding="utf-8")
+        raw = path.read_text(encoding="utf-8")
+        # Backlog 2.6 — minify at injection time. The file on disk stays
+        # human-readable; only the string sent to the LLM is compacted, which
+        # trims input tokens on every Agent 2/3 call at zero information loss.
+        # If the file is not valid JSON, fall back to the raw text unchanged
+        # (identical to pre-2.6 behaviour) so a malformed inventory can never
+        # make this method start failing.
+        try:
+            import json
+            return json.dumps(json.loads(raw), separators=(",", ":"), ensure_ascii=False)
+        except (ValueError, TypeError):
+            logger.warning(
+                "Page inventory at %s is not valid JSON — injecting raw text "
+                "without minification.", path,
+            )
+            return raw
