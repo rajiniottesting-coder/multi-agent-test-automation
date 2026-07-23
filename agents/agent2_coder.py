@@ -660,10 +660,11 @@ _ERROR_TYPE_RULES: list[tuple[str, str, str]] = [
     (
         "duplicate_step",
         "duplicate step",
-        "- DUPLICATE STEP DEFINITION: a step listed below is already defined in "
-        "another step-def file (often the reference). Do NOT re-declare it — "
-        "reuse the existing step. If a step is genuinely shared, move it into "
-        "`tests/step_defs/conftest.py` instead of redefining it here.",
+        "- DUPLICATE STEP DEFINITION: a step listed below is also defined in "
+        "another step-def file. This is SAFE and expected — pytest-bdd steps are "
+        "module-scoped fixtures, so each module resolves its own copy and they "
+        "never collide. Do NOT delete your declaration. Declare every step your "
+        "feature uses in YOUR file; never omit one assuming it is inherited.",
     ),
     (
         "import_resolution",
@@ -1183,10 +1184,8 @@ def _validate_generated_files(
         raise ValueError(
             f"Duplicate step-definition validation failed for {story_id}: "
             f"{len(duplicate_step_errors)} step(s) are declared in more than "
-            f"one step-def file (including the reference). pytest-bdd registers "
-            f"step definitions globally across the package, so these collide at "
-            f"collection time. The generated feature should reuse the existing "
-            f"step rather than re-declaring it. See logs for details."
+            f"one step-def file. NOTE (ADR-013): this path is unreachable — "
+            f"cross-file duplication is safe in pytest-bdd. See logs."
         )
 
     import_errors = validate_imports_resolvable(generated_files, PROJECT_ROOT)
@@ -1916,7 +1915,7 @@ def _generate_missing_step_functions(
         "  3. Reuse the page-object fixtures and `parsers` already imported in the "
         "existing file (they are in scope). Use parsers.parse() for parameterised "
         "steps, a plain string otherwise.\n"
-        "  4. Do NOT re-declare any step the existing file already defines.\n"
+        "  4. Declare every step the feature uses; steps are module-scoped, so duplicates are safe.\n"
     )
     return llm.invoke_text(system_prompt=system, user_prompt=user)
 

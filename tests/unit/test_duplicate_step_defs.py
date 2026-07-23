@@ -1,11 +1,16 @@
 """
-Unit tests for validate_no_duplicate_step_definitions (SCRUM-54 lesson).
+Unit tests for validate_no_duplicate_step_definitions.
 
-The validator must catch GENUINE pytest-bdd collision cases while producing
-ZERO false positives on the many legitimate patterns that look similar but do
-not collide (different phrases, different keywords, different parser types,
-parameterised steps with different variable names, duplicates within a single
-file, and steps that only appear in feature files).
+UPDATED (ADR-013): cross-file step duplication is SAFE in pytest-bdd. Step
+definitions are pytest FIXTURES and are MODULE-SCOPED, so two step-def modules
+declaring the same step text each resolve their own copy — they never collide.
+Verified empirically.
+
+The original SCRUM-54 belief ("pytest-bdd registers step definitions globally
+across the step_defs package") was false. The validator is now a no-op, which
+is what lets every generated step-def file be SELF-CONTAINED.
+
+These tests pin the CORRECT behaviour: duplication is never reported.
 """
 from pathlib import Path
 
@@ -24,7 +29,7 @@ def _gf(path, content):
 
 
 # ─────────────────────────────────────────────────────────────
-# TRUE POSITIVES — genuine collisions that must be flagged
+# CROSS-FILE DUPLICATION — safe in pytest-bdd, must NOT be flagged
 # ─────────────────────────────────────────────────────────────
 
 def test_identical_given_across_two_generated_files():
@@ -35,9 +40,7 @@ def test_identical_given_across_two_generated_files():
             '@given("I am on the login page")\ndef _(): pass'),
     ]
     errors = validate_no_duplicate_step_definitions(files)
-    assert len(errors) == 1
-    assert "I am on the login page" in errors[0]
-    assert "test_a.py" in errors[0] and "test_b.py" in errors[0]
+    assert errors == []  # module-scoped fixtures: never a collision
 
 
 def test_identical_parse_decorator_across_files():
@@ -48,8 +51,7 @@ def test_identical_parse_decorator_across_files():
             '@when(parsers.parse("I log in as \\"{user}\\""))\ndef _(): pass'),
     ]
     errors = validate_no_duplicate_step_definitions(files)
-    assert len(errors) == 1
-    assert "parse" in errors[0]
+    assert errors == []  # module-scoped fixtures: never a collision
 
 
 def test_collision_against_reference_on_disk(tmp_path):
@@ -64,8 +66,7 @@ def test_collision_against_reference_on_disk(tmp_path):
             '@given("I am on the login page")\ndef _(): pass'),
     ]
     errors = validate_no_duplicate_step_definitions(files, project_root=tmp_path)
-    assert len(errors) == 1
-    assert "test_login.py" in errors[0] and "test_login_edge.py" in errors[0]
+    assert errors == []  # module-scoped fixtures: never a collision
 
 
 # ─────────────────────────────────────────────────────────────
@@ -157,42 +158,29 @@ def test_no_project_root_still_checks_new_vs_new():
         _gf("tests/step_defs/test_a.py", '@given("dup")\ndef _(): pass'),
         _gf("tests/step_defs/test_b.py", '@given("dup")\ndef _(): pass'),
     ]
-    assert len(validate_no_duplicate_step_definitions(files)) == 1
+    assert validate_no_duplicate_step_definitions(files) == []
 
 
 # ─────────────────────────────────────────────────────────────
 # repair_format — repair-loop-targetable error messages
 # ─────────────────────────────────────────────────────────────
 
-def test_repair_format_targets_generated_file(tmp_path):
-    """In repair_format, the error must name the GENERATED file (repairable),
-    never the reference, in the loop's `error in '<path>':` convention."""
-    step_defs = tmp_path / "tests" / "step_defs"
-    step_defs.mkdir(parents=True)
-    (step_defs / "test_login.py").write_text(
-        '@given("I am on the login page")\ndef _(): pass', encoding="utf-8")
-
+def test_repair_format_targets_generated_file():
+    """repair_format=True must also report nothing — there is nothing to repair."""
     files = [
         _gf("tests/step_defs/test_login_edge.py",
             '@given("I am on the login page")\ndef _(): pass'),
+        _gf("tests/step_defs/test_login.py",
+            '@given("I am on the login page")\ndef _(): pass'),
     ]
-    errors = validate_no_duplicate_step_definitions(
-        files, project_root=tmp_path, repair_format=True
-    )
-    assert len(errors) == 1
-    # Must be in the repair-loop grouper's format and point at the GENERATED file.
-    assert "error in 'tests/step_defs/test_login_edge.py':" in errors[0]
-    assert "error in 'tests/step_defs/test_login.py':" not in errors[0]
+    assert validate_no_duplicate_step_definitions(files, repair_format=True) == []
 
 
-def test_repair_format_matches_grouper_regex():
-    """The repair-format error must satisfy the loop's grouper regex."""
-    import re
+def test_repair_format_also_reports_nothing():
+    """Two modules declaring the same step is the SELF-CONTAINED pattern, not a
+    defect, so the repair loop is never invoked for it."""
     files = [
         _gf("tests/step_defs/test_a.py", '@given("dup")\ndef _(): pass'),
         _gf("tests/step_defs/test_b.py", '@given("dup")\ndef _(): pass'),
     ]
-    errors = validate_no_duplicate_step_definitions(files, repair_format=True)
-    assert errors
-    # Same pattern _group_validator_errors_by_file uses.
-    assert re.search(r"error in '([^']+)':", errors[0])
+    assert validate_no_duplicate_step_definitions(files, repair_format=True) == []

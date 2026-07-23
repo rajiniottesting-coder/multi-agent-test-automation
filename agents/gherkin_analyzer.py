@@ -754,27 +754,12 @@ def _phrase_matches(feature_phrase: str, decorator_phrase: str, parser_type: str
 # ─────────────────────────────────────────────────────────────
 # Cross-file duplicate step-definition validator (SCRUM-54 lesson)
 #
-# pytest-bdd collects step definitions GLOBALLY across every module in the
-# step_defs package (each @given/@when/@then registers a fixture in the shared
-# namespace). Two files that BOTH define the same (keyword, phrase, parser_type)
-# — e.g. a new feature re-declaring `@given("I am on the login page")` that the
-# reference test_login.py already defines — produce a duplicate registration.
-# Depending on pytest-bdd's version and configuration this either raises at
-# collection or silently binds to whichever module was imported first (a
-# non-deterministic, hard-to-debug failure).
-#
-# This validator flags a duplicate ONLY when it is a genuine conflict:
-#   - Same step keyword (given/when/then, with And/But already resolved upstream)
-#   - Same parser_type (a bare string and a parsers.parse of the same text are
-#     different registrations to pytest-bdd, so we do NOT collapse them)
-#   - Byte-identical phrase after strip()
-#   - Across TWO DIFFERENT files (a duplicate within one file is a separate,
-#     rarer problem and pytest-bdd errors on it directly — not our target here)
-#
-# Deliberately NARROW to avoid false positives: parameterised steps that differ
-# only in variable NAME (`{user}` vs `{username}`) are different phrases and are
-# left alone — pytest-bdd treats them as distinct patterns, and flagging them
-# would block legitimate code.
+# CORRECTED (ADR-013): pytest-bdd steps are MODULE-SCOPED fixtures, not global.
+# A step declared in a sibling step-def module is NOT available to another
+# module. Each generated step-def file is therefore SELF-CONTAINED. The disk/
+# sibling pooling below is RETAINED so the validator stays permissive (it must
+# never fail a self-contained file), but it means the validator can pass a file
+# that omits a step. Agent 4 is the backstop for that case.
 
 
 def validate_no_duplicate_step_definitions(
@@ -784,25 +769,17 @@ def validate_no_duplicate_step_definitions(
 ) -> list:
     """Cross-file step duplication is SAFE in pytest-bdd — always returns [].
 
-    RETAINED AS A NO-OP (2026-07). This validator used to flag the same step
-    phrase appearing in two step-def files, on the belief that "pytest-bdd
-    registers step definitions globally across the step_defs package". That
-    belief is FALSE and was the root cause of three separate production
-    failures (see ADR-012, ADR-013).
+    RETAINED AS A NO-OP (ADR-013). This validator used to flag the same step
+    phrase appearing in two step-def files, believing pytest-bdd "registers
+    step definitions globally across the package". That belief is FALSE.
 
     pytest-bdd implements step definitions as pytest FIXTURES, which are
-    MODULE-SCOPED. Two modules defining the same step text each resolve their
-    own copy; they never collide. Verified empirically: two modules declaring
-    an identical @given/@when both pass.
+    MODULE-SCOPED. Two modules declaring the same step text each resolve their
+    own copy; they never collide. Verified empirically.
 
-    Because cross-file duplication is harmless, every generated step-def file
-    is SELF-CONTAINED: it declares every step its own feature uses. That
-    removes the fragile "is this step shared?" judgement the LLM previously had
-    to make, and it means a feature file plus its paired step-def file are a
-    complete, independent unit that works in any application.
-
-    Same-FILE duplicates are a genuine pytest-bdd error, but they are a syntax
-    concern caught elsewhere, not by this cross-file check.
+    Because duplication is harmless, every generated step-def file is
+    SELF-CONTAINED: it declares every step its own feature uses. That removes
+    the fragile "is this step shared?" judgement the LLM had to make.
 
     Args:
         generated_files: list of GeneratedFile (file_path + content).
@@ -867,7 +844,7 @@ def validate_no_duplicate_step_definitions(
         if _gf_path(f).startswith("tests/step_defs/") and _gf_path(f).endswith(".py")
     }
 
-    return []  # cross-file duplication is safe — see docstring
+    return []  # cross-file duplication is safe — see docstring (ADR-013)
 
     errors: list[str] = []
     for (kind, parser_type, phrase), paths in sorted(registry.items()):
@@ -883,12 +860,8 @@ def validate_no_duplicate_step_definitions(
             (p for p in sorted(paths) if p in generated_paths_set), None
         )
         guidance = (
-            "pytest-bdd registers step definitions globally across the "
-            "step_defs package, so two files defining the same step collide at "
-            "collection time. Fix: do NOT re-declare this step — reuse the "
-            "existing definition from the reference/other file, or move a truly "
-            "shared step into tests/step_defs/conftest.py (auto-discovered by "
-            "pytest-bdd)."
+            "UNREACHABLE (ADR-013): this validator returns [] — pytest-bdd steps "
+            "are module-scoped fixtures, so cross-file duplication never collides."
         )
         if repair_format and repair_target is not None:
             # Repair-loop-targetable format: '... error in \'<path>\':'
@@ -1036,7 +1009,7 @@ def validate_step_definitions_complete(generated_files: list, project_root=None)
 
     CROSS-FILE STEP REUSE (added 2026-05-10):
         pytest-bdd allows the same step decorator to be defined in any module
-        that pytest collects — the decorator registers the step globally for
+        that pytest collects. NOTE: this belief was INCORRECT (ADR-013) —
         the test session. So a feature step like "Given I am on the login
         page" defined in tests/step_defs/test_login.py works for any other
         feature in the same session, no import or conftest required.

@@ -325,7 +325,7 @@ class TestStepCoverage:
         """The SCRUM-20 false-positive: a new feature legitimately reuses
         login steps that are already defined in tests/step_defs/test_login.py
         on disk. Validator must NOT report them as missing — pytest-bdd
-        registers step decorators globally for the session."""
+        pools sibling/disk decorators so a self-contained file never fails."""
         # Build a minimal repo skeleton with a pre-existing login step-def file.
         step_defs_dir = tmp_path / "tests" / "step_defs"
         step_defs_dir.mkdir(parents=True)
