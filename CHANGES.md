@@ -4,6 +4,48 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## Phase 2 — Shared step definitions moved to `tests/step_defs/conftest.py`
+
+Fixes a runtime failure that every validator passed. Agent 2 generated a feature
+reusing `Given I am on the SauceDemo login page` (defined in the reference module
+`tests/step_defs/test_login.py`); Agent 4 failed at collection with
+`StepDefinitionNotFoundError`.
+
+**Root cause.** pytest-bdd implements step definitions as pytest **fixtures**,
+which are **module-scoped**. A step defined in one step-def module is invisible
+to every other module. The step-coverage validator had assumed the opposite
+("registers the step globally... no conftest required") and so green-lit code
+that cannot run — the PR #9 class of defect. Verified empirically: sibling module
+-> `StepDefinitionNotFoundError`; same step in `conftest.py` -> passes.
+
+- **NEW `tests/step_defs/conftest.py`** — shared page-object fixtures
+  (`login_page`, `inventory_page`) and the five shared step definitions. This is
+  pytest's only supported cross-module sharing mechanism. Located under
+  `step_defs/` (not `tests/`) because both validators discover on-disk steps with
+  `tests/step_defs/*.py`; shared steps in `tests/conftest.py` would run but be
+  invisible to the validator.
+- **`tests/step_defs/test_login.py`** — shared steps MOVED out (not copied: both
+  validator globs include `conftest.py`, so duplicates would trip the
+  duplicate-step guard). Retains two feature-specific steps so the reference
+  still demonstrates step authoring, plus a docstring stating the rule: *needed
+  by more than one feature -> conftest; specific to one feature -> paired module.*
+- **`features/login.feature`** — new 4th scenario (error dismissal) exercising
+  those local steps via existing `LoginPage.dismiss_error()` /
+  `get_error_message()`. No page-object change required.
+- **All quoted-value decorators now use `parsers.re` with `[^"]*`** — the `parse`
+  library cannot match empty quoted values, which validation scenarios rely on.
+  Each pattern is kept on ONE line: the validator reads first-quote to
+  last-quote, so multi-line implicit concatenation corrupts the pattern and every
+  step using it stops matching.
+- Docs: REUSE_FOR_NEW_PROJECT.md gains **Change 5** (mandatory for every new
+  app); DECISIONS.md gains **ADR-012**.
+- Suite: **270 passing**, unchanged.
+
+**Open follow-up:** the step-coverage validator still treats decorators in
+arbitrary sibling step-def files as available. It should count only `conftest.py`
+plus the paired module.
+
+
 ## Phase 2 — Tier 3 follow-up: complex-locator support in the inventory tooling
 
 Extends `inventory_tools/` to handle the controls real-world apps use, still

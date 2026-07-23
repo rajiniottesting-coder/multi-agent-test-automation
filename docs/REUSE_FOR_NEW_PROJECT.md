@@ -213,11 +213,107 @@ Make this test:
 - A typical user flow for your app (not an edge case)
 - Self-contained (no shared state with other tests)
 - Clean Gherkin (Given/When/Then with no awkward phrasing)
-- Step defs that show parsers.parse usage if your app uses quoted values
+- Step defs that show `parsers.re` usage for quoted values (see Change 5 — **not** `parsers.parse`)
+- At least ONE step defined locally in the paired module, so the reference
+  demonstrates how to write a step — not just how to bind scenarios
 
 This is the only file the LLM "studies" before generating code. Quality matters here more than anywhere else.
 
-### Change 5 — Clean up SauceDemo leftovers (RECOMMENDED)
+### Change 5 — `tests/step_defs/conftest.py` (MANDATORY)
+
+**This file is required for every application.** Without it, the SECOND feature
+file Agent 2 generates will fail at collection with
+`pytest_bdd.exceptions.StepDefinitionNotFoundError`.
+
+#### Why it is mandatory
+
+pytest-bdd implements step definitions as **pytest fixtures**, and fixtures are
+**module-scoped**. A step defined in `tests/step_defs/test_login.py` is visible
+only inside that module — it is NOT available to `test_checkout.py` or to any
+generated step-def file. The only supported cross-module sharing mechanism is
+`conftest.py`, whose fixtures are shared with every test module in that
+directory and below.
+
+So any step or page-object fixture that **more than one feature needs** must
+live in `tests/step_defs/conftest.py`. Steps specific to a single feature stay
+in that feature's paired module.
+
+> Proven empirically: a step defined in a sibling step-def module raises
+> `StepDefinitionNotFoundError`; the same step moved to `conftest.py` passes.
+
+#### Why it must be in `tests/step_defs/`, not `tests/`
+
+Both validators discover on-disk step definitions with
+`tests/step_defs/*.py`. Shared steps placed in `tests/conftest.py` would work at
+runtime but be **invisible to the step-coverage validator**, so Agent 2 would
+report phantom "missing decorator" errors. `tests/step_defs/conftest.py` is the
+one location that satisfies both pytest and the validators.
+
+#### The two conftest files — division of labour
+
+The project has two `conftest.py` files, split along the same engine/app
+boundary as the rest of the framework:
+
+| | `tests/conftest.py` | `tests/step_defs/conftest.py` |
+|---|---|---|
+| **Contains** | `browser`, `page`, `base_url`, `config`, screenshot-on-failure hook | Page-object fixtures + shared step definitions |
+| **Concern** | Playwright lifecycle & CI plumbing | Your application's step vocabulary |
+| **New project** | **Reuse unchanged** — app-agnostic | **Rewrite** — app-specific |
+| **Scope** | everything under `tests/` (incl. `tests/unit/`) | `tests/step_defs/` and below |
+
+pytest merges conftest files hierarchically, so the step-def conftest
+automatically inherits `page` and `base_url` from the parent — it never
+redefines them.
+
+Both belong in `reserved_paths`: they are human-owned foundations.
+
+#### What to put in it
+
+```python
+"""Shared page-object fixtures and shared step definitions."""
+import pytest
+from pytest_bdd import given, when, then, parsers
+
+from pages.login_page import LoginPage
+
+
+@pytest.fixture
+def login_page(page):          # `page` comes from tests/conftest.py
+    return LoginPage(page)
+
+
+@given("I am on the <your app> login page")
+def open_login_page(login_page, base_url):
+    login_page.open(base_url)
+
+
+# One single-quoted line. parsers.re + [^"]* so empty values still match.
+@when(parsers.re(r'I log in with username "(?P<username>[^"]*)" and password "(?P<password>[^"]*)"'))
+def login_with_credentials(login_page, username, password):
+    login_page.login_as(username, password)
+```
+
+#### Two rules the file must follow
+
+1. **`parsers.re`, not `parsers.parse`, for quoted values.** Validation
+   scenarios pass empty values (`When I log in with username "" and password ""`).
+   The `parse` library's default placeholder requires at least one character, so
+   `parsers.parse` fails at runtime with `StepDefinitionNotFoundError` even
+   though the decorator looks correct. `parsers.re(r'... "(?P<u>[^"]*)" ...')`
+   matches both `"alice"` and `""`; named groups bind to arguments identically.
+
+2. **Keep each decorator pattern on ONE single-quoted line.** The step-coverage
+   validator extracts decorators with a regex that reads from the first quote to
+   the last quote. Splitting a pattern across lines with implicit string
+   concatenation corrupts the captured pattern, and **every** step using it
+   silently stops matching.
+
+#### Rule of thumb
+
+> Needed by more than one feature → `conftest.py`.
+> Specific to one feature → that feature's paired step-def module.
+
+### Change 6 — Clean up SauceDemo leftovers (RECOMMENDED)
 
 Delete:
 - `features/login.feature` (replaced by your reference)
@@ -231,7 +327,7 @@ Keep:
 - `pages/__init__.py`
 - `tests/step_defs/__init__.py`
 
-### Change 6 — Update README/CHANGES if you want (OPTIONAL)
+### Change 7 — Update README/CHANGES if you want (OPTIONAL)
 
 `README.md` and `CHANGES.md` mention SauceDemo in narrative text. Update for your audience. These are documentation only — code doesn't read them.
 

@@ -4,6 +4,96 @@ Consolidated ADRs, newest first. Each section is an immutable decision record; l
 
 ---
 
+## ADR-012 — Shared step definitions live in `tests/step_defs/conftest.py`
+
+### Status
+
+Accepted (2026-07). Supersedes the cross-file step-reuse assumption documented
+in `gherkin_analyzer.py` (2026-05-10).
+
+### Context
+
+Agent 2 generated `features/login_edge_validation.feature` whose scenarios reuse
+`Given I am on the SauceDemo login page` — a step already defined in the
+reference module `tests/step_defs/test_login.py`. Every validator passed and a PR
+was opened. Agent 4 then failed at collection:
+
+```
+pytest_bdd.exceptions.StepDefinitionNotFoundError:
+Step definition is not found: Given "I am on the SauceDemo login page"
+```
+
+The step-coverage validator had been written on the belief that *"pytest-bdd
+allows the same step decorator to be defined in any module that pytest collects —
+the decorator registers the step globally for the test session… no import or
+conftest required."* **That belief is false.**
+
+pytest-bdd implements step definitions as **pytest fixtures**. Fixtures are
+module-scoped: a step defined in one step-def module is invisible to every other
+module. Verified empirically — a step in a sibling module raises
+`StepDefinitionNotFoundError`; the identical step moved to `conftest.py` passes.
+
+This is the "validator passes, runtime fails" class of defect the validator was
+explicitly built to prevent (the PR #9 scenario).
+
+### Decision
+
+- **Shared steps and shared page-object fixtures live in
+  `tests/step_defs/conftest.py`.** This is pytest's only supported cross-module
+  sharing mechanism, and it is mandatory for every application — the failure is a
+  property of pytest-bdd, not of any particular app.
+- **Location is `tests/step_defs/`, not `tests/`.** Both validators discover
+  on-disk step definitions with `tests/step_defs/*.py`. Shared steps in
+  `tests/conftest.py` would run correctly but be invisible to the validator,
+  producing phantom "missing decorator" errors. Only
+  `tests/step_defs/conftest.py` satisfies pytest *and* the validators.
+- **Two conftest files, split on the engine/app boundary.** `tests/conftest.py`
+  holds Playwright lifecycle and CI plumbing (`browser`, `page`, `base_url`,
+  screenshot hook) and is reused unchanged across projects.
+  `tests/step_defs/conftest.py` holds the application's step vocabulary and is
+  rewritten per app. pytest merges conftests hierarchically, so the step-def
+  conftest inherits `page`/`base_url` without redefining them. Both are
+  human-owned (`reserved_paths`).
+- **Move, do not copy.** Since both validator globs include `conftest.py`,
+  keeping duplicate copies of a step in `conftest.py` and `test_login.py` would
+  trip the duplicate step-definition guard — even though pytest itself tolerates
+  it (module definitions shadow conftest).
+- **The reference module keeps at least one locally-defined step.** After moving
+  the shared steps out, `test_login.py` would have been a bare `scenarios()`
+  call — a poor style exemplar, since it is injected into every Agent 2 prompt. A
+  fourth scenario (error dismissal) was added to `login.feature` so the reference
+  still demonstrates real step authoring: page-object calls only, no selectors,
+  assertion messages, single-line decorators.
+
+### Alternatives Considered
+
+- **Have Agent 2 redefine every step in each generated file.** Works at runtime
+  (module-scoped definitions don't collide), but duplicates code, inflates
+  tokens, and fights the duplicate-step guard.
+- **Put shared steps in `tests/conftest.py`.** Correct for pytest, invisible to
+  the validators. Rejected.
+- **Import steps between modules.** Not how pytest-bdd resolves steps; fragile
+  and non-idiomatic.
+
+### Consequences
+
+- Onboarding a new app gains one mandatory file (REUSE guide, Change 5).
+- The rule Agent 2 must follow: *needed by more than one feature → conftest;
+  specific to one feature → the paired module.* Documented in the reference
+  file's docstring, which is injected into the prompt.
+- **Open follow-up:** the step-coverage validator still treats decorators found
+  in arbitrary sibling step-def files as available. It should count only
+  `conftest.py` plus the paired module, otherwise it can still green-light a file
+  that relies on a sibling's step and Agent 4 will catch it at runtime.
+
+### References
+
+- `tests/step_defs/conftest.py`, `tests/step_defs/test_login.py`
+- `agents/gherkin_analyzer.py` — "CROSS-FILE STEP REUSE" block (now superseded)
+- REUSE_FOR_NEW_PROJECT.md → Change 5
+
+---
+
 ## ADR-011 — App-agnostic inventory tooling, page-level errors, and component filtering
 
 ### Status
