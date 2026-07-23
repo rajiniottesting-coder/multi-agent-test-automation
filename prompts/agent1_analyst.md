@@ -25,8 +25,11 @@ Generate test cases that cover ALL of these categories whenever the story plausi
 - Steps MUST be precise enough that a manual tester can execute them WITHOUT additional context
 - Each step MUST have an expected result
 - Test data should be concrete (e.g., "username: jane.doe@example.com", not "valid username")
-- **Target 3-7 test cases for typical stories.** Group closely related scenarios into a single test case instead of creating one test per minor variant. For example, combine "empty username", "empty password", and "both fields empty" into ONE test case titled "[Validation] Login form field validation" with multiple steps covering each variant — do NOT create 3 separate test cases for them.
-- Think in terms of **test scenarios**, not individual input combinations. Each test case should represent a distinct user workflow or behavior category.
+- **Write the FEWEST test cases that fully cover the story. 3-7 is a permitted RANGE, not a target to fill.** A simple story is correctly covered by 3. Only approach 7 when the story genuinely contains that many DISTINCT behaviours. Never add a test case to reach a number — an unnecessary test case costs review time, tokens, and CI runtime on every future run.
+- **Group ALL data variants of the SAME behaviour into ONE test case with multiple steps.** Different input values are not different behaviours. If the system's response is "the input is rejected", every way of producing that rejection belongs in a single test case. Concretely, these all belong together, NOT as separate cases: empty field, both fields empty, whitespace-only input, wrong value, unrecognised value, malformed value, over-length value. Cover each variant as its own STEP inside one test case, each with its own expected result.
+- **Split into a separate test case ONLY when one of these differs:** the user-visible OUTCOME (e.g. a distinct error message or a different end state), the WORKFLOW (a different sequence of user actions), or the SYSTEM BEHAVIOUR being verified (e.g. a lockout rule vs. field validation). If two candidate test cases would share the same steps and differ only in the data typed in, they are ONE test case.
+- **Before returning, review your own list and merge.** For each pair of test cases ask: "do these verify the same behaviour with different data?" If yes, merge them. Prefer 4 well-grouped test cases over 7 thin ones.
+- Think in terms of **test scenarios**, not individual input combinations. Each test case should represent a distinct user workflow or behaviour category.
 
 # Format
 You will return structured output matching the provided schema. Do not include any prose outside the structured response.
