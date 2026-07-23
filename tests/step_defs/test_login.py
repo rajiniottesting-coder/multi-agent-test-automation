@@ -1,95 +1,62 @@
 """
 Step definitions for features/login.feature.
-Each @given/@when/@then maps an English line to a Python action.
 
 REFERENCE FILE — this is the gold-standard example Agent 2 copies when it
-generates new step definitions. Keep it small, correct, and idiomatic:
-every convention shown here is one the LLM will reproduce.
+generates new step-def modules. Follow the pattern shown here.
 
-WHY parsers.re INSTEAD OF parsers.parse FOR QUOTED VALUES
----------------------------------------------------------
-pytest-bdd registers step decorators GLOBALLY for the test session, so the
-steps defined here are reused by every other feature file — including
-generated validation scenarios that pass EMPTY values, e.g.:
+1. BIND the module to its feature file with `scenarios(...)`.
 
-    When I log in with username "" and password ""
+2. REUSE shared steps — do NOT redefine them. Steps and page-object fixtures
+   that more than one feature needs live in `tests/step_defs/conftest.py`.
+   That is the ONLY place pytest-bdd shares them from: step definitions are
+   pytest fixtures, and fixtures are module-scoped everywhere else. A step
+   defined in a sibling step-def module is invisible to this one and fails at
+   collection with StepDefinitionNotFoundError.
 
-`parsers.parse('... "{username}" ...')` looks like it should match that, but
-it does NOT: the underlying `parse` library's default placeholder requires at
-least one character, so empty quoted values fail at runtime with
-StepDefinitionNotFoundError.
+   Shared steps available from conftest.py:
+     Given I am on the SauceDemo login page
+     When  I log in with username "..." and password "..."
+     Then  I should be redirected to the inventory page
+     Then  I should see the page title "..."
+     Then  I should see the error message "..."
 
-`parsers.re(r'... "(?P<username>[^"]*)" ...')` accepts zero or more non-quote
-characters, so it matches both "alice" and "". Named groups bind to the
-function arguments exactly like parsers.parse does, so nothing else changes.
+3. DEFINE LOCALLY only the steps specific to THIS feature — like the two
+   below, which exercise error dismissal and are not used by any other
+   feature. If a step you are about to write is needed by more than one
+   feature, put it in conftest.py instead.
 
-RULE: any quoted placeholder whose value could legitimately be empty must use
-parsers.re with [^"]*.
-
-FORMATTING RULE (do not break this): keep each decorator's pattern on ONE
-single-quoted line. The step-coverage validator extracts decorators with a
-regex that reads from the first quote to the last quote, so splitting a
-pattern across lines with implicit string concatenation corrupts the captured
-pattern and makes EVERY step using it fail to match.
+CONVENTIONS THESE STEPS DEMONSTRATE
+-----------------------------------
+- Step functions call PAGE OBJECT methods only. Never use a selector or read
+  a selector constant here — that breaks the POM boundary.
+- Keep each decorator's pattern on ONE single-quoted line. The step-coverage
+  validator reads from the first quote to the last quote, so splitting a
+  pattern across lines corrupts it and every step using it stops matching.
+- Use parsers.re with [^"]* for any quoted placeholder whose value could
+  legitimately be empty; parsers.parse cannot match "".
+- Assertions carry a message showing expected vs actual, so a CI failure is
+  readable without re-running locally.
 """
-import pytest
-from pytest_bdd import scenarios, given, when, then, parsers
+from pytest_bdd import scenarios, when, then
 
-from pages.login_page import LoginPage
-from pages.inventory_page import InventoryPage
-from pathlib import Path
 from config.paths import feature_path
 
 
-# Bind this test module to the feature file
+# Bind this test module to the feature file.
 scenarios(str(feature_path("login")))
 
 
-# === Page Object fixtures (created per-test) ===
+# === Feature-specific WHEN steps ===
 
-@pytest.fixture
-def login_page(page):
-    return LoginPage(page)
-
-
-@pytest.fixture
-def inventory_page(page):
-    return InventoryPage(page)
+@when("I dismiss the error message")
+def dismiss_error_banner(login_page):
+    login_page.dismiss_error()
 
 
-# === GIVEN steps ===
+# === Feature-specific THEN steps ===
 
-@given("I am on the SauceDemo login page")
-def open_login_page(login_page, base_url):
-    login_page.open(base_url)
-
-
-# === WHEN steps ===
-
-# parsers.re (not parsers.parse) so empty credentials — used by required-field
-# validation scenarios — still match at runtime. See module docstring.
-@when(parsers.re(r'I log in with username "(?P<username>[^"]*)" and password "(?P<password>[^"]*)"'))
-def login_with_credentials(login_page, username, password):
-    login_page.login_as(username, password)
-
-
-# === THEN steps ===
-
-@then("I should be redirected to the inventory page")
-def verify_inventory_page(inventory_page):
-    assert inventory_page.is_loaded(), \
-        f"Expected inventory page, but URL is: {inventory_page.page.url}"
-
-
-@then(parsers.re(r'I should see the page title "(?P<expected_title>[^"]*)"'))
-def verify_page_title(inventory_page, expected_title):
-    actual = inventory_page.get_page_title_text()
-    assert actual == expected_title, \
-        f"Expected title '{expected_title}', but got '{actual}'"
-
-
-@then(parsers.re(r'I should see the error message "(?P<expected_message>[^"]*)"'))
-def verify_error_message(login_page, expected_message):
+@then("no error message should be displayed")
+def verify_no_error_message(login_page):
     actual = login_page.get_error_message()
-    assert actual == expected_message, \
-        f"Expected error '{expected_message}', but got '{actual}'"
+    assert actual == "", \
+        f"Expected no error message, but got '{actual}'"
