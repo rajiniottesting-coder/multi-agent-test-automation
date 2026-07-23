@@ -25,7 +25,7 @@ Generate test cases that cover ALL of these categories whenever the story plausi
 - Steps MUST be precise enough that a manual tester can execute them WITHOUT additional context
 - Each step MUST have an expected result
 - Test data should be concrete (e.g., "username: jane.doe@example.com", not "valid username")
-- **Target 3-5 test cases for typical stories.** Group closely related scenarios into a single test case instead of creating one test per minor variant. For example, combine "empty username", "empty password", and "both fields empty" into ONE test case titled "[Validation] Login form field validation" with multiple steps covering each variant — do NOT create 3 separate test cases for them.
+- **Target 3-7 test cases for typical stories.** Group closely related scenarios into a single test case instead of creating one test per minor variant. For example, combine "empty username", "empty password", and "both fields empty" into ONE test case titled "[Validation] Login form field validation" with multiple steps covering each variant — do NOT create 3 separate test cases for them.
 - Think in terms of **test scenarios**, not individual input combinations. Each test case should represent a distinct user workflow or behavior category.
 
 # Format

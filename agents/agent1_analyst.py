@@ -201,15 +201,15 @@ def run(story_id: str, dry_run: bool = False) -> dict:
         .replace("{story_text}", story_text)
     )
 
-    # max_output_tokens=8192 (not the default 4096): a TestCaseList of 5
+    # max_output_tokens=12288 (not the default 4096): a TestCaseList of 7
     # detailed test cases (each with 5-10 steps carrying action + expected
-    # result) runs ~2,000-3,000 tokens — only ~1.4-2x headroom at 4096. A
-    # verbose story or a raised TC-count target in the prompt could truncate
-    # mid-JSON, which fails the Pydantic parse and burns a retry. 8192 gives
-    # comfortable ~3x headroom, matching the margin the other caps have.
-    # NOTE: if you raise the "3-5 test cases" target in
+    # result) runs ~2,800-4,200 tokens — only ~1x headroom at 4096, and ~2x at
+    # 8192. A verbose story or a raised TC-count target in the prompt could
+    # truncate mid-JSON, which fails the Pydantic parse and burns a retry.
+    # 12288 restores the ~3x headroom the other caps carry.
+    # NOTE: if you raise the "3-7 test cases" target in
     # prompts/agent1_analyst.md, revisit this cap in the same commit.
-    llm = LLMClient(temperature=0.3, max_output_tokens=8192)
+    llm = LLMClient(temperature=0.3, max_output_tokens=12288)
     test_case_list: TestCaseList = llm.invoke_structured(
         system_prompt="You are a meticulous, expert QA test analyst.",
         user_prompt=user_prompt,

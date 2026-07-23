@@ -116,7 +116,7 @@ agents:
       - "ai-ready"
     # CAP for automated cron scans (Day 8): keep blast radius small if a
     # mislabel ever fires the cron unintentionally. Each Agent 1 run on a
-    # story creates 3-5 Jira test case issues, which a human has to clean
+    # story creates 3-7 Jira test case issues, which a human has to clean
     # up if they were unintended. With cap=2, a worst-case mislabel costs
     # ~$0.30 of LLM and ~10 garbage Jira tickets to clean up — recoverable.
     max_stories_per_run: 2

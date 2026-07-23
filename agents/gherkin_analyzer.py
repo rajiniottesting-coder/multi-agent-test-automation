@@ -782,11 +782,27 @@ def validate_no_duplicate_step_definitions(
     project_root=None,
     repair_format: bool = False,
 ) -> list:
-    """Detect step definitions that collide across step-def files.
+    """Cross-file step duplication is SAFE in pytest-bdd — always returns [].
 
-    Scans the generated step-def files PLUS the reference step-def file (which
-    the generated code shares a namespace with at runtime) for identical
-    (keyword, parser_type, phrase) decorators declared in more than one file.
+    RETAINED AS A NO-OP (2026-07). This validator used to flag the same step
+    phrase appearing in two step-def files, on the belief that "pytest-bdd
+    registers step definitions globally across the step_defs package". That
+    belief is FALSE and was the root cause of three separate production
+    failures (see ADR-012, ADR-013).
+
+    pytest-bdd implements step definitions as pytest FIXTURES, which are
+    MODULE-SCOPED. Two modules defining the same step text each resolve their
+    own copy; they never collide. Verified empirically: two modules declaring
+    an identical @given/@when both pass.
+
+    Because cross-file duplication is harmless, every generated step-def file
+    is SELF-CONTAINED: it declares every step its own feature uses. That
+    removes the fragile "is this step shared?" judgement the LLM previously had
+    to make, and it means a feature file plus its paired step-def file are a
+    complete, independent unit that works in any application.
+
+    Same-FILE duplicates are a genuine pytest-bdd error, but they are a syntax
+    concern caught elsewhere, not by this cross-file check.
 
     Args:
         generated_files: list of GeneratedFile (file_path + content).
@@ -850,6 +866,8 @@ def validate_no_duplicate_step_definitions(
         _gf_path(f) for f in generated_files
         if _gf_path(f).startswith("tests/step_defs/") and _gf_path(f).endswith(".py")
     }
+
+    return []  # cross-file duplication is safe — see docstring
 
     errors: list[str] = []
     for (kind, parser_type, phrase), paths in sorted(registry.items()):

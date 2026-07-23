@@ -23,10 +23,11 @@ Feature: User Login
     Then I should see the error message "Epic sadface: Sorry, this user has been locked out."
 
   @login
-  Scenario: A failed-login error can be dismissed before retrying
+  Scenario: A failed login can be cleared and retried
     When I log in with username "standard_user" and password "wrong_password"
     Then I should see the error message "Epic sadface: Username and password do not match any user in this service"
     When I dismiss the error message
     Then no error message should be displayed
-    When I log in with username "standard_user" and password "secret_sauce"
+    When I clear the credential fields
+    And I log in with username "standard_user" and password "secret_sauce"
     Then I should be redirected to the inventory page

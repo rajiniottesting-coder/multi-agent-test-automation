@@ -12,7 +12,7 @@
 # WHAT IT DOES:
 #   For each Story with label `ai-ready` (and not `ai-processed` or
 #   `ai-skip`), Agent 1 calls the LLM to draft Jira Test Case issues
-#   (typically 3-5 per story), links them to the parent Story, and
+#   (typically 3-7 per story), links them to the parent Story, and
 #   adds the `ai-processed` label so the next scan skips it.
 #
 # COST PROFILE:
