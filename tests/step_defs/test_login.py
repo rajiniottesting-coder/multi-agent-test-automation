@@ -1,6 +1,30 @@
 """
 Step definitions for features/login.feature.
 Each @given/@when/@then maps an English line to a Python action.
+
+REFERENCE FILE — this is the gold-standard example Agent 2 copies when it
+generates new step definitions. Keep it small, correct, and idiomatic:
+every convention shown here is one the LLM will reproduce.
+
+WHY parsers.re INSTEAD OF parsers.parse FOR QUOTED VALUES
+---------------------------------------------------------
+pytest-bdd registers step decorators GLOBALLY for the test session, so the
+steps defined here are reused by every other feature file — including
+generated validation scenarios that pass EMPTY values, e.g.:
+
+    When I log in with username "" and password ""
+
+`parsers.parse('... "{username}" ...')` looks like it should match that, but
+it does NOT: the underlying `parse` library's default placeholder requires at
+least one character, so empty quoted values fail at runtime with
+StepDefinitionNotFoundError.
+
+`parsers.re(r'... "(?P<username>[^"]*)" ...')` accepts zero or more non-quote
+characters, so it matches both "alice" and "". Named groups bind to the
+function arguments exactly like parsers.parse does, so nothing else changes.
+
+RULE: any quoted placeholder whose value could legitimately be empty must use
+parsers.re with [^"]*.
 """
 import pytest
 from pytest_bdd import scenarios, given, when, then, parsers
@@ -36,7 +60,12 @@ def open_login_page(login_page, base_url):
 
 # === WHEN steps ===
 
-@when(parsers.parse('I log in with username "{username}" and password "{password}"'))
+# parsers.re (not parsers.parse) so empty credentials — used by required-field
+# validation scenarios — still match at runtime. See module docstring.
+@when(parsers.re(
+    r'I log in with username "(?P<username>[^"]*)" '
+    r'and password "(?P<password>[^"]*)"'
+))
 def login_with_credentials(login_page, username, password):
     login_page.login_as(username, password)
 
@@ -49,14 +78,14 @@ def verify_inventory_page(inventory_page):
         f"Expected inventory page, but URL is: {inventory_page.page.url}"
 
 
-@then(parsers.parse('I should see the page title "{expected_title}"'))
+@then(parsers.re(r'I should see the page title "(?P<expected_title>[^"]*)"'))
 def verify_page_title(inventory_page, expected_title):
     actual = inventory_page.get_page_title_text()
     assert actual == expected_title, \
         f"Expected title '{expected_title}', but got '{actual}'"
 
 
-@then(parsers.parse('I should see the error message "{expected_message}"'))
+@then(parsers.re(r'I should see the error message "(?P<expected_message>[^"]*)"'))
 def verify_error_message(login_page, expected_message):
     actual = login_page.get_error_message()
     assert actual == expected_message, \
