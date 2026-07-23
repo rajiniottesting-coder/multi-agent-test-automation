@@ -10,6 +10,7 @@ class InventoryPage(BasePage):
     PAGE_TITLE = "[data-test='title']"
     INVENTORY_CONTAINER = "[data-test='inventory-container']"
     SHOPPING_CART_LINK = "[data-test='shopping-cart-link']"
+    INVENTORY_ITEMS = "[data-test='inventory-item']"
 
     # === URL ===
     URL_PATH = "/inventory.html"
@@ -21,3 +22,7 @@ class InventoryPage(BasePage):
     def get_page_title_text(self) -> str:
         """Return the visible page title (e.g., 'Products')."""
         return self.page.locator(self.PAGE_TITLE).inner_text()
+
+    def get_item_count(self) -> int:
+        """Return the number of inventory items displayed on the page."""
+        return self.get_count(self.INVENTORY_ITEMS)
