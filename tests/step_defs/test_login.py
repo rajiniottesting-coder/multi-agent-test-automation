@@ -25,6 +25,12 @@ function arguments exactly like parsers.parse does, so nothing else changes.
 
 RULE: any quoted placeholder whose value could legitimately be empty must use
 parsers.re with [^"]*.
+
+FORMATTING RULE (do not break this): keep each decorator's pattern on ONE
+single-quoted line. The step-coverage validator extracts decorators with a
+regex that reads from the first quote to the last quote, so splitting a
+pattern across lines with implicit string concatenation corrupts the captured
+pattern and makes EVERY step using it fail to match.
 """
 import pytest
 from pytest_bdd import scenarios, given, when, then, parsers
@@ -62,10 +68,7 @@ def open_login_page(login_page, base_url):
 
 # parsers.re (not parsers.parse) so empty credentials — used by required-field
 # validation scenarios — still match at runtime. See module docstring.
-@when(parsers.re(
-    r'I log in with username "(?P<username>[^"]*)" '
-    r'and password "(?P<password>[^"]*)"'
-))
+@when(parsers.re(r'I log in with username "(?P<username>[^"]*)" and password "(?P<password>[^"]*)"'))
 def login_with_credentials(login_page, username, password):
     login_page.login_as(username, password)
 
