@@ -2389,6 +2389,23 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
 
     # 1. INPUT
     jira = JiraClient()
+
+    # Guard: --story must name a STORY, not a Test Case. Scan mode filters on
+    # issuetype="Story" via JQL, but the manual --story path has no such filter,
+    # so a Test Case key would be accepted and then baked into the branch name
+    # (auto/<TESTCASE-KEY>-...). That breaks traceability: Agents 3/4/5 fire on
+    # pull_request events which carry only a branch name, and Agent 5 recovers
+    # the story key FROM that branch to know where to report. Escalate to the
+    # parent Story when we can; keep the original key when we cannot.
+    parent_story = jira.get_parent_story_key(story_id)
+    if parent_story:
+        logger.warning(
+            f"{story_id} is a Test Case, not a Story. Using its parent Story "
+            f"{parent_story} instead — branch names and Agent 5 reporting must "
+            f"be keyed on the Story."
+        )
+        story_id = parent_story
+
     story = jira.get_story(story_id)
     test_cases = load_test_cases_for_story(jira, story_id)
 
