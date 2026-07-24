@@ -17,6 +17,8 @@ You are in Stage 2 of a two-stage workflow. The plan has already been decided. Y
 
 {sibling_page_objects_block}
 
+{base_page_helpers_block}
+
 {validator_feedback_block}
 
 # Output Format (CRITICAL)
@@ -318,7 +320,7 @@ This rule applies in any project. For any native HTML element on any page, prefe
 
 ### BasePage helpers — use these instead of inventing patterns
 
-`BasePage` (which every page object inherits from) provides Playwright-native helpers for the patterns LLMs most often get wrong. PREFER calling these over rolling your own logic; they handle the edge cases (timing, async updates, type conversion) correctly.
+`BasePage` (which every page object inherits from) provides Playwright-native helpers for every control type. Its full signature list is injected above under **Inherited BasePage helpers** — READ IT and call those methods instead of writing raw `self.page.*` code. If a generic helper you need is missing from that list, implement it on your page object AND record it in `notes` as `BASEPAGE-REQUEST: <name>(<args>) - <purpose>` so a human can promote it into BasePage for future runs. Never edit BasePage yourself — it is reserved.
 
 Available helpers on `self.<method>()` from any page object subclass:
 

@@ -520,6 +520,79 @@ def _read_extendable_file_content(file_path: str) -> str:
     return abs_path.read_text(encoding="utf-8")
 
 
+def _build_base_page_helpers_block(project_root=None) -> str:
+    """List BasePage's public method signatures for the Stage-2 prompt.
+
+    Why this exists:
+        Page objects inherit from BasePage, which carries ~70 helpers covering
+        every control type (dropdowns, checkboxes, uploads, hover menus,
+        drag-and-drop, tables, dialogs, frames). The prompt tells the LLM to
+        PREFER these helpers, but without the list it cannot know what exists
+        and falls back to raw Playwright — so the helpers go unused and each
+        page object reinvents them slightly differently.
+
+        Signatures only (never bodies): enough to call correctly, cheap in
+        tokens, and it cannot drift because it is read from the real file.
+
+    Returns "" when BasePage cannot be read, so the prompt degrades to its
+    previous behaviour rather than failing.
+    """
+    import ast as _ast
+    from pathlib import Path as _Path
+
+    root = _Path(project_root) if project_root else PROJECT_ROOT
+    base_path = root / "pages" / "base_page.py"
+    try:
+        tree = _ast.parse(base_path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError):
+        return ""
+
+    class_node = next(
+        (n for n in tree.body
+         if isinstance(n, _ast.ClassDef) and n.name == "BasePage"), None)
+    if class_node is None:
+        return ""
+
+    lines: list[str] = []
+    for node in class_node.body:
+        if not isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+            continue
+        if node.name.startswith("_"):
+            continue                      # private/internal helpers
+        try:
+            sig = _ast.unparse(node.args)
+        except Exception:
+            continue
+        sig = sig.replace("self, ", "").replace("self", "").strip()
+        returns = ""
+        if node.returns is not None:
+            try:
+                returns = f" -> {_ast.unparse(node.returns)}"
+            except Exception:
+                returns = ""
+        doc = (_ast.get_docstring(node) or "").strip().split("\n")[0]
+        entry = f"  self.{node.name}({sig}){returns}"
+        lines.append(f"{entry}  # {doc}" if doc else entry)
+
+    if not lines:
+        return ""
+
+    return (
+        "## Inherited BasePage helpers (call these, do NOT reimplement)\n\n"
+        "Every page object inherits these. PREFER them over raw `self.page.*`\n"
+        "calls — they handle waits, iframes and DOM quirks consistently.\n"
+        "Locators may use the ' >>> ' iframe chain, e.g.\n"
+        "'iframe#pay >>> [data-test=card]'.\n\n"
+        "```python\n" + "\n".join(lines) + "\n```\n\n"
+        "If you need a GENERIC helper that is not listed here, do NOT add it to\n"
+        "BasePage yourself (it is a reserved, human-owned file) and do NOT\n"
+        "silently write raw Playwright for it. Implement it as a method on the\n"
+        "page object you are writing, and record it in your `notes` field as:\n"
+        "'BASEPAGE-REQUEST: <name>(<args>) - <one-line purpose>' so a human can\n"
+        "promote it into BasePage for future runs.\n"
+    )
+
+
 def _build_sibling_page_object_context(
     already_generated: list[GeneratedFile],
 ) -> str:
@@ -989,6 +1062,20 @@ def generate_file_content(
     # Build the sibling page-object methods block (Hotfix v5 prevention).
     # Only relevant for step-definitions files — feature files and page
     # objects don't need it.
+    # BasePage helper signatures — injected ONLY for page objects, which are
+    # the only files that call them. Step defs must go through page-object
+    # METHODS (the POM boundary), so sending them this list would be both
+    # wasted tokens and a nudge toward breaking that rule.
+    base_helpers_block = ""
+    if file_plan.file_type == "page_object":
+        base_helpers_block = _build_base_page_helpers_block()
+        if base_helpers_block:
+            logger.info(
+                "Stage 2: injecting %d BasePage helper signatures into "
+                "page-object prompt.",
+                base_helpers_block.count("\n  self."),
+            )
+
     sibling_block = ""
     if file_plan.file_type == "step_definitions" and already_generated:
         sibling_block = _build_sibling_page_object_context(already_generated)
@@ -1010,6 +1097,7 @@ def generate_file_content(
         .replace("{existing_file_block}", existing_block)
         .replace("{validator_feedback_block}", feedback_block)
         .replace("{sibling_page_objects_block}", sibling_block)
+        .replace("{base_page_helpers_block}", base_helpers_block)
         .replace("{reference_feature_path}", ctx.reference_feature)
         .replace("{reference_step_def_path}", ctx.reference_step_def)
         .replace("{reference_page_object_path}", ctx.reference_page_object)
