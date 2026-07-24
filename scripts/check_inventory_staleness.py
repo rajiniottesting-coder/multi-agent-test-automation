@@ -16,8 +16,7 @@ Exit code is 1 when drift is found AND --fail-on-drift is passed (for CI gating)
 otherwise 0.
 
 Examples:
-    INVENTORY_USER="$APP_USER" INVENTORY_PASS="$APP_PASS" \
-      python -m scripts.check_inventory_staleness
+    python -m scripts.check_inventory_staleness
 
     # As a CI gate:
     ... python -m scripts.check_inventory_staleness --fail-on-drift --json report.json

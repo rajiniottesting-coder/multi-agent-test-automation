@@ -1,6 +1,10 @@
 """
 Smoke test: verifies Jira, LLM, and Playwright all work end-to-end.
 Run from project root: python scripts/smoke_test.py
+
+PreReq:pip install -r requirements.txt
+playwright install chromium
+
 """
 import os
 import sys
