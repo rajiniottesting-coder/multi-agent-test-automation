@@ -1092,22 +1092,26 @@ def validate_step_definitions_complete(generated_files: list, project_root=None)
         from pathlib import Path as _Path
         step_defs_dir = _Path(project_root) / "tests" / "step_defs"
         if step_defs_dir.is_dir():
-            # Files in the generated batch take precedence (the LLM may be
-            # rewriting one). Skip on-disk versions of files already in
-            # the batch so we use the LLM's latest content for those.
+            # ADR-013: pool ONLY conftest.py. pytest-bdd step definitions are
+            # MODULE-SCOPED fixtures, so a step declared in a sibling step-def
+            # module is NOT visible to the module under validation. Pooling
+            # siblings made this validator pass files that fail at collection
+            # with StepDefinitionNotFoundError - the exact "validator green,
+            # runtime red" defect it exists to prevent. conftest.py IS shared
+            # by pytest, so it is the only file that may be pooled.
             batch_step_def_paths = {
                 p for p in by_path
                 if p.startswith("tests/step_defs/") and p.endswith(".py")
             }
-            for py_file in step_defs_dir.glob("*.py"):
-                rel = f"tests/step_defs/{py_file.name}"
-                if rel in batch_step_def_paths:
-                    continue
+            conftest = step_defs_dir / "conftest.py"
+            if (conftest.is_file()
+                    and "tests/step_defs/conftest.py" not in batch_step_def_paths):
                 try:
-                    disk_content = py_file.read_text(encoding="utf-8")
+                    extra_decorators.extend(
+                        _extract_decorator_phrases(
+                            conftest.read_text(encoding="utf-8")))
                 except OSError:
-                    continue
-                extra_decorators.extend(_extract_decorator_phrases(disk_content))
+                    pass
 
     # For each feature file, find its paired step def file
     for path, content in by_path.items():

@@ -321,46 +321,59 @@ class TestStepCoverage:
         )
         assert errors == [], errors
 
-    def test_steps_from_existing_disk_step_def_pooled(self, tmp_path):
-        """The SCRUM-20 false-positive: a new feature legitimately reuses
-        login steps that are already defined in tests/step_defs/test_login.py
-        on disk. Validator must NOT report them as missing — pytest-bdd
-        pools sibling/disk decorators so a self-contained file never fails."""
-        # Build a minimal repo skeleton with a pre-existing login step-def file.
+    def test_steps_in_sibling_module_are_NOT_pooled(self, tmp_path):
+        """ADR-013: a step declared in a SIBLING step-def module is not
+        visible at runtime (pytest-bdd steps are module-scoped fixtures), so
+        the validator must report it as missing. Pooling siblings previously
+        let this pass here and fail at collection with
+        StepDefinitionNotFoundError."""
         step_defs_dir = tmp_path / "tests" / "step_defs"
         step_defs_dir.mkdir(parents=True)
         (step_defs_dir / "test_login.py").write_text(textwrap.dedent("""
-            from pytest_bdd import given, when, then, parsers
-            @given("I am on the login page")
-            def s1(): pass
+            from pytest_bdd import when, parsers
             @when(parsers.parse('I log in as "{user}"'))
             def s2(user): pass
-            @then("I see the inventory")
-            def s3(): pass
         """).strip())
 
-        # Generated batch: feature reuses 3 steps + adds one new specific step.
+        feature = gf("features/logout.feature", textwrap.dedent("""
+            Feature: Logout
+              Scenario: Logout works
+                When I log in as "alice"
+        """).strip())
+        step_def = gf("tests/step_defs/test_logout.py",
+                      "from pytest_bdd import when\n")
+
+        errors = validate_step_definitions_complete(
+            [feature, step_def], project_root=str(tmp_path))
+        assert len(errors) == 1
+        assert "I log in as" in errors[0]
+
+    def test_steps_from_conftest_are_pooled(self, tmp_path):
+        """conftest.py IS shared by pytest, so steps declared there are
+        genuinely available and must NOT be reported missing."""
+        step_defs_dir = tmp_path / "tests" / "step_defs"
+        step_defs_dir.mkdir(parents=True)
+        (step_defs_dir / "conftest.py").write_text(textwrap.dedent("""
+            from pytest_bdd import given
+            @given("I am on the login page")
+            def s1(): pass
+        """).strip())
+
         feature = gf("features/logout.feature", textwrap.dedent("""
             Feature: Logout
               Scenario: Logout works
                 Given I am on the login page
-                When I log in as "alice"
-                Then I see the inventory
                 When I click the logout button
         """).strip())
         step_def = gf("tests/step_defs/test_logout.py", textwrap.dedent("""
             from pytest_bdd import when
             @when("I click the logout button")
-            def s1(): pass
+            def s4(): pass
         """).strip())
 
         errors = validate_step_definitions_complete(
-            [feature, step_def], project_root=tmp_path
-        )
-        assert errors == [], (
-            f"Expected 0 errors (3 reused steps live in test_login.py on disk), "
-            f"got {len(errors)}: {errors}"
-        )
+            [feature, step_def], project_root=str(tmp_path))
+        assert errors == []
 
     def test_genuinely_missing_step_still_caught_with_disk_pool(self, tmp_path):
         """Negative control: pooling on-disk decorators must NOT mask real

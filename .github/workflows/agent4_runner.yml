@@ -111,6 +111,19 @@ jobs:
         # what Agent 5 reads and reports to the Jira story, so the story's
         # test counts reflect the feature, not framework internals.
         if: always()  # run app tests even if unit gate failed, so we still get E2E signal
+        # Application credentials. Feature files log in by ROLE; the
+        # `credentials` fixture (tests/step_defs/conftest.py) resolves the role
+        # from these variables at runtime. Nothing authenticating is ever
+        # committed to the repo. Secrets must be declared per-step - GitHub
+        # does not inject them automatically.
+        env:
+          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+          APP_USER_STANDARD: ${{ secrets.APP_USER_STANDARD }}
+          APP_USER_LOCKED_OUT: ${{ secrets.APP_USER_LOCKED_OUT }}
+          APP_USER_PROBLEM: ${{ secrets.APP_USER_PROBLEM }}
+          APP_USER_PERFORMANCE_GLITCH: ${{ secrets.APP_USER_PERFORMANCE_GLITCH }}
+          APP_USER_ERROR: ${{ secrets.APP_USER_ERROR }}
+          APP_USER_VISUAL: ${{ secrets.APP_USER_VISUAL }}
         run: |
           pytest tests/step_defs/ \
             --html=reports/pytest-report.html \
