@@ -92,7 +92,7 @@ if __name__ == "__main__":
         test_llm()
         test_playwright()
         print("\n" + "=" * 50)
-        print("🎉 ALL SYSTEMS GO — Day 1 setup complete!")
+        print("🎉 ALL SYSTEMS GO — setup complete!")
         print("=" * 50)
     except Exception as e:
         print(f"\n❌ FAILED: {type(e).__name__}: {e}")

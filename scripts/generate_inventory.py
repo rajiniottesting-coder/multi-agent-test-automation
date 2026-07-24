@@ -76,8 +76,15 @@ def main() -> int:
                     help="Comma-separated test-id attributes to prefer/track "
                          "(default: %s)." % ",".join(introspect.TEST_ID_ATTRS))
     # Login (all optional; auto-detected by input type unless overridden).
-    ap.add_argument("--username", default=os.getenv("INVENTORY_USER"))
-    ap.add_argument("--password", default=os.getenv("INVENTORY_PASS"))
+    # Credentials: prefer the tool-specific vars, fall back to the same
+    # APP_* variables the test suite uses (tests/step_defs/conftest.py),
+    # so a repo has ONE credential source rather than two.
+    ap.add_argument("--username",
+                    default=os.getenv("INVENTORY_USER")
+                    or os.getenv("APP_USER_STANDARD"))
+    ap.add_argument("--password",
+                    default=os.getenv("INVENTORY_PASS")
+                    or os.getenv("APP_PASSWORD"))
     ap.add_argument("--login-url", help="Login page URL/path (default: app root).")
     ap.add_argument("--username-selector", default=DEFAULT_USERNAME_SELECTOR)
     ap.add_argument("--password-selector", default=DEFAULT_PASSWORD_SELECTOR)
