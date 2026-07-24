@@ -22,6 +22,12 @@ Examples:
     ... python -m scripts.check_inventory_staleness --fail-on-drift --json report.json
 
 Requires: pip install playwright && playwright install chromium
+
+Every example above is ONE line on purpose. A trailing backslash is
+Unix-shell continuation and is NOT valid in PowerShell (which uses a
+backtick), so a wrapped command silently joins its arguments — e.g.
+'--urls / --output x.json' becomes '--urls /--output' and argparse
+rejects it. Copy each command as a single line.
 """
 from __future__ import annotations
 
@@ -31,6 +37,13 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Load .env so credentials resolve the same way as in smoke_test.py and the
+# agents. Without this, APP_USER_STANDARD / APP_PASSWORD set in .env are
+# invisible here and login silently does nothing.
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from agents.app_context import AppContext
 from inventory_tools import introspect

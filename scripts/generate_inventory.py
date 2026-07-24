@@ -14,22 +14,24 @@ conventions: data-test, data-testid, data-cy, ...).
 
 Examples:
     # Login and Logout screens
-    python -m scripts.generate_inventory --no-login --urls / \
-     --output app_inventory/saucedemo.login.draft.json --headed
+    python -m scripts.generate_inventory --no-login --urls /  --output app_inventory/saucedemo.login.draft.json --headed
 
     # Crawl the configured app (2 levels), logging in via env credentials:
-    python -m scripts.generate_inventory --crawl --max-pages 25 \
-      --output app_inventory/generated.draft.json
+    python -m scripts.generate_inventory --crawl --max-pages 25  --output app_inventory/generated.draft.json
 
     #To inspect at deeper level, use --max-depth 3 or more (default: 2)
-    python -m scripts.generate_inventory --crawl --max-depth 4 --max-pages 60 \
-  --output app_inventory/app.draft.json
+    python -m scripts.generate_inventory --crawl --max-depth 4 --max-pages 60  --output app_inventory/app.draft.json
 
     # Specific paths, no login, app that tags elements with data-cy:
-    python -m scripts.generate_inventory --urls /,/dashboard --no-login \
-      --test-attrs data-cy,data-testid --output draft.json
+    python -m scripts.generate_inventory --urls /,/dashboard --no-login  --test-attrs data-cy,data-testid --output draft.json
 
 Requires: pip install playwright && playwright install chromium
+
+Every example above is ONE line on purpose. A trailing backslash is
+Unix-shell continuation and is NOT valid in PowerShell (which uses a
+backtick), so a wrapped command silently joins its arguments — e.g.
+'--urls / --output x.json' becomes '--urls /--output' and argparse
+rejects it. Copy each command as a single line.
 """
 from __future__ import annotations
 
@@ -41,6 +43,13 @@ from collections import deque
 from urllib.parse import urljoin, urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Load .env so credentials resolve the same way as in smoke_test.py and the
+# agents. Without this, APP_USER_STANDARD / APP_PASSWORD set in .env are
+# invisible here and login silently does nothing.
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from agents.app_context import AppContext
 from inventory_tools import introspect
