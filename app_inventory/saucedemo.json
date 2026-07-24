@@ -8,12 +8,13 @@
     "errors": "Prefer per-page `errors` (name -> exact message string, verbatim) over a big top-level `common_errors`. Page-level errors get filtered with their page by backlog 2.2, and keep messages next to the screen that raises them. Reserve top-level `common_errors` for truly global errors (e.g. a session-timeout banner)."
   },
   "test_users": {
-    "standard": "standard_user / secret_sauce — normal user, all flows work",
-    "locked_out": "locked_out_user / secret_sauce — receives lockout error on login",
-    "problem": "problem_user / secret_sauce — UI bugs intentionally present (broken images, form fields)",
-    "performance_glitch": "performance_glitch_user / secret_sauce — slow page loads",
-    "error": "error_user / secret_sauce — errors on some cart/checkout actions",
-    "visual": "visual_user / secret_sauce — intentional visual differences"
+    "_note": "Roles only — credentials are NEVER stored here. This file is sent to the LLM verbatim. Features log in by ROLE; the `credentials` fixture in tests/step_defs/conftest.py resolves the role from environment variables (APP_USER_<ROLE> / APP_PASSWORD). Use the role name in Gherkin, e.g. When I log in as \"standard\".",
+    "standard": "normal user, all flows work",
+    "locked_out": "receives a lockout error on login",
+    "problem": "UI bugs intentionally present (broken images, form fields)",
+    "performance_glitch": "slow page loads",
+    "error": "errors on some cart/checkout actions",
+    "visual": "intentional visual differences"
   },
   "pages": {
     "login": {

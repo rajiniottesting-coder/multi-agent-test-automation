@@ -1,33 +1,19 @@
-"""Shared page-object fixtures.
+"""Fixtures shared by all step-definition modules.
 
-SCOPE OF THIS FILE — deliberately narrow
------------------------------------------
-This file holds ONLY fixtures (page-object constructors). It contains NO step
-definitions, by design.
+Only fixtures belong here. Step definitions are declared in each step-def
+module, not in this file.
 
-Fixtures MUST live here because pytest resolves fixtures hierarchically: a
-fixture defined in one test module is invisible to every other module, but a
-fixture in conftest.py is available to every module in this directory and
-below. `page` and `base_url` come from the parent tests/conftest.py and are
-inherited automatically — never redefine them here.
-
-Step definitions do NOT belong here. Each step-def module declares every step
-its own feature uses (see tests/step_defs/test_login.py). pytest-bdd step
-definitions are module-scoped fixtures, so two modules declaring the same step
-text each resolve their own copy and never collide — which means there is no
-"is this step shared?" decision to make, and no cross-file dependency to
-maintain as the suite grows.
-
-ADDING A NEW PAGE OBJECT
-------------------------
-Add a fixture here, following the pattern below. That is the only change this
-file needs, for any application of any size.
+`page` and `base_url` are inherited from tests/conftest.py.
 """
+import os
+
 import pytest
 
 from pages.login_page import LoginPage
 from pages.inventory_page import InventoryPage
 
+
+# === Page objects ===
 
 @pytest.fixture
 def login_page(page):
@@ -37,3 +23,31 @@ def login_page(page):
 @pytest.fixture
 def inventory_page(page):
     return InventoryPage(page)
+
+
+# === Credentials ===
+
+@pytest.fixture(scope="session")
+def credentials():
+    """Resolve a role name to (username, password) from the environment.
+
+    For role "standard":
+        username -> APP_USER_STANDARD
+        password -> APP_PASSWORD_STANDARD, else APP_PASSWORD
+    """
+    def _for(role: str) -> tuple[str, str]:
+        key = role.strip().upper().replace("-", "_").replace(" ", "_")
+        user = os.getenv(f"APP_USER_{key}")
+        if not user:
+            raise RuntimeError(
+                f"Missing credential for role '{role}'. Set APP_USER_{key}."
+            )
+        password = os.getenv(f"APP_PASSWORD_{key}") or os.getenv("APP_PASSWORD")
+        if not password:
+            raise RuntimeError(
+                f"Missing password for role '{role}'. "
+                f"Set APP_PASSWORD_{key} or APP_PASSWORD."
+            )
+        return user, password
+
+    return _for

@@ -1,35 +1,15 @@
-"""
-Step definitions for features/login.feature.
+"""Step definitions for features/login.feature.
 
-REFERENCE FILE — the gold-standard example Agent 2 copies. Follow this shape.
+REFERENCE FILE — Agent 2 copies this style. Rules it demonstrates:
 
-THE ONE RULE
-------------
-A step-def module is SELF-CONTAINED: it declares EVERY step its own feature
-file uses. Do not rely on steps defined in another step-def module — pytest-bdd
-step definitions are module-scoped fixtures, so another module's steps are
-invisible here and the test would fail at collection with
-StepDefinitionNotFoundError.
-
-Declaring the same step text as another module is SAFE and expected. Each
-module resolves its own copy; they never collide. So there is no judgement to
-make about which steps are "shared" — you simply write the ones your feature
-needs.
-
-Page-object FIXTURES are the exception: they come from
-tests/step_defs/conftest.py, because fixtures do resolve hierarchically.
-
-CONVENTIONS TO COPY
--------------------
-- Step functions call PAGE OBJECT methods only. Never use a selector, and never
-  read a selector constant, in a step definition.
-- Keep each decorator's pattern on ONE single-quoted line. The step-coverage
-  validator reads from the first quote to the last quote, so splitting a
-  pattern across lines corrupts it and every step using it stops matching.
-- Use parsers.re with [^"]* for any quoted placeholder whose value could be
-  empty. parsers.parse cannot match "" — validation scenarios rely on this.
-- Assertions carry expected-vs-actual, so a CI failure is readable without
-  re-running locally.
+- Declare EVERY step your feature uses in this file. Steps are module-scoped,
+  so a step defined in another step-def module is not visible here.
+- Call page-object methods only. Never put a selector in a step definition.
+- Keep each decorator pattern on ONE line.
+- Use parsers.re with [^"]* where a quoted value could be empty; parsers.parse
+  cannot match "".
+- Log in by ROLE via the `credentials` fixture. Invalid data (empty values,
+  wrong passwords) stays literal — it is test data, not a credential.
 """
 from pytest_bdd import scenarios, given, when, then, parsers
 
@@ -48,6 +28,20 @@ def open_login_page(login_page, base_url):
 
 
 # === WHEN steps ===
+
+@when(parsers.re(r'I log in as "(?P<role>[^"]*)"$'))
+def login_as_role(login_page, credentials, role):
+    """Log in with real credentials resolved from the environment."""
+    username, password = credentials(role)
+    login_page.login_as(username, password)
+
+
+@when(parsers.re(r'I log in as "(?P<role>[^"]*)" with an incorrect password'))
+def login_as_role_wrong_password(login_page, credentials, role):
+    """Valid username, deliberately wrong password (test data, not a secret)."""
+    username, _ = credentials(role)
+    login_page.login_as(username, "definitely-not-the-password")
+
 
 @when(parsers.re(r'I log in with username "(?P<username>[^"]*)" and password "(?P<password>[^"]*)"'))
 def login_with_credentials(login_page, username, password):
