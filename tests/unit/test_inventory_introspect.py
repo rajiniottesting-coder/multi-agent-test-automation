@@ -460,3 +460,77 @@ def test_falls_back_to_tag_when_no_css_path_supplied():
     """Callers that pass no cssPath (unit tests, older data) still work."""
     sel, strat = rank_selector("div", {})
     assert sel == "div" and strat == "css"
+
+
+# ── Volatile (runtime-data) text ──────────────────────────────
+
+def test_static_text_stays_stable():
+    for label in ("Submit", "Add to cart", "Sign in"):
+        _, strat = rank_selector("button", {}, label)
+        assert not is_unstable_strategy(strat), label
+
+
+def test_volatile_text_is_flagged_not_rejected():
+    """Still used (may be the only handle) but reported for review."""
+    for label in ("Welcome back, John Smith", "3 items in cart",
+                  "Total: $49.99", "Updated 2 minutes ago"):
+        sel, strat = rank_selector("button", {}, label)
+        assert label[:20] in sel, "the name must still be used"
+        assert is_unstable_strategy(strat), label
+
+
+def test_volatile_names_reach_unstable_selectors_block():
+    descriptors = [{"tag": "button", "attrs": {}, "text": "3 items in cart"}]
+    page = build_page_entry("https://x.com/c", "C", descriptors, "https://x.com")
+    assert page["_unstable_selectors"]["elements"]
+
+
+def test_stable_handle_still_wins_over_volatile_text():
+    sel, strat = rank_selector("button", {"data-test": "cart"}, "3 items in cart")
+    assert sel == "[data-test='cart']" and not is_unstable_strategy(strat)
+
+
+# ── Dynamic ATTRIBUTE values -> starts-with anchoring ─────────
+
+def test_dynamic_attr_value_uses_starts_with():
+    """A record/session id inside the value must not be matched exactly."""
+    sel, strat = rank_selector("div", {"data-test": "user-profile-8891"})
+    assert sel == "[data-test^='user-profile-']" and strat == "data-test-prefix"
+
+
+def test_hex_and_date_segments_also_anchored():
+    assert rank_selector("div", {"data-test": "session-a3f8b21c"})[0] \
+        == "[data-test^='session-']"
+    assert rank_selector("div", {"id": "order-row-20260725"})[0] \
+        == "[id^='order-row-']"
+
+
+def test_fully_static_attr_value_matched_exactly():
+    """Nothing dynamic in the value -> exact match, no needless loosening."""
+    sel, strat = rank_selector("div", {"data-test": "add-to-cart"})
+    assert sel == "[data-test='add-to-cart']" and strat == "data-test"
+
+
+def test_framework_id_prefix_is_not_anchored():
+    """radix-/ember- match every element the library renders — useless."""
+    sel, _ = rank_selector("div", {"id": "radix-123", "name": "menu"})
+    assert sel == "div[name='menu']"
+
+
+def test_prefix_strategies_count_as_stable():
+    for strategy in ("data-test-prefix", "id-prefix"):
+        assert not is_unstable_strategy(strategy)
+
+
+# ── Dynamic TEXT -> prefer a stable handle over a churning name ─
+
+def test_stable_attribute_beats_volatile_accessible_name():
+    """'3 items in cart' churns; the title does not — the title must win."""
+    sel, strat = rank_selector("button", {"title": "Open cart"}, "3 items in cart")
+    assert sel == "title=Open cart" and strat == "title"
+
+
+def test_volatile_name_used_only_when_nothing_stable_exists():
+    sel, strat = rank_selector("button", {}, "3 items in cart")
+    assert "3 items in cart" in sel and strat == "role-volatile"
+    assert is_unstable_strategy(strat)

@@ -60,6 +60,70 @@ _IMPLICIT_ROLE = {
 # these (React-Select, MUI, Ant Design, custom toggles, etc.) is captured even
 # without a test-id, and gets a churn-proof role= selector rather than brittle
 # css. This is what lets the tool handle complex/custom widgets in any app.
+# Accessible names / text that look VOLATILE — they contain runtime data, so a
+# locator built from them breaks as soon as that data changes:
+#   "Welcome back, John Smith"   (user name)
+#   "3 items in cart"            (count)
+#   "Total: $49.99"              (price)
+#   "Updated 2 minutes ago"      (timestamp)
+# Such a name is still USED (it may be the only handle available) but the
+# strategy is downgraded so the element lands in `_unstable_selectors` and the
+# reviewer is told to replace it with a data-test attribute.
+_VOLATILE_TEXT = re.compile(
+    r"\d"                                  # any digit: counts, prices, dates, ids
+    r"|\b(welcome|hello|hi)\b[, ]"          # personalised greetings
+    r"|\b(ago|remaining|left)\b",           # relative times / countdowns
+    re.IGNORECASE,
+)
+
+
+# A value segment that is clearly runtime-generated: a long digit run, a uuid
+# chunk, a hex blob, or a date stamp. An attribute carrying one of these churns
+# between runs, so the WHOLE value must never be used as an exact-match locator.
+# Prefixes emitted by UI libraries. Anchoring on one matches every element the
+# library renders, so it is worthless as a locator.
+_FRAMEWORK_ID_PREFIX = re.compile(
+    r"^(radix|headlessui|ember|mui|chakra|mantine|ant)$", re.IGNORECASE)
+
+_DYNAMIC_SEGMENT = re.compile(
+    r"^\d{3,}$"                       # 8891, 20260725
+    r"|^[0-9a-f]{8,}$"                 # a3f8b21c, hex/uuid chunk
+    r"|^[0-9a-f]{4,}-[0-9a-f]{4,}",    # uuid-ish pair
+    re.IGNORECASE,
+)
+
+
+def dynamic_attr_prefix(value: str) -> str:
+    """Return the STABLE leading part of a hyphenated attribute value, or "".
+
+    "user-profile-8891"  -> "user-profile"      (8891 is runtime data)
+    "session-a3f8b21c"   -> "session"
+    "order-row-20260725" -> "order-row"
+    "add-to-cart"        -> ""                  (nothing dynamic — use as-is)
+
+    Callers turn a non-empty result into a starts-with match
+    ([data-test^='user-profile-']) so the locator survives the value changing.
+    Requires at least one stable segment, otherwise there is nothing to anchor
+    on and the caller should fall through to another strategy.
+    """
+    if not value or "-" not in value:
+        return ""
+    segs = value.split("-")
+    stable = []
+    for seg in segs:
+        if _DYNAMIC_SEGMENT.match(seg):
+            break
+        stable.append(seg)
+    if not stable or len(stable) == len(segs):
+        return ""                       # nothing dynamic, or nothing stable
+    return "-".join(stable)
+
+
+def _is_volatile_text(value: str) -> bool:
+    """True if this text embeds runtime data and will churn between runs."""
+    return bool(value and _VOLATILE_TEXT.search(value))
+
+
 _INTERACTIVE_ROLES = {
     "button", "link", "checkbox", "radio", "switch", "combobox", "listbox",
     "option", "menuitem", "menuitemcheckbox", "menuitemradio", "tab", "textbox",
@@ -112,16 +176,37 @@ def rank_selector(tag: str, attrs: dict, text: str = "",
     a = attrs or {}
     for key in test_attrs:
         if a.get(key):
-            return (f"[{key}='{_css_escape_value(a[key])}']", key)
+            val = a[key]
+            # Dynamic value (record id, session id, timestamp embedded in it):
+            # anchor on the stable prefix instead of the whole churning value.
+            prefix = dynamic_attr_prefix(val)
+            if prefix:
+                return (f"[{key}^='{_css_escape_value(prefix)}-']", f"{key}-prefix")
+            return (f"[{key}='{_css_escape_value(val)}']", key)
     if a.get("id") and not _looks_generated_id(a["id"]):
         return (f"#{a['id']}", "id")
+    if a.get("id"):
+        # The id was rejected as generated, but it may still carry a MEANINGFUL
+        # stable prefix worth anchoring on:
+        #     "order-row-20260725" -> [id^='order-row-']
+        # A FRAMEWORK prefix (radix-, ember-, headlessui-) is not meaningful —
+        # every element the library renders shares it — so those are skipped and
+        # ranking continues to name/role/label below.
+        id_prefix = dynamic_attr_prefix(a["id"])
+        if id_prefix and not _FRAMEWORK_ID_PREFIX.match(id_prefix):
+            return (f"[id^='{_css_escape_value(id_prefix)}-']", "id-prefix")
     if a.get("name"):
         return (f"{tag}[name='{_css_escape_value(a['name'])}']", "name")
     # accessible role + name — churn-proof, handles custom/div-based widgets.
     role = a.get("role") or _IMPLICIT_ROLE.get(tag)
     acc_name = (a.get("aria-label") or (text or "")).strip()
     # getByRole WITH an accessible name — Playwright's first recommendation.
-    if role in _INTERACTIVE_ROLES and acc_name:
+    # getByRole WITH a STABLE accessible name — Playwright's first choice.
+    # If the name is volatile ("3 items in cart") we deliberately do NOT return
+    # here: a stable aria-label/placeholder/alt/title further down is a better
+    # locator than a name that changes every run. The volatile name is only
+    # used later, as a fallback, if nothing stable turns up.
+    if role in _INTERACTIVE_ROLES and acc_name and not _is_volatile_text(acc_name):
         return (f"role={role}[name='{_css_escape_value(acc_name[:40])}']", "role")
     # getByLabel — Playwright's recommended handle for form controls. Survives
     # id/class churn because it is tied to the visible label a user reads.
@@ -139,13 +224,21 @@ def rank_selector(tag: str, attrs: dict, text: str = "",
     if a.get("title"):
         return (f"title={_css_escape_value(a['title'][:60])}", "title")
     if role and acc_name:  # non-interactive role but has a name (weak but usable)
-        return (f"role={role}[name='{_css_escape_value(acc_name[:40])}']", "role")
+        return (f"role={role}[name='{_css_escape_value(acc_name[:40])}']",
+                "role-volatile" if _is_volatile_text(acc_name) else "role")
+    # Volatile accessible name — nothing stable was found above, so use it
+    # anyway (it is still better than a positional path) but flag it.
+    if role in _INTERACTIVE_ROLES and acc_name:
+        return (f"role={role}[name='{_css_escape_value(acc_name[:40])}']",
+                "role-volatile")
     # Nameless interactive role: churn-proof, but weaker than any named handle
     # above, so it deliberately ranks below label/alt/title.
     if role in _INTERACTIVE_ROLES:
         return (f"role={role}", "role")
-    if (text or "").strip() and tag in ("a", "button"):
-        return (f"text={_css_escape_value(text.strip()[:40])}", "text")
+    t = (text or "").strip()
+    if t and tag in ("a", "button"):
+        return (f"text={_css_escape_value(t[:40])}",
+                "text-volatile" if _is_volatile_text(t) else "text")
     # LAST RESORT — nothing semantic was available. A bare tag (or tag[type])
     # is a CATEGORY, not a locator: it matches every similar element on the
     # page and fails Playwright's strict mode. Fall back to the structurally
@@ -163,7 +256,8 @@ def rank_selector(tag: str, attrs: dict, text: str = "",
 # strategies that produced a durable handle; anything else ("css") is fragile.
 _STABLE_STRATEGIES = set(TEST_ID_ATTRS) | {
     "id", "name", "role", "label", "aria-label", "placeholder", "alt", "title",
-    "text", "data-test-prefix",
+    "text", "data-test-prefix", "id-prefix",
+    *(f"{a}-prefix" for a in TEST_ID_ATTRS),
 }
 
 
