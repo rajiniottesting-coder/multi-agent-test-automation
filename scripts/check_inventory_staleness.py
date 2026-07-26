@@ -138,12 +138,17 @@ def main() -> int:
     print(f"  pages checked      : {report['pages_checked']}")
     print(f"  stale selectors    : {report['stale_selectors']}")
     print(f"  new untracked tags : {report['new_untracked_data_tests']}")
+    print(f"  ambiguous selectors: {report['ambiguous_selectors']}")
     print(f"  unreachable pages  : {report['unreachable_pages'] or 'none'}")
     for pname, diff in per_page.items():
-        if diff["missing"] or diff["new_data_tests"]:
+        if diff["missing"] or diff["new_data_tests"] or diff.get("ambiguous"):
             print(f"\n  [{pname}]")
             for m in diff["missing"]:
                 print(f"    STALE   {m['element']}: {m['selector']} -> 0 matches on live page")
+            for amb in diff.get("ambiguous", []):
+                print(f"    AMBIG   {amb['element']}: {amb['selector']} -> "
+                      f"{amb['matches']} matches (Playwright strict mode will "
+                      f"fail on this)")
             for nt in diff["new_data_tests"]:
                 print(f"    NEW     test-id '{nt}' present live but not in inventory")
     if report["pages_missing_notes"]:

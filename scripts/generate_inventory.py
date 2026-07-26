@@ -130,7 +130,19 @@ def main() -> int:
             did = do_login(page, login_url, args.username_selector,
                            args.password_selector, args.submit_selector,
                            args.username, args.password)
-            print("  logged in." if did else "  (no login — missing creds/selectors)")
+            if did:
+                print("  logged in.")
+            elif not (args.username and args.password):
+                print("  (no login — missing creds/selectors)")
+            else:
+                # Credentials WERE supplied but we still look logged out. Say so
+                # loudly: otherwise every page captured below is the login form
+                # and the draft looks plausible but is useless.
+                print("  WARNING: login appears to have FAILED (still on the "
+                      "login page). Check credentials, or pass "
+                      "--username-selector/--password-selector/--submit-selector "
+                      "if the form is not auto-detected. Re-run with --headed "
+                      "to watch it.")
 
         queue = deque((s, 0) for s in seeds)
         seen: set[str] = set()
@@ -164,13 +176,14 @@ def main() -> int:
         "_inventory_conventions": {
             "generated": "Draft produced by scripts/generate_inventory.py (backlog 3.1). "
                          "Tag each page's `components`, add elements_notes/key_methods/errors, "
-                         "delete `_selector_strategies`, `_unstable_selectors` and `title_seen` "
+                         "delete `_selector_strategies`, `_unstable_selectors`, `_ambiguous_selectors` and `title_seen` "
                          "after review, and verify every selector before this replaces the real "
                          "inventory.",
             "selectors": "Every selector maps to a first-class Playwright locator, in priority order: [data-test='x'] / #id / [name='x'] (css), role=combobox[name='Country'] (getByRole), label=Email (getByLabel), placeholder=... , alt=Search (getByAltText), title=Close (getByTitle), text=Submit (getByText). XPath is never emitted. An iframe-chained selector uses ' >>> ', e.g. iframe#pay >>> [data-test='card']. label=/alt=/title= need page.get_by_label/get_by_alt_text/get_by_title (they are NOT page.locator() engine syntax); role= and text= work with page.locator() directly.",
             "_unstable_selectors": "If present on a page, these elements had no durable handle "
                          "(only a fragile css fallback). Add a data-test in the app or replace "
                          "with a role/label/text locator before relying on them.",
+            "_ambiguous_selectors": "If present, these selectors were produced for MORE THAN ONE element on the page. Playwright locators are strict by default, so each one raises 'strict mode violation: locator resolved to N elements' at runtime. Give each element a distinct handle (add a data-test) or disambiguate with .nth()/.filter() in the page object.",
         },
         "pages": pages,
     }

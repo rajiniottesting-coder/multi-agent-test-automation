@@ -131,16 +131,36 @@ def browser_page(headless: bool = True, timeout_ms: int = 15000) -> Iterator:
 def do_login(page, login_url: Optional[str], username_selector: Optional[str],
              password_selector: Optional[str], submit_selector: Optional[str],
              username: Optional[str], password: Optional[str]) -> bool:
-    """Best-effort form login from explicit selectors. App-agnostic."""
+    """Best-effort form login from explicit selectors. App-agnostic.
+
+    Returns True only if the login APPEARS to have succeeded. Previously this
+    returned True unconditionally, so bad credentials or a mis-detected submit
+    control failed silently and the crawl captured the login form on every
+    page — a draft full of username/password fields and no error anywhere.
+
+    Success heuristic (app-agnostic, no knowledge of the landing page): the
+    URL changed away from the login page, OR the password field is gone. Both
+    are true of essentially every real login and neither needs app specifics.
+    A False return is advisory — the caller decides whether to warn or abort.
+    """
     if not all([login_url, username_selector, password_selector,
                 submit_selector, username, password]):
         return False
     page.goto(login_url)
+    url_before = page.url
     page.locator(username_selector).first.fill(username)
     page.locator(password_selector).first.fill(password)
     page.locator(submit_selector).first.click()
     page.wait_for_load_state("networkidle")
-    return True
+
+    if page.url.rstrip("/") != url_before.rstrip("/"):
+        return True                      # navigated away from the login page
+    try:
+        # Same URL: a still-present password field means we never got in
+        # (SPAs that authenticate without navigating will have removed it).
+        return page.locator(password_selector).count() == 0
+    except Exception:
+        return True                      # can't tell — don't block the run
 
 
 def _frame_chain_selector(page, frame) -> str:

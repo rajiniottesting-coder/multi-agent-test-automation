@@ -405,6 +405,18 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
     unstable = sorted(n for n, e in elements.items()
                       if is_unstable_strategy(e.get("strategy", "css")))
 
+    # Selectors emitted for MORE THAN ONE element. Playwright runs locators in
+    # strict mode by default, so a selector matching several elements raises
+    # "strict mode violation: locator resolved to N elements" at runtime — even
+    # though a staleness check (which only looks for ZERO matches) passes it.
+    # Names are de-duplicated above, but two different elements can still rank
+    # to the same weak selector, so this must be detected separately.
+    _by_selector: dict[str, list[str]] = {}
+    for n, e in elements.items():
+        _by_selector.setdefault(e["selector"], []).append(n)
+    ambiguous = {sel: sorted(names) for sel, names in _by_selector.items()
+                 if len(names) > 1}
+
     pof, poc = guess_page_object(path)
     entry = {
         "url": path,
@@ -423,6 +435,16 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
         ),
         "title_seen": title,
     }
+    if ambiguous:
+        entry["_ambiguous_selectors"] = {
+            "selectors": ambiguous,
+            "warning": ("Each of these selectors was produced for MORE THAN ONE "
+                        "element on this page. Playwright locators are strict by "
+                        "default, so using one raises 'strict mode violation: "
+                        "locator resolved to N elements' at runtime. Give each "
+                        "element a distinct handle (add a data-test attribute) or "
+                        "disambiguate with .nth()/.filter() in the page object."),
+        }
     if unstable:
         entry["_unstable_selectors"] = {
             "elements": unstable,
@@ -469,19 +491,35 @@ def diff_page(page_name: str, inventory_selectors: dict[str, str],
         return value in inv_values or any(value.startswith(p) for p in prefixes)
 
     new = sorted(v for v in live_data_tests if not _covered(v))
-    return {"missing": missing, "new_data_tests": new}
+    # Live multi-match. Only ZERO matches were previously reported, so a
+    # selector resolving to several elements passed silently and then failed at
+    # runtime with a Playwright strict-mode violation.
+    ambiguous = sorted(
+        {"element": name, "selector": sel, "matches": live_resolved.get(sel, 0)}.items()
+        and (name, sel, live_resolved.get(sel, 0))
+        for name, sel in inventory_selectors.items()
+        if live_resolved.get(sel, 0) > 1
+    )
+    return {"missing": missing, "new_data_tests": new,
+            "ambiguous": [{"element": n, "selector": s_, "matches": c}
+                          for n, s_, c in ambiguous]}
 
 
 def summarize_drift(per_page: dict[str, dict], missing_pages: list[str]) -> dict:
     """Roll per-page diffs into a report with an overall `has_drift` flag."""
     total_missing = sum(len(p["missing"]) for p in per_page.values())
     total_new = sum(len(p["new_data_tests"]) for p in per_page.values())
+    total_ambiguous = sum(len(p.get("ambiguous", [])) for p in per_page.values())
     return {
         "pages_checked": len(per_page),
         "unreachable_pages": missing_pages,
         "stale_selectors": total_missing,
         "new_untracked_data_tests": total_new,
-        "has_drift": bool(total_missing or missing_pages or total_new),
+        # Selectors matching >1 element. Counted as drift because Playwright's
+        # strict mode makes them fail at runtime just as surely as a stale one.
+        "ambiguous_selectors": total_ambiguous,
+        "has_drift": bool(total_missing or missing_pages or total_new
+                          or total_ambiguous),
         "pages": per_page,
     }
 

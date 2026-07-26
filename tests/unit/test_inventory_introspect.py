@@ -368,3 +368,48 @@ def test_label_threaded_from_descriptor():
                     "label": "Full name"}]
     page = build_page_entry("https://x.com/f", "F", descriptors, "https://x.com")
     assert "label=Full name" in page["elements"].values()
+
+
+# ── Ambiguous selectors (Playwright strict-mode violations) ───
+
+def test_duplicate_selector_flagged_at_generate_time():
+    """Two elements ranking to the SAME selector => strict-mode violation."""
+    descriptors = [
+        {"tag": "input", "attrs": {"type": "text"}, "text": ""},
+        {"tag": "input", "attrs": {"type": "text"}, "text": ""},
+    ]
+    page = build_page_entry("https://x.com/f", "F", descriptors, "https://x.com")
+    amb = page["_ambiguous_selectors"]["selectors"]
+    assert "input[type='text']" in amb
+    assert len(amb["input[type='text']"]) == 2
+
+
+def test_no_ambiguous_key_when_all_selectors_distinct():
+    descriptors = [
+        {"tag": "input", "attrs": {"data-test": "a"}, "text": ""},
+        {"tag": "input", "attrs": {"data-test": "b"}, "text": ""},
+    ]
+    page = build_page_entry("https://x.com/f", "F", descriptors, "https://x.com")
+    assert "_ambiguous_selectors" not in page
+
+
+def test_diff_page_reports_live_multi_match():
+    """A selector matching several elements must be drift, not silence."""
+    out = diff_page("home", {"box": "input[type='text']"},
+                    {"input[type='text']": 4}, set())
+    assert out["ambiguous"] == [
+        {"element": "box", "selector": "input[type='text']", "matches": 4}]
+    assert out["missing"] == []          # it resolves, so it is not stale
+
+
+def test_single_match_is_not_ambiguous():
+    out = diff_page("home", {"box": "[data-test='x']"},
+                    {"[data-test='x']": 1}, set())
+    assert out["ambiguous"] == []
+
+
+def test_summarize_drift_counts_ambiguous_as_drift():
+    diff = diff_page("home", {"box": "input"}, {"input": 3}, set())
+    rep = summarize_drift({"home": diff}, [])
+    assert rep["ambiguous_selectors"] == 1
+    assert rep["has_drift"] is True
