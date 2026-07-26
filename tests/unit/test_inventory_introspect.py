@@ -316,3 +316,55 @@ def test_pages_missing_notes():
         "menu": {"elements_notes": {}},     # empty notes
     }}
     assert set(pages_missing_notes(inv)) == {"cart", "menu"}
+
+# ── Playwright locator coverage: label / alt / title ──────────
+
+def test_label_locator_preferred_over_generated_id():
+    """getByLabel is Playwright's recommended handle for form controls, and
+    must beat a framework-generated id."""
+    sel, strat = rank_selector("input", {"id": ":r0:"}, label="Email address")
+    assert sel == "label=Email address" and strat == "label"
+
+
+def test_stable_id_still_beats_label():
+    """A real, human-authored id remains the stronger handle."""
+    sel, strat = rank_selector("input", {"id": "email-field"}, label="Email")
+    assert sel == "#email-field" and strat == "id"
+
+
+def test_alt_locator_for_image_inputs():
+    """getByAltText — image buttons carry no text node."""
+    sel, strat = rank_selector("input", {"type": "image", "alt": "Search"})
+    assert sel == "alt=Search" and strat == "alt"
+
+
+def test_title_locator_for_iconless_control():
+    """getByTitle — tooltip-only controls such as an icon 'X' close button."""
+    sel, strat = rank_selector("button", {"title": "Close dialog"})
+    assert sel == "title=Close dialog" and strat == "title"
+
+
+def test_named_role_still_outranks_label():
+    """getByRole with an accessible name stays Playwright's first choice."""
+    sel, strat = rank_selector("div", {"role": "combobox", "aria-label": "Country"},
+                               label="Country selector")
+    assert strat == "role" and sel.startswith("role=combobox")
+
+
+def test_nameless_role_ranks_below_title():
+    """A nameless role is churn-proof but weaker than any named handle."""
+    sel, strat = rank_selector("button", {"role": "button", "title": "Close"})
+    assert sel == "title=Close" and strat == "title"
+
+
+def test_new_strategies_are_all_stable():
+    for strategy in ("label", "alt", "title"):
+        assert not is_unstable_strategy(strategy)
+
+
+def test_label_threaded_from_descriptor():
+    """build_page_entry must pass the collector's `label` through."""
+    descriptors = [{"tag": "input", "attrs": {"id": ":r7:"}, "text": "",
+                    "label": "Full name"}]
+    page = build_page_entry("https://x.com/f", "F", descriptors, "https://x.com")
+    assert "label=Full name" in page["elements"].values()

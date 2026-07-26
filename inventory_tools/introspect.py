@@ -87,16 +87,27 @@ def _css_escape_value(value: str) -> str:
 
 
 def rank_selector(tag: str, attrs: dict, text: str = "",
-                  test_attrs: tuple = TEST_ID_ATTRS) -> tuple[str, str]:
+                  test_attrs: tuple = TEST_ID_ATTRS,
+                  label: str = "") -> tuple[str, str]:
     """Return (selector, strategy) picking the most stable available handle.
 
-    Priority: test-id attribute > stable id > name > accessible role+name >
-    aria-label > placeholder > text > css fallback. Role+name (a Playwright
-    getByRole-style locator) is elevated because it is churn-proof and is the
-    right handle for custom widgets (React-Select, MUI, …) that have an ARIA
-    role but no test-id. `test_attrs` is the ordered list of test-id attributes
-    to prefer. The strategy label reveals how stable the pick is; a "css"
-    strategy means no durable hook was found (see `is_unstable_strategy`).
+    Priority, aligned with Playwright's own locator recommendations:
+
+        test-id attr > stable id > name > role+accessible-name (getByRole)
+        > label (getByLabel) > aria-label > placeholder (getByPlaceholder)
+        > alt (getByAltText) > title (getByTitle) > nameless role
+        > text (getByText) > css fallback
+
+    Every strategy above the css fallback maps to a first-class Playwright
+    locator, so generated page objects use the API Playwright actually
+    recommends rather than brittle css. XPath is deliberately never emitted.
+
+    `label` is the text of the element's associated <label> — a SEPARATE DOM
+    element, so it must be supplied by the collector; it cannot be read from
+    `attrs`. It is Playwright's recommended handle for form controls.
+
+    The strategy label reveals how stable the pick is; a "css" strategy means
+    no durable hook was found (see `is_unstable_strategy`).
     """
     a = attrs or {}
     for key in test_attrs:
@@ -109,16 +120,30 @@ def rank_selector(tag: str, attrs: dict, text: str = "",
     # accessible role + name — churn-proof, handles custom/div-based widgets.
     role = a.get("role") or _IMPLICIT_ROLE.get(tag)
     acc_name = (a.get("aria-label") or (text or "")).strip()
-    if role in _INTERACTIVE_ROLES:
-        if acc_name:
-            return (f"role={role}[name='{_css_escape_value(acc_name[:40])}']", "role")
-        return (f"role={role}", "role")  # nameless but churn-proof (better than bare tag)
+    # getByRole WITH an accessible name — Playwright's first recommendation.
+    if role in _INTERACTIVE_ROLES and acc_name:
+        return (f"role={role}[name='{_css_escape_value(acc_name[:40])}']", "role")
+    # getByLabel — Playwright's recommended handle for form controls. Survives
+    # id/class churn because it is tied to the visible label a user reads.
+    lbl = (label or "").strip()
+    if lbl:
+        return (f"label={_css_escape_value(lbl[:60])}", "label")
     if a.get("aria-label"):
         return (f"{tag}[aria-label='{_css_escape_value(a['aria-label'])}']", "aria-label")
     if a.get("placeholder"):
         return (f"{tag}[placeholder='{_css_escape_value(a['placeholder'])}']", "placeholder")
+    # getByAltText — images and image buttons carry no text node.
+    if a.get("alt"):
+        return (f"alt={_css_escape_value(a['alt'][:60])}", "alt")
+    # getByTitle — tooltip-only controls (icon buttons, close 'X's).
+    if a.get("title"):
+        return (f"title={_css_escape_value(a['title'][:60])}", "title")
     if role and acc_name:  # non-interactive role but has a name (weak but usable)
         return (f"role={role}[name='{_css_escape_value(acc_name[:40])}']", "role")
+    # Nameless interactive role: churn-proof, but weaker than any named handle
+    # above, so it deliberately ranks below label/alt/title.
+    if role in _INTERACTIVE_ROLES:
+        return (f"role={role}", "role")
     if (text or "").strip() and tag in ("a", "button"):
         return (f"text={_css_escape_value(text.strip()[:40])}", "text")
     if a.get("type"):
@@ -128,7 +153,8 @@ def rank_selector(tag: str, attrs: dict, text: str = "",
 
 # strategies that produced a durable handle; anything else ("css") is fragile.
 _STABLE_STRATEGIES = set(TEST_ID_ATTRS) | {
-    "id", "name", "role", "aria-label", "placeholder", "text", "data-test-prefix",
+    "id", "name", "role", "label", "aria-label", "placeholder", "alt", "title",
+    "text", "data-test-prefix",
 }
 
 
@@ -356,7 +382,8 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
         text = d.get("text") or ""
         if not _is_capturable(tag, attrs, test_attrs):
             continue
-        selector, strategy = rank_selector(tag, attrs, text, test_attrs)
+        selector, strategy = rank_selector(tag, attrs, text, test_attrs,
+                                           label=d.get("label", ""))
         # Element inside an iframe: prefix with the frame's own selector using
         # the documented `>>>` frame-enter convention.
         frame_sel = d.get("frame")

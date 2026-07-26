@@ -167,12 +167,7 @@ def main() -> int:
                          "delete `_selector_strategies`, `_unstable_selectors` and `title_seen` "
                          "after review, and verify every selector before this replaces the real "
                          "inventory.",
-            "selectors": "Selectors may be: a css attribute selector ([data-test='x'], #id), "
-                         "a Playwright role locator (role=combobox[name='Country']) for custom "
-                         "widgets, a text locator (text=Submit), or an iframe-chained selector "
-                         "using ' >>> ' (iframe#pay >>> [data-test='card']) meaning "
-                         "page.frame_locator('iframe#pay').locator(\"[data-test='card']\"). "
-                         "role=/text= locators pierce open shadow DOM automatically.",
+            "selectors": "Every selector maps to a first-class Playwright locator, in priority order: [data-test='x'] / #id / [name='x'] (css), role=combobox[name='Country'] (getByRole), label=Email (getByLabel), placeholder=... , alt=Search (getByAltText), title=Close (getByTitle), text=Submit (getByText). XPath is never emitted. An iframe-chained selector uses ' >>> ', e.g. iframe#pay >>> [data-test='card']. label=/alt=/title= need page.get_by_label/get_by_alt_text/get_by_title (they are NOT page.locator() engine syntax); role= and text= work with page.locator() directly.",
             "_unstable_selectors": "If present on a page, these elements had no durable handle "
                          "(only a fragile css fallback). Add a data-test in the app or replace "
                          "with a role/label/text locator before relying on them.",

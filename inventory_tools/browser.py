@@ -50,6 +50,20 @@ def _collect_js(test_attrs: tuple) -> str:
           tag: el.tagName.toLowerCase(),
           attrs,
           text: (el.innerText || el.value || '').trim().slice(0, 60),
+        // Associated <label> text. Playwright's getByLabel is the recommended
+        // locator for form controls, but a label is a SEPARATE DOM element
+        // (<label for="x">Email</label><input id="x">), so it can never be
+        // read from the element's own attributes. Captured here instead.
+        label: (() => {
+          try {
+            if (el.labels && el.labels.length) {
+              return (el.labels[0].innerText || '').trim().slice(0, 60);
+            }
+            const wrapping = el.closest && el.closest('label');
+            if (wrapping) return (wrapping.innerText || '').trim().slice(0, 60);
+          } catch (e) {}
+          return '';
+        })(),
           visible: !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length)
         });
       }
@@ -177,6 +191,27 @@ def collect_descriptors(page, url: str, test_attrs: tuple = TEST_ID_ATTRS
     return page.title(), descriptors
 
 
+def _resolve_one(scope, selector: str):
+    """Turn one inventory selector string into a Playwright Locator.
+
+    Playwright's `locator()` selector-engine syntax understands css, `text=`
+    and `role=`, but there is NO `label=`, `alt=` or `title=` engine — those
+    are only reachable through the get_by_* API. The inventory emits the
+    get_by_* forms because they are the locators Playwright recommends, so
+    they are translated here. Without this the staleness checker would report
+    every label/alt/title selector as stale even though it resolves perfectly
+    at runtime.
+    """
+    if selector.startswith("label="):
+        return scope.get_by_label(selector[len("label="):])
+    if selector.startswith("alt="):
+        return scope.get_by_alt_text(selector[len("alt="):])
+    if selector.startswith("title="):
+        return scope.get_by_title(selector[len("title="):])
+    # css, text= and role= are native to the selector engine.
+    return scope.locator(selector)
+
+
 def _count_selector(page, selector: str) -> int:
     """Count matches for a selector, entering iframe(s) if it is frame-prefixed."""
     if FRAME_DELIM in selector:
@@ -185,8 +220,8 @@ def _count_selector(page, selector: str) -> int:
         loc = page
         for fp in frame_parts:
             loc = loc.frame_locator(fp)
-        return loc.locator(elem).count()
-    return page.locator(selector).count()
+        return _resolve_one(loc, elem).count()
+    return _resolve_one(page, selector).count()
 
 
 def resolve_selectors(page, url: str, selectors: list[str],
