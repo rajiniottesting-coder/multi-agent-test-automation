@@ -21,7 +21,7 @@ Outputs:
 
 Hardening notes:
     - Reference files and page inventory come from AppContext (config-driven),
-      not hardcoded paths. Works for any app, not just SauceDemo.
+      not hardcoded paths. Works for any app under test.
     - Post-processing dedup+cap on issues list — LLMs can produce
       repetition loops on low-content PRs and `maxItems` can't be expressed
       in the structured-output schema.

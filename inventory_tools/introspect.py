@@ -416,7 +416,7 @@ def collapse_repeated_families(elements: dict[str, dict], min_family: int = 2,
 # ─────────────────────────────────────────────────────────────
 
 def url_to_path(url: str, base_url: str = "") -> str:
-    """Normalize an absolute URL to an app-relative path ('/inventory.html')."""
+    """Normalize an absolute URL to an app-relative path ('/products')."""
     p = urlparse(url)
     path = p.path or "/"
     if p.query:
@@ -430,6 +430,42 @@ def guess_page_object(path: str) -> tuple[str, str]:
     stem = _slug_to_name(stem) or "home"
     cls = "".join(part.capitalize() for part in stem.split("_")) + "Page"
     return (f"pages/{stem}_page.py", cls)
+
+
+# Attributes by which an element ADVERTISES that it reveals hidden content.
+# The revealed content (menu items, dialog fields, listbox options) is often not
+# rendered until the user interacts, so a DOM snapshot can never see it. These
+# controls are the reviewer's to-do list: click each one, then hand-add what
+# appears.
+_REVEALS_HIDDEN_CONTENT = (
+    "aria-haspopup",      # menu / dialog / listbox / tree / grid
+    "aria-controls",      # points at a region that may not be rendered yet
+    "data-toggle",        # Bootstrap 4
+    "data-bs-toggle",     # Bootstrap 5
+)
+
+# Roles whose *contents* (options, menu items, tabs) commonly render on demand.
+_LAZY_CONTAINER_ROLES = {"combobox", "listbox", "menu", "menubar", "tablist",
+                         "tree", "dialog", "alertdialog"}
+
+
+def reveals_hidden_content(tag: str, attrs: dict) -> str:
+    """Return WHY this element likely hides content, or "" if it does not.
+
+    Detects only what the element declares about itself - no clicking, no
+    guessing. A collapsed control (aria-expanded="false") or one that opens a
+    popup is very likely to have children a static snapshot cannot see.
+    """
+    a = attrs or {}
+    if str(a.get("aria-expanded", "")).lower() == "false":
+        return "aria-expanded='false' - collapsed, contents likely not rendered"
+    for key in _REVEALS_HIDDEN_CONTENT:
+        if a.get(key):
+            return f"{key}='{a[key]}' - opens content that may render on demand"
+    role = (a.get("role") or "").lower()
+    if role in _LAZY_CONTAINER_ROLES:
+        return f"role='{role}' - its options/items may render only when opened"
+    return ""
 
 
 def _is_capturable(tag: str, attrs: dict, test_attrs: tuple) -> bool:
@@ -485,6 +521,7 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
         text = d.get("text") or ""
         if not _is_capturable(tag, attrs, test_attrs):
             continue
+        reason = reveals_hidden_content(tag, attrs)
         selector, strategy = rank_selector(tag, attrs, text, test_attrs,
                                            label=d.get("label", ""),
                                            css_path=d.get("cssPath", ""))
@@ -501,7 +538,7 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
             i += 1
         used.add(final)
         elements[final] = {"selector": selector, "strategy": strategy,
-                           "framed": bool(frame_sel)}
+                           "framed": bool(frame_sel), "reveals": reason}
 
     elements = collapse_repeated_families(elements, test_attrs=test_attrs)
     clean_elements = {n: e["selector"] for n, e in elements.items()}
@@ -539,6 +576,16 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
         ),
         "title_seen": title,
     }
+    interaction = {n: e["reveals"] for n, e in elements.items() if e.get("reveals")}
+    if interaction:
+        entry["_interaction_required"] = {
+            "controls": interaction,
+            "warning": ("These controls reveal content that a DOM snapshot cannot "
+                        "see - a crawler never clicks, so anything rendered on "
+                        "demand (menu items, dialog fields, dropdown options) is "
+                        "MISSING from this page. Open each control by hand and add "
+                        "the elements it reveals before committing."),
+        }
     if ambiguous:
         entry["_ambiguous_selectors"] = {
             "selectors": ambiguous,

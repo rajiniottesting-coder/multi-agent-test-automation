@@ -19,7 +19,7 @@ were deleted), dead code is left behind:
 This module's goal is the second case: find dead page-object methods and
 comment them out (not delete) so a reviewer sees the audit trail.
 
-DESIGN PRINCIPLES (must hold for any project, not just SauceDemo):
+DESIGN PRINCIPLES (must hold for any project, independent of the app under test):
   - No hardcoded class names, file paths, or method names.
   - No assumptions about app domain (banking, CMS, e-commerce all work).
   - Conservative: prefer false negatives ("might be alive") over false

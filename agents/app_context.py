@@ -11,8 +11,8 @@ config.yaml and exposes typed accessors for:
 
 Why this module exists:
     Before this refactor, agent code had hardcoded paths like
-    "features/login.feature" and "app_inventory/saucedemo.json" baked
-    into Python files. That made the framework SauceDemo-specific.
+    "features/login.feature" and "app_inventory/<app>.json" baked
+    into Python files. That made the framework specific to one application.
 
     Now those values come from config, and any agent that needs them
     calls into this module. To onboard a new app, you edit config.yaml
@@ -24,7 +24,7 @@ Usage:
     ref_files = ctx.load_reference_files()       # {feature, step_def, page_object}
     inv = ctx.load_page_inventory_json()         # raw JSON string for prompts
     paths = ctx.reserved_paths_normalized()      # set of "feat/x.feature" strings
-    name = ctx.name                              # "SauceDemo" / "MyApp" / etc.
+    name = ctx.name                              # "MyApp" / "AcmePortal" / etc.
 """
 from __future__ import annotations
 

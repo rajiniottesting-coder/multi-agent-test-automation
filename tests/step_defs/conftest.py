@@ -35,9 +35,24 @@ def credentials():
         username -> APP_USER_STANDARD
         password -> APP_PASSWORD_STANDARD, else APP_PASSWORD
     """
+    def _users_map() -> dict:
+        """Parse APP_USERS: 'standard=alice,admin=bob' -> {'STANDARD': 'alice'}.
+
+        ONE generic variable, so CI config carries no app-specific role names
+        and the workflow file is reused unchanged for any application.
+        """
+        raw = os.getenv("APP_USERS", "")
+        out = {}
+        for pair in raw.split(","):
+            if "=" in pair:
+                r, _, u = pair.partition("=")
+                out[r.strip().upper().replace("-", "_").replace(" ", "_")] = u.strip()
+        return out
+
     def _for(role: str) -> tuple[str, str]:
         key = role.strip().upper().replace("-", "_").replace(" ", "_")
-        user = os.getenv(f"APP_USER_{key}")
+        # APP_USERS (generic) first; per-role APP_USER_<ROLE> still supported.
+        user = _users_map().get(key) or os.getenv(f"APP_USER_{key}")
         if not user:
             raise RuntimeError(
                 f"Missing credential for role '{role}'. Set APP_USER_{key}."

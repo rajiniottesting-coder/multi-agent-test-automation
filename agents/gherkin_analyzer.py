@@ -538,7 +538,7 @@ def _try_autocorrect_feature_name(
 # @given/@when/@then decorators in the corresponding step def file. Tests
 # then failed at collection time with `StepDefinitionNotFoundError`.
 #
-# DESIGN PRINCIPLES (so this is reusable across projects, not just SauceDemo):
+# DESIGN PRINCIPLES (so this is reusable across projects, independent of the app under test):
 #
 #   1. NO HARDCODED PHRASES. The validator works for any feature/step def
 #      pair regardless of domain (login, cart, checkout, payment, anything).

@@ -118,12 +118,10 @@ jobs:
         # does not inject them automatically.
         env:
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
-          APP_USER_STANDARD: ${{ secrets.APP_USER_STANDARD }}
-          APP_USER_LOCKED_OUT: ${{ secrets.APP_USER_LOCKED_OUT }}
-          APP_USER_PROBLEM: ${{ secrets.APP_USER_PROBLEM }}
-          APP_USER_PERFORMANCE_GLITCH: ${{ secrets.APP_USER_PERFORMANCE_GLITCH }}
-          APP_USER_ERROR: ${{ secrets.APP_USER_ERROR }}
-          APP_USER_VISUAL: ${{ secrets.APP_USER_VISUAL }}
+          # ONE generic variable - no app-specific role names in this file, so
+          # it is reused unchanged for any application. Format:
+          #   APP_USERS = "standard=alice,admin=bob,readonly=carol"
+          APP_USERS: ${{ secrets.APP_USERS }}
         run: |
           pytest tests/step_defs/ \
             --html=reports/pytest-report.html \
