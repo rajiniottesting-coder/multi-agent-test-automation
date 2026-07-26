@@ -413,3 +413,50 @@ def test_summarize_drift_counts_ambiguous_as_drift():
     rep = summarize_drift({"home": diff}, [])
     assert rep["ambiguous_selectors"] == 1
     assert rep["has_drift"] is True
+
+
+# ── Concrete last-resort fallback (no ambiguous tag selectors) ─
+
+def test_css_path_used_when_nothing_semantic_available():
+    """A bare tag is a CATEGORY, not a locator. The structural path must win."""
+    sel, strat = rank_selector("input", {"type": "text"},
+                               css_path="body > input:nth-of-type(2)")
+    assert sel == "body > input:nth-of-type(2)" and strat == "css"
+
+
+def test_semantic_handles_still_beat_css_path():
+    """The concrete path is a LAST resort — never preferred over a real handle."""
+    for attrs, label, expected_start in (
+        ({"data-test": "user"}, "", "[data-test="),
+        ({"id": "email-field"}, "", "#email-field"),
+        ({"role": "combobox", "aria-label": "Country"}, "", "role=combobox"),
+        ({"id": ":r0:"}, "Email", "label=Email"),
+    ):
+        sel, _ = rank_selector("input", attrs, label=label,
+                               css_path="body > input:nth-of-type(9)")
+        assert sel.startswith(expected_start), sel
+
+
+def test_css_path_still_reported_unstable():
+    """Concrete but layout-brittle — the reviewer must still be warned."""
+    _, strat = rank_selector("div", {}, css_path="body > div:nth-of-type(3)")
+    assert is_unstable_strategy(strat)
+
+
+def test_css_path_prevents_duplicate_selectors():
+    """Two otherwise-identical inputs must not collide into one selector."""
+    descriptors = [
+        {"tag": "input", "attrs": {"type": "text"}, "text": "",
+         "cssPath": "body > input:nth-of-type(1)"},
+        {"tag": "input", "attrs": {"type": "text"}, "text": "",
+         "cssPath": "body > input:nth-of-type(2)"},
+    ]
+    page = build_page_entry("https://x.com/f", "F", descriptors, "https://x.com")
+    assert len(set(page["elements"].values())) == 2
+    assert "_ambiguous_selectors" not in page
+
+
+def test_falls_back_to_tag_when_no_css_path_supplied():
+    """Callers that pass no cssPath (unit tests, older data) still work."""
+    sel, strat = rank_selector("div", {})
+    assert sel == "div" and strat == "css"

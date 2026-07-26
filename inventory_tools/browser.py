@@ -64,7 +64,36 @@ def _collect_js(test_attrs: tuple) -> str:
           } catch (e) {}
           return '';
         })(),
-          visible: !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length)
+          visible: !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length),
+        // Structurally UNIQUE css path, used only as the last-resort fallback.
+        // Built here because it needs the live DOM tree (parent chain +
+        // sibling index), which the pure ranking logic never sees. Anchored to
+        // the nearest ancestor carrying a stable id so the path stays as short
+        // — and therefore as resilient — as possible. Guarantees every element
+        // gets a locator that resolves to exactly ONE node, instead of an
+        // ambiguous tag selector that fails Playwright's strict mode.
+        cssPath: (() => {
+          try {
+            const parts = [];
+            let node = el;
+            while (node && node.nodeType === 1 && node !== document.documentElement) {
+              if (node.id && !/^[0-9]/.test(node.id) && !/:r[0-9a-z]+:|^radix-|^headlessui-|[0-9]{5,}/i.test(node.id)) {
+                parts.unshift('#' + CSS.escape(node.id));
+                break;                       // stable anchor found - stop here
+              }
+              const tag = node.tagName.toLowerCase();
+              const parent = node.parentElement;
+              if (!parent) { parts.unshift(tag); break; }
+              const sibs = Array.from(parent.children).filter(
+                c => c.tagName === node.tagName);
+              parts.unshift(sibs.length > 1
+                ? tag + ':nth-of-type(' + (sibs.indexOf(node) + 1) + ')'
+                : tag);
+              node = parent;
+            }
+            return parts.join(' > ');
+          } catch (e) { return ''; }
+        })()
         });
       }
       if (el.shadowRoot) walk(el.shadowRoot);   // pierce OPEN shadow DOM

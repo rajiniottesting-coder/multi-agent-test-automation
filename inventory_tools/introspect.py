@@ -88,7 +88,7 @@ def _css_escape_value(value: str) -> str:
 
 def rank_selector(tag: str, attrs: dict, text: str = "",
                   test_attrs: tuple = TEST_ID_ATTRS,
-                  label: str = "") -> tuple[str, str]:
+                  label: str = "", css_path: str = "") -> tuple[str, str]:
     """Return (selector, strategy) picking the most stable available handle.
 
     Priority, aligned with Playwright's own locator recommendations:
@@ -146,6 +146,15 @@ def rank_selector(tag: str, attrs: dict, text: str = "",
         return (f"role={role}", "role")
     if (text or "").strip() and tag in ("a", "button"):
         return (f"text={_css_escape_value(text.strip()[:40])}", "text")
+    # LAST RESORT — nothing semantic was available. A bare tag (or tag[type])
+    # is a CATEGORY, not a locator: it matches every similar element on the
+    # page and fails Playwright's strict mode. Fall back to the structurally
+    # unique css path instead, so EVERY element still gets a locator that
+    # resolves to exactly one node. It is brittle against layout changes —
+    # hence still reported as "css" and flagged in _unstable_selectors — but a
+    # brittle locator that works beats a clean one that never can.
+    if css_path:
+        return (css_path, "css")
     if a.get("type"):
         return (f"{tag}[type='{_css_escape_value(a['type'])}']", "css")
     return (tag, "css")
@@ -383,7 +392,8 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
         if not _is_capturable(tag, attrs, test_attrs):
             continue
         selector, strategy = rank_selector(tag, attrs, text, test_attrs,
-                                           label=d.get("label", ""))
+                                           label=d.get("label", ""),
+                                           css_path=d.get("cssPath", ""))
         # Element inside an iframe: prefix with the frame's own selector using
         # the documented `>>>` frame-enter convention.
         frame_sel = d.get("frame")
