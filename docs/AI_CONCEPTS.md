@@ -56,8 +56,9 @@ PR review (a human reads every diff before merge).
 
 | Concept | Why not here |
 |---|---|
-| **LangChain / LangGraph / CrewAI** | Raw API + custom orchestration gives full control and no framework churn; our "graph" is the Jira label machine, which is externally observable and survives process death — an in-memory graph doesn't. |
+| **LangGraph / CrewAI / agent frameworks** | Our "graph" is the Jira label machine (`ai-ready` -> `ai-processed` -> `human-approved` -> `ai-coded` -> `tests-run`), which is externally observable, survives process death, and costs zero tokens to coordinate — an in-memory graph does none of those. Raw API + custom orchestration also means no framework churn. **LangChain itself IS used**, but only as a provider-agnostic HTTP client (`ChatOpenAI` + message types, two imports in `llm_client.py`) — no chains, agents, tools or memory. Structured output is Pydantic, not LangChain. |
 | **Vector DB / embeddings / semantic RAG** | Dedup is exact-title matching on ~dozens of scenarios; page-object retrieval is AST-based and exact. Embeddings would add infra and fuzziness where we need precision. |
+| **LangSmith / hosted tracing** | Token and cost tracking is `agents/usage_ledger.py`, which posts `[LLM-USAGE]` directly onto the Jira story — the number lands on the work item, and no third party holds our prompts. LangSmith is present in `pip list` only as a transitive dependency of `langchain-core`; nothing imports it. |
 | **Fine-tuning** | Failure modes were fixable with prompt rules (see the "Lessons learned" section below); fine-tuning freezes behavior into an uninspectable artifact. |
 | **Runtime memory / learning loop** | Lessons are curated into prompts at development time — zero marginal token cost. see "Why not runtime learning" in the Lessons learned section below. |
 | **Multi-model routing** | One model keeps behavior predictable; the LLM client is a single swap point if we ever route (e.g., cheap model for Agent 5 summaries). |

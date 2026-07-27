@@ -50,22 +50,33 @@ pytest-html==4.1.1
 # Upgrading any one of these requires upgrading all of them together.
 # ─────────────────────────────────────────────────────────────────────────────
 
-# LangChain — high-level abstractions over LLM APIs.
-# We use it for: prompt templates, structured output, message types.
-# Standardizes how all 5 agents talk to the LLM.
-langchain>=1.0,<2.0
+# LangChain is used ONLY as a provider-agnostic HTTP client. Exactly two
+# imports, in agents/llm_client.py:
+#     from langchain_openai import ChatOpenAI              (the HTTP call)
+#     from langchain_core.messages import SystemMessage, HumanMessage
+# No chains, no agents, no tools, no memory. Structured output is enforced by
+# Pydantic (model_json_schema -> prompt -> model_validate_json), NOT by
+# LangChain, so the layer we actually trust is ours and inspectable.
+#
+# Deliberately NOT used (see docs/AI_CONCEPTS.md):
+#   langgraph  - our state machine is the Jira label sequence
+#                (ai-ready -> ai-processed -> human-approved -> ai-coded ->
+#                tests-run). It is externally observable, survives process
+#                death, and costs zero tokens to coordinate. An in-memory
+#                graph does none of those.
+#   langsmith  - installed only as a transitive dependency of langchain-core.
+#                Cost/token tracking is agents/usage_ledger.py, which posts
+#                [LLM-USAGE] straight onto the Jira story.
+#   vector DBs / embeddings / RAG - retrieval here is EXACT, not semantic:
+#                component filtering picks the pages, AST extraction gives real
+#                method signatures, SHA-256 markers detect changed test cases.
 
-# langchain-core — the foundation that everything else builds on.
+# langchain-core — message types (SystemMessage / HumanMessage).
 langchain-core>=1.0,<2.0
 
-# LangGraph — state machine library for orchestrating multi-agent workflows.
-# Each agent is a node; edges define transitions; supports human-in-the-loop
-# interrupts. We use this in Day 6 to wire all agents into one pipeline.
-langgraph>=1.0,<2.0
-
-# LangChain wrapper for OpenAI-compatible APIs.
-# Works with any endpoint that follows the OpenAI /v1/chat/completions spec
-# (OpenAI, Azure, Anthropic proxies, self-hosted models, etc.)
+# ChatOpenAI — the HTTP client. Accepts base_url, so it works with ANY endpoint
+# following the OpenAI /v1/chat/completions spec (the adesso LiteLLM gateway,
+# Azure, self-hosted models). Switching provider is config, never code.
 langchain-openai>=0.3.0
 
 # Pydantic — data validation library used everywhere in our agents.
@@ -119,7 +130,7 @@ pyyaml>=6.0
 #
 #   - openai              (OpenAI Python SDK, installed by langchain-openai)
 #   - httpx               (async HTTP transport for openai SDK)
-#   - SQLAlchemy          (LangChain memory backends — not used yet)
+#   - SQLAlchemy          (pulled in by langchain-core; unused here)
 #   - aiohttp             (async HTTP for langchain)
 #   - Pillow              (image handling, used by jira lib for attachments)
 #
