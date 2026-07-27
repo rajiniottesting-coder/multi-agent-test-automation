@@ -541,7 +541,8 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
                            "framed": bool(frame_sel), "reveals": reason}
 
     elements = collapse_repeated_families(elements, test_attrs=test_attrs)
-    clean_elements = {n: e["selector"] for n, e in elements.items()}
+    # NOTE: built AFTER disambiguation below so the nth= suffixes are included.
+
     strategies = {n: e.get("strategy", "css") for n, e in elements.items()}
     unstable = sorted(n for n, e in elements.items()
                       if is_unstable_strategy(e.get("strategy", "css")))
@@ -558,6 +559,29 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
     ambiguous = {sel: sorted(names) for sel, names in _by_selector.items()
                  if len(names) > 1}
 
+    # DISAMBIGUATE duplicates. Ranking is per-element, so three links reading
+    # "Canada" each independently rank to role=link[name='Canada'] - a perfectly
+    # VALID locator that simply is not UNIQUE, so the concrete css-path fallback
+    # never fires (it only triggers when nothing semantic is found at all).
+    # Playwright is strict by default, so all three would raise
+    # "strict mode violation: resolved to 3 elements" at runtime.
+    #
+    # Appending ' >> nth=N' (native Playwright syntax, DOM order) keeps the
+    # readable semantic locator AND makes it resolve to exactly one node.
+    # Preferred over swapping in the raw css path, which is longer and loses
+    # the meaning. `_ambiguous_selectors` below still REPORTS the collision so
+    # the reviewer knows to add a data-test attribute in the app.
+    _seen: dict[str, int] = {}
+    _dupes = {sel for sel, names in _by_selector.items() if len(names) > 1}
+    for name, entry_e in elements.items():
+        sel = entry_e["selector"]
+        if sel in _dupes:
+            idx = _seen.get(sel, 0)
+            entry_e["selector"] = f"{sel} >> nth={idx}"
+            _seen[sel] = idx + 1
+
+
+    clean_elements = {n: e["selector"] for n, e in elements.items()}
     pof, poc = guess_page_object(path)
     entry = {
         "url": path,

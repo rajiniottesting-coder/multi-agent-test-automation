@@ -251,6 +251,16 @@ def _resolve_one(scope, selector: str):
     every label/alt/title selector as stale even though it resolves perfectly
     at runtime.
     """
+    # ' >> nth=N' disambiguates a selector that matched several elements. For
+    # css/text/role it is native locator() syntax, but a get_by_* selector must
+    # have it split off and applied as .nth(N) - otherwise the index would be
+    # passed into get_by_label("Email >> nth=0") as part of the text.
+    if " >> nth=" in selector:
+        base, _, idx = selector.rpartition(" >> nth=")
+        try:
+            return _resolve_one(scope, base).nth(int(idx))
+        except ValueError:
+            pass
     if selector.startswith("label="):
         return scope.get_by_label(selector[len("label="):])
     if selector.startswith("alt="):

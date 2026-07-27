@@ -534,3 +534,39 @@ def test_volatile_name_used_only_when_nothing_stable_exists():
     sel, strat = rank_selector("button", {}, "3 items in cart")
     assert "3 items in cart" in sel and strat == "role-volatile"
     assert is_unstable_strategy(strat)
+
+# ── Duplicate semantic selectors -> nth disambiguation ────────
+
+def test_duplicate_semantic_selectors_get_nth_suffix():
+    """Three links reading 'Canada' each rank to the SAME valid locator.
+    Playwright is strict, so all three would fail without disambiguation."""
+    descriptors = [
+        {"tag": "a", "attrs": {}, "text": "Canada"},
+        {"tag": "a", "attrs": {}, "text": "Canada"},
+        {"tag": "a", "attrs": {}, "text": "Canada"},
+    ]
+    page = build_page_entry("https://x.com/", "X", descriptors, "https://x.com")
+    sels = list(page["elements"].values())
+    assert sels == [
+        "role=link[name='Canada'] >> nth=0",
+        "role=link[name='Canada'] >> nth=1",
+        "role=link[name='Canada'] >> nth=2",
+    ]
+
+
+def test_unique_selector_gets_no_suffix():
+    """Only duplicates are indexed - a unique locator stays clean."""
+    descriptors = [{"tag": "a", "attrs": {}, "text": "Mexico"}]
+    page = build_page_entry("https://x.com/", "X", descriptors, "https://x.com")
+    assert list(page["elements"].values()) == ["role=link[name='Mexico']"]
+
+
+def test_collision_still_reported_after_disambiguation():
+    """The selectors now work, but the reviewer must still be told - the real
+    fix is a data-test attribute in the app."""
+    descriptors = [
+        {"tag": "a", "attrs": {}, "text": "Canada"},
+        {"tag": "a", "attrs": {}, "text": "Canada"},
+    ]
+    page = build_page_entry("https://x.com/", "X", descriptors, "https://x.com")
+    assert "role=link[name='Canada']" in page["_ambiguous_selectors"]["selectors"]
