@@ -62,19 +62,16 @@ browser:
 base_url: https://www.saucedemo.com
 
 # ────────────────────────────────────────────────────────────
-# Test data (intentionally in plain config — not secrets)
-# Move these to your app's inventory file or remove for non-SauceDemo apps.
+# Login roles
+#
+# Credentials are NEVER stored here. Features log in by ROLE
+# ("When I log in as \"standard\""); the `credentials` fixture in
+# tests/step_defs/conftest.py resolves the role at runtime from
+# APP_USERS / APP_PASSWORD (.env locally, GitHub Secrets in CI).
+#
+# The behaviour of each role is documented in prompts/app_context/
+# and app_inventory/<app>.json, which is where the LLM reads it.
 # ────────────────────────────────────────────────────────────
-test_users:
-  standard:
-    username: standard_user
-    password: secret_sauce
-  locked_out:
-    username: locked_out_user
-    password: secret_sauce
-  problem:
-    username: problem_user
-    password: secret_sauce
 
 # ────────────────────────────────────────────────────────────
 # Agent configuration

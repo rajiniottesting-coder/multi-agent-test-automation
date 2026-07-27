@@ -40,11 +40,11 @@ write them literally in the test case.
 
 - The cart badge (top-right) shows the current item count; absent when the cart is empty
 - Login errors appear in a banner at the top of the login form, prefixed with `Epic sadface:`
-- `problem_user` and `performance_glitch_user` are the levers for negative / timing scenarios
+- `problem` role and `performance_glitch` role are the levers for negative / timing scenarios
 
 ## Testing notes
 
 - Prefer concrete test data over abstract descriptions
-- Use `standard_user` for happy-path scenarios
-- Use `locked_out_user` / `problem_user` for specific negative scenarios where relevant
+- Use `standard` role for happy-path scenarios
+- Use `locked_out` role / `problem` role for specific negative scenarios where relevant
 - "Reset App State" (menu) clears the cart between scenarios when needed

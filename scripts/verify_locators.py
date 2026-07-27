@@ -15,6 +15,26 @@ each element so you can see it. Match counts are colour-coded:
     red    = 0 matches (stale - selector no longer resolves)
 
 
+WHICH INVENTORY IS CHECKED  (--inventory)
+----------------------------------------
+By default the file named by `inventory_file` in config.yaml - i.e. the
+COMMITTED inventory the agents actually use.
+
+But the normal workflow is: generate a DRAFT -> review it -> promote it. The
+draft is exactly what you need to eyeball, and it is NOT the committed file, so
+point at it explicitly:
+
+    python -m scripts.verify_locators --inventory app_inventory/app.draft.json
+
+Without --inventory you would be verifying yesterday's committed inventory
+while looking at today's draft, or hitting FileNotFoundError because the draft
+has a different name. If the configured file is missing, this lists the JSON
+files that ARE in app_inventory/ and shows the exact command to use.
+
+--inventory also applies to --page: the page URL is looked up in whichever
+inventory you pointed at.
+
+
 COMMANDS
 --------
 Public site (no login) - add --no-login to any command below:
@@ -24,6 +44,9 @@ Public site (no login) - add --no-login to any command below:
 
     # one page only (key from the inventory's `pages` block)
     python -m scripts.verify_locators --no-login --page login
+
+    # verify a DRAFT before promoting it to the committed inventory
+    python -m scripts.verify_locators --no-login --inventory app_inventory/app.draft.json
 
     # only the ones that need attention (skip the healthy ones)
     python -m scripts.verify_locators --no-login --only-problems
@@ -128,6 +151,22 @@ _MARK_JS = """
 """
 
 
+def _suggest_page(wanted: str, available) -> str:
+    """Closest matching page key, or "".
+
+    Page keys are derived from URL paths, so hyphens become underscores
+    (/inventory-item.html -> inventory_item). Typing the hyphenated form is the
+    obvious mistake, and a bare "not found" makes the user scan a long list.
+    """
+    import difflib
+    norm = wanted.replace("-", "_").replace(".", "_").lower()
+    for key in available:
+        if key.lower() == norm:
+            return key
+    close = difflib.get_close_matches(norm, list(available), n=1, cutoff=0.6)
+    return close[0] if close else ""
+
+
 def _highlight(page, locator, label: str, colour: str) -> bool:
     """Draw a labelled box over the first match. False if it is not on screen."""
     try:
@@ -188,6 +227,17 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
         print(f"    {status:11} {name:28} {sel}{shown}")
         if pause and count >= 1:
             time.sleep(pause)
+
+    # EVERY selector stale is almost never an inventory problem - it means the
+    # page never loaded (wrong base_url, unreachable, redirected to a login or
+    # consent wall). Saying so beats printing N STALE lines that read as if the
+    # inventory rotted overnight.
+    if selectors and ok == 0 and bad == len(selectors):
+        print(f"    ^ ALL {bad} selectors stale - the page almost certainly did not "
+              f"load as expected.\n"
+              f"      Check base_url resolves to a reachable page and that you are not\n"
+              f"      being redirected to a login or cookie wall.\n"
+              f"      Actual URL after navigation: {page.url}")
     return ok, bad
 
 
@@ -202,6 +252,7 @@ def main() -> int:
             "  public site, everything          --no-login\n"
             "  public site, one page            --no-login --page login\n"
             "  only problems                    --no-login --only-problems\n"
+            "  verify a DRAFT                   --no-login --inventory app_inventory/app.draft.json\n"
             "  single selector (DevTools sub)   --no-login "
             "--selector \"role=link[name='Forms']\" --url /\n"
             "  login-gated app                  --page dashboard\n"
@@ -210,6 +261,10 @@ def main() -> int:
             "\nexit codes: 0=all good  1=stale/ambiguous found  2=login failed"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--inventory",
+                    help="Inventory JSON to verify. Defaults to the file named in "
+                         "config.yaml. Point it at a DRAFT to review it BEFORE "
+                         "committing - that is the normal workflow.")
     ap.add_argument("--page", help="Verify only this page key from the inventory.")
     ap.add_argument("--selector", help="Check ONE selector instead of the inventory.")
     ap.add_argument("--url", help="Path for --selector, e.g. /login.")
@@ -267,9 +322,41 @@ def main() -> int:
                       "    auto-detected. Re-run without --headless to watch it.")
                 return 2
 
-        # single-selector mode: no inventory needed
+        # single-selector mode
         if args.selector:
-            url = base_url + (args.url or "/")
+            # --page is a convenience: look the page's URL up in the inventory
+            # rather than making the caller retype it. Previously --page was
+            # silently IGNORED here, so the selector was checked against the site
+            # root - usually the login page - and a perfectly valid locator came
+            # back "matches: 0".
+            path = args.url
+            if args.page and not path:
+                try:
+                    from pathlib import Path as _P
+                    inv_p = _P(args.inventory) if args.inventory else ctx.inventory_path()
+                    inv = json.loads(inv_p.read_text(encoding="utf-8"))
+                    entry = (inv.get("pages") or {}).get(args.page)
+                    if entry is None:
+                        pages_avail = inv.get("pages") or {}
+                        hint = _suggest_page(args.page, pages_avail)
+                        print(f"  no page named {args.page!r}.")
+                        if hint:
+                            print(f"    did you mean {hint!r}?  "
+                                  f"(page keys use underscores, not hyphens)")
+                        print(f"    available: {', '.join(sorted(pages_avail))}")
+                        return 2
+                    path = entry.get("url") or "/"
+                    if "<" in path:
+                        print(f"  page {args.page!r} has a TEMPLATED url: {path}\n"
+                              f"    It cannot be visited directly - substitute a real\n"
+                              f"    value and pass it explicitly, e.g.\n"
+                              f"      --url \"{path.replace('<id>', '4')}\"")
+                        return 2
+                    print(f"  --page {args.page} -> {path}")
+                except (OSError, ValueError) as e:
+                    print(f"  could not read inventory for --page: {e}")
+                    return 2
+            url = base_url + (path or "/")
             page.goto(url)
             page.wait_for_load_state("networkidle")
             try:
@@ -289,12 +376,34 @@ def main() -> int:
                     input()
             return 0 if count == 1 else 1
 
-        inventory = json.loads(ctx.inventory_path().read_text(encoding="utf-8"))
+        from pathlib import Path
+        inv_path = Path(args.inventory) if args.inventory else ctx.inventory_path()
+        if not inv_path.is_file():
+            print(f"\n  ERROR: inventory not found: {inv_path}")
+            drafts = sorted(inv_path.parent.glob("*.json")) if inv_path.parent.is_dir() else []
+            if drafts:
+                print("  files that ARE present:")
+                for d in drafts:
+                    print(f"    {d}")
+                print("\n  Verify a draft directly:")
+                print(f"    python -m scripts.verify_locators --inventory {drafts[0]}")
+            else:
+                print("  Generate one first:")
+                print("    python -m scripts.generate_inventory --no-login --urls / "
+                      "--output app_inventory/app.draft.json")
+            return 2
+        inventory = json.loads(inv_path.read_text(encoding="utf-8"))
         pages = inventory.get("pages") or {}
         if args.page:
             pages = {k: v for k, v in pages.items() if k == args.page}
             if not pages:
-                print(f"  no page named {args.page!r} in the inventory")
+                all_pages = inventory.get("pages") or {}
+                hint = _suggest_page(args.page, all_pages)
+                print(f"  no page named {args.page!r} in the inventory.")
+                if hint:
+                    print(f"    did you mean {hint!r}?  "
+                          f"(page keys use underscores, not hyphens)")
+                print(f"    available: {', '.join(sorted(all_pages))}")
                 return 2
 
         total_ok = total_bad = 0

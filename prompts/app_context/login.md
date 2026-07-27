@@ -14,6 +14,6 @@ _Injected for stories tagged with the "Login" Jira Component._
 - Empty password: `Epic sadface: Password is required`
 
 ## Coverage hints
-- Positive: valid `standard_user` login lands on the inventory page
+- Positive: valid `standard` role login lands on the inventory page
 - Negative: locked-out user, wrong password, empty username, empty password
 - Edge: whitespace-only fields; both fields empty (username error takes precedence)
