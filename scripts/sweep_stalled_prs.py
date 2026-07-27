@@ -48,6 +48,22 @@ _MARKER = "<!-- sweeper:nudged:{sha} -->"
 # Pure decision logic (unit-tested; no network)
 # ─────────────────────────────────────────────────────────────
 
+# A run that has not finished yet. Something IS already working on this commit,
+# so the PR is not stalled - nudging it now would restart a healthy run.
+_ACTIVE_STATUSES = {"in_progress", "queued", "requested", "waiting", "pending"}
+
+
+def workflow_active(runs_for_sha: list[dict]) -> bool:
+    """True if a run for this commit is still executing or waiting to start.
+
+    Without this the sweeper races Agent 2: a PR opened moments earlier has no
+    SETTLED run yet (Agent 3/4 are mid-flight), so it looked stalled and got
+    reopened - cancelling healthy work and re-running the whole chain. The
+    window is small but real, and it widens as the agent cron gets busier.
+    """
+    return any(r.get("status") in _ACTIVE_STATUSES for r in runs_for_sha)
+
+
 def workflow_settled(runs_for_sha: list[dict]) -> bool:
     """True if any run for this commit reached a real verdict."""
     return any(
@@ -61,6 +77,12 @@ def classify_pr(head_sha: str, head_ref: str, wf_runs: dict[str, list[dict]],
     """Decide what to do with one PR. Returns {'action': 'nudge'|'skip', ...}."""
     if not head_ref.startswith(AUTO_BRANCH_PREFIX):
         return {"action": "skip", "reason": "not an auto/* PR"}
+    # Something is still running for this commit -> not stalled, leave it alone.
+    # This is what stops the sweeper racing a PR Agent 2 has just opened.
+    active = [wf for wf, runs in wf_runs.items() if workflow_active(runs)]
+    if active:
+        return {"action": "skip",
+                "reason": f"still running: {', '.join(sorted(active))}"}
     stalled = [wf for wf, runs in wf_runs.items() if not workflow_settled(runs)]
     if not stalled:
         return {"action": "skip", "reason": "all workflows settled"}

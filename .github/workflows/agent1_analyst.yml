@@ -60,10 +60,15 @@ on:
         required: false
         default: ""
   schedule:
-    # Every 15 minutes, Mon-Fri 9:00-18:00 UTC.
+    # Every 30 minutes on the hour and half-hour, Mon-Fri 9:00-18:00 UTC
+    # (= 14:30-23:30 IST). Deliberately NOT */15: GitHub throttles
+    # frequent schedules on free/personal accounts and silently drops
+    # runs, so asking for less reliably delivers more. The 30-min
+    # pickup latency is irrelevant anyway - a human approval gate sits
+    # between Agent 1 and Agent 2, and that wait is measured in hours.
     # NOTE: GitHub Actions cron may be delayed up to 15 min during high
     # platform load — effective worst-case latency is ~30 min.
-    - cron: "*/15 9-18 * * 1-5"
+    - cron: "0,30 9-18 * * 1-5"
 
 # ──── NO push: TRIGGER (intentional) ────
 # Per user direction, Agent 1 runs on cron ONLY. See agent2_coder.yml

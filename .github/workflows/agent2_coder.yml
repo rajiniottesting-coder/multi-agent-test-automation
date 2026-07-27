@@ -51,11 +51,16 @@ on:
         required: false
         default: ""
   schedule:
-    # Every 15 minutes, Mon-Fri 9:00-18:00 UTC. Aligned with Agent 1's
+    # Every 30 minutes on the hour and half-hour, Mon-Fri 9:00-18:00 UTC
+    # (= 14:30-23:30 IST). Deliberately NOT */15: GitHub throttles
+    # frequent schedules on free/personal accounts and silently drops
+    # runs, so asking for less reliably delivers more. The 30-min
+    # pickup latency is irrelevant anyway - a human approval gate sits
+    # between Agent 1 and Agent 2, and that wait is measured in hours. Aligned with Agent 1's
     # cron so the two agents process the same story within roughly the
     # same business-hours window. NOTE: GitHub Actions cron may be
     # delayed up to 15 min during platform load.
-    - cron: "*/15 9-18 * * 1-5"
+    - cron: "0,30 9-18 * * 1-5"
 
 # ──── NO push: TRIGGER (intentional) ────
 # We previously added a push failsafe when GitHub Actions cron was

@@ -20,8 +20,21 @@ on:
         type: boolean
         default: false
   schedule:
-    # Hourly, on the hour. GitHub cron can be delayed a few minutes under load.
-    - cron: "5 * * * *"
+    # Hourly at :05, Mon-Fri 09:00-19:00 UTC (= 14:30-00:30 IST).
+    #
+    # Aligned to the agents (0,30 9-18 UTC) rather than running 24/7: auto/*
+    # PRs are only ever created inside the agent window, so sweeping at 03:00
+    # on a Sunday can never find anything to nudge. This drops 168 runs/week
+    # to 55 - which also eases GitHub's throttling of frequent schedules on
+    # free accounts, the reason the agents moved off */15.
+    #
+    # The window runs ONE HOUR PAST the agents (19 vs 18) on purpose: a PR
+    # opened at 17:55 has Agent 3/4 still executing at 18:05, and if that run
+    # is cancelled it would otherwise sit stalled until the next business day.
+    # The :05 offset keeps the sweeper clear of the agents' :00 tick.
+    #
+    # Outside this window, trigger manually via workflow_dispatch below.
+    - cron: "5 9-19 * * 1-5"
 
 # Governs the built-in token; our script uses GH_PAT, but keep least-privilege.
 permissions:

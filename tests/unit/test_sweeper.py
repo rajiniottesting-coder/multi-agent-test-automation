@@ -3,7 +3,7 @@
 Covers workflow_settled() and classify_pr() — the pure core that decides which
 open PRs are genuinely stalled vs. legitimately finished.
 """
-from scripts.sweep_stalled_prs import workflow_settled, classify_pr
+from scripts.sweep_stalled_prs import workflow_active, workflow_settled, classify_pr
 
 
 def _run(status, conclusion):
@@ -100,3 +100,39 @@ def test_both_stalled_lists_both():
     wf = {"agent3-reviewer.yml": [], "agent4_runner.yml": [_run("completed", "skipped")]}
     d = classify_pr(SHA, AUTO, wf, None)
     assert set(d["stalled"]) == {"agent3-reviewer.yml", "agent4_runner.yml"}
+
+# ── Race with Agent 2: a freshly-opened PR is not stalled ─────
+
+def test_in_progress_run_is_not_stalled():
+    """Agent 2 opens a PR; Agent 4 is mid-flight. Nudging would restart it."""
+    d = classify_pr("sha1", "auto/SCRUM-5-login", {
+        "agent3-reviewer.yml": [{"status": "completed", "conclusion": "success"}],
+        "agent4_runner.yml": [{"status": "in_progress", "conclusion": None}],
+    }, None)
+    assert d["action"] == "skip"
+    assert "still running" in d["reason"]
+
+
+def test_queued_run_is_not_stalled():
+    """Queued behind another job is still 'something is happening'."""
+    d = classify_pr("sha1", "auto/SCRUM-5-login", {
+        "agent3-reviewer.yml": [{"status": "queued", "conclusion": None}],
+        "agent4_runner.yml": [],
+    }, None)
+    assert d["action"] == "skip"
+
+
+def test_genuinely_stalled_still_nudged():
+    """Nothing running and nothing settled -> still a real stall."""
+    d = classify_pr("sha1", "auto/SCRUM-5-login", {
+        "agent3-reviewer.yml": [{"status": "completed", "conclusion": "cancelled"}],
+        "agent4_runner.yml": [],
+    }, None)
+    assert d["action"] == "nudge"
+
+
+def test_workflow_active_helper():
+    assert workflow_active([{"status": "in_progress"}]) is True
+    assert workflow_active([{"status": "queued"}]) is True
+    assert workflow_active([{"status": "completed", "conclusion": "failure"}]) is False
+    assert workflow_active([]) is False
