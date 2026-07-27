@@ -26,6 +26,15 @@ Usage:
     # Include hidden files (.github, .gitignore) — default is already True
     # Use --no-hidden to exclude
     python scripts/zip_project.py --no-hidden
+
+FULL FLAG REFERENCE
+-------------------
+Every flag, its default and its purpose:
+
+    python -m scripts.zip_project --help
+
+That is the authoritative list - this docstring shows only the common
+cases. --help also carries copy-pasteable examples.
 """
 from __future__ import annotations
 

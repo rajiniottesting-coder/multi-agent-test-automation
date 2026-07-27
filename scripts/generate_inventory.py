@@ -34,6 +34,15 @@ Unix-shell continuation and is NOT valid in PowerShell (which uses a
 backtick), so a wrapped command silently joins its arguments — e.g.
 '--urls / --output x.json' becomes '--urls /--output' and argparse
 rejects it. Copy each command as a single line.
+
+FULL FLAG REFERENCE
+-------------------
+Every flag, its default and its purpose:
+
+    python -m scripts.generate_inventory --help
+
+That is the authoritative list - this docstring shows only the common
+cases. --help also carries copy-pasteable examples.
 """
 from __future__ import annotations
 
@@ -85,11 +94,15 @@ def _abs(base_url: str, path_or_url: str) -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Generate a draft inventory JSON.")
+    ap = argparse.ArgumentParser(description="Generate a draft inventory JSON.",
+        epilog=("examples:\n  login page (logged OUT - you never see it once authenticated)\n    --no-login --urls / --output app_inventory/<app>.login.draft.json --headed\n  everything else, logged in, following links\n    --crawl --urls /dashboard --max-depth 3 --max-pages 40 --headed\n  exact pages only (most reliable - no crawl guesswork)\n    --urls /products,/cart,/checkout --output app_inventory/app.draft.json\n  app that tags elements with something other than data-test\n    --no-login --urls / --test-attrs data-cy,data-qa\n\nwrite each command on ONE line - a trailing backslash is Unix-shell\ncontinuation and is NOT valid in PowerShell, which silently joins the args."),
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--urls", help="Comma-separated paths/URLs to visit (skips crawl).")
     ap.add_argument("--crawl", action="store_true", help="BFS-crawl same-origin links.")
-    ap.add_argument("--max-pages", type=int, default=20)
-    ap.add_argument("--max-depth", type=int, default=2)
+    ap.add_argument("--max-pages", type=int, default=20,
+                    help="Stop after N pages. The usual limiting factor - a crawl hits this long before --max-depth (default 20).")
+    ap.add_argument("--max-depth", type=int, default=2,
+                    help="How many link-hops from the seed to follow. A CEILING, not a target: the crawl stops early when the link graph runs out (default 2).")
     ap.add_argument("--test-attrs",
                     help="Comma-separated test-id attributes to prefer/track "
                          "(default: %s)." % ",".join(introspect.TEST_ID_ATTRS))
@@ -99,17 +112,26 @@ def main() -> int:
     # so a repo has ONE credential source rather than two.
     ap.add_argument("--username",
                     default=os.getenv("INVENTORY_USER")
-                    or os.getenv("APP_USER_STANDARD"))
+                    or os.getenv("APP_USER_STANDARD"),
+                    help="Login username. Defaults to INVENTORY_USER, else "
+                         "APP_USER_STANDARD from .env.")
     ap.add_argument("--password",
                     default=os.getenv("INVENTORY_PASS")
-                    or os.getenv("APP_PASSWORD"))
+                    or os.getenv("APP_PASSWORD"),
+                    help="Login password. Defaults to INVENTORY_PASS, else "
+                         "APP_PASSWORD from .env.")
     ap.add_argument("--login-url", help="Login page URL/path (default: app root).")
-    ap.add_argument("--username-selector", default=DEFAULT_USERNAME_SELECTOR)
-    ap.add_argument("--password-selector", default=DEFAULT_PASSWORD_SELECTOR)
-    ap.add_argument("--submit-selector", default=DEFAULT_SUBMIT_SELECTOR)
-    ap.add_argument("--no-login", action="store_true")
+    ap.add_argument("--username-selector", default=DEFAULT_USERNAME_SELECTOR,
+                    help="Override if the username field is not auto-detected (SSO, multi-step forms).")
+    ap.add_argument("--password-selector", default=DEFAULT_PASSWORD_SELECTOR,
+                    help="Override if the password field is not auto-detected.")
+    ap.add_argument("--submit-selector", default=DEFAULT_SUBMIT_SELECTOR,
+                    help="Override if the submit control is not auto-detected.")
+    ap.add_argument("--no-login", action="store_true",
+                    help="Skip login. Required for public sites AND for capturing the login page itself.")
     ap.add_argument("--headed", action="store_true", help="Show the browser.")
-    ap.add_argument("--output", default="app_inventory/generated.draft.json")
+    ap.add_argument("--output", default="app_inventory/generated.draft.json",
+                    help="Where to write the draft JSON (default app_inventory/generated.draft.json).")
     args = ap.parse_args()
 
     ctx = AppContext.load()

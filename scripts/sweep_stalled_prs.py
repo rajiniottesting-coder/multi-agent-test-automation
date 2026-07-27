@@ -23,6 +23,15 @@ Usage:
     python -m scripts.sweep_stalled_prs                 # act
     python -m scripts.sweep_stalled_prs --dry-run       # report only
 Needs GITHUB_TOKEN + GITHUB_REPO (same as the agents).
+
+FULL FLAG REFERENCE
+-------------------
+Every flag, its default and its purpose:
+
+    python -m scripts.sweep_stalled_prs --help
+
+That is the authoritative list - this docstring shows only the common
+cases. --help also carries copy-pasteable examples.
 """
 from __future__ import annotations
 
@@ -127,7 +136,9 @@ def _reopen(pr) -> None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Re-trigger stalled auto/* PRs.")
+    ap = argparse.ArgumentParser(description="Re-trigger stalled auto/* PRs.",
+        epilog=("examples:\n  report only, change nothing   --dry-run\n  live (what the hourly cron does)\n\nonly touches auto/* PRs, and nudges each commit at most once."),
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dry-run", action="store_true", help="Report only; take no action.")
     args = ap.parse_args()
 

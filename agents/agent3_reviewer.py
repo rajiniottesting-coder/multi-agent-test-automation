@@ -25,6 +25,15 @@ Hardening notes:
     - Post-processing dedup+cap on issues list — LLMs can produce
       repetition loops on low-content PRs and `maxItems` can't be expressed
       in the structured-output schema.
+
+FULL FLAG REFERENCE
+-------------------
+Every flag, its default and its purpose:
+
+    python -m agents.agent3_reviewer --help
+
+That is the authoritative list - this docstring shows only the common
+cases. --help also carries copy-pasteable examples.
 """
 import argparse
 import json
@@ -367,7 +376,9 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
 # CLI
 # ─────────────────────────────────────────────────────────────
 def main():
-    parser = argparse.ArgumentParser(description="Agent 3 (Reviewer): AI code review on a PR")
+    parser = argparse.ArgumentParser(description="Agent 3 (Reviewer): AI code review on a PR",
+        epilog=("example:\n  --pr 42"),
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--pr",
         type=int,

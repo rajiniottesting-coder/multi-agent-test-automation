@@ -28,6 +28,15 @@ Unix-shell continuation and is NOT valid in PowerShell (which uses a
 backtick), so a wrapped command silently joins its arguments — e.g.
 '--urls / --output x.json' becomes '--urls /--output' and argparse
 rejects it. Copy each command as a single line.
+
+FULL FLAG REFERENCE
+-------------------
+Every flag, its default and its purpose:
+
+    python -m scripts.check_inventory_staleness --help
+
+That is the authoritative list - this docstring shows only the common
+cases. --help also carries copy-pasteable examples.
 """
 from __future__ import annotations
 
@@ -71,7 +80,9 @@ def _abs(base_url: str, path_or_url: str) -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Check inventory vs live app.")
+    ap = argparse.ArgumentParser(description="Check inventory vs live app.",
+        epilog=("examples:\n  public site                 --no-login\n  login-gated app             (no flag - reads APP_USERS/APP_PASSWORD from .env)\n  watch the login happen      --headed\n  fail a CI job on drift      --fail-on-drift\n\nread-only: reports STALE (0 matches), AMBIG (>1), NEW test-ids and\nunreachable pages. It never edits the inventory."),
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--test-attrs",
                     help="Comma-separated test-id attributes to track "
                          "(default: %s)." % ",".join(introspect.TEST_ID_ATTRS))
@@ -81,16 +92,25 @@ def main() -> int:
     # so a repo has ONE credential source rather than two.
     ap.add_argument("--username",
                     default=os.getenv("INVENTORY_USER")
-                    or os.getenv("APP_USER_STANDARD"))
+                    or os.getenv("APP_USER_STANDARD"),
+                    help="Login username. Defaults to INVENTORY_USER, else "
+                         "APP_USER_STANDARD from .env.")
     ap.add_argument("--password",
                     default=os.getenv("INVENTORY_PASS")
-                    or os.getenv("APP_PASSWORD"))
+                    or os.getenv("APP_PASSWORD"),
+                    help="Login password. Defaults to INVENTORY_PASS, else "
+                         "APP_PASSWORD from .env.")
     ap.add_argument("--login-url", help="Login page URL/path (default: app root).")
-    ap.add_argument("--username-selector", default=DEFAULT_USERNAME_SELECTOR)
-    ap.add_argument("--password-selector", default=DEFAULT_PASSWORD_SELECTOR)
-    ap.add_argument("--submit-selector", default=DEFAULT_SUBMIT_SELECTOR)
-    ap.add_argument("--no-login", action="store_true")
-    ap.add_argument("--headed", action="store_true")
+    ap.add_argument("--username-selector", default=DEFAULT_USERNAME_SELECTOR,
+                    help="Override if the username field is not auto-detected.")
+    ap.add_argument("--password-selector", default=DEFAULT_PASSWORD_SELECTOR,
+                    help="Override if the password field is not auto-detected.")
+    ap.add_argument("--submit-selector", default=DEFAULT_SUBMIT_SELECTOR,
+                    help="Override if the submit control is not auto-detected.")
+    ap.add_argument("--no-login", action="store_true",
+                    help="Skip login. Use for public sites.")
+    ap.add_argument("--headed", action="store_true",
+                    help="Show the browser window (useful when login is failing).")
     ap.add_argument("--fail-on-drift", action="store_true",
                     help="Exit 1 if any drift is found (for CI gating).")
     ap.add_argument("--json", help="Also write the full drift report to this path.")

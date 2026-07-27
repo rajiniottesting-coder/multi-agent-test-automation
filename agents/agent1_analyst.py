@@ -25,6 +25,15 @@ Usage:
     # Production mode — process all stories matching config criteria
     python -m agents.agent1_analyst --scan --dry-run
     python -m agents.agent1_analyst --scan
+
+FULL FLAG REFERENCE
+-------------------
+Every flag, its default and its purpose:
+
+    python -m agents.agent1_analyst --help
+
+That is the authoritative list - this docstring shows only the common
+cases. --help also carries copy-pasteable examples.
 """
 import argparse
 import logging
@@ -299,8 +308,9 @@ def print_summary(results: list[dict]) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Agent 1 (Analyst): Generate manual test cases from Jira stories"
-    )
+        description="Agent 1 (Analyst): Generate manual test cases from Jira stories",
+        epilog=("examples:\n  one story          --story SCRUM-5\n  scan for ai-ready  (no flags - uses config.yaml selection rules)\n  preview only       --story SCRUM-5 --dry-run\n\nNOTE: --story has no re-processing guard. Running it twice on the same\nstory creates DUPLICATE test cases in Jira."),
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "--story",

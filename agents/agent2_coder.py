@@ -28,6 +28,15 @@ Usage:
     python -m agents.agent2_coder --story SCRUM-5 --dry-run
     python -m agents.agent2_coder --story SCRUM-5
     python -m agents.agent2_coder --scan
+
+FULL FLAG REFERENCE
+-------------------
+Every flag, its default and its purpose:
+
+    python -m agents.agent2_coder --help
+
+That is the authoritative list - this docstring shows only the common
+cases. --help also carries copy-pasteable examples.
 """
 import argparse
 import ast
@@ -2893,8 +2902,9 @@ def _print_scan_summary(results: list[dict]) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Agent 2 (Coder): Generate test code from Jira test cases"
-    )
+        description="Agent 2 (Coder): Generate test code from Jira test cases",
+        epilog=("examples:\n  one story        --story SCRUM-5\n  preview only     --story SCRUM-5 --dry-run\n\nreads ref: main - a framework change only takes effect once MERGED."),
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--story", help="Process all test cases of a specific story")
     group.add_argument("--scan", action="store_true", help="Scan mode (config-driven)")

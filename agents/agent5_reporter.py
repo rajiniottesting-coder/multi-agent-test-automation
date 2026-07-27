@@ -29,6 +29,15 @@ Idempotency:
     None enforced — Agent 5 is intended to be called once per CI run.
     If you re-run, you'll get a duplicate comment. This is acceptable
     because comments are timestamped and ordered.
+
+FULL FLAG REFERENCE
+-------------------
+Every flag, its default and its purpose:
+
+    python -m agents.agent5_reporter --help
+
+That is the authoritative list - this docstring shows only the common
+cases. --help also carries copy-pasteable examples.
 """
 import argparse
 import json
@@ -437,7 +446,9 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
 # CLI
 # ─────────────────────────────────────────────────────────────
 def main():
-    parser = argparse.ArgumentParser(description="Agent 5 (Reporter): post test results to Jira")
+    parser = argparse.ArgumentParser(description="Agent 5 (Reporter): post test results to Jira",
+        epilog=("example:\n  --story SCRUM-5"),
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--story",
         default=None,

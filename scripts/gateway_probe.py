@@ -13,6 +13,15 @@ Usage:
     python scripts/gateway_probe.py --model claude-sonnet-4-5   # probe a specific model
 
 Reads OPENAI_API_BASE / OPENAI_API_KEY / LLM_MODEL from the environment (.env).
+
+FULL FLAG REFERENCE
+-------------------
+Every flag, its default and its purpose:
+
+    python -m scripts.gateway_probe --help
+
+That is the authoritative list - this docstring shows only the common
+cases. --help also carries copy-pasteable examples.
 """
 from __future__ import annotations
 
