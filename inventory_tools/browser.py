@@ -240,6 +240,30 @@ def browser_page(headless: bool = True, timeout_ms: int = 30000) -> Iterator:
             browser.close()
 
 
+def _wait_for_login_form(page, timeout_ms: int = 15000) -> bool:
+    """Block until a password field appears, or the timeout expires.
+
+    A password input is the reliable signal that a login form has rendered:
+    every login form has exactly one, and almost nothing else does. Waiting on
+    the USERNAME field would be weaker, since apps differ wildly in how they
+    mark it up - which is the whole reason _USERNAME_CANDIDATES exists.
+
+    Returns False on timeout rather than raising: the caller already reports a
+    missing form clearly, and a hard failure here would be less informative.
+    """
+    try:
+        page.wait_for_selector("input[type='password']", state="visible",
+                               timeout=timeout_ms)
+        return True
+    except Exception:
+        logger.warning(
+            f"  no password field appeared within {timeout_ms}ms at {page.url}. "
+            f"The page may still be rendering, may not be a login page, or may "
+            f"have redirected elsewhere."
+        )
+        return False
+
+
 def do_login(page, login_url: Optional[str], username_selector: Optional[str],
              password_selector: Optional[str], submit_selector: Optional[str],
              username: Optional[str], password: Optional[str]) -> bool:
@@ -255,10 +279,27 @@ def do_login(page, login_url: Optional[str], username_selector: Optional[str],
     are true of essentially every real login and neither needs app specifics.
     A False return is advisory — the caller decides whether to warn or abort.
     """
-    if not all([login_url, username_selector, password_selector,
-                submit_selector, username, password]):
+    # Only the URL and the credentials are required. The three SELECTORS are
+    # optional by design - when they are None, _first_matching() detects them
+    # against the live page. Requiring them here made auto-detection dead code:
+    # do_login returned False before ever opening the page, the crawl ran
+    # unauthenticated, and every URL captured the login screen instead.
+    if not all([login_url, username, password]):
+        logger.info("  (no login - missing url or credentials)")
         return False
     _goto_spa_tolerant(page, login_url)
+
+    # WAIT for the form to actually render before looking for its fields.
+    #
+    # Two things make this necessary and they compound:
+    #   1. _goto_spa_tolerant waits for `domcontentloaded`, which on an Angular
+    #      app fires against an EMPTY SHELL - the form does not exist yet.
+    #   2. OrangeHRM redirects "/" to "/web/index.php/auth/login", so there is
+    #      a second navigation after the first one settles.
+    # Detecting fields immediately therefore searches a page that has no form
+    # on it, finds nothing, and the crawl proceeds unauthenticated - capturing
+    # the login screen once per URL instead of the pages you asked for.
+    _wait_for_login_form(page)
     url_before = page.url
     # Resolve each field against the page rather than trusting one static
     # selector. Different apps render login forms differently, and a timeout
