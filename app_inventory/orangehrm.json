@@ -1,23 +1,31 @@
 {
   "app_name": "OrangeHRM",
   "base_url": "https://opensource-demo.orangehrmlive.com",
-  "description": "OrangeHRM open-source demo — an HR management system. Login, dashboard, and the Admin/PIM/Leave/Time modules behind it.",
+  "description": "OrangeHRM open-source demo - an HR management system. Login, dashboard, and the Admin / PIM modules. Angular SPA: `oxd-*` classes are design-system names (stable), not generated hashes.",
   "_inventory_conventions": {
-    "selectors": "Every selector maps to a first-class Playwright locator: [name='x'] / #id (css), role=button[name='Save'] (getByRole), label=Username (getByLabel), placeholder=..., alt=... , title=..., text=... . XPath is never emitted. An iframe-chained selector uses ' >>> '. label=/alt=/title= need page.get_by_label/get_by_alt_text/get_by_title (they are NOT page.locator() engine syntax); role= and text= work with page.locator() directly.",
-    "stability": "OrangeHRM 5.x is an Angular app. Its `oxd-*` class names are design-system classes, not generated hashes, so they are stable across releases — but `name` attributes and ARIA roles are stronger still and are preferred where present.",
-    "verification": "These selectors were derived from the app's documented behaviour, NOT captured from a live crawl. Run `python -m scripts.generate_inventory --no-login --urls /web/index.php/auth/login --output app_inventory/orangehrm.draft.json --headed` and `python -m scripts.verify_locators` before trusting them."
+    "selectors": "Every selector maps to a first-class Playwright locator: [name='x'] / #id (css), role=button[name='Save'] (getByRole), label=X (getByLabel), placeholder=..., alt=..., title=..., text=... . XPath is never emitted. An iframe-chained selector uses ' >>> '. label=/alt=/title= need page.get_by_label/get_by_alt_text/get_by_title - they are NOT page.locator() engine syntax; role= and text= work with page.locator().",
+    "shared_navigation": "The left menu and top bar appear on EVERY page after login. They live once under the `menu` page (always: true) instead of being repeated on each page, which is what the raw crawl produced.",
+    "form_fields": "OrangeHRM's form inputs carry no name or id - Angular renders them bare. The crawler therefore fell back to 12-level css paths that break on any layout change. They are replaced here with `.oxd-input-group:has-text('Label') input`, which anchors on the visible label text and survives re-layout. VERIFY these with `python -m scripts.verify_locators` before trusting them.",
+    "verification": "Captured by scripts/generate_inventory.py against the live app, then hand-reviewed: pages renamed, navigation de-duplicated, brittle css paths replaced, and elements a crawler cannot see (validation messages, dropdown options) added by hand."
   },
   "test_users": {
     "admin": "Full administrator. Reaches every module."
   },
   "common_errors": {
     "invalid_credentials": "Invalid credentials",
-    "required_field": "Required"
+    "required_field": "Required",
+    "password_too_short": "Should have at least 7 characters",
+    "password_no_number": "Your password must contain minimum 1 number",
+    "password_no_lowercase": "Your password must contain minimum 1 lower-case letter",
+    "password_has_spaces": "Your password should not contain spaces",
+    "passwords_mismatch": "Passwords do not match"
   },
   "pages": {
     "login": {
       "url": "/web/index.php/auth/login",
-      "components": ["Login"],
+      "components": [
+        "Login"
+      ],
       "page_object_file": "pages/login_page.py",
       "page_object_class": "LoginPage",
       "elements": {
@@ -34,7 +42,14 @@
         "field_error": "Per-field message shown when a field is left EMPTY. Text is 'Required'. Both fields empty means TWO of these are present, so a locator must expect more than one.",
         "credentials_hint": "The demo prints Admin / admin123 on the login screen itself."
       },
-      "key_methods": ["open(base_url)", "login_as(username, password)", "clear_credentials()", "get_error_message()", "get_field_error()", "is_login_form_displayed()"],
+      "key_methods": [
+        "open(base_url)",
+        "login_as(username, password)",
+        "clear_credentials()",
+        "get_error_message()",
+        "get_field_error()",
+        "is_login_form_displayed()"
+      ],
       "errors": {
         "invalid_credentials": "Invalid credentials",
         "empty_field": "Required"
@@ -42,7 +57,9 @@
     },
     "dashboard": {
       "url": "/web/index.php/dashboard/index",
-      "components": ["Dashboard"],
+      "components": [
+        "Dashboard"
+      ],
       "page_object_file": "pages/dashboard_page.py",
       "page_object_class": "DashboardPage",
       "elements": {
@@ -58,8 +75,174 @@
         "header_title": "Breadcrumb heading. Reads 'Dashboard' here and the module name elsewhere — the cheapest proof that login succeeded.",
         "logout_link": "Only rendered AFTER user_dropdown is clicked. A crawler cannot see it; it is listed here from manual review."
       },
-      "key_methods": ["get_header_title()", "is_loaded()", "get_logged_in_user()", "get_menu_items()", "open_user_menu()", "logout()"],
+      "key_methods": [
+        "get_header_title()",
+        "is_loaded()",
+        "get_logged_in_user()",
+        "get_menu_items()",
+        "open_user_menu()",
+        "logout()"
+      ],
       "errors": {}
+    },
+    "menu": {
+      "url": "/web/index.php/dashboard/index",
+      "always": true,
+      "components": [],
+      "page_object_file": "pages/menu_page.py (NOT YET CREATED)",
+      "page_object_class": "MenuPage",
+      "elements": {
+        "admin_link": "role=link[name='Admin']",
+        "pim_link": "role=link[name='PIM']",
+        "leave_link": "role=link[name='Leave']",
+        "time_link": "role=link[name='Time']",
+        "recruitment_link": "role=link[name='Recruitment']",
+        "my_info_link": "role=link[name='My Info']",
+        "performance_link": "role=link[name='Performance']",
+        "dashboard_link": "role=link[name='Dashboard']",
+        "directory_link": "role=link[name='Directory']",
+        "maintenance_link": "role=link[name='Maintenance']",
+        "claim_link": "role=link[name='Claim']",
+        "buzz_link": "role=link[name='Buzz']",
+        "menu_search_input": "input[placeholder='Search']",
+        "sidebar_toggle": ".oxd-main-menu-button",
+        "user_dropdown": ".oxd-userdropdown-tab",
+        "logout_link": "role=menuitem[name='Logout']",
+        "toast": "#oxd-toaster_1"
+      },
+      "elements_notes": {
+        "always": "`always: true` means this page is injected regardless of the story's Component - the menu is reachable from every authenticated page.",
+        "logout_link": "Rendered only AFTER user_dropdown is clicked. The crawler cannot see it; added by hand.",
+        "toast": "Success/error toast, e.g. 'Successfully Saved'. Present in the DOM but empty until an action fires."
+      },
+      "key_methods": [
+        "go_to(module)",
+        "open_user_menu()",
+        "logout()",
+        "get_toast_text()"
+      ],
+      "errors": {}
+    },
+    "admin_users": {
+      "url": "/web/index.php/admin/viewSystemUsers",
+      "components": [
+        "Admin"
+      ],
+      "page_object_file": "pages/admin_users_page.py (NOT YET CREATED)",
+      "page_object_class": "AdminUsersPage",
+      "elements": {
+        "add_button": "role=button[name=' Add ']",
+        "search_username_input": ".oxd-input-group:has-text('Username') input",
+        "search_button": "role=button[name=' Search ']",
+        "reset_button": "role=button[name=' Reset ']",
+        "records_found": ".orangehrm-horizontal-padding .oxd-text--span",
+        "results_table": ".oxd-table",
+        "table_rows": ".oxd-table-card",
+        "toast": "#oxd-toaster_1"
+      },
+      "elements_notes": {
+        "add_button": "OrangeHRM pads button labels with spaces - the accessible name is ' Add ', not 'Add'. Matching on 'Add' alone will not resolve.",
+        "user_role_filter": "User Role / Status filters are custom ARIA dropdowns, not <select>. They must be CLICKED open before their options exist in the DOM, so the crawler never saw the options.",
+        "shared_demo": "This is a PUBLIC demo - other people add and delete users while your tests run. Never assert on a record count or on a specific user existing unless the test created it."
+      },
+      "key_methods": [
+        "click_add()",
+        "search_by_username(name)",
+        "get_record_count()"
+      ],
+      "errors": {}
+    },
+    "admin_add_user": {
+      "url": "/web/index.php/admin/saveSystemUser",
+      "components": [
+        "Admin"
+      ],
+      "page_object_file": "pages/admin_add_user_page.py (NOT YET CREATED)",
+      "page_object_class": "AdminAddUserPage",
+      "elements": {
+        "user_role_select": ".oxd-input-group:has-text('User Role') .oxd-select-text",
+        "employee_name_input": "input[placeholder='Type for hints...']",
+        "status_select": ".oxd-input-group:has-text('Status') .oxd-select-text",
+        "username_input": ".oxd-input-group:has-text('Username') input",
+        "password_input": "input[type='password'] >> nth=0",
+        "confirm_password_input": "input[type='password'] >> nth=1",
+        "save_button": "role=button[name=' Save ']",
+        "cancel_button": "role=button[name=' Cancel ']",
+        "field_error": ".oxd-input-field-error-message",
+        "password_strength_hint": ".oxd-text--subtitle-2",
+        "dropdown_option": ".oxd-select-option",
+        "autocomplete_option": ".oxd-autocomplete-option",
+        "toast": "#oxd-toaster_1"
+      },
+      "elements_notes": {
+        "SELECTORS_REPLACED": "The crawl produced 12-level css paths for every form field (#app > div:nth-of-type(1) > ...) because Angular renders these inputs with no name or id. Those break on any layout change and were replaced with label-anchored selectors. VERIFY with `python -m scripts.verify_locators --url '/web/index.php/admin/saveSystemUser'` before relying on them.",
+        "field_error": "THE KEY ELEMENT FOR VALIDATION TESTS, and the crawler never saw it - it renders only after a field is touched and left invalid. Messages appear AS YOU TYPE, not on Save, so a test must assert after filling the field, not after submitting the form.",
+        "password_input": "Password and Confirm Password are both bare `input[type='password']` in DOM order. nth=0/nth=1 is positional and would break if the form gained another password field - acceptable here because the form is fixed, but worth re-checking after an OrangeHRM upgrade.",
+        "user_role_select": "Custom ARIA dropdown, NOT a <select>. Click it, then click an `.oxd-select-option`. `select_option()` will not work.",
+        "employee_name_input": "Autocomplete. Type at least 2 characters, wait for `.oxd-autocomplete-option`, then click one. Typing a full name without selecting a suggestion leaves the field invalid.",
+        "do_not_save": "This is a PUBLIC shared demo. A saved user persists and the next run hits 'User already exists'. Validation-only tests that never click Save are safe; anything that saves needs a unique username per run."
+      },
+      "key_methods": [
+        "select_user_role(role)",
+        "enter_employee_name(name)",
+        "select_status(status)",
+        "enter_username(username)",
+        "enter_password(password)",
+        "enter_confirm_password(password)",
+        "get_field_error()",
+        "get_all_field_errors()",
+        "click_save()"
+      ],
+      "errors": {
+        "password_too_short": "Should have at least 7 characters",
+        "password_no_number": "Your password must contain minimum 1 number",
+        "password_no_lowercase": "Your password must contain minimum 1 lower-case letter",
+        "password_has_spaces": "Your password should not contain spaces",
+        "passwords_mismatch": "Passwords do not match",
+        "required": "Required",
+        "user_exists": "Already exists"
+      }
+    },
+    "pim_employee_list": {
+      "url": "/web/index.php/pim/viewEmployeeList",
+      "components": [
+        "PIM"
+      ],
+      "page_object_file": "pages/pim_employee_list_page.py (NOT YET CREATED)",
+      "page_object_class": "PimEmployeeListPage",
+      "elements": {
+        "employee_name_input": "input[placeholder='Type for hints...']",
+        "employee_id_input": ".oxd-input-group:has-text('Employee Id') input",
+        "employment_status_select": ".oxd-input-group:has-text('Employment Status') .oxd-select-text",
+        "include_select": ".oxd-input-group:has-text('Include') .oxd-select-text",
+        "supervisor_name_input": ".oxd-input-group:has-text('Supervisor Name') input",
+        "job_title_select": ".oxd-input-group:has-text('Job Title') .oxd-select-text",
+        "sub_unit_select": ".oxd-input-group:has-text('Sub Unit') .oxd-select-text",
+        "search_button": "role=button[name=' Search ']",
+        "reset_button": "role=button[name=' Reset ']",
+        "add_button": "role=button[name=' Add ']",
+        "records_found": ".orangehrm-horizontal-padding .oxd-text--span",
+        "results_table": ".oxd-table",
+        "table_rows": ".oxd-table-card",
+        "dropdown_option": ".oxd-select-option",
+        "toast": "#oxd-toaster_1"
+      },
+      "elements_notes": {
+        "filters": "Every *_select here is a custom ARIA dropdown, not a <select>. Click to open, then click an `.oxd-select-option`.",
+        "records_found": "Reads '(N) Records Found'. On this SHARED demo the number changes as other people add and delete employees - assert that results are filtered, never on an exact count.",
+        "crawl_noise": "The raw crawl produced 265 elements for this page, almost all of them the left menu and per-row action buttons. Only the search form and results container are kept here."
+      },
+      "key_methods": [
+        "search_by_employee_name(name)",
+        "search_by_id(emp_id)",
+        "select_job_title(title)",
+        "click_search()",
+        "click_reset()",
+        "get_result_count()"
+      ],
+      "errors": {
+        "invalid_employee": "Invalid"
+      }
     }
   }
 }
