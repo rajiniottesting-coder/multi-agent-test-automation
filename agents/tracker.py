@@ -108,6 +108,21 @@ class Tracker(Protocol):
     def add_label(self, issue_key: str, label: str) -> None: ...
     def remove_label(self, issue_key: str, label: str) -> None: ...
 
+    # ── board position ───────────────────────────────────────
+    def transition_status(self, issue_key: str, status: str) -> bool:
+        """Move an issue to `status` (a board column). True if it moved.
+
+        Board columns are STATUSES, not labels - a label marks pipeline state,
+        a status is where the card sits. Both matter: labels drive the agents,
+        statuses tell a human at a glance what is happening.
+
+        MUST return False rather than raise when the status does not exist or
+        the transition is not permitted. Board hygiene is cosmetic; it must
+        never fail a pipeline run. Adapters for trackers without a workflow
+        (a flat task list) may return False always.
+        """
+        ...
+
     # ── audit trail ──────────────────────────────────────────
     def add_comment(self, issue_key: str, body: str) -> str:
         """Post a comment. Returns a URL/identifier for it where available."""

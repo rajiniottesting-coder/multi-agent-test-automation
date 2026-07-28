@@ -42,6 +42,7 @@ import yaml
 
 from agents.app_context import AppContext
 from agents.tracker import get_tracker
+from agents.board_status import move_card_for_label
 from agents.llm_client import LLMClient
 from agents.schemas import TestCaseList
 from config import (
@@ -303,6 +304,9 @@ def run(story_id: str, dry_run: bool = False) -> dict:
         completion_label = agent_config.get("completion_label", "ai-processed")
         jira.add_label(story_id, completion_label)
         logger.info(f"Marked {story_id} with label '{completion_label}' (idempotency)")
+        # Board hygiene: follow the label with a column move so the card
+        # reflects real progress. Opt-in via config; never fatal.
+        move_card_for_label(jira, story_id, completion_label)
 
         # ONE-SHOT TRIGGER CLEANUP: remove the trigger label(s) that brought
         # this story into Agent 1's scope. After successful run, those labels

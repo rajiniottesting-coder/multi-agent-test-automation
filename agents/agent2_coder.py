@@ -50,6 +50,7 @@ import yaml
 
 from agents.app_context import AppContext
 from agents.tracker import get_tracker
+from agents.board_status import move_card_for_label
 from agents.repo_host import get_repo_host
 from agents.import_validator import validate_imports_resolvable
 from agents.method_resolution_validator import validate_method_resolution
@@ -2882,6 +2883,8 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     completion_label = agent_config.get("completion_label", "ai-coded")
     jira.add_label(story_id, completion_label)
     logger.info(f"Marked {story_id} with label '{completion_label}' (idempotency)")
+    # Board hygiene: follow the label with a column move. Opt-in; never fatal.
+    move_card_for_label(jira, story_id, completion_label)
 
     if is_regenerate:
         regenerate_label = agent_config.get("regenerate_label", "ai-regenerate")

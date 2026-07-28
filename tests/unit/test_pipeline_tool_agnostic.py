@@ -83,6 +83,13 @@ class MemoryTracker:
 
     def get_comments(self, issue_key): return self.comments.get(issue_key, [])
 
+    def transition_status(self, issue_key, status):
+        """Board column. This tracker has no workflow rules, so it always
+        succeeds - proving the pipeline works on a tracker with a completely
+        different status model."""
+        self.stories[issue_key]["status"] = status
+        return True
+
 
 @pytest.fixture
 def tracker(monkeypatch):
@@ -294,6 +301,8 @@ def test_full_pipeline_runs_on_neither_jira_nor_github(tracker, tmp_path):
     assert tracker.stories["ACME-1"]["labels"] == [
         "ai-processed", "human-approved", "ai-coded", "tests-run"]
     assert any("End-to-end LLM usage" in c for c in tracker.comments["ACME-1"])
+    # the card followed the work across the board, not just the labels
+    assert tracker.stories["ACME-1"]["status"] == "In Review"
 
 
 def test_repo_host_dict_keys_are_exactly_as_documented():

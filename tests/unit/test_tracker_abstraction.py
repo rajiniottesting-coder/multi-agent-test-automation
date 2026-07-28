@@ -90,6 +90,7 @@ def test_a_new_adapter_needs_no_agent_changes():
         def remove_label(self, issue_key, label): pass
         def add_comment(self, issue_key, body): return ""
         def get_comments(self, issue_key): return []
+        def transition_status(self, issue_key, status): return True
 
     register_adapter("fake", FakeTracker)
     t = get_tracker("fake", fresh=True)

@@ -379,6 +379,37 @@ class JiraClient:
         logger.info(f"Posted comment on {issue_key}: {comment_url}")
         return comment_url
 
+    def transition_status(self, issue_key: str, status: str) -> bool:
+        """Move an issue to a named status (board column). True if it moved.
+
+        Jira exposes moves as *transitions*, not direct status writes, and the
+        available transitions depend on the workflow and the issue's current
+        state. We look up the transition whose target matches `status`.
+
+        Never raises: a missing status, a workflow that forbids the move, or a
+        permissions problem all return False. Board position is cosmetic - it
+        must not fail a pipeline run that has already done real work.
+        """
+        try:
+            issue = self.client.issue(issue_key, fields="status")
+            current = getattr(issue.fields.status, "name", "")
+            if current.strip().lower() == status.strip().lower():
+                return True                       # already there
+            for t in self.client.transitions(issue):
+                target = (t.get("to") or {}).get("name", "")
+                if target.strip().lower() == status.strip().lower():
+                    self.client.transition_issue(issue, t["id"])
+                    logger.info(f"{issue_key}: '{current}' -> '{target}'")
+                    return True
+            available = [(t.get("to") or {}).get("name") for t in self.client.transitions(issue)]
+            logger.warning(
+                f"{issue_key}: no transition to {status!r} from {current!r}. "
+                f"Available: {available}. Leaving the card where it is."
+            )
+        except Exception as e:
+            logger.warning(f"{issue_key}: could not transition to {status!r}: {e}")
+        return False
+
     def get_linked_test_cases(self, story_key: str) -> list[dict]:
         """Test Cases linked to a story, as plain dicts.
 

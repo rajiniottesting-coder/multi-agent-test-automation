@@ -1,0 +1,61 @@
+# Move a story to Done when its PR is MERGED.
+#
+# Every other board move is made by an agent that just did work. Done is
+# different: it means a human read the code and accepted it. So this is the one
+# transition driven by a real merge event rather than a pipeline label.
+#
+# `pull_request: closed` fires for BOTH merges and rejections, so the job is
+# gated on `merged == true`. A PR closed without merging means the work was not
+# accepted and the card must stay in In Review.
+name: Story Done on merge
+
+on:
+  pull_request:
+    types:
+      - closed          # fires on merge AND on close-without-merge
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Head branch, e.g. auto/SCRUM-5-login (manual run only)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: story-done-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  mark-done:
+    # THE GATE: only a genuine merge moves the card. Without this, rejecting a
+    # PR would mark the story Done — the opposite of what happened.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main          # the merge target; agent code lives here
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Move story to Done
+        env:
+          JIRA_URL: ${{ secrets.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+        run: |
+          python -m scripts.close_merged_story \
+            --branch "${{ github.event.pull_request.head.ref || inputs.branch }}" \
+            --merged "${{ github.event_name == 'workflow_dispatch' && 'true' || github.event.pull_request.merged }}"

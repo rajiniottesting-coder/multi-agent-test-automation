@@ -41,6 +41,37 @@
 repo_host:
   type: "github"
 
+# ────────────────────────────────────────────────────────────
+# Board column automation  (optional)
+#
+# Labels drive the agents; STATUSES tell a human at a glance what is
+# happening. Without this every story sits in "To Do" however far it has
+# progressed, which makes the board useless at standup.
+#
+# Maps a completion LABEL onto a board STATUS. Column names live here, not in
+# code, because they differ per tool and per team - Jira ships
+# "To Do / In Progress / In Review / Done", Azure DevOps uses
+# "New / Active / Resolved / Closed", and most boards are customised further.
+#
+# Stories still awaiting work (ai-ready / ai-update / ai-regenerate) are left
+# alone and stay wherever they are, normally "To Do".
+#
+# A move that the workflow forbids is logged and ignored - board position is
+# cosmetic and must never fail a run that has already done real work.
+#
+# Set enabled: false to leave statuses untouched (the previous behaviour).
+# ────────────────────────────────────────────────────────────
+status_workflow:
+  enabled: true
+  on_label:
+    ai-processed: "In Progress"    # Agent 1 drafted test cases
+    ai-coded: "In Review"          # Agent 2 opened a PR
+
+  # Driven by a real MERGE event, not by a label. No agent sets this: merging
+  # is the human decision the pipeline is built around, so only a human
+  # merging the PR can move a card to Done.
+  on_merge: "Done"
+
 tracker:
   type: "jira"
 
@@ -119,6 +150,7 @@ agents:
       allowed_statuses:
         - "To Do"
         - "In Progress"
+        - "In Review"      # stories moved here by status_workflow after coding
       required_labels:
         - "ai-ready"
       excluded_labels:
@@ -168,6 +200,7 @@ agents:
       allowed_statuses:
         - "To Do"
         - "In Progress"
+        - "In Review"      # stories moved here by status_workflow after coding
       required_labels:
         - "ai-processed"   # Agent 1 finished generating Test Case issues
         - "human-approved" # You approved the test cases in Jira
@@ -184,6 +217,7 @@ agents:
       allowed_statuses:
         - "To Do"
         - "In Progress"
+        - "In Review"      # stories moved here by status_workflow after coding
       required_labels:
         - "ai-processed"
         - "human-approved"
@@ -204,6 +238,7 @@ agents:
       allowed_statuses:
         - "To Do"
         - "In Progress"
+        - "In Review"      # stories moved here by status_workflow after coding
       required_labels:
         - "ai-processed"
         - "human-approved"
