@@ -52,15 +52,15 @@ NO prose before or after the code block. Just the code block.
 page key below, then look each element up by its `elements` KEY:
 
 ```python
-class LoginPage(BasePage):
-    INVENTORY_PAGE = "login"
+class SomePage(BasePage):
+    INVENTORY_PAGE = "<page key from the inventory below>"
 
-    def login_as(self, username, password):
-        self.fill(self.sel("username_input"), username)
-        self.click(self.sel("login_button"))
+    def do_something(self, value):
+        self.fill(self.sel("<element key on that page>"), value)
+        self.click(self.sel("<another element key>"))
 ```
 
-Write `self.sel("username_input")` — NEVER `"input[name='username']"`.
+Write `self.sel("<key>")` — NEVER a literal selector string.
 The key must exist in the `elements` block for that page; an unknown key
 raises at first use. If you need an element that is not listed, say so in your
 notes rather than inventing a selector.
@@ -81,8 +81,8 @@ Use `self.page_url()` for the page path — it comes from the same entry.
 3. **POM compliance (STRICT — most-violated rule):** If this is a step definition file, NEVER put CSS selectors, `data-test` attributes, XPath expressions, role queries, or ANY DOM locator strings in it — neither as literal strings nor by READING selector constants from the page-object class. Step defs MUST interact with the UI exclusively through page-object METHODS (verbs like `login_as`, `dismiss_error`, `clear_credentials`). They MUST NOT do any of the following, no matter how convenient:
    - Literal selector in step def: `page.click("[data-test='error-button']")` — FORBIDDEN
    - `page.locator(...)`, `page.fill(...)`, `page.click(...)`, `page.get_by_test_id(...)` with literal strings — FORBIDDEN
-   - Reading a selector through the page object: `page.locator(login_page.sel("username_input"))` — FORBIDDEN (still a POM boundary violation; the step def now depends on inventory element keys)
-   - Chaining off a resolved selector: `login_page.page.locator(login_page.sel("error_banner")).locator("button")` — FORBIDDEN
+   - Reading a selector through the page object: `page.locator(some_page.sel("<key>"))` — FORBIDDEN (still a POM boundary violation; the step def now depends on inventory element keys)
+   - Chaining off a resolved selector: `some_page.page.locator(some_page.sel("<key>")).locator("button")` — FORBIDDEN
    
    If a step definition needs to interact with a new UI element, you MUST: (a) add a locator constant to the page object class (e.g., `ERROR_BUTTON = "[data-test='error-button']"`), (b) add a method on the page object that uses it (e.g., `def dismiss_error(self) -> None: self.page.click(self.ERROR_BUTTON)`), and (c) call ONLY that method from the step def (e.g., `login_page.dismiss_error()`). The step def file should never `import` selector constants and should never reference `Page` directly for DOM queries.
 4. **No hardcoded waits:** Never use `time.sleep()`. Use Playwright's auto-wait.
@@ -90,7 +90,7 @@ Use `self.page_url()` for the page path — it comes from the same entry.
 6. **URL comparisons must normalise trailing slashes.** Browsers add a trailing slash to root-path navigations (`https://site.com` → `https://site.com/`), so a strict `assert page.url == base_url` will fail at runtime even when the user is on the correct page. Always strip trailing slashes on BOTH sides before comparing, e.g. `assert page.url.rstrip("/") == base_url.rstrip("/")`. This applies to any URL equality check — login pages, redirect targets, deep-link assertions. For prefix checks use `page.url.startswith(...)`; for path checks use `urllib.parse.urlparse(page.url).path`.
 7. **Use selectors from the page inventory:** the inventory above lists the exact selectors to use.
 8. **Imports order:** stdlib -> third-party -> project (consistent with reference).
-9. **Type hints (ALL new function signatures):** Add type annotations on EVERY new function signature you produce — pytest fixtures (return type), step definition functions (parameter types), and page-object methods (parameters AND return type). Match the reference style exactly. Examples: `def login_page(page: Page) -> LoginPage:`, NOT `def login_page(page):`. Step def: `def enter_username(login_page: LoginPage, value: str) -> None:`, NOT `def enter_username(login_page, value):`. Page method: `def get_error_message(self) -> str:`, NOT `def get_error_message(self):`. Use `None` as the return annotation for actions that don't return anything.
+9. **Type hints (ALL new function signatures):** Add type annotations on EVERY new function signature you produce — pytest fixtures (return type), step definition functions (parameter types), and page-object methods (parameters AND return type). Match the reference style exactly. Examples: `def login_page(page: Page) -> SomePage:`, NOT `def login_page(page):`. Step def: `def enter_username(login_page: SomePage, value: str) -> None:`, NOT `def enter_username(login_page, value):`. Page method: `def get_error_message(self) -> str:`, NOT `def get_error_message(self):`. Use `None` as the return annotation for actions that don't return anything.
 10. **Pytest markers in feature files:** Add appropriate tags like `@smoke`, `@negative`, `@<theme>`.
 11. **UI state cleanup between repeated actions in the same scenario:** If a single Scenario performs the SAME user action multiple times (e.g., multiple failed login attempts, multiple form submissions, multiple search queries), each attempt leaves residual UI state behind — error banners, validation icons, modal dialogs, toast messages, previously-entered values. Assertions made on the next attempt may match STALE state from the previous attempt instead of validating a fresh response, producing false-pass test cases. You MUST add explicit cleanup/dismiss steps between repeated actions. Example pattern for multiple login attempts: after each failed login, add a step like `When I dismiss the error message` (with a corresponding page-object method that clicks the error-close button or reloads the form). Apply this rule to ANY scenario that performs the same action ≥ 2 times.
 12. **No dead code:** Do not generate step-definition functions or page-object methods that are never called from any scenario in the paired feature file. If you are not sure a function is used, omit it. Generate ONLY what the scenarios actually need.

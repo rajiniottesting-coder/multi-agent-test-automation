@@ -1,100 +1,174 @@
 """Page objects resolve selectors from the app inventory, not from literals.
 
-The inventory is the single source of truth. Two reasons this matters more
-than the usual DRY argument:
+APP-AGNOSTIC BY CONSTRUCTION
+---------------------------
+These tests exercise the MECHANISM (BasePage.sel / page_url and the
+no-literals rule), never a particular application. Pointing the framework at a
+different app must not change a line here, so:
 
-1. Agent 2 CANNOT hallucinate a selector it never writes. `self.sel("x")` is
-   checkable against the inventory; a literal `"input[name='x']"` is not.
-2. A selector fixed in the inventory takes effect everywhere at once, with no
-   second edit and no chance of two copies disagreeing.
+  - the sel()/page_url() tests build a SYNTHETIC inventory and a throwaway
+    page object; they import no application page object and never read the
+    real inventory
+  - the no-literals scan walks whatever is in pages/ and cares only about the
+    SHAPE of what it finds
+
+Why the rule exists: the inventory is the single source of truth, and an agent
+cannot hallucinate a selector it never writes. `self.sel("x")` is checkable
+against the inventory; a literal `"input[name='x']"` is not.
 """
+import ast
+import json
 import re
 from pathlib import Path
 
 import pytest
 
 from pages.base_page import BasePage
-from pages.dashboard_page import DashboardPage
-from pages.login_page import LoginPage
 
 PAGES_DIR = Path(__file__).resolve().parents[2] / "pages"
-PAGE_OBJECTS = [LoginPage, DashboardPage]
 
-# A selector-looking literal: css, role=, text=, label=, placeholder=, etc.
+# A selector-looking literal: css, or one of Playwright's engine prefixes.
 _SELECTOR_LITERAL = re.compile(
     r'=\s*"(?:'
-    r'\s*[.#\[]'                      # .class  #id  [attr=...]
+    r'\s*[.#\[]'                                     # .class  #id  [attr=…]
     r'|(?:role|text|label|alt|title|placeholder)='   # playwright engines
     r')[^"]*"'
 )
 
-
-def test_no_page_object_contains_a_selector_literal():
-    """The rule this whole change exists to enforce."""
-    offenders = []
-    for f in sorted(PAGES_DIR.glob("*_page.py")):
-        if f.name == "base_page.py":
-            continue
-        for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
-            if line.strip().startswith("#") or line.strip().startswith('"'):
-                continue
-            if _SELECTOR_LITERAL.search(line):
-                offenders.append(f"{f.name}:{i}: {line.strip()[:70]}")
-    assert not offenders, (
-        "selector literal(s) in a page object — use self.sel(\"<key>\") and add "
-        "the element to the app inventory:\n  " + "\n  ".join(offenders))
+# A synthetic app. Deliberately nothing to do with the app under test.
+_FAKE_INVENTORY = {
+    "pages": {
+        "widget_screen": {
+            "url": "/widgets/list",
+            "elements": {
+                "search_box": "[data-test='search']",
+                "submit_button": "role=button[name='Go']",
+            },
+        }
+    }
+}
 
 
-@pytest.mark.parametrize("cls", PAGE_OBJECTS, ids=lambda c: c.__name__)
-def test_every_page_object_declares_its_inventory_page(cls):
-    assert cls.INVENTORY_PAGE, f"{cls.__name__} must set INVENTORY_PAGE"
-    assert cls.INVENTORY_PAGE in (cls._inventory().get("pages") or {}), (
-        f"{cls.__name__}.INVENTORY_PAGE = {cls.INVENTORY_PAGE!r} is not in the "
-        f"app inventory")
+@pytest.fixture
+def fake_inventory(monkeypatch):
+    """Point BasePage at a synthetic inventory for the duration of a test."""
+    monkeypatch.setattr(BasePage, "_INVENTORY_CACHE", _FAKE_INVENTORY,
+                        raising=False)
+    yield
+    monkeypatch.setattr(BasePage, "_INVENTORY_CACHE", None, raising=False)
 
 
-@pytest.mark.parametrize("cls", PAGE_OBJECTS, ids=lambda c: c.__name__)
-def test_every_sel_key_used_exists_in_the_inventory(cls):
-    """A typo'd key must fail here, not at runtime in a browser."""
-    src = (PAGES_DIR / f"{cls.__name__[:-4].lower()}_page.py")
-    if not src.is_file():                       # LoginPage -> login_page.py
-        src = next(p for p in PAGES_DIR.glob("*_page.py")
-                   if f"class {cls.__name__}" in p.read_text(encoding="utf-8"))
-    # AST, not regex: a docstring showing `self.sel("<element_key>")` as an
-    # EXAMPLE is documentation, not a call, and must not be checked.
-    import ast
-    tree = ast.parse(src.read_text(encoding="utf-8"))
-    keys = set()
-    for node in ast.walk(tree):
-        if (isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "sel"
-                and node.args
-                and isinstance(node.args[0], ast.Constant)
-                and isinstance(node.args[0].value, str)):
-            keys.add(node.args[0].value)
-    assert keys, f"{cls.__name__} resolves no selectors — is it wired up?"
-    for k in sorted(keys):
-        cls.sel(k)                              # raises KeyError if unknown
+class _WidgetPage(BasePage):
+    INVENTORY_PAGE = "widget_screen"
 
 
-def test_unknown_key_raises_and_lists_what_is_available():
+class _UnwiredPage(BasePage):
+    pass
+
+
+# ── the mechanism ────────────────────────────────────────────
+
+def test_sel_resolves_a_key_to_its_selector(fake_inventory):
+    assert _WidgetPage.sel("search_box") == "[data-test='search']"
+    assert _WidgetPage.sel("submit_button") == "role=button[name='Go']"
+
+
+def test_page_url_comes_from_the_inventory(fake_inventory):
+    assert _WidgetPage.page_url() == "/widgets/list"
+
+
+def test_unknown_key_raises_and_lists_what_is_available(fake_inventory):
     """A silent None would mis-select; the error must be actionable."""
     with pytest.raises(KeyError) as exc:
-        LoginPage.sel("no_such_element")
+        _WidgetPage.sel("no_such_element")
     msg = str(exc.value)
     assert "no_such_element" in msg
     assert "Available" in msg
-    assert "username_input" in msg              # names real keys
+    assert "search_box" in msg                    # names the real keys
 
 
-def test_page_object_without_inventory_page_fails_clearly():
-    class Unwired(BasePage):
-        pass
+def test_unknown_inventory_page_raises_and_lists_the_pages(fake_inventory):
+    class _Wrong(BasePage):
+        INVENTORY_PAGE = "no_such_page"
+    with pytest.raises(KeyError, match="Available pages"):
+        _Wrong.sel("anything")
+
+
+def test_page_object_without_inventory_page_fails_clearly(fake_inventory):
     with pytest.raises(RuntimeError, match="INVENTORY_PAGE"):
-        Unwired.sel("anything")
+        _UnwiredPage.sel("anything")
+    with pytest.raises(RuntimeError, match="INVENTORY_PAGE"):
+        _UnwiredPage.page_url()
 
 
-def test_page_url_comes_from_the_inventory():
-    assert LoginPage.page_url() == "/web/index.php/auth/login"
-    assert DashboardPage.page_url() == "/web/index.php/dashboard/index"
+# ── the rule, applied to whatever pages/ contains ────────────
+
+def _page_object_files():
+    return [f for f in sorted(PAGES_DIR.glob("*_page.py"))
+            if f.name != "base_page.py"]
+
+
+def test_no_page_object_contains_a_selector_literal():
+    """The rule this whole design exists to enforce."""
+    offenders = []
+    for f in _page_object_files():
+        for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith(("#", '"', "'", "*")):
+                continue
+            if _SELECTOR_LITERAL.search(line):
+                offenders.append(f"{f.name}:{i}: {stripped[:70]}")
+    assert not offenders, (
+        'selector literal(s) in a page object — use self.sel("<key>") and add '
+        "the element to the app inventory:\n  " + "\n  ".join(offenders))
+
+
+def test_every_page_object_declares_an_inventory_page():
+    """Without it, sel() raises at runtime instead of at import."""
+    missing = []
+    for f in _page_object_files():
+        src = f.read_text(encoding="utf-8")
+        if "INVENTORY_PAGE" not in src:
+            missing.append(f.name)
+    assert not missing, (
+        f"page object(s) with no INVENTORY_PAGE: {missing}. Set it to the key "
+        f"of the page they implement in the app inventory.")
+
+
+def test_every_sel_key_used_exists_in_the_real_inventory():
+    """Whatever app is configured, every key a page object asks for must be in
+    its inventory page. AST, not regex: a docstring showing self.sel("<key>")
+    as an EXAMPLE is documentation, not a call."""
+    cfg = (PAGES_DIR.parent / "config" / "config.yaml").read_text(encoding="utf-8")
+    m = re.search(r'inventory_file:\s*"([^"]+)"', cfg)
+    if not m:
+        pytest.skip("no inventory_file configured")
+    inv_path = PAGES_DIR.parent / m.group(1)
+    if not inv_path.is_file():
+        pytest.skip(f"inventory not present at {inv_path}")
+    pages = json.loads(inv_path.read_text(encoding="utf-8")).get("pages") or {}
+
+    problems = []
+    for f in _page_object_files():
+        src = f.read_text(encoding="utf-8")
+        page_key = re.search(r'INVENTORY_PAGE\s*=\s*"([^"]+)"', src)
+        if not page_key:
+            continue
+        page_key = page_key.group(1)
+        if page_key not in pages:
+            problems.append(f"{f.name}: INVENTORY_PAGE={page_key!r} not in inventory")
+            continue
+        elements = (pages[page_key].get("elements") or {})
+        for node in ast.walk(ast.parse(src)):
+            if (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "sel"
+                    and node.args
+                    and isinstance(node.args[0], ast.Constant)
+                    and isinstance(node.args[0].value, str)):
+                key = node.args[0].value
+                if key not in elements:
+                    problems.append(
+                        f"{f.name}:{node.lineno}: sel({key!r}) not in "
+                        f"inventory page {page_key!r}")
+    assert not problems, "\n  " + "\n  ".join(problems)

@@ -19,17 +19,17 @@ SELECTORS LIVE IN THE APP INVENTORY, NOT IN PAGE OBJECTS
 A page object declares which inventory page it implements and looks selectors
 up by KEY:
 
-    class LoginPage(BasePage):
-        INVENTORY_PAGE = "login"
+    class SomePage(BasePage):
+        INVENTORY_PAGE = "<page key from the inventory>"
 
-        def login_as(self, username, password):
-            self.fill(self.sel("username_input"), username)
+        def do_something(self, value):
+            self.fill(self.sel("<element key on that page>"), value)
 
 `app_inventory/<app>.json` is the single source of truth. Two reasons:
 
 1. Agent 2 CANNOT hallucinate a selector it never writes. Emitting
-   `self.sel("username_input")` is checkable against the inventory; emitting
-   `"input[name='username']"` is not.
+   `self.sel("<key>")` is checkable against the inventory; emitting a literal
+   selector string is not.
 2. A selector fixed in the inventory takes effect everywhere at once, with no
    second edit and no chance of the two copies disagreeing.
 

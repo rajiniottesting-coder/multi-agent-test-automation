@@ -26,8 +26,9 @@ logger = logging.getLogger(__name__)
 # NOTE on `input[type='text']`: a CSS attribute selector matches the ATTRIBUTE,
 # not the effective type. An input rendered as <input name="username"> with no
 # `type` at all defaults to text in the browser but does NOT match
-# input[type='text'] - which is exactly how OrangeHRM 5.x renders its login
-# form, and why auto-detection used to time out on it.
+# input[type='text']. Several frameworks emit inputs that way, so relying on
+# the type attribute alone makes auto-detection time out on a form that is
+# perfectly ordinary.
 DEFAULT_USERNAME_SELECTOR = (
     "input[type='email'], input[type='text'], "
     "input:not([type]):not([type='password'])"
@@ -292,10 +293,11 @@ def do_login(page, login_url: Optional[str], username_selector: Optional[str],
     # WAIT for the form to actually render before looking for its fields.
     #
     # Two things make this necessary and they compound:
-    #   1. _goto_spa_tolerant waits for `domcontentloaded`, which on an Angular
-    #      app fires against an EMPTY SHELL - the form does not exist yet.
-    #   2. OrangeHRM redirects "/" to "/web/index.php/auth/login", so there is
-    #      a second navigation after the first one settles.
+    #   1. _goto_spa_tolerant waits for `domcontentloaded`, which on a
+    #      single-page app fires against an EMPTY SHELL - the form does not
+    #      exist yet.
+    #   2. Apps commonly redirect the root path to a real login URL, so there
+    #      is a second navigation after the first one settles.
     # Detecting fields immediately therefore searches a page that has no form
     # on it, finds nothing, and the crawl proceeds unauthenticated - capturing
     # the login screen once per URL instead of the pages you asked for.
