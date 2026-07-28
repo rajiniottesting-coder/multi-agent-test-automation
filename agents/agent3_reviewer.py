@@ -43,7 +43,7 @@ import re
 import sys
 
 from agents.app_context import AppContext
-from agents.github_client import GitHubClient
+from agents.repo_host import get_repo_host
 from agents.llm_client import LLMClient
 from agents.schemas import ReviewReport, ReviewIssue
 from config import (
@@ -259,7 +259,7 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
     logger.info(f"App under test: {ctx.name}")
 
     # 1. INPUT: fetch PR data
-    gh = GitHubClient()
+    gh = get_repo_host()
     pr_metadata = gh.get_pr_metadata(pr_number)
     logger.info(
         f"PR #{pr_number}: '{pr_metadata['title']}' "

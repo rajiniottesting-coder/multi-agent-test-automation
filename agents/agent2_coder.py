@@ -50,7 +50,7 @@ import yaml
 
 from agents.app_context import AppContext
 from agents.tracker import get_tracker
-from agents.github_client import GitHubClient
+from agents.repo_host import get_repo_host
 from agents.import_validator import validate_imports_resolvable
 from agents.method_resolution_validator import validate_method_resolution
 from agents.llm_client import LLMClient
@@ -1549,7 +1549,7 @@ def _print_dry_run_preview(output: CodeGenerationOutput) -> None:
             print(f"   ... (and {len(lines) - 30} more lines)")
 
 
-def _resolve_unused_revision_branch(gh: GitHubClient, base_branch: str) -> str:
+def _resolve_unused_revision_branch(gh, base_branch: str) -> str:
     """Find the lowest unused -revN suffix for a regeneration branch.
 
     Starts from rev2 (rev1 = original). Used so the original PR stays open
@@ -1739,7 +1739,7 @@ def _inject_markers_into_feature(content: str, test_cases: list[dict]) -> str:
 # ---------------------------------------------------------------------------
 # Incremental update flow (ai-update label) — surgical scenario splicing
 # ---------------------------------------------------------------------------
-def _find_unused_update_branch(gh: GitHubClient, base_branch: str) -> str:
+def _find_unused_update_branch(gh, base_branch: str) -> str:
     """Find the lowest unused -updateN suffix for an incremental-update branch."""
     n = 2
     while gh.branch_exists(f"{base_branch}-update{n}"):
@@ -2140,7 +2140,7 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
         }
     logger.info(f"Update target feature file: {feature_file_path}")
 
-    gh = GitHubClient()
+    gh = get_repo_host()
     try:
         existing_content = gh.get_file_content(feature_file_path, branch="main")
     except Exception as e:
@@ -2500,19 +2500,19 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     # LLM spend. Skipped in regenerate/update mode, where a NEW PR on a -revN /
     # -updateN branch is the intended outcome.
     if not is_regenerate:
-        existing_pr = GitHubClient().find_open_pr_for_story(story_id)
+        existing_pr = get_repo_host().find_open_pr_for_story(story_id)
         if existing_pr:
             completion_label = load_agent_config().get("completion_label", "ai-coded")
             logger.warning(
-                f"{story_id} already has an open PR (#{existing_pr.number}, "
-                f"{existing_pr.head.ref}) but is not labelled '{completion_label}' - "
+                f"{story_id} already has an open PR (#{existing_pr['number']}, "
+                f"{existing_pr['head_ref']}) but is not labelled '{completion_label}' - "
                 f"a previous run was interrupted after opening the PR. Repairing the "
                 f"label and stopping instead of regenerating."
             )
             if not dry_run:
                 jira.add_label(story_id, completion_label)
             return {"story_id": story_id, "status": "already_coded",
-                    "pr_number": existing_pr.number, "files_generated": 0}
+                    "pr_number": existing_pr["number"], "files_generated": 0}
 
     story = jira.get_story(story_id)
     test_cases = load_test_cases_for_story(jira, story_id)
@@ -2656,7 +2656,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
         try:
             from agents.orphan_cleanup import cleanup_orphans_after_removal
 
-            _gh_for_read = GitHubClient()
+            _gh_for_read = get_repo_host()
 
             # Find generated feature file content
             new_feature_files: dict[str, str] = {}
@@ -2802,7 +2802,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     # Real run — branch must contain a Jira key for downstream agents to work
     assert_valid_branch_for_pipeline(output.branch_name)
 
-    gh = GitHubClient()
+    gh = get_repo_host()
 
     # REGENERATE: append -revN suffix so we don't reuse the existing branch.
     if is_regenerate:

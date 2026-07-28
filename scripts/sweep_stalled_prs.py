@@ -105,34 +105,32 @@ def classify_pr(head_sha: str, head_ref: str, wf_runs: dict[str, list[dict]],
 
 
 # ─────────────────────────────────────────────────────────────
-# I/O shell (PyGithub — reuses the agents' auth pattern)
+# I/O shell — goes through the repo-host adapter, never PyGithub
+#
+# This used to call PyGithub directly (repo.get_workflow, pr.edit(state=...),
+# pr.create_issue_comment). That made the sweeper GitHub-only even though its
+# decision logic is generic: "has CI settled for this commit, and have we
+# already nudged it?" is true of GitLab pipelines and Azure Repos builds too.
+# Everything provider-specific now sits behind agents/github_client.py.
 # ─────────────────────────────────────────────────────────────
 
-def _runs_for_sha(repo, workflow_file: str, head_ref: str, head_sha: str) -> list[dict]:
-    try:
-        wf = repo.get_workflow(workflow_file)
-    except Exception:
-        return []
-    runs = []
-    for r in wf.get_runs(branch=head_ref)[:20]:
-        if r.head_sha == head_sha:
-            runs.append({"status": r.status, "conclusion": r.conclusion})
-    return runs
+def _runs_for_sha(host, workflow_file: str, head_ref: str, head_sha: str) -> list[dict]:
+    """CI runs for THIS commit only. Older commits' runs are irrelevant - the
+    question is always whether *this* commit has been processed."""
+    return [r for r in host.get_workflow_runs(workflow_file, head_ref)
+            if r.get("head_sha") == head_sha]
 
 
-def _already_nudged_sha(pr) -> str | None:
-    for c in pr.get_issue_comments():
-        if "<!-- sweeper:nudged:" in c.body:
+def _already_nudged_sha(host, pr_number: int) -> str | None:
+    """SHA from the hidden marker comment, or None. The marker is what stops
+    the hourly cron nudging the same commit forever."""
+    for body in host.get_pr_comments(pr_number):
+        if "<!-- sweeper:nudged:" in body:
             try:
-                return c.body.split("sweeper:nudged:")[1].split(" ")[0].rstrip("->").strip()
+                return body.split("sweeper:nudged:")[1].split(" ")[0].rstrip("->").strip()
             except Exception:
                 continue
     return None
-
-
-def _reopen(pr) -> None:
-    pr.edit(state="closed")
-    pr.edit(state="open")
 
 
 def main() -> int:
@@ -142,37 +140,37 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true", help="Report only; take no action.")
     args = ap.parse_args()
 
-    from agents.github_client import GitHubClient
-    gh = GitHubClient()
-    repo = gh.repo
+    from agents.repo_host import get_repo_host
+    host = get_repo_host()
 
-    open_prs = list(repo.get_pulls(state="open"))
-    print(f"Sweeper: {len(open_prs)} open PR(s) to inspect "
+    open_prs = host.list_open_prs(branch_prefix=AUTO_BRANCH_PREFIX)
+    print(f"Sweeper: {len(open_prs)} open auto/* PR(s) to inspect "
           f"({'DRY-RUN' if args.dry_run else 'live'}).")
 
     nudged = 0
     for pr in open_prs:
-        head_ref, head_sha = pr.head.ref, pr.head.sha
-        if not head_ref.startswith(AUTO_BRANCH_PREFIX):
-            continue
-        wf_runs = {wf: _runs_for_sha(repo, wf, head_ref, head_sha) for wf in REQUIRED_WORKFLOWS}
-        decision = classify_pr(head_sha, head_ref, wf_runs, _already_nudged_sha(pr))
-        tag = f"PR #{pr.number} ({head_ref} @ {head_sha[:7]})"
+        head_ref, head_sha, number = pr["head_ref"], pr["head_sha"], pr["number"]
+        wf_runs = {wf: _runs_for_sha(host, wf, head_ref, head_sha)
+                   for wf in REQUIRED_WORKFLOWS}
+        decision = classify_pr(head_sha, head_ref, wf_runs,
+                               _already_nudged_sha(host, number))
+        tag = f"PR #{number} ({head_ref} @ {head_sha[:7]})"
         if decision["action"] == "skip":
             print(f"  skip  {tag}: {decision['reason']}")
             continue
         print(f"  NUDGE {tag}: {decision['reason']}")
         if not args.dry_run:
             try:
-                _reopen(pr)
-                pr.create_issue_comment(
+                host.reopen_pull_request(number)
+                host.post_pr_comment(
+                    number,
                     _MARKER.format(sha=head_sha) +
                     f"\n🧹 Sweeper re-triggered this PR — it was stalled "
                     f"({decision['reason']}). Agents 3–5 should re-run."
                 )
                 nudged += 1
             except Exception as e:
-                print(f"    ! failed to reopen #{pr.number}: {type(e).__name__}: {e}",
+                print(f"    ! failed to reopen #{number}: {type(e).__name__}: {e}",
                       file=sys.stderr)
 
     print(f"Sweeper done: {nudged} PR(s) re-triggered.")

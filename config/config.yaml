@@ -26,6 +26,21 @@
 # To add another: implement the Protocol, register it in tracker._ADAPTERS
 # (or call tracker.register_adapter at startup), then set the name here.
 # ────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
+# Code host
+#
+# Where the generated test code lives. Agents 2/3/5 and the sweeper need
+# branches, commits, pull requests, PR comments and CI status - all defined
+# by the `RepoHost` Protocol in agents/repo_host.py.
+#
+#   github - GitHub (default; adapter: agents/github_client.py)
+#
+# NOTE: switching host also means replacing .github/workflows/*.yml, which is
+# CI wiring rather than API calls and therefore outside the Protocol.
+# ────────────────────────────────────────────────────────────
+repo_host:
+  type: "github"
+
 tracker:
   type: "jira"
 

@@ -58,25 +58,91 @@ class GitHubClient:
         self.repo.create_git_ref(ref=ref, sha=source.commit.sha)
         logger.info(f"Created branch '{branch_name}' from {from_branch} ({source.commit.sha[:7]})")
 
-    def find_open_pr_for_story(self, story_id: str, branch_prefix: str = "auto/"):
-        """Return an OPEN PR whose head branch belongs to `story_id`, or None.
+    def find_open_pr_for_story(self, story_id: str,
+                               branch_prefix: str = "auto/") -> Optional[dict]:
+        """Return an OPEN PR belonging to `story_id` as a PLAIN DICT, or None.
 
-        Guards the crash window between create_pull_request() and add_label():
-        if the runner dies in there, the story keeps its pre-work labels and the
-        next tick would redo the whole story - burning a full set of LLM calls
-        and then failing at PR creation because the PR already exists.
+        Returns {"number", "head_ref", "head_sha", "url", "title"}.
 
-        Matches `auto/<STORY>-...` so it also finds -updateN / -revN branches,
-        which belong to the same story.
+        Deliberately NOT a provider object: agents used to read `.number` and
+        `.head.ref` off a PyGithub PR, which forced any future GitLab / Azure
+        Repos adapter to impersonate PyGithub's object shape. Plain dicts keep
+        the boundary honest - every provider returns the same five keys.
+
+        Guards the crash window between open_pull_request() and add_label():
+        if the runner dies in there, the story keeps its pre-work labels and
+        the next tick would redo the whole story.
+
+        Matches `<prefix><STORY>-...` so it also finds -updateN / -revN
+        branches, which belong to the same story.
         """
         want = f"{branch_prefix}{story_id}-"
         try:
             for pr in self.repo.get_pulls(state="open"):
                 if pr.head.ref.startswith(want):
-                    return pr
+                    return {
+                        "number": pr.number,
+                        "head_ref": pr.head.ref,
+                        "head_sha": pr.head.sha,
+                        "url": pr.html_url,
+                        "title": pr.title,
+                    }
         except Exception as e:                      # never block on a lookup
             logger.warning(f"Could not check for an existing PR: {e}")
         return None
+
+    def list_open_prs(self, branch_prefix: str = "") -> list[dict]:
+        """All open PRs as plain dicts, optionally filtered by branch prefix.
+
+        Same five keys as find_open_pr_for_story. Used by the sweeper, which
+        previously iterated raw PyGithub objects.
+        """
+        out: list[dict] = []
+        try:
+            for pr in self.repo.get_pulls(state="open"):
+                if branch_prefix and not pr.head.ref.startswith(branch_prefix):
+                    continue
+                out.append({"number": pr.number, "head_ref": pr.head.ref,
+                            "head_sha": pr.head.sha, "url": pr.html_url,
+                            "title": pr.title})
+        except Exception as e:
+            logger.warning(f"Could not list open PRs: {e}")
+        return out
+
+    def reopen_pull_request(self, pr_number: int) -> None:
+        """Close then reopen a PR to re-fire pull_request events.
+
+        The provider-specific way to re-trigger event-driven CI. GitLab would
+        implement this differently (or as a no-op plus a pipeline retry), which
+        is exactly why it belongs behind the adapter.
+        """
+        pr = self.repo.get_pull(pr_number)
+        pr.edit(state="closed")
+        pr.edit(state="open")
+
+    def get_workflow_runs(self, workflow_file: str, branch: str,
+                          limit: int = 20) -> list[dict]:
+        """Recent CI runs for a workflow on a branch, as plain dicts.
+
+        Returns [{"status", "conclusion", "head_sha"}, ...]. "Workflow" is
+        GitHub's word; a GitLab adapter would map this onto pipelines.
+        """
+        try:
+            wf = self.repo.get_workflow(workflow_file)
+            return [{"status": r.status, "conclusion": r.conclusion,
+                     "head_sha": r.head_sha}
+                    for r in wf.get_runs(branch=branch)[:limit]]
+        except Exception as e:
+            logger.warning(f"Could not read runs for {workflow_file}: {e}")
+            return []
+
+    def get_pr_comments(self, pr_number: int) -> list[str]:
+        """Comment bodies on a PR."""
+        try:
+            return [c.body for c in self.repo.get_pull(pr_number).get_issue_comments()]
+        except Exception as e:
+            logger.warning(f"Could not read comments on PR #{pr_number}: {e}")
+            return []
 
     def delete_branch(self, branch_name: str) -> bool:
         """Delete a branch. Returns True if it was deleted, False otherwise.

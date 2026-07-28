@@ -16,7 +16,10 @@ from agents.github_client import GitHubClient
 def _pr(ref, number):
     m = MagicMock()
     m.head.ref = ref
+    m.head.sha = "abc1234"
     m.number = number
+    m.html_url = f"https://example/pull/{number}"
+    m.title = "t"
     return m
 
 
@@ -36,10 +39,19 @@ def _find(gh, repo, story):
         return gh.find_open_pr_for_story(story)
 
 
+def test_returns_a_plain_dict_not_a_provider_object():
+    """The adapter must not leak PyGithub objects - a GitLab/Azure adapter
+    would otherwise have to impersonate PyGithub's `.head.ref` shape."""
+    gh, repo = _client([_pr("auto/SCRUM-5-login", 42)])
+    out = _find(gh, repo, "SCRUM-5")
+    assert isinstance(out, dict)
+    assert set(out) == {"number", "head_ref", "head_sha", "url", "title"}
+
+
 def test_finds_pr_for_the_story():
     gh, repo = _client([_pr("auto/SCRUM-9-cart", 9),
                         _pr("auto/SCRUM-5-login", 42)])
-    assert _find(gh, repo, "SCRUM-5").number == 42
+    assert _find(gh, repo, "SCRUM-5")["number"] == 42
 
 
 def test_ignores_other_stories():
@@ -51,7 +63,7 @@ def test_matches_rev_and_update_branches():
     """-revN / -updateN belong to the same story."""
     for ref in ("auto/SCRUM-5-login-rev2", "auto/SCRUM-5-login-update3"):
         gh, repo = _client([_pr(ref, 43)])
-        assert _find(gh, repo, "SCRUM-5").number == 43
+        assert _find(gh, repo, "SCRUM-5")["number"] == 43
 
 
 def test_ignores_non_auto_branches():
