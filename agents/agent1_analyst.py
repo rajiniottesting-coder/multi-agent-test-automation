@@ -162,6 +162,64 @@ def run(story_id: str, dry_run: bool = False) -> dict:
 
     # 1. INPUT: fetch the story
     jira = JiraClient()
+
+    # DUPLICATE GUARD. Test Cases are created in a LOOP and `ai-processed` is
+    # added only afterwards, so three routes end in duplicates:
+    #   - `--story` run twice by hand (there was no guard at all)
+    #   - a crash mid-loop: some cases created, story unmarked, next tick
+    #     recreates the WHOLE set
+    #   - a story reset to ai-ready without deleting the previous cases
+    #
+    # Unlike Agent 2 - where an open PR proves every file was committed, because
+    # the PR is opened AFTER the commit loop - a COUNT of linked Test Cases is
+    # ambiguous on its own: 4 linked cases could be "4 of 4, finished" or
+    # "4 of 6, died". The completion LABEL is what disambiguates, since it is
+    # written after the loop for exactly the same reason the PR is:
+    #
+    #   label PRESENT + cases exist  -> previous run FINISHED
+    #   label ABSENT  + cases exist  -> previous run was INTERRUPTED
+    #
+    # Either way we refuse and hand back to a human, but the message says which,
+    # because the right remedy differs. Runs BEFORE the LLM call, so a repeat
+    # costs two API calls instead of a full generation.
+    #
+    # Deliberately NOT auto-deleting: those issues may already be approved,
+    # edited by a human, or referenced by an open PR. Removing them is a
+    # judgement call that belongs to a person.
+    existing = jira.count_linked_test_cases(story_id)
+    if existing and not dry_run:
+        agent_config = load_agent_config()
+        completion_label = agent_config.get("completion_label", "ai-processed")
+        try:
+            labels = jira.get_story(story_id).get("labels", []) or []
+        except Exception:
+            labels = []
+        finished = completion_label in labels
+
+        if finished:
+            logger.warning(
+                f"{story_id} already has {existing} linked Test Case(s) and is "
+                f"labelled '{completion_label}' - the previous run COMPLETED. "
+                f"Nothing to do.\n"
+                f"  To draft a fresh set, delete the existing Test Cases and "
+                f"remove the '{completion_label}' label first."
+            )
+            status = "already_processed"
+        else:
+            logger.warning(
+                f"{story_id} has {existing} linked Test Case(s) but NO "
+                f"'{completion_label}' label - a previous run was INTERRUPTED "
+                f"part-way through creating them, so that set is INCOMPLETE.\n"
+                f"  Delete those {existing} partial Test Case(s) in Jira and "
+                f"re-run to get a clean, complete set.\n"
+                f"  (Refusing to add more: appending to a partial set would mix "
+                f"two drafts and leave duplicates.)"
+            )
+            status = "partial_test_cases"
+
+        return {"story_id": story_id, "status": status,
+                "test_cases_created": 0, "existing_test_cases": existing}
+
     story = jira.get_story(story_id)
     logger.info(f"Story: {story['summary']}")
 

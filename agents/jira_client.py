@@ -379,6 +379,25 @@ class JiraClient:
         logger.info(f"Posted comment on {issue_key}: {comment_url}")
         return comment_url
 
+    def count_linked_test_cases(self, story_key: str) -> int:
+        """How many Test Case issues are already linked to this story.
+
+        Agent 1 creates Test Cases in a LOOP and only adds `ai-processed`
+        afterwards, so a crash mid-loop leaves cases created but the story
+        unmarked - and the next run would create the whole set AGAIN. The same
+        hole makes `--story` unsafe to run twice by hand.
+
+        Existing linked Test Cases are the evidence that work already happened.
+        Returns 0 on any lookup failure so a Jira hiccup never blocks a run.
+        """
+        jql = (f'project = {self.project_key} AND issuetype = "Test Case" '
+               f'AND issue in linkedIssues("{story_key}")')
+        try:
+            return len(self.client.enhanced_search_issues(jql, maxResults=50))
+        except Exception as e:
+            logger.warning(f"Could not count test cases for {story_key}: {e}")
+            return 0
+
     def get_parent_story_key(self, issue_key: str) -> Optional[str]:
         """Return the parent Story key for a Test Case, or None if not applicable.
 
