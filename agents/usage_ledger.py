@@ -89,7 +89,7 @@ def post_usage_to_story(story_key: str, agent_name: str, usage: dict, jira=None)
     """Post this agent's usage comment onto the story. Best-effort.
 
     Returns True if posted, False otherwise. NEVER raises — usage
-    bookkeeping must not fail a pipeline run. Creates a JiraClient
+    bookkeeping must not fail a pipeline run. Creates a tracker
     lazily if one isn't supplied (and swallows env/config errors, e.g.
     an agent whose workflow lacks Jira credentials).
     """
