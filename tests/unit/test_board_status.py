@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agents.board_status import (load_status_workflow, move_card_for_label,
+from core.board_status import (load_status_workflow, move_card_for_label,
                                  status_for_label)
 
 WF = {"enabled": True,
@@ -37,7 +37,7 @@ def test_missing_config_block_disables_the_feature(tmp_path, monkeypatch):
     """An existing deployment with no status_workflow keeps its old behaviour."""
     cfg = tmp_path / "config.yaml"
     cfg.write_text("app_under_test:\n  name: X\n")
-    monkeypatch.setattr("agents.board_status.CONFIG_YAML", cfg)
+    monkeypatch.setattr("core.board_status.CONFIG_YAML", cfg)
     wf = load_status_workflow()
     assert wf["enabled"] is False
     assert wf["on_label"] == {}
@@ -136,7 +136,7 @@ def test_no_label_ever_maps_to_done():
 
 
 def test_merge_moves_the_card_to_done():
-    from agents.board_status import move_card_on_merge
+    from core.board_status import move_card_on_merge
     tracker = MagicMock()
     tracker.transition_status.return_value = True
     assert move_card_on_merge(tracker, "S-1", WF_MERGE) is True
@@ -144,21 +144,21 @@ def test_merge_moves_the_card_to_done():
 
 
 def test_merge_move_is_never_fatal():
-    from agents.board_status import move_card_on_merge
+    from core.board_status import move_card_on_merge
     tracker = MagicMock()
     tracker.transition_status.side_effect = Exception("workflow locked")
     assert move_card_on_merge(tracker, "S-1", WF_MERGE) is False
 
 
 def test_on_merge_unset_means_no_done_transition():
-    from agents.board_status import move_card_on_merge
+    from core.board_status import move_card_on_merge
     tracker = MagicMock()
     assert move_card_on_merge(tracker, "S-1", WF) is False   # WF has no on_merge
     tracker.transition_status.assert_not_called()
 
 
 def test_merge_target_is_tool_agnostic():
-    from agents.board_status import move_card_on_merge
+    from core.board_status import move_card_on_merge
     class AzureLike:
         def __init__(self): self.status = "Resolved"
         def transition_status(self, issue_key, status):
@@ -209,7 +209,7 @@ def test_malformed_config_degrades_instead_of_raising(bad_workflow):
     {"enabled": True, "on_label": {}, "on_merge": ""},
 ])
 def test_malformed_on_merge_degrades(bad_merge):
-    from agents.board_status import move_card_on_merge
+    from core.board_status import move_card_on_merge
     tracker = MagicMock()
     assert move_card_on_merge(tracker, "S-1", bad_merge) is False
     tracker.transition_status.assert_not_called()

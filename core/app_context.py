@@ -19,7 +19,7 @@ Why this module exists:
     — never agent code.
 
 Usage:
-    from agents.app_context import AppContext
+    from core.app_context import AppContext
     ctx = AppContext.load()
     ref_files = ctx.load_reference_files()       # {feature, step_def, page_object}
     inv = ctx.load_page_inventory_json()         # raw JSON string for prompts

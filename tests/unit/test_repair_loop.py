@@ -21,8 +21,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agents.agent2_coder import _attempt_step_coverage_repair
-from agents.app_context import AppContext
-from agents.schemas import CodePlan, FilePlan, GeneratedFile
+from core.app_context import AppContext
+from core.schemas import CodePlan, FilePlan, GeneratedFile
 
 
 # ---------------------------------------------------------------------------

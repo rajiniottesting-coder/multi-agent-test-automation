@@ -138,7 +138,7 @@ class Tracker(Protocol):
 # ─────────────────────────────────────────────────────────────
 
 def _jira_adapter():
-    from agents.jira_client import JiraClient
+    from integrations.jira_client import JiraClient
     return JiraClient()
 
 

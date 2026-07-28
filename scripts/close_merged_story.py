@@ -35,8 +35,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import extract_jira_key
-from agents.board_status import load_status_workflow, move_card_on_merge
-from agents.tracker import get_tracker
+from core.board_status import load_status_workflow, move_card_on_merge
+from integrations.tracker import get_tracker
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger(__name__)

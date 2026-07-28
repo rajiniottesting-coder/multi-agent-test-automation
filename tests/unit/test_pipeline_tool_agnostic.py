@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agents.schemas import (CodePlan, FilePlan, JiraCommentDraft,
+from core.schemas import (CodePlan, FilePlan, JiraCommentDraft,
                             TestCase, TestCaseList, TestStep)
 
 # pytest tries to COLLECT any class named Test*; these are Pydantic schemas,
@@ -22,7 +22,7 @@ from agents.schemas import (CodePlan, FilePlan, JiraCommentDraft,
 TestCase.__test__ = False
 TestCaseList.__test__ = False
 TestStep.__test__ = False
-from agents.tracker import Tracker
+from integrations.tracker import Tracker
 
 
 class MemoryTracker:
@@ -173,7 +173,7 @@ def test_agent5_writes_the_run_report_to_a_non_jira_tracker(tracker, tmp_path):
 
     with patch.object(a5, "get_tracker", return_value=tracker), \
          patch.object(a5, "LLMClient") as LLM, \
-         patch("agents.github_client.GitHubClient"):
+         patch("integrations.github_client.GitHubClient"):
         LLM.return_value.invoke_structured.return_value = JiraCommentDraft(
             title="Run summary", body_markdown="1 of 2 scenarios passed.")
         result = a5.run(story_key="ACME-1", reports_dir=Path(tmp_path),
@@ -234,12 +234,12 @@ def test_full_pipeline_runs_on_neither_jira_nor_github(tracker, tmp_path):
     This is the claim that matters: the whole flow works when NEITHER provider
     is the one it was built against.
     """
-    from agents.repo_host import RepoHost
+    from integrations.repo_host import RepoHost
     import agents.agent1_analyst as a1
     import agents.agent2_coder as a2
     import agents.agent3_reviewer as a3
     import agents.agent5_reporter as a5
-    from agents.schemas import ReviewReport
+    from core.schemas import ReviewReport
 
     hub = SourceHub()
     assert isinstance(hub, RepoHost)
@@ -291,7 +291,7 @@ def test_full_pipeline_runs_on_neither_jira_nor_github(tracker, tmp_path):
         '<testcase classname="c" name="b" time="2"/></testsuite></testsuites>')
     with patch.object(a5, "get_tracker", return_value=tracker), \
          patch.object(a5, "LLMClient") as LLM, \
-         patch("agents.github_client.GitHubClient"):
+         patch("integrations.github_client.GitHubClient"):
         LLM.return_value.invoke_structured.return_value = JiraCommentDraft(
             title="Run", body_markdown="All 2 scenarios passed.")
         assert a5.run(story_key="ACME-1", reports_dir=Path(tmp_path),

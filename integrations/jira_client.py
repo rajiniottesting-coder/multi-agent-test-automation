@@ -8,7 +8,7 @@ from typing import Optional
 from jira import JIRA, Issue
 from dotenv import load_dotenv
 
-from agents.schemas import TestCase
+from core.schemas import TestCase
 
 load_dotenv()
 logger = logging.getLogger(__name__)

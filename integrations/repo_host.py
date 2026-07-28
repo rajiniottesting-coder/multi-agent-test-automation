@@ -136,7 +136,7 @@ class RepoHost(Protocol):
 # ─────────────────────────────────────────────────────────────
 
 def _github_adapter():
-    from agents.github_client import GitHubClient
+    from integrations.github_client import GitHubClient
     return GitHubClient()
 
 

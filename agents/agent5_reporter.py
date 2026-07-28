@@ -48,9 +48,9 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from agents.tracker import get_tracker
-from agents.llm_client import LLMClient
-from agents.schemas import RunReport, TestResult, JiraCommentDraft
+from integrations.tracker import get_tracker
+from core.llm_client import LLMClient
+from core.schemas import RunReport, TestResult, JiraCommentDraft
 from config import (
     REQUIRED_JIRA_ENV_VARS,
     REQUIRED_LLM_ENV_VARS,
@@ -309,7 +309,7 @@ def resolve_story_key(cli_arg: str | None, pr_branch: str | None = None) -> str:
             # Escalate to parent Story when the branch encoded a Test Case key.
             # Best-effort: any failure here keeps the original key.
             try:
-                from agents.tracker import get_tracker
+                from integrations.tracker import get_tracker
                 parent = get_tracker().get_parent_story_key(key)
                 if parent:
                     return parent
@@ -390,8 +390,8 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
     # 3c. USAGE LEDGER: log this agent's own token/cost summary, then read
     # all [LLM-USAGE] comments posted by earlier agents (1, 2, 3) and append
     # an end-to-end usage & cost table for the whole story to the report.
-    from agents.llm_client import log_usage_summary, reset_usage
-    from agents.usage_ledger import (
+    from core.llm_client import log_usage_summary, reset_usage
+    from core.usage_ledger import (
         aggregate_story_usage, format_e2e_section, post_usage_to_story,
     )
     own_usage = log_usage_summary(f"story {story_key} (reporter)")

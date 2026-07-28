@@ -28,7 +28,7 @@ DESIGN CHOICES:
        no features dir still works.
 
 USAGE:
-    from agents.gherkin_analyzer import scan_features_dir, find_matching_scenario
+    from validators.gherkin_analyzer import scan_features_dir, find_matching_scenario
     from config.paths import FEATURES_DIR
 
     inventory = scan_features_dir(FEATURES_DIR)

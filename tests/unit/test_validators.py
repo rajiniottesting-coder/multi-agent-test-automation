@@ -30,16 +30,16 @@ from pathlib import Path
 
 import pytest
 
-from agents.gherkin_analyzer import (
+from validators.gherkin_analyzer import (
     validate_filename_consistency,
     validate_feature_file_structure,
     validate_step_definitions_complete,
 )
-from agents.import_validator import validate_imports_resolvable
-from agents.method_resolution_validator import validate_method_resolution
-from agents.app_context import AppContext
+from validators.import_validator import validate_imports_resolvable
+from validators.method_resolution_validator import validate_method_resolution
+from core.app_context import AppContext
 from agents.agent2_coder import validate_paths_against_policy
-from agents.schemas import GeneratedFile
+from core.schemas import GeneratedFile
 
 
 # Helper: build a GeneratedFile from a path and content

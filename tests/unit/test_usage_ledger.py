@@ -1,10 +1,10 @@
 """
-Unit tests for agents.usage_ledger — the cross-agent, per-story
+Unit tests for core.usage_ledger — the cross-agent, per-story
 token & cost ledger. No Jira or LLM calls; pure parse/aggregate logic.
 """
 import pytest
 
-from agents.usage_ledger import (
+from core.usage_ledger import (
     RESET_MARKER,
     aggregate_story_usage,
     format_e2e_section,

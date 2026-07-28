@@ -1,13 +1,13 @@
 """
-Unit tests for LLM usage tracking and cost estimation in agents.llm_client.
+Unit tests for LLM usage tracking and cost estimation in core.llm_client.
 
 No LLM calls are made — these test the accumulator and cost math directly,
 plus _record_usage() against a fake LangChain-style response object.
 """
 import pytest
 
-from agents import llm_client
-from agents.llm_client import (
+from core import llm_client
+from core.llm_client import (
     _UsageTracker,
     _record_usage,
     get_usage_summary,

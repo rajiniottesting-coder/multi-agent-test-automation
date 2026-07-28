@@ -54,7 +54,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from agents.app_context import AppContext
+from core.app_context import AppContext
 from inventory_tools import introspect
 from inventory_tools.browser import (
     browser_page, do_login, resolve_selectors,

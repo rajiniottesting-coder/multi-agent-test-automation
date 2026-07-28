@@ -1,5 +1,5 @@
 """
-Unit tests for agents.orphan_cleanup.
+Unit tests for validators.orphan_cleanup.
 
 DESIGN PRINCIPLE: every test uses synthetic app-neutral content to
 prove the cleanup logic is generic. We use banking, CMS, and finance
@@ -11,7 +11,7 @@ import textwrap
 
 import pytest
 
-from agents.orphan_cleanup import (
+from validators.orphan_cleanup import (
     OrphanPageMethod,
     OrphanStepDef,
     cleanup_orphans_after_removal,
@@ -220,7 +220,7 @@ class TestFindOrphanStepDefs:
             BANKING_FEATURE_BEFORE, ["BANK-103"]
         )
         # Surviving steps come from BANK-101 and BANK-102
-        from agents.gherkin_analyzer import _extract_feature_steps
+        from validators.gherkin_analyzer import _extract_feature_steps
         surviving = _extract_feature_steps(BANKING_FEATURE_AFTER)
 
         orphans = find_orphan_step_defs(
@@ -241,7 +241,7 @@ class TestFindOrphanStepDefs:
         removed_steps = extract_steps_in_removed_scenarios(
             BANKING_FEATURE_BEFORE, ["BANK-103"]
         )
-        from agents.gherkin_analyzer import _extract_feature_steps
+        from validators.gherkin_analyzer import _extract_feature_steps
         surviving = _extract_feature_steps(BANKING_FEATURE_AFTER)
 
         orphans = find_orphan_step_defs(
@@ -266,7 +266,7 @@ class TestFindOrphanStepDefs:
         the transfer step def is NOT orphan."""
         # Construct a feature where BANK-102 and BANK-103 share a step
         feature = BANKING_FEATURE_BEFORE  # keep BANK-103 alive
-        from agents.gherkin_analyzer import _extract_feature_steps
+        from validators.gherkin_analyzer import _extract_feature_steps
 
         removed_steps = extract_steps_in_removed_scenarios(feature, ["BANK-102"])
         surviving = _extract_feature_steps(feature)  # all 3 scenarios still in surviving content
@@ -295,7 +295,7 @@ class TestFindOrphanStepDefs:
         removed_steps = extract_steps_in_removed_scenarios(
             BANKING_FEATURE_BEFORE, ["BANK-102", "BANK-103"]
         )
-        from agents.gherkin_analyzer import _extract_feature_steps
+        from validators.gherkin_analyzer import _extract_feature_steps
         surviving = _extract_feature_steps(feature_minus_102)
 
         orphans = find_orphan_step_defs(

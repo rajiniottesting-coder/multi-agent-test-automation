@@ -33,7 +33,7 @@ def test_tracker():
 
     Probes only Protocol operations, so it works against any adapter.
     """
-    from agents.tracker import get_tracker
+    from integrations.tracker import get_tracker
 
     tracker = get_tracker()
     name = type(tracker).__name__

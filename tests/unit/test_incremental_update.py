@@ -384,7 +384,7 @@ class TestMarkerInjection:
 
     def test_non_feature_files_passed_through(self):
         from agents.agent2_coder import _ensure_jira_markers_on_feature_files
-        from agents.schemas import GeneratedFile
+        from core.schemas import GeneratedFile
         gf = GeneratedFile(
             file_path="pages/inventory_page.py",
             content="class Foo: pass",

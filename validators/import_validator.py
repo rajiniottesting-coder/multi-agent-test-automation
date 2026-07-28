@@ -39,7 +39,7 @@ DESIGN PRINCIPLES (app-agnostic, reusable across projects):
        Module-level resolution is enough to catch the common LLM mistake.
 
 USAGE:
-    from agents.import_validator import validate_imports_resolvable
+    from validators.import_validator import validate_imports_resolvable
     errors = validate_imports_resolvable(generated_files, project_root)
     # errors is a list[str]; empty means all imports resolve
 """

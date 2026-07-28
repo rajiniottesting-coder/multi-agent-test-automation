@@ -48,15 +48,15 @@ from dataclasses import dataclass, field
 from typing import Optional
 import yaml
 
-from agents.app_context import AppContext
-from agents.tracker import get_tracker
-from agents.board_status import move_card_for_label
-from agents.repo_host import get_repo_host
-from agents.import_validator import validate_imports_resolvable
-from agents.method_resolution_validator import validate_method_resolution
-from agents.llm_client import LLMClient
-from agents.schemas import CodePlan, GeneratedFile, CodeGenerationOutput
-from agents.gherkin_analyzer import (
+from core.app_context import AppContext
+from integrations.tracker import get_tracker
+from core.board_status import move_card_for_label
+from integrations.repo_host import get_repo_host
+from validators.import_validator import validate_imports_resolvable
+from validators.method_resolution_validator import validate_method_resolution
+from core.llm_client import LLMClient
+from core.schemas import CodePlan, GeneratedFile, CodeGenerationOutput
+from validators.gherkin_analyzer import (
     validate_no_duplicate_step_definitions,
     scan_features_dir,
     filter_duplicate_test_cases,
@@ -1818,7 +1818,7 @@ def _regenerate_step_defs_whole(
     page_inventory: str,
 ) -> str:
     """Regenerate the step-defs file whole based on the spliced feature."""
-    from agents.schemas import FilePlan
+    from core.schemas import FilePlan
 
     _h, blocks = parse_feature_file(new_feature_content)
     synthetic_tcs = []
@@ -2235,7 +2235,7 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
     # we log and continue with the surgical update without it. The PR
     # opens either way.
     # ════════════════════════════════════════════════════════════════════
-    from agents.orphan_cleanup import cleanup_orphans_after_removal
+    from validators.orphan_cleanup import cleanup_orphans_after_removal
 
     orphan_step_defs_found: list = []
     orphan_page_methods_found: list = []
@@ -2429,11 +2429,11 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
         f"=== Agent 2 UPDATE complete for {story_id}. "
         f"Modified={len(mod_keys)} New={len(new_keys)} Removed={len(classification['orphan_keys'])} ==="
     )
-    from agents.llm_client import log_usage_summary, reset_usage
+    from core.llm_client import log_usage_summary, reset_usage
     usage = log_usage_summary(f"story {story_id} (update)")
     reset_usage()  # per-story numbers in scan mode
     if not dry_run:
-        from agents.usage_ledger import post_usage_to_story
+        from core.usage_ledger import post_usage_to_story
         post_usage_to_story(story_id, "Agent 2 (Coder, incremental update)", usage, jira=jira)
     return {
         "story_id": story_id,
@@ -2655,7 +2655,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     orphan_regen_page_methods: list = []
     if is_regenerate:
         try:
-            from agents.orphan_cleanup import cleanup_orphans_after_removal
+            from validators.orphan_cleanup import cleanup_orphans_after_removal
 
             _gh_for_read = get_repo_host()
 
@@ -2891,11 +2891,11 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
         jira.remove_label(story_id, regenerate_label)
         logger.info(f"Removed label '{regenerate_label}' from {story_id} (one-shot consumed)")
 
-    from agents.llm_client import log_usage_summary, reset_usage
+    from core.llm_client import log_usage_summary, reset_usage
     usage = log_usage_summary(f"story {story_id}")
     reset_usage()  # per-story numbers in scan mode
     if not dry_run:
-        from agents.usage_ledger import post_usage_to_story
+        from core.usage_ledger import post_usage_to_story
         mode = "regenerate" if is_regenerate else "initial"
         post_usage_to_story(story_id, f"Agent 2 (Coder, {mode})", usage, jira=jira)
 

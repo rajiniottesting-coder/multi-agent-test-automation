@@ -13,7 +13,7 @@ import json
 
 import pytest
 
-from agents.app_context import AppContext, filter_inventory_by_components
+from core.app_context import AppContext, filter_inventory_by_components
 
 
 # A compact inventory covering every branch: two component groups, an "always"

@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agents.repo_host import RepoHost, get_repo_host, register_adapter
+from integrations.repo_host import RepoHost, get_repo_host, register_adapter
 
 ROOT = Path(__file__).resolve().parents[2]
 CALLERS = sorted((ROOT / "agents").glob("agent*.py")) + [
@@ -39,7 +39,7 @@ def test_protocol_covers_every_operation_the_callers_use():
 def test_github_adapter_matches_the_protocol_signature_exactly():
     """Name-only conformance is not enough - parameter names and order are
     part of the contract wherever a caller uses keyword arguments."""
-    from agents.github_client import GitHubClient
+    from integrations.github_client import GitHubClient
     mismatches = []
     for member in (m for m in dir(RepoHost) if not m.startswith("_")):
         proto = getattr(RepoHost, member, None)
@@ -74,7 +74,7 @@ def test_callers_never_instantiate_a_concrete_host():
 def test_pr_lookups_return_plain_dicts_not_provider_objects():
     """The regression that made a GitLab adapter impossible: agents read
     `.number` / `.head.ref` off a PyGithub PR."""
-    from agents.github_client import GitHubClient
+    from integrations.github_client import GitHubClient
     src = (ROOT / "agents" / "agent2_coder.py").read_text(encoding="utf-8")
     assert "existing_pr.number" not in src
     assert "existing_pr.head" not in src

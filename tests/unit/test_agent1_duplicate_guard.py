@@ -87,7 +87,7 @@ def test_dry_run_is_not_blocked():
 def test_lookup_failure_never_blocks():
     """A Jira hiccup must not stop the pipeline - count returns 0."""
     from unittest.mock import PropertyMock
-    from agents.jira_client import JiraClient
+    from integrations.jira_client import JiraClient
     client = MagicMock()
     client.enhanced_search_issues.side_effect = Exception("jira down")
     jc = JiraClient.__new__(JiraClient)

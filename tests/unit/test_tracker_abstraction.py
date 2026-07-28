@@ -10,11 +10,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agents.tracker import Tracker, get_tracker, register_adapter
+from integrations.tracker import Tracker, get_tracker, register_adapter
 
 ROOT = Path(__file__).resolve().parents[2]
+# Every module that CONSUMES a tracker. usage_ledger lives in core/ because it
+# is shared infrastructure, not an agent - but it calls the tracker, so it is
+# held to the same no-provider-coupling rule.
 AGENT_FILES = sorted((ROOT / "agents").glob("agent*.py")) + [
-    ROOT / "agents" / "usage_ledger.py"]
+    ROOT / "core" / "usage_ledger.py"]
 
 
 # ── the contract ─────────────────────────────────────────────
@@ -31,7 +34,7 @@ def test_protocol_covers_every_operation_the_agents_use():
 
 
 def test_jira_client_satisfies_the_protocol():
-    from agents.jira_client import JiraClient
+    from integrations.jira_client import JiraClient
     inst = JiraClient.__new__(JiraClient)
     inst.project_key = "SCRUM"
     assert isinstance(inst, Tracker)
@@ -103,7 +106,7 @@ def test_a_new_adapter_needs_no_agent_changes():
 
 def test_defaults_to_jira_when_config_is_unreadable():
     """An existing deployment with no `tracker:` block keeps working."""
-    from agents import tracker as t
+    from integrations import tracker as t
     with patch.object(t, "_configured_type", return_value="jira"):
         assert t._configured_type() == "jira"
 
@@ -124,8 +127,8 @@ def test_every_adapter_matches_the_protocol_signature_exactly():
     it looks wired up until a real story goes through.
     """
     import inspect
-    from agents.tracker import _ADAPTERS
-    from agents.jira_client import JiraClient
+    from integrations.tracker import _ADAPTERS
+    from integrations.jira_client import JiraClient
 
     # Check every concrete adapter we can inspect without constructing it.
     concrete = {"jira": JiraClient}

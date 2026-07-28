@@ -40,11 +40,11 @@ import logging
 import sys
 import yaml
 
-from agents.app_context import AppContext
-from agents.tracker import get_tracker
-from agents.board_status import move_card_for_label
-from agents.llm_client import LLMClient
-from agents.schemas import TestCaseList
+from core.app_context import AppContext
+from integrations.tracker import get_tracker
+from core.board_status import move_card_for_label
+from core.llm_client import LLMClient
+from core.schemas import TestCaseList
 from config import (
     REQUIRED_JIRA_ENV_VARS,
     REQUIRED_LLM_ENV_VARS,
@@ -237,7 +237,7 @@ def run(story_id: str, dry_run: bool = False) -> dict:
     # the same costed story, and their usage SHOULD accumulate.
     # Best-effort — never fails the run.
     if not dry_run:
-        from agents.usage_ledger import has_usage_comments, post_reset_to_story
+        from core.usage_ledger import has_usage_comments, post_reset_to_story
         try:
             if has_usage_comments(jira.get_comments(story_id)):
                 logger.info(
@@ -331,11 +331,11 @@ def run(story_id: str, dry_run: bool = False) -> dict:
                 )
 
     # 4. OUTPUT: return state for orchestrator / next agent
-    from agents.llm_client import log_usage_summary, reset_usage
+    from core.llm_client import log_usage_summary, reset_usage
     usage = log_usage_summary(f"story {story_id} (analyst)")
     reset_usage()  # per-story numbers in scan mode
     if not dry_run:
-        from agents.usage_ledger import post_usage_to_story
+        from core.usage_ledger import post_usage_to_story
         post_usage_to_story(story_id, "Agent 1 (Analyst)", usage, jira=jira)
 
     result = {

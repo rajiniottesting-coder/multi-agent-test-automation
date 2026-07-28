@@ -10,7 +10,7 @@ landed and only the label is missing.
 """
 from unittest.mock import MagicMock, PropertyMock, patch
 
-from agents.github_client import GitHubClient
+from integrations.github_client import GitHubClient
 
 
 def _pr(ref, number):

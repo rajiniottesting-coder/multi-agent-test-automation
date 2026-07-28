@@ -13,7 +13,7 @@ import textwrap
 import pytest
 
 import agents.agent1_analyst as analyst
-from agents.app_context import AppContext
+from core.app_context import AppContext
 
 
 # ═══════════════════════════════════════════════════════════════════

@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from agents.gherkin_analyzer import validate_no_duplicate_step_definitions
+from validators.gherkin_analyzer import validate_no_duplicate_step_definitions
 
 
 def _gf(path, content):

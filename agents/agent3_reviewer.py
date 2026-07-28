@@ -42,10 +42,10 @@ import os
 import re
 import sys
 
-from agents.app_context import AppContext
-from agents.repo_host import get_repo_host
-from agents.llm_client import LLMClient
-from agents.schemas import ReviewReport, ReviewIssue
+from core.app_context import AppContext
+from integrations.repo_host import get_repo_host
+from core.llm_client import LLMClient
+from core.schemas import ReviewReport, ReviewIssue
 from config import (
     REQUIRED_GITHUB_ENV_VARS,
     REQUIRED_LLM_ENV_VARS,
@@ -345,13 +345,13 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
 
     # ── LLM usage: log summary and post to the story's usage ledger ──
     # Story key is derived from the auto/<KEY>-... branch convention.
-    from agents.llm_client import log_usage_summary, reset_usage
+    from core.llm_client import log_usage_summary, reset_usage
     usage = log_usage_summary(f"PR #{pr_number} (reviewer)")
     reset_usage()
     import re as _re
     _m = _re.match(r"auto/([A-Z][A-Z0-9_]*-\d+)-", pr_metadata.get("head_branch", "") or "")
     if _m:
-        from agents.usage_ledger import post_usage_to_story
+        from core.usage_ledger import post_usage_to_story
         post_usage_to_story(_m.group(1), "Agent 3 (Reviewer)", usage)
     else:
         import logging as _logging

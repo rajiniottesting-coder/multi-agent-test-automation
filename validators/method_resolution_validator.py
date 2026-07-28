@@ -54,7 +54,7 @@ DESIGN PRINCIPLES (app-agnostic, reusable across projects):
        waste a repair attempt.
 
 USAGE:
-    from agents.method_resolution_validator import validate_method_resolution
+    from validators.method_resolution_validator import validate_method_resolution
     errors = validate_method_resolution(generated_files, project_root)
     # errors is a list[str]; empty means all method calls resolve
 

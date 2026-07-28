@@ -140,7 +140,7 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true", help="Report only; take no action.")
     args = ap.parse_args()
 
-    from agents.repo_host import get_repo_host
+    from integrations.repo_host import get_repo_host
     host = get_repo_host()
 
     open_prs = host.list_open_prs(branch_prefix=AUTO_BRANCH_PREFIX)

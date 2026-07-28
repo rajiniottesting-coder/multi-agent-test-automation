@@ -98,7 +98,7 @@ def post_usage_to_story(story_key: str, agent_name: str, usage: dict, jira=None)
         return False
     try:
         if jira is None:
-            from agents.tracker import get_tracker
+            from integrations.tracker import get_tracker
             jira = get_tracker()
         body = format_usage_comment(agent_name, usage)
         jira.add_comment(story_key, body)
@@ -133,7 +133,7 @@ def post_reset_to_story(story_key: str, reason: str = "", jira=None) -> bool:
         return False
     try:
         if jira is None:
-            from agents.tracker import get_tracker
+            from integrations.tracker import get_tracker
             jira = get_tracker()
         jira.add_comment(story_key, format_reset_comment(reason))
         logger.info(f"Usage ledger: posted reset marker to {story_key} ({reason}).")
