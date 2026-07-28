@@ -35,27 +35,16 @@ def credentials():
         username -> APP_USER_STANDARD
         password -> APP_PASSWORD_STANDARD, else APP_PASSWORD
     """
-    def _users_map() -> dict:
-        """Parse APP_USERS: 'standard=alice,admin=bob' -> {'STANDARD': 'alice'}.
-
-        ONE generic variable, so CI config carries no app-specific role names
-        and the workflow file is reused unchanged for any application.
-        """
-        raw = os.getenv("APP_USERS", "")
-        out = {}
-        for pair in raw.split(","):
-            if "=" in pair:
-                r, _, u = pair.partition("=")
-                out[r.strip().upper().replace("-", "_").replace(" ", "_")] = u.strip()
-        return out
-
     def _for(role: str) -> tuple[str, str]:
         key = role.strip().upper().replace("-", "_").replace(" ", "_")
-        # APP_USERS (generic) first; per-role APP_USER_<ROLE> still supported.
-        user = _users_map().get(key) or os.getenv(f"APP_USER_{key}")
+        user = os.getenv(f"APP_USER_{key}")
         if not user:
             raise RuntimeError(
-                f"Missing credential for role '{role}'. Set APP_USER_{key}."
+                f"No credential configured for login role '{role}'. Roles are "
+                f"LOGIN IDENTITIES (standard, locked_out, admin) - not pages or "
+                f"Jira components. If '{role}' is a real role, set APP_USER_{key} "
+                f"in .env (local) or GitHub Secrets (CI). If it is not a role, "
+                f"fix the feature file instead."
             )
         password = os.getenv(f"APP_PASSWORD_{key}") or os.getenv("APP_PASSWORD")
         if not password:

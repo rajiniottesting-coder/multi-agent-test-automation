@@ -118,10 +118,16 @@ jobs:
         # does not inject them automatically.
         env:
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
-          # ONE generic variable - no app-specific role names in this file, so
-          # it is reused unchanged for any application. Format:
-          #   APP_USERS = "standard=alice,admin=bob,readonly=carol"
-          APP_USERS: ${{ secrets.APP_USERS }}
+          # One secret per login role, matching the repo's Actions secrets.
+          # Onboarding a different app means editing this list to that app's
+          # roles - a deliberate trade: an explicit, greppable mapping that
+          # matches the GitHub Secrets page one-to-one.
+          APP_USER_STANDARD: ${{ secrets.APP_USER_STANDARD }}
+          APP_USER_LOCKED_OUT: ${{ secrets.APP_USER_LOCKED_OUT }}
+          APP_USER_PROBLEM: ${{ secrets.APP_USER_PROBLEM }}
+          APP_USER_PERFORMANCE_GLITCH: ${{ secrets.APP_USER_PERFORMANCE_GLITCH }}
+          APP_USER_ERROR: ${{ secrets.APP_USER_ERROR }}
+          APP_USER_VISUAL: ${{ secrets.APP_USER_VISUAL }}
         run: |
           pytest tests/step_defs/ \
             --html=reports/pytest-report.html \

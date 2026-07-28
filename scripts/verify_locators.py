@@ -55,7 +55,7 @@ Public site (no login) - add --no-login to any command below:
     python -m scripts.verify_locators --no-login \
         --selector "role=link[name='Forms']" --url /
 
-Login-gated app - omit --no-login and it reads APP_USERS / APP_PASSWORD
+Login-gated app - omit --no-login and it reads APP_USER_STANDARD / APP_PASSWORD
 from .env, logs in once, then visits every page authenticated (one browser
 context for the whole run, so the session persists):
 
@@ -306,7 +306,7 @@ def main() -> int:
             elif not (args.username and args.password):
                 print("  no credentials supplied - continuing WITHOUT login. Any page "
                       "behind auth will report every selector as STALE.\n"
-                      "  Set APP_USERS / APP_PASSWORD in .env, or pass --no-login if "
+                      "  Set APP_USER_STANDARD / APP_PASSWORD in .env, or pass --no-login if "
                       "the app is public.")
             else:
                 # ABORT. Continuing would visit the login screen for every page, so

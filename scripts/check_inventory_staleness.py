@@ -81,7 +81,7 @@ def _abs(base_url: str, path_or_url: str) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Check inventory vs live app.",
-        epilog=("examples:\n  public site                 --no-login\n  login-gated app             (no flag - reads APP_USERS/APP_PASSWORD from .env)\n  watch the login happen      --headed\n  fail a CI job on drift      --fail-on-drift\n\nread-only: reports STALE (0 matches), AMBIG (>1), NEW test-ids and\nunreachable pages. It never edits the inventory."),
+        epilog=("examples:\n  public site                 --no-login\n  login-gated app             (no flag - reads APP_USER_STANDARD/APP_PASSWORD from .env)\n  watch the login happen      --headed\n  fail a CI job on drift      --fail-on-drift\n\nread-only: reports STALE (0 matches), AMBIG (>1), NEW test-ids and\nunreachable pages. It never edits the inventory."),
         formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--test-attrs",
                     help="Comma-separated test-id attributes to track "
