@@ -122,12 +122,7 @@ jobs:
           # Onboarding a different app means editing this list to that app's
           # roles - a deliberate trade: an explicit, greppable mapping that
           # matches the GitHub Secrets page one-to-one.
-          APP_USER_STANDARD: ${{ secrets.APP_USER_STANDARD }}
-          APP_USER_LOCKED_OUT: ${{ secrets.APP_USER_LOCKED_OUT }}
-          APP_USER_PROBLEM: ${{ secrets.APP_USER_PROBLEM }}
-          APP_USER_PERFORMANCE_GLITCH: ${{ secrets.APP_USER_PERFORMANCE_GLITCH }}
-          APP_USER_ERROR: ${{ secrets.APP_USER_ERROR }}
-          APP_USER_VISUAL: ${{ secrets.APP_USER_VISUAL }}
+          APP_USER_ADMIN: ${{ secrets.APP_USER_ADMIN }}
         run: |
           pytest tests/step_defs/ \
             --html=reports/pytest-report.html \

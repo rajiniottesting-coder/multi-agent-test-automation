@@ -1,0 +1,65 @@
+{
+  "app_name": "OrangeHRM",
+  "base_url": "https://opensource-demo.orangehrmlive.com",
+  "description": "OrangeHRM open-source demo — an HR management system. Login, dashboard, and the Admin/PIM/Leave/Time modules behind it.",
+  "_inventory_conventions": {
+    "selectors": "Every selector maps to a first-class Playwright locator: [name='x'] / #id (css), role=button[name='Save'] (getByRole), label=Username (getByLabel), placeholder=..., alt=... , title=..., text=... . XPath is never emitted. An iframe-chained selector uses ' >>> '. label=/alt=/title= need page.get_by_label/get_by_alt_text/get_by_title (they are NOT page.locator() engine syntax); role= and text= work with page.locator() directly.",
+    "stability": "OrangeHRM 5.x is an Angular app. Its `oxd-*` class names are design-system classes, not generated hashes, so they are stable across releases — but `name` attributes and ARIA roles are stronger still and are preferred where present.",
+    "verification": "These selectors were derived from the app's documented behaviour, NOT captured from a live crawl. Run `python -m scripts.generate_inventory --no-login --urls /web/index.php/auth/login --output app_inventory/orangehrm.draft.json --headed` and `python -m scripts.verify_locators` before trusting them."
+  },
+  "test_users": {
+    "admin": "Full administrator. Reaches every module."
+  },
+  "common_errors": {
+    "invalid_credentials": "Invalid credentials",
+    "required_field": "Required"
+  },
+  "pages": {
+    "login": {
+      "url": "/web/index.php/auth/login",
+      "components": ["Login"],
+      "page_object_file": "pages/login_page.py",
+      "page_object_class": "LoginPage",
+      "elements": {
+        "username_input": "input[name='username']",
+        "password_input": "input[name='password']",
+        "login_button": "button[type='submit']",
+        "error_banner": ".oxd-alert-content-text",
+        "field_error": ".oxd-input-field-error-message",
+        "forgot_password_link": "text=Forgot your password?",
+        "branding": ".orangehrm-login-branding"
+      },
+      "elements_notes": {
+        "error_banner": "Shown for WRONG credentials. Text is exactly 'Invalid credentials' — the app does not say which field was wrong, deliberately.",
+        "field_error": "Per-field message shown when a field is left EMPTY. Text is 'Required'. Both fields empty means TWO of these are present, so a locator must expect more than one.",
+        "credentials_hint": "The demo prints Admin / admin123 on the login screen itself."
+      },
+      "key_methods": ["open(base_url)", "login_as(username, password)", "clear_credentials()", "get_error_message()", "get_field_error()", "is_login_form_displayed()"],
+      "errors": {
+        "invalid_credentials": "Invalid credentials",
+        "empty_field": "Required"
+      }
+    },
+    "dashboard": {
+      "url": "/web/index.php/dashboard/index",
+      "components": ["Dashboard"],
+      "page_object_file": "pages/dashboard_page.py",
+      "page_object_class": "DashboardPage",
+      "elements": {
+        "header_title": ".oxd-topbar-header-breadcrumb h6",
+        "user_dropdown": ".oxd-userdropdown-tab",
+        "user_name": ".oxd-userdropdown-name",
+        "side_menu": ".oxd-sidepanel",
+        "side_menu_items": ".oxd-main-menu-item",
+        "search_menu_input": "input[placeholder='Search']",
+        "logout_link": "role=menuitem[name='Logout']"
+      },
+      "elements_notes": {
+        "header_title": "Breadcrumb heading. Reads 'Dashboard' here and the module name elsewhere — the cheapest proof that login succeeded.",
+        "logout_link": "Only rendered AFTER user_dropdown is clicked. A crawler cannot see it; it is listed here from manual review."
+      },
+      "key_methods": ["get_header_title()", "is_loaded()", "get_logged_in_user()", "get_menu_items()", "open_user_menu()", "logout()"],
+      "errors": {}
+    }
+  }
+}

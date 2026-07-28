@@ -713,7 +713,7 @@ Implements the cleanup described in §5.8/§5.7. Detailed earlier; key functions
 | `comment_out_orphan_page_methods()` | 420 | Walks file lines, prefixes orphan func lines with `# `, prepends `# AI-ORPHAN:` banner with the removed Jira keys |
 | `cleanup_orphans_after_removal()` | 502 | Top-level orchestrator. Called from both `run_update()` (line 1769) AND `run()` regenerate mode (line ~2120). Both wrapped in try/except so cleanup failure doesn't block the PR. |
 
-Tests: 20 unit tests in `tests/unit/test_orphan_cleanup.py` using banking AND CMS fixtures (zero SauceDemo content) to prove app-agnosticism.
+Tests: 20 unit tests in `tests/unit/test_orphan_cleanup.py` using banking AND CMS fixtures (zero OrangeHRM content) to prove app-agnosticism.
 
 ### 9.4 `core/llm_client.py` (270 lines)
 
@@ -781,7 +781,7 @@ Wraps PyGithub. Methods used across agents:
 
 ### 9.8 `inventory_tools/` + `scripts/` inventory & sweeper tooling
 
-Two capabilities added in Tier 3, both app-agnostic (no SauceDemo assumptions):
+Two capabilities added in Tier 3, both app-agnostic (no OrangeHRM assumptions):
 
 **Inventory generation + staleness (3.1).** `inventory_tools/introspect.py` holds
 the pure, browser-free logic and is fully unit-tested: `rank_selector` (test-id
@@ -1173,7 +1173,7 @@ Agent prompts (`prompts/agent2_coder_plan.md`, `prompts/agent2_coder_generate.md
 This isolation is enforced by code, not just convention:
 - Path policy validator rejects plans touching reserved files
 - Prompts use placeholders (config substitution happens before LLM sees it)
-- Unit tests use generic fixtures (banking, CMS) — they'd fail if any code had a SauceDemo assumption
+- Unit tests use generic fixtures (banking, CMS) — they'd fail if any code had a OrangeHRM assumption
 
 ---
 

@@ -306,7 +306,7 @@ browser:               # Playwright settings (headless, viewport, timeout, slow_
 
 base_url: ...          # Legacy alias for tests/conftest.py
 
-test_users: ...        # SauceDemo-specific test data (move/remove for other apps)
+test_users: ...        # OrangeHRM-specific test data (move/remove for other apps)
 
 agents:
   agent1_analyst:
@@ -535,7 +535,7 @@ app_under_test:
 
 ### Step 2: Create `app_inventory/myshop.json`
 
-Describes the pages, selectors, and methods of your app. Use `app_inventory/saucedemo.json` as the example. The schema is documented in [REUSE_FOR_NEW_PROJECT.md → App inventory JSON schema](./REUSE_FOR_NEW_PROJECT.md). Rather than hand-writing from zero, **bootstrap a draft** with `python -m scripts.generate_inventory --crawl` (see [Inventory tooling](#inventory-tooling-bootstrap--staleness) above), then hand-review and fill the human-only fields (`elements_notes`, `key_methods`, page-level `errors`, `components`).
+Describes the pages, selectors, and methods of your app. Use `app_inventory/orangehrm.json` as the example. The schema is documented in [REUSE_FOR_NEW_PROJECT.md → App inventory JSON schema](./REUSE_FOR_NEW_PROJECT.md). Rather than hand-writing from zero, **bootstrap a draft** with `python -m scripts.generate_inventory --crawl` (see [Inventory tooling](#inventory-tooling-bootstrap--staleness) above), then hand-review and fill the human-only fields (`elements_notes`, `key_methods`, page-level `errors`, `components`).
 
 ### Step 3: Populate `prompts/app_context/`
 
@@ -550,10 +550,10 @@ The reference triplet is:
 - `tests/step_defs/test_<reference>.py` — step definitions
 - `pages/<reference>_page.py` — page object
 
-### Step 5: Optional — clean up SauceDemo leftovers
+### Step 5: Optional — clean up OrangeHRM leftovers
 
-If you want a pristine repo for your app (no SauceDemo files):
-- Delete `app_inventory/saucedemo.json`
+If you want a pristine repo for your app (no OrangeHRM files):
+- Delete `app_inventory/orangehrm.json`
 - Delete `features/login.feature`, `tests/step_defs/test_login.py`, `pages/login_page.py`, `pages/inventory_page.py`
 - Update `config.yaml`'s `test_users:` block (or remove it)
 - Update `config.yaml`'s `base_url:` legacy alias

@@ -11,23 +11,25 @@ REFERENCE FILE — Agent 2 copies this style. Rules it demonstrates:
 - Log in by ROLE via the `credentials` fixture. Invalid data (empty values,
   wrong passwords) stays literal — it is test data, not a credential.
 """
-from pytest_bdd import scenarios, given, when, then, parsers
+from pytest_bdd import given, when, then, parsers, scenarios
 
 from config.paths import feature_path
 
-
-# Bind this module to its feature file.
 scenarios(str(feature_path("login")))
 
 
-# === GIVEN steps ===
+# ─────────────────────────────────────────────────────────────
+# Given
+# ─────────────────────────────────────────────────────────────
 
-@given("I am on the SauceDemo login page")
+@given("I am on the OrangeHRM login page")
 def open_login_page(login_page, base_url):
     login_page.open(base_url)
 
 
-# === WHEN steps ===
+# ─────────────────────────────────────────────────────────────
+# When
+# ─────────────────────────────────────────────────────────────
 
 @when(parsers.re(r'I log in as "(?P<role>[^"]*)"$'))
 def login_as_role(login_page, credentials, role):
@@ -44,44 +46,43 @@ def login_as_role_wrong_password(login_page, credentials, role):
 
 
 @when(parsers.re(r'I log in with username "(?P<username>[^"]*)" and password "(?P<password>[^"]*)"'))
-def login_with_credentials(login_page, username, password):
+def login_with_literal_credentials(login_page, username, password):
+    """Literal values, for invalid and empty-field scenarios."""
     login_page.login_as(username, password)
 
 
-@when("I dismiss the error message")
-def dismiss_error_banner(login_page):
-    login_page.dismiss_error()
-
-
 @when("I clear the credential fields")
-def clear_credential_fields(login_page):
+def clear_credentials(login_page):
     login_page.clear_credentials()
 
 
-# === THEN steps ===
+# ─────────────────────────────────────────────────────────────
+# Then
+# ─────────────────────────────────────────────────────────────
 
-@then("I should be redirected to the inventory page")
-def verify_inventory_page(inventory_page):
-    assert inventory_page.is_loaded(), \
-        f"Expected inventory page, but URL is: {inventory_page.page.url}"
+@then("I should be redirected to the dashboard")
+def assert_on_dashboard(dashboard_page):
+    assert dashboard_page.is_loaded(), "Dashboard did not load after login"
 
 
 @then(parsers.re(r'I should see the page title "(?P<expected_title>[^"]*)"'))
-def verify_page_title(inventory_page, expected_title):
-    actual = inventory_page.get_page_title_text()
-    assert actual == expected_title, \
-        f"Expected title '{expected_title}', but got '{actual}'"
+def assert_page_title(dashboard_page, expected_title):
+    actual = dashboard_page.get_header_title()
+    assert actual == expected_title, f"Expected title {expected_title!r}, got {actual!r}"
 
 
 @then(parsers.re(r'I should see the error message "(?P<expected_message>[^"]*)"'))
-def verify_error_message(login_page, expected_message):
+def assert_error_message(login_page, expected_message):
     actual = login_page.get_error_message()
-    assert actual == expected_message, \
-        f"Expected error '{expected_message}', but got '{actual}'"
+    assert expected_message in actual, f"Expected {expected_message!r} in {actual!r}"
 
 
-@then("no error message should be displayed")
-def verify_no_error_message(login_page):
-    actual = login_page.get_error_message()
-    assert actual == "", \
-        f"Expected no error message, but got '{actual}'"
+@then(parsers.re(r'I should see the field error "(?P<expected_message>[^"]*)"'))
+def assert_field_error(login_page, expected_message):
+    actual = login_page.get_field_error()
+    assert expected_message in actual, f"Expected {expected_message!r} in {actual!r}"
+
+
+@then("I should remain on the login page")
+def assert_still_on_login(login_page):
+    assert login_page.is_login_form_displayed(), "Expected to stay on the login page"

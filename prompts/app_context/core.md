@@ -1,11 +1,10 @@
-# Application Context — Core
+# Application under test — OrangeHRM
 
-The application under test is **SauceDemo** (https://www.saucedemo.com), a free
-demo e-commerce site for automation practice.
+OrangeHRM open-source demo, an HR management system.
 
-_Always injected. Cross-cutting knowledge: test users, page-flow map, global
-conventions, testing notes. Module-specific rules live in the per-module files
-(login.md, inventory.md, cart.md, checkout.md), injected by Jira Component._
+- URL: https://opensource-demo.orangehrmlive.com
+- The login form is at `/web/index.php/auth/login`; `/` redirects there.
+- After a successful login the user lands on `/web/index.php/dashboard/index`.
 
 ## Known test roles
 
@@ -15,13 +14,10 @@ environment variables (GitHub Secrets in CI).
 
 | Role | Behaviour |
 |---|---|
-| `standard` | Normal user, all flows work |
-| `locked_out` | Receives a lockout error on login |
-| `problem` | UI bugs intentionally present (broken images, wrong field behaviour) |
-| `performance_glitch` | Slow page loads — useful for timing-sensitive scenarios |
+| `admin` | Full administrator. Reaches every module. |
 
-When a test case needs a valid login, name the ROLE (e.g. "log in as the
-standard user"). Do NOT write usernames or passwords into test-case steps.
+When a test case needs a valid login, name the ROLE (e.g. "log in as the admin
+user"). Do NOT write usernames or passwords into test-case steps.
 
 Invalid data is different and SHOULD be explicit: empty values, whitespace-only
 values and deliberately-wrong passwords are test data, not credentials, so
@@ -29,22 +25,16 @@ write them literally in the test case.
 
 ## Page flow (end to end)
 
-- Login form lives at the root path (`/`)
-- After successful login, users land on the inventory/products page (`/inventory.html`)
-- Clicking a product opens its detail page (`/inventory-item.html?id=<n>`)
-- Cart is at `/cart.html`
-- Checkout: `/checkout-step-one.html` → `/checkout-step-two.html` → `/checkout-complete.html`
-- The hamburger menu offers: All Items, About, Logout, Reset App State
+    login  →  dashboard  →  left-hand menu (Admin, PIM, Leave, Time,
+                            Recruitment, My Info, Performance, Directory)
 
-## Global conventions
+## Global rules
 
-- The cart badge (top-right) shows the current item count; absent when the cart is empty
-- Login errors appear in a banner at the top of the login form, prefixed with `Epic sadface:`
-- `problem` role and `performance_glitch` role are the levers for negative / timing scenarios
-
-## Testing notes
-
-- Prefer concrete test data over abstract descriptions
-- Use `standard` role for happy-path scenarios
-- Use `locked_out` role / `problem` role for specific negative scenarios where relevant
-- "Reset App State" (menu) clears the cart between scenarios when needed
+- The app is an Angular SPA. Navigation happens client-side, so a URL change
+  is not always a full page load — assert on a visible element, not just the
+  URL.
+- The left-hand menu and the top bar are present on every page after login.
+- Sessions expire. A test that idles will be bounced back to the login form.
+- This is a SHARED public demo: other people are using it at the same time.
+  Never write a test that depends on a specific record existing, on a count
+  being stable, or on data it did not create itself.

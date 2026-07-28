@@ -19,7 +19,7 @@ one line in `config/config.yaml`. Nothing in `agents/` changes.
 > ledger). Phase 2 (Tier 1 + Tier 2) also deployed: module-wise app context
 > (`prompts/app_context/`), inventory JSON minification, duplicate step-definition
 > guard, per-story ledger reset marker, and light-model routing (`LLM_MODEL_LIGHT`).
-> Audit-confirmed: zero hardcoded SauceDemo references in agent code,
+> Audit-confirmed: zero hardcoded OrangeHRM references in agent code,
 > agent prompts, or unit-test logic.
 
 This guide explains exactly what to change to point this framework at a different application (e.g., banking app, CMS, internal portal, anything with a web UI testable by Playwright + pytest-bdd).
@@ -62,7 +62,7 @@ These files contain zero project-specific knowledge. Reuse as-is:
 - `tests/unit/test_incremental_update.py`
 - `tests/unit/test_orphan_cleanup.py` — uses banking + CMS fixtures
 - `tests/unit/test_repair_loop.py`
-- `tests/unit/test_validators.py` — one fixture mentions "standard_user" as generic placeholder, not SauceDemo-specific
+- `tests/unit/test_validators.py` — one fixture mentions "Admin" as generic placeholder, not OrangeHRM-specific
 
 ### Infrastructure
 - `.github/workflows/*.yml` — all five workflows
@@ -104,14 +104,14 @@ app_under_test:
 ALSO update the legacy `base_url:` alias at line 61:
 
 ```yaml
-base_url: https://bank.acme.example.com   # was: https://www.saucedemo.com
+base_url: https://bank.acme.example.com   # was: https://opensource-demo.orangehrmlive.com
 ```
 
-ALSO update or REMOVE the `test_users:` block. SauceDemo-specific test users are in there.
+ALSO update or REMOVE the `test_users:` block. OrangeHRM-specific test users are in there.
 
 > **⚠️ Credentials — read before onboarding a REAL application.**
 >
-> SauceDemo's credentials (`standard_user` / `secret_sauce`) are safe to commit:
+> OrangeHRM's credentials (`Admin` / `admin123`) are safe to commit:
 > they are printed on the app's own login page, published in Sauce Labs' docs, and
 > guard nothing. **Real application credentials are not.** Putting them in
 > `config.yaml` or any file under `prompts/app_context/` means they are:
@@ -154,7 +154,7 @@ The `agents:` section (label selection rules, completion labels) **stays exactly
 
 ### Change 2 — `app_inventory/<your_app>.json` (MANDATORY)
 
-Delete `app_inventory/saucedemo.json`. Create a new JSON file describing your app's pages, selectors, and methods. See `the "App inventory JSON schema" section below` for the schema.
+Delete `app_inventory/orangehrm.json`. Create a new JSON file describing your app's pages, selectors, and methods. See `the "App inventory JSON schema" section below` for the schema.
 
 This file is what Agent 2's planner uses to understand what page objects exist and what methods they expose. Get it right or Agent 2 will hallucinate methods.
 
@@ -325,14 +325,14 @@ def login_with_credentials(login_page, username, password):
 > Needed by more than one feature → `conftest.py`.
 > Specific to one feature → that feature's paired step-def module.
 
-### Change 6 — Clean up SauceDemo leftovers (RECOMMENDED)
+### Change 6 — Clean up OrangeHRM leftovers (RECOMMENDED)
 
 Delete:
 - `features/login.feature` (replaced by your reference)
 - `tests/step_defs/test_login.py` (replaced by your reference)
 - `pages/login_page.py` (replaced by your reference)
-- `pages/inventory_page.py` (SauceDemo-specific)
-- `app_inventory/saucedemo.json` (after creating yours)
+- `pages/inventory_page.py` (OrangeHRM-specific)
+- `app_inventory/orangehrm.json` (after creating yours)
 
 Keep:
 - `pages/base_page.py` — universal helpers
@@ -341,13 +341,13 @@ Keep:
 
 ### Change 7 — Update README/CHANGES if you want (OPTIONAL)
 
-`README.md` and `CHANGES.md` mention SauceDemo in narrative text. Update for your audience. These are documentation only — code doesn't read them.
+`README.md` and `CHANGES.md` mention OrangeHRM in narrative text. Update for your audience. These are documentation only — code doesn't read them.
 
 ---
 
 ## What you DO NOT need to change
 
-Confirmed by audit (search for SauceDemo terms in agent code/prompts/tests returns ZERO hits):
+Confirmed by audit (search for OrangeHRM terms in agent code/prompts/tests returns ZERO hits):
 
 | Layer | What's in it | Touch? |
 |---|---|---|
@@ -431,7 +431,7 @@ If all work, you can promote to live cron-based scanning.
 
 ## What works "for free" across projects
 
-The fixes we delivered this week aren't tied to SauceDemo. Everything works for the new project automatically:
+The fixes we delivered this week aren't tied to OrangeHRM. Everything works for the new project automatically:
 
 | Fix | Why it works for any project |
 |---|---|
@@ -446,22 +446,22 @@ The fixes we delivered this week aren't tied to SauceDemo. Everything works for 
 | **Component-wise inventory filtering (2.2)** | Filters by the page `components` you tag — no app assumptions. Login story → only login pages/errors. |
 | **Error-type-aware repair (2.3)** | Classifies repair failures (import/method/duplicate/etc.) generically; routing rules are language-level, not app-level. |
 | **Update-mode step-def splicing (2.4)** | Splices only new steps into existing files; whole-file regen fallback. Generic pytest-bdd handling. |
-| **Inventory generation + staleness (3.1)** | `generate_inventory.py` / `check_inventory_staleness.py` are fully app-neutral: configurable `--test-attrs`, type-based login, no SauceDemo defaults. |
+| **Inventory generation + staleness (3.1)** | `generate_inventory.py` / `check_inventory_staleness.py` are fully app-neutral: configurable `--test-attrs`, type-based login, no OrangeHRM defaults. |
 | **Sweeper (3.4)** | Manages the agent pipeline (auto/* PRs, agent workflows), independent of the app under test. |
 
 The unit tests include:
 - 34 incremental-update tests (surgical `ai-update` splicing, app-agnostic)
 - 31 validator tests using generic placeholders
 - 29 per-story cost-ledger tests, including the reset-marker boundary
-- 27 inventory-tooling + sweeper tests (introspection on `data-cy`/`data-test` DOMs; stalled-PR classification) — never SauceDemo
+- 27 inventory-tooling + sweeper tests (introspection on `data-cy`/`data-test` DOMs; stalled-PR classification) — never OrangeHRM
 - 20 orphan-cleanup tests using **banking** (BANK-101, AccountPage) and **CMS** (CMS-1, SocialPage) fixtures
 - 19 module-wise app-context tests (core + component selection, safe-default fallback)
 - 18 component-filtering + 14 error-type-repair + 16 step-splicing tests
 - 14 duplicate step-definition guard tests (genuine cross-file collisions only)
 - 12 LLM usage-tracking tests, 8 repair-loop tests, 3 Agent 1 label tests
-- All of these use abstract, banking, CMS, or generic-attribute data — never SauceDemo
+- All of these use abstract, banking, CMS, or generic-attribute data — never OrangeHRM
 
-If any of these had snuck in a SauceDemo-specific assumption, the tests would fail when run.
+If any of these had snuck in a OrangeHRM-specific assumption, the tests would fail when run.
 
 ---
 
@@ -473,9 +473,9 @@ These traps caught us during development; flagging so you don't repeat them.
 
 `base_page.py` is universal — Playwright primitives only. App-specific helpers belong in your `pages/<app>_page.py`. If you find yourself adding "find_product_by_name" to base_page.py, that's wrong; it goes in inventory_page.py for an e-commerce app or account_page.py for a banking app.
 
-### Gotcha 2: Don't put SauceDemo selectors in reference files
+### Gotcha 2: Don't put OrangeHRM selectors in reference files
 
-When authoring the reference test for your new app, write selectors that match YOUR app. The framework treats the reference as the "gold standard"; if it has `[data-test='login-button']` (a SauceDemo selector), Agent 2 will mimic that exact attribute syntax. Your app probably uses different conventions (e.g., `[data-testid='login']`, or `#submit`, or React `role` selectors).
+When authoring the reference test for your new app, write selectors that match YOUR app. The framework treats the reference as the "gold standard"; if it has `[data-test='login-button']` (a OrangeHRM selector), Agent 2 will mimic that exact attribute syntax. Your app probably uses different conventions (e.g., `[data-testid='login']`, or `#submit`, or React `role` selectors).
 
 ### Gotcha 3: Reference test must be currently passing
 
@@ -493,7 +493,7 @@ The framework filters Jira issues by project key. If you set `JIRA_PROJECT_KEY=S
 
 ## One-paragraph version (if you're in a hurry)
 
-Copy the whole repo. In `config/config.yaml`, change the `app_under_test` block to point at your app and create the matching `app_inventory/<name>.json`. Populate `prompts/app_context/` — put global info in `core.md` and one `<component>.md` per Jira Component (or use a single `prompts/app_context.md` if you prefer) — with your app's known users / errors / page flow. Write ONE high-quality hand-crafted reference test (feature + step_def + page_object trio) and list those three files in `reserved_paths`. Delete the old SauceDemo files. Run `python -m pytest tests/unit/ -q` — should see 259 passed. Done. **No Python file in `agents/`, no prompt in `prompts/agent*.md`, no unit test, and no workflow file needs to change.**
+Copy the whole repo. In `config/config.yaml`, change the `app_under_test` block to point at your app and create the matching `app_inventory/<name>.json`. Populate `prompts/app_context/` — put global info in `core.md` and one `<component>.md` per Jira Component (or use a single `prompts/app_context.md` if you prefer) — with your app's known users / errors / page flow. Write ONE high-quality hand-crafted reference test (feature + step_def + page_object trio) and list those three files in `reserved_paths`. Delete the old OrangeHRM files. Run `python -m pytest tests/unit/ -q` — should see 259 passed. Done. **No Python file in `agents/`, no prompt in `prompts/agent*.md`, no unit test, and no workflow file needs to change.**
 
 ---
 
@@ -524,9 +524,9 @@ Copy the whole repo. In `config/config.yaml`, change the `app_under_test` block 
 | Duplicate step-definition guard | ✅ Present (SCRUM-54 / lesson #15) |
 | Per-story ledger reset marker | ✅ Present |
 | Light-model routing (`LLM_MODEL_LIGHT`) | ✅ Wired (Agents 1 & 5) |
-| Hardcoded SauceDemo references in agent code | ✅ Zero (audited) |
-| Hardcoded SauceDemo references in inventory tooling | ✅ Zero (audited) |
-| Hardcoded SauceDemo references in agent prompts | ✅ Zero (audited) |
+| Hardcoded OrangeHRM references in agent code | ✅ Zero (audited) |
+| Hardcoded OrangeHRM references in inventory tooling | ✅ Zero (audited) |
+| Hardcoded OrangeHRM references in agent prompts | ✅ Zero (audited) |
 
 Your local repo is ready to ship and ready to reuse.
 
@@ -615,7 +615,7 @@ Short context the LLM uses to "set the scene." The description should be one or 
 Map of user aliases to free-form descriptions. Each entry should contain credentials (or how to obtain them) plus any quirks. Examples:
 
 ```json
-"standard": "standard_user / secret_sauce — normal user, all flows work",
+"standard": "Admin / admin123 — normal user, all flows work",
 "admin": "admin@test.com / Pass123! — full permissions",
 "readonly": "viewer@test.com / Pass123! — cannot edit"
 ```
@@ -685,4 +685,4 @@ It flags inventory selectors that no longer resolve (the dangerous kind — they
 
 ### Examples
 
-The canonical reference is [`app_inventory/saucedemo.json`](../app_inventory/saucedemo.json). Use it as a template when authoring inventory for a new app.
+The canonical reference is [`app_inventory/orangehrm.json`](../app_inventory/orangehrm.json). Use it as a template when authoring inventory for a new app.

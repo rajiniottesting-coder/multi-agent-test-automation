@@ -1,64 +1,85 @@
 """
-LoginPage — the SauceDemo login page.
+LoginPage — the OrangeHRM login screen.
 
-POM principles applied:
-- Selectors live HERE, not in tests.
-- Methods describe USER INTENT (login_as, get_error_message),
-  not low-level actions (click button X, type Y).
+RESERVED reference file. Agent 2 copies this style when generating new page
+objects, so it is the single worked example of the conventions:
 
-Note on URL: the base URL is NOT hardcoded here. It comes from
-`config/config.yaml` via the `base_url` pytest fixture. This keeps
-the application URL in one place and makes the page object reusable
-across environments (dev / staging / prod).
+  - selectors are CLASS CONSTANTS, never inline in a method
+  - methods are business verbs (login_as), not UI mechanics (type_then_click)
+  - every method uses a BasePage helper; no raw self.page.* calls
+  - no assertions here — those belong in step definitions
+
+App: https://opensource-demo.orangehrmlive.com
 """
-from playwright.sync_api import Page
 from pages.base_page import BasePage
 
 
 class LoginPage(BasePage):
-    # === Locators (single source of truth) ===
-    # NOTE on error elements: SauceDemo renders the error text inside an
-    # <h3 data-test="error"> element, and the (X) close button as a SIBLING
-    # <button data-test="error-button">. The close button is NOT a child of
-    # the error element, so a selector like "[data-test='error'] button"
-    # will not find anything. Use ERROR_BUTTON below to dismiss errors.
-    USERNAME_INPUT = "[data-test='username']"
-    PASSWORD_INPUT = "[data-test='password']"
-    LOGIN_BUTTON = "[data-test='login-button']"
-    ERROR_MESSAGE = "[data-test='error']"
-    ERROR_BUTTON = "[data-test='error-button']"
+    """The login screen at /web/index.php/auth/login."""
 
+    PATH = "/web/index.php/auth/login"
+
+    # ── selectors ────────────────────────────────────────────
+    # `name` attributes are used by the app itself, so they are far more stable
+    # than the generated oxd-* class names Angular emits.
+    USERNAME_INPUT = "input[name='username']"
+    PASSWORD_INPUT = "input[name='password']"
+    LOGIN_BUTTON = "button[type='submit']"
+
+    # Banner shown for wrong credentials ("Invalid credentials").
+    ERROR_BANNER = ".oxd-alert-content-text"
+    # Per-field message shown when a field is left empty
+    # ("Username cannot be empty" / "Password cannot be empty").
+    FIELD_ERROR = ".oxd-input-field-error-message"
+
+    BRANDING = ".orangehrm-login-branding"
+
+    # ── actions ──────────────────────────────────────────────
     def open(self, base_url: str) -> None:
-        """Navigate to the login page.
+        """Navigate to the login screen.
 
         Args:
-            base_url: The application base URL, supplied by the test fixture
-                      from config.yaml. The login form lives at the root path.
+            base_url: application base URL, supplied by the `base_url` fixture
+                      from BASE_URL or config.yaml. OrangeHRM serves the login
+                      form at /web/index.php/auth/login and redirects "/" there.
         """
-        self.navigate(base_url)
+        self.navigate(f"{base_url.rstrip('/')}{self.PATH}")
 
     def login_as(self, username: str, password: str) -> None:
-        """Perform full login flow."""
-        self.page.fill(self.USERNAME_INPUT, username)
-        self.page.fill(self.PASSWORD_INPUT, password)
-        self.page.click(self.LOGIN_BUTTON)
+        """Fill both credentials and submit.
 
-    def get_error_message(self) -> str:
-        """Return error message text (empty string if none)."""
-        if self.is_visible(self.ERROR_MESSAGE):
-            return self.page.locator(self.ERROR_MESSAGE).inner_text()
-        return ""
-
-    def dismiss_error(self) -> None:
-        """Click the (X) close button on the error banner to dismiss it.
-
-        Use this between successive failed-login attempts in the same
-        scenario so each attempt asserts against a fresh error, not the
-        stale one from the previous attempt.
+        Takes the values rather than a role name: resolving a role to real
+        credentials is the `credentials` fixture's job, so this page object
+        stays usable with any user, including deliberately invalid ones.
         """
-        self.page.click(self.ERROR_BUTTON)
+        self.fill(self.USERNAME_INPUT, username)
+        self.fill(self.PASSWORD_INPUT, password)
+        self.click(self.LOGIN_BUTTON)
 
     def clear_credentials(self) -> None:
-        """Clear both username and password input fields."""
-        self.page.fill(self.USERNAME_INPUT, "")
-        self.page.fill(self.PASSWORD_INPUT, "")
+        """Empty both fields without submitting."""
+        self.clear(self.USERNAME_INPUT)
+        self.clear(self.PASSWORD_INPUT)
+
+    # ── queries ──────────────────────────────────────────────
+    def get_error_message(self) -> str:
+        """Text of the credentials error banner."""
+        self.wait_visible(self.ERROR_BANNER)
+        return self.get_text(self.ERROR_BANNER)
+
+    def get_field_error(self) -> str:
+        """First per-field validation message ('Username cannot be empty')."""
+        self.wait_visible(self.FIELD_ERROR)
+        return self.get_text(self.FIELD_ERROR)
+
+    def get_all_field_errors(self) -> list[str]:
+        """Every per-field validation message currently shown."""
+        return self.get_all_texts(self.FIELD_ERROR)
+
+    def is_error_displayed(self) -> bool:
+        """True if the credentials error banner is on screen."""
+        return self.is_visible(self.ERROR_BANNER)
+
+    def is_login_form_displayed(self) -> bool:
+        """True if we are still on the login screen."""
+        return self.is_visible(self.USERNAME_INPUT)

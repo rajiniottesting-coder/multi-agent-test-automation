@@ -76,13 +76,13 @@ tracker:
   type: "jira"
 
 app_under_test:
-  name: "SauceDemo"
-  base_url: "https://www.saucedemo.com"
+  name: "OrangeHRM"
+  base_url: "https://opensource-demo.orangehrmlive.com"
 
   # Page inventory: a JSON file describing pages, selectors, methods.
-  # See app_inventory/saucedemo.json as the canonical example. The
+  # See app_inventory/orangehrm.json as the canonical example. The
   # JSON shape is documented in docs/REUSE_FOR_NEW_PROJECT.md ("App inventory JSON schema").
-  inventory_file: "app_inventory/saucedemo.json"
+  inventory_file: "app_inventory/orangehrm.json"
 
   # Reference files: existing tests Agent 2 mimics for style and Agent 3
   # uses as the style baseline. These are NOT edited by the agents —
@@ -107,7 +107,7 @@ app_under_test:
   # automated (e.g., adding sort methods to InventoryPage when automating sort).
   # The LLM is told the rules in the Stage 1 prompt; the validator checks them.
   extendable_paths:
-    - "pages/inventory_page.py"
+    - "pages/dashboard_page.py"
     
 
 # ────────────────────────────────────────────────────────────
@@ -123,7 +123,7 @@ browser:
 
 # Legacy alias — agents now read from app_under_test.base_url, but this
 # is kept so conftest.py (which uses BASE_URL env var fallback) still works.
-base_url: https://www.saucedemo.com
+base_url: https://opensource-demo.orangehrmlive.com
 
 # ────────────────────────────────────────────────────────────
 # Login roles
