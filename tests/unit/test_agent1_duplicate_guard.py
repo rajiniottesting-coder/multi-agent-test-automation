@@ -95,3 +95,22 @@ def test_lookup_failure_never_blocks():
     with patch.object(JiraClient, "client", new_callable=PropertyMock,
                       return_value=client):      # `client` is a property
         assert jc.count_linked_test_cases("SCRUM-5") == 0
+
+# ── NEGATIVE: a broken junit.xml must say WHY ────────────────
+
+def test_unparseable_junit_gives_an_actionable_error(tmp_path):
+    """An empty or truncated junit.xml means the test RUN broke, not the
+    report. The raw ParseError ('no element found: line 1, column 0') tells the
+    reader nothing about what to do."""
+    from agents.agent5_reporter import parse_junit_xml
+    import pytest as _pytest
+
+    for body in ("", "garbage", "<incomplete"):
+        f = tmp_path / "junit.xml"
+        f.write_text(body)
+        with _pytest.raises(ValueError) as exc:
+            parse_junit_xml(f)
+        msg = str(exc.value)
+        assert "Could not parse" in msg
+        assert "bytes" in msg                      # names the size
+        assert "Agent 4" in msg                    # says where to look

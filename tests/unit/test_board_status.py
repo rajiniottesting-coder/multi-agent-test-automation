@@ -181,3 +181,35 @@ def test_closed_without_merge_does_not_mark_done():
             __import__("pathlib").Path(__file__).resolve().parents[2]))
     assert r.returncode == 0
     assert "WITHOUT merging" in r.stdout
+
+# ── NEGATIVE: malformed config must never crash an agent ─────
+#
+# status_for_label is called BEFORE the try block in move_card_for_label, so an
+# exception here would propagate and fail a run that has already created test
+# cases or opened a PR. A YAML indentation slip must not cost that.
+
+@pytest.mark.parametrize("bad_workflow", [
+    {"enabled": True, "on_label": "ai-coded: In Review"},   # string, not mapping
+    {"enabled": True, "on_label": ["ai-coded"]},            # list
+    {"enabled": True, "on_label": {"ai-coded": None}},      # null status
+    {"enabled": True, "on_label": {"ai-coded": 42}},        # non-string status
+    {"enabled": True, "on_label": {"ai-coded": {"a": 1}}},  # nested mapping
+    {"enabled": True, "on_label": {"ai-coded": "   "}},     # whitespace only
+    "not a mapping at all",                                 # whole block wrong
+    ["also", "not", "a", "mapping"],
+])
+def test_malformed_config_degrades_instead_of_raising(bad_workflow):
+    assert status_for_label("ai-coded", bad_workflow) is None
+    assert move_card_for_label(MagicMock(), "S-1", "ai-coded", bad_workflow) is False
+
+
+@pytest.mark.parametrize("bad_merge", [
+    {"enabled": True, "on_label": {}, "on_merge": 7},
+    {"enabled": True, "on_label": {}, "on_merge": ["Done"]},
+    {"enabled": True, "on_label": {}, "on_merge": ""},
+])
+def test_malformed_on_merge_degrades(bad_merge):
+    from agents.board_status import move_card_on_merge
+    tracker = MagicMock()
+    assert move_card_on_merge(tracker, "S-1", bad_merge) is False
+    tracker.transition_status.assert_not_called()

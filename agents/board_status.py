@@ -60,17 +60,67 @@ def load_status_workflow() -> dict:
         logger.debug(f"status_workflow unreadable ({e}); board moves disabled.")
         return {"enabled": False, "on_label": {}}
     block = data.get("status_workflow") or {}
+    if not isinstance(block, dict):              # `status_workflow: yes` etc.
+        logger.warning("status_workflow is not a mapping; board moves disabled.")
+        return {"enabled": False, "on_label": {}, "on_merge": None}
     return {"enabled": bool(block.get("enabled", False)),
-            "on_label": dict(block.get("on_label") or {}),
-            "on_merge": block.get("on_merge")}
+            "on_label": _coerce_mapping(block.get("on_label"), "on_label"),
+            "on_merge": _coerce_status(block.get("on_merge"), "on_merge")}
+
+
+def _coerce_mapping(value, field: str) -> dict:
+    """Return `value` as a {str: str} mapping, dropping anything unusable.
+
+    YAML indentation mistakes turn a mapping into a string or a list, and a
+    stray value turns a status into a dict. None of that should crash an agent
+    mid-run, so bad entries are logged and skipped rather than raised.
+    """
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        logger.warning(
+            f"status_workflow.{field} should be a mapping of label -> status, "
+            f"got {type(value).__name__}. Ignoring it; no cards will move."
+        )
+        return {}
+    out = {}
+    for k, v in value.items():
+        status = _coerce_status(v, f"{field}.{k}")
+        if status:
+            out[str(k)] = status
+    return out
+
+
+def _coerce_status(value, field: str) -> Optional[str]:
+    """A status must be a non-empty string. Anything else is dropped."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        logger.warning(
+            f"status_workflow.{field} should be a status name (a string), got "
+            f"{type(value).__name__}. Ignoring it."
+        )
+        return None
+    return value.strip() or None
 
 
 def status_for_label(label: str, workflow: Optional[dict] = None) -> Optional[str]:
-    """Board status a given completion label should move the card to, or None."""
-    wf = workflow if workflow is not None else load_status_workflow()
-    if not wf.get("enabled"):
+    """Board status a given completion label should move the card to, or None.
+
+    Never raises. A malformed config must not break a pipeline run that has
+    already created test cases or opened a PR - board position is cosmetic.
+    """
+    try:
+        wf = workflow if workflow is not None else load_status_workflow()
+        if not isinstance(wf, dict) or not wf.get("enabled"):
+            return None
+        mapping = wf.get("on_label")
+        if not isinstance(mapping, dict):
+            mapping = _coerce_mapping(mapping, "on_label")
+        return _coerce_status(mapping.get(label), f"on_label.{label}")
+    except Exception as e:
+        logger.warning(f"status_workflow is unusable ({e}); not moving the card.")
         return None
-    return wf.get("on_label", {}).get(label)
 
 
 def move_card_for_label(tracker, issue_key: str, label: str,
@@ -111,10 +161,14 @@ def move_card_on_merge(tracker, issue_key: str,
 
     Same never-fatal contract as every other board move.
     """
-    wf = workflow if workflow is not None else load_status_workflow()
-    if not wf.get("enabled"):
+    try:
+        wf = workflow if workflow is not None else load_status_workflow()
+        if not isinstance(wf, dict) or not wf.get("enabled"):
+            return False
+        status = _coerce_status(wf.get("on_merge"), "on_merge")
+    except Exception as e:
+        logger.warning(f"status_workflow is unusable ({e}); not moving the card.")
         return False
-    status = wf.get("on_merge")
     if not status:
         return False
     try:

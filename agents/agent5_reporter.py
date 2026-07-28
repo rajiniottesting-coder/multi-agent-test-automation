@@ -83,7 +83,23 @@ def parse_junit_xml(junit_path: Path) -> RunReport:
             f"Make sure Agent 4 (Runner) ran first and produced reports/junit.xml."
         )
 
-    tree = ET.parse(junit_path)
+    try:
+        tree = ET.parse(junit_path)
+    except ET.ParseError as e:
+        # An empty or truncated junit.xml means the test RUN broke, not the
+        # report. Pytest killed mid-write, a cancelled runner, or a truncated
+        # artifact download all land here. The raw ParseError
+        # ("no element found: line 1, column 0") tells the reader nothing, so
+        # say what actually happened and what to look at.
+        size = junit_path.stat().st_size if junit_path.exists() else 0
+        raise ValueError(
+            f"Could not parse {junit_path} ({size} bytes): {e}\n"
+            f"  The file exists but is not valid XML - usually pytest was "
+            f"killed before it finished writing, or the artifact download was "
+            f"truncated.\n"
+            f"  Check Agent 4's run: if the test job was cancelled or timed "
+            f"out, re-run it rather than trusting this report."
+        ) from e
     root = tree.getroot()
 
     # JUnit XML can have <testsuites> wrapper or be a single <testsuite>.
