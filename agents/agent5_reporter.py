@@ -48,7 +48,7 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from agents.jira_client import JiraClient
+from agents.tracker import get_tracker
 from agents.llm_client import LLMClient
 from agents.schemas import RunReport, TestResult, JiraCommentDraft
 from config import (
@@ -293,8 +293,8 @@ def resolve_story_key(cli_arg: str | None, pr_branch: str | None = None) -> str:
             # Escalate to parent Story when the branch encoded a Test Case key.
             # Best-effort: any failure here keeps the original key.
             try:
-                from agents.jira_client import JiraClient
-                parent = JiraClient().get_parent_story_key(key)
+                from agents.tracker import get_tracker
+                parent = get_tracker().get_parent_story_key(key)
                 if parent:
                     return parent
             except Exception as e:
@@ -382,7 +382,7 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
     reset_usage()
     try:
         if not dry_run:
-            _ledger_jira = JiraClient()
+            _ledger_jira = get_tracker()
             prior_comments = _ledger_jira.get_comments(story_key)
         else:
             prior_comments = []
@@ -420,7 +420,7 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
             "status": "draft_generated_dry_run",
         }
 
-    jira = JiraClient()
+    jira = get_tracker()
     comment_url = jira.add_comment(story_key, final_body)
     jira.add_label(story_key, "tests-run")  # idempotent — won't dup-add
     # Record this agent's usage on the ledger too, so any later re-run or

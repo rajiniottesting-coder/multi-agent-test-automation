@@ -11,6 +11,24 @@
 #
 # No agent code changes are needed. See docs/GUIDE.md "Onboarding a
 # new app" section for the full checklist.
+# ────────────────────────────────────────────────────────────
+# Issue tracker
+#
+# Which tracker adapter the agents talk to. The pipeline needs only ten
+# operations (read a story, find work, create/read test cases, move state
+# markers), all defined by the `Tracker` Protocol in agents/tracker.py.
+#
+# Shipping to a client on a different tool means writing ONE adapter and
+# changing this line - nothing in agents/ changes.
+#
+#   jira   - Atlassian Jira (default; adapter: agents/jira_client.py)
+#
+# To add another: implement the Protocol, register it in tracker._ADAPTERS
+# (or call tracker.register_adapter at startup), then set the name here.
+# ────────────────────────────────────────────────────────────
+tracker:
+  type: "jira"
+
 app_under_test:
   name: "SauceDemo"
   base_url: "https://www.saucedemo.com"

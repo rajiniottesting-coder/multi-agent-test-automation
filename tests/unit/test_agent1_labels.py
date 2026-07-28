@@ -51,7 +51,7 @@ def patched_agent1(fake_test_case_list):
     mock_llm.invoke_with_schema.return_value = fake_test_case_list
 
     # Patch the module-level constructors and prompt loader
-    with patch.object(agent1_analyst, "JiraClient", return_value=mock_jira), \
+    with patch.object(agent1_analyst, "get_tracker", return_value=mock_jira), \
          patch.object(agent1_analyst, "LLMClient", return_value=mock_llm), \
          patch.object(agent1_analyst, "load_prompt", return_value="prompt {story_summary} {story_description}"):
         yield mock_jira, agent1_analyst.run

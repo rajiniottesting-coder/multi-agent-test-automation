@@ -24,7 +24,7 @@ def _jira(count, labels=None):
 
 def test_completed_run_is_reported_as_already_processed():
     """Cases exist AND the label is present -> the previous run FINISHED."""
-    with patch.object(a1, "JiraClient",
+    with patch.object(a1, "get_tracker",
                       return_value=_jira(6, labels=["ai-processed"])), \
          patch.object(a1, "AppContext") as ctx:
         ctx.load.return_value = MagicMock(name="App", base_url="https://x")
@@ -37,7 +37,7 @@ def test_completed_run_is_reported_as_already_processed():
 def test_interrupted_run_is_reported_as_partial():
     """Cases exist but NO label -> the previous run died mid-loop, so that
     set is INCOMPLETE and must be deleted before re-running."""
-    with patch.object(a1, "JiraClient",
+    with patch.object(a1, "get_tracker",
                       return_value=_jira(4, labels=["ai-ready"])), \
          patch.object(a1, "AppContext") as ctx:
         ctx.load.return_value = MagicMock(name="App", base_url="https://x")
@@ -49,7 +49,7 @@ def test_interrupted_run_is_reported_as_partial():
 def test_guard_runs_before_any_llm_call():
     """A repeat must cost API calls, not a full generation."""
     jira = _jira(3)
-    with patch.object(a1, "JiraClient", return_value=jira), \
+    with patch.object(a1, "get_tracker", return_value=jira), \
          patch.object(a1, "AppContext") as ctx, \
          patch.object(a1, "LLMClient") as llm:
         ctx.load.return_value = MagicMock(name="App", base_url="https://x")
@@ -61,7 +61,7 @@ def test_guard_runs_before_any_llm_call():
 def test_zero_existing_cases_proceeds():
     """A clean story is untouched by the guard."""
     jira = _jira(0)
-    with patch.object(a1, "JiraClient", return_value=jira), \
+    with patch.object(a1, "get_tracker", return_value=jira), \
          patch.object(a1, "AppContext") as ctx:
         ctx.load.return_value = MagicMock(name="App", base_url="https://x")
         try:
@@ -74,7 +74,7 @@ def test_zero_existing_cases_proceeds():
 def test_dry_run_is_not_blocked():
     """--dry-run creates nothing, so it may always preview."""
     jira = _jira(4)
-    with patch.object(a1, "JiraClient", return_value=jira), \
+    with patch.object(a1, "get_tracker", return_value=jira), \
          patch.object(a1, "AppContext") as ctx:
         ctx.load.return_value = MagicMock(name="App", base_url="https://x")
         try:

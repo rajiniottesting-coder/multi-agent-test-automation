@@ -11,7 +11,7 @@ Position in pipeline:
 
 Inputs:
     - A Jira story key (manual mode), OR
-    - All stories matching a config-driven JQL filter (scan mode).
+    - All stories matching the config-driven selection rule (scan mode).
 
 Outputs:
     - Jira "Test Case" issues, linked to the parent story.
@@ -41,7 +41,7 @@ import sys
 import yaml
 
 from agents.app_context import AppContext
-from agents.jira_client import JiraClient
+from agents.tracker import get_tracker
 from agents.llm_client import LLMClient
 from agents.schemas import TestCaseList
 from config import (
@@ -161,7 +161,7 @@ def run(story_id: str, dry_run: bool = False) -> dict:
     logger.info(f"App under test: {ctx.name} ({ctx.base_url})")
 
     # 1. INPUT: fetch the story
-    jira = JiraClient()
+    jira = get_tracker()
 
     # DUPLICATE GUARD. Test Cases are created in a LOOP and `ai-processed` is
     # added only afterwards, so three routes end in duplicates:
@@ -427,7 +427,7 @@ def main():
         else:
             logger.info("Sprint scope: ALL sprints (no sprint filter configured)")
 
-        jira = JiraClient()
+        jira = get_tracker()
         stories = jira.find_stories_to_process(
             selection,
             max_results=max_stories,

@@ -49,7 +49,7 @@ from typing import Optional
 import yaml
 
 from agents.app_context import AppContext
-from agents.jira_client import JiraClient
+from agents.tracker import get_tracker
 from agents.github_client import GitHubClient
 from agents.import_validator import validate_imports_resolvable
 from agents.method_resolution_validator import validate_method_resolution
@@ -425,24 +425,9 @@ def load_prompt(prompt_file: str) -> str:
     return (PROMPTS_DIR / prompt_file).read_text(encoding="utf-8")
 
 
-def load_test_cases_for_story(jira: JiraClient, story_key: str) -> list[dict]:
-    jql = (
-        f'project = {jira.project_key} AND issuetype = "Test Case" '
-        f'AND issue in linkedIssues("{story_key}")'
-    )
-    logger.info(f"Fetching test cases linked to {story_key}: {jql}")
-    issues = jira.client.enhanced_search_issues(jql, maxResults=50)
-
-    test_cases = [
-        {
-            "key": issue.key,
-            "summary": issue.fields.summary,
-            "description": issue.fields.description or "",
-        }
-        for issue in issues
-    ]
-    logger.info(f"Found {len(test_cases)} test cases linked to {story_key}")
-    return test_cases
+def load_test_cases_for_story(jira, story_key: str) -> list[dict]:
+    """Delegate to the tracker adapter - no query language in agent code."""
+    return jira.get_linked_test_cases(story_key)
 
 
 def format_test_cases_for_prompt(test_cases: list[dict]) -> str:
@@ -2133,7 +2118,7 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
     ctx = AppContext.load()
     logger.info(f"App under test: {ctx.name} ({ctx.base_url})")
 
-    jira = JiraClient()
+    jira = get_tracker()
     story = jira.get_story(story_id)
     test_cases = load_test_cases_for_story(jira, story_id)
     if not test_cases:
@@ -2485,10 +2470,11 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     logger.info(f"App under test: {ctx.name} ({ctx.base_url})")
 
     # 1. INPUT
-    jira = JiraClient()
+    jira = get_tracker()
 
     # Guard: --story must name a STORY, not a Test Case. Scan mode filters on
-    # issuetype="Story" via JQL, but the manual --story path has no such filter,
+    # issue type "Story" via the tracker selection rule, but the manual --story
+    # path has no such filter,
     # so a Test Case key would be accepted and then baked into the branch name
     # (auto/<TESTCASE-KEY>-...). That breaks traceability: Agents 3/4/5 fire on
     # pull_request events which carry only a branch name, and Agent 5 recovers
@@ -3018,7 +3004,7 @@ def main():
         else:
             logger.info("Sprint scope: ALL sprints (no sprint filter configured).")
 
-        jira = JiraClient()
+        jira = get_tracker()
 
         logger.info("Scan pass 1/3: looking for first-time stories (normal mode)")
         normal_stories = jira.find_stories_to_process(

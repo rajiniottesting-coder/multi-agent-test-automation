@@ -379,6 +379,29 @@ class JiraClient:
         logger.info(f"Posted comment on {issue_key}: {comment_url}")
         return comment_url
 
+    def get_linked_test_cases(self, story_key: str) -> list[dict]:
+        """Test Cases linked to a story, as plain dicts.
+
+        Returns [{"key", "summary", "description"}, ...].
+
+        The JQL lives HERE, not in the agents: JQL is Jira-only, so a caller
+        that builds its own query cannot be pointed at Xray, TestRail or Azure
+        DevOps without editing the agent. Every tracker-specific detail belongs
+        behind this adapter.
+        """
+        jql = (f'project = {self.project_key} AND issuetype = "Test Case" '
+               f'AND issue in linkedIssues("{story_key}")')
+        logger.info(f"Fetching test cases linked to {story_key}: {jql}")
+        issues = self.client.enhanced_search_issues(jql, maxResults=50)
+        test_cases = [
+            {"key": i.key,
+             "summary": i.fields.summary,
+             "description": i.fields.description or ""}
+            for i in issues
+        ]
+        logger.info(f"Found {len(test_cases)} test cases linked to {story_key}")
+        return test_cases
+
     def count_linked_test_cases(self, story_key: str) -> int:
         """How many Test Case issues are already linked to this story.
 
