@@ -50,7 +50,14 @@ logger = logging.getLogger(__name__)
 
 @runtime_checkable
 class Tracker(Protocol):
-    """The complete set of tracker operations the pipeline uses."""
+    """The complete set of tracker operations the pipeline uses.
+
+    SIGNATURES ARE THE CONTRACT, not just the names. These were derived from
+    the real call sites in agents/ - a new adapter must match them exactly,
+    parameter names included, because some call sites use keyword arguments.
+    `tests/unit/test_tracker_abstraction.py` compares this Protocol against
+    every registered adapter and fails the build on any drift.
+    """
 
     # ── identity ─────────────────────────────────────────────
     @property
@@ -59,27 +66,33 @@ class Tracker(Protocol):
         ...
 
     # ── reading work ─────────────────────────────────────────
-    def get_story(self, key: str) -> dict:
-        """One story as {"key", "summary", "description", "labels", ...}."""
+    def get_story(self, issue_key: str) -> dict:
+        """One story as {"key", "summary", "description", "labels", "components"}."""
         ...
 
-    def find_stories_to_process(self, selection: dict,
+    def find_stories_to_process(self, selection_config: dict,
+                                max_results: int = 5,
                                 sprint_override: Optional[str] = None) -> list[dict]:
         """Stories matching a selection rule from config.yaml.
 
-        `selection` carries issue_type / required_labels / excluded_labels /
-        allowed_statuses / sprint. Translating that into a query is the
-        adapter's job — the agents never build one.
+        `selection_config` carries issue_type / required_labels /
+        excluded_labels / allowed_statuses / sprint. Translating that into a
+        query is the adapter's job - the agents never build one.
         """
         ...
 
-    def get_parent_story_key(self, key: str) -> Optional[str]:
-        """Parent story of a test case, or None if `key` is already a story."""
+    def get_parent_story_key(self, issue_key: str) -> Optional[str]:
+        """Parent story of a test case, or None if `issue_key` is a story."""
         ...
 
     # ── test cases ───────────────────────────────────────────
-    def create_test_case(self, story_key: str, test_case: Any) -> Any:
-        """Create a test case and link it to the story. Returns the new issue."""
+    def create_test_case(self, test_case: Any, parent_story_key: str) -> Any:
+        """Create a test case and link it to the parent story.
+
+        NOTE the argument ORDER: test_case first. agent1_analyst calls this as
+        `create_test_case(tc, parent_story_key=story_id)` - a keyword - so both
+        the order AND the name `parent_story_key` are part of the contract.
+        """
         ...
 
     def get_linked_test_cases(self, story_key: str) -> list[dict]:
@@ -92,12 +105,17 @@ class Tracker(Protocol):
         ...
 
     # ── state markers ────────────────────────────────────────
-    def add_label(self, key: str, label: str) -> None: ...
-    def remove_label(self, key: str, label: str) -> None: ...
+    def add_label(self, issue_key: str, label: str) -> None: ...
+    def remove_label(self, issue_key: str, label: str) -> None: ...
 
     # ── audit trail ──────────────────────────────────────────
-    def add_comment(self, key: str, body: str) -> None: ...
-    def get_comments(self, key: str) -> list[str]: ...
+    def add_comment(self, issue_key: str, body: str) -> str:
+        """Post a comment. Returns a URL/identifier for it where available."""
+        ...
+
+    def get_comments(self, issue_key: str) -> list:
+        """All comment bodies on the issue."""
+        ...
 
 
 # ─────────────────────────────────────────────────────────────

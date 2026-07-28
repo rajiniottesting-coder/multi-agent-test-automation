@@ -77,23 +77,27 @@ def test_a_new_adapter_needs_no_agent_changes():
     """The whole point: register a class matching the shape and it works."""
     class FakeTracker:
         project_key = "DEMO"
-        def get_story(self, key): return {"key": key, "summary": "s",
-                                          "description": "d", "labels": []}
-        def find_stories_to_process(self, selection, sprint_override=None): return []
-        def get_parent_story_key(self, key): return None
-        def create_test_case(self, story_key, test_case): return MagicMock(key="T-1")
+        def get_story(self, issue_key): return {"key": issue_key, "summary": "s",
+                                                "description": "d", "labels": []}
+        def find_stories_to_process(self, selection_config, max_results=5,
+                                    sprint_override=None): return []
+        def get_parent_story_key(self, issue_key): return None
+        def create_test_case(self, test_case, parent_story_key):
+            return MagicMock(key="T-1")
         def get_linked_test_cases(self, story_key): return []
         def count_linked_test_cases(self, story_key): return 0
-        def add_label(self, key, label): pass
-        def remove_label(self, key, label): pass
-        def add_comment(self, key, body): pass
-        def get_comments(self, key): return []
+        def add_label(self, issue_key, label): pass
+        def remove_label(self, issue_key, label): pass
+        def add_comment(self, issue_key, body): return ""
+        def get_comments(self, issue_key): return []
 
     register_adapter("fake", FakeTracker)
     t = get_tracker("fake", fresh=True)
     assert isinstance(t, Tracker)
     assert t.project_key == "DEMO"
     assert t.get_story("X-1")["key"] == "X-1"
+    # keyword call, exactly as agent1 makes it
+    assert t.create_test_case({}, parent_story_key="S-1").key == "T-1"
 
 
 def test_defaults_to_jira_when_config_is_unreadable():
@@ -101,3 +105,57 @@ def test_defaults_to_jira_when_config_is_unreadable():
     from agents import tracker as t
     with patch.object(t, "_configured_type", return_value="jira"):
         assert t._configured_type() == "jira"
+
+# ── SIGNATURES are the contract, not just names ──────────────
+
+def _params(func):
+    import inspect
+    return [p for p in inspect.signature(func).parameters if p != "self"]
+
+
+def test_every_adapter_matches_the_protocol_signature_exactly():
+    """Name-only conformance is not enough.
+
+    `create_test_case` is called as `create_test_case(tc, parent_story_key=...)`
+    - a KEYWORD argument - so the parameter name and order are both part of the
+    contract. An adapter with the right method names but shuffled parameters
+    passes isinstance() and then fails at runtime, which is the worst outcome:
+    it looks wired up until a real story goes through.
+    """
+    import inspect
+    from agents.tracker import _ADAPTERS
+    from agents.jira_client import JiraClient
+
+    # Check every concrete adapter we can inspect without constructing it.
+    concrete = {"jira": JiraClient}
+    for name, cls in concrete.items():
+        mismatches = []
+        for member in (m for m in dir(Tracker) if not m.startswith("_")):
+            proto = getattr(Tracker, member, None)
+            impl = getattr(cls, member, None)
+            if not callable(proto) or not callable(impl):
+                continue          # properties are checked by isinstance
+            if _params(proto) != _params(impl):
+                mismatches.append(
+                    f"{member}: Protocol{_params(proto)} != {cls.__name__}{_params(impl)}")
+        assert not mismatches, (
+            f"adapter {name!r} drifts from the Protocol:\n  " + "\n  ".join(mismatches))
+
+
+def test_keyword_call_sites_still_resolve():
+    """Any agent call using keyword args must match the Protocol's names."""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    kwargs_used = set()
+    for f in sorted((root / "agents").glob("agent*.py")):
+        for m in re.finditer(r"\b(?:jira|tracker)\.(\w+)\(([^)]*)\)", f.read_text(encoding="utf-8")):
+            for kw in re.findall(r"(\w+)\s*=", m.group(2)):
+                kwargs_used.add((m.group(1), kw))
+    for method, kw in kwargs_used:
+        proto = getattr(Tracker, method, None)
+        if proto is None or not callable(proto):
+            continue
+        assert kw in _params(proto), (
+            f"agents call {method}({kw}=...) but the Protocol has no such "
+            f"parameter — a new adapter would break at runtime")
