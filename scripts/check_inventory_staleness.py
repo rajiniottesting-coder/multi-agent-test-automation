@@ -48,7 +48,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Load .env so credentials resolve the same way as in smoke_test.py and the
-# agents. Without this, APP_USER_STANDARD / APP_PASSWORD set in .env are
+# agents. Without this, INVENTORY_USER / INVENTORY_PASS set in .env are
 # invisible here and login silently does nothing.
 from dotenv import load_dotenv
 
@@ -57,6 +57,7 @@ load_dotenv()
 from core.app_context import AppContext
 from inventory_tools import introspect
 from inventory_tools.browser import (
+    crawl_credentials,
     browser_page, do_login, resolve_selectors,
     DEFAULT_USERNAME_SELECTOR, DEFAULT_PASSWORD_SELECTOR, DEFAULT_SUBMIT_SELECTOR,
 )
@@ -81,7 +82,7 @@ def _abs(base_url: str, path_or_url: str) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Check inventory vs live app.",
-        epilog=("examples:\n  public site                 --no-login\n  login-gated app             (no flag - reads APP_USER_STANDARD/APP_PASSWORD from .env)\n  watch the login happen      --headed\n  fail a CI job on drift      --fail-on-drift\n\nread-only: reports STALE (0 matches), AMBIG (>1), NEW test-ids and\nunreachable pages. It never edits the inventory."),
+        epilog=("examples:\n  public site                 --no-login\n  login-gated app             (no flag - reads INVENTORY_USER/INVENTORY_PASS from .env)\n  watch the login happen      --headed\n  fail a CI job on drift      --fail-on-drift\n\nread-only: reports STALE (0 matches), AMBIG (>1), NEW test-ids and\nunreachable pages. It never edits the inventory."),
         formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--test-attrs",
                     help="Comma-separated test-id attributes to track "
@@ -91,13 +92,11 @@ def main() -> int:
     # APP_* variables the test suite uses (tests/step_defs/conftest.py),
     # so a repo has ONE credential source rather than two.
     ap.add_argument("--username",
-                    default=os.getenv("INVENTORY_USER")
-                    or os.getenv("APP_USER_STANDARD"),
+                    default=crawl_credentials()[0],
                     help="Login username. Defaults to INVENTORY_USER, else "
-                         "APP_USER_STANDARD from .env.")
+                         "INVENTORY_USER from .env.")
     ap.add_argument("--password",
-                    default=os.getenv("INVENTORY_PASS")
-                    or os.getenv("APP_PASSWORD"),
+                    default=crawl_credentials()[1],
                     help="Login password. Defaults to INVENTORY_PASS, else "
                          "APP_PASSWORD from .env.")
     ap.add_argument("--login-url", help="Login page URL/path (default: app root).")

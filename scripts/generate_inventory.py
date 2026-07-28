@@ -56,7 +56,7 @@ from urllib.parse import urljoin, urlparse
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Load .env so credentials resolve the same way as in smoke_test.py and the
-# agents. Without this, APP_USER_STANDARD / APP_PASSWORD set in .env are
+# agents. Without this, INVENTORY_USER / INVENTORY_PASS set in .env are
 # invisible here and login silently does nothing.
 from dotenv import load_dotenv
 
@@ -65,6 +65,7 @@ load_dotenv()
 from core.app_context import AppContext
 from inventory_tools import introspect
 from inventory_tools.browser import (
+    crawl_credentials,
     browser_page, do_login, collect_descriptors,
     DEFAULT_USERNAME_SELECTOR, DEFAULT_PASSWORD_SELECTOR, DEFAULT_SUBMIT_SELECTOR,
 )
@@ -93,6 +94,7 @@ def _abs(base_url: str, path_or_url: str) -> str:
     return base_url + (path_or_url if path_or_url.startswith("/") else "/" + path_or_url)
 
 
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Generate a draft inventory JSON.",
         epilog=("examples:\n  login page (logged OUT - you never see it once authenticated)\n    --no-login --urls / --output app_inventory/<app>.login.draft.json --headed\n  everything else, logged in, following links\n    --crawl --urls /dashboard --max-depth 3 --max-pages 40 --headed\n  exact pages only (most reliable - no crawl guesswork)\n    --urls /products,/cart,/checkout --output app_inventory/app.draft.json\n  app that tags elements with something other than data-test\n    --no-login --urls / --test-attrs data-cy,data-qa\n\nwrite each command on ONE line - a trailing backslash is Unix-shell\ncontinuation and is NOT valid in PowerShell, which silently joins the args."),
@@ -111,15 +113,13 @@ def main() -> int:
     # APP_* variables the test suite uses (tests/step_defs/conftest.py),
     # so a repo has ONE credential source rather than two.
     ap.add_argument("--username",
-                    default=os.getenv("INVENTORY_USER")
-                    or os.getenv("APP_USER_STANDARD"),
-                    help="Login username. Defaults to INVENTORY_USER, else "
-                         "APP_USER_STANDARD from .env.")
+                    default=crawl_credentials()[0],
+                    help="Login username for the crawl. Defaults to INVENTORY_USER, else the "
+                         "single APP_USER_<ROLE> in .env / GitHub Secrets.")
     ap.add_argument("--password",
-                    default=os.getenv("INVENTORY_PASS")
-                    or os.getenv("APP_PASSWORD"),
+                    default=crawl_credentials()[1],
                     help="Login password. Defaults to INVENTORY_PASS, else "
-                         "APP_PASSWORD from .env.")
+                         "APP_PASSWORD, from .env / GitHub Secrets.")
     ap.add_argument("--login-url", help="Login page URL/path (default: app root).")
     ap.add_argument("--username-selector", default=DEFAULT_USERNAME_SELECTOR,
                     help="Override if the username field is not auto-detected (SSO, multi-step forms).")

@@ -9,7 +9,10 @@ frame-chain selector), and open shadow DOM. Requires a Playwright browser:
     pip install playwright
     playwright install chromium
 """
+
 from __future__ import annotations
+
+import os
 
 from contextlib import contextmanager
 from typing import Iterator, Optional
@@ -140,8 +143,31 @@ el => {
 """
 
 
+def crawl_credentials() -> tuple:
+    """(username, password) for the ONE login the browser tools need.
+
+    They do not care about roles - any valid user gets them past the login
+    wall. So rather than hardcoding a role name (APP_USER_STANDARD broke the
+    moment the app under test renamed its roles), this takes whatever is in
+    the environment:
+
+        username: INVENTORY_USER, else the single APP_USER_<ROLE> that is set
+        password: INVENTORY_PASS, else APP_PASSWORD
+
+    With several roles set, INVENTORY_USER decides - picking one arbitrarily
+    would crawl as the wrong user and produce an inventory for the wrong
+    permissions level.
+    """
+    user = os.getenv("INVENTORY_USER")
+    if not user:
+        roles = [v for k, v in os.environ.items()
+                 if k.startswith("APP_USER_") and v.strip()]
+        user = roles[0] if len(roles) == 1 else None
+    return user, (os.getenv("INVENTORY_PASS") or os.getenv("APP_PASSWORD"))
+
+
 @contextmanager
-def browser_page(headless: bool = True, timeout_ms: int = 15000) -> Iterator:
+def browser_page(headless: bool = True, timeout_ms: int = 30000) -> Iterator:
     """Yield a Playwright Page, cleaning up the browser afterwards."""
     from playwright.sync_api import sync_playwright  # imported lazily
 
@@ -175,7 +201,7 @@ def do_login(page, login_url: Optional[str], username_selector: Optional[str],
     if not all([login_url, username_selector, password_selector,
                 submit_selector, username, password]):
         return False
-    page.goto(login_url)
+    _goto_spa_tolerant(page, login_url)
     url_before = page.url
     page.locator(username_selector).first.fill(username)
     page.locator(password_selector).first.fill(password)
@@ -210,6 +236,26 @@ def _frame_chain_selector(page, frame) -> str:
     return f" {FRAME_DELIM} ".join(reversed(parts)) if parts else ""
 
 
+def _goto_spa_tolerant(page, url: str, settle_ms: int = 3000):
+    """Navigate, tolerating single-page apps that never fire `load`.
+
+    Playwright's default `goto` waits for the `load` event. An Angular/React app
+    holding an open websocket or a long poll may never fire it, so a page that
+    renders perfectly still raises "Timeout 15000ms exceeded" - and the crawler
+    reports 0 pages for a site that works.
+
+    So: wait only for `domcontentloaded` (which always fires), then give the
+    framework a short window to render, preferring `networkidle` but accepting
+    a plain timeout. Anything actually unreachable still raises from the goto.
+    """
+    resp = page.goto(url, wait_until="domcontentloaded")
+    try:
+        page.wait_for_load_state("networkidle", timeout=settle_ms)
+    except Exception:
+        page.wait_for_timeout(settle_ms)      # SPA still busy - render anyway
+    return resp
+
+
 def collect_descriptors(page, url: str, test_attrs: tuple = TEST_ID_ATTRS
                         ) -> tuple[str, list[dict]]:
     """Navigate to `url`; return (page_title, element_descriptors).
@@ -217,8 +263,7 @@ def collect_descriptors(page, url: str, test_attrs: tuple = TEST_ID_ATTRS
     Collects the main frame plus every child frame (each element tagged with its
     frame-chain selector) and pierces open shadow DOM within each frame.
     """
-    page.goto(url)
-    page.wait_for_load_state("networkidle")
+    _goto_spa_tolerant(page, url)
     js = _collect_js(test_attrs)
     descriptors = list(page.evaluate(js))
     try:
@@ -292,8 +337,7 @@ def resolve_selectors(page, url: str, selectors: list[str],
     and open shadow DOM. `reachable` is False on navigation error / HTTP >= 400.
     """
     try:
-        resp = page.goto(url)
-        page.wait_for_load_state("networkidle")
+        resp = _goto_spa_tolerant(page, url)
     except Exception:
         return {}, set(), False
     reachable = True

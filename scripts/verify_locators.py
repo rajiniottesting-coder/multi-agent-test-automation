@@ -55,7 +55,7 @@ Public site (no login) - add --no-login to any command below:
     python -m scripts.verify_locators --no-login \
         --selector "role=link[name='Forms']" --url /
 
-Login-gated app - omit --no-login and it reads APP_USER_STANDARD / APP_PASSWORD
+Login-gated app - omit --no-login and it reads INVENTORY_USER / INVENTORY_PASS
 from .env, logs in once, then visits every page authenticated (one browser
 context for the whole run, so the session persists):
 
@@ -121,6 +121,7 @@ load_dotenv()
 from core.app_context import AppContext
 from inventory_tools import introspect
 from inventory_tools.browser import (
+    crawl_credentials,
     browser_page, do_login, _resolve_one,
     DEFAULT_USERNAME_SELECTOR, DEFAULT_PASSWORD_SELECTOR, DEFAULT_SUBMIT_SELECTOR,
 )
@@ -285,10 +286,10 @@ def main() -> int:
     ap.add_argument("--submit-selector", default=DEFAULT_SUBMIT_SELECTOR,
                 help="Override if the submit control is not auto-detected.")
     ap.add_argument("--username",
-                    default=os.getenv("INVENTORY_USER") or os.getenv("APP_USER_STANDARD"),
-                    help="Defaults to INVENTORY_USER, else APP_USER_STANDARD from .env.")
+                    default=crawl_credentials()[0],
+                    help="Defaults to INVENTORY_USER from .env.")
     ap.add_argument("--password",
-                    default=os.getenv("INVENTORY_PASS") or os.getenv("APP_PASSWORD"),
+                    default=crawl_credentials()[1],
                     help="Defaults to INVENTORY_PASS, else APP_PASSWORD from .env.")
     args = ap.parse_args()
 
@@ -306,7 +307,7 @@ def main() -> int:
             elif not (args.username and args.password):
                 print("  no credentials supplied - continuing WITHOUT login. Any page "
                       "behind auth will report every selector as STALE.\n"
-                      "  Set APP_USER_STANDARD / APP_PASSWORD in .env, or pass --no-login if "
+                      "  Set INVENTORY_USER / INVENTORY_PASS in .env, or pass --no-login if "
                       "the app is public.")
             else:
                 # ABORT. Continuing would visit the login screen for every page, so
