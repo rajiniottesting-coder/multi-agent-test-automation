@@ -586,7 +586,7 @@ python -m pytest --collect-only -q tests/step_defs/
 ## Expected: 3 tests collected
 
 ## All modules import
-python -c "import agents.agent2_coder, agents.gherkin_analyzer, agents.jira_client, agents.github_client"
+python -c "import agents.agent2_coder, validators.gherkin_analyzer, integrations.jira_client, integrations.github_client"
 ## Expected: no errors
 
 ## Agent 2 CLI works

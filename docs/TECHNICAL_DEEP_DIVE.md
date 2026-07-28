@@ -616,7 +616,7 @@ A workflow can rerun multiple times (manual rerun, retry on transient failures).
 
 ## 9. Cross-cutting modules
 
-### 9.1 `agents/app_context.py` (210 lines) — the reuse enabler
+### 9.1 `core/app_context.py` (210 lines) — the reuse enabler
 
 #### `class AppContext` (line 50)
 
@@ -647,7 +647,7 @@ class AppContext:
 
 This is the single point where app config is loaded. Every agent calls `AppContext.load()` once.
 
-### 9.2 `agents/gherkin_analyzer.py` (1136 lines) — feature/step matching engine (renamed from test_inventory.py)
+### 9.2 `validators/gherkin_analyzer.py` (1136 lines) — feature/step matching engine (renamed from test_inventory.py)
 
 The hardest computation in the codebase. Used by:
 - Agent 2's repair loop and final validation
@@ -701,7 +701,7 @@ Includes `_try_autocorrect_feature_name()` (line 481) which can fix simple misma
 
 Catches orphan Given/When/Then lines outside any Scenario block. pytest-bdd would fail at collection time with a cryptic error; this validator catches it pre-commit with a clear message.
 
-### 9.3 `agents/orphan_cleanup.py` (593 lines) — dead code detection
+### 9.3 `validators/orphan_cleanup.py` (593 lines) — dead code detection
 
 Implements the cleanup described in §5.8/§5.7. Detailed earlier; key functions:
 
@@ -715,7 +715,7 @@ Implements the cleanup described in §5.8/§5.7. Detailed earlier; key functions
 
 Tests: 20 unit tests in `tests/unit/test_orphan_cleanup.py` using banking AND CMS fixtures (zero SauceDemo content) to prove app-agnosticism.
 
-### 9.4 `agents/llm_client.py` (270 lines)
+### 9.4 `core/llm_client.py` (270 lines)
 
 #### `class LLMClient` (line 79)
 
@@ -731,7 +731,7 @@ Wraps any OpenAI-compatible LLM API via `langchain-openai`. Configuration from e
 
 Returns max output tokens based on model name. Pro 2.5 supports 65k output. Critical for large step_def file generation; insufficient tokens cause truncation mid-file.
 
-### 9.5 `agents/jira_client.py` (289 lines)
+### 9.5 `integrations/jira_client.py` (289 lines)
 
 Wraps the `jira` Python SDK. Methods:
 
@@ -746,7 +746,7 @@ Wraps the `jira` Python SDK. Methods:
 | `add_comment(issue_key, body)` | 226 | Plain markdown comment |
 | `get_parent_story_key(issue_key)` | 246 | For Test Case → parent Story lookup |
 
-### 9.6 `agents/github_client.py` (229 lines)
+### 9.6 `integrations/github_client.py` (229 lines)
 
 Wraps PyGithub. Methods used across agents:
 
@@ -762,7 +762,7 @@ Wraps PyGithub. Methods used across agents:
 | `get_pr_changed_files(pr_number)` | 183 | Used by Agent 3 — includes the unified diff patches |
 | `post_pr_comment(pr_number, body)` | 219 | Idempotent via header signature matching |
 
-### 9.7 `agents/schemas.py` (249 lines) — every Pydantic model
+### 9.7 `core/schemas.py` (249 lines) — every Pydantic model
 
 | Class | Used by | Purpose |
 |---|---|---|
@@ -1144,7 +1144,7 @@ The single biggest design decision in this codebase. **All app-specific knowledg
 
 ### Layer 1 — `AppContext` (singleton config loader)
 
-`agents/app_context.py::AppContext.load()` reads `config/config.yaml`, validates, and returns an immutable dataclass. Every agent calls this once at startup.
+`core/app_context.py::AppContext.load()` reads `config/config.yaml`, validates, and returns an immutable dataclass. Every agent calls this once at startup.
 
 ### Layer 2 — Prompts with placeholders
 
@@ -1258,7 +1258,7 @@ config value > no filter. Zero config edits at sprint boundaries.
 story run ends with two separate log lines — `LLM TOKEN USAGE [...]` (exact)
 and `LLM COST [...]` (derived from the `LLM_PRICE_INPUT_PER_1M` /
 `LLM_PRICE_OUTPUT_PER_1M` repo variables). Cross-agent story cost:
-`agents/usage_ledger.py` — each LLM-using agent posts a machine-parseable
+`core/usage_ledger.py` — each LLM-using agent posts a machine-parseable
 `[LLM-USAGE]` comment on the story (Agent 3 derives the key from the
 `auto/<KEY>-` branch); Agent 5 reads them back (`JiraClient.get_comments`),
 adds its own usage, and appends an "End-to-end LLM usage & cost" table

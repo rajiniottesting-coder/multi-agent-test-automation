@@ -1,5 +1,17 @@
 # Reusing this framework for a different project
 
+## Package layout
+
+    agents/         the four agents - the pipeline itself
+    core/           shared infrastructure (LLM client, schemas, config,
+                    usage ledger, board status)
+    integrations/   tool adapters + the Protocols they satisfy
+                    (tracker/jira_client, repo_host/github_client)
+    validators/     static checks on LLM-generated code
+
+Porting to a new tool means adding ONE file under `integrations/` and changing
+one line in `config/config.yaml`. Nothing in `agents/` changes.
+
 > **Verification status (July 2026):** ALL FIXES PRESENT. All 259 unit tests
 > pass. Deployed: v17/v18 prompt hardening, orphan cleanup (`ai-update` AND
 > `ai-regenerate`), dynamic sprint scoping (`sprint: "auto"` via JIRA_BOARD_ID),
@@ -25,15 +37,15 @@ These files contain zero project-specific knowledge. Reuse as-is:
 - `agents/agent2_coder.py` — Test Cases → Playwright code + PR
 - `agents/agent3_reviewer.py` — PR review
 - `agents/agent5_reporter.py` — Slack/Jira notification
-- `agents/orphan_cleanup.py` — dead-code detection (purely AST + Gherkin)
-- `agents/app_context.py` — loads app_under_test from config
-- `agents/github_client.py` — GitHub API wrapper
-- `agents/jira_client.py` — Jira API wrapper
-- `agents/llm_client.py` — provider-agnostic LLM wrapper (OpenAI-compatible) + token/cost tracking
-- `agents/usage_ledger.py` — per-story LLM cost ledger (Jira comments) — fully app-agnostic
-- `agents/gherkin_analyzer.py` — Gherkin / step-def matching primitives (renamed from test_inventory.py)
-- `agents/import_validator.py`, `agents/method_resolution_validator.py` — generic validators
-- `agents/schemas.py` — Pydantic models
+- `validators/orphan_cleanup.py` — dead-code detection (purely AST + Gherkin)
+- `core/app_context.py` — loads app_under_test from config
+- `integrations/github_client.py` — GitHub API wrapper
+- `integrations/jira_client.py` — Jira API wrapper
+- `core/llm_client.py` — provider-agnostic LLM wrapper (OpenAI-compatible) + token/cost tracking
+- `core/usage_ledger.py` — per-story LLM cost ledger (Jira comments) — fully app-agnostic
+- `validators/gherkin_analyzer.py` — Gherkin / step-def matching primitives (renamed from test_inventory.py)
+- `validators/import_validator.py`, `validators/method_resolution_validator.py` — generic validators
+- `core/schemas.py` — Pydantic models
 
 ### Agent prompts (templated, read app info from config at runtime)
 - `prompts/agent1_analyst.md`
@@ -346,7 +358,7 @@ Confirmed by audit (search for SauceDemo terms in agent code/prompts/tests retur
 | `.github/workflows/*.yml` | All 5 workflow files | ❌ NEVER |
 | `config/__init__.py`, `config/paths.py` | Config loading code | ❌ NEVER |
 | `requirements.txt`, `pytest.ini` | Dependency / pytest config | ❌ NEVER |
-| `agents/orphan_cleanup.py` | Dead-code detection (AST + Gherkin only) | ❌ NEVER |
+| `validators/orphan_cleanup.py` | Dead-code detection (AST + Gherkin only) | ❌ NEVER |
 
 ---
 
@@ -532,7 +544,7 @@ The `app_inventory/<app>.json` file is the LLM's reference for the application u
 ### How it's wired in
 
 1. `config.yaml` — `app_under_test.inventory_file` points at the JSON
-2. `agents/app_context.py` — `AppContext.load_page_inventory_json()` reads the file as a raw string
+2. `core/app_context.py` — `AppContext.load_page_inventory_json()` reads the file as a raw string
 3. Agent prompts substitute `{page_inventory_json}` with that string
 
 You can use any JSON shape you want — the LLM doesn't enforce a schema. The structure below is a **strong convention** that has worked well in practice. Deviating is fine; just make sure the LLM has enough context to reason about your app.
