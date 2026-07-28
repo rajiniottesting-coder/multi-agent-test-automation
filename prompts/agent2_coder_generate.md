@@ -46,7 +46,28 @@ NO prose before or after the code block. Just the code block.
 {reference_page_object_content}
 ```
 
-# Application Context (Page Inventory -- use these EXACT selectors)
+# Application Context (Page Inventory)
+
+**Page objects do NOT contain selector strings.** Set `INVENTORY_PAGE` to the
+page key below, then look each element up by its `elements` KEY:
+
+```python
+class LoginPage(BasePage):
+    INVENTORY_PAGE = "login"
+
+    def login_as(self, username, password):
+        self.fill(self.sel("username_input"), username)
+        self.click(self.sel("login_button"))
+```
+
+Write `self.sel("username_input")` — NEVER `"input[name='username']"`.
+The key must exist in the `elements` block for that page; an unknown key
+raises at first use. If you need an element that is not listed, say so in your
+notes rather than inventing a selector.
+
+Use `self.page_url()` for the page path — it comes from the same entry.
+
+# Page Inventory
 ```json
 {page_inventory_json}
 ```
@@ -60,8 +81,8 @@ NO prose before or after the code block. Just the code block.
 3. **POM compliance (STRICT — most-violated rule):** If this is a step definition file, NEVER put CSS selectors, `data-test` attributes, XPath expressions, role queries, or ANY DOM locator strings in it — neither as literal strings nor by READING selector constants from the page-object class. Step defs MUST interact with the UI exclusively through page-object METHODS (verbs like `login_as`, `dismiss_error`, `clear_credentials`). They MUST NOT do any of the following, no matter how convenient:
    - Literal selector in step def: `page.click("[data-test='error-button']")` — FORBIDDEN
    - `page.locator(...)`, `page.fill(...)`, `page.click(...)`, `page.get_by_test_id(...)` with literal strings — FORBIDDEN
-   - Reading a SELECTOR CONSTANT from the page object: `page.locator(LoginPage.USERNAME_INPUT)` or `login_page.page.fill(LoginPage.PASSWORD_INPUT, "")` — FORBIDDEN (this is still a POM boundary violation; the step def now depends on the page object's internal locator naming)
-   - Chaining off a page-object selector constant: `login_page.page.locator(LoginPage.ERROR_MESSAGE).locator("button")` — FORBIDDEN
+   - Reading a selector through the page object: `page.locator(login_page.sel("username_input"))` — FORBIDDEN (still a POM boundary violation; the step def now depends on inventory element keys)
+   - Chaining off a resolved selector: `login_page.page.locator(login_page.sel("error_banner")).locator("button")` — FORBIDDEN
    
    If a step definition needs to interact with a new UI element, you MUST: (a) add a locator constant to the page object class (e.g., `ERROR_BUTTON = "[data-test='error-button']"`), (b) add a method on the page object that uses it (e.g., `def dismiss_error(self) -> None: self.page.click(self.ERROR_BUTTON)`), and (c) call ONLY that method from the step def (e.g., `login_page.dismiss_error()`). The step def file should never `import` selector constants and should never reference `Page` directly for DOM queries.
 4. **No hardcoded waits:** Never use `time.sleep()`. Use Playwright's auto-wait.

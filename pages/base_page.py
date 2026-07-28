@@ -12,8 +12,29 @@ compose these helpers instead. That keeps Playwright specifics in ONE file
 and makes generated page objects consistent.
 
 All methods here are app-agnostic — they accept locator strings and operate
-on whatever element they are pointed at. Concrete locators belong in
-subclasses (LoginPage, InventoryPage, etc.), never here.
+on whatever element they are pointed at.
+
+SELECTORS LIVE IN THE APP INVENTORY, NOT IN PAGE OBJECTS
+--------------------------------------------------------
+A page object declares which inventory page it implements and looks selectors
+up by KEY:
+
+    class LoginPage(BasePage):
+        INVENTORY_PAGE = "login"
+
+        def login_as(self, username, password):
+            self.fill(self.sel("username_input"), username)
+
+`app_inventory/<app>.json` is the single source of truth. Two reasons:
+
+1. Agent 2 CANNOT hallucinate a selector it never writes. Emitting
+   `self.sel("username_input")` is checkable against the inventory; emitting
+   `"input[name='username']"` is not.
+2. A selector fixed in the inventory takes effect everywhere at once, with no
+   second edit and no chance of the two copies disagreeing.
+
+An unknown key raises immediately, naming the page and listing what IS
+available — a failure at the first use, not a silent mis-selection later.
 
 Locator strings may be any Playwright selector: CSS, `text=`, `role=`, or an
 iframe-chained selector using ' >>> '. Open shadow DOM is pierced by CSS
@@ -33,8 +54,80 @@ class BasePage:
     # fast on broken pages, long enough to absorb normal network jitter.
     DEFAULT_TIMEOUT_MS = 5000
 
+    # Subclasses set this to the key of the page they implement in
+    # app_inventory/<app>.json. Left None only by BasePage itself.
+    INVENTORY_PAGE: Optional[str] = None
+
+    # Parsed inventory, shared by every page object in the process.
+    _INVENTORY_CACHE: Optional[Dict[str, Any]] = None
+
     def __init__(self, page: Page):
         self.page = page
+
+    # ============================================================
+    # Selectors — resolved from the app inventory
+    # ============================================================
+
+    @classmethod
+    def _inventory(cls) -> Dict[str, Any]:
+        """The parsed app inventory, loaded once per process."""
+        if BasePage._INVENTORY_CACHE is None:
+            import json
+            import yaml
+            from config.paths import CONFIG_YAML, PROJECT_ROOT
+            cfg = yaml.safe_load(CONFIG_YAML.read_text(encoding="utf-8")) or {}
+            rel = (cfg.get("app_under_test") or {}).get("inventory_file")
+            if not rel:
+                raise RuntimeError(
+                    "config.yaml has no app_under_test.inventory_file — page "
+                    "objects cannot resolve selectors without it."
+                )
+            path = PROJECT_ROOT / rel
+            if not path.is_file():
+                raise FileNotFoundError(
+                    f"App inventory not found at {path}. Page objects read "
+                    f"their selectors from it; generate one with "
+                    f"`python -m scripts.generate_inventory`."
+                )
+            BasePage._INVENTORY_CACHE = json.loads(path.read_text(encoding="utf-8"))
+        return BasePage._INVENTORY_CACHE
+
+    @classmethod
+    def sel(cls, key: str) -> str:
+        """Selector for `key` on this page object's inventory page.
+
+        Raises with the available keys rather than returning None, so a typo
+        fails at first use instead of quietly matching nothing.
+        """
+        if not cls.INVENTORY_PAGE:
+            raise RuntimeError(
+                f"{cls.__name__} has no INVENTORY_PAGE set. Point it at the key "
+                f"of the page it implements in the app inventory."
+            )
+        pages = cls._inventory().get("pages") or {}
+        page = pages.get(cls.INVENTORY_PAGE)
+        if page is None:
+            raise KeyError(
+                f"{cls.__name__}.INVENTORY_PAGE = {cls.INVENTORY_PAGE!r} is not "
+                f"in the app inventory. Available pages: "
+                f"{', '.join(sorted(pages))}"
+            )
+        elements = page.get("elements") or {}
+        if key not in elements:
+            raise KeyError(
+                f"{cls.__name__}: no element {key!r} on inventory page "
+                f"{cls.INVENTORY_PAGE!r}. Available: "
+                f"{', '.join(sorted(elements))}"
+            )
+        return elements[key]
+
+    @classmethod
+    def page_url(cls) -> str:
+        """URL path for this page object's inventory page."""
+        if not cls.INVENTORY_PAGE:
+            raise RuntimeError(f"{cls.__name__} has no INVENTORY_PAGE set.")
+        pages = cls._inventory().get("pages") or {}
+        return (pages.get(cls.INVENTORY_PAGE) or {}).get("url", "/")
 
     # ============================================================
     # Internal

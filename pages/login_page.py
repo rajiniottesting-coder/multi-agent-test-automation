@@ -4,7 +4,9 @@ LoginPage — the OrangeHRM login screen.
 RESERVED reference file. Agent 2 copies this style when generating new page
 objects, so it is the single worked example of the conventions:
 
-  - selectors are CLASS CONSTANTS, never inline in a method
+  - SELECTORS COME FROM THE APP INVENTORY, never from a literal in this file.
+    Declare INVENTORY_PAGE, then use self.sel("<element_key>"). The keys are
+    the `elements` keys on that page in app_inventory/<app>.json.
   - methods are business verbs (login_as), not UI mechanics (type_then_click)
   - every method uses a BasePage helper; no raw self.page.* calls
   - no assertions here — those belong in step definitions
@@ -15,24 +17,9 @@ from pages.base_page import BasePage
 
 
 class LoginPage(BasePage):
-    """The login screen at /web/index.php/auth/login."""
+    """The login screen. Selectors: see `pages.login` in the app inventory."""
 
-    PATH = "/web/index.php/auth/login"
-
-    # ── selectors ────────────────────────────────────────────
-    # `name` attributes are used by the app itself, so they are far more stable
-    # than the generated oxd-* class names Angular emits.
-    USERNAME_INPUT = "input[name='username']"
-    PASSWORD_INPUT = "input[name='password']"
-    LOGIN_BUTTON = "button[type='submit']"
-
-    # Banner shown for wrong credentials ("Invalid credentials").
-    ERROR_BANNER = ".oxd-alert-content-text"
-    # Per-field message shown when a field is left empty
-    # ("Username cannot be empty" / "Password cannot be empty").
-    FIELD_ERROR = ".oxd-input-field-error-message"
-
-    BRANDING = ".orangehrm-login-branding"
+    INVENTORY_PAGE = "login"
 
     # ── actions ──────────────────────────────────────────────
     def open(self, base_url: str) -> None:
@@ -40,10 +27,10 @@ class LoginPage(BasePage):
 
         Args:
             base_url: application base URL, supplied by the `base_url` fixture
-                      from BASE_URL or config.yaml. OrangeHRM serves the login
-                      form at /web/index.php/auth/login and redirects "/" there.
+                      from BASE_URL or config.yaml. The path comes from the
+                      inventory, so it is never duplicated here.
         """
-        self.navigate(f"{base_url.rstrip('/')}{self.PATH}")
+        self.navigate(f"{base_url.rstrip('/')}{self.page_url()}")
 
     def login_as(self, username: str, password: str) -> None:
         """Fill both credentials and submit.
@@ -52,34 +39,34 @@ class LoginPage(BasePage):
         credentials is the `credentials` fixture's job, so this page object
         stays usable with any user, including deliberately invalid ones.
         """
-        self.fill(self.USERNAME_INPUT, username)
-        self.fill(self.PASSWORD_INPUT, password)
-        self.click(self.LOGIN_BUTTON)
+        self.fill(self.sel("username_input"), username)
+        self.fill(self.sel("password_input"), password)
+        self.click(self.sel("login_button"))
 
     def clear_credentials(self) -> None:
         """Empty both fields without submitting."""
-        self.clear(self.USERNAME_INPUT)
-        self.clear(self.PASSWORD_INPUT)
+        self.clear(self.sel("username_input"))
+        self.clear(self.sel("password_input"))
 
     # ── queries ──────────────────────────────────────────────
     def get_error_message(self) -> str:
-        """Text of the credentials error banner."""
-        self.wait_visible(self.ERROR_BANNER)
-        return self.get_text(self.ERROR_BANNER)
+        """Text of the credentials error banner ('Invalid credentials')."""
+        self.wait_visible(self.sel("error_banner"))
+        return self.get_text(self.sel("error_banner"))
 
     def get_field_error(self) -> str:
-        """First per-field validation message ('Username cannot be empty')."""
-        self.wait_visible(self.FIELD_ERROR)
-        return self.get_text(self.FIELD_ERROR)
+        """First per-field validation message ('Required')."""
+        self.wait_visible(self.sel("field_error"))
+        return self.get_text(self.sel("field_error"))
 
     def get_all_field_errors(self) -> list[str]:
         """Every per-field validation message currently shown."""
-        return self.get_all_texts(self.FIELD_ERROR)
+        return self.get_all_texts(self.sel("field_error"))
 
     def is_error_displayed(self) -> bool:
         """True if the credentials error banner is on screen."""
-        return self.is_visible(self.ERROR_BANNER)
+        return self.is_visible(self.sel("error_banner"))
 
     def is_login_form_displayed(self) -> bool:
         """True if we are still on the login screen."""
-        return self.is_visible(self.USERNAME_INPUT)
+        return self.is_visible(self.sel("username_input"))

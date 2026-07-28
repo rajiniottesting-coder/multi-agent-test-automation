@@ -2,52 +2,45 @@
 DashboardPage — where OrangeHRM lands after a successful login.
 
 EXTENDABLE: Agent 2 may add methods here as new stories need them. Follow the
-conventions in pages/login_page.py — selectors as class constants, business
-verbs, BasePage helpers only.
+conventions in pages/login_page.py — selectors from the app inventory via
+self.sel(), business verbs, BasePage helpers only.
 """
 from pages.base_page import BasePage
 
 
 class DashboardPage(BasePage):
-    """The post-login landing page at /web/index.php/dashboard/index."""
+    """The post-login landing page. Selectors: `pages.dashboard` in the inventory."""
 
-    PATH = "/web/index.php/dashboard/index"
-
-    # ── selectors ────────────────────────────────────────────
-    # The breadcrumb header reads "Dashboard" and is the cheapest proof that
-    # login succeeded.
-    HEADER_TITLE = ".oxd-topbar-header-breadcrumb h6"
-    USER_DROPDOWN = ".oxd-userdropdown-tab"
-    USER_NAME = ".oxd-userdropdown-name"
-    SIDE_MENU = ".oxd-sidepanel"
-    SIDE_MENU_ITEMS = ".oxd-main-menu-item"
-    SEARCH_MENU_INPUT = "input[placeholder='Search']"
-    LOGOUT_LINK = "role=menuitem[name='Logout']"
+    INVENTORY_PAGE = "dashboard"
 
     # ── queries ──────────────────────────────────────────────
     def get_header_title(self) -> str:
         """Breadcrumb title, e.g. 'Dashboard'."""
-        self.wait_visible(self.HEADER_TITLE)
-        return self.get_text(self.HEADER_TITLE)
+        self.wait_visible(self.sel("header_title"))
+        return self.get_text(self.sel("header_title"))
 
     def is_loaded(self) -> bool:
         """True once the dashboard header is on screen."""
-        return self.is_visible(self.HEADER_TITLE)
+        return self.is_visible(self.sel("header_title"))
 
     def get_logged_in_user(self) -> str:
         """Display name in the top-right user dropdown."""
-        return self.get_text(self.USER_NAME)
+        return self.get_text(self.sel("user_name"))
 
     def get_menu_items(self) -> list[str]:
         """Labels of every left-hand menu item."""
-        return self.get_all_texts(self.SIDE_MENU_ITEMS)
+        return self.get_all_texts(self.sel("side_menu_items"))
 
     # ── actions ──────────────────────────────────────────────
     def open_user_menu(self) -> None:
         """Open the top-right user dropdown."""
-        self.click(self.USER_DROPDOWN)
+        self.click(self.sel("user_dropdown"))
 
     def logout(self) -> None:
-        """Open the user dropdown and sign out."""
+        """Open the user dropdown and sign out.
+
+        logout_link only renders AFTER the dropdown is open — see the
+        elements_notes on `pages.dashboard` in the inventory.
+        """
         self.open_user_menu()
-        self.click(self.LOGOUT_LINK)
+        self.click(self.sel("logout_link"))
