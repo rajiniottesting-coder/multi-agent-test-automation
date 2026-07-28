@@ -2503,6 +2503,31 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
         )
         story_id = parent_story
 
+    # CRASH-WINDOW GUARD. `ai-coded` is added only AFTER the PR is created, so a
+    # runner killed in between leaves the story looking un-coded and the next
+    # tick would redo the whole thing: a full set of LLM calls (~$0.37) thrown
+    # away, then a failure at PR creation because the PR already exists.
+    #
+    # An open auto/<STORY>-* PR IS the completion marker - it is created by the
+    # same call the label follows. Finding one means the work landed; the label
+    # is simply missing, so repair it and stop. Two cheap API calls, before any
+    # LLM spend. Skipped in regenerate/update mode, where a NEW PR on a -revN /
+    # -updateN branch is the intended outcome.
+    if not is_regenerate:
+        existing_pr = GitHubClient().find_open_pr_for_story(story_id)
+        if existing_pr:
+            completion_label = load_agent_config().get("completion_label", "ai-coded")
+            logger.warning(
+                f"{story_id} already has an open PR (#{existing_pr.number}, "
+                f"{existing_pr.head.ref}) but is not labelled '{completion_label}' - "
+                f"a previous run was interrupted after opening the PR. Repairing the "
+                f"label and stopping instead of regenerating."
+            )
+            if not dry_run:
+                jira.add_label(story_id, completion_label)
+            return {"story_id": story_id, "status": "already_coded",
+                    "pr_number": existing_pr.number, "files_generated": 0}
+
     story = jira.get_story(story_id)
     test_cases = load_test_cases_for_story(jira, story_id)
 
@@ -2801,6 +2826,25 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
             f"'{new_branch_name}' to preserve old PR as historical record"
         )
         output.branch_name = new_branch_name
+
+    # PARTIAL-BRANCH GUARD (crash WINDOW A). Files are committed one at a time,
+    # so a crash inside the loop below leaves some present and others missing.
+    # create_branch() is idempotent and would happily REUSE that branch - but
+    # this run may produce a DIFFERENT set of files (a test case was deleted,
+    # the plan changed), and any file from the abandoned attempt would survive
+    # into the PR without ever being generated or validated by this run.
+    #
+    # Discarding is safe here precisely because no PR exists: the crash-window
+    # guard at the top of run() already returned early if one did, so nothing
+    # under human review can be destroyed. All-or-nothing beats a silent mix of
+    # two attempts.
+    if not dry_run and gh.branch_exists(output.branch_name):
+        logger.warning(
+            f"Branch '{output.branch_name}' already exists with no open PR - "
+            f"a previous attempt was interrupted mid-commit. Discarding it so "
+            f"this run starts from a clean base."
+        )
+        gh.delete_branch(output.branch_name)
 
     gh.create_branch(output.branch_name, from_branch="main")
 

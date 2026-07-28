@@ -58,6 +58,47 @@ class GitHubClient:
         self.repo.create_git_ref(ref=ref, sha=source.commit.sha)
         logger.info(f"Created branch '{branch_name}' from {from_branch} ({source.commit.sha[:7]})")
 
+    def find_open_pr_for_story(self, story_id: str, branch_prefix: str = "auto/"):
+        """Return an OPEN PR whose head branch belongs to `story_id`, or None.
+
+        Guards the crash window between create_pull_request() and add_label():
+        if the runner dies in there, the story keeps its pre-work labels and the
+        next tick would redo the whole story - burning a full set of LLM calls
+        and then failing at PR creation because the PR already exists.
+
+        Matches `auto/<STORY>-...` so it also finds -updateN / -revN branches,
+        which belong to the same story.
+        """
+        want = f"{branch_prefix}{story_id}-"
+        try:
+            for pr in self.repo.get_pulls(state="open"):
+                if pr.head.ref.startswith(want):
+                    return pr
+        except Exception as e:                      # never block on a lookup
+            logger.warning(f"Could not check for an existing PR: {e}")
+        return None
+
+    def delete_branch(self, branch_name: str) -> bool:
+        """Delete a branch. Returns True if it was deleted, False otherwise.
+
+        Used to discard a PARTIALLY-WRITTEN branch: files are committed one at a
+        time, so a crash mid-loop leaves some files present and others missing.
+        Reusing that branch is unsafe - the next run may generate a DIFFERENT
+        set of files (a test case was deleted, the plan changed), and any file
+        from the abandoned attempt would survive, unvalidated, into the PR.
+
+        Only ever called when NO pull request exists for the branch, so nothing
+        under review is destroyed.
+        """
+        try:
+            ref = self.repo.get_git_ref(f"heads/{branch_name}")
+            ref.delete()
+            logger.info(f"Deleted partially-written branch '{branch_name}'")
+            return True
+        except Exception as e:
+            logger.warning(f"Could not delete branch '{branch_name}': {e}")
+            return False
+
     def branch_exists(self, branch_name: str) -> bool:
         """
         Return True if the named branch exists on the remote, False otherwise.
