@@ -24,22 +24,46 @@ def test_env_vars():
     print("✅ Env vars OK")
 
 
-def test_jira():
-    """Verify Jira credentials and project access."""
-    from jira import JIRA
-    jira = JIRA(
-        server=os.getenv("JIRA_URL"),
-        basic_auth=(os.getenv("JIRA_EMAIL"), os.getenv("JIRA_API_TOKEN"))
-    )
-    user = jira.myself()
-    project = jira.project(os.getenv("JIRA_PROJECT_KEY"))
-    issue_types = [it.name for it in project.issueTypes]
-    print(f"✅ Jira OK — user: {user['displayName']}, project: {project.name}")
-    print(f"   Issue types available: {issue_types}")
-    if "Test Case" in issue_types:
-        print("   ✅ 'Test Case' issue type is configured")
-    else:
-        print("   ⚠️  'Test Case' issue type NOT found — needs to be added")
+def test_tracker():
+    """Verify the CONFIGURED tracker is reachable and usable.
+
+    Goes through get_tracker() rather than importing a Jira client directly, so
+    a client running on Xray / Azure DevOps / TestRail gets their own adapter
+    smoke-tested instead of a hardcoded Jira check that could never pass.
+
+    Probes only Protocol operations, so it works against any adapter.
+    """
+    from agents.tracker import get_tracker
+
+    tracker = get_tracker()
+    name = type(tracker).__name__
+    print(f"✅ Tracker adapter loaded: {name} (project: {tracker.project_key})")
+
+    # A read that every tracker must support. An empty result is fine - it
+    # proves auth and the query path work; it does not require open work.
+    try:
+        selection = {"issue_type": "Story", "required_labels": [], "excluded_labels": []}
+        stories = tracker.find_stories_to_process(selection)
+        print(f"   ✅ Read access OK — selection query returned {len(stories)} story(ies)")
+    except Exception as e:
+        print(f"   ❌ Read FAILED: {type(e).__name__}: {e}")
+        print("      Check credentials and that the project/board exists.")
+        raise
+
+    # Adapter-specific extras: only meaningful for the Jira adapter, so they are
+    # probed defensively rather than assumed.
+    if hasattr(tracker, "client") and hasattr(tracker, "project_key"):
+        try:
+            project = tracker.client.project(tracker.project_key)
+            issue_types = [it.name for it in project.issueTypes]
+            print(f"   Issue types available: {issue_types}")
+            if "Test Case" in issue_types:
+                print("   ✅ 'Test Case' issue type is configured")
+            else:
+                print("   ⚠️  'Test Case' issue type NOT found — needs to be added")
+        except Exception:
+            pass          # non-Jira adapter, or no issue-type concept
+
 
 def test_llm():
     """Verify LLM API key and endpoint work."""
@@ -92,7 +116,7 @@ if __name__ == "__main__":
     print("=" * 50 + "\n")
     try:
         test_env_vars()
-        test_jira()
+        test_tracker()
         test_llm()
         test_playwright()
         print("\n" + "=" * 50)

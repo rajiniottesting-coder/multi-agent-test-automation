@@ -1,6 +1,6 @@
 """
 GitHub client wrapper — handles all GitHub API interactions.
-Same Adapter pattern as JiraClient: agents never call PyGithub directly.
+Same Adapter pattern as the tracker: agents never call PyGithub directly.
 
 Day 4: branches, files, pull requests
 Day 5: PR reading (changed files, diffs) and comment posting for Agent 3
