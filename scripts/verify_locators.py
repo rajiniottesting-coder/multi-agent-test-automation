@@ -279,12 +279,12 @@ def main() -> int:
                 help="Skip login. Use for public sites.")
     ap.add_argument("--login-url",
                 help="Path to the login form, e.g. /signin. Defaults to base_url.")
-    ap.add_argument("--username-selector", default=DEFAULT_USERNAME_SELECTOR,
-                help="Override if the username field is not auto-detected.")
-    ap.add_argument("--password-selector", default=DEFAULT_PASSWORD_SELECTOR,
-                help="Override if the password field is not auto-detected.")
-    ap.add_argument("--submit-selector", default=DEFAULT_SUBMIT_SELECTOR,
-                help="Override if the submit control is not auto-detected.")
+    ap.add_argument("--username-selector", default=None,
+                help="Override auto-detection of the username field.")
+    ap.add_argument("--password-selector", default=None,
+                help="Override auto-detection of the password field.")
+    ap.add_argument("--submit-selector", default=None,
+                help="Override auto-detection of the submit control.")
     ap.add_argument("--username",
                     default=crawl_credentials()[0],
                     help="Defaults to INVENTORY_USER from .env.")

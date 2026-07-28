@@ -12,6 +12,7 @@ frame-chain selector), and open shadow DOM. Requires a Playwright browser:
 
 from __future__ import annotations
 
+import logging
 import os
 
 from contextlib import contextmanager
@@ -19,10 +20,66 @@ from typing import Iterator, Optional
 
 from inventory_tools.introspect import TEST_ID_ATTRS, FRAME_DELIM
 
+logger = logging.getLogger(__name__)
+
 # Generic, app-agnostic login-field defaults (by input type/role, not by name).
-DEFAULT_USERNAME_SELECTOR = "input[type='email'], input[type='text']"
+# NOTE on `input[type='text']`: a CSS attribute selector matches the ATTRIBUTE,
+# not the effective type. An input rendered as <input name="username"> with no
+# `type` at all defaults to text in the browser but does NOT match
+# input[type='text'] - which is exactly how OrangeHRM 5.x renders its login
+# form, and why auto-detection used to time out on it.
+DEFAULT_USERNAME_SELECTOR = (
+    "input[type='email'], input[type='text'], "
+    "input:not([type]):not([type='password'])"
+)
 DEFAULT_PASSWORD_SELECTOR = "input[type='password']"
 DEFAULT_SUBMIT_SELECTOR = "button[type='submit'], input[type='submit']"
+
+# Tried IN ORDER when the caller does not pass an explicit selector. A single
+# comma-joined selector is not enough: `.first` then picks by DOM order rather
+# than by how trustworthy the match is, so a stray search box above the form
+# would win over the real username field.
+_USERNAME_CANDIDATES = (
+    "input[name='username']",
+    "input[name*='user' i]",
+    "input[name*='email' i]",
+    "input[id*='user' i]",
+    "input[placeholder*='user' i]",
+    "input[type='email']",
+    "input[type='text']",
+    "input:not([type]):not([type='password'])",
+)
+_PASSWORD_CANDIDATES = (
+    "input[type='password']",
+    "input[name='password']",
+    "input[name*='pass' i]",
+)
+_SUBMIT_CANDIDATES = (
+    "button[type='submit']",
+    "input[type='submit']",
+    "button:has-text('Login')",
+    "button:has-text('Sign in')",
+)
+
+
+def _first_matching(page, explicit: Optional[str], candidates: tuple,
+                    what: str) -> Optional[str]:
+    """First selector that matches something on the page, or None.
+
+    An explicit selector from the caller is used as-is - if it does not match,
+    that is worth failing on rather than silently guessing past it.
+    """
+    if explicit:
+        return explicit
+    for sel in candidates:
+        try:
+            if page.locator(sel).count() > 0:
+                logger.info(f"  detected {what} field: {sel}")
+                return sel
+        except Exception:
+            continue
+    logger.warning(f"  could not find a {what} field. Tried: {', '.join(candidates)}")
+    return None
 
 
 def _match_selector(test_attrs: tuple) -> str:
@@ -203,9 +260,24 @@ def do_login(page, login_url: Optional[str], username_selector: Optional[str],
         return False
     _goto_spa_tolerant(page, login_url)
     url_before = page.url
-    page.locator(username_selector).first.fill(username)
-    page.locator(password_selector).first.fill(password)
-    page.locator(submit_selector).first.click()
+    # Resolve each field against the page rather than trusting one static
+    # selector. Different apps render login forms differently, and a timeout
+    # here used to read as "wrong credentials" when it was really "wrong
+    # selector" - a confusing failure for something the tool can detect.
+    user_sel = _first_matching(page, username_selector, _USERNAME_CANDIDATES, "username")
+    pass_sel = _first_matching(page, password_selector, _PASSWORD_CANDIDATES, "password")
+    submit_sel = _first_matching(page, submit_selector, _SUBMIT_CANDIDATES, "submit")
+    if not (user_sel and pass_sel and submit_sel):
+        logger.warning(
+            "  login form not recognised on this page. Pass --username-selector "
+            "/ --password-selector / --submit-selector explicitly, or use "
+            "--no-login if the app is public."
+        )
+        return False
+
+    page.locator(user_sel).first.fill(username)
+    page.locator(pass_sel).first.fill(password)
+    page.locator(submit_sel).first.click()
     page.wait_for_load_state("networkidle")
 
     if page.url.rstrip("/") != url_before.rstrip("/"):

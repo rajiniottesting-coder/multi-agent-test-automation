@@ -121,12 +121,12 @@ def main() -> int:
                     help="Login password. Defaults to INVENTORY_PASS, else "
                          "APP_PASSWORD, from .env / GitHub Secrets.")
     ap.add_argument("--login-url", help="Login page URL/path (default: app root).")
-    ap.add_argument("--username-selector", default=DEFAULT_USERNAME_SELECTOR,
-                    help="Override if the username field is not auto-detected (SSO, multi-step forms).")
-    ap.add_argument("--password-selector", default=DEFAULT_PASSWORD_SELECTOR,
-                    help="Override if the password field is not auto-detected.")
-    ap.add_argument("--submit-selector", default=DEFAULT_SUBMIT_SELECTOR,
-                    help="Override if the submit control is not auto-detected.")
+    ap.add_argument("--username-selector", default=None,
+                    help="Override auto-detection of the username field (SSO, multi-step forms).")
+    ap.add_argument("--password-selector", default=None,
+                    help="Override auto-detection of the password field.")
+    ap.add_argument("--submit-selector", default=None,
+                    help="Override auto-detection of the submit control.")
     ap.add_argument("--no-login", action="store_true",
                     help="Skip login. Required for public sites AND for capturing the login page itself.")
     ap.add_argument("--headed", action="store_true", help="Show the browser.")
