@@ -64,7 +64,7 @@ class OrphanStepDef:
 class OrphanPageMethod:
     """A page-object method that was only called by orphan step defs."""
     file_path: str           # e.g. "pages/login_page.py"
-    class_name: str          # e.g. "LoginPage"
+    class_name: str          # e.g. "SomePage"
     method_name: str         # e.g. "click_recover_password"
     line_start: int
     line_end: int

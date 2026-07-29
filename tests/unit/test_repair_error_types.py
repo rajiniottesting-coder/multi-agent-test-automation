@@ -14,7 +14,7 @@ from agents.agent2_coder import _classify_error, _build_error_type_guidance
 
 # Real validator error strings (prefixes taken verbatim from the validators).
 IMPORT_ERR = "Import resolution error in 'tests/step_defs/test_x.py': cannot import 'pages.ghost'"
-METHOD_ERR = "Method resolution error in 'tests/step_defs/test_x.py': login_fast() not on LoginPage"
+METHOD_ERR = "Method resolution error in 'tests/step_defs/test_x.py': login_fast() not on SomePage"
 DUP_ERR = "Duplicate step-definition error in 'tests/step_defs/test_y.py': step already defined"
 STEP_ERR = "Step coverage error in 'tests/step_defs/test_z.py': feature step `I wait` has no matching @when()"
 GHERKIN_ERR = "Gherkin structure error in 'features/a.feature': step on line 4 is malformed"

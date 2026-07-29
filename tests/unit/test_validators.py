@@ -77,11 +77,11 @@ def project_root(tmp_path: Path) -> Path:
                 return self.page.locator(locator).is_visible()
     """).strip())
 
-    # LoginPage (RESERVED — must never be modified)
+    # SomePage (RESERVED — must never be modified)
     (tmp_path / "pages" / "login_page.py").write_text(textwrap.dedent("""
         from pages.base_page import BasePage
 
-        class LoginPage(BasePage):
+        class SomePage(BasePage):
             USERNAME_INPUT = "[data-test='username']"
             PASSWORD_INPUT = "[data-test='password']"
             LOGIN_BUTTON = "[data-test='login-button']"
@@ -552,7 +552,7 @@ class TestImportResolution:
 
     def test_existing_import_passes(self, project_root: Path):
         step_def = gf("tests/step_defs/test_x.py", textwrap.dedent("""
-            from pages.login_page import LoginPage
+            from pages.login_page import SomePage
             from pages.inventory_page import InventoryPage
             import pytest
             def s1(): pass
@@ -608,16 +608,16 @@ class TestMethodResolution:
         assert "click_logout" in errors[0]  # suggested fix
 
     def test_hallucinated_method_on_reserved_page_caught(self, project_root: Path):
-        """LoginPage is reserved (read from disk). The LLM calls a method
+        """SomePage is reserved (read from disk). The LLM calls a method
         that doesn't exist on it. Must be caught."""
         step_def = gf("tests/step_defs/test_logout.py", textwrap.dedent("""
             import pytest
             from pytest_bdd import then
-            from pages.login_page import LoginPage
+            from pages.login_page import SomePage
 
             @pytest.fixture
             def login_page(page):
-                return LoginPage(page)
+                return SomePage(page)
 
             @then("login form visible")
             def s1(login_page):

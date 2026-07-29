@@ -24,21 +24,21 @@ from agents.agent2_coder import (
 FEATURE = '''Feature: Login
   Scenario: valid login
     Given I am on the login page
-    When I log in as "standard_user" with password "secret_sauce"
+    When I log in as "demo_user" with password "demo_pass"
     Then I see the products page
 '''
 
 FULLY_COVERED = '''import pytest
 from pytest_bdd import scenarios, given, when, then, parsers
-from pages.login_page import LoginPage
+from pages.some_page import SomePage
 
 @given("I am on the login page")
-def _(login_page):
-    login_page.open()
+def _(some_page):
+    some_page.open()
 
 @when(parsers.parse('I log in as "{u}" with password "{p}"'))
-def _(login_page, u, p):
-    login_page.login_as(u, p)
+def _(some_page, u, p):
+    some_page.login_as(u, p)
 
 @then("I see the products page")
 def _(inventory_page):
@@ -47,15 +47,15 @@ def _(inventory_page):
 
 MISSING_THEN = '''import pytest
 from pytest_bdd import scenarios, given, when, then, parsers
-from pages.login_page import LoginPage
+from pages.some_page import SomePage
 
 @given("I am on the login page")
-def _(login_page):
-    login_page.open()
+def _(some_page):
+    some_page.open()
 
 @when(parsers.parse('I log in as "{u}" with password "{p}"'))
-def _(login_page, u, p):
-    login_page.login_as(u, p)
+def _(some_page, u, p):
+    some_page.login_as(u, p)
 '''
 
 

@@ -16,7 +16,7 @@ THE FAILURE MODES THIS CATCHES:
 
     (B) Hallucinated methods on RESERVED page objects.
         The LLM calls `login_page.are_login_form_fields_visible()` even
-        though `LoginPage` is a reserved file with only `open`, `login_as`,
+        though `SomePage` is a reserved file with only `open`, `login_as`,
         and `get_error_message`. Reserved files can't be modified, so the
         method must exist already — but it doesn't.
 
@@ -143,8 +143,8 @@ def _parse_imports_for_classes(source: str) -> dict[str, str]:
     """Parse `from X import Y` statements and return a {class_name: module}
     mapping for all imported names that look like class names (CapWords).
 
-    This lets us resolve `LoginPage` -> `pages.login_page` even when the
-    import line is `from pages.login_page import LoginPage`.
+    This lets us resolve `SomePage` -> `pages.some_page` even when the
+    import line is `from pages.some_page import SomePage`.
 
     Returns:
         Dict mapping imported name -> dotted module path it came from.
@@ -174,7 +174,7 @@ def _parse_fixtures(source: str) -> dict[str, str]:
     For step def files, the typical pattern is:
         @pytest.fixture
         def login_page(page):
-            return LoginPage(page)
+            return SomePage(page)
 
     We look for that exact shape: a fixture-decorated function that
     returns a single instantiation of a class. Other fixture shapes
@@ -182,7 +182,7 @@ def _parse_fixtures(source: str) -> dict[str, str]:
 
     Returns:
         Dict mapping fixture variable name -> class name it instantiates.
-        E.g., {"login_page": "LoginPage", "inventory_page": "InventoryPage"}.
+        E.g., {"some_page": "SomePage", "other_page": "OtherPage"}.
     """
     try:
         tree = ast.parse(source)
@@ -508,7 +508,7 @@ def validate_method_resolution(
         fixture_to_class: dict[str, str] = dict(local_fixtures)
 
         # Naming-convention fallback: `inventory_page` -> `InventoryPage`,
-        # `login_page` -> `LoginPage`. Only applies to step function args
+        # `login_page` -> `SomePage`. Only applies to step function args
         # that aren't already mapped via a local fixture.
         for name in step_func_args:
             if name in fixture_to_class:

@@ -181,8 +181,8 @@ def test_build_page_entry_shape_and_stubs():
         {"tag": "input", "attrs": {"data-test": "login-button", "type": "submit"}, "text": "Login"},
         {"tag": "div", "attrs": {}, "text": "ignore me"},  # non-interactable, untagged -> skipped
     ]
-    page = build_page_entry("https://www.saucedemo.com/", "Swag Labs", descriptors,
-                            "https://www.saucedemo.com")
+    page = build_page_entry("https://shop.example.com/", "Example Shop", descriptors,
+                            "https://shop.example.com")
     assert page["url"] == "/"
     assert page["elements"]["username_input"] == "[data-test='username']"
     assert page["elements"]["login_button"] == "[data-test='login-button']"

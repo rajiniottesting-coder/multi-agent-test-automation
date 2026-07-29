@@ -75,22 +75,22 @@ def realistic_step_def(extra_decorator: str = "") -> str:
     base = (
         "import pytest\n"
         "from pytest_bdd import scenarios, given, when, then, parsers\n"
-        "from pages.login_page import LoginPage\n"
+        "from pages.some_page import SomePage\n"
         "from pages.inventory_page import InventoryPage\n"
         "\n"
         "scenarios('features/logout.feature')\n"
         "\n"
         "@pytest.fixture\n"
-        "def login_page(page):\n"
-        "    return LoginPage(page)\n"
+        "def some_page(page):\n"
+        "    return SomePage(page)\n"
         "\n"
         "@pytest.fixture\n"
         "def inventory_page(page):\n"
         "    return InventoryPage(page)\n"
         "\n"
         "@given('I am on the login page')\n"
-        "def open_login(login_page, base_url):\n"
-        "    login_page.open(base_url)\n"
+        "def open_login(some_page, base_url):\n"
+        "    some_page.open(base_url)\n"
         "\n"
         "@when('I click logout')\n"
         "def click_logout(inventory_page):\n"
@@ -128,7 +128,7 @@ class TestRepairSucceedsAfterRetry:
         """One error on first check → one repair call → second check passes."""
         broken_content = realistic_step_def()
         repaired_content = realistic_step_def(
-            "@then('I see login page')\ndef verify(login_page):\n    assert True\n"
+            "@then('I see login page')\ndef verify(some_page):\n    assert True\n"
         )
 
         files = [
