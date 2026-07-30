@@ -55,9 +55,37 @@ class LoginPage(BasePage):
         return self.get_text(self.sel("error_banner"))
 
     def get_field_error(self) -> str:
-        """First per-field validation message ('Required')."""
-        self.wait_visible(self.sel("field_error"))
-        return self.get_text(self.sel("field_error"))
+        """First per-field validation message ('Required').
+
+        Uses field_error_first, not field_error. The generic selector matches
+        every field error on the page, and Playwright runs in strict mode, so
+        a visibility assertion against it raises a strict mode violation the
+        moment two fields are empty - which is exactly what this method is
+        used to check. field_error_first pins it to one element.
+        """
+        self.wait_visible(self.sel("field_error_first"))
+        return self.get_text(self.sel("field_error_first"))
+
+    def get_username_field_error(self) -> str:
+        """Validation message under the Username field specifically."""
+        self.wait_visible(self.sel("username_field_error"))
+        return self.get_text(self.sel("username_field_error"))
+
+    def get_password_field_error(self) -> str:
+        """Validation message under the Password field specifically."""
+        self.wait_visible(self.sel("password_field_error"))
+        return self.get_text(self.sel("password_field_error"))
+
+    def has_field_error(self) -> bool:
+        """True if ANY per-field validation message is shown. Never raises.
+
+        The non-waiting counterpart to get_field_error. Absence assertions
+        must use this: a getter that waits for visibility cannot express
+        "nothing is there" - it times out and raises instead.
+        """
+        # get_all_texts uses all_inner_texts(), which is strict-mode safe:
+        # it returns a list over every match rather than asserting on one.
+        return len(self.get_all_texts(self.sel("field_error"))) > 0
 
     def get_all_field_errors(self) -> list[str]:
         """Every per-field validation message currently shown."""

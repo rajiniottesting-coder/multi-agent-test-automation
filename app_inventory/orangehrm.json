@@ -35,12 +35,18 @@
         "error_banner": ".oxd-alert-content-text",
         "field_error": ".oxd-input-field-error-message",
         "forgot_password_link": "text=Forgot your password?",
-        "branding": ".orangehrm-login-branding"
+        "branding": ".orangehrm-login-branding",
+        "field_error_first": ".oxd-input-field-error-message >> nth=0",
+        "username_field_error": ".oxd-input-group:has-text('Username') .oxd-input-field-error-message",
+        "password_field_error": ".oxd-input-group:has-text('Password') .oxd-input-field-error-message"
       },
       "elements_notes": {
         "error_banner": "Shown for WRONG credentials. Text is exactly 'Invalid credentials' — the app does not say which field was wrong, deliberately.",
-        "field_error": "Per-field message shown when a field is left EMPTY. Text is 'Required'. Both fields empty means TWO of these are present, so a locator must expect more than one.",
-        "credentials_hint": "The demo prints Admin / admin123 on the login screen itself."
+        "field_error": "MATCHES EVERY field error on the page. Use ONLY for counting or for 'is any error shown' checks - never with a visibility assertion, which raises a Playwright strict mode violation when two fields are empty. For a single field use username_field_error / password_field_error; for 'the first one' use field_error_first.",
+        "credentials_hint": "The demo prints Admin / admin123 on the login screen itself.",
+        "field_error_first": "The generic field_error narrowed to one element with >> nth=0. Safe with wait_visible. Order-dependent: nth=0 is Username, nth=1 is Password.",
+        "username_field_error": "Scoped to the Username input group, so it stays unique even when both fields are empty. Preferred over field_error for per-field assertions.",
+        "password_field_error": "Scoped to the Password input group. Unique on the LOGIN form because no other group there contains the word 'Password'. Note this is NOT true on Add User, where 'Confirm Password' also matches - see that page's keys."
       },
       "key_methods": [
         "open(base_url)",
@@ -89,7 +95,7 @@
       "url": "/web/index.php/dashboard/index",
       "always": true,
       "components": [],
-      "page_object_file": "pages/menu_page.py (NOT YET CREATED)",
+      "page_object_file": "pages/menu_page.py",
       "page_object_class": "MenuPage",
       "elements": {
         "admin_link": "role=link[name='Admin']",
@@ -112,7 +118,7 @@
       },
       "elements_notes": {
         "always": "`always: true` means this page is injected regardless of the story's Component - the menu is reachable from every authenticated page.",
-        "logout_link": "Rendered only AFTER user_dropdown is clicked. The crawler cannot see it; added by hand.",
+        "logout_link": "Rendered only AFTER user_dropdown is clicked. The crawler cannot see it; added by hand. MenuPage.logout() opens the dropdown first.",
         "toast": "Success/error toast, e.g. 'Successfully Saved'. Present in the DOM but empty until an action fires."
       },
       "key_methods": [
@@ -172,15 +178,19 @@
         "password_strength_hint": ".oxd-text--subtitle-2",
         "dropdown_option": ".oxd-select-option",
         "autocomplete_option": ".oxd-autocomplete-option",
-        "toast": "#oxd-toaster_1"
+        "toast": "#oxd-toaster_1",
+        "password_field_error": ".oxd-input-group:has-text('Password') .oxd-input-field-error-message >> nth=0",
+        "confirm_password_field_error": ".oxd-input-group:has-text('Confirm Password') .oxd-input-field-error-message"
       },
       "elements_notes": {
         "SELECTORS_REPLACED": "The crawl produced 12-level css paths for every form field (#app > div:nth-of-type(1) > ...) because Angular renders these inputs with no name or id. Those break on any layout change and were replaced with label-anchored selectors. VERIFY with `python -m scripts.verify_locators --url '/web/index.php/admin/saveSystemUser'` before relying on them.",
-        "field_error": "THE KEY ELEMENT FOR VALIDATION TESTS, and the crawler never saw it - it renders only after a field is touched and left invalid. Messages appear AS YOU TYPE, not on Save, so a test must assert after filling the field, not after submitting the form.",
+        "field_error": "THE KEY ELEMENT FOR VALIDATION TESTS, and the crawler never saw it - it renders only after a field is touched and left invalid. Messages appear AS YOU TYPE, not on Save, so a test must assert after filling the field, not after submitting the form. MATCHES EVERY field error on the page: use only for counting or 'is any error shown'. For per-field assertions use password_field_error / confirm_password_field_error.",
         "password_input": "Password and Confirm Password are both bare `input[type='password']` in DOM order. nth=0/nth=1 is positional and would break if the form gained another password field - acceptable here because the form is fixed, but worth re-checking after an OrangeHRM upgrade.",
         "user_role_select": "Custom ARIA dropdown, NOT a <select>. Click it, then click an `.oxd-select-option`. `select_option()` will not work.",
         "employee_name_input": "Autocomplete. Type at least 2 characters, wait for `.oxd-autocomplete-option`, then click one. Typing a full name without selecting a suggestion leaves the field invalid.",
-        "do_not_save": "This is a PUBLIC shared demo. A saved user persists and the next run hits 'User already exists'. Validation-only tests that never click Save are safe; anything that saves needs a unique username per run."
+        "do_not_save": "This is a PUBLIC shared demo. A saved user persists and the next run hits 'User already exists'. Validation-only tests that never click Save are safe; anything that saves needs a unique username per run.",
+        "password_field_error": "Scoped to the Password input group. ':has-text' is a SUBSTRING match, so it also matches the Confirm Password group - hence '>> nth=0'. The Password group precedes Confirm Password in the form, so nth=0 is Password. Same nth convention as password_input.",
+        "confirm_password_field_error": "Scoped to the Confirm Password input group. Needs no nth: 'Confirm Password' is a substring of that group only."
       },
       "key_methods": [
         "select_user_role(role)",
