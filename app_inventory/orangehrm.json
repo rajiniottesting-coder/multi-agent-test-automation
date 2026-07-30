@@ -134,7 +134,7 @@
       "components": [
         "Admin"
       ],
-      "page_object_file": "pages/admin_users_page.py (NOT YET CREATED)",
+      "page_object_file": "pages/admin_users_page.py",
       "page_object_class": "AdminUsersPage",
       "elements": {
         "add_button": "role=button[name=' Add ']",
@@ -163,7 +163,7 @@
       "components": [
         "Admin"
       ],
-      "page_object_file": "pages/admin_add_user_page.py (NOT YET CREATED)",
+      "page_object_file": "pages/admin_add_user_page.py",
       "page_object_class": "AdminAddUserPage",
       "elements": {
         "user_role_select": ".oxd-input-group:has-text('User Role') .oxd-select-text",
@@ -218,7 +218,7 @@
       "components": [
         "PIM"
       ],
-      "page_object_file": "pages/pim_employee_list_page.py (NOT YET CREATED)",
+      "page_object_file": "pages/pim_employee_list_page.py",
       "page_object_class": "PimEmployeeListPage",
       "elements": {
         "employee_name_input": "input[placeholder='Type for hints...']",
