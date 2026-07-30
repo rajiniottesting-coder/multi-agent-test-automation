@@ -19,8 +19,34 @@ class DashboardPage(BasePage):
         self.wait_visible(self.sel("header_title"))
         return self.get_text(self.sel("header_title"))
 
-    def is_loaded(self) -> bool:
-        """True once the dashboard header is on screen."""
+    def is_loaded(self, timeout_ms: int = 10000) -> bool:
+        """True once the dashboard header is on screen. WAITS up to timeout_ms.
+
+        Waiting is essential and was the bug this replaced. The app is a
+        single-page app: submitting the login form fires an XHR and re-renders
+        asynchronously, so the dashboard is never present the instant
+        login_as() returns. The previous implementation used is_visible(),
+        which BasePage documents as "no waiting" - it checked immediately and
+        returned False every time, failing every test that needed a successful
+        login, and cascading into 30s timeouts for anything that navigated
+        afterwards.
+
+        Returns a bool rather than raising, so `assert page.is_loaded()` still
+        reads naturally and a genuine failure still reports as an assertion.
+        Use is_displayed_now() for a true zero-wait probe.
+        """
+        try:
+            self.wait_visible(self.sel("header_title"), timeout_ms=timeout_ms)
+            return True
+        except Exception:
+            return False
+
+    def is_displayed_now(self) -> bool:
+        """True only if the dashboard header is visible RIGHT NOW. No waiting.
+
+        For asserting the dashboard is absent, or probing without cost. Never
+        use this immediately after an action that triggers a re-render.
+        """
         return self.is_visible(self.sel("header_title"))
 
     def get_logged_in_user(self) -> str:

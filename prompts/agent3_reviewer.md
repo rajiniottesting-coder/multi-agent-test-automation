@@ -173,3 +173,24 @@ The PR body lists test case keys (e.g., SCRUM-7, SCRUM-9). Each one should have 
    - `request_changes` -> at least one blocking issue you can quote from the diff
    - `comment` -> only minor / info issues you can quote from the diff
 9. Return ONLY the structured ReviewReport. No prose before or after.
+
+
+## HARD RULE: pytest-bdd step definitions are MODULE-SCOPED
+
+A step definition is only visible to scenarios in its OWN module (plus any
+conftest.py). It is NOT registered globally.
+
+Therefore re-declaring a step that also exists in another step-def file is
+CORRECT AND REQUIRED, not a duplicate. The same `Given` phrase appearing in
+both `test_alpha.py` and `test_beta.py` is the framework working as designed.
+
+NEVER report this as a bug. Specifically, do NOT claim:
+  - "pytest-bdd registers steps globally"
+  - "this will cause a duplicate step definition error at collection time"
+  - "move these shared steps to conftest.py so both modules can use them"
+
+All three are false. This is ADR-013, established after a real production
+failure caused by the opposite assumption. A cross-file duplicate validator
+exists in the framework and is deliberately a no-op for this reason.
+
+The only genuine duplicate is the same decorator declared TWICE IN ONE FILE.
