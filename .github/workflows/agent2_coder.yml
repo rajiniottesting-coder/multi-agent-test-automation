@@ -51,8 +51,8 @@ on:
         required: false
         default: ""
   schedule:
-    # Every 30 minutes on the hour and half-hour, Mon-Fri 9:00-18:00 UTC
-    # (= 14:30-23:30 IST). Deliberately NOT */15: GitHub throttles
+    # Every 30 minutes on the hour and half-hour, Mon-Fri 04:30-13:30 UTC
+    # (= 10:00-19:00 IST). Deliberately NOT */15: GitHub throttles
     # frequent schedules on free/personal accounts and silently drops
     # runs, so asking for less reliably delivers more. The 30-min
     # pickup latency is irrelevant anyway - a human approval gate sits
@@ -60,7 +60,11 @@ on:
     # cron so the two agents process the same story within roughly the
     # same business-hours window. NOTE: GitHub Actions cron may be
     # delayed up to 15 min during platform load.
-    - cron: "0,30 9-18 * * 1-5"
+    # 10:00-19:00 IST = 04:30-13:30 UTC. GitHub cron is ALWAYS UTC, and the
+    # window straddles hour boundaries, so it needs three entries:
+    - cron: "30 4 * * 1-5"        # 10:00 IST
+    - cron: "0,30 5-12 * * 1-5"   # 10:30 - 18:00 IST, every 30 min
+    - cron: "0,30 13 * * 1-5"     # 18:30 and 19:00 IST
 
 # ──── NO push: TRIGGER (intentional) ────
 # We previously added a push failsafe when GitHub Actions cron was

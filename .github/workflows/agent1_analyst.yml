@@ -5,7 +5,7 @@
 #   1. Manually triggered from GitHub Actions UI (workflow_dispatch)
 #      - Optional inputs: process a single story or scan all `ai-ready`
 #   2. Automatically on a business-hours cron schedule:
-#      - Every 15 minutes, Mon-Fri 9:00-18:00 UTC
+#      - Every 30 minutes, Mon-Fri 04:30-13:30 UTC
 #      - Calls `--scan` to find stories matching config.yaml selection
 #      - Skips weekends/nights to avoid idle CI minutes outside work hours
 #
@@ -60,15 +60,19 @@ on:
         required: false
         default: ""
   schedule:
-    # Every 30 minutes on the hour and half-hour, Mon-Fri 9:00-18:00 UTC
-    # (= 14:30-23:30 IST). Deliberately NOT */15: GitHub throttles
+    # Every 30 minutes on the hour and half-hour, Mon-Fri 04:30-13:30 UTC
+    # (= 10:00-19:00 IST). Deliberately NOT */15: GitHub throttles
     # frequent schedules on free/personal accounts and silently drops
     # runs, so asking for less reliably delivers more. The 30-min
     # pickup latency is irrelevant anyway - a human approval gate sits
     # between Agent 1 and Agent 2, and that wait is measured in hours.
     # NOTE: GitHub Actions cron may be delayed up to 15 min during high
     # platform load — effective worst-case latency is ~30 min.
-    - cron: "0,30 9-18 * * 1-5"
+    # 10:00-19:00 IST = 04:30-13:30 UTC. GitHub cron is ALWAYS UTC, and the
+    # window straddles hour boundaries, so it needs three entries:
+    - cron: "30 4 * * 1-5"        # 10:00 IST
+    - cron: "0,30 5-12 * * 1-5"   # 10:30 - 18:00 IST, every 30 min
+    - cron: "0,30 13 * * 1-5"     # 18:30 and 19:00 IST
 
 # ──── NO push: TRIGGER (intentional) ────
 # Per user direction, Agent 1 runs on cron ONLY. See agent2_coder.yml

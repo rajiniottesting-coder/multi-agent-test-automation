@@ -34,7 +34,11 @@ on:
     # The :05 offset keeps the sweeper clear of the agents' :00 tick.
     #
     # Outside this window, trigger manually via workflow_dispatch below.
-    - cron: "5 9-19 * * 1-5"
+    # Hourly at :05 past, 10:00-19:00 IST = 04:30-13:30 UTC. Cron is UTC.
+    # Offset to :35/:05 so the sweeper lands between agent runs, not on top
+    # of them - it looks for work the others left stalled.
+    - cron: "35 4-12 * * 1-5"     # 10:05 - 18:05 IST
+    - cron: "35 13 * * 1-5"       # 19:05 IST
 
 # Governs the built-in token; our script uses GH_PAT, but keep least-privilege.
 permissions:
