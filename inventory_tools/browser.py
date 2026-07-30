@@ -321,7 +321,10 @@ def do_login(page, login_url: Optional[str], username_selector: Optional[str],
     page.locator(user_sel).first.fill(username)
     page.locator(pass_sel).first.fill(password)
     page.locator(submit_sel).first.click()
-    page.wait_for_load_state("networkidle")
+    # 'load', not 'networkidle': an app that polls or streams never reaches
+    # a quiet window. The helper below still tries networkidle, but with a
+    # timeout and a fallback - that is the safe way to use it.
+    page.wait_for_load_state("load")
 
     if page.url.rstrip("/") != url_before.rstrip("/"):
         return True                      # navigated away from the login page

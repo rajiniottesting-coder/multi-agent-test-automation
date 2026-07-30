@@ -190,7 +190,9 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
         return 0, 0
     try:
         page.goto(url)
-        page.wait_for_load_state("networkidle")
+        # See note below: 'networkidle' is unreachable on apps that keep
+        # background requests in flight.
+        page.wait_for_load_state("load")
     except Exception as e:
         print(f"  [{page_name}] UNREACHABLE {url}: {type(e).__name__}")
         return 0, 0
@@ -359,7 +361,9 @@ def main() -> int:
                     return 2
             url = base_url + (path or "/")
             page.goto(url)
-            page.wait_for_load_state("networkidle")
+            # 'load', not 'networkidle': an app that polls or streams
+            # never goes idle, so the wait times out on a rendered page.
+            page.wait_for_load_state("load")
             try:
                 loc = _resolve_one(page, args.selector)
                 count = loc.count()

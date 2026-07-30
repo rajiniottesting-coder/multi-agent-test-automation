@@ -192,9 +192,19 @@ class BasePage:
         """Wait until the URL matches a glob or regex pattern."""
         self.page.wait_for_url(url_pattern, timeout=self._timeout(timeout_ms))
 
-    def wait_for_page_load(self, state: str = "networkidle",
+    def wait_for_page_load(self, state: str = "load",
                            timeout_ms: Optional[int] = None) -> None:
-        """Wait for a load state: 'load', 'domcontentloaded' or 'networkidle'."""
+        """Wait for a load state: 'load', 'domcontentloaded' or 'networkidle'.
+
+        Defaults to 'load', NOT 'networkidle'. A single-page app that polls,
+        streams or lazy-loads never reaches a 500ms window with no in-flight
+        requests, so 'networkidle' can time out on a page that has been fully
+        rendered for seconds. The failure is confusing because the Playwright
+        log shows the load event already fired.
+
+        Pass state='networkidle' explicitly only when you know the page under
+        test genuinely goes quiet, and give it a timeout.
+        """
         self.page.wait_for_load_state(state, timeout=self._timeout(timeout_ms))
 
     # ============================================================
