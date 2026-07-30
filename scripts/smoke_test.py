@@ -86,7 +86,7 @@ def test_tracker():
 def test_llm():
     """Verify LLM API key and endpoint work."""
     from langchain_openai import ChatOpenAI
-    model_name = os.getenv("LLM_MODEL", "claude-opus-4-6")
+    model_name = os.getenv("LLM_MODEL", "anthropic.claude-opus-5")
     api_key = os.getenv("OPENAI_API_KEY")
     api_base = os.getenv("OPENAI_API_BASE")
     llm = ChatOpenAI(

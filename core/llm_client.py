@@ -382,7 +382,7 @@ class LLMClient:
     """
 
     def __init__(self, temperature: float = 0.2, max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS):
-        model_name = os.getenv("LLM_MODEL", "claude-opus-4-6")
+        model_name = os.getenv("LLM_MODEL", "anthropic.claude-opus-5")
         self.model_name = model_name
         # Retained so a truncation message can quote the cap it breached.
         self.max_output_tokens = max_output_tokens
