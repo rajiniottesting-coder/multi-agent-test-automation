@@ -1,0 +1,162 @@
+"""Tests for the Agent 2 validator gate and batch-aware fixture derivation.
+
+Three production defects are pinned here:
+
+  1. A page object generated in the same batch was reported as a missing
+     fixture. No repair attempt could satisfy it, so it consumed the whole
+     retry budget while the file providing it was being written.
+  2. validate_no_unused_step_definitions and validate_fixtures_exist fed the
+     repair loop but not the final gate, so a run could log "Final validator
+     will raise", exhaust its retries, and open a PR carrying those errors.
+  3. Scan mode printed [FAIL] for a story and exited 0.
+"""
+import inspect
+
+import pytest
+
+import agents.agent2_coder as agent2
+from validators.gherkin_analyzer import validate_fixtures_exist
+
+
+class _GF:
+    def __init__(self, file_path: str, content: str):
+        self.file_path = file_path
+        self.content = content
+
+
+_PAGE_OBJECT = (
+    "from pages.base_page import BasePage\n\n\n"
+    "class WidgetPage(BasePage):\n    pass\n"
+)
+
+
+def _step_def(*fixtures: str) -> str:
+    return (
+        "from pytest_bdd import given\n\n\n"
+        '@given("I am somewhere")\n'
+        f"def go({', '.join(fixtures)}) -> None:\n    pass\n"
+    )
+
+
+# ── defect 1: batch-aware derivation ─────────────────────────────────────
+
+def test_page_object_generated_in_the_same_batch_is_accepted():
+    """The false positive that burned four repair attempts in production."""
+    files = [
+        _GF("pages/widget_page.py", _PAGE_OBJECT),
+        _GF("tests/step_defs/test_x.py", _step_def("widget_page")),
+    ]
+    assert validate_fixtures_exist(files, ".") == []
+
+
+def test_fixture_with_no_page_object_anywhere_is_still_caught():
+    """The genuine bug must not be masked by the fix for the false positive."""
+    files = [
+        _GF("pages/widget_page.py", _PAGE_OBJECT),
+        _GF("tests/step_defs/test_x.py", _step_def("nowhere_page")),
+    ]
+    errors = validate_fixtures_exist(files, ".")
+    assert len(errors) == 1 and "nowhere_page" in errors[0]
+
+
+def test_generated_page_object_that_does_not_parse_is_not_trusted():
+    """conftest imports page objects; an unparseable one registers nothing."""
+    files = [
+        _GF("pages/broken_page.py", "class BrokenPage(BasePage:\n bad\n"),
+        _GF("tests/step_defs/test_x.py", _step_def("broken_page")),
+    ]
+    assert len(validate_fixtures_exist(files, ".")) == 1
+
+
+def test_generated_non_page_class_is_not_trusted():
+    files = [
+        _GF("pages/helper.py", "class Helper:\n    pass\n"),
+        _GF("tests/step_defs/test_x.py", _step_def("helper")),
+    ]
+    assert len(validate_fixtures_exist(files, ".")) == 1
+
+
+def test_generated_file_outside_pages_is_not_trusted():
+    """Only pages/ is auto-registered, so only pages/ may be trusted."""
+    files = [
+        _GF("utils/widget_page.py", _PAGE_OBJECT),
+        _GF("tests/step_defs/test_x.py", _step_def("widget_page")),
+    ]
+    assert len(validate_fixtures_exist(files, ".")) == 1
+
+
+def test_generated_class_named_page_is_refused():
+    """Would derive 'page' and shadow the browser fixture."""
+    files = [
+        _GF("pages/page.py",
+            "from pages.base_page import BasePage\n\n\nclass Page(BasePage):\n    pass\n"),
+        _GF("tests/step_defs/test_x.py", _step_def("something_page")),
+    ]
+    assert len(validate_fixtures_exist(files, ".")) == 1
+
+
+# ── defect 2: the final gate must be able to block ───────────────────────
+
+_FEATURE = "Feature: f\n\n  Scenario: s\n    Given I am somewhere\n"
+
+
+def test_gate_blocks_an_unresolvable_fixture():
+    files = [
+        _GF("features/x.feature", _FEATURE),
+        _GF("tests/step_defs/test_x.py", _step_def("nowhere_page")),
+    ]
+    with pytest.raises(ValueError, match="Fixture resolution validation failed"):
+        agent2._validate_generated_files(files, "STORY-1")
+
+
+def test_gate_blocks_an_unused_step_definition():
+    step_def = _step_def("login_page") + (
+        '\n\n@given("nothing uses this")\n'
+        "def dead(login_page) -> None:\n    pass\n"
+    )
+    files = [
+        _GF("features/x.feature", _FEATURE),
+        _GF("tests/step_defs/test_x.py", step_def),
+    ]
+    with pytest.raises(ValueError, match="Unused step-definition validation failed"):
+        agent2._validate_generated_files(files, "STORY-1")
+
+
+def test_gate_passes_a_clean_batch():
+    """The gate must not become a false blocker."""
+    files = [
+        _GF("features/x.feature", _FEATURE),
+        _GF("tests/step_defs/test_x.py", _step_def("widget_page")),
+        _GF("pages/widget_page.py", _PAGE_OBJECT),
+    ]
+    agent2._validate_generated_files(files, "STORY-1")      # must not raise
+
+
+def test_both_new_validators_are_wired_into_the_gate():
+    """Guards against either being dropped back to repair-loop-only."""
+    src = inspect.getsource(agent2._validate_generated_files)
+    assert "validate_no_unused_step_definitions" in src
+    assert "validate_fixtures_exist" in src
+
+
+# ── defect 3: scan mode must signal failure ──────────────────────────────
+
+def test_scan_mode_exits_non_zero_when_a_story_failed():
+    src = inspect.getsource(agent2.main)
+    assert 'r.get("status") == "failed"' in src
+    assert "sys.exit(1)" in src
+
+
+def test_system_exit_is_re_raised_before_the_broad_handler():
+    """Otherwise our own exit(1) is caught and reported as a crash."""
+    import ast
+    tree = ast.parse(inspect.getsource(agent2.main))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Try):
+            continue
+        names = ["bare" if h.type is None else ast.unparse(h.type)
+                 for h in node.handlers]
+        if "SystemExit" in names:
+            assert names.index("SystemExit") < names.index("Exception")
+            return
+    pytest.fail("no try block re-raises SystemExit")

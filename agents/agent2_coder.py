@@ -1386,6 +1386,47 @@ def _validate_generated_files(
             f"`click_logout_link()` in the step def). See logs for details."
         )
 
+    # These two were previously wired only into the repair loop. That meant a
+    # run could log "Final validator will raise", exhaust its retries, and
+    # then open a PR carrying the very errors it had just reported - turning a
+    # caught problem into a shipped one. A PR must never open with a known
+    # collection-time failure.
+    unused_step_errors = validate_no_unused_step_definitions(generated_files)
+    if unused_step_errors:
+        logger.error(
+            f"Unused step-definition check FAILED with "
+            f"{len(unused_step_errors)} error(s) AFTER retry:"
+        )
+        for err in unused_step_errors:
+            logger.error(f"  - {err}")
+        raise ValueError(
+            f"Unused step-definition validation failed for {story_id}: "
+            f"{len(unused_step_errors)} decorator(s) are defined but no "
+            f"scenario uses them — even after the LLM was given the "
+            f"validator's feedback. This usually means the LLM emitted two "
+            f"phrasings of the same step and wired only one into the feature "
+            f"file. See logs for details."
+        )
+
+    fixture_errors = validate_fixtures_exist(generated_files, PROJECT_ROOT)
+    if fixture_errors:
+        logger.error(
+            f"Fixture resolution check FAILED with "
+            f"{len(fixture_errors)} error(s) AFTER retry:"
+        )
+        for err in fixture_errors:
+            logger.error(f"  - {err}")
+        raise ValueError(
+            f"Fixture resolution validation failed for {story_id}: "
+            f"{len(fixture_errors)} step definition(s) request a fixture that "
+            f"no conftest declares and no page object provides. pytest "
+            f"resolves fixtures at collection time, so every scenario in the "
+            f"file would error before running. If the fixture should come "
+            f"from a page object, that page object must be in the plan; if it "
+            f"needs custom setup, add it to conftest by hand. See logs."
+        )
+
+
 
 # ---------------------------------------------------------------------------
 # Self-correcting retry loop (handles weak-model step coverage failures)
@@ -3204,6 +3245,21 @@ def main():
 
         _print_scan_summary(results)
 
+        # A failed story must not report success. Scan mode deliberately
+        # catches per-story errors so one bad story cannot halt the batch,
+        # but the process still has to signal failure - otherwise a cron
+        # run goes green while producing nothing, indefinitely.
+        failed = [r for r in results if r.get("status") == "failed"]
+        if failed:
+            logger.error(
+                "%d of %d story/stories failed: %s",
+                len(failed), len(results),
+                ", ".join(str(r.get('story_id')) for r in failed),
+            )
+            sys.exit(1)
+
+    except SystemExit:
+        raise               # our own exit(1) above - not an unexpected error
     except Exception as e:
         logger.error(f"Agent 2 failed: {type(e).__name__}: {e}", exc_info=True)
         sys.exit(1)
