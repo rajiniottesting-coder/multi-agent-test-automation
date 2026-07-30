@@ -54,7 +54,7 @@ from core.board_status import move_card_for_label
 from integrations.repo_host import get_repo_host
 from validators.import_validator import validate_imports_resolvable
 from validators.method_resolution_validator import validate_method_resolution
-from core.llm_client import LLMClient
+from core.llm_client import LLMClient, OutputTruncatedError
 from core.schemas import CodePlan, GeneratedFile, CodeGenerationOutput
 from validators.gherkin_analyzer import (
     validate_no_duplicate_step_definitions,
@@ -1499,6 +1499,12 @@ def _attempt_step_coverage_repair(
                     is_new_file=generated_files[target_idx].is_new_file,
                     purpose=generated_files[target_idx].purpose,
                 )
+            except OutputTruncatedError:
+                # A budget breach is not a repairable failure. Every further
+                # attempt would truncate at the identical cap, so swallowing
+                # this would burn the remaining retries and then report a
+                # validator error that never mentions the real cause.
+                raise
             except Exception as e:
                 logger.error(
                     f"  Repair attempt for '{step_def_path}' failed: {e}. "

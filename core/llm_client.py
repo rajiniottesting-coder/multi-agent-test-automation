@@ -111,6 +111,24 @@ class QuotaExhaustedError(RuntimeError):
     pass
 
 
+class OutputTruncatedError(RuntimeError):
+    """Raised when the model stopped because it hit the output token cap.
+
+    Surfaced fast for the same reason as QuotaExhaustedError: this is a budget
+    breach, not a model mistake, so retrying under the same cap truncates at
+    the same place. Two downstream symptoms it replaces:
+
+      - a structured call would raise a Pydantic ValidationError about a field
+        that was simply cut in half, naming the wrong cause
+      - a text call would emit invalid Python, fail the validators, and burn
+        every repair attempt against the identical cap
+
+    The message names the exact knob to raise, so a re-run is a deliberate
+    decision rather than guesswork.
+    """
+    pass
+
+
 # ─────────────────────────────────────────────────────────────
 # Token usage & cost tracking
 #
@@ -211,6 +229,75 @@ class _UsageTracker:
 _tracker = _UsageTracker()
 
 
+# finish_reason values meaning "stopped because the output budget ran out".
+# OpenAI-compatible endpoints report "length"; some gateways pass through
+# Anthropic's "max_tokens". Compared lower-cased.
+_TRUNCATION_FINISH_REASONS = {"length", "max_tokens"}
+
+
+def _finish_reason(response) -> "str | None":
+    """Best-effort finish_reason from a LangChain response. Never raises.
+
+    Returns None when the endpoint does not report one — a missing reason must
+    never fail a run that actually succeeded.
+    """
+    try:
+        meta = getattr(response, "response_metadata", None) or {}
+        for key in ("finish_reason", "stop_reason"):
+            value = meta.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip().lower()
+    except Exception:
+        pass
+    return None
+
+
+def _check_output_not_truncated(response, *, label: str, cap: int, knob: str) -> None:
+    """Raise OutputTruncatedError if the model stopped at the output cap.
+
+    Called AFTER _record_usage (so a truncated call still appears in the cost
+    ledger — it was paid for) and BEFORE any parsing, so the operator sees the
+    budget breach rather than a downstream symptom.
+
+    Silent when finish_reason is absent or is any other value.
+    """
+    reason = _finish_reason(response)
+    if reason not in _TRUNCATION_FINISH_REASONS:
+        return
+
+    produced = None
+    try:
+        produced = (getattr(response, "usage_metadata", None) or {}).get("output_tokens")
+    except Exception:
+        pass
+    produced_str = f"{produced:,}" if isinstance(produced, int) else "not reported"
+
+    logger.error("=" * 66)
+    logger.error("OUTPUT TRUNCATED [%s]", label)
+    logger.error("=" * 66)
+    logger.error("The model stopped because the output token budget ran out.")
+    logger.error("  finish_reason   : %r", reason)
+    logger.error("  output cap      : %s tokens", f"{cap:,}")
+    logger.error("  tokens produced : %s", produced_str)
+    logger.error("Nothing was parsed and nothing was written.")
+    logger.error("")
+    logger.error("TO RE-RUN WITH MORE ROOM: %s", knob)
+    logger.error("")
+    logger.error(
+        "BEFORE RAISING THE CAP: scan the log above for repeated content. A "
+        "repetition loop fills any budget you give it, so a larger cap would "
+        "only cost more and truncate later. Raise the cap only if the output "
+        "was genuinely large and non-repetitive."
+    )
+    logger.error("=" * 66)
+
+    raise OutputTruncatedError(
+        f"{label}: output truncated at the {cap:,}-token cap "
+        f"(finish_reason={reason!r}, produced={produced_str}). "
+        f"Nothing was parsed or written. To re-run with more room: {knob}"
+    )
+
+
 def _record_usage(response, label: str) -> None:
     """Extract usage from a LangChain response and log call + running totals.
 
@@ -297,6 +384,8 @@ class LLMClient:
     def __init__(self, temperature: float = 0.2, max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS):
         model_name = os.getenv("LLM_MODEL", "claude-opus-4-6")
         self.model_name = model_name
+        # Retained so a truncation message can quote the cap it breached.
+        self.max_output_tokens = max_output_tokens
         api_key = os.getenv("OPENAI_API_KEY")
         api_base = os.getenv("OPENAI_API_BASE")
         # temperature=0 → deterministic; small temp adds slight creativity
@@ -345,6 +434,7 @@ class LLMClient:
 
         Raises:
             QuotaExhaustedError: if API rate limit / quota is hit
+            OutputTruncatedError: if the model hit the output token cap
             ValueError: if LLM returns empty or unparseable output
         """
         # Generate the JSON schema from the Pydantic model so the LLM sees
@@ -370,6 +460,15 @@ class LLMClient:
         logger.info(f"Calling LLM (model={self.model_name}, schema={output_schema.__name__})...")
         response = self._call_with_quota_check(self.llm.invoke, messages)
         _record_usage(response, f"structured:{output_schema.__name__}")
+        _check_output_not_truncated(
+            response,
+            label=f"structured:{output_schema.__name__}",
+            cap=self.max_output_tokens,
+            knob=(
+                f"raise max_output_tokens in the LLMClient(...) call for this "
+                f"agent (currently {self.max_output_tokens:,})"
+            ),
+        )
 
         raw_content = response.content or ""
         if not raw_content.strip():
@@ -409,6 +508,7 @@ class LLMClient:
 
         Raises:
             QuotaExhaustedError: if API quota is hit
+            OutputTruncatedError: if the model hit the output token cap
         """
         # Use a dedicated LLM instance with a higher token budget for code.
         # Cached on first call so we don't reconstruct on every invocation.
@@ -446,6 +546,15 @@ class LLMClient:
 
         # Record token usage in the run-level tracker (logs per-call + totals)
         _record_usage(response, "text:code-gen")
+        _check_output_not_truncated(
+            response,
+            label="text:code-gen",
+            cap=cap,
+            knob=(
+                f"set LLM_CODE_GEN_MAX_TOKENS above {cap:,} "
+                f"(env var — no code change, no redeploy)"
+            ),
+        )
 
         # Suspicious-output diagnostic dump
         if len(content.strip()) < 30:
