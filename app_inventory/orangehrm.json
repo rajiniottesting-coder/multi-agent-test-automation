@@ -137,7 +137,7 @@
       "page_object_file": "pages/admin_users_page.py",
       "page_object_class": "AdminUsersPage",
       "elements": {
-        "add_button": "role=button[name=' Add ']",
+        "add_button": ".orangehrm-header-container button:has-text('Add')",
         "search_username_input": ".oxd-input-group:has-text('Username') input",
         "search_button": "role=button[name=' Search ']",
         "reset_button": "role=button[name=' Reset ']",
