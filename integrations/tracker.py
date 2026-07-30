@@ -29,8 +29,14 @@ ADDING A TRACKER
    structural Protocol, so a class matching the shape simply *is* a Tracker).
 2. Register it in `_ADAPTERS` below.
 3. Set `tracker.type` in config.yaml.
+4. Replace the credential env vars in the five workflows that talk to the
+   tracker: agent1_analyst, agent2_coder, agent3-reviewer, agent4_runner and
+   story_done_on_merge. Each passes the adapter's variables through an `env:`
+   block, so a new adapter reading different names needs them supplied.
+   (sweeper.yml is the one workflow that never touches the tracker.)
 
-Nothing in agents/ changes.
+Nothing in agents/ changes. Steps 1-3 are the Python contract; step 4 is the
+credential plumbing, which the Protocol deliberately does not cover.
 
 A NOTE ON LABELS
 ----------------

@@ -441,7 +441,7 @@ Three distinct test layers exist; they have different triggers and purposes:
 
 | Suite | Trigger | Touches network? | Purpose |
 |---|---|---|---|
-| `tests/unit/` (259 tests) | Every PR — Agent 4 runs `pytest tests/`, which includes them. Also run manually (`python -m pytest tests/unit/ -q`) before committing any framework change. | No — fully offline (no Jira/GitHub/LLM) | Framework correctness: validators, markers, orphan cleanup, usage tracking, ledger, component filtering, repair routing, step-def splicing, inventory tooling, sweeper |
+| `tests/unit/` (391 tests) | Every PR — Agent 4 runs `pytest tests/`, which includes them. Also run manually (`python -m pytest tests/unit/ -q`) before committing any framework change. | No — fully offline (no Jira/GitHub/LLM) | Framework correctness: validators, markers, orphan cleanup, usage tracking, ledger, component filtering, repair routing, step-def splicing, inventory tooling, sweeper |
 | `tests/step_defs/` (generated E2E) | Every PR — same Agent 4 run | Yes — drives a real browser against the app under test | Does the application work |
 | `scripts/smoke_test.py` | **Manual only** — run on first setup, after credential/`.env` changes, on a new machine, or when onboarding a new app | Yes — live Jira login, one real LLM call, one browser hit on the app's `base_url` (config-driven) | Is the *environment* wired correctly |
 
@@ -961,5 +961,6 @@ Because every step persists before the next begins, recovery is trivial:
   cost; rare in practice.)
 - Agent 2 dies before opening the PR → `ai-coded` not added → next cron
   retries; branch creation is idempotent.
-- Agent 5 workflow re-runs → it finds its own comment header and skips.
+- The runner workflow re-runs (Agent 5 is job 2 of `agent4_runner.yml`, not a
+  workflow of its own) → Agent 5 finds its own comment header and skips.
 - Quota exhaustion mid-run → labels not consumed → automatic retry next tick.

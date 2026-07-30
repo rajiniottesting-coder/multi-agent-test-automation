@@ -12,7 +12,7 @@
 Porting to a new tool means adding ONE file under `integrations/` and changing
 one line in `config/config.yaml`. Nothing in `agents/` changes.
 
-> **Verification status (July 2026):** ALL FIXES PRESENT. All 259 unit tests
+> **Verification status (July 2026):** ALL FIXES PRESENT. All 391 unit tests
 > pass. Deployed: v17/v18 prompt hardening, orphan cleanup (`ai-update` AND
 > `ai-regenerate`), dynamic sprint scoping (`sprint: "auto"` via JIRA_BOARD_ID),
 > and end-to-end LLM token & cost instrumentation (per-run tracker + per-story
@@ -55,7 +55,7 @@ These files contain zero project-specific knowledge. Reuse as-is:
 - `prompts/agent5_reporter.md`
 
 ### Universal page-object helpers
-- `pages/base_page.py` — 10 generic Playwright-native helpers from v18. Universal across projects.
+- `pages/base_page.py` — 72 generic Playwright-native helpers. Universal across projects.
 
 ### Unit tests (the test suite is project-agnostic)
 - `tests/unit/test_agent1_labels.py`
@@ -65,7 +65,7 @@ These files contain zero project-specific knowledge. Reuse as-is:
 - `tests/unit/test_validators.py` — one fixture mentions "Admin" as generic placeholder, not OrangeHRM-specific
 
 ### Infrastructure
-- `.github/workflows/*.yml` — all five workflows
+- `.github/workflows/*.yml` — all six workflows
 - `requirements.txt`
 - `pytest.ini`
 - `config/__init__.py`, `config/paths.py`
@@ -112,7 +112,7 @@ ALSO update or REMOVE the `test_users:` block. OrangeHRM-specific test users are
 > **⚠️ Credentials — read before onboarding a REAL application.**
 >
 > OrangeHRM's credentials (`Admin` / `admin123`) are safe to commit:
-> they are printed on the app's own login page, published in Sauce Labs' docs, and
+> they are printed on the app's own login page and
 > guard nothing. **Real application credentials are not.** Putting them in
 > `config.yaml` or any file under `prompts/app_context/` means they are:
 >
@@ -353,9 +353,9 @@ Confirmed by audit (search for OrangeHRM terms in agent code/prompts/tests retur
 |---|---|---|
 | `agents/*.py` | All 11 Python agent files | ❌ NEVER |
 | `prompts/agent*.md` | All five agent prompts (NOT the `app_context/` modules) | ❌ NEVER |
-| `pages/base_page.py` | 10 generic Playwright helpers | ❌ NEVER |
-| `tests/unit/*.py` | All 259 unit tests | ❌ NEVER |
-| `.github/workflows/*.yml` | All 5 workflow files | ❌ NEVER |
+| `pages/base_page.py` | 72 generic Playwright helpers | ❌ NEVER |
+| `tests/unit/*.py` | All 391 unit tests | ❌ NEVER |
+| `.github/workflows/*.yml` | All 6 workflow files | ❌ NEVER |
 | `config/__init__.py`, `config/paths.py` | Config loading code | ❌ NEVER |
 | `requirements.txt`, `pytest.ini` | Dependency / pytest config | ❌ NEVER |
 | `validators/orphan_cleanup.py` | Dead-code detection (AST + Gherkin only) | ❌ NEVER |
@@ -406,7 +406,7 @@ After making the six changes:
 ```bash
 # 1. Unit tests still pass (proves agents + helpers + orphan cleanup still work)
 python -m pytest tests/unit/ -q
-# Expected: 259 passed
+# Expected: 391 passed
 
 # 2. Smoke test: connections to Jira / the LLM endpoint / GitHub
 python scripts/smoke_test.py
@@ -438,7 +438,7 @@ The fixes we delivered this week aren't tied to OrangeHRM. Everything works for 
 | **v15** universal cross-file completeness rule | Generic step-coverage check — works for any pytest-bdd codebase |
 | **v17** type-contract awareness | Tells the LLM to respect declared return types — banking floats, CMS dicts, anything |
 | **v17** locator discipline | Native HTML `<select>` / `<input>` patterns are universal |
-| **v18** BasePage helpers (10 methods) | Generic Playwright wrappers, no project assumptions |
+| **v18** BasePage helpers (72 methods) | Generic Playwright wrappers, no project assumptions |
 | **v18** exact phrase matching rule | pytest-bdd's matching semantics are universal |
 | **v18** parsers.parse quote handling | Universal `parse` library behavior |
 | **Orphan cleanup (ai-update)** | AST + Gherkin, app-agnostic by construction. Verified against banking + CMS fixtures. |
@@ -493,7 +493,7 @@ The framework filters Jira issues by project key. If you set `JIRA_PROJECT_KEY=S
 
 ## One-paragraph version (if you're in a hurry)
 
-Copy the whole repo. In `config/config.yaml`, change the `app_under_test` block to point at your app and create the matching `app_inventory/<name>.json`. Populate `prompts/app_context/` — put global info in `core.md` and one `<component>.md` per Jira Component (or use a single `prompts/app_context.md` if you prefer) — with your app's known users / errors / page flow. Write ONE high-quality hand-crafted reference test (feature + step_def + page_object trio) and list those three files in `reserved_paths`. Delete the old OrangeHRM files. Run `python -m pytest tests/unit/ -q` — should see 259 passed. Done. **No Python file in `agents/`, no prompt in `prompts/agent*.md`, no unit test, and no workflow file needs to change.**
+Copy the whole repo. In `config/config.yaml`, change the `app_under_test` block to point at your app and create the matching `app_inventory/<name>.json`. Populate `prompts/app_context/` — put global info in `core.md` and one `<component>.md` per Jira Component (or use a single `prompts/app_context.md` if you prefer) — with your app's known users / errors / page flow. Write ONE high-quality hand-crafted reference test (feature + step_def + page_object trio) and list those three files in `reserved_paths`. Delete the old OrangeHRM files. Run `python -m pytest tests/unit/ -q` — should see 391 passed. Done. **No Python file in `agents/`, no prompt in `prompts/agent*.md`, no unit test, and no workflow file needs to change.**
 
 ---
 
@@ -503,7 +503,7 @@ Copy the whole repo. In `config/config.yaml`, change the `app_under_test` block 
 |---|---|
 | v17 type-contract rule in agent2_coder_generate.md | ✅ Present |
 | v17 locator discipline rule | ✅ Present |
-| v18 BasePage helpers (10 methods) | ✅ All 10 present in base_page.py |
+| v18 BasePage helpers (72 methods) | ✅ All 72 present in base_page.py |
 | v18 exact phrase matching rule | ✅ Present |
 | v18 parsers.parse quote rule | ✅ Present |
 | v18 BasePage helpers section in prompt | ✅ Present |
@@ -512,7 +512,7 @@ Copy the whole repo. In `config/config.yaml`, change the `app_under_test` block 
 | GitHubClient.list_files_in_directory | ✅ Present |
 | Wire-in for ai-update orphan cleanup | ✅ Present |
 | Wire-in for ai-regenerate orphan cleanup | ✅ Present |
-| Unit tests | ✅ 259 passing |
+| Unit tests | ✅ 391 passing |
 | Module-wise app context (`prompts/app_context/`) | ✅ Present (core + per-component) |
 | Inventory JSON minification | ✅ Present |
 | Component-wise inventory filtering (2.2) | ✅ Present (`filter_inventory_by_components`) |

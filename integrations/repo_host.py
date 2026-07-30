@@ -40,8 +40,21 @@ ADDING A HOST
 1. Write a class implementing `RepoHost` (structural Protocol — no inheritance).
 2. `register_adapter("gitlab", GitLabHost)`.
 3. Set `repo_host.type` in config.yaml.
+4. Replace the credential env vars in the three workflows that talk to the
+   repo host: agent2_coder, agent3-reviewer and sweeper.
 
-Nothing in agents/ changes.
+Nothing in agents/ changes — but note that step 4 is the *cheap* case, and it
+only applies if CI stays on GitHub Actions. Moving the code to another host
+normally moves CI too, and all six workflow files use GitHub Actions-specific
+constructs (actions/checkout, actions/setup-python, github.event.*). Those are
+rewritten, not edited. See "WHAT DOES NOT BELONG HERE" above.
+
+One further obligation on a new adapter, not enforced by this Protocol:
+`get_workflow_runs()` returns {"status", "conclusion", "head_sha"} — the KEYS
+are contractual but the VALUES are not. scripts/sweep_stalled_prs.py compares
+them against GitHub Actions vocabulary (_SETTLED_CONCLUSIONS, _ACTIVE_STATUSES).
+A non-GitHub adapter must map its own statuses onto those strings, or the
+sweeper will treat every pipeline as unsettled and re-trigger it forever.
 """
 from __future__ import annotations
 

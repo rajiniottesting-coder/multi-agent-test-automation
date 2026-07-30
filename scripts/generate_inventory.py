@@ -21,7 +21,7 @@ Examples:
 
     #To inspect at deeper level, use --max-depth 3 or more (default: 2) #lisiting all pages 
     python -m scripts.generate_inventory --crawl --max-depth 4 --max-pages 60  --output app_inventory/app.draft.json
-    python -m scripts.generate_inventory --urls "/web/index.php/admin/viewSystemUsers,/web/index.php/admin/saveSystemUser,/web/index.php/pim/viewEmployeeList" --output app_inventory/orangehrm.draft.json --headed
+    python -m scripts.generate_inventory --urls "/path/one,/path/two,/path/three" --output app_inventory/app.draft.json --headed
 
     # Specific paths, no login, app that tags elements with data-cy:
     python -m scripts.generate_inventory --urls /,/dashboard --no-login  --test-attrs data-cy,data-testid --output draft.json
