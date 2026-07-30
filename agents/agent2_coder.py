@@ -1464,6 +1464,13 @@ def _attempt_step_coverage_repair(
                 f"  Repairing '{step_def_path}' with "
                 f"{len(errors_for_this_file)} feedback item(s)..."
             )
+            # Log every item, not just the count. Costs no tokens - this
+            # goes to stdout, never into a prompt. Note the contrast with
+            # the "summarized into N chars" line below: only the first
+            # _MAX_FEEDBACK_ERRORS_VERBATIM reach the model, so seeing the
+            # full list here is the only way to know what was collapsed.
+            for feedback_item in errors_for_this_file:
+                logger.info(f"    - {feedback_item}")
             try:
                 prior_content = generated_files[target_idx].content
                 # Pass siblings (excluding the one being repaired) so the
