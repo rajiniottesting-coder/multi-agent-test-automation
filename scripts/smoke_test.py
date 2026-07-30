@@ -1,6 +1,9 @@
 """
 Smoke test: verifies Jira, LLM, and Playwright all work end-to-end.
-Run from project root: python scripts/smoke_test.py
+
+Run from the project root, either way:
+    python -m scripts.smoke_test      (preferred - matches the other scripts)
+    python scripts/smoke_test.py      (also works, see sys.path note below)
 
 PreReq:pip install -r requirements.txt
 playwright install chromium
@@ -8,7 +11,22 @@ playwright install chromium
 """
 import os
 import sys
-from dotenv import load_dotenv
+from pathlib import Path
+
+# Make the project root importable regardless of how this script is invoked.
+#
+# `python -m scripts.smoke_test` puts the CURRENT DIRECTORY on sys.path, so
+# `from integrations...` resolves. `python scripts/smoke_test.py` instead puts
+# scripts/ on sys.path[0], and the framework imports below fail with
+# ModuleNotFoundError: No module named 'integrations'.
+#
+# Inserting the root explicitly makes both invocations work. Guarded against
+# duplicates so re-running in the same interpreter is a no-op.
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
+from dotenv import load_dotenv  # noqa: E402  (after the sys.path fix above)
 
 load_dotenv()
 
