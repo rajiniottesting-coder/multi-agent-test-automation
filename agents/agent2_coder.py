@@ -956,6 +956,78 @@ def build_plan(
 # ---------------------------------------------------------------------------
 # STAGE 2: Generate each file's content
 # ---------------------------------------------------------------------------
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Prompt caching for Stage 2
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# generate_file_content() is the hot path: once per generated file, plus once
+# per repair attempt. Every one of those calls resends the same instruction
+# text, which is ~93% of the template. Splitting it into a cached system
+# prefix turns those repeats into cache reads.
+#
+# The split is declared in the prompt itself, not here, so an editor can move
+# the boundary without touching Python.
+
+_CACHE_MARKER = "<!-- ===== CACHE BREAKPOINT: everything below is static ===== -->"
+
+# Providers will not cache a prefix below roughly 1,024 tokens. Caching a
+# shorter span is worse than not caching: the write premium is charged and no
+# read ever hits. ~4 chars/token, with headroom.
+_MIN_CACHEABLE_CHARS = 4500
+
+# Every placeholder generate_file_content substitutes. None may appear below
+# the marker: a substituted value there would change the cached prefix on
+# every call, so each call would pay the cache-WRITE premium and no read would
+# ever hit - strictly worse than not caching. Checked at runtime and by a test.
+_SUBSTITUTED_PLACEHOLDERS = (
+    "{app_name}", "{file_path}", "{file_type}", "{file_purpose}",
+    "{feature_name}", "{existing_file_block}", "{validator_feedback_block}",
+    "{sibling_page_objects_block}", "{base_page_helpers_block}",
+    "{reference_feature_path}", "{reference_step_def_path}",
+    "{reference_page_object_path}", "{reference_feature_content}",
+    "{reference_step_def_content}", "{reference_page_object_content}",
+    "{page_inventory_json}", "{test_cases_text}",
+)
+
+_GENERATE_SYSTEM_ROLE = (
+    "You are a Senior Test Automation Engineer (SDET). "
+    "Produce complete, working code."
+)
+
+
+def _split_prompt_for_cache(template: str) -> tuple:
+    """Split the generate template into (variable_part, static_part).
+
+    Degrades to (template, "") - the exact pre-caching behaviour - when the
+    marker is missing or when a substituted placeholder has leaked below it.
+    Caching is an optimisation; it must never be why a run fails.
+    """
+    if _CACHE_MARKER not in template:
+        return template, ""
+    variable_part, static_part = template.split(_CACHE_MARKER, 1)
+    if len(static_part) < _MIN_CACHEABLE_CHARS:
+        logger.warning(
+            "Prompt cache disabled: only %d chars below the cache marker, "
+            "under the ~%d providers require to cache a prefix at all. "
+            "A shorter prefix pays the cache-WRITE premium and never reads "
+            "back. Move the marker up.",
+            len(static_part), _MIN_CACHEABLE_CHARS,
+        )
+        return template, ""
+    leaked = [p for p in _SUBSTITUTED_PLACEHOLDERS if p in static_part]
+    if leaked:
+        logger.warning(
+            "Prompt cache disabled: %s found BELOW the cache marker in "
+            "agent2_coder_generate.md. A substituted value there changes the "
+            "cached prefix every call, which costs more than no caching. "
+            "Move it above the marker.",
+            ", ".join(leaked),
+        )
+        return template, ""
+    return variable_part, static_part
+
+
 def generate_file_content(
     llm: LLMClient,
     file_plan,
@@ -1084,8 +1156,9 @@ def generate_file_content(
             )
 
     prompt_template = load_prompt("agent2_coder_generate.md")
+    variable_template, static_rules = _split_prompt_for_cache(prompt_template)
     user_prompt = (
-        prompt_template
+        variable_template
         .replace("{app_name}", ctx.name)
         .replace("{file_path}", file_plan.file_path)
         .replace("{file_type}", file_plan.file_type)
@@ -1106,9 +1179,13 @@ def generate_file_content(
     )
 
     logger.info(f"Stage 2: generating content for {file_plan.file_path}...")
+    system_prompt = _GENERATE_SYSTEM_ROLE
+    if static_rules:
+        system_prompt = f"{_GENERATE_SYSTEM_ROLE}\n\n{static_rules}"
     response = llm.invoke_text(
-        system_prompt="You are a Senior Test Automation Engineer (SDET). Produce complete, working code.",
+        system_prompt=system_prompt,
         user_prompt=user_prompt,
+        cache_prefix=bool(static_rules),
     )
     content = extract_code_from_response(response)
     logger.info(f"  Generated {len(content)} chars for {file_plan.file_path}")

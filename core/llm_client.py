@@ -298,6 +298,62 @@ def _check_output_not_truncated(response, *, label: str, cap: int, knob: str) ->
     )
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Prompt caching
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Providers that support it will cache a prompt PREFIX and bill later reads at
+# a fraction of the input rate. The saving only exists when the cached span is
+# byte-identical across calls, so a caller must pass genuinely static text as
+# `system_prompt` and everything variable as `user_prompt`.
+#
+# Set LLM_PROMPT_CACHE=0 to disable — useful for A/B measurement, or if a
+# gateway rejects the content-block form.
+#
+# Wire format below is the one verified against this project's gateway by
+# scripts/gateway_probe.py: a breakpoint on a system content block.
+
+_CACHE_DISABLED_VALUES = {"0", "false", "no", "off"}
+
+
+def _prompt_cache_enabled() -> bool:
+    """True unless LLM_PROMPT_CACHE is explicitly switched off."""
+    return os.getenv("LLM_PROMPT_CACHE", "1").strip().lower() \
+        not in _CACHE_DISABLED_VALUES
+
+
+def _system_message(system_prompt: str, cache_prefix: bool):
+    """Build the SystemMessage, with a cache breakpoint when asked for.
+
+    Falls back to a plain string whenever caching is off, the caller did not
+    request it, or the prompt is empty — so a provider that has never heard of
+    cache_control sees exactly what it saw before this feature existed.
+    """
+    if not (cache_prefix and _prompt_cache_enabled() and system_prompt.strip()):
+        return SystemMessage(content=system_prompt)
+    return SystemMessage(content=[{
+        "type": "text",
+        "text": system_prompt,
+        "cache_control": {"type": "ephemeral"},
+    }])
+
+
+def _cache_fields(response) -> tuple:
+    """(created, read) cached-token counts. Returns (None, None) if absent.
+
+    Providers disagree on naming, so both known spellings are checked. Never
+    raises: cache reporting must not break a run.
+    """
+    try:
+        usage = getattr(response, "usage_metadata", None) or {}
+        details = usage.get("input_token_details") or {}
+        created = details.get("cache_creation") or usage.get("cache_creation_input_tokens")
+        read = details.get("cache_read") or usage.get("cache_read_input_tokens")
+        return created, read
+    except Exception:
+        return None, None
+
+
 def _record_usage(response, label: str) -> None:
     """Extract usage from a LangChain response and log call + running totals.
 
@@ -322,6 +378,17 @@ def _record_usage(response, label: str) -> None:
             _tracker.calls, _tracker.input_tokens, _tracker.output_tokens,
             _tracker.cost_str(),
         )
+        created, read = _cache_fields(response)
+        if created or read:
+            # Reads bill at a fraction of the input rate; writes at a small
+            # premium. Logged separately because the cost ledger prices every
+            # input token the same and would otherwise overstate a cached run.
+            logger.info(
+                "LLM cache [%s]: written=%s read=%s",
+                label,
+                f"{created:,}" if created else "0",
+                f"{read:,}" if read else "0",
+            )
     except Exception as e:
         logger.debug(f"Usage tracking failed (non-fatal): {e}")
 
@@ -382,7 +449,7 @@ class LLMClient:
     """
 
     def __init__(self, temperature: float = 0.2, max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS):
-        model_name = os.getenv("LLM_MODEL", "anthropic.claude-opus-5")
+        model_name = os.getenv("LLM_MODEL", "claude-opus-4-8")
         self.model_name = model_name
         # Retained so a truncation message can quote the cap it breached.
         self.max_output_tokens = max_output_tokens
@@ -420,6 +487,7 @@ class LLMClient:
         system_prompt: str,
         user_prompt: str,
         output_schema: Type[T],
+        cache_prefix: bool = False,
     ) -> T:
         """
         Call the LLM and parse output into the given Pydantic schema.
@@ -453,7 +521,7 @@ class LLMClient:
         )
 
         messages = [
-            SystemMessage(content=system_prompt),
+            _system_message(system_prompt, cache_prefix),
             HumanMessage(content=augmented_prompt),
         ]
 
@@ -496,7 +564,8 @@ class LLMClient:
         logger.info(f"LLM returned {type(result).__name__} successfully")
         return result
 
-    def invoke_text(self, system_prompt: str, user_prompt: str) -> str:
+    def invoke_text(self, system_prompt: str, user_prompt: str,
+                    cache_prefix: bool = False) -> str:
         """
         Call the LLM and return raw text. Used for content generation
         where structured output is fragile (e.g., entire source files
@@ -527,7 +596,7 @@ class LLMClient:
             )
 
         messages = [
-            SystemMessage(content=system_prompt),
+            _system_message(system_prompt, cache_prefix),
             HumanMessage(content=user_prompt),
         ]
         logger.info(

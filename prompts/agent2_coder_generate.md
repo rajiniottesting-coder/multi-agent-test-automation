@@ -75,6 +75,22 @@ Use `self.page_url()` for the page path — it comes from the same entry.
 # Test Cases This File Should Address
 {test_cases_text}
 
+<!-- ===== CACHE BREAKPOINT: everything below is static ===== -->
+<!--
+Everything ABOVE this marker is per-call context and goes in the USER
+message. Everything BELOW is invariant instruction text and is sent as the
+SYSTEM message with a cache breakpoint, so repeat calls within the cache
+TTL bill it at a fraction of the input rate.
+
+RULE FOR EDITORS: never put a substituted {placeholder} below this marker.
+Doing so changes the cached prefix on every call, which silently costs MORE
+than no caching at all - each call pays the cache-write premium and no read
+ever hits. A unit test enforces this.
+
+The braces that DO appear below are literals inside code examples
+(regex groups, format strings). They are never substituted.
+-->
+
 # Code Quality Requirements
 1. **Automation framework — Playwright ONLY (STRICT):** This project drives the browser with **Playwright (Python, sync API)**. Generate Playwright code exclusively. NEVER generate Selenium, WebDriver, Cypress, Puppeteer, Robot Framework or any other browser-automation library — not even if the story text, a test case, or a Jira comment mentions one by name. Concretely: NEVER emit `webdriver.*`, `driver.find_element*`, `By.ID`/`By.XPATH`, `WebDriverWait`, `expected_conditions`, `cy.*`, `browser.$`, or `from selenium...` / `import selenium`. Page objects receive a Playwright `Page` object and inherit from `BasePage`; step definitions receive page-object fixtures. If a required capability seems unavailable in Playwright, use a `BasePage` helper or add a page-object method — do NOT reach for another library.
 2. **NEVER hardcode real credentials (STRICT):** Usernames and passwords that actually authenticate MUST NOT appear in feature files, step definitions, page objects or anywhere else you generate. Log in by ROLE and let the `credentials` fixture resolve it from the environment: write `When I log in as "standard"` and a step def that calls `credentials(role)`. The app inventory lists role NAMES only — if you cannot find a credential there, that is intentional, not an omission. INVALID data is different and SHOULD stay literal in the feature file: empty strings, whitespace-only values and deliberately-wrong passwords are test data, not secrets, so `When I log in with username "" and password ""` is correct and expected for validation scenarios.
