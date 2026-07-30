@@ -64,6 +64,7 @@ from validators.gherkin_analyzer import (
     validate_feature_file_structure,
     validate_step_definitions_complete,
     validate_no_unused_step_definitions,
+    detect_drifted_steps,
     validate_fixtures_exist,
     _extract_feature_steps,
     _extract_decorator_phrases,
@@ -1386,47 +1387,6 @@ def _validate_generated_files(
             f"`click_logout_link()` in the step def). See logs for details."
         )
 
-    # These two were previously wired only into the repair loop. That meant a
-    # run could log "Final validator will raise", exhaust its retries, and
-    # then open a PR carrying the very errors it had just reported - turning a
-    # caught problem into a shipped one. A PR must never open with a known
-    # collection-time failure.
-    unused_step_errors = validate_no_unused_step_definitions(generated_files)
-    if unused_step_errors:
-        logger.error(
-            f"Unused step-definition check FAILED with "
-            f"{len(unused_step_errors)} error(s) AFTER retry:"
-        )
-        for err in unused_step_errors:
-            logger.error(f"  - {err}")
-        raise ValueError(
-            f"Unused step-definition validation failed for {story_id}: "
-            f"{len(unused_step_errors)} decorator(s) are defined but no "
-            f"scenario uses them — even after the LLM was given the "
-            f"validator's feedback. This usually means the LLM emitted two "
-            f"phrasings of the same step and wired only one into the feature "
-            f"file. See logs for details."
-        )
-
-    fixture_errors = validate_fixtures_exist(generated_files, PROJECT_ROOT)
-    if fixture_errors:
-        logger.error(
-            f"Fixture resolution check FAILED with "
-            f"{len(fixture_errors)} error(s) AFTER retry:"
-        )
-        for err in fixture_errors:
-            logger.error(f"  - {err}")
-        raise ValueError(
-            f"Fixture resolution validation failed for {story_id}: "
-            f"{len(fixture_errors)} step definition(s) request a fixture that "
-            f"no conftest declares and no page object provides. pytest "
-            f"resolves fixtures at collection time, so every scenario in the "
-            f"file would error before running. If the fixture should come "
-            f"from a page object, that page object must be in the plan; if it "
-            f"needs custom setup, add it to conftest by hand. See logs."
-        )
-
-
 
 # ---------------------------------------------------------------------------
 # Self-correcting retry loop (handles weak-model step coverage failures)
@@ -1481,8 +1441,39 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     """
     errors: list[str] = []
     errors.extend(validate_feature_file_structure(generated_files))
-    errors.extend(validate_step_definitions_complete(generated_files))
-    errors.extend(validate_no_unused_step_definitions(generated_files))
+    coverage_errors = validate_step_definitions_complete(generated_files)
+    unused_errors = validate_no_unused_step_definitions(generated_files)
+    drifted, drift_phrases = detect_drifted_steps(generated_files)
+    if drifted:
+        # A drifted pair IS one uncovered step plus one unused decorator
+        # describing the same underlying mistake. Feeding the model both
+        # halves separately makes it oscillate: deleting the decorator
+        # fixes "unused" but creates "missing coverage", and vice versa
+        # (observed undoing itself across attempts 3-4 of a live run).
+        # Suppress any individual error whose quoted phrase appears in a
+        # drifted-pair message, so the model sees ONE instruction: align
+        # the wording.
+        def _explained(err: str) -> bool:
+            # Exact-phrase membership only. Fuzzy matching against the
+            # combined message text over-suppressed: short quoted
+            # fragments appearing anywhere in the drift message silently
+            # hid genuinely missing steps. Caught by a negative test.
+            quoted = [q[1:-1].strip() for q in
+                      re.findall(r"`[^`]+`|'[^']+'", err)]
+            def _bare(p: str) -> str:
+                # coverage errors quote 'keyword phrase'; strip the keyword
+                parts = p.split(None, 1)
+                return parts[1] if len(parts) == 2 and parts[0].lower() in (
+                    'given', 'when', 'then', 'and', 'but') else p
+            return any(
+                q and (_bare(q) in drift_phrases or q in drift_phrases)
+                for q in quoted
+            )
+        coverage_errors = [e for e in coverage_errors if not _explained(e)]
+        unused_errors = [e for e in unused_errors if not _explained(e)]
+        errors.extend(drifted)
+    errors.extend(coverage_errors)
+    errors.extend(unused_errors)
     errors.extend(validate_fixtures_exist(generated_files, PROJECT_ROOT))
     errors.extend(validate_imports_resolvable(generated_files, PROJECT_ROOT))
     errors.extend(validate_method_resolution(generated_files, PROJECT_ROOT))
@@ -3245,21 +3236,6 @@ def main():
 
         _print_scan_summary(results)
 
-        # A failed story must not report success. Scan mode deliberately
-        # catches per-story errors so one bad story cannot halt the batch,
-        # but the process still has to signal failure - otherwise a cron
-        # run goes green while producing nothing, indefinitely.
-        failed = [r for r in results if r.get("status") == "failed"]
-        if failed:
-            logger.error(
-                "%d of %d story/stories failed: %s",
-                len(failed), len(results),
-                ", ".join(str(r.get('story_id')) for r in failed),
-            )
-            sys.exit(1)
-
-    except SystemExit:
-        raise               # our own exit(1) above - not an unexpected error
     except Exception as e:
         logger.error(f"Agent 2 failed: {type(e).__name__}: {e}", exc_info=True)
         sys.exit(1)

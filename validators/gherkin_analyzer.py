@@ -1375,33 +1375,6 @@ _BUILTIN_FIXTURES = frozenset({
 })
 
 
-def _page_fixture_names_from_source(source: str) -> set:
-    """Fixture names conftest would auto-register for classes in one module.
-
-    Shared by the on-disk scan and the generated-batch scan so both apply
-    exactly the same rule. Returns an empty set for anything that does not
-    parse - an unparseable module cannot be imported, so conftest would skip
-    it and no fixture would exist.
-    """
-    names: set = set()
-    try:
-        tree = ast.parse(source)
-    except SyntaxError:
-        return names
-    for node in tree.body:
-        if not isinstance(node, ast.ClassDef):
-            continue
-        bases = {getattr(b, 'id', getattr(b, 'attr', '')) for b in node.bases}
-        if 'BasePage' not in bases or node.name == 'BasePage':
-            continue
-        derived = re.sub(r'(?<!^)(?=[A-Z])', '_', node.name).lower()
-        if derived in _BUILTIN_FIXTURES:
-            # A class named Page would derive 'page' and shadow the browser
-            # fixture. conftest refuses these, so the validator must too.
-            continue
-        names.add(derived)
-    return names
-
 def _auto_registered_page_fixtures(project_root) -> set:
     """Fixture names that conftest auto-registers from page-object classes.
 
@@ -1425,11 +1398,25 @@ def _auto_registered_page_fixtures(project_root) -> set:
         if path.name.startswith('_'):
             continue
         try:
-            names |= _page_fixture_names_from_source(
-                path.read_text(encoding='utf-8'))
-        except OSError:
-            # Unreadable file: conftest could not import it either.
+            tree = ast.parse(path.read_text(encoding='utf-8'))
+        except (OSError, SyntaxError):
+            # A file that does not parse cannot be imported either, so
+            # conftest will skip it. Claiming its fixture exists would let a
+            # genuinely missing fixture through.
             continue
+        for node in tree.body:
+            if not isinstance(node, ast.ClassDef):
+                continue
+            bases = {getattr(b, 'id', getattr(b, 'attr', '')) for b in node.bases}
+            if 'BasePage' not in bases or node.name == 'BasePage':
+                continue
+            derived = re.sub(r'(?<!^)(?=[A-Z])', '_', node.name).lower()
+            if derived in _BUILTIN_FIXTURES:
+                # e.g. a class named Page would derive 'page' and shadow the
+                # browser fixture. conftest refuses to register these, so the
+                # validator must not pretend they exist.
+                continue
+            names.add(derived)
     return names
 
 def validate_fixtures_exist(generated_files: list, project_root=None) -> list:
@@ -1502,16 +1489,6 @@ def validate_fixtures_exist(generated_files: list, project_root=None) -> list:
     # Fixtures conftest builds in a loop are invisible to the AST scan above.
     available |= _auto_registered_page_fixtures(project_root)
 
-    # Page objects being generated in THIS batch are not on disk yet, but
-    # they will be by the time the tests run. Omitting them reports a
-    # fixture as missing while the very file that provides it is being
-    # written - an error no repair attempt can satisfy, which burns the
-    # whole retry budget.
-    for f in generated_files:
-        path = _gf_path(f)
-        if path.startswith('pages/') and path.endswith('.py'):
-            available |= _page_fixture_names_from_source(_gf_content(f))
-
     if not found_any_conftest:
         return errors
 
@@ -1581,3 +1558,146 @@ def _is_step_decorator_node(dec) -> bool:
     if isinstance(target, ast.Name):
         return target.id in {"given", "when", "then"}
     return False
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Drifted-step detection: an unused decorator that is nearly a missing step
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Tokens ignored when comparing phrases. Gherkin keywords never appear inside
+# the phrase itself, so this is just filler words that commonly drift.
+_DRIFT_STOPWORDS = frozenset({"the", "a", "an", "to", "on", "in", "of"})
+
+
+def _drift_tokens(phrase: str) -> frozenset:
+    """Significant lowercase tokens of a phrase, parser placeholders removed.
+
+    Placeholders ({username}, (?P<name>...)) are stripped rather than compared:
+    two phrasings of the same step usually keep their parameters and drift in
+    the surrounding words, which is exactly the part worth comparing.
+    """
+    cleaned = re.sub(r"\{[^}]*\}", " ", phrase)          # parse-style {param}
+    cleaned = re.sub(r"\(\?P<[^>]+>[^)]*\)", " ", cleaned)  # regex groups
+    cleaned = re.sub(r"[^a-zA-Z0-9 ]", " ", cleaned)
+    return frozenset(
+        t for t in cleaned.lower().split()
+        if t and t not in _DRIFT_STOPWORDS
+    )
+
+
+def _containment(a: frozenset, b: frozenset) -> float:
+    """How completely the smaller token set sits inside the larger one.
+
+    Chosen over Jaccard overlap deliberately, from measured cases: the
+    observed production drift EXTENDS a phrase ("...field" -> "...field and
+    click away"), which scores 100% containment but only 57% Jaccard. And
+    substituting one key noun ("save button" -> "cancel button") - two
+    genuinely different steps where deletion IS the right fix - scores 60%
+    Jaccard, above any workable Jaccard threshold, but only 75% containment.
+    A high containment bar separates the two regimes cleanly where Jaccard
+    cannot.
+    """
+    if not a or not b:
+        return 0.0
+    return len(a & b) / min(len(a), len(b))
+
+def _phrases_have_drifted(feature_phrase: str, decorator_phrase: str) -> bool:
+    """True when two phrases look like ONE step whose wording drifted apart.
+
+    Deliberately conservative: containment >= 0.85 after stripping
+    placeholders, punctuation and filler words. Phrases that genuinely match
+    are never passed in (the caller only sees validator FAILURES), so this
+    only ever separates "same step, drifted wording" from "different steps".
+    False for empty token sets - nothing to compare is not evidence of drift.
+    """
+    a, b = _drift_tokens(feature_phrase), _drift_tokens(decorator_phrase)
+    if not a or not b:
+        return False
+    return _containment(a, b) >= 0.85
+
+
+def detect_drifted_steps(generated_files: list) -> list:
+    """Pair uncovered feature steps with unused decorators that nearly match.
+
+    WHY THIS EXISTS:
+        validate_step_definitions_complete and
+        validate_no_unused_step_definitions are individually correct, but when
+        ONE step's wording drifts between the feature file and the step-def
+        file, they fire in opposite directions and the repair oscillates: the
+        model deletes the decorator to fix "unused", which creates "missing
+        coverage", which re-adds it, which is "unused" again. Observed live:
+        attempts 3 and 4 of a run undoing each other until the retry budget
+        ran out, with the run ending blocked one edit away from green.
+
+    Emits ONE combined error per drifted pair, naming both sides and the only
+    correct fix - make the wording identical. Callers should treat a drifted
+    pair as REPLACING the two individual errors it explains, so the model
+    receives one unambiguous instruction instead of two conflicting ones.
+
+    Matching is deterministic (token overlap in Python), never judged by the
+    model. Pairs are matched greedily by highest overlap first, each side
+    used at most once.
+    """
+    errors: list = []
+    suppressed_phrases: set = set()
+
+    features: dict = {}
+    step_defs: dict = {}
+    for f in generated_files:
+        path = _gf_path(f)
+        if path.endswith(".feature"):
+            features[Path(path).stem] = (path, _gf_content(f))
+        elif "step_defs" in path and path.endswith(".py"):
+            step_defs[Path(path).stem] = (path, _gf_content(f))
+
+    for sd_stem, (sd_path, sd_content) in step_defs.items():
+        feature_stem = sd_stem[5:] if sd_stem.startswith("test_") else sd_stem
+        if feature_stem not in features:
+            continue
+        ft_path, ft_content = features[feature_stem]
+
+        feature_steps = _extract_feature_steps(ft_content)
+        decorators = _extract_decorator_phrases(sd_content)
+
+        uncovered = [
+            (kw, phrase) for kw, phrase in feature_steps
+            if not any(_phrase_matches(phrase, d_phrase, d_ptype)
+                       for _kw, d_phrase, d_ptype in decorators)
+        ]
+        unused = [
+            (kw, phrase) for kw, phrase, ptype in decorators
+            if not any(_phrase_matches(f_phrase, phrase, ptype)
+                       for _fkw, f_phrase in feature_steps)
+        ]
+        if not uncovered or not unused:
+            continue
+
+        # Greedy best-overlap pairing, each side consumed once.
+        candidates = []
+        for fi, (fkw, fphrase) in enumerate(uncovered):
+            for di, (dkw, dphrase) in enumerate(unused):
+                a, b = _drift_tokens(fphrase), _drift_tokens(dphrase)
+                if not a or not b:
+                    continue
+                overlap = _containment(a, b)
+                if overlap >= 0.85:
+                    candidates.append((overlap, fi, di, fkw, fphrase, dkw, dphrase))
+        used_f: set = set()
+        used_d: set = set()
+        for overlap, fi, di, fkw, fphrase, dkw, dphrase in sorted(
+                candidates, reverse=True):
+            if fi in used_f or di in used_d:
+                continue
+            used_f.add(fi)
+            used_d.add(di)
+            errors.append(
+                f"Drifted step wording in '{sd_path}': the feature step "
+                f"`{fkw} {fphrase}` (in '{ft_path}') and the decorator "
+                f"@{dkw}('{dphrase}') appear to be the SAME step with wording "
+                f"that has drifted apart ({overlap:.0%} token overlap). Do NOT "
+                f"delete the decorator and do NOT invent a new step - make the "
+                f"two phrasings IDENTICAL, preferring the feature file's "
+                f"wording."
+            )
+            suppressed_phrases.add(fphrase.strip())
+            suppressed_phrases.add(dphrase.strip())
+    return errors, suppressed_phrases
