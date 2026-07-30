@@ -1375,6 +1375,50 @@ _BUILTIN_FIXTURES = frozenset({
 })
 
 
+def _auto_registered_page_fixtures(project_root) -> set:
+    """Fixture names that conftest auto-registers from page-object classes.
+
+    tests/step_defs/conftest.py creates one fixture per page object, named
+    after the class in snake_case (LoginPage -> login_page). Those fixtures are
+    built in a loop, so they are invisible to the AST scan that finds
+    @pytest.fixture decorators - without this, every auto-registered fixture
+    would be reported as missing even though it resolves fine at runtime.
+
+    Derives the names from the same source conftest uses: classes in pages/.
+    Text-based on purpose - importing the app's page objects from a validator
+    would drag Playwright into a pure-static check.
+    """
+    names: set = set()
+    if project_root is None:
+        return names
+    pages_dir = Path(project_root) / 'pages'
+    if not pages_dir.is_dir():
+        return names
+    for path in pages_dir.glob('*.py'):
+        if path.name.startswith('_'):
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding='utf-8'))
+        except (OSError, SyntaxError):
+            # A file that does not parse cannot be imported either, so
+            # conftest will skip it. Claiming its fixture exists would let a
+            # genuinely missing fixture through.
+            continue
+        for node in tree.body:
+            if not isinstance(node, ast.ClassDef):
+                continue
+            bases = {getattr(b, 'id', getattr(b, 'attr', '')) for b in node.bases}
+            if 'BasePage' not in bases or node.name == 'BasePage':
+                continue
+            derived = re.sub(r'(?<!^)(?=[A-Z])', '_', node.name).lower()
+            if derived in _BUILTIN_FIXTURES:
+                # e.g. a class named Page would derive 'page' and shadow the
+                # browser fixture. conftest refuses to register these, so the
+                # validator must not pretend they exist.
+                continue
+            names.add(derived)
+    return names
+
 def validate_fixtures_exist(generated_files: list, project_root=None) -> list:
     """Verify every fixture a generated step def requests actually exists.
 
@@ -1441,6 +1485,9 @@ def validate_fixtures_exist(generated_files: list, project_root=None) -> list:
                 _collect_fixtures(conftest.read_text(encoding="utf-8"))
             except OSError:
                 continue
+
+    # Fixtures conftest builds in a loop are invisible to the AST scan above.
+    available |= _auto_registered_page_fixtures(project_root)
 
     if not found_any_conftest:
         return errors
