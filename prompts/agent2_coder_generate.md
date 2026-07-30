@@ -366,6 +366,52 @@ Available helpers on `self.<method>()` from any page object subclass:
 **For visibility checks:**
 - `self.is_visible(locator)` → returns True/False (doesn't raise)
 
+### RULE: asserting that something is ABSENT
+
+When a step asserts something is NOT present, you MUST use a predicate that
+returns a boolean. NEVER call a getter that waits for visibility first.
+
+WRONG — times out and raises before the assertion is ever reached:
+```python
+@then("I should not see any validation message")
+def assert_no_message(some_page) -> None:
+    assert some_page.get_field_error() == ""   # get_* waits → raises on absence
+```
+
+RIGHT — the absence case is the expected case, so nothing may raise:
+```python
+@then("I should not see any validation message")
+def assert_no_message(some_page) -> None:
+    assert not some_page.has_field_error(), "Expected no validation message"
+```
+
+If the page object has no boolean predicate for the thing you need to check,
+add one alongside the getter. Every `get_*` that waits MUST have a matching
+`has_*` or `is_*` that does not, or absence can never be asserted.
+
+### RULE: only request fixtures that exist
+
+A step definition may only take fixtures that are declared in a conftest.py
+you can see, plus pytest/playwright builtins such as `page`. pytest resolves
+fixtures at COLLECTION time, so requesting one that does not exist fails every
+scenario in the file with `fixture 'x' not found` before any browser action
+runs.
+
+An inventory page is NOT a promise that a fixture exists. Some inventory
+entries describe pages whose page object has not been written yet — check
+`page_object_file` before assuming. If the page object you need is missing,
+drive the interaction through a page object and fixture that do exist rather
+than inventing a fixture name.
+
+### RULE: a selector that can match more than one element
+
+Playwright runs in strict mode: asserting on a locator that resolves to two or
+more elements raises a strict mode violation, not a passing test. A class-based
+selector for a validation message will usually match EVERY such message on the
+page. Scope it to the field you mean, or use an indexed accessor. Never assume
+a shared error selector is unique just because the reference file uses it that
+way.
+
 **Example of using these correctly in a page object method:**
 
 ```python

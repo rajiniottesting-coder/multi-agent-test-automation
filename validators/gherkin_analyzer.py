@@ -38,6 +38,7 @@ USAGE:
 """
 from __future__ import annotations
 
+import ast
 import logging
 import re
 from pathlib import Path
@@ -1283,3 +1284,230 @@ def _suggest_parsers_re_pattern(parse_phrase: str) -> str:
             result.append(_escape_char(ch))
             i += 1
     return ''.join(result)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Reverse step coverage: decorators nothing calls
+# ─────────────────────────────────────────────────────────────────────────────
+
+def validate_no_unused_step_definitions(generated_files: list) -> list:
+    """Flag @given/@when/@then decorators in generated step-def files that no
+    generated feature file actually uses.
+
+    WHY THIS EXISTS:
+        validate_step_definitions_complete() checks one direction only —
+        every feature step has a decorator. The reverse was invisible, so a
+        model that hedged between two phrasings ("...and click away" AND
+        "...without typing and click outside") could emit both and use one.
+        Dead code, extra review surface, and a reviewer had to catch it.
+
+    CONSERVATIVE BY DESIGN:
+        Only inspects decorators in the GENERATED batch, and only counts a
+        decorator unused when the batch contains the paired feature file. A
+        step-def file generated without its feature (or a shared step used by
+        a feature on disk) is never flagged. Prefers false negatives.
+
+    Returns a list of error strings, one per unused decorator. Empty list
+    means every generated decorator is reachable from a generated feature.
+    """
+    errors: list = []
+
+    features: dict = {}
+    step_defs: dict = {}
+    for f in generated_files:
+        path = _gf_path(f)
+        if path.endswith(".feature"):
+            features[Path(path).stem] = _gf_content(f)
+        elif "step_defs" in path and path.endswith(".py"):
+            step_defs[Path(path).stem] = (path, _gf_content(f))
+
+    if not features or not step_defs:
+        return errors
+
+    for stem, (path, content) in step_defs.items():
+        feature_stem = stem[5:] if stem.startswith("test_") else stem
+        feature_content = features.get(feature_stem)
+        if feature_content is None:
+            # No paired feature in this batch — cannot judge. Skip.
+            continue
+
+        feature_steps = _extract_feature_steps(feature_content)
+        decorators = _extract_decorator_phrases(content)
+
+        for keyword, phrase, parser_type in decorators:
+            used = any(
+                _phrase_matches(f_phrase, phrase, parser_type)
+                for f_keyword, f_phrase in feature_steps
+            )
+            if not used:
+                errors.append(
+                    f"Unused step-definition error in '{path}': "
+                    f"@{keyword}('{phrase}') is defined but no scenario in "
+                    f"'features/{feature_stem}.feature' uses it. Either use it "
+                    f"in a scenario or delete the function. Do not leave two "
+                    f"phrasings of the same step when only one is used."
+                )
+
+    return errors
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Fixture existence: step defs may only request fixtures that exist
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Fixtures supplied by pytest, pytest-bdd, pytest-playwright and pytest-html.
+# A generated step def may request any of these without them being declared
+# in a conftest on disk.
+_BUILTIN_FIXTURES = frozenset({
+    "request", "tmp_path", "tmp_path_factory", "tmpdir", "tmpdir_factory",
+    "monkeypatch", "capsys", "capfd", "capsysbinary", "capfdbinary",
+    "caplog", "recwarn", "cache", "pytestconfig", "record_property",
+    "record_testsuite_property", "record_xml_attribute", "doctest_namespace",
+    # pytest-bdd
+    "_pytest_bdd_example",
+    # pytest-playwright
+    "page", "context", "browser", "browser_name", "browser_type",
+    "browser_channel", "browser_context_args", "browser_type_launch_args",
+    "playwright", "playwright_instance", "launch_browser", "new_context",
+    "base_url", "device", "is_chromium", "is_firefox", "is_webkit",
+    # pytest-html / metadata
+    "extra", "extras", "metadata",
+})
+
+
+def validate_fixtures_exist(generated_files: list, project_root=None) -> list:
+    """Verify every fixture a generated step def requests actually exists.
+
+    WHY THIS EXISTS:
+        pytest resolves fixtures at COLLECTION time, so a step def asking for
+        a fixture nobody declares fails with `fixture 'x' not found` — every
+        scenario in the file erroring before a single browser action runs. No
+        existing validator saw it: the function exists, the imports resolve,
+        the Gherkin matches. Only Agent 4 found out, one stage too late.
+
+        The usual trigger is an inventory entry that names a page object which
+        was never built. The page is injected into the prompt, the model
+        reasonably assumes a matching fixture exists, and requests it.
+
+    WHERE FIXTURES MAY COME FROM:
+        - any conftest.py in the generated batch
+        - any conftest.py on disk under the project root
+        - _BUILTIN_FIXTURES (pytest / pytest-bdd / playwright / html)
+
+    CONSERVATIVE BY DESIGN:
+        Skips a parameter whose name matches a step-def parser variable (those
+        are supplied by pytest-bdd from the step text, not by a fixture). If no
+        conftest can be located at all, returns no errors rather than guessing.
+
+    Returns a list of error strings, one per missing fixture.
+    """
+    errors: list = []
+
+    available = set(_BUILTIN_FIXTURES)
+    found_any_conftest = False
+
+    def _collect_fixtures(source: str) -> None:
+        nonlocal found_any_conftest
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return
+        found_any_conftest = True
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for dec in node.decorator_list:
+                target = dec.func if isinstance(dec, ast.Call) else dec
+                name = ""
+                if isinstance(target, ast.Attribute):
+                    name = target.attr
+                elif isinstance(target, ast.Name):
+                    name = target.id
+                if name == "fixture":
+                    available.add(node.name)
+                    break
+
+    for f in generated_files:
+        if Path(_gf_path(f)).name == "conftest.py":
+            _collect_fixtures(_gf_content(f))
+
+    if project_root is not None:
+        root = Path(project_root)
+        for conftest in root.rglob("conftest.py"):
+            if any(part in {".git", "__pycache__", ".venv", "venv"}
+                   for part in conftest.parts):
+                continue
+            try:
+                _collect_fixtures(conftest.read_text(encoding="utf-8"))
+            except OSError:
+                continue
+
+    if not found_any_conftest:
+        return errors
+
+    for f in generated_files:
+        path = _gf_path(f)
+        if "step_defs" not in path or not path.endswith(".py"):
+            continue
+        if Path(path).name == "conftest.py":
+            continue
+        content = _gf_content(f)
+        try:
+            tree = ast.parse(content)
+        except SyntaxError:
+            continue
+
+        # Parser variables are injected by pytest-bdd, not by fixtures.
+        parser_vars: set = set()
+        for _kw, phrase, _pt in _extract_decorator_phrases(content):
+            parser_vars.update(re.findall(r"\(\?P<(\w+)>", phrase))
+            parser_vars.update(re.findall(r"\{(\w+)[:}]", phrase))
+
+        # Fixtures declared inside the step-def module itself are legal too.
+        local_fixtures: set = set()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for dec in node.decorator_list:
+                    target = dec.func if isinstance(dec, ast.Call) else dec
+                    nm = target.attr if isinstance(target, ast.Attribute) else (
+                        target.id if isinstance(target, ast.Name) else "")
+                    if nm == "fixture":
+                        local_fixtures.add(node.name)
+
+        reported: set = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            is_step = any(
+                _is_step_decorator_node(dec) for dec in node.decorator_list
+            )
+            if not is_step:
+                continue
+            for arg in node.args.args:
+                name = arg.arg
+                if (name in available or name in parser_vars
+                        or name in local_fixtures or name in reported
+                        or name.startswith("_")):
+                    continue
+                reported.add(name)
+                errors.append(
+                    f"Fixture resolution error in '{path}': step definition "
+                    f"'{node.name}' requests fixture '{name}', which is not "
+                    f"declared in any conftest.py and is not a pytest builtin. "
+                    f"pytest resolves fixtures at collection time, so every "
+                    f"scenario in this file would error before running. Use an "
+                    f"existing fixture, or drive the interaction through one "
+                    f"that exists."
+                )
+
+    return errors
+
+
+def _is_step_decorator_node(dec) -> bool:
+    """True when a decorator node is @given/@when/@then (called or bare)."""
+    target = dec.func if isinstance(dec, ast.Call) else dec
+    if isinstance(target, ast.Attribute):
+        return target.attr in {"given", "when", "then"}
+    if isinstance(target, ast.Name):
+        return target.id in {"given", "when", "then"}
+    return False

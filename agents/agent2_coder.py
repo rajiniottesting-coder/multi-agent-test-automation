@@ -63,6 +63,8 @@ from validators.gherkin_analyzer import (
     validate_filename_consistency,
     validate_feature_file_structure,
     validate_step_definitions_complete,
+    validate_no_unused_step_definitions,
+    validate_fixtures_exist,
     _extract_feature_steps,
     _extract_decorator_phrases,
     _phrase_matches,
@@ -1362,6 +1364,8 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     errors: list[str] = []
     errors.extend(validate_feature_file_structure(generated_files))
     errors.extend(validate_step_definitions_complete(generated_files))
+    errors.extend(validate_no_unused_step_definitions(generated_files))
+    errors.extend(validate_fixtures_exist(generated_files, PROJECT_ROOT))
     errors.extend(validate_imports_resolvable(generated_files, PROJECT_ROOT))
     errors.extend(validate_method_resolution(generated_files, PROJECT_ROOT))
     # Duplicate step-defs across files (SCRUM-54 lesson). repair_format=True so
