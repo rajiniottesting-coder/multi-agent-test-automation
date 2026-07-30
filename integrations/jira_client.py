@@ -44,7 +44,7 @@ class JiraClient:
             ]
             raise RuntimeError(
                 f"JiraClient: missing required env var(s): {', '.join(missing)}. "
-                f"See .env.example or docs/CONFIGURATION.md."
+                f"See .env.example or docs/GUIDE.md (§ Configuration)."
             )
 
     @property
@@ -81,7 +81,7 @@ class JiraClient:
         if not self.board_id:
             logger.warning(
                 "JIRA_BOARD_ID env var not set — cannot auto-resolve active "
-                "sprint. Set JIRA_BOARD_ID (see docs/CONFIGURATION notes) or "
+                "sprint. Set JIRA_BOARD_ID (see docs/GUIDE.md § Configuration) or "
                 "use an explicit sprint name in config.yaml."
             )
             return None

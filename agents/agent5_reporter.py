@@ -291,7 +291,7 @@ def resolve_story_key(cli_arg: str | None, pr_branch: str | None = None) -> str:
     a Test Case linked to a parent Story; if so we escalate to the Story so
     run-summary comments land where humans expect to read them.
 
-    See docs/BRANCH_NAMING.md for the full branch convention.
+    See docs/GUIDE.md (§ Branch naming) for the full branch convention.
     """
     if cli_arg:
         return cli_arg.upper()
@@ -323,7 +323,7 @@ def resolve_story_key(cli_arg: str | None, pr_branch: str | None = None) -> str:
         "Could not determine Jira story key. Provide one of: "
         "--story <KEY> CLI arg, JIRA_STORY_KEY env var, or run on a "
         "PR branch with a Jira key (e.g., 'auto/PROJ-123-feature'). "
-        "See docs/BRANCH_NAMING.md."
+        "See docs/GUIDE.md (§ Branch naming)."
     )
 
 

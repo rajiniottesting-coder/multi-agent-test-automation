@@ -64,6 +64,44 @@ class InvalidBranchNameError(ValueError):
 # Environment validation
 # ─────────────────────────────────────────────────────────────
 
+_env_file_loaded = False
+
+
+def _ensure_env_file_loaded() -> None:
+    """Load `<project_root>/.env` into os.environ exactly once, if it exists.
+
+    Why this lives here:
+        Every agent calls validate_required_env() before it touches any
+        integration. But `load_dotenv()` is only called inside
+        integrations/jira_client.py and integrations/github_client.py, and
+        those imports are DEFERRED by the adapter factories in
+        integrations/tracker.py and integrations/repo_host.py (so an unused
+        adapter's dependency need not be installed). Nothing had therefore
+        loaded `.env` by the time validation ran, and every variable looked
+        missing even when `.env` was correctly filled in.
+
+        In CI this was invisible: the variables arrive from the workflow
+        `env:` blocks, so `.env` is never needed. The bug only bit local dev.
+
+    override=False is deliberate: a real environment variable must always
+    beat `.env`, so a stray local file can never shadow a CI secret.
+
+    A missing python-dotenv is not fatal — variables may legitimately come
+    from the real environment alone, which is exactly the CI case.
+    """
+    global _env_file_loaded
+    if _env_file_loaded:
+        return
+    _env_file_loaded = True
+    try:
+        from dotenv import load_dotenv
+        from config.paths import ENV_FILE
+    except ImportError:
+        return
+    if ENV_FILE.exists():
+        load_dotenv(ENV_FILE, override=False)
+
+
 def validate_required_env(required_vars: list[str]) -> None:
     """Verify that all listed environment variables are set and non-empty.
 
@@ -83,6 +121,7 @@ def validate_required_env(required_vars: list[str]) -> None:
                             (not just the first), so the user can fix
                             everything in one go.
     """
+    _ensure_env_file_loaded()
     missing = [name for name in required_vars if not os.getenv(name)]
     if missing:
         raise MissingEnvVarError(
@@ -90,7 +129,7 @@ def validate_required_env(required_vars: list[str]) -> None:
             f"For local dev, set them in .env (see .env.example for the format). "
             f"For CI, add them as repository secrets in GitHub Settings → "
             f"Secrets and variables → Actions. "
-            f"For a full reference, see docs/CONFIGURATION.md."
+            f"For a full reference, see docs/GUIDE.md (§ Configuration)."
         )
 
 
@@ -129,7 +168,7 @@ def is_valid_branch_for_pipeline(branch_name: str | None) -> bool:
     Branches without a key are treated as ad-hoc / non-pipeline work and
     are skipped (gracefully, with a log message — not as an error).
 
-    See docs/BRANCH_NAMING.md for the recommended convention.
+    See docs/GUIDE.md (§ Branch naming) for the recommended convention.
     """
     return extract_jira_key(branch_name) is not None
 
@@ -154,6 +193,6 @@ def assert_valid_branch_for_pipeline(branch_name: str | None) -> str:
             f"Branch name {branch_name!r} does not contain a Jira key. "
             f"Branches must include a key in the format PREFIX-NUMBER "
             f"(e.g., 'auto/PROJ-123-feature'). "
-            f"See docs/BRANCH_NAMING.md for the full convention."
+            f"See docs/GUIDE.md (§ Branch naming) for the full convention."
         )
     return key
