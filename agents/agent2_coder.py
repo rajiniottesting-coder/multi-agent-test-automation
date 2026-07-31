@@ -43,6 +43,7 @@ import ast
 import hashlib
 import logging
 import re
+from pathlib import Path
 import sys
 from dataclasses import dataclass, field
 from typing import Optional
@@ -65,6 +66,7 @@ from validators.gherkin_analyzer import (
     validate_step_definitions_complete,
     validate_no_unused_step_definitions,
     detect_drifted_steps,
+    _extract_feature_steps,
     validate_fixtures_exist,
     _extract_feature_steps,
     _extract_decorator_phrases,
@@ -972,6 +974,9 @@ def build_plan(
 
 _CACHE_MARKER = "<!-- ===== CACHE BREAKPOINT: everything below is static ===== -->"
 
+# Newline used when assembling prompt blocks in this module.
+NL_JOIN = "\n"
+
 # Providers will not cache a prefix below roughly 1,024 tokens. Caching a
 # shorter span is worse than not caching: the write premium is charged and no
 # read ever hits. ~4 chars/token, with headroom.
@@ -985,6 +990,7 @@ _SUBSTITUTED_PLACEHOLDERS = (
     "{app_name}", "{file_path}", "{file_type}", "{file_purpose}",
     "{feature_name}", "{existing_file_block}", "{validator_feedback_block}",
     "{sibling_page_objects_block}", "{base_page_helpers_block}",
+    "{authoritative_steps_block}",
     "{reference_feature_path}", "{reference_step_def_path}",
     "{reference_page_object_path}", "{reference_feature_content}",
     "{reference_step_def_content}", "{reference_page_object_content}",
@@ -1028,6 +1034,82 @@ def _split_prompt_for_cache(template: str) -> tuple:
         return template, ""
     return variable_part, static_part
 
+
+
+def _build_authoritative_steps_block(file_plan, already_generated) -> str:
+    """Authoritative step list for a step-def file, from the batch's feature.
+
+    WHY THIS EXISTS:
+        The feature file and its step-def file are generated in SEPARATE LLM
+        calls, and the step-def call previously received only the raw test
+        cases - not the feature file generated moments earlier. The model
+        re-derived every Gherkin phrase independently, and each wording
+        difference between the two derivations became a coverage error plus
+        an unused-step error. Observed live: 25-27 validator errors on the
+        FIRST attempt, all of one class, before any repair had run.
+
+        This mirrors Hotfix v5, which injects sibling page-object method
+        signatures for exactly the same reason (cross-file naming drift).
+
+    THE GUARANTEE:
+        Steps are extracted with _extract_feature_steps - the SAME function
+        validate_step_definitions_complete uses. What the model is told to
+        implement and what the validator will demand are therefore the same
+        set by construction, not by hope.
+
+    Pairing: features/X.feature for tests/step_defs/test_X.py, matching the
+    validators' stem convention. Fallback: if the batch generated exactly one
+    feature file, it is the pair regardless of stem. Zero features, or
+    several with no stem match, returns '' - guessing would inject the wrong
+    contract, which is worse than none.
+    """
+    if getattr(file_plan, "file_type", "") != "step_definitions":
+        return ""
+    features = [
+        f for f in (already_generated or [])
+        if f.file_path.endswith(".feature")
+    ]
+    if not features:
+        return ""
+    stem = Path(file_plan.file_path).stem
+    want = stem[5:] if stem.startswith("test_") else stem
+    paired = [f for f in features if Path(f.file_path).stem == want]
+    if not paired and len(features) == 1:
+        paired = features
+    if len(paired) != 1:
+        return ""
+    feature = paired[0]
+    steps = _extract_feature_steps(feature.content)
+    if not steps:
+        return ""
+    seen: set = set()
+    lines: list = []
+    for keyword, phrase in steps:
+        key = phrase.strip()
+        if not key or key in seen:
+            continue                # one decorator serves every occurrence
+        seen.add(key)
+        lines.append(f"  {len(seen)}. [{keyword}] {phrase}")
+    if not lines:
+        return ""
+    return NL_JOIN.join([
+        "## AUTHORITATIVE STEP LIST (from the feature file in this batch)",
+        "",
+        f"`{feature.file_path}` was generated moments ago and contains EXACTLY",
+        "these unique steps:",
+        "",
+        *lines,
+        "",
+        "HARD REQUIREMENTS for this step-definitions file:",
+        "1. Write EXACTLY ONE decorator for each listed phrase. Copy the",
+        "   phrase VERBATIM, or use a parsers.parse/parsers.re pattern that",
+        "   matches it exactly (for steps containing quoted values).",
+        "2. Do NOT invent decorators for phrases that are not in this list.",
+        "3. Do NOT rephrase, reorder words, add or drop articles, or change",
+        "   tense. The list above is the contract the validators will check",
+        "   this file against - any deviation is a guaranteed validation",
+        "   failure.",
+    ])
 
 def generate_file_content(
     llm: LLMClient,
@@ -1147,8 +1229,16 @@ def generate_file_content(
             )
 
     sibling_block = ""
+    authoritative_steps_block = ""
     if file_plan.file_type == "step_definitions" and already_generated:
         sibling_block = _build_sibling_page_object_context(already_generated)
+        authoritative_steps_block = _build_authoritative_steps_block(
+            file_plan, already_generated)
+        if authoritative_steps_block:
+            logger.info(
+                "Stage 2: injecting authoritative step list from the batch's "
+                "feature file into the step-def prompt."
+            )
         if sibling_block:
             logger.info(
                 f"Stage 2: injecting method signatures from "
@@ -1168,6 +1258,7 @@ def generate_file_content(
         .replace("{existing_file_block}", existing_block)
         .replace("{validator_feedback_block}", feedback_block)
         .replace("{sibling_page_objects_block}", sibling_block)
+        .replace("{authoritative_steps_block}", authoritative_steps_block)
         .replace("{base_page_helpers_block}", base_helpers_block)
         .replace("{reference_feature_path}", ctx.reference_feature)
         .replace("{reference_step_def_path}", ctx.reference_step_def)

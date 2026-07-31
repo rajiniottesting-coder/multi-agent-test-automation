@@ -17,6 +17,8 @@ You are in Stage 2 of a two-stage workflow. The plan has already been decided. Y
 
 {sibling_page_objects_block}
 
+{authoritative_steps_block}
+
 {base_page_helpers_block}
 
 {validator_feedback_block}
