@@ -40,20 +40,47 @@ Results show as "(N) Records Found" above a table.
 A mismatch between Password and Confirm Password shows **Passwords do not
 match**. An empty required field shows **Required**.
 
+## Add User — employee link (shared-demo dependency)
+
+Creating a system user REQUIRES linking an existing employee: the Employee
+Name field is an autocomplete — type a single common letter (e.g. "a") and
+select the FIRST suggestion. Never assume a specific employee name exists;
+employee records on this environment change constantly. This is the only
+acceptable dependency on data the test does not own.
+
+## Search results and empty state
+
+The results summary text shows "(N) Records Found" when matches exist and
+"No Records Found" when none do. Zero-result assertions must read this
+text — never count table rows.
+
+## Confirmations
+
+Save and Delete both show a transient success toast that disappears after a
+few seconds — assert the toast BEFORE performing any further navigation.
+
+Deleting a user row first opens a confirmation dialog ("Yes, Delete") which
+must be accepted; the dialog renders only after the row's trash icon is
+clicked. The trash icon is only unambiguous after the list has been searched
+down to the single owned record.
+
 ## Points that matter when writing test cases
 
 - **Validation appears AS YOU TYPE**, under the field. A test case that submits
   the form and then checks for the message describes the wrong interaction.
-- **Employee Name is an autocomplete, not a text box.** Typing a full name
-  without clicking a suggestion leaves the field invalid, and the form will not
-  save. A test case must say "select from the suggestions".
+- **Employee Name is an autocomplete, not a text box** — see "Add User —
+  employee link" above for the required interaction.
 - **User Role and Status are custom dropdowns, not native selects.** Say
   "choose X from the User Role dropdown"; the interaction is click-then-click.
-- **DO NOT write test cases that actually save a user.** This is a shared public
-  demo: a saved user persists, and the next run fails with "Already exists".
-  Validation-only cases that never click Save are safe. If a case genuinely
-  must save, it has to generate a unique username and delete the user afterwards
-  — say so explicitly in the steps.
+- **Saving a user is allowed ONLY with owned data.** This is a shared public
+  demo. A test case that saves must (a) use a run-unique username, and
+  (b) delete that same user before the scenario ends. Fixed literal usernames
+  must never be saved — they persist and break the next run with "Already
+  exists". Validation-only cases that never click Save carry no such
+  obligation.
+- **Assert only on data this test created.** Never assert total record
+  counts, never assert on pre-existing users or employees. The only
+  permitted dependency on foreign data is the employee autocomplete above.
 
 ## Grouping guidance
 
@@ -63,3 +90,7 @@ enforced") and differ only by data.
 
 "Username too short", "username already taken" and "required field empty" are
 DIFFERENT behaviours with different messages, so they earn separate cases.
+
+A create -> search -> delete lifecycle is ONE test case: the delete is the
+cleanup half of the create, not a separate behaviour. Splitting it leaves an
+orphaned user on the shared demo if the second case never runs.
