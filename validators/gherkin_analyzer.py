@@ -1375,6 +1375,31 @@ _BUILTIN_FIXTURES = frozenset({
 })
 
 
+def _page_fixture_names_from_source(source: str) -> set:
+    """Fixture names conftest would auto-register for classes in one module.
+
+    Shared by the on-disk scan and the generated-batch scan so both apply
+    exactly the same rule. Returns an empty set for anything that does not
+    parse - an unparseable module cannot be imported, so conftest would skip
+    it and no fixture would exist.
+    """
+    names: set = set()
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return names
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef):
+            continue
+        bases = {getattr(b, 'id', getattr(b, 'attr', '')) for b in node.bases}
+        if 'BasePage' not in bases or node.name == 'BasePage':
+            continue
+        derived = re.sub(r'(?<!^)(?=[A-Z])', '_', node.name).lower()
+        if derived in _BUILTIN_FIXTURES:
+            continue
+        names.add(derived)
+    return names
+
 def _auto_registered_page_fixtures(project_root) -> set:
     """Fixture names that conftest auto-registers from page-object classes.
 
@@ -1398,25 +1423,11 @@ def _auto_registered_page_fixtures(project_root) -> set:
         if path.name.startswith('_'):
             continue
         try:
-            tree = ast.parse(path.read_text(encoding='utf-8'))
-        except (OSError, SyntaxError):
-            # A file that does not parse cannot be imported either, so
-            # conftest will skip it. Claiming its fixture exists would let a
-            # genuinely missing fixture through.
+            names |= _page_fixture_names_from_source(
+                path.read_text(encoding='utf-8'))
+        except OSError:
+            # Unreadable file: conftest could not import it either.
             continue
-        for node in tree.body:
-            if not isinstance(node, ast.ClassDef):
-                continue
-            bases = {getattr(b, 'id', getattr(b, 'attr', '')) for b in node.bases}
-            if 'BasePage' not in bases or node.name == 'BasePage':
-                continue
-            derived = re.sub(r'(?<!^)(?=[A-Z])', '_', node.name).lower()
-            if derived in _BUILTIN_FIXTURES:
-                # e.g. a class named Page would derive 'page' and shadow the
-                # browser fixture. conftest refuses to register these, so the
-                # validator must not pretend they exist.
-                continue
-            names.add(derived)
     return names
 
 def validate_fixtures_exist(generated_files: list, project_root=None) -> list:
@@ -1488,6 +1499,16 @@ def validate_fixtures_exist(generated_files: list, project_root=None) -> list:
 
     # Fixtures conftest builds in a loop are invisible to the AST scan above.
     available |= _auto_registered_page_fixtures(project_root)
+
+    # Page objects being generated in THIS batch are not on disk yet, but
+    # they will be by the time the tests run. Omitting them reports a
+    # fixture as missing while the very file that provides it is being
+    # written - an error no repair attempt can satisfy, which burns the
+    # whole retry budget.
+    for f in generated_files:
+        path = _gf_path(f)
+        if path.startswith('pages/') and path.endswith('.py'):
+            available |= _page_fixture_names_from_source(_gf_content(f))
 
     if not found_any_conftest:
         return errors
