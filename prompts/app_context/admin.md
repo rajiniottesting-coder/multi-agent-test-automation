@@ -64,6 +64,21 @@ must be accepted; the dialog renders only after the row's trash icon is
 clicked. The trash icon is only unambiguous after the list has been searched
 down to the single owned record.
 
+Cancelling that dialog ("No, Cancel") is a NEGATIVE path: nothing is saved, so
+NO toast appears. Do not read the toast with the waiting getter to prove its
+absence — that waits for something that will never come and fails on timeout
+instead of asserting. Use the non-waiting probe (`has_toast()`) and assert it
+is False, then re-search to prove the record is still there.
+
+## Reading a result row
+
+A result row is a card whose text is every column concatenated — username,
+user role, employee name, status and the action labels. Comparing that text
+with `==` against a username can never match. Assert the username with the
+cell-scoped selector (`row_username_cell`), or assert containment against the
+row text. Row COUNT is still off limits on this shared demo: prove existence
+and absence through `records_found` and the username the test itself created.
+
 ## Points that matter when writing test cases
 
 - **Validation appears AS YOU TYPE**, under the field. A test case that submits

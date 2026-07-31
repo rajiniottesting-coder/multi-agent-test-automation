@@ -19,6 +19,7 @@ DUP_ERR = "Duplicate step-definition error in 'tests/step_defs/test_y.py': step 
 STEP_ERR = "Step coverage error in 'tests/step_defs/test_z.py': feature step `I wait` has no matching @when()"
 GHERKIN_ERR = "Gherkin structure error in 'features/a.feature': step on line 4 is malformed"
 FILENAME_ERR = "Filename consistency error: step def 'x' references 'login' but is named test_cart"
+SELECTOR_ERR = "Selector inventory error in 'pages/x_page.py' line 8: literal selector `A = \".c\"`"
 NOVEL_ERR = "Some totally novel error string"
 
 
@@ -29,6 +30,7 @@ NOVEL_ERR = "Some totally novel error string"
     (STEP_ERR, "step_coverage"),
     (GHERKIN_ERR, "gherkin_structure"),
     (FILENAME_ERR, "filename_consistency"),
+    (SELECTOR_ERR, "selector_inventory"),
     (NOVEL_ERR, "other"),
 ])
 def test_classify_each_error_class(err, label):
@@ -45,6 +47,19 @@ def test_guidance_contains_only_present_classes():
     assert "UNKNOWN PAGE METHOD" in g
     assert "MISSING STEP DEFINITION" not in g
     assert "DUPLICATE STEP DEFINITION" not in g
+    assert "SELECTOR NOT FROM THE INVENTORY" not in g
+
+
+def test_selector_class_does_not_swallow_the_others():
+    """Its needle is the most specific, so it is matched first — but only for
+    its own errors. A regression here would give every failure the wrong hint.
+    """
+    for err in (IMPORT_ERR, METHOD_ERR, DUP_ERR, STEP_ERR, GHERKIN_ERR,
+                FILENAME_ERR, NOVEL_ERR):
+        assert _classify_error(err) != "selector_inventory"
+    g = _build_error_type_guidance([SELECTOR_ERR])
+    assert "SELECTOR NOT FROM THE INVENTORY" in g
+    assert "BROKEN IMPORT" not in g
 
 
 def test_guidance_deduplicates_repeated_class():

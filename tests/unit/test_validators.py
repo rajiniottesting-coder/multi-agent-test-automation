@@ -12,6 +12,7 @@ Validators covered (in order of historical introduction):
     4. Path policy (Hotfix v1)     — reserved file overwrite, extendable allowed
     5. Import resolution (v3)      — hallucinated module imports
     6. Method resolution (v5)      — cross-file method-name mismatches
+    7. Page-object selectors       — literals / invented inventory keys
 
 Design philosophy (after the v5 cleanup):
 
@@ -36,7 +37,10 @@ from validators.gherkin_analyzer import (
     validate_step_definitions_complete,
 )
 from validators.import_validator import validate_imports_resolvable
-from validators.method_resolution_validator import validate_method_resolution
+from validators.method_resolution_validator import (
+    validate_method_resolution,
+    validate_page_object_selectors,
+)
 from core.app_context import AppContext
 from agents.agent2_coder import validate_paths_against_policy
 from core.schemas import GeneratedFile
@@ -801,3 +805,157 @@ class TestGeneralization:
         assert any("shipping_page" in e for e in errors)
         # The existing checkout_page import should NOT be flagged
         assert not any("checkout_page" in e and "does not exist" in e for e in errors)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 7. Page-object selectors
+# ─────────────────────────────────────────────────────────────────────────
+
+# A synthetic app, exactly as in tests/unit/test_page_object_selectors.py:
+# these tests exercise the RULE, never the application under test.
+_INV = {
+    "pages": {
+        "widgets": {
+            "elements": {"add_button": "role=button[name='Add']",
+                         "rows": ".row"},
+        },
+        "login": {"elements": {"username": "#u"}},
+    }
+}
+
+
+class TestPageObjectSelectors:
+    """SCRUM-104: Agent 2 shipped a page object holding four raw CSS literals.
+
+    The rule was enforced only by tests/unit/test_page_object_selectors.py,
+    which runs in Agent 4 — after the LLM spend, after the PR, and reported
+    against the story instead of the generation that caused it. These tests
+    lock the same rule into the generation-time gate.
+    """
+
+    def test_literal_selectors_in_a_page_object_are_caught(self, project_root: Path):
+        """The exact SCRUM-104 shape: selectors as class constants."""
+        page_obj = gf("pages/widgets_page.py", textwrap.dedent("""
+            from pages.base_page import BasePage
+
+            class WidgetsPage(BasePage):
+                INVENTORY_PAGE = "widgets"
+
+                ROW_DELETE_ICON = ".row .icon.bi-trash"
+                DELETE_DIALOG = ".dialog-container-default"
+
+                def click_add(self) -> None:
+                    self.click(self.sel("add_button"))
+        """).strip())
+        errors = validate_page_object_selectors([page_obj], project_root, inventory=_INV)
+        assert len(errors) == 2
+        assert all("Selector inventory error" in e for e in errors)
+        assert any("ROW_DELETE_ICON" in e for e in errors)
+        assert any("DELETE_DIALOG" in e for e in errors)
+
+    def test_invented_inventory_key_is_caught(self, project_root: Path):
+        """The other escape route: a key the inventory does not have."""
+        page_obj = gf("pages/widgets_page.py", textwrap.dedent("""
+            from pages.base_page import BasePage
+
+            class WidgetsPage(BasePage):
+                INVENTORY_PAGE = "widgets"
+
+                def delete(self) -> None:
+                    self.click(self.sel("row_delete_icon"))
+        """).strip())
+        errors = validate_page_object_selectors([page_obj], project_root, inventory=_INV)
+        assert len(errors) == 1
+        assert "row_delete_icon" in errors[0]
+        assert "add_button" in errors[0]     # names what IS available
+
+    def test_missing_inventory_page_is_caught(self, project_root: Path):
+        page_obj = gf("pages/widgets_page.py", textwrap.dedent("""
+            from pages.base_page import BasePage
+
+            class WidgetsPage(BasePage):
+                def click_add(self) -> None:
+                    self.click(self.sel("add_button"))
+        """).strip())
+        errors = validate_page_object_selectors([page_obj], project_root, inventory=_INV)
+        assert len(errors) == 1
+        assert "INVENTORY_PAGE" in errors[0]
+
+    def test_unknown_inventory_page_is_caught(self, project_root: Path):
+        page_obj = gf("pages/widgets_page.py", textwrap.dedent("""
+            from pages.base_page import BasePage
+
+            class WidgetsPage(BasePage):
+                INVENTORY_PAGE = "nowhere"
+
+                def click_add(self) -> None:
+                    self.click(self.sel("add_button"))
+        """).strip())
+        errors = validate_page_object_selectors([page_obj], project_root, inventory=_INV)
+        assert len(errors) == 1
+        assert "nowhere" in errors[0]
+
+    def test_a_clean_page_object_passes(self, project_root: Path):
+        """Including a docstring that SHOWS a selector while teaching the rule."""
+        page_obj = gf("pages/widgets_page.py", textwrap.dedent("""
+            from pages.base_page import BasePage
+
+            class WidgetsPage(BasePage):
+                \"\"\"Selectors come from the inventory, never as ".some-class".\"\"\"
+
+                INVENTORY_PAGE = "widgets"
+
+                # BAD = ".never-do-this"
+                def click_add(self) -> None:
+                    self.click(self.sel("add_button"))
+        """).strip())
+        assert validate_page_object_selectors([page_obj], project_root, inventory=_INV) == []
+
+    def test_only_page_objects_are_scanned(self, project_root: Path):
+        """Step defs and base_page.py are out of scope for this validator."""
+        step_def = gf("tests/step_defs/test_widgets.py", 'SEL = ".row .icon"')
+        base = gf("pages/base_page.py", 'SEL = ".row .icon"')
+        assert validate_page_object_selectors([step_def, base], project_root, inventory=_INV) == []
+
+    def test_computed_selector_key_is_not_guessed_at(self, project_root: Path):
+        """An f-string key is unknowable statically — never a false accusation."""
+        page_obj = gf("pages/widgets_page.py", textwrap.dedent("""
+            from pages.base_page import BasePage
+
+            class WidgetsPage(BasePage):
+                INVENTORY_PAGE = "widgets"
+
+                def click_row(self, name: str) -> None:
+                    self.click(self.sel(f"row_{name}"))
+        """).strip())
+        assert validate_page_object_selectors([page_obj], project_root, inventory=_INV) == []
+
+    def test_unparseable_page_object_still_reports_its_literals(self, project_root: Path):
+        """A syntax error must not swallow the literal it sits next to."""
+        page_obj = gf("pages/widgets_page.py", 'SEL = ".row"\ndef broken(:')
+        errors = validate_page_object_selectors([page_obj], project_root, inventory=_INV)
+        assert len(errors) == 1
+        assert "literal selector" in errors[0]
+
+    def test_unreadable_inventory_degrades_to_the_literal_scan(self, project_root: Path):
+        """No inventory in this environment: still catch literals, claim nothing else."""
+        page_obj = gf("pages/widgets_page.py", textwrap.dedent("""
+            from pages.base_page import BasePage
+
+            class WidgetsPage(BasePage):
+                INVENTORY_PAGE = "widgets"
+                SEL = ".row"
+
+                def go(self) -> None:
+                    self.click(self.sel("not_a_real_key"))
+        """).strip())
+        errors = validate_page_object_selectors([page_obj], project_root, inventory={})
+        assert len(errors) == 1
+        assert "literal selector" in errors[0]
+
+    def test_empty_batch_is_clean(self, project_root: Path):
+        assert validate_page_object_selectors([], project_root, inventory=_INV) == []
+
+    def test_windows_paths_are_scanned_too(self, project_root: Path):
+        page_obj = gf("pages\\widgets_page.py", 'SEL = ".row"')
+        assert len(validate_page_object_selectors([page_obj], project_root, inventory=_INV)) == 1

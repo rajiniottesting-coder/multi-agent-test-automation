@@ -163,7 +163,10 @@ class ReviewReport(BaseModel):
     )
     pom_compliant: bool = Field(
         ...,
-        description="Selectors live in page objects (not in step definition files)?"
+        description=(
+            "Selectors come from the app inventory via self.sel('<key>') — no "
+            "raw selector literal in ANY file, page objects included?"
+        )
     )
     coverage_complete: bool = Field(
         ...,

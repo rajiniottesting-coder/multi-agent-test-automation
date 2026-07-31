@@ -219,123 +219,137 @@ jobs:
           retention-days: 14
 
       - name: Write test summary to Agent 4's run page
-        # Inline Python that parses junit.xml and writes a markdown summary
-        # to $GITHUB_STEP_SUMMARY. Replaces the buggy EnricoMi action.
-        # Visible at: PR → Checks → "Run Tests" → Summary section at top.
+        # Inline Python that parses the junit report(s) and writes a markdown
+        # summary to $GITHUB_STEP_SUMMARY. Replaces the buggy EnricoMi action.
+        # Visible at: PR -> Checks -> "Run Tests" -> Summary section at top.
         #
-        # Runs on push too. There is no E2E report there, so it summarises the
-        # unit gate instead — a framework build names the failing test rather
-        # than showing a bare red X. On pull_request nothing changes: the
-        # source stays reports/junit.xml, the story's own report.
-        if: always()  # run even when pytest fails — failures need reporting
+        # Summarises BOTH reports on a pull_request. It used to summarise only
+        # the app tests, so a failing framework unit gate showed up here as
+        # nothing at all - you had to open the step log to find it. On push
+        # there is no app report, so only the unit gate is listed.
+        if: always()  # run even when pytest fails - failures need reporting
         env:
-          JUNIT_PATH: ${{ github.event_name == 'push' && 'reports/junit-unit.xml' || 'reports/junit.xml' }}
-          SUMMARY_SCOPE: ${{ github.event_name == 'push' && 'Framework Unit Tests' || 'Test Results' }}
+          # One line on purpose: a folded scalar would keep the newlines of an
+          # indented continuation inside the ${{ }}, and the expression would
+          # not evaluate.
+          SUMMARY_REPORTS: ${{ github.event_name == 'push' && 'reports/junit-unit.xml|Framework Unit Tests' || 'reports/junit-unit.xml|Framework Unit Tests;reports/junit.xml|App Tests (E2E)' }}
         run: |
           python3 << 'PYEOF'
-          """Parse junit.xml and write a markdown test summary to the GitHub
+          """Parse the junit report(s) and write a markdown summary to the GitHub
           Actions job summary page."""
           import os
           import xml.etree.ElementTree as ET
           from pathlib import Path
 
-          # Which report to summarise is decided by the step's env, not here,
-          # so this stays one code path for every event. Both fall back to the
-          # PR values, keeping the script runnable by hand.
-          junit_path = Path(os.environ.get("JUNIT_PATH") or "reports/junit.xml")
-          scope = os.environ.get("SUMMARY_SCOPE") or "Test Results"
+          # WHICH reports to summarise comes from the step env, never from logic here,
+          # so this is one code path for every event. Format: "path|Heading" entries
+          # separated by ";". The unit gate is listed FIRST on purpose: when it failed
+          # on a PR its result was invisible in this summary, which showed only the app
+          # tests - a red framework gate hidden behind an app-test verdict.
+          spec = os.environ.get("SUMMARY_REPORTS") or "reports/junit.xml|Test Results"
           summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
 
           if not summary_path:
               print("Not running in GitHub Actions (no GITHUB_STEP_SUMMARY). Skipping.")
               raise SystemExit(0)
 
-          if not junit_path.exists():
-              with open(summary_path, "a", encoding="utf-8") as f:
-                  f.write(f"## ❌ {scope}\n\n")
-                  f.write(f"**No report found at `{junit_path}`.** The test run did not "
-                          "produce one — see the step output above for the actual error.\n")
-              raise SystemExit(0)
 
-          # A truncated or empty XML file is a crashed run, not a clean pass:
-          # say so instead of dying with a traceback that hides the real cause.
-          try:
-              tree = ET.parse(junit_path)
-          except ET.ParseError as exc:
-              with open(summary_path, "a", encoding="utf-8") as f:
-                  f.write(f"## ❌ {scope}\n\n")
-                  f.write(f"**Unreadable report `{junit_path}`** ({exc}). The run almost "
-                          "certainly crashed mid-write — see the step output above.\n")
-              raise SystemExit(0)
+          def render(junit_path, scope):
+              """Markdown lines for one junit file, plus a one-line console echo.
 
-          root = tree.getroot()
-          suites = root.findall("testsuite") if root.tag == "testsuites" else [root]
+              Never raises: a missing or corrupt report becomes a reported failure,
+              not a traceback that buries the cause it was meant to surface.
+              """
+              if not junit_path.exists():
+                  print(f"{scope}: no report at {junit_path}")
+                  return [f"## \u274c {scope}", "",
+                          f"**No report found at `{junit_path}`.** That step produced no "
+                          "report - see its output above for the actual error.", ""]
+              try:
+                  tree = ET.parse(junit_path)
+              except ET.ParseError as exc:
+                  print(f"{scope}: unreadable report {junit_path} ({exc})")
+                  return [f"## \u274c {scope}", "",
+                          f"**Unreadable report `{junit_path}`** ({exc}). The run almost "
+                          "certainly crashed mid-write - see the step output above.", ""]
 
-          total = sum(int(s.get("tests", 0)) for s in suites)
-          failures = sum(int(s.get("failures", 0)) for s in suites)
-          errors = sum(int(s.get("errors", 0)) for s in suites)
-          skipped = sum(int(s.get("skipped", 0)) for s in suites)
-          duration = sum(float(s.get("time", 0)) for s in suites)
-          passed = total - failures - errors - skipped
+              root = tree.getroot()
+              suites = root.findall("testsuite") if root.tag == "testsuites" else [root]
 
-          if total == 0:
-              # pytest wrote a report but collected nothing — a collection
-              # error or a bad path filter. Never report that as green.
-              status_emoji = "⚠️"
-              status_text = "No tests were collected"
-          elif failures == 0 and errors == 0:
-              status_emoji = "✅"
-              status_text = f"All {total} tests passed"
-          else:
-              status_emoji = "❌"
-              status_text = f"{failures + errors} of {total} tests failed"
+              total = sum(int(s.get("tests", 0)) for s in suites)
+              failures = sum(int(s.get("failures", 0)) for s in suites)
+              errors = sum(int(s.get("errors", 0)) for s in suites)
+              skipped = sum(int(s.get("skipped", 0)) for s in suites)
+              duration = sum(float(s.get("time", 0)) for s in suites)
+              passed = total - failures - errors - skipped
 
-          lines = []
-          lines.append(f"## {status_emoji} {scope}")
-          lines.append("")
-          lines.append(f"**{status_text}** in {duration:.2f}s")
-          lines.append("")
-          lines.append("| Status | Count |")
-          lines.append("|---|---|")
-          lines.append(f"| ✅ Passed | {passed} |")
-          lines.append(f"| ❌ Failed | {failures} |")
-          lines.append(f"| 💥 Errored | {errors} |")
-          lines.append(f"| ⏭️ Skipped | {skipped} |")
-          lines.append(f"| **Total** | **{total}** |")
-          lines.append("")
+              if total == 0:
+                  # pytest wrote a report but collected nothing - a collection error or
+                  # a bad path filter. Never report that as green.
+                  status_emoji, status_text = "\u26a0\ufe0f", "No tests were collected"
+              elif failures == 0 and errors == 0:
+                  status_emoji, status_text = "\u2705", f"All {total} tests passed"
+              else:
+                  status_emoji = "\u274c"
+                  status_text = f"{failures + errors} of {total} tests failed"
 
-          failed_cases = []
-          for suite in suites:
-              for case in suite.findall("testcase"):
-                  failure = case.find("failure")
-                  error = case.find("error")
-                  if failure is not None or error is not None:
-                      classname = case.get("classname", "")
-                      name = case.get("name", "")
+              lines = [f"## {status_emoji} {scope}", "",
+                       f"**{status_text}** in {duration:.2f}s", "",
+                       "| Status | Count |", "|---|---|",
+                       f"| \u2705 Passed | {passed} |",
+                       f"| \u274c Failed | {failures} |",
+                       f"| \U0001f4a5 Errored | {errors} |",
+                       f"| \u23ed\ufe0f Skipped | {skipped} |",
+                       f"| **Total** | **{total}** |", ""]
+
+              failed_cases = []
+              for suite in suites:
+                  for case in suite.findall("testcase"):
+                      failure = case.find("failure")
+                      error = case.find("error")
+                      if failure is None and error is None:
+                          continue
                       issue = failure if failure is not None else error
                       msg = (issue.get("message") or issue.text or "").strip()
                       first_line = msg.splitlines()[0] if msg else "(no message)"
                       if len(first_line) > 200:
                           first_line = first_line[:197] + "..."
-                      failed_cases.append((f"{classname}::{name}", first_line))
+                      failed_cases.append(
+                          (f'{case.get("classname", "")}::{case.get("name", "")}',
+                           first_line))
 
-          if failed_cases:
-              lines.append("### Failures")
-              lines.append("")
-              for test_name, msg in failed_cases:
-                  lines.append(f"- **`{test_name}`**")
-                  lines.append(f"  - {msg}")
-              lines.append("")
+              if failed_cases:
+                  lines += ["### Failures", ""]
+                  for test_name, msg in failed_cases:
+                      lines += [f"- **`{test_name}`**", f"  - {msg}"]
+                  lines.append("")
 
-          lines.append("---")
-          lines.append("_Generated by Agent 4 (Runner)._")
+              print(f"{scope}: {total} total, {passed} passed, {failures} failed, "
+                    f"{errors} errored, {skipped} skipped, {duration:.2f}s")
+              return lines
+
+
+          out = []
+          for entry in [e.strip() for e in spec.split(";") if e.strip()]:
+              path_str, _, scope = entry.partition("|")
+              out += render(Path(path_str.strip()), scope.strip() or "Test Results")
+
+          # Evidence pointer: reports/ is uploaded as the run artifact, and the page
+          # fixture drops a screenshot, a video and a Playwright trace under
+          # failure-evidence/ for every FAILED test. Nothing said so, so nobody looked.
+          evidence = Path("reports/failure-evidence")
+          shots = sorted(evidence.glob("*.png")) if evidence.is_dir() else []
+          if shots:
+              out += ["### Failure evidence", "",
+                      f"{len(shots)} failing test(s) captured a screenshot, a video and a "
+                      "Playwright trace. Download the `pytest-report-*` artifact from "
+                      "this run and open `reports/failure-evidence/`; view a trace with "
+                      "`playwright show-trace <file>.trace.zip`.", ""]
+
+          out += ["---", "_Generated by Agent 4 (Runner)._"]
 
           with open(summary_path, "a", encoding="utf-8") as f:
-              f.write("\n".join(lines) + "\n")
-
-          print(f"Test summary written: {total} total, {passed} passed, "
-                f"{failures} failed, {errors} errored, {skipped} skipped, "
-                f"{duration:.2f}s")
+              f.write("\n".join(out) + "\n")
           PYEOF
 
   # ─────────────────────────────────────────────────────────────

@@ -139,6 +139,16 @@ def test_both_new_validators_are_wired_into_the_gate():
     assert "validate_fixtures_exist" in src
 
 
+def test_selector_validator_is_wired_into_the_gate():
+    """SCRUM-104: the no-literal-selectors rule lived only in
+    tests/unit/test_page_object_selectors.py, so it was enforced in Agent 4 —
+    after the tokens were spent and the PR was open. If this assertion ever
+    fails, that regression is back.
+    """
+    src = inspect.getsource(agent2._validate_generated_files)
+    assert "validate_page_object_selectors" in src
+
+
 # ── defect 3: scan mode must signal failure ──────────────────────────────
 
 def test_scan_mode_exits_non_zero_when_a_story_failed():

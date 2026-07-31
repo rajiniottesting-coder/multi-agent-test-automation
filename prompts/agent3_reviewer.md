@@ -102,8 +102,15 @@ Each `ReviewIssue` has:
 **Key fact:** `[^"]*` IS THE CORRECT PATTERN for capturing empty quoted values.
 If the diff contains `parsers.re(r'... "(?P<x>[^"]*)" ...')` and scenarios use empty quoted values like `""`, this is **CORRECT** code. Do NOT flag it as a functional bug.
 
-## 2. Style (BLOCKING for POM violation, MAJOR otherwise)
-- **POM violation**: selectors (CSS, attribute, etc.) MUST live in page object files, NEVER in step definition files
+## 2. Selector source and style (BLOCKING for a selector violation, MAJOR otherwise)
+- **Selectors live in the APP INVENTORY, not in code (BLOCKING).** A page object resolves every selector with `self.sel("<key>")`, where the key is an element on its `INVENTORY_PAGE`. A step definition never touches a selector at all. Therefore BOTH of these are blocking:
+  - a raw selector string in a **step definition** (bypasses the page object entirely)
+  - a raw selector string in a **page object** — e.g. `ROW_DELETE_ICON = ".oxd-table-card .oxd-icon"`, `page.click("[data-test='x']")`, `role=button[name='…']` assigned to a constant
+  Do NOT downgrade the second one to a minor or a best-practice note, and do NOT accept a docstring or comment that calls it a temporary fallback, a "BASEPAGE-REQUEST", or a pending inventory migration. **There is no sanctioned fallback.** `tests/unit/test_page_object_selectors.py` fails the build on any such literal, so a PR carrying one cannot go green. The correct fix is always: add the element to the app inventory and call `self.sel("<key>")`.
+- A page-object class that calls `self.sel(...)` must declare `INVENTORY_PAGE`.
+- Imports order
+- Naming conventions
+- Type hints on new functions
 - Imports order
 - Naming conventions
 - Type hints on new functions

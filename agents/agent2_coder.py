@@ -54,7 +54,10 @@ from integrations.tracker import get_tracker
 from core.board_status import move_card_for_label
 from integrations.repo_host import get_repo_host
 from validators.import_validator import validate_imports_resolvable
-from validators.method_resolution_validator import validate_method_resolution
+from validators.method_resolution_validator import (
+    validate_method_resolution,
+    validate_page_object_selectors,
+)
 from core.llm_client import LLMClient, OutputTruncatedError
 from core.schemas import CodePlan, GeneratedFile, CodeGenerationOutput
 from validators.gherkin_analyzer import (
@@ -730,6 +733,18 @@ _DEGRADED_OUTPUT_CHAR_THRESHOLD = 500
 # Ordered (label, substring-that-identifies-the-class, targeted repair hint).
 # First matching substring wins, so more specific strings come first.
 _ERROR_TYPE_RULES: list[tuple[str, str, str]] = [
+    (
+        "selector_inventory",
+        "selector inventory error",
+        "- SELECTOR NOT FROM THE INVENTORY: a page object below either hard-codes "
+        "a selector string or calls self.sel() with a key the inventory does not "
+        "have. Page objects resolve EVERY selector through self.sel(\"<key>\"), and "
+        "the key must already exist on that page in the app inventory shown above. "
+        "If the element you need is genuinely absent from the inventory, do NOT "
+        "invent a selector and do NOT invent a key: drop the behaviour and state "
+        "the missing element in `notes` so a human can add it. A literal selector "
+        "is rejected even when a comment calls it a temporary fallback.",
+    ),
     (
         "duplicate_step",
         "duplicate step",
@@ -1476,6 +1491,30 @@ def _validate_generated_files(
             f"between the page object and the step def file (e.g., defined "
             f"`click_logout()` in the page object but called "
             f"`click_logout_link()` in the step def). See logs for details."
+        )
+
+    selector_errors = validate_page_object_selectors(
+        generated_files, PROJECT_ROOT
+    )
+    if selector_errors:
+        logger.error(
+            f"Page-object selector check FAILED with "
+            f"{len(selector_errors)} error(s) AFTER retry:"
+        )
+        for err in selector_errors:
+            logger.error(f"  - {err}")
+        raise ValueError(
+            f"Page-object selector validation failed for {story_id}: "
+            f"{len(selector_errors)} selector(s) in the generated page "
+            f"object(s) are hard-coded literals or reference an inventory key "
+            f"that does not exist — even after the LLM was given the "
+            f"validator's feedback. The app inventory is the single source of "
+            f"truth for selectors; the same rule is enforced by "
+            f"tests/unit/test_page_object_selectors.py, so shipping this "
+            f"would fail Agent 4's unit gate on the story PR instead. If the "
+            f"element is genuinely missing from the inventory, add it there "
+            f"(and verify it with `python -m scripts.verify_locators`) rather "
+            f"than letting a literal through. See logs for details."
         )
 
     # These two were previously wired only into the repair loop. That meant a

@@ -577,3 +577,241 @@ def _find_similar_methods(target: str, available: set[str]) -> list[str]:
 
     scored.sort(key=lambda x: (-x[0], x[1]))
     return [name for _, name in scored[:3]]
+
+# ═════════════════════════════════════════════════════════════════════════
+# Page-object selector validator
+#
+# WHY THIS EXISTS (SCRUM-104, 31 Jul 2026):
+#     `tests/unit/test_page_object_selectors.py` enforces the rule this whole
+#     design rests on — a page object resolves selectors through
+#     `self.sel("<key>")` against the app inventory, never from a literal
+#     string. That rule was enforced ONLY by that unit test, which runs in
+#     Agent 4, i.e. AFTER generation, AFTER the PR is open and AFTER the LLM
+#     tokens are spent. Agent 2's own gate had eight validators and none of
+#     them looked at page objects' selectors, so it happily shipped a page
+#     object carrying four raw CSS literals and the red check landed on the
+#     story PR.
+#
+#     This closes that loop: the same rule, checked statically at generation
+#     time, feeding the repair loop so the model can self-correct before a
+#     branch is ever created.
+#
+# THE TWO ESCAPE ROUTES IT CLOSES:
+#     When the inventory lacks an element the story needs, a model has exactly
+#     two ways to proceed anyway, and both produce code that cannot pass:
+#       (A) invent a literal selector       -> caught by the literal scan
+#       (B) invent an inventory key         -> caught by the key check
+#     The intended third route — request the element via the plan's `notes`
+#     field — is the only one this validator leaves open, which is the point.
+#
+# APP-AGNOSTIC: the rule is about SHAPE (a literal that looks like a selector)
+# and about REFERENTIAL INTEGRITY (a key that must exist in whatever inventory
+# is configured). No application, page or element name appears here.
+# ═════════════════════════════════════════════════════════════════════════
+
+# A selector-looking literal: bare CSS, or one of Playwright's engine prefixes.
+# Deliberately the SAME shape as tests/unit/test_page_object_selectors.py — the
+# two must agree, or generation passes and the unit gate still fails.
+_SELECTOR_LITERAL_RE = re.compile(
+    r'=\s*"(?:'
+    r'\s*[.#\[]'                                    # .class  #id  [attr=…]
+    r'|(?:role|text|label|alt|title|placeholder)='   # playwright engines
+    r')[^"]*"'
+)
+
+_ERROR_PREFIX = "Selector inventory error"
+
+# How many inventory keys to name when reporting an unknown one. Enough to be
+# actionable, few enough that the repair prompt does not drown in them.
+_MAX_KEYS_LISTED = 25
+
+
+def _is_page_object_path(file_path: str) -> bool:
+    """True for `pages/<something>_page.py`, excluding the base class.
+
+    Normalises separators first: a plan produced on Windows carries
+    backslashes, and `pages\\admin_users_page.py` must match too.
+    """
+    norm = (file_path or "").replace("\\", "/").lstrip("./")
+    if not norm.startswith("pages/"):
+        return False
+    name = norm.rsplit("/", 1)[-1]
+    return name.endswith("_page.py") and name != "base_page.py"
+
+
+def _load_configured_inventory(project_root: Path) -> dict | None:
+    """The app inventory the framework is currently pointed at, or None.
+
+    Returns None rather than raising on ANY problem (no config, no
+    `inventory_file`, missing or malformed JSON). A validator must never be
+    the reason a run dies: when the inventory cannot be read, the literal
+    scan still runs and only the key check is skipped.
+    """
+    try:
+        import json
+        import yaml
+        config_yaml = project_root / "config" / "config.yaml"
+        cfg = yaml.safe_load(config_yaml.read_text(encoding="utf-8")) or {}
+        rel = (cfg.get("app_under_test") or {}).get("inventory_file")
+        if not rel:
+            return None
+        path = project_root / rel
+        if not path.is_file():
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except Exception as exc:                       # noqa: BLE001 - see docstring
+        logger.warning("Selector validator: inventory unreadable (%s).", exc)
+        return None
+
+
+def _class_inventory_page(class_node: ast.ClassDef) -> str | None:
+    """The class-level `INVENTORY_PAGE = "..."` value, or None if not set."""
+    for node in class_node.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name) and target.id == "INVENTORY_PAGE":
+                if isinstance(node.value, ast.Constant) and isinstance(
+                        node.value.value, str):
+                    return node.value.value
+    return None
+
+
+def _sel_keys_used(class_node: ast.ClassDef) -> list[str]:
+    """Constant keys passed to `self.sel(...)` / `cls.sel(...)` in the class.
+
+    Only literal strings are collected. A computed key (an f-string, a
+    variable, a dict lookup) is unknowable statically and is left alone
+    rather than guessed at — a false accusation would send the repair loop
+    chasing correct code.
+    """
+    keys: list[str] = []
+    for node in ast.walk(class_node):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not isinstance(func, ast.Attribute) or func.attr != "sel":
+            continue
+        if not isinstance(func.value, ast.Name) or func.value.id not in {"self", "cls"}:
+            continue
+        if node.args and isinstance(node.args[0], ast.Constant) and isinstance(
+                node.args[0].value, str):
+            keys.append(node.args[0].value)
+    return keys
+
+
+def validate_page_object_selectors(
+    generated_files: Iterable,
+    project_root: Path,
+    inventory: dict | None = None,
+) -> list[str]:
+    """Every generated page object must resolve selectors through the inventory.
+
+    Checks three things, in the order a reader would:
+
+      1. no selector literal appears anywhere in the file
+      2. every page-object class declares `INVENTORY_PAGE`, and that page
+         exists in the inventory
+      3. every literal key passed to `self.sel(...)` exists on that page
+
+    Returns a list of human-readable errors; empty means the batch is clean.
+    Never raises: a file that does not parse is skipped (the syntax error is
+    reported by the tooling that owns it), and an unreadable inventory
+    downgrades to the literal scan alone.
+
+    `inventory` is injectable so tests can supply a synthetic app; production
+    callers leave it None and the configured one is loaded.
+    """
+    errors: list[str] = []
+
+    page_objects = [
+        f for f in (generated_files or [])
+        if _is_page_object_path(getattr(f, "file_path", ""))
+    ]
+    if not page_objects:
+        return errors
+
+    if inventory is None:
+        inventory = _load_configured_inventory(project_root)
+    pages = (inventory or {}).get("pages")
+    pages = pages if isinstance(pages, dict) else None
+
+    for gen_file in page_objects:
+        path = gen_file.file_path
+        source = getattr(gen_file, "content", "") or ""
+
+        # ── 1. literal selectors ──────────────────────────────────────
+        for lineno, line in enumerate(source.splitlines(), 1):
+            stripped = line.strip()
+            # Same skip list as the unit test: comments and docstring/prose
+            # lines legitimately SHOW a selector while teaching the rule.
+            if stripped.startswith(("#", '"', "'", "*")):
+                continue
+            if _SELECTOR_LITERAL_RE.search(line):
+                errors.append(
+                    f"{_ERROR_PREFIX} in '{path}' line {lineno}: literal "
+                    f"selector `{stripped[:70]}`. Page objects must call "
+                    f'self.sel("<key>") and the element must be added to the '
+                    f"app inventory. If the element is not in the inventory, "
+                    f"request it in the plan's `notes` instead of inventing a "
+                    f"selector."
+                )
+
+        # ── 2 & 3. inventory wiring ───────────────────────────────────
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            # Unparseable file: the literal scan above still applied. Leave the
+            # syntax error itself to be reported once, by its owner.
+            continue
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            sel_keys = _sel_keys_used(node)
+            inv_page = _class_inventory_page(node)
+
+            # A class that never calls sel() and declares no INVENTORY_PAGE is
+            # not a page object (a helper, an enum, a mixin) — skip it.
+            if inv_page is None and not sel_keys:
+                continue
+
+            if inv_page is None:
+                errors.append(
+                    f"{_ERROR_PREFIX} in '{path}': class {node.name} calls "
+                    f"self.sel(...) but declares no INVENTORY_PAGE. Set it to "
+                    f"the key of the page it implements in the app inventory."
+                )
+                continue
+
+            if pages is None:
+                # No usable inventory in this environment. Reporting every key
+                # as unknown would be noise, not signal.
+                continue
+
+            if inv_page not in pages:
+                errors.append(
+                    f"{_ERROR_PREFIX} in '{path}': class {node.name} sets "
+                    f"INVENTORY_PAGE = '{inv_page}', which is not a page in "
+                    f"the app inventory. Available pages: "
+                    f"{', '.join(sorted(pages)[:_MAX_KEYS_LISTED])}."
+                )
+                continue
+
+            page_entry = pages.get(inv_page) or {}
+            elements = page_entry.get("elements")
+            elements = elements if isinstance(elements, dict) else {}
+            for key in sel_keys:
+                if key in elements:
+                    continue
+                available = ", ".join(sorted(elements)[:_MAX_KEYS_LISTED]) or "(none)"
+                errors.append(
+                    f"{_ERROR_PREFIX} in '{path}': class {node.name} calls "
+                    f"self.sel('{key}'), but '{key}' is not an element on "
+                    f"inventory page '{inv_page}'. Available keys: {available}. "
+                    f"Do not invent the key — request the element in the plan's "
+                    f"`notes` so it can be added to the inventory."
+                )
+
+    return errors
