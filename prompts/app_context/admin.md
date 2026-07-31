@@ -45,12 +45,12 @@ match**. An empty required field shows **Required**.
 Creating a system user REQUIRES linking an existing employee, and the Employee
 Name field is an autocomplete. Two facts about it, both learned the hard way:
 
-**Query length is not the problem — the placeholder is.** A single letter DOES
-fire the request (verified: `GET /api/v2/pim/employees?nameOrId=a`) and does
-return suggestions; it just returns a long, slow, arbitrary list. Prefer 2-3
-characters for a shorter and more predictable one. What matters far more is
-that the prefix matches something: "adm" returns "No Records Found", because
-Admin is a user ROLE, not an employee name.
+**Type AT LEAST 3 characters. This is a rule, not a preference.** A single
+letter does fire the request, but it returns a long list whose first entry is
+arbitrary and shifts as other people edit this shared demo — so the test picks
+a different employee every run and is not reproducible. Three or more gives a
+short, stable match. The prefix must also match something real: "adm" returns
+"No Records Found", because Admin is a user ROLE, not an employee name.
 
 **It renders `Searching....` first.** That placeholder is a real row in the
 suggestion list, and it appears IMMEDIATELY. Any code that waits for "the
@@ -97,6 +97,17 @@ most common failure on this page:
 An assertion of "(1) Records Found" can never pass. Assert on "(1) Record",
 which is a prefix of the singular form, or read the number out of the text and
 compare it numerically. Never count table rows.
+
+**After Save you are not on the list yet.** Saving redirects to the Users list,
+but the app renders the form for a moment first — and the list's search
+Username box and the Add User form's Username field are the SAME shape of
+control. Type too early and the text goes into the form you just left: the
+value reads back correctly, Search then submits an empty filter, and the
+assertion compares against the whole list with no clue why. It is
+non-deterministic, because it depends on which page wins the race. Wait for
+`**/viewSystemUsers` before touching any search filter. The inventory's
+`search_username_input` is scoped to the filter panel so that using it too
+early fails loudly rather than writing to the wrong page.
 
 **Use `type_and_confirm()` on the search filters.** Two separate things go wrong
 here and only that helper survives both.
