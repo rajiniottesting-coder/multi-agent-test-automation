@@ -40,19 +40,33 @@ Locator strings may be any Playwright selector: CSS, `text=`, `role=`, or an
 iframe-chained selector using ' >>> '. Open shadow DOM is pierced by CSS
 automatically.
 """
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urlparse
 
 from playwright.sync_api import Locator, Page, expect
 
+logger = logging.getLogger(__name__)
+
 
 class BasePage:
     """Every page object inherits from this."""
 
-    # Default timeout for "wait and assert" helpers — short enough to fail
-    # fast on broken pages, long enough to absorb normal network jitter.
+    # FALLBACK ONLY. The real value comes from `browser.timeout` in
+    # config.yaml — see _default_timeout_ms(). This constant applies when
+    # there is no readable config (unit tests, a stripped checkout).
+    #
+    # It used to BE the value, hard-coded, while conftest.py separately
+    # applied config.yaml's `timeout` via page.set_default_timeout(). The two
+    # disagreed: config said 30000, every explicit wait_visible() used 5000,
+    # and a CI log would show "timeout 5000ms" on a run configured for 30s.
+    # Raising the config number changed nothing, which is the worst kind of
+    # knob. One source of truth now.
     DEFAULT_TIMEOUT_MS = 5000
+
+    # Resolved browser.timeout, read once per process. None = not yet read.
+    _TIMEOUT_CACHE: Optional[int] = None
 
     # Subclasses set this to the key of the page they implement in
     # app_inventory/<app>.json. Left None only by BasePage itself.
@@ -148,8 +162,36 @@ class BasePage:
             scope = scope.frame_locator(frame_selector)
         return scope.locator(element)
 
+    @classmethod
+    def _default_timeout_ms(cls) -> int:
+        """`browser.timeout` from config.yaml, or DEFAULT_TIMEOUT_MS.
+
+        Never raises: a missing, unreadable or non-numeric config falls back
+        to the constant. A page object must not fail to construct because
+        the config file moved.
+        """
+        if BasePage._TIMEOUT_CACHE is None:
+            value = BasePage.DEFAULT_TIMEOUT_MS
+            try:
+                import yaml
+                from config.paths import CONFIG_YAML
+                cfg = yaml.safe_load(CONFIG_YAML.read_text(encoding="utf-8")) or {}
+                raw = (cfg.get("browser") or {}).get("timeout")
+                if isinstance(raw, bool):
+                    raise TypeError("browser.timeout must be a number")
+                candidate = int(raw)
+                if candidate > 0:
+                    value = candidate
+            except Exception as exc:                      # noqa: BLE001
+                logger.debug(
+                    "browser.timeout unreadable (%s); using %d ms.",
+                    exc, BasePage.DEFAULT_TIMEOUT_MS,
+                )
+            BasePage._TIMEOUT_CACHE = value
+        return BasePage._TIMEOUT_CACHE
+
     def _timeout(self, timeout_ms: Optional[int]) -> int:
-        return timeout_ms if timeout_ms is not None else self.DEFAULT_TIMEOUT_MS
+        return timeout_ms if timeout_ms is not None else self._default_timeout_ms()
 
     # ============================================================
     # Navigation and page state
@@ -238,6 +280,38 @@ class BasePage:
     def is_visible(self, locator: str) -> bool:
         """True if the element is currently visible (no waiting)."""
         return self._locator(locator).is_visible()
+
+    def is_showing(self, locator: str,
+                   timeout_ms: Optional[int] = None) -> bool:
+        """True once the element is visible, WAITING up to the timeout.
+
+        The readiness probe page objects should build `is_loaded()` on. The
+        pattern it replaces was `try: wait_visible(...) / except: return
+        False`, which discards the Playwright error — so a failing
+        `assert page.is_loaded()` reported nothing but `assert False`, naming
+        neither the element that never appeared nor how long it waited.
+
+        This logs that context at WARNING before returning False, so the CI
+        log alone is enough to tell a wrong selector from a slow page.
+
+        Use is_visible() when you want a true zero-wait probe, and this when
+        you are waiting for something to arrive.
+        """
+        try:
+            self.wait_visible(locator, timeout_ms=timeout_ms)
+            return True
+        except Exception as exc:                          # noqa: BLE001
+            reason = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
+            try:
+                where = self.page.url
+            except Exception:                             # noqa: BLE001
+                where = "(url unavailable)"
+            logger.warning(
+                "%s.is_showing(%r) is False after %d ms at %s — %s",
+                type(self).__name__, locator, self._timeout(timeout_ms),
+                where, reason,
+            )
+            return False
 
     def is_enabled(self, locator: str) -> bool:
         """True if the element is enabled."""

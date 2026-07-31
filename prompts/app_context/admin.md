@@ -64,11 +64,26 @@ must be accepted; the dialog renders only after the row's trash icon is
 clicked. The trash icon is only unambiguous after the list has been searched
 down to the single owned record.
 
+Before clicking a row's trash icon, prove the list holds exactly ONE row - the
+one this test created. The trash-icon family selector matches every row, so
+clicking it unnarrowed is both a strict-mode violation and, on a public demo,
+a good way to delete a record belonging to somebody else. Search by the unique
+username first, assert the count, then use the first-row icon key.
+
 Cancelling that dialog ("No, Cancel") is a NEGATIVE path: nothing is saved, so
 NO toast appears. Do not read the toast with the waiting getter to prove its
 absence — that waits for something that will never come and fails on timeout
 instead of asserting. Use the non-waiting probe (`has_toast()`) and assert it
 is False, then re-search to prove the record is still there.
+
+## Dropdowns on the Add User form
+
+User Role and Status are custom ARIA dropdowns, not `<select>` elements.
+Open-then-click-an-option is the right interaction, but the option selector in
+the inventory matches EVERY option at once, so clicking or waiting on it raises
+a strict-mode violation. Use the BasePage helper that picks one option by its
+text. The Employee Name field is an autocomplete with the same property: type,
+then choose a named suggestion, never wait on the suggestion family.
 
 ## Reading a result row
 

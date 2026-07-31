@@ -114,11 +114,19 @@ class ReviewIssue(BaseModel):
         default=None,
         description="Line number (1-indexed), or null if file-level issue with no specific line"
     )
+    # DEFAULTED, not required (31 Jul 2026). A review came back with five
+    # well-formed issues and this one enum omitted on every one of them;
+    # because it was `...` the whole ReviewReport failed validation, Agent 3
+    # crashed, and the tokens were spent for nothing. A category is the least
+    # load-bearing field in the report - losing its precision costs far less
+    # than losing the review. The repair attempt in llm_client.invoke_structured
+    # asks for it properly first; this is the backstop behind that.
     issue_type: Literal["style", "functional_bug", "missing_coverage", "security", "best_practice"] = Field(
-        ...,
+        default="best_practice",
         description="Category: style=formatting/naming, functional_bug=test will fail, "
                     "missing_coverage=test case not addressed, security=credentials/injection, "
-                    "best_practice=could be cleaner"
+                    "best_practice=could be cleaner. ALWAYS set this explicitly - "
+                    "it defaults to best_practice only to stop an omission voiding the report."
     )
     description: str = Field(
         ...,

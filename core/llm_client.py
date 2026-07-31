@@ -551,15 +551,60 @@ class LLMClient:
         try:
             result = output_schema.model_validate_json(json_str)
         except Exception as e:
-            # Log the raw content for debugging, then raise a clear error
-            logger.error(
-                "Failed to parse LLM output as %s. Raw content (first 1000 chars): %s",
-                output_schema.__name__,
-                raw_content[:1000],
+            # ONE repair attempt before giving up (31 Jul 2026).
+            #
+            # Agent 2 has had a repair loop for validator errors for months;
+            # structured output had none. A review came back with five
+            # perfectly good issues and one required enum missing from each,
+            # and the entire agent died on it - the run failed, the PR got no
+            # review, and the tokens were already spent. Handing the model its
+            # own validation error is the cheapest possible fix and mirrors
+            # what the coder already does.
+            #
+            # Deliberately ONE retry, not a loop: if the model cannot satisfy
+            # its own schema twice, more attempts buy nothing but cost.
+            logger.warning(
+                "%s failed validation (%s). Asking the model to repair it once.",
+                output_schema.__name__, e,
             )
-            raise ValueError(
-                f"LLM returned invalid JSON for {output_schema.__name__}: {e}"
-            ) from e
+            repair_prompt = (
+                f"Your previous response did not satisfy the required schema.\n\n"
+                f"VALIDATION ERRORS:\n{e}\n\n"
+                f"YOUR PREVIOUS RESPONSE:\n{json_str}\n\n"
+                f"Return the SAME content corrected to satisfy the schema. Keep "
+                f"every field you already produced - fix only what the errors "
+                f"name, and supply any field reported as missing. Respond with "
+                f"ONLY the raw JSON object: no markdown fencing, no commentary."
+            )
+            try:
+                repair_response = self._call_with_quota_check(
+                    self.llm.invoke,
+                    [
+                        _system_message(system_prompt, cache_prefix=False),
+                        HumanMessage(content=repair_prompt),
+                    ],
+                )
+                _record_usage(
+                    repair_response, f"structured-repair:{output_schema.__name__}"
+                )
+                repaired = _extract_json_object(repair_response.content or "")
+                result = output_schema.model_validate_json(repaired)
+                logger.info(
+                    "%s repaired successfully on the retry.", output_schema.__name__
+                )
+            except Exception as repair_error:             # noqa: BLE001
+                # Log the ORIGINAL raw content: it is the one a human needs to
+                # read, and the repair attempt is only ever a derivative of it.
+                logger.error(
+                    "Failed to parse LLM output as %s, and the repair attempt "
+                    "also failed (%s). Raw content (first 1000 chars): %s",
+                    output_schema.__name__,
+                    repair_error,
+                    raw_content[:1000],
+                )
+                raise ValueError(
+                    f"LLM returned invalid JSON for {output_schema.__name__}: {e}"
+                ) from e
 
         logger.info(f"LLM returned {type(result).__name__} successfully")
         return result

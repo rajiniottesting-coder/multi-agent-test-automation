@@ -146,6 +146,7 @@
         "table_rows": ".oxd-table-card",
         "row_username_cell": ".oxd-table-card .oxd-table-row .oxd-table-cell >> nth=0",
         "row_delete_icon": ".oxd-table-card .oxd-icon.bi-trash",
+        "row_delete_icon_first": ".oxd-table-card .oxd-icon.bi-trash >> nth=0",
         "delete_dialog": ".oxd-dialog-container-default",
         "delete_confirm_button": ".oxd-dialog-container-default button:has-text('Yes, Delete')",
         "delete_cancel_button": ".oxd-dialog-container-default button:has-text('No, Cancel')",
@@ -156,7 +157,8 @@
         "UNVERIFIED_2026_07_31": "row_username_cell, row_delete_icon, delete_dialog, delete_confirm_button and delete_cancel_button were added by hand for the user-lifecycle story (SCRUM-104) and are NOT crawler output. VERIFY the first two with `python -m scripts.verify_locators --url '/web/index.php/admin/viewSystemUsers'` before trusting them. The three delete_* entries CANNOT be verified that way and were never exercised by a passing test - the dialog exists only after the trash icon is clicked, which is exactly why the crawler never saw it. Confirm the two button labels ('Yes, Delete' / 'No, Cancel') against the live app.",
         "table_rows": "Matches the WHOLE row card, so its text is every column concatenated (username, user role, employee name, status, action labels). Never compare it with == against a single field - use row_username_cell for the username, or assert containment.",
         "row_username_cell": "First cell of the first result row. POSITIONAL: '>> nth=0' picks the first match across the whole table, so this is only meaningful after searching down to a single owned record. It breaks if the column order changes.",
-        "row_delete_icon": "The trash icon inside a result row. Matches EVERY row's icon, so click it only when the list has been searched down to the single record the test created - see shared_demo.",
+        "row_delete_icon": "MULTI-MATCH - every row's trash icon. Use it for `get_count()` only. Clicking it is a strict-mode violation the moment the list holds more than one row, and on this shared demo that means deleting a record the test does not own. Use row_delete_icon_first, and only after proving the list is down to one row.",
+        "row_delete_icon_first": "The trash icon of the FIRST result row. Safe to click, but only meaningful once the search has narrowed the list to the single record the test created: assert `get_count(table_rows) == 1` BEFORE clicking. Skipping that check on this public demo deletes somebody else's user.",
         "delete_dialog": "The confirmation modal. Rendered only AFTER row_delete_icon is clicked; absent from the DOM before that, so wait for it rather than probing immediately.",
         "user_role_filter": "User Role / Status filters are custom ARIA dropdowns, not <select>. They must be CLICKED open before their options exist in the DOM, so the crawler never saw the options.",
         "shared_demo": "This is a PUBLIC demo - other people add and delete users while your tests run. Never assert on a record count or on a specific user existing unless the test created it."
@@ -201,8 +203,11 @@
         "SELECTORS_REPLACED": "The crawl produced 12-level css paths for every form field (#app > div:nth-of-type(1) > ...) because Angular renders these inputs with no name or id. Those break on any layout change and were replaced with label-anchored selectors. VERIFY with `python -m scripts.verify_locators --url '/web/index.php/admin/saveSystemUser'` before relying on them.",
         "field_error": "THE KEY ELEMENT FOR VALIDATION TESTS, and the crawler never saw it - it renders only after a field is touched and left invalid. Messages appear AS YOU TYPE, not on Save, so a test must assert after filling the field, not after submitting the form. MATCHES EVERY field error on the page: use only for counting or 'is any error shown'. For per-field assertions use password_field_error / confirm_password_field_error.",
         "password_input": "Password and Confirm Password are both bare `input[type='password']` in DOM order. nth=0/nth=1 is positional and would break if the form gained another password field - acceptable here because the form is fixed, but worth re-checking after an OrangeHRM upgrade.",
-        "user_role_select": "Custom ARIA dropdown, NOT a <select>. Click it, then click an `.oxd-select-option`. `select_option()` will not work.",
-        "employee_name_input": "Autocomplete. Type at least 2 characters, wait for `.oxd-autocomplete-option`, then click one. Typing a full name without selecting a suggestion leaves the field invalid.",
+        "user_role_select": "Custom ARIA dropdown, NOT a <select>: `select_option()` will not work. Use `select_custom_option(self.sel('user_role_select'), '<option text>')` from BasePage - it clicks the trigger and then picks the one option by accessible name. DO NOT click or wait on `dropdown_option`: it matches EVERY option in the list, and Playwright runs strict, so both `click()` and `wait_visible()` raise 'strict mode violation ... resolved to 3 elements'. That is exactly how SCRUM-104 failed on 31 Jul 2026.",
+        "status_select": "Same custom ARIA dropdown as user_role_select. Use `select_custom_option(self.sel('status_select'), '<option text>')`.",
+        "dropdown_option": "MULTI-MATCH - the whole option family, not one option. Legitimate uses: `get_all_texts()` to list what is offered, `get_count()` to count. NEVER `click()` and NEVER `wait_visible()` on it: those are strict-mode violations. To choose one, use `select_custom_option(trigger, text)`.",
+        "autocomplete_option": "MULTI-MATCH - every suggestion currently rendered. Same rule as dropdown_option: read or count it, never click or wait on it directly. To pick a suggestion use `select_custom_option(self.sel('employee_name_input'), '<suggestion text>')` after typing enough characters, or address it by role and name.",
+        "employee_name_input": "Autocomplete. Type at least 2 characters, then pick a SPECIFIC suggestion by its text - `select_custom_option` or a role+name lookup. Waiting on the bare `autocomplete_option` family is a strict-mode violation once more than one suggestion renders. Typing a full name without selecting a suggestion leaves the field invalid.",
         "do_not_save": "This is a PUBLIC shared demo. A saved user persists and the next run hits 'User already exists'. Validation-only tests that never click Save are safe; anything that saves needs a unique username per run.",
         "password_field_error": "Scoped to the Password input group. ':has-text' is a SUBSTRING match, so it also matches the Confirm Password group - hence '>> nth=0'. The Password group precedes Confirm Password in the form, so nth=0 is Password. Same nth convention as password_input.",
         "confirm_password_field_error": "Scoped to the Confirm Password input group. Needs no nth: 'Confirm Password' is a substring of that group only."
@@ -253,7 +258,8 @@
         "toast": "#oxd-toaster_1"
       },
       "elements_notes": {
-        "filters": "Every *_select here is a custom ARIA dropdown, not a <select>. Click to open, then click an `.oxd-select-option`.",
+        "filters": "Every *_select here is a custom ARIA dropdown, not a <select>. Use `select_custom_option(self.sel('<the>_select'), '<option text>')`. Do NOT click or wait on `dropdown_option` - it matches every option at once and Playwright's strict mode raises on it. Same rule and same reason as admin_add_user.",
+        "dropdown_option": "MULTI-MATCH - the whole option family. Read or count it; never click or wait on it directly. Choose one with `select_custom_option(trigger, text)`.",
         "records_found": "Reads '(N) Records Found'. On this SHARED demo the number changes as other people add and delete employees - assert that results are filtered, never on an exact count.",
         "crawl_noise": "The raw crawl produced 265 elements for this page, almost all of them the left menu and per-row action buttons. Only the search form and results container are kept here."
       },

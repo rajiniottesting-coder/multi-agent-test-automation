@@ -5,6 +5,8 @@ EXTENDABLE: Agent 2 may add methods here as new stories need them. Follow the
 conventions in pages/login_page.py — selectors from the app inventory via
 self.sel(), business verbs, BasePage helpers only.
 """
+from typing import Optional
+
 from pages.base_page import BasePage
 
 
@@ -19,8 +21,10 @@ class DashboardPage(BasePage):
         self.wait_visible(self.sel("header_title"))
         return self.get_text(self.sel("header_title"))
 
-    def is_loaded(self, timeout_ms: int = 10000) -> bool:
-        """True once the dashboard header is on screen. WAITS up to timeout_ms.
+    def is_loaded(self, timeout_ms: Optional[int] = None) -> bool:
+        """True once the dashboard header is on screen. WAITS for it.
+
+        THE REFERENCE READINESS PROBE - copy this shape, not an older one.
 
         Waiting is essential and was the bug this replaced. The app is a
         single-page app: submitting the login form fires an XHR and re-renders
@@ -28,18 +32,22 @@ class DashboardPage(BasePage):
         login_as() returns. The previous implementation used is_visible(),
         which BasePage documents as "no waiting" - it checked immediately and
         returned False every time, failing every test that needed a successful
-        login, and cascading into 30s timeouts for anything that navigated
-        afterwards.
+        login, and cascading into timeouts for anything that navigated after.
+
+        Two later corrections are baked in here:
+
+        - `timeout_ms=None` inherits `browser.timeout` from config.yaml. The
+          hard-coded 10000 that used to sit here ignored the configured value
+          entirely, so tuning the config did nothing for this page.
+        - it delegates to BasePage.is_showing() rather than swallowing the
+          Playwright error in a bare `except`. A failed readiness check now
+          logs the selector, the wait and the current URL; before, the whole
+          diagnosis a CI log offered was `assert False`.
 
         Returns a bool rather than raising, so `assert page.is_loaded()` still
-        reads naturally and a genuine failure still reports as an assertion.
-        Use is_displayed_now() for a true zero-wait probe.
+        reads naturally. Use is_displayed_now() for a true zero-wait probe.
         """
-        try:
-            self.wait_visible(self.sel("header_title"), timeout_ms=timeout_ms)
-            return True
-        except Exception:
-            return False
+        return self.is_showing(self.sel("header_title"), timeout_ms=timeout_ms)
 
     def is_displayed_now(self) -> bool:
         """True only if the dashboard header is visible RIGHT NOW. No waiting.

@@ -1,4 +1,5 @@
-"""Unit tests for the BasePage helper-signature injection.
+"""Unit tests for BasePage: helper-signature injection, and runtime behaviour
+that a page object depends on (timeout resolution, readiness probing).
 
 Page objects inherit ~70 helpers from BasePage. The LLM cannot use what it
 cannot see, so Stage 2 injects their signatures into the page-object prompt.
@@ -97,3 +98,154 @@ def test_real_base_page_exposes_expected_control_types():
                    "drag_to", "get_row_count", "scroll_into_view",
                    "accept_next_dialog", "click_in_frame"):
         assert f"self.{method}(" in block, f"missing {method}"
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Timeout resolution — one source of truth
+#
+# BasePage used to hard-code DEFAULT_TIMEOUT_MS = 5000 while conftest.py
+# separately applied config.yaml's `browser.timeout` via
+# page.set_default_timeout(). The two disagreed: config said 30000, every
+# explicit wait_visible() used 5000, and CI logs showed "timeout 5000ms" on a
+# run configured for 30s. Raising the config value changed nothing.
+# ─────────────────────────────────────────────────────────────────────────
+from pathlib import Path
+
+import pytest
+
+from pages.base_page import BasePage
+
+
+@pytest.fixture(autouse=True)
+def _clear_timeout_cache():
+    """The resolved timeout is cached per process; isolate each test."""
+    BasePage._TIMEOUT_CACHE = None
+    yield
+    BasePage._TIMEOUT_CACHE = None
+
+
+class _FakeLocator:
+    def __init__(self, visible: bool):
+        self._visible = visible
+
+
+class _FakePage:
+    url = "https://app.example/somewhere"
+
+
+def _page_obj(monkeypatch, *, raises: bool = False, seen: list | None = None):
+    """A BasePage bound to a fake Playwright page, with wait_visible stubbed."""
+    obj = BasePage(_FakePage())
+
+    def fake_wait_visible(locator, timeout_ms=None):
+        if seen is not None:
+            seen.append((locator, obj._timeout(timeout_ms)))
+        if raises:
+            raise RuntimeError("Timeout 5000ms exceeded.\nwaiting for locator")
+
+    monkeypatch.setattr(obj, "wait_visible", fake_wait_visible)
+    return obj
+
+
+def test_timeout_comes_from_the_real_config(monkeypatch):
+    """The shipped config says 30000; the helper must return that, not 5000."""
+    assert BasePage._default_timeout_ms() == 30000
+    assert BasePage.DEFAULT_TIMEOUT_MS == 5000, "constant is the fallback only"
+
+
+def test_explicit_timeout_still_wins(monkeypatch):
+    obj = BasePage(_FakePage())
+    assert obj._timeout(1234) == 1234
+
+
+def test_zero_is_not_treated_as_absent(monkeypatch):
+    """`0` is a real caller choice, not a 'use the default' sentinel."""
+    obj = BasePage(_FakePage())
+    assert obj._timeout(0) == 0
+
+
+def test_unreadable_config_falls_back_to_the_constant(monkeypatch):
+    import yaml
+    monkeypatch.setattr(yaml, "safe_load", lambda *_a, **_k: (_ for _ in ()).throw(
+        OSError("no config here")))
+    assert BasePage._default_timeout_ms() == BasePage.DEFAULT_TIMEOUT_MS
+
+
+@pytest.mark.parametrize("bad", [None, "", "abc", 0, -1, True, {"a": 1}])
+def test_malformed_timeout_values_fall_back(monkeypatch, bad):
+    """A junk or non-positive browser.timeout must not produce a junk wait."""
+    import yaml
+    monkeypatch.setattr(yaml, "safe_load",
+                        lambda *_a, **_k: {"browser": {"timeout": bad}})
+    assert BasePage._default_timeout_ms() == BasePage.DEFAULT_TIMEOUT_MS
+
+
+def test_timeout_is_resolved_once_not_per_call(monkeypatch):
+    calls = {"n": 0}
+    import yaml
+    real = yaml.safe_load
+
+    def counting(*a, **k):
+        calls["n"] += 1
+        return real(*a, **k)
+
+    monkeypatch.setattr(yaml, "safe_load", counting)
+    BasePage._default_timeout_ms()
+    BasePage._default_timeout_ms()
+    BasePage._default_timeout_ms()
+    assert calls["n"] == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# is_showing — a readiness probe that says WHY it failed
+#
+# The pattern it replaces swallowed the Playwright error, so a failing
+# `assert page.is_loaded()` reported nothing but `assert False`.
+# ─────────────────────────────────────────────────────────────────────────
+
+def test_is_showing_true_when_the_element_arrives(monkeypatch):
+    obj = _page_obj(monkeypatch)
+    assert obj.is_showing("#thing") is True
+
+
+def test_is_showing_false_and_never_raises_on_timeout(monkeypatch):
+    obj = _page_obj(monkeypatch, raises=True)
+    assert obj.is_showing("#thing") is False
+
+
+def test_is_showing_logs_selector_timeout_and_url(monkeypatch, caplog):
+    obj = _page_obj(monkeypatch, raises=True)
+    with caplog.at_level("WARNING"):
+        obj.is_showing("#missing")
+    logged = caplog.text
+    assert "#missing" in logged
+    assert "30000" in logged, "the wait it actually used must be named"
+    assert "app.example" in logged, "the page it was on must be named"
+
+
+def test_is_showing_survives_a_page_with_no_url(monkeypatch):
+    class _NoUrl:
+        @property
+        def url(self):
+            raise RuntimeError("browser closed")
+
+    obj = BasePage(_NoUrl())
+    monkeypatch.setattr(obj, "wait_visible", lambda *a, **k: (_ for _ in ()).throw(
+        RuntimeError("boom")))
+    assert obj.is_showing("#x") is False
+
+
+def test_is_showing_passes_the_explicit_timeout_through(monkeypatch):
+    seen: list = []
+    obj = _page_obj(monkeypatch, seen=seen)
+    obj.is_showing("#thing", timeout_ms=250)
+    assert seen == [("#thing", 250)]
+
+
+def test_reference_page_object_uses_the_probe():
+    """dashboard_page.is_loaded() is the shape Agent 2 copies. If it goes back
+    to a bare try/except the swallowed-reason regression comes back with it."""
+    src = Path(__file__).resolve().parents[2] / "pages" / "dashboard_page.py"
+    body = src.read_text(encoding="utf-8")
+    assert "self.is_showing(" in body
+    assert "except Exception:" not in body

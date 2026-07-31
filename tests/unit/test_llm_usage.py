@@ -1,5 +1,6 @@
 """
-Unit tests for LLM usage tracking and cost estimation in core.llm_client.
+Unit tests for core.llm_client: usage tracking, cost estimation, and the
+one-shot repair that structured output falls back on.
 
 No LLM calls are made — these test the accumulator and cost math directly,
 plus _record_usage() against a fake LangChain-style response object.
@@ -132,3 +133,167 @@ class TestSummary:
         _record_usage(FakeResponse({"input_tokens": 2000, "output_tokens": 200}), "s2")
         s = get_usage_summary()
         assert s["input_tokens"] == 2000  # only story 2
+
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Structured-output repair
+#
+# 31 Jul 2026: Agent 3 came back with five well-formed review issues and the
+# required `issue_type` enum missing from every one. invoke_structured()
+# validated once and raised, so the whole agent died, the PR got no review,
+# and the tokens were already spent. Agent 2 had had a repair loop for months;
+# structured output had none. These lock in the fix.
+# ─────────────────────────────────────────────────────────────────────────
+import json
+
+from pydantic import BaseModel
+
+from core.llm_client import LLMClient
+from core.schemas import ReviewIssue
+
+
+class _Reply:
+    """Minimal stand-in for a LangChain AIMessage."""
+    def __init__(self, content: str):
+        self.content = content
+        self.usage_metadata = {"input_tokens": 10, "output_tokens": 5}
+        self.response_metadata = {}
+
+
+class _Model(BaseModel):
+    name: str
+    kind: str
+
+
+def _client(replies):
+    """An LLMClient wired to a scripted sequence of replies. No network."""
+    client = object.__new__(LLMClient)
+    client.model_name = "test-model"
+    client.max_output_tokens = 8192
+    sent = []
+
+    class _FakeLLM:
+        def invoke(self, messages):
+            sent.append(messages)
+            return _Reply(replies[len(sent) - 1])
+
+    client.llm = _FakeLLM()
+    return client, sent
+
+
+def _call(client):
+    return client.invoke_structured(
+        system_prompt="sys", user_prompt="usr", output_schema=_Model
+    )
+
+
+class TestStructuredRepair:
+
+    def test_valid_first_response_makes_no_second_call(self):
+        client, sent = _client([json.dumps({"name": "a", "kind": "b"})])
+        result = _call(client)
+        assert (result.name, result.kind) == ("a", "b")
+        assert len(sent) == 1, "a good response must never cost a repair call"
+
+    def test_missing_field_is_repaired_on_the_retry(self):
+        client, sent = _client([
+            json.dumps({"name": "a"}),                       # `kind` missing
+            json.dumps({"name": "a", "kind": "b"}),          # repaired
+        ])
+        result = _call(client)
+        assert (result.name, result.kind) == ("a", "b")
+        assert len(sent) == 2
+
+    def test_repair_prompt_carries_the_error_and_the_bad_output(self):
+        client, sent = _client([
+            json.dumps({"name": "a"}),
+            json.dumps({"name": "a", "kind": "b"}),
+        ])
+        _call(client)
+        repair_text = sent[1][-1].content
+        assert "kind" in repair_text, "the failing field must be named"
+        assert "VALIDATION ERRORS" in repair_text
+        assert '"name": "a"' in repair_text, "prior output must be echoed back"
+
+    def test_repair_is_attempted_exactly_once(self):
+        client, sent = _client([
+            json.dumps({"name": "a"}),
+            json.dumps({"name": "a"}),        # still wrong
+        ])
+        with pytest.raises(ValueError, match="invalid JSON"):
+            _call(client)
+        assert len(sent) == 2, "one retry, never a loop"
+
+    def test_original_error_is_the_one_raised(self):
+        """The first failure is what a human needs to read, not the retry's."""
+        client, _ = _client([json.dumps({"name": "a"}), json.dumps({"name": "a"})])
+        with pytest.raises(ValueError) as excinfo:
+            _call(client)
+        assert "kind" in str(excinfo.value)
+
+    def test_repair_call_is_counted_in_the_cost_ledger(self):
+        client, _ = _client([
+            json.dumps({"name": "a"}),
+            json.dumps({"name": "a", "kind": "b"}),
+        ])
+        _call(client)
+        assert get_usage_summary()["llm_calls"] == 2, "a repair is paid for; count it"
+
+    def test_a_crashing_repair_call_still_raises_the_original(self):
+        client = object.__new__(LLMClient)
+        client.model_name = "test-model"
+        client.max_output_tokens = 8192
+
+        class _FlakyLLM:
+            def __init__(self):
+                self.n = 0
+
+            def invoke(self, messages):
+                self.n += 1
+                if self.n == 1:
+                    return _Reply(json.dumps({"name": "a"}))
+                raise RuntimeError("gateway exploded")
+
+        client.llm = _FlakyLLM()
+        with pytest.raises(ValueError, match="invalid JSON"):
+            _call(client)
+
+    def test_unparseable_first_response_is_also_repairable(self):
+        client, sent = _client([
+            "I think the answer is probably fine, honestly.",
+            json.dumps({"name": "a", "kind": "b"}),
+        ])
+        result = _call(client)
+        assert result.kind == "b"
+        assert len(sent) == 2
+
+
+class TestReviewIssueDefault:
+    """The backstop behind the repair: an omitted category must never be able
+    to void an entire review."""
+
+    def test_issue_type_defaults_instead_of_failing_validation(self):
+        issue = ReviewIssue(
+            severity="major",
+            file_path="tests/step_defs/test_x.py",
+            description="d",
+            suggested_fix="f",
+        )
+        assert issue.issue_type == "best_practice"
+
+    def test_an_explicit_issue_type_is_still_honoured(self):
+        issue = ReviewIssue(
+            severity="blocking",
+            file_path="p",
+            issue_type="functional_bug",
+            description="d",
+            suggested_fix="f",
+        )
+        assert issue.issue_type == "functional_bug"
+
+    def test_the_other_required_fields_are_still_required(self):
+        """Defaulting one enum must not quietly loosen the whole schema."""
+        import pydantic
+        with pytest.raises(pydantic.ValidationError):
+            ReviewIssue(severity="major", file_path="p", description="d")
