@@ -42,17 +42,44 @@ match**. An empty required field shows **Required**.
 
 ## Add User — employee link (shared-demo dependency)
 
-Creating a system user REQUIRES linking an existing employee: the Employee
-Name field is an autocomplete — type a single common letter (e.g. "a") and
-select the FIRST suggestion. Never assume a specific employee name exists;
-employee records on this environment change constantly. This is the only
-acceptable dependency on data the test does not own.
+Creating a system user REQUIRES linking an existing employee, and the Employee
+Name field is an autocomplete. Two facts about it, both learned the hard way:
+
+**It needs 2+ characters.** One letter fires no request at all, so no
+suggestion ever renders. Three characters that match nothing ("adm" — Admin is
+a ROLE, not an employee) render "No Records Found". Use a 2-3 character prefix
+of a real surname or forename.
+
+**It renders `Searching....` first.** That placeholder is a real row in the
+suggestion list, and it appears IMMEDIATELY. Any code that waits for "the
+first suggestion" is satisfied by it, clicks it, selects nothing, and leaves
+the field `Invalid` — after which Save is refused client-side with no request
+sent and no toast, so the test dies several steps later on a missing
+confirmation. WAIT FOR `Searching....` TO DISAPPEAR before reading the list.
+
+The correct sequence is: type a 2+ character prefix, wait until the suggestion
+list contains an entry that is NOT `Searching....`, then click that entry by
+its text. Do not hard-code a full employee name — records on this environment
+change constantly, and a name that exists today may not tomorrow. Take
+whichever real suggestion the prefix returns.
+
+This is the only acceptable dependency on data the test does not own. If no
+real suggestion appears for the prefix, fail with a message naming the prefix
+and the texts that WERE rendered — a silent "no suggestion" tells the next
+reader nothing.
 
 ## Search results and empty state
 
 The results summary text shows "(N) Records Found" when matches exist and
 "No Records Found" when none do. Zero-result assertions must read this
 text — never count table rows.
+
+The list re-renders ASYNCHRONOUSLY after Search is clicked. Reading the
+summary immediately returns the PREVIOUS value — the unfiltered total — so an
+assertion of "(1) Records Found" sees "(34) Records Found" and fails while the
+app is working correctly. It passes or fails depending on which wins the race,
+which is what a flaky test looks like. Wait for the summary to contain the
+expected text before asserting on it, rather than reading it and comparing.
 
 ## Confirmations
 
