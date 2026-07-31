@@ -864,6 +864,15 @@ def validate_page_object_selectors(
             # check is a no-op, so an old inventory keeps working unchanged.
             family = page_entry.get("multi_match")
             family = set(family) if isinstance(family, (list, tuple, set)) else set()
+            # Families the app POPULATES ASYNCHRONOUSLY. Index 0 can be a
+            # transient row that is not a real choice - a loading row, or a
+            # 'nothing selected' default - so an index pin is not
+            # merely awkward here, it silently selects nothing. Never offer
+            # one as the remedy for these; by-text is the only correct answer.
+            async_family = page_entry.get("async_family")
+            async_family = (set(async_family)
+                            if isinstance(async_family, (list, tuple, set))
+                            else set())
             if family:
                 for key, method, lineno in _strict_uses_of_sel(node):
                     if key not in family:
@@ -877,7 +886,19 @@ def validate_page_object_selectors(
                     # really exists; otherwise point at the by-text helper or
                     # at `notes`, which is the one escape hatch it is allowed.
                     first_key = f"{key}_first"
-                    if first_key in elements:
+                    if key in async_family:
+                        remedy = (
+                            f"select the ONE element you want BY ITS TEXT - "
+                            f"select_custom_option(trigger, '<text>') for a "
+                            f"dropdown or autocomplete, click_role('option', "
+                            f"'<text>') otherwise. '{key}' is populated "
+                            f"asynchronously, so an index pin such as "
+                            f"'>> nth=0' or a '{first_key}' key is NEVER "
+                            f"correct here: index 0 may be a loading "
+                            f"placeholder, and waiting for it to appear "
+                            f"succeeds while selecting nothing"
+                        )
+                    elif first_key in elements:
                         remedy = (f"use self.sel('{first_key}'), which is the "
                                   f"same selector already pinned to one element")
                     else:

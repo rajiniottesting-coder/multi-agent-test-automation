@@ -831,6 +831,8 @@ _INV_MM = {
                          "rows_first": ".row >> nth=0", "opt": ".opt",
                          "cell": ".cell"},
             "multi_match": ["rows", "opt"],
+            # `opt` is populated asynchronously: index 0 can be a loading row.
+            "async_family": ["opt"],
         }
     }
 }
@@ -1028,6 +1030,70 @@ class TestMultiMatchEnforcement:
             project_root, inventory=_INV_MM)
         assert "rows_first" in errors[0]
 
+    def test_an_async_family_is_never_offered_an_index_pin(self, project_root: Path):
+        """SCRUM-104, 31 Jul 2026. `autocomplete_option_first` (>> nth=0) was
+        added as the 'safe' way to pick a suggestion. The app renders a loading
+        row while its request is in flight, so nth=0 WAS that placeholder:
+        waiting for it succeeded, clicking it selected nothing, the form was
+        refused client-side with no request sent, and the test failed three
+        steps later on a confirmation that never existed. An index pin is
+        only ever valid for a STATIC family.
+        """
+        errors = validate_page_object_selectors(
+            [_widgets_page("    def go(self) -> None:\n"
+                           "        self.click(self.sel('opt'))\n")],
+            project_root, inventory=_INV_MM)
+        assert len(errors) == 1
+        assert "BY ITS TEXT" in errors[0]
+        assert "select_custom_option" in errors[0]
+        assert "opt_first" in errors[0] and "NEVER" in errors[0]
+        assert "loading placeholder" in errors[0]
+
+    def test_a_static_family_still_gets_its_index_pin(self, project_root: Path):
+        """The async rule must not swallow the ordinary case."""
+        errors = validate_page_object_selectors(
+            [_widgets_page("    def go(self) -> None:\n"
+                           "        self.click(self.sel('rows'))\n")],
+            project_root, inventory=_INV_MM)
+        assert "rows_first" in errors[0]
+        assert "BY ITS TEXT" not in errors[0]
+
+    def test_async_family_absent_or_malformed_is_a_no_op(self, project_root: Path):
+        """An inventory predating the field keeps its old behaviour."""
+        inv = {"pages": {"widgets": {
+            "elements": {"opt": ".opt", "opt_first": ".opt >> nth=0"},
+            "multi_match": ["opt"], "async_family": "opt"}}}   # a string, not a list
+        errors = validate_page_object_selectors(
+            [_widgets_page("    def go(self) -> None:\n"
+                           "        self.click(self.sel('opt'))\n")],
+            project_root, inventory=inv)
+        assert "opt_first" in errors[0]
+        assert "BY ITS TEXT" not in errors[0]
+
+    def test_plural_reads_are_still_allowed_on_an_async_family(self, project_root: Path):
+        """Listing what an autocomplete offered is legitimate."""
+        assert validate_page_object_selectors(
+            [_widgets_page("    def go(self):\n"
+                           "        return self.get_all_texts(self.sel('opt'))\n")],
+            project_root, inventory=_INV_MM) == []
+
+    def test_no_async_family_may_carry_an_index_pinned_sibling(self):
+        """Guards the real inventory: a `<key>_first` for an async family is
+        the exact defect this fix removed, and must not creep back."""
+        inv = _configured_inventory()
+        for page, entry in inv["pages"].items():
+            for key in entry.get("async_family") or []:
+                assert f"{key}_first" not in entry["elements"], (
+                    f"{page}.{key} is async - an index pin cannot be correct")
+
+    def test_every_async_family_is_also_declared_multi_match(self):
+        """async_family is a refinement of multi_match, never a separate set."""
+        inv = _configured_inventory()
+        for page, entry in inv["pages"].items():
+            families = set(entry.get("multi_match") or [])
+            for key in entry.get("async_family") or []:
+                assert key in families, f"{page}.{key} async but not multi_match"
+
     def test_the_error_never_tells_the_model_to_invent_a_key(self, project_root: Path):
         """SCRUM-103, 31 Jul 2026: the remedy used to read "add a '<key>_first'
         key to the inventory". The model cannot edit the inventory and rule 15
@@ -1035,10 +1101,12 @@ class TestMultiMatchEnforcement:
         for a key that did not exist and the run died on the next check. The
         remedy must only ever name actions the model is allowed to take.
         """
+        inv = {"pages": {"widgets": {"elements": {"opt": ".opt"},
+                                     "multi_match": ["opt"]}}}
         errors = validate_page_object_selectors(
             [_widgets_page("    def go(self) -> None:\n"
                            "        self.click(self.sel('opt'))\n")],
-            project_root, inventory=_INV_MM)
+            project_root, inventory=inv)
         assert "add a 'opt_first' key" not in errors[0]
         assert "Do NOT write self.sel('opt_first')" in errors[0]
         assert "select_custom_option" in errors[0]

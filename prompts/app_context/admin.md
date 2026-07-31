@@ -76,14 +76,30 @@ absence — that waits for something that will never come and fails on timeout
 instead of asserting. Use the non-waiting probe (`has_toast()`) and assert it
 is False, then re-search to prove the record is still there.
 
+## The Add User form will refuse to submit silently
+
+Every field is validated client-side. If one is invalid, clicking Save sends NO
+request at all: the page stays on the form, red messages appear under the bad
+fields, and no toast is ever raised. A test that asserts on the toast then fails
+several steps away from the real cause. Employee Name is the usual culprit -
+typing into it is not selecting from it, and an unselected name reads `Invalid`.
+
 ## Dropdowns on the Add User form
 
 User Role and Status are custom ARIA dropdowns, not `<select>` elements.
 Open-then-click-an-option is the right interaction, but the option selector in
 the inventory matches EVERY option at once, so clicking or waiting on it raises
 a strict-mode violation. Use the BasePage helper that picks one option by its
-text. The Employee Name field is an autocomplete with the same property: type,
-then choose a named suggestion, never wait on the suggestion family.
+text. The Employee Name field is an autocomplete and needs more care than the
+dropdowns. While its request is in flight it renders a suggestion row reading
+`Searching....`, which is a real element in the family: waiting for the first
+suggestion to appear is satisfied by that placeholder, and clicking it selects
+nothing while leaving the field `Invalid`. Type enough characters to be
+unambiguous - a single letter returns a slow, crowded list - and then choose the
+suggestion BY ITS TEXT, so the wait cannot be satisfied by the placeholder.
+
+Asserting the save worked means asserting the toast APPEARED, which needs the
+waiting reader. The non-waiting probe is for proving a toast did NOT appear.
 
 ## Reading a result row
 
