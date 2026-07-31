@@ -384,6 +384,47 @@ Available helpers on `self.<method>()` from any page object subclass:
 **For visibility checks:**
 - `self.is_visible(locator)` → returns True/False (doesn't raise)
 
+### RULE: test data on a SHARED application must be run-unique
+
+The application under test is shared: other users and scheduled resets can
+create or delete records at any time. Therefore:
+
+1. Any record a test CREATES must use an identifier derived from the
+   `unique_username` fixture (or an equivalent built from `run_id`) - NEVER a
+   fixed literal like "testuser1".
+2. Assert ABSENCE ("no records found") only for identifiers the test itself
+   owns. Asserting that a fixed literal is absent is non-deterministic on
+   shared data and will flake regardless of how the assertion is written.
+3. Do NOT suppress errors, retry, or loosen assertions to survive shared
+   data. Uniqueness makes the expected state true by construction; the
+   assertion then reads the application's real rendered state.
+
+
+### RULE: asserting an EMPTY or ZERO-RESULT state
+
+When a step asserts that a search, filter, or list returned NOTHING, you MUST
+assert on the application's own empty-state indicator (its 'no records' /
+'no results' text element), NEVER on counting row elements.
+
+WRONG - row counts are fragile: on shared or seeded data the filter may not
+have applied, rows from a previous state may still be rendered, and a stale
+count silently passes or fails for the wrong reason:
+```python
+assert some_page.get_record_count() == 0
+```
+
+RIGHT - the empty-state text is what the application itself renders for this
+case, so the assertion and the behaviour cannot drift apart:
+```python
+assert some_page.has_no_records(), "Expected the no-records indicator"
+```
+
+If the page object lacks a boolean empty-state predicate, add one alongside
+the count getter, reading the results-summary text element from the
+inventory. The predicate must not wait for result rows - in the empty case
+there are none to wait for.
+
+
 ### RULE: asserting that something is ABSENT
 
 When a step asserts something is NOT present, you MUST use a predicate that

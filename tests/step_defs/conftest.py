@@ -42,6 +42,34 @@ def menu_page(page):
 # === Credentials ===
 
 @pytest.fixture(scope="session")
+def run_id():
+    """Short identifier unique to this test run.
+
+    The application under test is a SHARED demo: other users and scheduled
+    resets mutate its data at any time. An assertion like 'searching for
+    username X returns no records' is only deterministic when X could not
+    have been created by anyone else - i.e. when the test derives X from
+    this run's own identity. Fixed literal test data on shared state is the
+    root cause of flaky zero-result and duplicate-record failures.
+    """
+    import time, uuid
+    return f"{int(time.time())%100000}{uuid.uuid4().hex[:4]}"
+
+
+@pytest.fixture
+def unique_username(run_id, request):
+    """A username owned exclusively by the current test.
+
+    Derived from run_id plus the test's own name, so the same run never
+    collides with itself either. Any 'record exists' / 'no records' check
+    against this name is deterministic on shared data by construction -
+    nothing is suppressed or retried to make it pass.
+    """
+    test_part = "".join(c for c in request.node.name if c.isalnum())[:8]
+    return f"tt{run_id}{test_part}"
+
+
+@pytest.fixture(scope="session")
 def credentials():
     """Resolve a role name to (username, password) from the environment.
 
