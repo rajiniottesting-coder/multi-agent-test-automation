@@ -182,6 +182,37 @@ def _highlight(page, locator, label: str, colour: str) -> bool:
         return False
 
 
+def _wait_for_render(page, selectors: dict, timeout_ms: int = 15000) -> bool:
+    """Wait until the page has actually RENDERED, not merely loaded.
+
+    `wait_for_load_state("load")` fires when the HTML and JS have arrived. On
+    a single-page app that is BEFORE the framework mounts and paints anything,
+    so every inventory selector is checked against an empty shell and reported
+    STALE. On 31 Jul 2026 this produced 13 of 14 stale for a page whose
+    selectors were demonstrably working in the E2E suite minutes earlier - the
+    single one that "resolved" was the toaster, which lives in the app shell
+    and therefore exists on every page.
+
+    There is no app-agnostic readiness signal, so the page's OWN inventory is
+    used as one: poll until ANY declared selector resolves. That self-
+    calibrates to whatever the app is, and if nothing appears within the
+    timeout the page genuinely did not render - which is a different and much
+    more useful finding than a list of false stale reports.
+
+    Returns True if something rendered.
+    """
+    deadline = time.time() + timeout_ms / 1000.0
+    while time.time() < deadline:
+        for sel in selectors.values():
+            try:
+                if _resolve_one(page, sel).count() > 0:
+                    return True
+            except Exception:                      # noqa: BLE001 - bad selector
+                continue
+        page.wait_for_timeout(250)
+    return False
+
+
 def _verify_page(page, base_url: str, page_name: str, entry: dict,
                  pause: float, only_problems: bool) -> tuple[int, int]:
     url = base_url.rstrip("/") + (entry.get("url") or "/")
@@ -195,6 +226,18 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
         page.wait_for_load_state("load")
     except Exception as e:
         print(f"  [{page_name}] UNREACHABLE {url}: {type(e).__name__}")
+        return 0, 0
+
+    _pre = {n: s for n, s in (entry.get("elements") or {}).items()
+            if isinstance(s, str) and n != "_selector_strategies"}
+    if _pre and not _wait_for_render(page, _pre):
+        print(f"  [{page_name}] {url}\n"
+              f"    PAGE DID NOT RENDER - not one of its {len(_pre)} selectors "
+              f"appeared within 15s.\n"
+              f"    Nothing here is a reliable staleness report. Check that\n"
+              f"    base_url is right, that login succeeded, and that this URL\n"
+              f"    is not redirecting to a login or consent wall.\n"
+              f"    Actual URL after navigation: {page.url}")
         return 0, 0
 
     selectors = {n: s for n, s in (entry.get("elements") or {}).items()
@@ -395,6 +438,10 @@ def main() -> int:
             # 'load', not 'networkidle': an app that polls or streams
             # never goes idle, so the wait times out on a rendered page.
             page.wait_for_load_state("load")
+            # ...but 'load' is BEFORE an SPA paints, so give the one selector
+            # under test a chance to appear rather than reporting it stale
+            # against an empty shell.
+            _wait_for_render(page, {"target": args.selector})
             try:
                 loc = _resolve_one(page, args.selector)
                 count = loc.count()
