@@ -201,16 +201,29 @@ def _wait_for_render(page, selectors: dict, timeout_ms: int = 15000) -> bool:
 
     Returns True if something rendered.
     """
+    # Require TWO distinct selectors, not one. Shell-level elements - a global
+    # toaster, a nav bar - resolve on EVERY page, so a one-selector gate is
+    # satisfied by the exact element that proves you are on the wrong page.
+    # A second, page-specific match is what actually says "this page rendered".
+    needed = 2 if len(selectors) > 1 else 1
     deadline = time.time() + timeout_ms / 1000.0
-    while time.time() < deadline:
-        for sel in selectors.values():
+    while True:
+        hits = []
+        for name, sel in selectors.items():
             try:
                 if _resolve_one(page, sel).count() > 0:
-                    return True
+                    hits.append(name)
+                    if len(hits) >= needed:
+                        return True
             except Exception:                      # noqa: BLE001 - bad selector
                 continue
+        if time.time() >= deadline:
+            if hits:
+                print(f"    only {len(hits)} of {len(selectors)} selector(s) ever "
+                      f"resolved ({', '.join(hits)}) - typically the app shell, "
+                      f"not this page's content.")
+            return False
         page.wait_for_timeout(250)
-    return False
 
 
 def _verify_page(page, base_url: str, page_name: str, entry: dict,
