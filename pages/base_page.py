@@ -357,6 +357,96 @@ class BasePage:
         """Type character by character — for fields with keystroke handlers."""
         self._locator(locator).press_sequentially(value, delay=delay_ms)
 
+    def type_and_confirm(self, locator: str, value: str,
+                         delay_ms: int = 50, attempts: int = 3) -> str:
+        """Enter `value`, verifying it stuck. Escalates through strategies.
+
+        In a single-page app an input can be REPLACED by a re-render between
+        the keystrokes and the submit — the framework remounts the component
+        and the new element is empty. Nothing raises: the locator still
+        resolves, the click still lands, and the request goes out with no
+        filter at all, so the test compares against unfiltered data and fails
+        somewhere far away from the cause.
+
+        Verified 31 Jul 2026: two tests typed the same 18-character username
+        into the same search box with the same helper. One produced
+        `?username=...` and one produced no filter, purely on timing.
+
+        STRATEGY ORDER MATTERS, and not for the reason it looks like.
+        Reading the value back proves the FIELD holds it. It does NOT prove
+        the app's model bound to it — `fill()` sets the value and reads back
+        perfectly while the model stays empty, which is the original bug this
+        helper exists to catch. So the keystroke strategies, which do bind,
+        are tried first, and `fill()` is a last resort rather than a peer:
+
+            1. type character by character
+            2. click to focus first, then type  (the field may not have been
+               mounted or focused when the first attempt ran)
+            3. fill                             (last resort - may not bind)
+
+        Each strategy is tried up to `attempts` times and verified after every
+        try; a strategy that raises is logged and the next one runs, so one
+        broken approach cannot end the attempt.
+
+        Returns the strategy name that worked, for logging.
+
+        Raises:
+            AssertionError naming what the field last held. EMPTY means the
+            app re-rendered and wiped it; a DIFFERENT value means the wrong
+            element was targeted. Those need opposite fixes.
+        """
+        def _type(loc: str, val: str) -> None:
+            self.clear(loc)
+            self.type_text(loc, val, delay_ms=delay_ms)
+
+        def _click_then_type(loc: str, val: str) -> None:
+            self.click(loc)
+            self.clear(loc)
+            self.type_text(loc, val, delay_ms=delay_ms)
+
+        def _fill(loc: str, val: str) -> None:
+            self.fill(loc, val)
+
+        strategies = (
+            ("type", _type),
+            ("click_then_type", _click_then_type),
+            ("fill", _fill),
+        )
+
+        last = ""
+        for name, strategy in strategies:
+            for attempt in range(1, attempts + 1):
+                try:
+                    strategy(locator, value)
+                    last = self.get_input_value(locator)
+                except Exception as exc:                  # noqa: BLE001
+                    logger.warning(
+                        "%s: strategy %r raised on attempt %d/%d (%s). "
+                        "Trying the next approach.",
+                        locator, name, attempt, attempts, exc,
+                    )
+                    break
+                if last == value:
+                    if name != "type" or attempt > 1:
+                        logger.info(
+                            "%s accepted %r via %r on attempt %d.",
+                            locator, value, name, attempt,
+                        )
+                    return name
+                logger.warning(
+                    "%s did not keep %r via %r on attempt %d/%d (held %r) — "
+                    "the component was probably re-rendered mid-entry.",
+                    locator, value, name, attempt, attempts, last,
+                )
+
+        raise AssertionError(
+            f"{locator!r} would not hold {value!r} after trying "
+            f"{', '.join(n for n, _ in strategies)}; it last held {last!r}. "
+            f"An EMPTY field means the app re-rendered the input and wiped it "
+            f"- submitting now would send no filter at all. A DIFFERENT value "
+            f"means the wrong element was targeted."
+        )
+
     def clear(self, locator: str) -> None:
         """Empty an input."""
         self._locator(locator).fill("")

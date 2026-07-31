@@ -87,16 +87,35 @@ Verify by hand before relying on it; employee records change here.
 
 ## Search results and empty state
 
-The results summary text shows "(N) Records Found" when matches exist and
-"No Records Found" when none do. Zero-result assertions must read this
-text — never count table rows.
+The results summary has THREE grammatical forms, and getting this wrong is the
+most common failure on this page:
 
-**Type into the search filters, do not fill them.** `fill()` sets the value and
-the box visibly shows it, but this app's search inputs do not bind their model
-from it: clicking Search then re-requests the unfiltered list, and an assertion
-of "(1) Records Found" reads whatever the full list happens to be. That failure
-is especially misleading because the screenshot shows the text sitting in the
-box. `type_text()` sends real keystrokes and the model binds.
+    0 matches  ->  "No Records Found"
+    1 match    ->  "(1) Record Found"     <- SINGULAR. No "s".
+    N matches  ->  "(N) Records Found"
+
+An assertion of "(1) Records Found" can never pass. Assert on "(1) Record",
+which is a prefix of the singular form, or read the number out of the text and
+compare it numerically. Never count table rows.
+
+**Use `type_and_confirm()` on the search filters.** Two separate things go wrong
+here and only that helper survives both.
+
+`fill()` sets the value — the box visibly shows it — but the model never binds,
+so Search re-requests the unfiltered list. Real keystrokes do bind.
+
+The search panel can also be RE-RENDERED between the keystrokes and the Search
+click, emptying the field with nothing raising: the locator still resolves, the
+click still lands, the request goes out with no filter. Two tests typed the same
+username with the same helper in one run — one sent `?username=...`, the other
+sent nothing, purely on timing.
+
+`type_and_confirm()` reads the value back and escalates through three ways of
+entering it — type, click-then-type, then `fill` as a last resort — so one
+approach failing does not end the attempt. Order matters: reading a value back
+proves the FIELD holds it, not that the app's model bound to it, and `fill()`
+reads back perfectly while the model stays empty. The keystroke approaches,
+which do bind, are tried first.
 
 The list re-renders ASYNCHRONOUSLY after Search is clicked. Reading the
 summary immediately returns the PREVIOUS value — the unfiltered total — so an
