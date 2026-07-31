@@ -823,6 +823,25 @@ _INV = {
     }
 }
 
+# Same synthetic app, now with the family classification the inventory carries.
+_INV_MM = {
+    "pages": {
+        "widgets": {
+            "elements": {"add_button": "#add", "rows": ".row",
+                         "rows_first": ".row >> nth=0", "opt": ".opt",
+                         "cell": ".cell"},
+            "multi_match": ["rows", "opt"],
+        }
+    }
+}
+
+
+def _widgets_page(body: str):
+    return gf("pages/widgets_page.py",
+              "from pages.base_page import BasePage\n\n\n"
+              "class WidgetsPage(BasePage):\n"
+              "    INVENTORY_PAGE = \"widgets\"\n\n" + body)
+
 
 class TestPageObjectSelectors:
     """SCRUM-104: Agent 2 shipped a page object holding four raw CSS literals.
@@ -959,3 +978,151 @@ class TestPageObjectSelectors:
     def test_windows_paths_are_scanned_too(self, project_root: Path):
         page_obj = gf("pages\\widgets_page.py", 'SEL = ".row"')
         assert len(validate_page_object_selectors([page_obj], project_root, inventory=_INV)) == 1
+
+
+def _configured_inventory() -> dict:
+    """The inventory this checkout is pointed at, per config.yaml.
+
+    Read through the config rather than naming a file: these two assertions
+    are about THIS checkout's inventory, whichever app it holds, so swapping
+    the app under test must not break the framework's own suite.
+    """
+    import json
+    import yaml
+    repo = Path(__file__).resolve().parents[2]
+    cfg = yaml.safe_load((repo / "config" / "config.yaml").read_text(encoding="utf-8"))
+    rel = (cfg.get("app_under_test") or {}).get("inventory_file")
+    return json.loads((repo / rel).read_text(encoding="utf-8"))
+
+
+class TestMultiMatchEnforcement:
+    """SCRUM-104 again, one layer up.
+
+    The first fix stopped page objects inventing selectors. It did not stop
+    them using a legitimate inventory key that happens to match a whole family
+    - one option-family selector matched three options and Playwright's strict mode
+    raised on it. The inventory now says which keys are families; this makes
+    that machine-checkable instead of a prose note someone has to remember.
+    """
+
+    def test_clicking_a_family_key_is_rejected(self, project_root: Path):
+        errors = validate_page_object_selectors(
+            [_widgets_page("    def go(self) -> None:\n"
+                           "        self.click(self.sel('rows'))\n")],
+            project_root, inventory=_INV_MM)
+        assert len(errors) == 1
+        assert "multi_match" in errors[0]
+        assert "strict mode violation" in errors[0]
+
+    def test_waiting_on_a_family_key_is_rejected(self, project_root: Path):
+        errors = validate_page_object_selectors(
+            [_widgets_page("    def go(self) -> None:\n"
+                           "        self.wait_visible(self.sel('opt'))\n")],
+            project_root, inventory=_INV_MM)
+        assert len(errors) == 1
+
+    def test_the_error_names_an_existing_first_sibling(self, project_root: Path):
+        errors = validate_page_object_selectors(
+            [_widgets_page("    def go(self) -> None:\n"
+                           "        self.click(self.sel('rows'))\n")],
+            project_root, inventory=_INV_MM)
+        assert "rows_first" in errors[0]
+
+    def test_the_error_asks_for_one_when_it_is_missing(self, project_root: Path):
+        errors = validate_page_object_selectors(
+            [_widgets_page("    def go(self) -> None:\n"
+                           "        self.click(self.sel('opt'))\n")],
+            project_root, inventory=_INV_MM)
+        assert "add a 'opt_first' key" in errors[0]
+
+    @pytest.mark.parametrize("call", [
+        "return self.get_all_texts(self.sel('opt'))",
+        "return self.get_count(self.sel('rows'))",
+        "return self.exists(self.sel('rows'))",
+        "return self.get_nth_text(self.sel('opt'), 1)",
+        "return self.get_row_count(self.sel('rows'))",
+        "return self.find_row_index_by_text(self.sel('rows'), 'x')",
+        "return self.get_cell_text(self.sel('rows'), 0, self.sel('cell'))",
+    ])
+    def test_plural_reads_are_allowed(self, project_root: Path, call: str):
+        """A family selector is exactly what these helpers are for."""
+        assert validate_page_object_selectors(
+            [_widgets_page(f"    def go(self):\n        {call}\n")],
+            project_root, inventory=_INV_MM) == []
+
+    def test_the_first_sibling_is_allowed(self, project_root: Path):
+        assert validate_page_object_selectors(
+            [_widgets_page("    def go(self) -> None:\n"
+                           "        self.click(self.sel('rows_first'))\n")],
+            project_root, inventory=_INV_MM) == []
+
+    def test_a_single_key_is_untouched(self, project_root: Path):
+        assert validate_page_object_selectors(
+            [_widgets_page("    def go(self) -> None:\n"
+                           "        self.click(self.sel('add_button'))\n")],
+            project_root, inventory=_INV_MM) == []
+
+    def test_page_dot_locator_is_strict_too(self, project_root: Path):
+        """Reaching past BasePage does not escape strict mode."""
+        errors = validate_page_object_selectors(
+            [_widgets_page("    def go(self) -> None:\n"
+                           "        self.page.locator(self.sel('rows')).click()\n")],
+            project_root, inventory=_INV_MM)
+        assert len(errors) == 1
+
+    def test_composing_the_family_key_is_still_caught(self, project_root: Path):
+        """f-string narrowing is rule 13's problem and this one's too."""
+        errors = validate_page_object_selectors(
+            [_widgets_page('    def go(self) -> None:\n'
+                           '        self.click(f"{self.sel(\'rows\')} >> nth=0")\n')],
+            project_root, inventory=_INV_MM)
+        assert len(errors) == 1
+
+    def test_each_violation_is_reported_once(self, project_root: Path):
+        errors = validate_page_object_selectors(
+            [_widgets_page("    def a(self) -> None:\n"
+                           "        self.click(self.sel('rows'))\n\n"
+                           "    def b(self) -> None:\n"
+                           "        self.fill(self.sel('opt'), 'x')\n")],
+            project_root, inventory=_INV_MM)
+        assert len(errors) == 2
+
+    def test_a_key_held_in_a_variable_is_not_guessed_at(self, project_root: Path):
+        """Static tracing stops here on purpose - a false accusation would send
+        the repair loop rewriting correct code."""
+        assert validate_page_object_selectors(
+            [_widgets_page("    def go(self) -> None:\n"
+                           "        s = self.sel('rows')\n"
+                           "        self.click(s)\n")],
+            project_root, inventory=_INV_MM) == []
+
+    @pytest.mark.parametrize("mm", [None, "rows", 0, {}, [], ["ghost"]])
+    def test_absent_or_malformed_classification_is_a_no_op(self, project_root: Path, mm):
+        """An inventory that predates the field, or carries junk in it, must
+        keep working - never harden into a source of false failures."""
+        inv = {"pages": {"widgets": {"elements": {"rows": ".row"},
+                                     "multi_match": mm}}}
+        assert validate_page_object_selectors(
+            [_widgets_page("    def go(self) -> None:\n"
+                           "        self.click(self.sel('rows'))\n")],
+            project_root, inventory=inv) == []
+
+    def test_the_real_inventory_classifies_its_own_families(self):
+        """Every committed page that has a table or an options list should
+        declare it. Guards against a new page shipping unclassified."""
+        inv = _configured_inventory()
+        # Key names that are families in any app that uses them, by meaning.
+        known_families = ("table_rows", "dropdown_option", "autocomplete_option",
+                          "field_error", "side_menu_items", "list_items")
+        for page, entry in inv["pages"].items():
+            families = set(entry.get("multi_match") or [])
+            for key in entry["elements"]:
+                if key in known_families:
+                    assert key in families, f"{page}.{key} is a family but unlisted"
+
+    def test_every_declared_family_exists_as_an_element(self):
+        """A typo in multi_match would silently protect nothing."""
+        inv = _configured_inventory()
+        for page, entry in inv["pages"].items():
+            for key in entry.get("multi_match") or []:
+                assert key in entry["elements"], f"{page}.multi_match names unknown {key!r}"

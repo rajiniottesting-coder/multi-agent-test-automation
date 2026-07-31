@@ -625,6 +625,22 @@ _ERROR_PREFIX = "Selector inventory error"
 # actionable, few enough that the repair prompt does not drown in them.
 _MAX_KEYS_LISTED = 25
 
+# BasePage helpers that are SAFE against a selector matching many elements,
+# because they read or count the whole match set instead of asserting on one.
+# Everything else is treated as strict: Playwright raises "strict mode
+# violation: locator(...) resolved to N elements" the moment a locator that
+# matches 2+ nodes is clicked, filled, waited on or asserted against.
+#
+# A WHITELIST, deliberately - not a blacklist. A helper added to BasePage
+# tomorrow is strict until someone proves otherwise, which fails safe. The
+# table helpers are here because a row-family locator is exactly what they are
+# built to take.
+_PLURAL_SAFE_METHODS = frozenset({
+    "get_all_texts", "get_count", "exists", "get_nth_text",
+    "get_row_count", "get_column_values", "find_row_index_by_text",
+    "get_cell_text",
+})
+
 
 def _is_page_object_path(file_path: str) -> bool:
     """True for `pages/<something>_page.py`, excluding the base class.
@@ -699,6 +715,44 @@ def _sel_keys_used(class_node: ast.ClassDef) -> list[str]:
                 node.args[0].value, str):
             keys.append(node.args[0].value)
     return keys
+
+
+def _strict_uses_of_sel(class_node: ast.ClassDef) -> list[tuple[str, str, int]]:
+    """(sel_key, calling_method, lineno) for every self.sel() used STRICTLY.
+
+    A "strict use" is `self.<method>(... self.sel("<key>") ...)` where <method>
+    is not in _PLURAL_SAFE_METHODS. The outer call is what decides: the same
+    key is fine in get_all_texts() and fatal in click().
+
+    Only literal keys inside a call are reported. A key stashed in a variable
+    first, or built with an f-string, is not traced - a static guess there
+    would produce false accusations, and a false accusation sends the repair
+    loop rewriting correct code.
+    """
+    found: list[tuple[str, str, int]] = []
+    for outer in ast.walk(class_node):
+        if not isinstance(outer, ast.Call):
+            continue
+        func = outer.func
+        if not isinstance(func, ast.Attribute):
+            continue
+        method = func.attr
+        if method == "sel":                     # the sel() call itself
+            continue
+        for arg in list(outer.args) + [kw.value for kw in outer.keywords]:
+            for inner in ast.walk(arg):
+                if (isinstance(inner, ast.Call)
+                        and isinstance(inner.func, ast.Attribute)
+                        and inner.func.attr == "sel"
+                        and isinstance(inner.func.value, ast.Name)
+                        and inner.func.value.id in {"self", "cls"}
+                        and inner.args
+                        and isinstance(inner.args[0], ast.Constant)
+                        and isinstance(inner.args[0].value, str)):
+                    if method not in _PLURAL_SAFE_METHODS:
+                        found.append((inner.args[0].value, method,
+                                      getattr(outer, "lineno", 0)))
+    return found
 
 
 def validate_page_object_selectors(
@@ -802,6 +856,39 @@ def validate_page_object_selectors(
             page_entry = pages.get(inv_page) or {}
             elements = page_entry.get("elements")
             elements = elements if isinstance(elements, dict) else {}
+
+            # ── multi-match enforcement ──────────────────────────────
+            # `multi_match` lists the keys whose selector matches a FAMILY of
+            # elements (dropdown options, table rows, per-row icons, repeated
+            # field errors). Absent or malformed = unclassified page, and this
+            # check is a no-op, so an old inventory keeps working unchanged.
+            family = page_entry.get("multi_match")
+            family = set(family) if isinstance(family, (list, tuple, set)) else set()
+            if family:
+                for key, method, lineno in _strict_uses_of_sel(node):
+                    if key not in family:
+                        continue
+                    first_key = f"{key}_first"
+                    if first_key in elements:
+                        remedy = (f"use self.sel('{first_key}') for the single "
+                                  f"element")
+                    else:
+                        remedy = (f"add a '{first_key}' key pinned with "
+                                  f"'>> nth=0' to the inventory, or address the "
+                                  f"one element you want by role and name")
+                    errors.append(
+                        f"{_ERROR_PREFIX} in '{path}' line {lineno}: "
+                        f"{node.name}.{method}() is called with "
+                        f"self.sel('{key}'), but '{key}' is listed under "
+                        f"multi_match on inventory page '{inv_page}' - its "
+                        f"selector matches SEVERAL elements. Playwright is "
+                        f"strict, so this raises 'strict mode violation: "
+                        f"locator(...) resolved to N elements' at runtime. "
+                        f"Either {remedy}, or, if you meant the whole set, "
+                        f"read it with one of: "
+                        f"{', '.join(sorted(_PLURAL_SAFE_METHODS))}."
+                    )
+
             for key in sel_keys:
                 if key in elements:
                     continue

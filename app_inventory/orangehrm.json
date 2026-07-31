@@ -40,6 +40,8 @@
         "username_field_error": ".oxd-input-group:has-text('Username') .oxd-input-field-error-message",
         "password_field_error": ".oxd-input-group:has-text('Password') .oxd-input-field-error-message"
       },
+      "multi_match": ["field_error"],
+      "multi_match_note": "Keys whose selector matches SEVERAL elements. Read them with get_all_texts / get_count / get_nth_text / the table helpers; never click, fill, wait on or assert against them - Playwright is strict and raises 'resolved to N elements'. A `<key>_first` sibling, where present, is the same selector pinned with '>> nth=0'. Enforced by validators/method_resolution_validator.py at generation time.",
       "elements_notes": {
         "error_banner": "Shown for WRONG credentials. Text is exactly 'Invalid credentials' — the app does not say which field was wrong, deliberately.",
         "field_error": "MATCHES EVERY field error on the page. Use ONLY for counting or for 'is any error shown' checks - never with a visibility assertion, which raises a Playwright strict mode violation when two fields are empty. For a single field use username_field_error / password_field_error; for 'the first one' use field_error_first.",
@@ -77,6 +79,8 @@
         "search_menu_input": "input[placeholder='Search']",
         "logout_link": "role=menuitem[name='Logout']"
       },
+      "multi_match": ["side_menu_items"],
+      "multi_match_note": "Keys whose selector matches SEVERAL elements. Read them with get_all_texts / get_count / get_nth_text / the table helpers; never click, fill, wait on or assert against them - Playwright is strict and raises 'resolved to N elements'. A `<key>_first` sibling, where present, is the same selector pinned with '>> nth=0'. Enforced by validators/method_resolution_validator.py at generation time.",
       "elements_notes": {
         "header_title": "Breadcrumb heading. Reads 'Dashboard' here and the module name elsewhere — the cheapest proof that login succeeded.",
         "logout_link": "Only rendered AFTER user_dropdown is clicked. A crawler cannot see it; it is listed here from manual review."
@@ -152,6 +156,8 @@
         "delete_cancel_button": ".oxd-dialog-container-default button:has-text('No, Cancel')",
         "toast": "#oxd-toaster_1"
       },
+      "multi_match": ["table_rows", "row_delete_icon"],
+      "multi_match_note": "Keys whose selector matches SEVERAL elements. Read them with get_all_texts / get_count / get_nth_text / the table helpers; never click, fill, wait on or assert against them - Playwright is strict and raises 'resolved to N elements'. A `<key>_first` sibling, where present, is the same selector pinned with '>> nth=0'. Enforced by validators/method_resolution_validator.py at generation time.",
       "elements_notes": {
         "add_button": "OrangeHRM pads button labels with spaces - the accessible name is ' Add ', not 'Add'. Matching on 'Add' alone will not resolve.",
         "UNVERIFIED_2026_07_31": "row_username_cell, row_delete_icon, delete_dialog, delete_confirm_button and delete_cancel_button were added by hand for the user-lifecycle story (SCRUM-104) and are NOT crawler output. VERIFY the first two with `python -m scripts.verify_locators --url '/web/index.php/admin/viewSystemUsers'` before trusting them. The three delete_* entries CANNOT be verified that way and were never exercised by a passing test - the dialog exists only after the trash icon is clicked, which is exactly why the crawler never saw it. Confirm the two button labels ('Yes, Delete' / 'No, Cancel') against the live app.",
@@ -192,6 +198,7 @@
         "save_button": "role=button[name=' Save ']",
         "cancel_button": "role=button[name=' Cancel ']",
         "field_error": ".oxd-input-field-error-message",
+        "field_error_first": ".oxd-input-field-error-message >> nth=0",
         "password_strength_hint": ".oxd-text--subtitle-2",
         "dropdown_option": ".oxd-select-option",
         "autocomplete_option": ".oxd-autocomplete-option",
@@ -199,9 +206,12 @@
         "password_field_error": ".oxd-input-group:has-text('Password') .oxd-input-field-error-message >> nth=0",
         "confirm_password_field_error": ".oxd-input-group:has-text('Confirm Password') .oxd-input-field-error-message"
       },
+      "multi_match": ["field_error", "dropdown_option", "autocomplete_option"],
+      "multi_match_note": "Keys whose selector matches SEVERAL elements. Read them with get_all_texts / get_count / get_nth_text / the table helpers; never click, fill, wait on or assert against them - Playwright is strict and raises 'resolved to N elements'. A `<key>_first` sibling, where present, is the same selector pinned with '>> nth=0'. Enforced by validators/method_resolution_validator.py at generation time.",
       "elements_notes": {
         "SELECTORS_REPLACED": "The crawl produced 12-level css paths for every form field (#app > div:nth-of-type(1) > ...) because Angular renders these inputs with no name or id. Those break on any layout change and were replaced with label-anchored selectors. VERIFY with `python -m scripts.verify_locators --url '/web/index.php/admin/saveSystemUser'` before relying on them.",
-        "field_error": "THE KEY ELEMENT FOR VALIDATION TESTS, and the crawler never saw it - it renders only after a field is touched and left invalid. Messages appear AS YOU TYPE, not on Save, so a test must assert after filling the field, not after submitting the form. MATCHES EVERY field error on the page: use only for counting or 'is any error shown'. For per-field assertions use password_field_error / confirm_password_field_error.",
+        "field_error": "THE KEY ELEMENT FOR VALIDATION TESTS, and the crawler never saw it - it renders only after a field is touched and left invalid. Messages appear AS YOU TYPE, not on Save, so a test must assert after filling the field, not after submitting the form. MATCHES EVERY field error on the page: use only for counting or 'is any error shown'. For per-field assertions use password_field_error / confirm_password_field_error; for 'the first one' use field_error_first. This form has FIVE required fields, so an empty submit renders five messages at once - a visibility assertion on the generic key is a strict mode violation.",
+        "field_error_first": "The generic field_error narrowed to one element with '>> nth=0'. Safe with wait_visible. Order-dependent: nth follows DOM order, which is the field order on the form.",
         "password_input": "Password and Confirm Password are both bare `input[type='password']` in DOM order. nth=0/nth=1 is positional and would break if the form gained another password field - acceptable here because the form is fixed, but worth re-checking after an OrangeHRM upgrade.",
         "user_role_select": "Custom ARIA dropdown, NOT a <select>: `select_option()` will not work. Use `select_custom_option(self.sel('user_role_select'), '<option text>')` from BasePage - it clicks the trigger and then picks the one option by accessible name. DO NOT click or wait on `dropdown_option`: it matches EVERY option in the list, and Playwright runs strict, so both `click()` and `wait_visible()` raise 'strict mode violation ... resolved to 3 elements'. That is exactly how SCRUM-104 failed on 31 Jul 2026.",
         "status_select": "Same custom ARIA dropdown as user_role_select. Use `select_custom_option(self.sel('status_select'), '<option text>')`.",
@@ -257,6 +267,8 @@
         "dropdown_option": ".oxd-select-option",
         "toast": "#oxd-toaster_1"
       },
+      "multi_match": ["table_rows", "dropdown_option"],
+      "multi_match_note": "Keys whose selector matches SEVERAL elements. Read them with get_all_texts / get_count / get_nth_text / the table helpers; never click, fill, wait on or assert against them - Playwright is strict and raises 'resolved to N elements'. A `<key>_first` sibling, where present, is the same selector pinned with '>> nth=0'. Enforced by validators/method_resolution_validator.py at generation time.",
       "elements_notes": {
         "filters": "Every *_select here is a custom ARIA dropdown, not a <select>. Use `select_custom_option(self.sel('<the>_select'), '<option text>')`. Do NOT click or wait on `dropdown_option` - it matches every option at once and Playwright's strict mode raises on it. Same rule and same reason as admin_add_user.",
         "dropdown_option": "MULTI-MATCH - the whole option family. Read or count it; never click or wait on it directly. Choose one with `select_custom_option(trigger, text)`.",

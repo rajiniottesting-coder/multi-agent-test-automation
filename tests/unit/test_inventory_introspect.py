@@ -570,3 +570,67 @@ def test_collision_still_reported_after_disambiguation():
     ]
     page = build_page_entry("https://x.com/", "X", descriptors, "https://x.com")
     assert "role=link[name='Canada']" in page["_ambiguous_selectors"]["selectors"]
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# multi_match emission
+#
+# The generator already knew which entries stood for a FAMILY of elements,
+# but only said so in `_ambiguous_selectors` / `family_members_seen` — draft
+# aids that are stripped during curation. Agent 2 therefore read an inventory
+# with the classification removed, and SCRUM-104 clicked a selector matching
+# three dropdown options. This is now a first-class field that survives.
+# ─────────────────────────────────────────────────────────────────────────
+
+def test_collapsed_family_is_reported_as_multi_match():
+    descs = [
+        {"tag": "button", "attrs": {"data-test": "buy-item-backpack"}, "text": "Buy"},
+        {"tag": "button", "attrs": {"data-test": "buy-item-bikelight"}, "text": "Buy"},
+        {"tag": "input", "attrs": {"data-test": "search"}, "text": ""},
+    ]
+    entry = build_page_entry("https://x.test/items", "Items", descs, "https://x.test")
+    assert entry["multi_match"], "the collapsed family must be declared"
+    fam = entry["multi_match"][0]
+    assert "^=" in entry["elements"][fam], "a prefix selector is a family by construction"
+    assert "search_input" not in entry["multi_match"], "a singleton is not a family"
+
+
+def test_multi_match_is_present_even_when_empty():
+    """A stable key means curation cannot silently drop the concept."""
+    entry = build_page_entry("https://x.test/p", "P",
+                             [{"tag": "input", "attrs": {"data-test": "only"}, "text": ""}],
+                             "https://x.test")
+    assert entry["multi_match"] == []
+    assert "multi_match_note" in entry
+
+
+def test_multi_match_is_not_a_draft_only_field():
+    """`_`-prefixed fields get stripped at curation; this one must not be."""
+    entry = build_page_entry("https://x.test/p", "P", [], "https://x.test")
+    assert not any(k.startswith("_") for k in ("multi_match", "multi_match_note"))
+    assert "multi_match" in entry
+
+
+def test_disambiguated_duplicates_are_not_families():
+    """Two links reading the same thing get `>> nth=N` and each resolves to
+    one element — accidental duplication, not an intentional family."""
+    descs = [
+        {"tag": "a", "attrs": {}, "text": "Canada"},
+        {"tag": "a", "attrs": {}, "text": "Canada"},
+    ]
+    entry = build_page_entry("https://x.test/p", "P", descs, "https://x.test")
+    assert entry["multi_match"] == []
+    assert any(">> nth=" in s for s in entry["elements"].values())
+
+
+def test_numeric_members_are_pinned_not_collapsed():
+    """buy-item-101 / -202 anchor to the same prefix, so each is disambiguated
+    with  and resolves to ONE element. Pinned duplicates are not a
+    family - only a key that stands for the whole set is."""
+    descs = [
+        {"tag": "button", "attrs": {"data-test": "buy-item-101"}, "text": "Buy"},
+        {"tag": "button", "attrs": {"data-test": "buy-item-202"}, "text": "Buy"},
+    ]
+    entry = build_page_entry("https://x.test/i", "I", descs, "https://x.test")
+    assert entry["multi_match"] == []
+    assert all(">> nth=" in s for s in entry["elements"].values())

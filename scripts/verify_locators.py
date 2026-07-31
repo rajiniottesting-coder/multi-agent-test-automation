@@ -201,6 +201,9 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
                  if isinstance(s, str) and n != "_selector_strategies"}
     print(f"\n  [{page_name}] {url}  -  {len(selectors)} element(s)")
     ok = bad = 0
+    declared_family = set(entry.get("multi_match") or [])
+    measured_family: list[tuple[str, int]] = []
+
     for name, sel in selectors.items():
         try:
             count = _resolve_one(page, sel).count()
@@ -216,6 +219,7 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
         elif count > 1:
             bad += 1
             status, colour = f"AMBIG({count})", "#f59e0b"
+            measured_family.append((name, count))
         else:
             bad += 1
             status, colour = "ERROR", "#ef4444"
@@ -235,6 +239,33 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
     # page never loaded (wrong base_url, unreachable, redirected to a login or
     # consent wall). Saying so beats printing N STALE lines that read as if the
     # inventory rotted overnight.
+    # Turn the counts into a multi_match SUGGESTION. Deliberately printed, not
+    # written: a page is measured in one state, and a dropdown that happens to
+    # be closed resolves to 0 or 1. Auto-editing the inventory from that would
+    # silently UNCLASSIFY a real family, which is worse than not classifying it
+    # at all. The human applies it; the tool only has to notice.
+    unlisted = [(n, c) for n, c in measured_family if n not in declared_family]
+    if unlisted:
+        print(f"\n    multi_match SUGGESTION for [{page_name}] - "
+              f"{len(unlisted)} key(s) matched >1 element but are not listed:")
+        for n, c in unlisted:
+            print(f"      {n:28} matched {c} elements")
+        merged = sorted(declared_family | {n for n, _ in unlisted})
+        print('      paste into the page entry:')
+        print('        "multi_match": ['
+              + ", ".join(f'"{n}"' for n in merged) + '],')
+        print("      and give each one a `<key>_first` sibling "
+              "('<selector> >> nth=0') if a test needs a single element.")
+
+    # A declared family that measured 1 is NOT an error: a closed dropdown or an
+    # unsubmitted form legitimately renders one member or none. Say so quietly
+    # rather than inviting someone to delete a correct classification.
+    thin = sorted(declared_family - {n for n, _ in measured_family})
+    if thin:
+        print(f"\n    note: declared multi_match not multiple right now "
+              f"({', '.join(thin)}) - expected when the widget is closed or the "
+              f"form is unsubmitted. Do NOT remove them on this evidence alone.")
+
     if selectors and ok == 0 and bad == len(selectors):
         print(f"    ^ ALL {bad} selectors stale - the page almost certainly did not "
               f"load as expected.\n"

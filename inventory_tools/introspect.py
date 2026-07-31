@@ -549,8 +549,10 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
 
     # Selectors emitted for MORE THAN ONE element. Playwright runs locators in
     # strict mode by default, so a selector matching several elements raises
-    # "strict mode violation: locator resolved to N elements" at runtime — even
-    # though a staleness check (which only looks for ZERO matches) passes it.
+    # "strict mode violation: locator resolved to N elements" at runtime.
+    # diff_page() does now count these as drift, so `check` catches them on a
+    # committed inventory — this block is what catches them at generate time,
+    # before anyone commits.
     # Names are de-duplicated above, but two different elements can still rank
     # to the same weak selector, so this must be detected separately.
     _by_selector: dict[str, list[str]] = {}
@@ -581,6 +583,17 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
             _seen[sel] = idx + 1
 
 
+    # Families the machine can prove: a collapsed prefix entry stands for
+    # several real elements by construction. Emitted as a FIRST-CLASS field,
+    # not a `_`-prefixed draft aid, because the draft aids get stripped during
+    # curation and this fact has to survive into the file Agent 2 reads — a
+    # generation-time validator enforces it there. Hand-added family keys
+    # (dropdown options, dialog buttons: anything a crawler never sees because
+    # it never clicks) must be appended here by hand; `verify_locators` reports
+    # which ones by counting live matches.
+    multi_match = sorted(n for n, e in elements.items()
+                         if e.get("family_members_seen"))
+
     clean_elements = {n: e["selector"] for n, e in elements.items()}
     pof, poc = guess_page_object(path)
     entry = {
@@ -589,6 +602,15 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
         "page_object_file": f"{pof} (AUTO-DRAFT — verify)",
         "page_object_class": poc,
         "elements": clean_elements,
+        "multi_match": multi_match,  # KEEP through curation - it is enforced
+        "multi_match_note": (
+            "Keys whose selector matches SEVERAL elements. Read them with "
+            "get_all_texts / get_count / get_nth_text / the table helpers; "
+            "never click, fill, wait on or assert against them. A `<key>_first` "
+            "sibling, where present, is the same selector pinned '>> nth=0'. "
+            "ADD any hand-written family key here - a crawler never clicks, so "
+            "options and dialog contents are not in this list yet."
+        ),
         "_selector_strategies": strategies,  # draft aid; delete after review
         "elements_notes": {},   # STUB — fill behavioral quirks by hand
         "key_methods": [],      # STUB — fill intended page-object API by hand
