@@ -489,6 +489,101 @@ class BasePage:
         self._locator(trigger_locator).click()
         self.page.get_by_role("option", name=option_text).click()
 
+    def select_autocomplete_suggestion(
+        self,
+        input_locator: str,
+        option_locator: str,
+        query: str,
+        *,
+        placeholder: str = "",
+        empty_text: str = "",
+        timeout_ms: Optional[int] = None,
+    ) -> str:
+        """Type `query`, wait for a REAL suggestion, click it, return its text.
+
+        The whole async-autocomplete dance in one call, because splitting it
+        up is how it keeps going wrong. A suggestion list is populated by a
+        request, and many apps render a transient placeholder row the instant
+        you type. That row is a real member of the
+        option family, so every naive approach picks it:
+
+            wait for the first option    -> satisfied by the placeholder
+            click option nth=0           -> clicks the placeholder
+            wait for networkidle         -> a heuristic; races the render
+
+        and selecting the placeholder selects NOTHING, which typically leaves
+        the field invalid and the form silently unsubmittable - so the test
+        fails several steps later on a missing confirmation rather than here.
+
+        This waits for the placeholder to GO, then picks the first entry that
+        is actually a suggestion, and clicks it by exact text.
+
+        Args:
+            input_locator:  the text field to type into
+            option_locator: the suggestion FAMILY selector (matches all rows)
+            query:          what to type - long enough to match something
+            placeholder:    text of the transient loading row, from the app
+                            inventory. Pass "" if the app has none.
+            empty_text:     the app's "nothing matched" row, e.g. "No Records
+                            Found". It is a real element in the family and
+                            would otherwise be clicked as though it were a
+                            result, so it is reported as a failure instead.
+            timeout_ms:     defaults to browser.timeout from config.
+
+        Returns:
+            The text of the suggestion that was clicked, so a caller can
+            assert on it or reuse it.
+
+        Raises:
+            AssertionError: naming the query AND every row that did render,
+            because "no suggestion appeared" on its own tells you nothing
+            about whether the request failed, returned nothing, or is still
+            showing the placeholder.
+        """
+        self.clear(input_locator)
+        # Real keystrokes: many autocompletes listen for key events and never
+        # fire their request when the value is set directly.
+        self.type_text(input_locator, query)
+
+        # The list opening at all is the first signal. The placeholder counts.
+        self.wait_visible(f"{option_locator} >> nth=0", timeout_ms=timeout_ms)
+
+        if placeholder:
+            # Passes immediately if the placeholder never rendered, which is
+            # the correct behaviour for an app that has none or a cached list.
+            self.wait_hidden(f"{option_locator} >> text={placeholder}",
+                             timeout_ms=timeout_ms)
+
+        rendered = [t.strip() for t in self.get_all_texts(option_locator)]
+
+        if empty_text and any(empty_text.lower() in t.lower() for t in rendered):
+            raise AssertionError(
+                f"The app reported {empty_text!r} for {query!r}. The query "
+                f"matched no record - this is the application's empty state, "
+                f"not a timing problem. Use a query that matches existing data."
+            )
+
+        def _noise(text: str) -> bool:
+            return bool(
+                (placeholder and placeholder.lower() in text.lower())
+                or (empty_text and empty_text.lower() in text.lower())
+            )
+
+        real = [t for t in rendered if t and not _noise(t)]
+        if not real:
+            raise AssertionError(
+                f"No real suggestion for {query!r} in {input_locator!r}. "
+                f"Rows rendered: {rendered!r}. Either the query matches "
+                f"nothing, or it is too short for the app to fire its request."
+            )
+
+        chosen = real[0]
+        # Exact text match, scoped to the family: quoting makes Playwright
+        # match the whole string rather than a substring, so a suggestion
+        # that is a prefix of another cannot be picked by mistake.
+        self.click(f'{option_locator} >> text="{chosen}"')
+        return chosen
+
     # ============================================================
     # Hover and menus
     # ============================================================

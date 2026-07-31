@@ -105,9 +105,10 @@ If the diff contains `parsers.re(r'... "(?P<x>[^"]*)" ...')` and scenarios use e
 ## 2. Selector source and style (BLOCKING for a selector violation, MAJOR otherwise)
 - **Selectors live in the APP INVENTORY, not in code (BLOCKING).** A page object resolves every selector with `self.sel("<key>")`, where the key is an element on its `INVENTORY_PAGE`. A step definition never touches a selector at all. Therefore BOTH of these are blocking:
   - a raw selector string in a **step definition** (bypasses the page object entirely)
-  - a raw selector string in a **page object** — e.g. `ROW_DELETE_ICON = ".oxd-table-card .oxd-icon"`, `page.click("[data-test='x']")`, `role=button[name='…']` assigned to a constant
+  - a raw selector string in a **page object** — e.g. `ROW_DELETE_ICON = ".result-row .trash-icon"`, `page.click("[data-test='x']")`, `role=button[name='…']` assigned to a constant
   Do NOT downgrade the second one to a minor or a best-practice note, and do NOT accept a docstring or comment that calls it a temporary fallback, a "BASEPAGE-REQUEST", or a pending inventory migration. **There is no sanctioned fallback.** `tests/unit/test_page_object_selectors.py` fails the build on any such literal, so a PR carrying one cannot go green. The correct fix is always: add the element to the app inventory and call `self.sel("<key>")`.
 - A page-object class that calls `self.sel(...)` must declare `INVENTORY_PAGE`.
+- **Do NOT speculate about BasePage. `pages/base_page.py` is NOT in your diff — it is an existing, reviewed file with ~70 helpers.** Never raise a finding of the form "verify this helper exists", "this method may not exist on BasePage", or "the reference page object uses a different helper, use that instead". Those are guesses about a file you cannot see, they are almost always wrong, and a blocking or major finding built on one costs a review cycle for nothing. If a helper genuinely does not exist the run fails at import or attribute access, which is Agent 4's job to report, not yours. Review what the diff contains.
 - Imports order
 - Naming conventions
 - Type hints on new functions

@@ -57,16 +57,31 @@ the field `Invalid` — after which Save is refused client-side with no request
 sent and no toast, so the test dies several steps later on a missing
 confirmation. WAIT FOR `Searching....` TO DISAPPEAR before reading the list.
 
-The correct sequence is: type a 2+ character prefix, wait until the suggestion
-list contains an entry that is NOT `Searching....`, then click that entry by
-its text. Do not hard-code a full employee name — records on this environment
+Do not hand-roll that sequence. `BasePage.select_autocomplete_suggestion()`
+does the whole thing in one call — type, wait for the loading row to go, click
+the first real suggestion, return its text:
+
+    self.select_autocomplete_suggestion(
+        self.sel("employee_name_input"),
+        self.sel("autocomplete_option"),
+        "pet",
+        placeholder="Searching",
+        empty_text="No Records Found",
+    )
+
+Every hand-rolled version so far has selected the placeholder — via `nth=0`,
+via "the first suggestion", via a `networkidle` heuristic. Use the helper. Do
+not hard-code a full employee name — records on this environment
 change constantly, and a name that exists today may not tomorrow. Take
 whichever real suggestion the prefix returns.
 
-This is the only acceptable dependency on data the test does not own. If no
-real suggestion appears for the prefix, fail with a message naming the prefix
-and the texts that WERE rendered — a silent "no suggestion" tells the next
-reader nothing.
+This is the only acceptable dependency on data the test does not own. The
+helper already fails with the prefix and every row that rendered, and reports
+`No Records Found` as the application's empty state rather than a timing
+problem — so a bad prefix is distinguishable from a broken wait.
+
+A prefix known to work on 31 Jul 2026 is `pet`, returning `Peter Mac Anderson`.
+Verify by hand before relying on it; employee records change here.
 
 ## Search results and empty state
 
