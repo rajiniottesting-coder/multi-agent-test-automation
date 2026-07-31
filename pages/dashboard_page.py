@@ -70,3 +70,14 @@ class DashboardPage(BasePage):
         """
         self.open_user_menu()
         self.click(self.sel("logout_link"))
+
+    def go_to_admin(self) -> None:
+        """Navigate to the Admin module via the left-hand menu.
+
+        The Admin link lives on the always-injected side menu (see
+        `pages.menu` in the inventory), which is reachable from every
+        authenticated page including this dashboard. Waiting for the menu
+        items keeps the click safe on the freshly-rendered SPA landing page.
+        """
+        self.wait_visible(self.sel("side_menu_items"))
+        self.click_role("link", "Admin")
