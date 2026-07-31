@@ -45,10 +45,12 @@ match**. An empty required field shows **Required**.
 Creating a system user REQUIRES linking an existing employee, and the Employee
 Name field is an autocomplete. Two facts about it, both learned the hard way:
 
-**It needs 2+ characters.** One letter fires no request at all, so no
-suggestion ever renders. Three characters that match nothing ("adm" — Admin is
-a ROLE, not an employee) render "No Records Found". Use a 2-3 character prefix
-of a real surname or forename.
+**Query length is not the problem — the placeholder is.** A single letter DOES
+fire the request (verified: `GET /api/v2/pim/employees?nameOrId=a`) and does
+return suggestions; it just returns a long, slow, arbitrary list. Prefer 2-3
+characters for a shorter and more predictable one. What matters far more is
+that the prefix matches something: "adm" returns "No Records Found", because
+Admin is a user ROLE, not an employee name.
 
 **It renders `Searching....` first.** That placeholder is a real row in the
 suggestion list, and it appears IMMEDIATELY. Any code that waits for "the
@@ -88,6 +90,13 @@ Verify by hand before relying on it; employee records change here.
 The results summary text shows "(N) Records Found" when matches exist and
 "No Records Found" when none do. Zero-result assertions must read this
 text — never count table rows.
+
+**Type into the search filters, do not fill them.** `fill()` sets the value and
+the box visibly shows it, but this app's search inputs do not bind their model
+from it: clicking Search then re-requests the unfiltered list, and an assertion
+of "(1) Records Found" reads whatever the full list happens to be. That failure
+is especially misleading because the screenshot shows the text sitting in the
+box. `type_text()` sends real keystrokes and the model binds.
 
 The list re-renders ASYNCHRONOUSLY after Search is clicked. Reading the
 summary immediately returns the PREVIOUS value — the unfiltered total — so an
