@@ -41,6 +41,24 @@ def menu_page(page):
 
 # === Credentials ===
 
+def _configured_roles() -> str:
+    """Role names the environment currently defines, for error messages.
+
+    Read from APP_USER_* at call time rather than hard-coded, so the message
+    can never drift from the app under test the way a literal list does.
+    Blank-valued variables are ignored: CI exports an empty string for a
+    secret that was never set, and reporting that as an available role would
+    send someone hunting for a credential that does not exist.
+    """
+    prefix = "APP_USER_"
+    roles = sorted(
+        name[len(prefix):].lower()
+        for name, value in os.environ.items()
+        if name.startswith(prefix) and len(name) > len(prefix) and value.strip()
+    )
+    return ", ".join(roles) if roles else "(none - no APP_USER_* variable is set)"
+
+
 @pytest.fixture(scope="session")
 def run_id():
     """Short identifier unique to this test run.
@@ -73,20 +91,36 @@ def unique_username(run_id, request):
 def credentials():
     """Resolve a role name to (username, password) from the environment.
 
-    For role "standard":
-        username -> APP_USER_STANDARD
-        password -> APP_PASSWORD_STANDARD, else APP_PASSWORD
+    The lookup is derived from the role's own name, so no role is named here:
+
+        role "<name>"  ->  username  APP_USER_<NAME>
+                       ->  password  APP_PASSWORD_<NAME>, else APP_PASSWORD
+
+    Whichever APP_USER_* variables the environment defines ARE the roles this
+    suite has. That is what keeps this shared file application-agnostic:
+    onboarding a different app means editing .env and the CI secrets, never
+    this fixture.
     """
     def _for(role: str) -> tuple[str, str]:
         key = role.strip().upper().replace("-", "_").replace(" ", "_")
+        if not key:
+            # An empty role reaches here when a feature file writes
+            # 'I log in as ""' or the step regex captured nothing. Say that,
+            # rather than reporting a missing APP_USER_ variable that no one
+            # was ever meant to set.
+            raise RuntimeError(
+                "Empty login role. The scenario must name a role, e.g. "
+                "'When I log in as \"admin\"'."
+            )
         user = os.getenv(f"APP_USER_{key}")
         if not user:
             raise RuntimeError(
                 f"No credential configured for login role '{role}'. Roles are "
-                f"LOGIN IDENTITIES (standard, locked_out, admin) - not pages or "
-                f"Jira components. If '{role}' is a real role, set APP_USER_{key} "
-                f"in .env (local) or GitHub Secrets (CI). If it is not a role, "
-                f"fix the feature file instead."
+                f"LOGIN IDENTITIES - not pages, not Jira components. "
+                f"Configured right now: {_configured_roles()}. If '{role}' is a "
+                f"real role, set APP_USER_{key} in .env (local) or GitHub "
+                f"Secrets (CI). If it is not a role, fix the feature file "
+                f"instead."
             )
         password = os.getenv(f"APP_PASSWORD_{key}") or os.getenv("APP_PASSWORD")
         if not password:
@@ -104,8 +138,8 @@ def credentials():
 #
 # Every page object gets a fixture named after its class, in snake_case:
 #
-#     LoginPage      ->  login_page
-#     AdminAddUserPage  ->  admin_add_user_page
+#     LoginPage           ->  login_page
+#     SearchResultsPage   ->  search_results_page
 #
 # That convention was already being followed by hand for every fixture above.
 # Registering it here means a NEW page object landing in pages/ gets its
@@ -130,7 +164,7 @@ _RESERVED_FIXTURE_NAMES = frozenset({
 
 
 def _snake_case(name: str) -> str:
-    """AdminAddUserPage -> admin_add_user_page."""
+    """SearchResultsPage -> search_results_page."""
     return re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()
 
 

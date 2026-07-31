@@ -31,7 +31,26 @@
 #
 # WHEN THIS RUNS:
 #   - PR opened, synchronized (new commits), or reopened
+#   - Push to main touching FRAMEWORK code (see `paths` below). Runs the
+#     unit-test gate ONLY: no browsers, no E2E, no Jira.
 #   - Manual trigger via Actions tab → workflow_dispatch
+#
+# WHY THE PUSH TRIGGER EXISTS:
+#   The framework's own unit tests used to run only as a step inside this
+#   workflow's `pull_request` path. A framework change pushed to main
+#   therefore fired NOTHING: its first execution was whenever the next agent
+#   PR happened to open — by which point it was already merged and already
+#   generating code — and a failure showed up as a red check on an unrelated
+#   auto/SCRUM-nn story PR, blaming the wrong change.
+#
+# EVENT MATRIX:
+#   step / job            pull_request   push (main)   workflow_dispatch
+#   unit-test gate             yes           yes             yes
+#   Chromium install           yes            -              yes
+#   app E2E tests              yes            -              yes
+#   report artifact            yes            -              yes
+#   job summary                yes           yes             yes
+#   Agent 5 -> Jira            yes            -               -
 # ─────────────────────────────────────────────────────────────
 
 name: Agent 4 - Runner
@@ -42,11 +61,48 @@ on:
       - opened
       - synchronize
       - reopened
+
+  # Framework self-test gate.
+  #
+  # `paths` is declared ONLY under push, deliberately. The same filter on
+  # `pull_request` would SKIP Agent 4 on story PRs, because those touch
+  # features/, tests/step_defs/ and generated pages/*_page.py — none of
+  # which appear below. Generated page objects are excluded on purpose:
+  # only pages/base_page.py is watched, and path policy makes it a reserved
+  # file no agent may write. So merging a story PR cannot re-fire this build.
+  push:
+    branches: [main]
+    paths:
+      - 'agents/**'
+      - 'core/**'
+      - 'validators/**'
+      - 'integrations/**'
+      - 'config/**'
+      - 'inventory_tools/**'
+      - 'scripts/**'
+      - 'tests/unit/**'
+      - 'pages/base_page.py'
+      - 'requirements.txt'
+      - 'pytest.ini'
+      - '.github/workflows/agent4_runner.yml'
+
   workflow_dispatch: {}  # allow manual triggering from Actions tab
 
 permissions:
   contents: read
   pull-requests: write   # Agent 5 may need to read PR metadata
+
+# Serialise runs per PR (or per branch on push).
+#
+# cancel-in-progress is TRUE ONLY for push: superseding a main build costs
+# nothing. On pull_request it is FALSE on purpose — a cancelled run has no
+# settled conclusion, and scripts/sweep_stalled_prs.py treats "no settled run
+# for this SHA" as a stalled PR and reopens it to re-fire the event chain.
+# Cancelling story runs would manufacture exactly the condition the sweeper
+# is built to repair.
+concurrency:
+  group: agent4-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
   # ─────────────────────────────────────────────────────────────
@@ -81,6 +137,9 @@ jobs:
         # to download. Caching it between runs saves significant CI time.
         # Cache key includes OS and requirements.txt hash — if either changes,
         # we re-download (e.g., a new Playwright version may need a new binary).
+        # Skipped on push: the unit gate needs the playwright PACKAGE (already
+        # installed from requirements.txt), never the browser BINARY.
+        if: github.event_name != 'push'
         id: playwright-cache
         uses: actions/cache@v4
         with:
@@ -91,15 +150,26 @@ jobs:
         # `--with-deps` installs the OS-level libs Chromium needs (libnss, etc.).
         # The browser binary itself is restored from cache when the key matches.
         # OS-level apt packages are NOT cached and need to be reinstalled fresh.
+        # Skipped on push — saves ~2-3 min on every framework commit.
+        if: github.event_name != 'push'
         run: playwright install --with-deps chromium
 
       - name: Framework self-test (unit tests)
-        # Runs the framework's own 123 unit tests FIRST as a gate. If the
+        # Runs the framework's own unit tests FIRST as a gate. If the
         # framework itself is broken, the generated code's trustworthiness is
         # already in question, so we fail fast before running app E2E tests.
         # Written to a SEPARATE junit file so it never mixes into the story
         # report (Agent 5 only reports the app tests below).
+        #
+        # On push this step IS the job — every step after it is skipped.
+        # Deliberately NOT `if: always()`: a failure here must fail the run.
+        # No `env:` block, and none is needed — these tests touch no secret,
+        # which is what makes the push path safe to run without any.
+        #
+        # `mkdir -p reports` because reports/ is gitignored and therefore
+        # absent from a fresh checkout.
         run: |
+          mkdir -p reports
           pytest tests/unit/ \
             --junit-xml=reports/junit-unit.xml \
             -v
@@ -110,7 +180,10 @@ jobs:
         # This junit.xml contains ONLY the app-under-test E2E results — it's
         # what Agent 5 reads and reports to the Jira story, so the story's
         # test counts reflect the feature, not framework internals.
-        if: always()  # run app tests even if unit gate failed, so we still get E2E signal
+        # always() so a failed unit gate still yields E2E signal on a PR.
+        # Never on push: no browser is installed, and the app secrets this
+        # step needs are irrelevant to a framework change.
+        if: always() && github.event_name != 'push'
         # Application credentials. Feature files log in by ROLE; the
         # `credentials` fixture (tests/step_defs/conftest.py) resolves the role
         # from these variables at runtime. Nothing authenticating is ever
@@ -134,7 +207,11 @@ jobs:
         # Required because the `report` job runs on a separate runner and
         # needs to download junit.xml to feed into Agent 5.
         # Also useful as a PR artifact for human inspection.
-        if: always()  # upload report even if tests failed (we want to see WHY)
+        # always() so we can see WHY a run failed. Skipped on push: the
+        # `report` job (the only consumer) does not run there, and 14-day
+        # artifacts for every framework commit are pure storage cost — the
+        # job summary below already names the failing tests.
+        if: always() && github.event_name != 'push'
         uses: actions/upload-artifact@v4
         with:
           name: pytest-report-${{ github.run_id }}
@@ -145,7 +222,15 @@ jobs:
         # Inline Python that parses junit.xml and writes a markdown summary
         # to $GITHUB_STEP_SUMMARY. Replaces the buggy EnricoMi action.
         # Visible at: PR → Checks → "Run Tests" → Summary section at top.
+        #
+        # Runs on push too. There is no E2E report there, so it summarises the
+        # unit gate instead — a framework build names the failing test rather
+        # than showing a bare red X. On pull_request nothing changes: the
+        # source stays reports/junit.xml, the story's own report.
         if: always()  # run even when pytest fails — failures need reporting
+        env:
+          JUNIT_PATH: ${{ github.event_name == 'push' && 'reports/junit-unit.xml' || 'reports/junit.xml' }}
+          SUMMARY_SCOPE: ${{ github.event_name == 'push' && 'Framework Unit Tests' || 'Test Results' }}
         run: |
           python3 << 'PYEOF'
           """Parse junit.xml and write a markdown test summary to the GitHub
@@ -154,7 +239,11 @@ jobs:
           import xml.etree.ElementTree as ET
           from pathlib import Path
 
-          junit_path = Path("reports/junit.xml")
+          # Which report to summarise is decided by the step's env, not here,
+          # so this stays one code path for every event. Both fall back to the
+          # PR values, keeping the script runnable by hand.
+          junit_path = Path(os.environ.get("JUNIT_PATH") or "reports/junit.xml")
+          scope = os.environ.get("SUMMARY_SCOPE") or "Test Results"
           summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
 
           if not summary_path:
@@ -163,12 +252,22 @@ jobs:
 
           if not junit_path.exists():
               with open(summary_path, "a", encoding="utf-8") as f:
-                  f.write("## ❌ Test Results\n\n")
-                  f.write("**No junit.xml found.** The test run did not produce a report — "
-                          "see the 'Run tests' step output above for the actual error.\n")
+                  f.write(f"## ❌ {scope}\n\n")
+                  f.write(f"**No report found at `{junit_path}`.** The test run did not "
+                          "produce one — see the step output above for the actual error.\n")
               raise SystemExit(0)
 
-          tree = ET.parse(junit_path)
+          # A truncated or empty XML file is a crashed run, not a clean pass:
+          # say so instead of dying with a traceback that hides the real cause.
+          try:
+              tree = ET.parse(junit_path)
+          except ET.ParseError as exc:
+              with open(summary_path, "a", encoding="utf-8") as f:
+                  f.write(f"## ❌ {scope}\n\n")
+                  f.write(f"**Unreadable report `{junit_path}`** ({exc}). The run almost "
+                          "certainly crashed mid-write — see the step output above.\n")
+              raise SystemExit(0)
+
           root = tree.getroot()
           suites = root.findall("testsuite") if root.tag == "testsuites" else [root]
 
@@ -179,7 +278,12 @@ jobs:
           duration = sum(float(s.get("time", 0)) for s in suites)
           passed = total - failures - errors - skipped
 
-          if failures == 0 and errors == 0:
+          if total == 0:
+              # pytest wrote a report but collected nothing — a collection
+              # error or a bad path filter. Never report that as green.
+              status_emoji = "⚠️"
+              status_text = "No tests were collected"
+          elif failures == 0 and errors == 0:
               status_emoji = "✅"
               status_text = f"All {total} tests passed"
           else:
@@ -187,7 +291,7 @@ jobs:
               status_text = f"{failures + errors} of {total} tests failed"
 
           lines = []
-          lines.append(f"## {status_emoji} Test Results")
+          lines.append(f"## {status_emoji} {scope}")
           lines.append("")
           lines.append(f"**{status_text}** in {duration:.2f}s")
           lines.append("")
