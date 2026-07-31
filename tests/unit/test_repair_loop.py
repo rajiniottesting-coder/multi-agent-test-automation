@@ -175,9 +175,18 @@ class TestRepairSucceedsAfterRetry:
 # 2. EXHAUSTION PATH
 # ---------------------------------------------------------------------------
 class TestRepairExhaustsRetries:
-    def test_persistent_errors_exhaust_retries(self, ctx, plan):
-        """If errors persist on every retry, return last attempt — final
-        validator will then raise. Cap at max_retries calls."""
+    def test_an_unchanged_error_set_stops_the_loop(self, ctx, plan):
+        """CONTRACT CHANGED 31 Jul 2026. This used to assert the loop spent
+        every retry on a persistent error. A real run did exactly that: four
+        attempts, the same unused-step error verbatim each time, near-identical
+        output, nothing fixed, $1.74 spent.
+
+        An attempt that leaves the error set byte-identical is not converging,
+        so the loop now stops and lets the final gate report it. The old
+        behaviour is still covered by
+        test_changing_errors_still_use_every_retry below - progress, however
+        partial, always earns another attempt.
+        """
         files = [
             GeneratedFile(
                 file_path="features/logout.feature",
@@ -205,8 +214,54 @@ class TestRepairExhaustsRetries:
                 files, llm, plan, [], {}, "{}", ctx, max_retries=2
             )
 
-        # Repair attempted exactly max_retries times before giving up
-        assert mock_gen.call_count == 2
+        # One repair attempt, then the identical error set aborts the loop.
+        assert mock_gen.call_count == 1
+
+    def test_changing_errors_still_use_every_retry(self, ctx, plan):
+        """Partial progress must never be mistaken for a stuck loop: as long
+        as each attempt changes something, the model keeps its full budget."""
+        files = [
+            GeneratedFile(
+                file_path="tests/step_defs/test_logout.py",
+                content=realistic_step_def(),
+                is_new_file=True, purpose="...",
+            ),
+        ]
+        counter = {"n": 0}
+
+        def _always_different(*_a, **_k):
+            counter["n"] += 1
+            return [f"Step coverage error in 'tests/step_defs/test_logout.py': "
+                    f"round {counter['n']}"]
+
+        with patch("agents.agent2_coder._collect_repairable_errors",
+                   side_effect=_always_different), \
+             patch("agents.agent2_coder.generate_file_content",
+                   return_value=realistic_step_def()) as mock_gen:
+            llm = MagicMock()
+            _attempt_step_coverage_repair(
+                files, llm, plan, [], {}, "{}", ctx, max_retries=3
+            )
+
+        assert mock_gen.call_count == 3, "a different error each round is progress"
+
+    def test_an_empty_error_set_is_success_not_stagnation(self, ctx, plan):
+        """Two clean rounds in a row must return happily, not trip the abort."""
+        files = [
+            GeneratedFile(
+                file_path="tests/step_defs/test_logout.py",
+                content=realistic_step_def(),
+                is_new_file=True, purpose="...",
+            ),
+        ]
+        with patch("agents.agent2_coder._collect_repairable_errors", return_value=[]), \
+             patch("agents.agent2_coder.generate_file_content") as mock_gen:
+            llm = MagicMock()
+            out = _attempt_step_coverage_repair(
+                files, llm, plan, [], {}, "{}", ctx, max_retries=4
+            )
+        assert mock_gen.call_count == 0
+        assert out == files
 
 
 # ---------------------------------------------------------------------------
@@ -337,3 +392,87 @@ class TestEmptyOutputGuard:
             page_inventory="", ctx=ctx,
         )
         assert "Logout" in result
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# SCRUM-103, 31 Jul 2026 — the repair loop never saw the real error
+#
+# A run spent all four attempts repairing a step-def file for an unused step
+# definition, produced near-identical output each time, and died on a
+# page-object selector error it had never been shown. Two causes: the
+# selector validator was not in the repair set at all, and the error router's
+# regex could not parse `... error in '<path>' line 125:` even if it had been.
+# ─────────────────────────────────────────────────────────────────────────
+from agents.agent2_coder import (
+    _collect_repairable_errors,
+    _group_validator_errors_by_file,
+)
+from core.schemas import GeneratedFile
+
+
+def _gf(path, content):
+    return GeneratedFile(file_path=path, content=content,
+                         is_new_file=True, purpose="t")
+
+
+_OFFENDING_PAGE = (
+    'from pages.base_page import BasePage\n\n\n'
+    'class AdminAddUserPage(BasePage):\n'
+    '    INVENTORY_PAGE = "admin_add_user"\n\n'
+    '    def pick(self) -> None:\n'
+    '        self.wait_visible(self.sel("autocomplete_option"))\n'
+)
+
+
+class TestSelectorErrorsAreRepairable:
+
+    def test_a_line_numbered_error_routes_to_its_file(self):
+        """The exact string from the failed run. The old regex required a
+        colon straight after the closing quote, so this matched nothing, the
+        error was dropped, and no repair was ever attempted."""
+        err = ("Selector inventory error in 'pages/admin_add_user_page.py' "
+               "line 125: AdminAddUserPage.wait_visible() is called with "
+               "self.sel('autocomplete_option') ...")
+        assert _group_validator_errors_by_file([err]) == {
+            "pages/admin_add_user_page.py": [err]}
+
+    def test_errors_without_a_line_number_still_route(self):
+        err = "Selector inventory error in 'pages/y_page.py': class Y ..."
+        assert list(_group_validator_errors_by_file([err])) == ["pages/y_page.py"]
+
+    @pytest.mark.parametrize("err", [
+        "Step coverage error in 'tests/step_defs/test_x.py': missing @when",
+        "Import resolution error in 'tests/step_defs/test_x.py': bad import",
+        "Unused step-definition error in 'tests/step_defs/test_x.py': unused",
+        "Method resolution error in 'tests/step_defs/test_x.py': no such method",
+    ])
+    def test_every_other_error_shape_is_untouched(self, err):
+        """The regex change must not narrow what already worked."""
+        assert list(_group_validator_errors_by_file([err])) == [
+            "tests/step_defs/test_x.py"]
+
+    def test_unparseable_errors_are_still_skipped(self):
+        assert _group_validator_errors_by_file(["something with no file"]) == {}
+
+    def test_selector_errors_reach_the_repair_loop(self):
+        """Previously enforced only by the final gate, so the model got four
+        attempts at the wrong file and none at this one."""
+        errors = _collect_repairable_errors(
+            [_gf("pages/admin_add_user_page.py", _OFFENDING_PAGE)])
+        selector = [e for e in errors if "Selector inventory error" in e]
+        assert len(selector) == 1
+        assert "BY ITS TEXT" in selector[0], "the remedy must reach the model"
+        assert list(_group_validator_errors_by_file(selector)) == [
+            "pages/admin_add_user_page.py"]
+
+    def test_a_clean_page_object_adds_no_repair_work(self):
+        clean = (
+            'from pages.base_page import BasePage\n\n\n'
+            'class AdminAddUserPage(BasePage):\n'
+            '    INVENTORY_PAGE = "admin_add_user"\n\n'
+            '    def pick(self, name: str) -> None:\n'
+            '        self.select_custom_option(self.sel("employee_name_input"), name)\n'
+        )
+        errors = _collect_repairable_errors(
+            [_gf("pages/admin_add_user_page.py", clean)])
+        assert [e for e in errors if "Selector inventory error" in e] == []

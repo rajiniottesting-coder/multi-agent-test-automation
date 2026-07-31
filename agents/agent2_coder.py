@@ -1574,11 +1574,16 @@ def _group_validator_errors_by_file(
       - `Import resolution error in '...':` (import validator)
       - any future validators that follow the same convention
 
+    The line-number segment is optional: the selector validator reports
+    `... error in '<path>' line 125:` so it can point at the offending call,
+    and without tolerating that the error matched nothing, was dropped here,
+    and the file never got a repair attempt (SCRUM-103, 31 Jul 2026).
+
     Returns: {file_path: [error_messages_for_that_file]}
     """
     grouped: dict[str, list[str]] = {}
-    # Match `<words> error in '<path>':` regardless of which validator emitted it
-    pattern = re.compile(r"error in '([^']+)':")
+    # Match `<words> error in '<path>'[ line N]:` regardless of the emitter
+    pattern = re.compile(r"error in '([^']+)'(?: line \d+)?:")
     for err in validator_errors:
         match = pattern.search(err)
         if not match:
@@ -1611,6 +1616,11 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     the same format.
     """
     errors: list[str] = []
+    # Page-object selector errors ARE repairable and were missing here.
+    # They were enforced only by the final gate, so the model got four
+    # attempts at whatever else was wrong and ZERO at the page object, then
+    # the run died on feedback it had never been shown (SCRUM-103).
+    errors.extend(validate_page_object_selectors(generated_files, PROJECT_ROOT))
     errors.extend(validate_feature_file_structure(generated_files))
     coverage_errors = validate_step_definitions_complete(generated_files)
     unused_errors = validate_no_unused_step_definitions(generated_files)
@@ -1689,8 +1699,25 @@ def _attempt_step_coverage_repair(
     Cost: each retry = 1 LLM call per broken file. Capped at `max_retries`
     iterations. Worst case for a typical 1-broken-file run is 2 extra calls.
     """
+    previous_errors: set[str] | None = None
     for attempt in range(1, max_retries + 1):
         all_errors = _collect_repairable_errors(generated_files)
+
+        # NO-PROGRESS ABORT. A run on 31 Jul 2026 spent all four attempts on
+        # one unused step definition, produced near-identical output each
+        # time, fixed nothing and cost $1.74. If an attempt leaves the error
+        # set exactly as it found it, the model is not converging and further
+        # attempts only buy tokens. Stop and let the final gate report it.
+        current = set(all_errors)
+        if previous_errors is not None and current and current == previous_errors:
+            logger.warning(
+                "Repair attempt %d changed nothing — the same %d error(s) "
+                "came back verbatim. Abandoning repair; the final validation "
+                "gate will report them.", attempt - 1, len(current),
+            )
+            return generated_files
+        previous_errors = current
+
         if not all_errors:
             if attempt > 1:
                 logger.info(
