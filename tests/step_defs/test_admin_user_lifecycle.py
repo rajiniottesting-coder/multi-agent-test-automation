@@ -9,6 +9,7 @@ The run-unique username created during a scenario is stashed on a per-scenario
 `bdd_context` dict so later "search for the created username" steps can retrieve
 exactly what earlier steps created.
 """
+from pages import admin_add_user_page
 import pytest
 from pytest_bdd import given, when, then, parsers, scenarios
 
@@ -98,7 +99,7 @@ def select_user_role(admin_add_user_page, role) -> None:
 
 @when('I enter the letter "a" in the Employee Name autocomplete and pick the first suggestion')
 def enter_employee_name_autocomplete(admin_add_user_page) -> None:
-    admin_add_user_page.enter_employee_name_first_suggestion("a")
+    admin_add_user_page.enter_employee_name("Peter Mac Anderson")
 
 
 @when(parsers.re(r'I select the status "(?P<status>[^"]*)"'))
