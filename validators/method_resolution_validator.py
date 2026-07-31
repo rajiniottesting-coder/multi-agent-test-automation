@@ -635,11 +635,25 @@ _MAX_KEYS_LISTED = 25
 # tomorrow is strict until someone proves otherwise, which fails safe. The
 # table helpers are here because a row-family locator is exactly what they are
 # built to take.
-_PLURAL_SAFE_METHODS = frozenset({
+# Helpers that READ a whole family. These are what the error message offers
+# when someone wants the set rather than one member.
+_FAMILY_READERS = frozenset({
     "get_all_texts", "get_count", "exists", "get_nth_text",
     "get_row_count", "get_column_values", "find_row_index_by_text",
     "get_cell_text",
 })
+
+# Helpers BUILT to take a family selector and resolve it to one element
+# internally. Passing a family key to these is not a mistake, it is the
+# documented signature - select_autocomplete_suggestion exists precisely so a
+# page object never has to disambiguate an async suggestion list by hand.
+# Without this set the validator rejected the very helper it tells people to
+# use, and the repair loop then rewrote correct code (SCRUM-103, 31 Jul 2026).
+_FAMILY_CONSUMERS = frozenset({
+    "select_autocomplete_suggestion",
+})
+
+_PLURAL_SAFE_METHODS = _FAMILY_READERS | _FAMILY_CONSUMERS
 
 
 def _is_page_object_path(file_path: str) -> bool:
@@ -923,7 +937,7 @@ def validate_page_object_selectors(
                         f"locator(...) resolved to N elements' at runtime. "
                         f"Either {remedy}, or, if you meant the whole set, "
                         f"read it with one of: "
-                        f"{', '.join(sorted(_PLURAL_SAFE_METHODS))}."
+                        f"{', '.join(sorted(_FAMILY_READERS))}."
                     )
 
             for key in sel_keys:

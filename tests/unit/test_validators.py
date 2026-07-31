@@ -1127,6 +1127,32 @@ class TestMultiMatchEnforcement:
             [_widgets_page(f"    def go(self):\n        {call}\n")],
             project_root, inventory=_INV_MM) == []
 
+    def test_the_family_consuming_helper_is_allowed(self, project_root: Path):
+        """SCRUM-103, 31 Jul 2026. select_autocomplete_suggestion takes the
+        family selector BY DESIGN - it resolves the async list to one real
+        suggestion internally, which is the whole reason it exists. It was not
+        whitelisted, so the validator rejected the exact call the inventory and
+        app-context tell the model to make, and the repair loop then rewrote
+        correct code.
+        """
+        assert validate_page_object_selectors(
+            [_widgets_page(
+                "    def pick(self, q: str) -> str:\n"
+                "        return self.select_autocomplete_suggestion(\n"
+                "            self.sel('add_button'), self.sel('opt'), q,\n"
+                "            placeholder='Loading', empty_text='None Found')\n")],
+            project_root, inventory=_INV_MM) == []
+
+    def test_the_error_offers_readers_not_consumers(self, project_root: Path):
+        """'read it with one of ...' must list only helpers that READ the set.
+        Offering a consumer there would be wrong advice."""
+        errors = validate_page_object_selectors(
+            [_widgets_page("    def go(self) -> None:\n"
+                           "        self.click(self.sel('rows'))\n")],
+            project_root, inventory=_INV_MM)
+        assert "get_all_texts" in errors[0]
+        assert "select_autocomplete_suggestion" not in errors[0]
+
     def test_the_first_sibling_is_allowed(self, project_root: Path):
         assert validate_page_object_selectors(
             [_widgets_page("    def go(self) -> None:\n"
