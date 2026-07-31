@@ -1028,12 +1028,21 @@ class TestMultiMatchEnforcement:
             project_root, inventory=_INV_MM)
         assert "rows_first" in errors[0]
 
-    def test_the_error_asks_for_one_when_it_is_missing(self, project_root: Path):
+    def test_the_error_never_tells_the_model_to_invent_a_key(self, project_root: Path):
+        """SCRUM-103, 31 Jul 2026: the remedy used to read "add a '<key>_first'
+        key to the inventory". The model cannot edit the inventory and rule 15
+        forbids inventing keys, so it wrote self.sel('autocomplete_option_first')
+        for a key that did not exist and the run died on the next check. The
+        remedy must only ever name actions the model is allowed to take.
+        """
         errors = validate_page_object_selectors(
             [_widgets_page("    def go(self) -> None:\n"
                            "        self.click(self.sel('opt'))\n")],
             project_root, inventory=_INV_MM)
-        assert "add a 'opt_first' key" in errors[0]
+        assert "add a 'opt_first' key" not in errors[0]
+        assert "Do NOT write self.sel('opt_first')" in errors[0]
+        assert "select_custom_option" in errors[0]
+        assert "`notes`" in errors[0]
 
     @pytest.mark.parametrize("call", [
         "return self.get_all_texts(self.sel('opt'))",

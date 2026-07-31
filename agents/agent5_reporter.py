@@ -48,6 +48,7 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from integrations.repo_host import get_repo_host
 from integrations.tracker import get_tracker
 from core.llm_client import LLMClient
 from core.schemas import RunReport, TestResult, JiraCommentDraft
@@ -273,6 +274,74 @@ def build_final_comment(prose_body: str, report: RunReport) -> str:
     return "\n".join(parts)
 
 
+def _classname_of(path: str) -> str:
+    """'tests/step_defs/test_x.py' -> 'tests.step_defs.test_x' (junit style)."""
+    return (path or "").replace("\\", "/").removesuffix(".py").replace("/", ".")
+
+
+def _scope_to_story(report: "RunReport", cli_pr: int | None = None) -> "RunReport":
+    """Narrow a whole-session report to the step-def modules the PR touched.
+
+    Returns the report UNCHANGED - deliberately - when the scope cannot be
+    established: no PR number, the API call fails, or the PR touched no
+    step-def file at all. Over-reporting is a cosmetic defect; silently
+    dropping a story's own failures because a lookup blipped would be a
+    correctness one, and it would read as a green story.
+    """
+    pr_number = cli_pr or report.pr_number
+    if not pr_number:
+        logger.info("No PR number - reporting the whole session, unscoped.")
+        return report
+    try:
+        changed = get_repo_host().get_pr_changed_files(int(pr_number))
+        owned = {
+            _classname_of(f.get("filename", ""))
+            for f in (changed or [])
+            if (f.get("filename", "") or "").replace("\\", "/")
+               .startswith("tests/step_defs/")
+            and (f.get("filename", "") or "").endswith(".py")
+            and not (f.get("filename", "") or "").endswith("conftest.py")
+        }
+    except Exception as exc:                              # noqa: BLE001
+        logger.warning("Could not scope to the story's own tests (%s); "
+                       "reporting the whole session.", exc)
+        return report
+    if not owned:
+        logger.info("PR #%s touched no step-def module - reporting unscoped.",
+                    pr_number)
+        return report
+
+    mine = [r for r in report.results
+            if any(r.classname == c or r.classname.startswith(c + ".")
+                   for c in owned)]
+    if not mine:
+        # The PR added step defs but the junit holds none of them: the run
+        # never reached them. Saying "0 tests" would be a lie of omission.
+        logger.warning("None of the story's tests appear in junit.xml "
+                       "(owned=%s) - reporting the whole session.",
+                       sorted(owned))
+        return report
+
+    dropped = len(report.results) - len(mine)
+    if dropped:
+        logger.info("Scoped report to %s: kept %d test(s), dropped %d "
+                    "belonging to other stories.",
+                    ", ".join(sorted(owned)), len(mine), dropped)
+
+    counts = {"passed": 0, "failed": 0, "error": 0, "skipped": 0}
+    for r in mine:
+        counts[r.status] = counts.get(r.status, 0) + 1
+    return report.model_copy(update={
+        "results": mine,
+        "total": len(mine),
+        "passed": counts["passed"],
+        "failed": counts["failed"],
+        "errors": counts["error"],
+        "skipped": counts["skipped"],
+        "duration_seconds": round(sum(r.duration_seconds for r in mine), 3),
+    })
+
+
 # ─────────────────────────────────────────────────────────────
 # Story key resolution — figure out which Jira story to comment on
 # ─────────────────────────────────────────────────────────────
@@ -359,6 +428,15 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
         f"failed={report.failed}, errors={report.errors}, skipped={report.skipped} "
         f"({report.duration_seconds:.1f}s)"
     )
+
+    # 1b. SCOPE: keep only the tests this STORY owns.
+    #
+    # reports/junit.xml is the whole `pytest tests/step_defs/` session - every
+    # step-def module in the repo, not just the one this story generated. So a
+    # three-scenario story was reported to Jira as "3 of 8 tests failed", with
+    # a login failure it had nothing to do with listed under its own key. The
+    # PR tells us which step-def files the story actually added or changed.
+    report = _scope_to_story(report, cli_pr=cli_pr)
 
     # 2. CONTEXT: enrich with CI info
     report = gather_ci_context(report, cli_pr=cli_pr)

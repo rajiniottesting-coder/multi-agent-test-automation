@@ -302,3 +302,100 @@ def test_has_usage_comments_false_after_reset_with_no_new_usage():
 
 def test_has_usage_comments_empty_list():
     assert has_usage_comments([]) is False
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Agent 5 story scoping
+#
+# reports/junit.xml is the whole `pytest tests/step_defs/` session. Agent 5
+# summed all of it, so a three-scenario story was reported to Jira as "3 of 8
+# tests failed" with a login failure listed under its key. The PR says which
+# step-def modules the story owns.
+# ─────────────────────────────────────────────────────────────────────────
+from core.schemas import RunReport, TestResult
+from agents.agent5_reporter import _classname_of, _scope_to_story
+
+
+def _tc(mod, name, status="passed"):
+    return TestResult(name=name, classname=f"tests.step_defs.{mod}",
+                      status=status, duration_seconds=1.0,
+                      failure_message=None if status == "passed" else "boom")
+
+
+def _session():
+    """The real 31 Jul shape: 5 login tests + 3 admin tests, 3 failing."""
+    return RunReport(
+        total=8, passed=5, failed=3, errors=0, skipped=0, duration_seconds=113.8,
+        results=[
+            _tc("test_login", "test_successful_login"),
+            _tc("test_login", "test_login_fails_with_an_incorrect_password"),
+            _tc("test_login", "test_login_fails_with_an_unknown_username"),
+            _tc("test_login", "test_requiredfield_validation"),
+            _tc("test_login", "test_a_failed_login_can_be_cleared_and_retried", "failed"),
+            _tc("test_admin_user_lifecycle", "test_full_lifecycle", "failed"),
+            _tc("test_admin_user_lifecycle", "test_cancelling_the_delete_dialog", "failed"),
+            _tc("test_admin_user_lifecycle", "test_searching_for_a_username"),
+        ],
+        pr_number=43,
+    )
+
+
+def _files(*names):
+    return [{"filename": n} for n in names]
+
+
+class TestStoryScoping:
+
+    def test_classname_conversion(self):
+        assert _classname_of("tests/step_defs/test_x.py") == "tests.step_defs.test_x"
+        assert _classname_of("tests\\step_defs\\test_x.py") == "tests.step_defs.test_x"
+
+    def test_the_real_case_reports_3_not_8(self, monkeypatch):
+        monkeypatch.setattr("agents.agent5_reporter.get_repo_host",
+                            lambda: type("H", (), {"get_pr_changed_files": staticmethod(
+                                lambda n: _files("features/admin_user_lifecycle.feature",
+                                                 "tests/step_defs/test_admin_user_lifecycle.py",
+                                                 "pages/admin_users_page.py"))})())
+        out = _scope_to_story(_session())
+        assert out.total == 3
+        assert out.failed == 2, "the login failure belongs to no story"
+        assert out.passed == 1
+        assert all("admin_user_lifecycle" in r.classname for r in out.results)
+
+    def test_duration_is_recomputed_not_inherited(self, monkeypatch):
+        monkeypatch.setattr("agents.agent5_reporter.get_repo_host",
+                            lambda: type("H", (), {"get_pr_changed_files": staticmethod(
+                                lambda n: _files("tests/step_defs/test_admin_user_lifecycle.py"))})())
+        assert _scope_to_story(_session()).duration_seconds == 3.0
+
+    @pytest.mark.parametrize("files,why", [
+        ([], "PR touched nothing"),
+        (_files("pages/x_page.py", "features/x.feature"), "no step-def file"),
+        (_files("tests/step_defs/conftest.py"), "conftest is shared, not a story's"),
+        (_files("tests/step_defs/test_nothing_ran.py"), "owned module absent from junit"),
+    ])
+    def test_unscopeable_runs_report_everything(self, monkeypatch, files, why):
+        """Over-reporting is cosmetic; dropping a story's own failures would
+        read as a green story. Always fail toward showing more."""
+        monkeypatch.setattr("agents.agent5_reporter.get_repo_host",
+                            lambda: type("H", (), {"get_pr_changed_files": staticmethod(
+                                lambda n: files)})())
+        assert _scope_to_story(_session()).total == 8, why
+
+    def test_no_pr_number_reports_everything(self):
+        r = _session().model_copy(update={"pr_number": None})
+        assert _scope_to_story(r).total == 8
+
+    def test_api_failure_reports_everything_and_never_raises(self, monkeypatch):
+        def boom():
+            raise RuntimeError("github is down")
+        monkeypatch.setattr("agents.agent5_reporter.get_repo_host", boom)
+        assert _scope_to_story(_session()).total == 8
+
+    def test_cli_pr_overrides_the_detected_one(self, monkeypatch):
+        seen = {}
+        monkeypatch.setattr("agents.agent5_reporter.get_repo_host",
+                            lambda: type("H", (), {"get_pr_changed_files": staticmethod(
+                                lambda n: seen.setdefault("n", n) and [] or [])})())
+        _scope_to_story(_session(), cli_pr=99)
+        assert seen["n"] == 99

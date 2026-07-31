@@ -201,7 +201,9 @@
         "field_error_first": ".oxd-input-field-error-message >> nth=0",
         "password_strength_hint": ".oxd-text--subtitle-2",
         "dropdown_option": ".oxd-select-option",
+        "dropdown_option_first": ".oxd-select-option >> nth=0",
         "autocomplete_option": ".oxd-autocomplete-option",
+        "autocomplete_option_first": ".oxd-autocomplete-option >> nth=0",
         "toast": "#oxd-toaster_1",
         "password_field_error": ".oxd-input-group:has-text('Password') .oxd-input-field-error-message >> nth=0",
         "confirm_password_field_error": ".oxd-input-group:has-text('Confirm Password') .oxd-input-field-error-message"
@@ -216,6 +218,8 @@
         "user_role_select": "Custom ARIA dropdown, NOT a <select>: `select_option()` will not work. Use `select_custom_option(self.sel('user_role_select'), '<option text>')` from BasePage - it clicks the trigger and then picks the one option by accessible name. DO NOT click or wait on `dropdown_option`: it matches EVERY option in the list, and Playwright runs strict, so both `click()` and `wait_visible()` raise 'strict mode violation ... resolved to 3 elements'. That is exactly how SCRUM-104 failed on 31 Jul 2026.",
         "status_select": "Same custom ARIA dropdown as user_role_select. Use `select_custom_option(self.sel('status_select'), '<option text>')`.",
         "dropdown_option": "MULTI-MATCH - the whole option family, not one option. Legitimate uses: `get_all_texts()` to list what is offered, `get_count()` to count. NEVER `click()` and NEVER `wait_visible()` on it: those are strict-mode violations. To choose one, use `select_custom_option(trigger, text)`.",
+        "dropdown_option_first": "The option family pinned to the first entry. A LAST RESORT: on this app nth=0 is usually the '-- Select --' placeholder, not a real choice. Prefer select_custom_option(trigger, '<option text>'), which picks the option you actually mean.",
+        "autocomplete_option_first": "The suggestion family pinned to the first entry. Reasonable for an autocomplete, where the first suggestion after typing a full unique name IS the intended one - but only after typing enough characters to make it unambiguous.",
         "autocomplete_option": "MULTI-MATCH - every suggestion currently rendered. Same rule as dropdown_option: read or count it, never click or wait on it directly. To pick a suggestion use `select_custom_option(self.sel('employee_name_input'), '<suggestion text>')` after typing enough characters, or address it by role and name.",
         "employee_name_input": "Autocomplete. Type at least 2 characters, then pick a SPECIFIC suggestion by its text - `select_custom_option` or a role+name lookup. Waiting on the bare `autocomplete_option` family is a strict-mode violation once more than one suggestion renders. Typing a full name without selecting a suggestion leaves the field invalid.",
         "do_not_save": "This is a PUBLIC shared demo. A saved user persists and the next run hits 'User already exists'. Validation-only tests that never click Save are safe; anything that saves needs a unique username per run.",

@@ -868,14 +868,30 @@ def validate_page_object_selectors(
                 for key, method, lineno in _strict_uses_of_sel(node):
                     if key not in family:
                         continue
+                    # The remedy must only ever name actions the MODEL can
+                    # take. Telling it to "add a key to the inventory" was a
+                    # trap: rule 15 forbids inventing keys, the model cannot
+                    # edit the inventory, so it wrote self.sel('<key>_first')
+                    # for a key that does not exist and the run died on the
+                    # very next check. Offer the pinned key only when one
+                    # really exists; otherwise point at the by-text helper or
+                    # at `notes`, which is the one escape hatch it is allowed.
                     first_key = f"{key}_first"
                     if first_key in elements:
-                        remedy = (f"use self.sel('{first_key}') for the single "
-                                  f"element")
+                        remedy = (f"use self.sel('{first_key}'), which is the "
+                                  f"same selector already pinned to one element")
                     else:
-                        remedy = (f"add a '{first_key}' key pinned with "
-                                  f"'>> nth=0' to the inventory, or address the "
-                                  f"one element you want by role and name")
+                        remedy = (
+                            f"address the ONE element you want by its text or "
+                            f"accessible name - select_custom_option(trigger, "
+                            f"text) for a dropdown or autocomplete, "
+                            f"click_role(role, name) for anything else. Do NOT "
+                            f"write self.sel('{first_key}') or any other key "
+                            f"that is not in the list above: inventing a key is "
+                            f"rejected the same way a literal selector is. If "
+                            f"no legal path exists, drop the behaviour and say "
+                            f"so in `notes`"
+                        )
                     errors.append(
                         f"{_ERROR_PREFIX} in '{path}' line {lineno}: "
                         f"{node.name}.{method}() is called with "
