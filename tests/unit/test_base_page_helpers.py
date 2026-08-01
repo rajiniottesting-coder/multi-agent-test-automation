@@ -252,3 +252,86 @@ def test_reference_page_object_uses_the_probe():
     body = src.read_text(encoding="utf-8")
     assert "self.is_showing(" in body
     assert "except Exception:" not in body
+
+# ─────────────────────────────────────────────────────────────────────────
+# Templated page URLs
+#
+# Some pages are a TEMPLATE, not an address: /product_details/{product_id}
+# stands for one page per record. Storing a sample id instead would couple
+# every test to whichever record happened to be crawled, and would read as one
+# page when it stands for thousands.
+# ─────────────────────────────────────────────────────────────────────────
+from inventory_tools.browser import resolve_page_url
+
+
+class _TemplatedPage(BasePage):
+    INVENTORY_PAGE = "x"
+    _URL = "/"
+
+    @classmethod
+    def _inventory(cls):
+        return {"pages": {"x": {"url": cls._URL}}}
+
+
+def test_plain_url_is_returned_unchanged():
+    _TemplatedPage._URL = "/view_cart"
+    assert _TemplatedPage.page_url() == "/view_cart"
+
+
+def test_plain_url_ignores_stray_params():
+    """Passing an id to a non-templated page must not blow up."""
+    _TemplatedPage._URL = "/view_cart"
+    assert _TemplatedPage.page_url(product_id=9) == "/view_cart"
+
+
+def test_template_is_substituted_at_runtime():
+    _TemplatedPage._URL = "/product_details/{product_id}"
+    assert _TemplatedPage.page_url(product_id=42) == "/product_details/42"
+
+
+def test_template_accepts_a_non_numeric_id():
+    _TemplatedPage._URL = "/product_details/{product_id}"
+    assert _TemplatedPage.page_url(product_id="blue-top") == "/product_details/blue-top"
+
+
+def test_template_with_several_placeholders():
+    _TemplatedPage._URL = "/orders/{order_id}/items/{item_id}"
+    assert _TemplatedPage.page_url(order_id=7, item_id=3) == "/orders/7/items/3"
+
+
+@pytest.mark.parametrize("params", [{}, {"wrong_name": 1}])
+def test_missing_param_names_what_is_needed(params):
+    """Far better than navigating to a literal "{product_id}" and reporting
+    every selector on the page as missing."""
+    _TemplatedPage._URL = "/product_details/{product_id}"
+    with pytest.raises(KeyError) as excinfo:
+        _TemplatedPage.page_url(**params)
+    assert "product_id" in str(excinfo.value)
+    assert "template" in str(excinfo.value)
+
+
+class TestToolsHandleTemplatedPages:
+    """verify_locators and check_inventory_staleness would otherwise navigate
+    to a literal "{product_id}", 404, and report every selector STALE - the
+    false-report class these tools exist to avoid."""
+
+    def test_plain_entry_proceeds(self):
+        assert resolve_page_url({"url": "/view_cart"}) == ("/view_cart", None)
+
+    def test_missing_url_defaults_to_root(self):
+        assert resolve_page_url({}) == ("/", None)
+
+    def test_sample_is_used_for_a_template(self):
+        path, skip = resolve_page_url({"url": "/product_details/{product_id}",
+                                       "url_sample": "/product_details/1"})
+        assert path == "/product_details/1" and skip is None
+
+    def test_template_without_a_sample_is_skipped_with_a_reason(self):
+        path, skip = resolve_page_url({"url": "/product_details/{product_id}"})
+        assert path == ""
+        assert "url_sample" in skip and "product_id" in skip
+
+    def test_a_still_templated_sample_is_rejected(self):
+        """A sample that was never filled in is not a usable address."""
+        _, skip = resolve_page_url({"url": "/a/{id}", "url_sample": "/a/{id}"})
+        assert skip is not None

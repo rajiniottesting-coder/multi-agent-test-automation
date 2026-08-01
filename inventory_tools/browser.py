@@ -403,6 +403,40 @@ def collect_descriptors(page, url: str, test_attrs: tuple = TEST_ID_ATTRS
     return page.title(), descriptors
 
 
+def resolve_page_url(entry: dict) -> tuple[str, str | None]:
+    """(path, skip_reason) for one inventory page entry.
+
+    Some pages are a TEMPLATE, not an address - `/product_details/{product_id}`
+    stands for one page per record. Navigating to that string literally gives a
+    404 and every selector on it is then reported STALE, which is a false
+    report of exactly the kind these tools exist to avoid.
+
+    A templated entry may name a concrete page to check instead::
+
+        "url": "/product_details/{product_id}",
+        "url_sample": "/product_details/1"
+
+    With a sample, that page is checked and the result applies to the template
+    - the elements are identical for every record. Without one, the page is
+    SKIPPED with a reason, never silently reported as broken.
+
+    Returns (path, None) to proceed, or ("", reason) to skip.
+    """
+    url = (entry or {}).get("url") or "/"
+    if "{" not in url:
+        return url, None
+    sample = (entry or {}).get("url_sample")
+    if sample and "{" not in sample:
+        return sample, None
+    import re
+    needed = re.findall(r"\{(\w+)\}", url)
+    return "", (
+        f"templated url {url!r} needs {needed} and the entry has no "
+        f"`url_sample`. Add one - e.g. \"url_sample\": \"{url.split('{')[0]}1\" "
+        f"- so this page can be checked against a real record."
+    )
+
+
 def _resolve_one(scope, selector: str):
     """Turn one inventory selector string into a Playwright Locator.
 

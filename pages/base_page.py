@@ -136,12 +136,42 @@ class BasePage:
         return elements[key]
 
     @classmethod
-    def page_url(cls) -> str:
-        """URL path for this page object's inventory page."""
+    def page_url(cls, **params: object) -> str:
+        """URL path for this page object's inventory page.
+
+        Some pages are a TEMPLATE rather than an address: one page exists per
+        record, so the inventory stores `/product_details/{product_id}` and the
+        caller supplies the id at run time::
+
+            self.navigate(base_url + self.page_url(product_id=42))
+
+        Storing a sample id in the inventory instead would be worse than
+        untidy: every test would silently couple to whichever record happened
+        to be crawled, and the entry would read as one page when it stands for
+        thousands.
+
+        Raises:
+            KeyError, naming the placeholders the template needs, when a
+            templated page is opened without them - far better than navigating
+            to a literal "{product_id}" and reporting every selector missing.
+        """
         if not cls.INVENTORY_PAGE:
             raise RuntimeError(f"{cls.__name__} has no INVENTORY_PAGE set.")
         pages = cls._inventory().get("pages") or {}
-        return (pages.get(cls.INVENTORY_PAGE) or {}).get("url", "/")
+        url = (pages.get(cls.INVENTORY_PAGE) or {}).get("url", "/")
+        if "{" not in url:
+            return url
+        try:
+            return url.format(**params)
+        except KeyError as exc:
+            import re as _re
+            needed = _re.findall(r"\{(\w+)\}", url)
+            raise KeyError(
+                f"{cls.__name__}.page_url() needs {needed} to build {url!r}; "
+                f"got {sorted(params) or 'none'}. This page is a template - "
+                f"one page exists per record - so pass the identifier at run "
+                f"time, e.g. page_url({needed[0]}=<value>)."
+            ) from exc
 
     # ============================================================
     # Internal

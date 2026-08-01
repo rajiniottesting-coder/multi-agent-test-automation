@@ -122,7 +122,7 @@ from core.app_context import AppContext
 from inventory_tools import introspect
 from inventory_tools.browser import (
     crawl_credentials,
-    browser_page, do_login, _resolve_one,
+    browser_page, do_login, _resolve_one, resolve_page_url,
     DEFAULT_USERNAME_SELECTOR, DEFAULT_PASSWORD_SELECTOR, DEFAULT_SUBMIT_SELECTOR,
 )
 
@@ -228,7 +228,11 @@ def _wait_for_render(page, selectors: dict, timeout_ms: int = 15000) -> bool:
 
 def _verify_page(page, base_url: str, page_name: str, entry: dict,
                  pause: float, only_problems: bool) -> tuple[int, int]:
-    url = base_url.rstrip("/") + (entry.get("url") or "/")
+    path, skip = resolve_page_url(entry)
+    if skip:
+        print(f"  [{page_name}] SKIPPED - {skip}")
+        return 0, 0
+    url = base_url.rstrip("/") + path
     if "<" in url:
         print(f"  [{page_name}] SKIPPED - templated url {entry.get('url')}")
         return 0, 0

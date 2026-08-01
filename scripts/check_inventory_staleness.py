@@ -59,7 +59,7 @@ from inventory_tools import introspect
 from inventory_tools.browser import (
     crawl_credentials,
     browser_page, do_login, resolve_selectors,
-    DEFAULT_USERNAME_SELECTOR, DEFAULT_PASSWORD_SELECTOR, DEFAULT_SUBMIT_SELECTOR,
+    DEFAULT_USERNAME_SELECTOR, DEFAULT_PASSWORD_SELECTOR, DEFAULT_SUBMIT_SELECTOR, resolve_page_url,
 )
 
 
@@ -136,7 +136,12 @@ def main() -> int:
             if entry.get("always"):
                 # shared overlay (e.g. a global menu) — no standalone URL to visit
                 continue
-            url_path = entry.get("url") or "/"
+            url_path, skip = resolve_page_url(entry)
+            if skip:
+                # A templated page with no sample cannot be visited. Say so and
+                # move on: reporting its selectors as drifted would be a lie.
+                logger.info("  [%s] skipped - %s", name, skip)
+                continue
             if "<" in url_path:  # templated URL (e.g. ?id=<id>) — skip auto-visit
                 continue
             selectors = _page_selectors(entry)
