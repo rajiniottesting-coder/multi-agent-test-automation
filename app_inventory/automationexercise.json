@@ -7,7 +7,8 @@
     "selectors": "Every selector maps to a first-class Playwright locator: [name='x'] / #id (css), role=button[name='Save'] (getByRole), label=X (getByLabel), placeholder=..., alt=..., title=..., text=... . XPath is never emitted. An iframe-chained selector uses ' >>> '. label=/alt=/title= need page.get_by_label/get_by_alt_text/get_by_title - they are NOT page.locator() engine syntax; role= and text= work with page.locator().",
     "selector_strategy": "USER-FACING PLAYWRIGHT LOCATORS FIRST. Ranking, following Playwright's own guidance: test-id > role+accessible-name (getByRole) > label (getByLabel) > aria-label > placeholder > alt > title > stable id / name (css) > nameless role > text > css path. `#id` and `[name=...]` are page.locator() css rather than a getBy* method, so they sit BELOW everything user-facing - they remain above text= and a raw css path, because a deliberate id IS an author's contract, but they are not the first thing to reach for. This app is server-rendered with semantic HTML and readable button and link text, so role= and text= locators fit it especially well.",
     "test_owned_data": "An account's cart, addresses and orders are private to it, so assertions on them are safe. The PRODUCT CATALOGUE is shared and read-only - 34 fixed products - so a named product is safe to assert on, but never assert a total that the site owner could change.",
-    "icon_only_controls": "A control whose visible content is only an icon has NO accessible name, so role=<x>[name='...'] resolves to nothing however sensible the name looks. Prefer role= for anything with readable text; fall back to the id for icon-only buttons. Ranking prefers user-facing locators, but 'user-facing' requires the user to be able to READ something."
+    "icon_only_controls": "A control whose visible content is only an icon has NO accessible name, so role=<x>[name='...'] resolves to nothing however sensible the name looks. Prefer role= for anything with readable text; fall back to the id for icon-only buttons. Ranking prefers user-facing locators, but 'user-facing' requires the user to be able to READ something.",
+    "icon_ligature_names": "Before trusting role=<x>[name='...'], check what the accessible name ACTUALLY is - an icon font that renders from ligature text (Material Icons, some Material Design Web builds) puts that text in the DOM and Playwright includes it in the name. `<i class='material-icons'>home</i> Home` is named 'home Home'. Role-name matching is exact, so the obvious selector silently matches nothing. Prefer href for navigation links; verify anything else with verify_locators."
   },
   "test_users": {
     "registered": "A pre-registered account used for login scenarios. No privilege levels exist in this app."
@@ -26,22 +27,23 @@
       "page_object_file": "pages/nav_page.py",
       "page_object_class": "NavPage",
       "elements": {
-        "home_link": "role=link[name='Home']",
-        "products_link": "role=link[name='Products']",
-        "cart_link": "role=link[name='Cart']",
-        "signup_login_link": "role=link[name='Signup / Login']",
-        "test_cases_link": "role=link[name='Test Cases']",
-        "api_testing_link": "role=link[name='API Testing']",
-        "contact_us_link": "role=link[name='Contact us']",
-        "logout_link": "role=link[name='Logout']",
-        "delete_account_link": "role=link[name='Delete Account']",
+        "home_link": "a[href='/']",
+        "products_link": "a[href='/products']",
+        "cart_link": "a[href='/view_cart']",
+        "signup_login_link": "a[href='/login']",
+        "test_cases_link": "a[href='/test_cases']",
+        "api_testing_link": "a[href='/api_list']",
+        "contact_us_link": "a[href='/contact_us']",
+        "logout_link": "a[href='/logout']",
+        "delete_account_link": "a[href='/delete_account']",
         "logged_in_as": "text=Logged in as"
       },
       "elements_notes": {
         "_shared": "Present on every page. Top navigation, so it lives once here rather than repeated on each page.",
         "logout_link": "Present ONLY while logged in, which makes its presence a reliable readiness signal for 'am I authenticated'. Use is_visible() on it rather than parsing the URL.",
         "logged_in_as": "Reads 'Logged in as <name>'. A substring match, so assert containment rather than equality.",
-        "delete_account_link": "Permanently removes the account and shows 'ACCOUNT DELETED!'. A test that registers an account should call this at the end - there is no admin cleanup on this site and abandoned accounts accumulate forever."
+        "delete_account_link": "Permanently removes the account and shows 'ACCOUNT DELETED!'. A test that registers an account should call this at the end - there is no admin cleanup on this site and abandoned accounts accumulate forever.",
+        "_href_over_role": "These are addressed by href, not by role+name, and that is deliberate. This app's nav mixes icon libraries, and Material Icons renders its glyph from LIGATURE TEXT - <i class='material-icons'>card_travel</i> puts the literal string 'card_travel' in the DOM. Playwright folds that into the accessible name, so the Products link is named 'card_travel Products', not 'Products', and role=link[name='Products'] matches NOTHING because role-name matching is exact. Links whose icon is Font Awesome (empty <i>) were unaffected, which is why 'Test Cases' resolved while eight others did not - proven 1 Aug 2026 both against the live site and against reproduced markup. The href is the author's contract and cannot be polluted this way."
       },
       "key_methods": [
         "go_to_products()",

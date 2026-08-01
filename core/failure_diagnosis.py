@@ -74,6 +74,29 @@ _SIGNATURES: list[tuple[re.Pattern, Diagnosis]] = [
         ),
     ),
     (
+        # The readiness-probe shape. is_showing() swallows the Playwright error
+        # by design and returns False, so the assertion reads `assert False` and
+        # the real detail lands in a WARNING log line instead of the traceback.
+        # Without this the whole class came back "unclassified" - which is the
+        # thing this module exists to prevent (1 Aug 2026).
+        re.compile(r"is_showing\(|expected to be visible|No session after", re.I),
+        Diagnosis(
+            "readiness probe returned False",
+            "A page-object readiness check waited for an element and never saw "
+            "it. The probe logs the selector, the wait it used and the URL at "
+            "WARNING level - read that line, not the bare `assert False`. The "
+            "URL usually settles it: the RIGHT page means a wrong selector, "
+            "the WRONG page means the step before this one did not do what it "
+            "claimed.",
+            "Check the selector against the live page: "
+            "`python -m scripts.verify_locators --page <page> --only-problems`. "
+            "If it resolves there, the app never reached this state. Beware "
+            "accessible-name selectors in particular: an icon font that renders "
+            "from ligature text puts that text into the name, so "
+            "role=<x>[name='...'] can silently match nothing.",
+        ),
+    ),
+    (
         re.compile(r"Timeout .*exceeded.*waiting for.*to be visible", re.I | re.S),
         Diagnosis(
             "element never appeared",
