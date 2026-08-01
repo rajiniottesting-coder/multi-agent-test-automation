@@ -407,8 +407,8 @@ def _resolve_one(scope, selector: str):
     """Turn one inventory selector string into a Playwright Locator.
 
     Playwright's `locator()` selector-engine syntax understands css, `text=`
-    and `role=`, but there is NO `label=`, `alt=` or `title=` engine — those
-    are only reachable through the get_by_* API. The inventory emits the
+    and `role=`, but there is NO `label=`, `placeholder=`, `alt=` or `title=`
+    engine — those are only reachable through the get_by_* API. The inventory emits the
     get_by_* forms because they are the locators Playwright recommends, so
     they are translated here. Without this the staleness checker would report
     every label/alt/title selector as stale even though it resolves perfectly
@@ -424,6 +424,14 @@ def _resolve_one(scope, selector: str):
             return _resolve_one(scope, base).nth(int(idx))
         except ValueError:
             pass
+    if selector.startswith("placeholder="):
+        # getByPlaceholder. There is no `placeholder` SELECTOR ENGINE - passing
+        # "placeholder=..." to locator() raises `Unknown engine "placeholder"`,
+        # which surfaced as an ERROR rather than a miss and cost a verification
+        # round (1 Aug 2026). The css form `[placeholder='...']` also works and
+        # is what rank_selector emits; this accepts the get_by_* spelling too,
+        # so an inventory written either way resolves.
+        return scope.get_by_placeholder(selector[len("placeholder="):])
     if selector.startswith("label="):
         return scope.get_by_label(selector[len("label="):])
     if selector.startswith("alt="):
