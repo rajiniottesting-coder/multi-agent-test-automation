@@ -162,3 +162,28 @@ def pytest_runtest_makereport(item, call):
     outcome = yield
     report = outcome.get_result()
     setattr(item, f"rep_{report.when}", report)
+
+    # Attach a plain-English CAUSE and FIX to every failure.
+    #
+    # A Playwright error says what the framework was doing, never what was
+    # wrong with the application. "strict mode violation", "Timeout 30000ms",
+    # `assert '' == 'qa_user'` - each needed someone with the whole repo in
+    # their head and a trace file to interpret. Each also has a small number
+    # of causes and a specific remedy, so those are printed next to the
+    # failure instead of living in one person's memory.
+    #
+    # Written to the report SECTIONS, so it appears in the terminal output,
+    # in reports/pytest-report.html and in the CI log - everywhere someone
+    # might read a failure - without touching the assertion itself.
+    if report.failed:
+        try:
+            from core.failure_diagnosis import diagnose
+            d = diagnose(str(report.longrepr))
+            report.sections.append((
+                "Why this failed",
+                f"CAUSE ({d.label}): {d.cause}\n\nFIX: {d.remedy}",
+            ))
+        except Exception:                                 # noqa: BLE001
+            # Diagnosis is a convenience. It must never be able to turn a
+            # test failure into a collection error or mask the real result.
+            pass

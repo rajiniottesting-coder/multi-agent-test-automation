@@ -1,0 +1,195 @@
+{
+  "app_name": "Automation Exercise",
+  "base_url": "https://automationexercise.com",
+  "description": "E-commerce practice site: browse and search products, add to cart, register an account, place an order.",
+  "_VERIFICATION_STATUS": "STARTER INVENTORY, NOT YET VERIFIED AGAINST THE LIVE DOM (created 31 Jul 2026). Every selector below is role= or text= derived from text observed on the actual pages, so the NAMES are real - but none has been confirmed to resolve to exactly one element. Before trusting it run `python -m scripts.verify_locators --only-problems` and fix whatever it reports. Then crawl a fuller draft with `python -m scripts.generate_inventory` and merge in the elements this file does not cover: the second signup form, product detail, checkout and payment are all missing.",
+  "_inventory_conventions": {
+    "selectors": "Every selector maps to a first-class Playwright locator: [name='x'] / #id (css), role=button[name='Save'] (getByRole), label=X (getByLabel), placeholder=..., alt=..., title=..., text=... . XPath is never emitted. An iframe-chained selector uses ' >>> '. label=/alt=/title= need page.get_by_label/get_by_alt_text/get_by_title - they are NOT page.locator() engine syntax; role= and text= work with page.locator().",
+    "selector_strategy": "This app is server-rendered with semantic HTML and readable button/link text, so role= and text= selectors are preferred over CSS: they survive restyling and read like the page. Where the crawl finds a data-qa attribute, prefer that.",
+    "shared_navigation": "Present on every page. Top navigation, so it lives once here rather than repeated on each page.",
+    "test_owned_data": "An account's cart, addresses and orders are private to it, so assertions on them are safe. The PRODUCT CATALOGUE is shared and read-only - 34 fixed products - so a named product is safe to assert on, but never assert a total that the site owner could change."
+  },
+  "test_users": {
+    "registered": "A pre-registered account used for login scenarios. No privilege levels exist in this app."
+  },
+  "common_errors": {
+    "invalid_login": "Your email or password is incorrect!",
+    "email_already_exists": "Email Address already exist!"
+  },
+  "pages": {
+    "nav": {
+      "url": "/",
+      "components": [
+        "Navigation"
+      ],
+      "always": true,
+      "page_object_file": "pages/nav_page.py",
+      "page_object_class": "NavPage",
+      "elements": {
+        "home_link": "role=link[name='Home']",
+        "products_link": "role=link[name='Products']",
+        "cart_link": "role=link[name='Cart']",
+        "signup_login_link": "role=link[name='Signup / Login']",
+        "test_cases_link": "role=link[name='Test Cases']",
+        "api_testing_link": "role=link[name='API Testing']",
+        "contact_us_link": "role=link[name='Contact us']",
+        "logout_link": "role=link[name='Logout']",
+        "delete_account_link": "role=link[name='Delete Account']",
+        "logged_in_as": "text=Logged in as"
+      },
+      "elements_notes": {
+        "_shared": "Present on every page. Top navigation, so it lives once here rather than repeated on each page.",
+        "logout_link": "Present ONLY while logged in, which makes its presence a reliable readiness signal for 'am I authenticated'. Use is_visible() on it rather than parsing the URL.",
+        "logged_in_as": "Reads 'Logged in as <name>'. A substring match, so assert containment rather than equality.",
+        "delete_account_link": "Permanently removes the account and shows 'ACCOUNT DELETED!'. A test that registers an account should call this at the end - there is no admin cleanup on this site and abandoned accounts accumulate forever."
+      },
+      "key_methods": [
+        "go_to_products()",
+        "go_to_cart()",
+        "go_to_login()",
+        "logout()",
+        "is_logged_in()",
+        "logged_in_name()"
+      ]
+    },
+    "home": {
+      "url": "/",
+      "components": [
+        "Home"
+      ],
+      "page_object_file": "pages/home_page.py",
+      "page_object_class": "HomePage",
+      "elements": {
+        "site_logo": "alt=Website for automation practice",
+        "subscription_heading": "text=Subscription",
+        "subscribe_email_input": "placeholder=Your email address",
+        "subscribe_button": "#subscribe",
+        "subscribe_success": "text=You have been successfully subscribed!"
+      },
+      "elements_notes": {
+        "subscribe_button": "UNVERIFIED id, taken from the site's own documented test cases rather than from the DOM. Confirm with verify_locators before relying on it.",
+        "subscribe_success": "Rendered in place after subscribing - there is no navigation and no toast."
+      },
+      "key_methods": [
+        "is_loaded()",
+        "subscribe(email)"
+      ]
+    },
+    "login": {
+      "url": "/login",
+      "components": [
+        "Login",
+        "Account"
+      ],
+      "page_object_file": "pages/login_page.py",
+      "page_object_class": "LoginPage",
+      "elements": {
+        "login_heading": "text=Login to your account",
+        "login_email_input": "[data-qa='login-email']",
+        "login_password_input": "[data-qa='login-password']",
+        "login_button": "[data-qa='login-button']",
+        "signup_heading": "text=New User Signup!",
+        "signup_name_input": "[data-qa='signup-name']",
+        "signup_email_input": "[data-qa='signup-email']",
+        "signup_button": "[data-qa='signup-button']",
+        "login_error": "text=Your email or password is incorrect!",
+        "signup_error": "text=Email Address already exist!"
+      },
+      "elements_notes": {
+        "_two_forms": "THIS PAGE CARRIES TWO INDEPENDENT FORMS - 'Login to your account' and 'New User Signup!' - and BOTH have an email field. A selector loose enough to match 'the email input' matches both and is a strict-mode violation. Always use the form-specific key.",
+        "login_email_input": "UNVERIFIED data-qa value. This app is widely documented as using data-qa attributes, but the exact values here were not read from the DOM. verify_locators will confirm or reject each one in seconds.",
+        "signup_button": "Submitting this does NOT create the account - it navigates to a second, fuller form at /signup. The account exists only after THAT form is submitted.",
+        "login_error": "Rendered as text on the same page. No redirect, no toast."
+      },
+      "key_methods": [
+        "is_loaded()",
+        "login_as(email, password)",
+        "start_signup(name, email)",
+        "get_login_error()",
+        "has_login_error()"
+      ],
+      "errors": {
+        "invalid_login": "Your email or password is incorrect!",
+        "email_already_exists": "Email Address already exist!"
+      }
+    },
+    "products": {
+      "url": "/products",
+      "components": [
+        "Products",
+        "Search"
+      ],
+      "page_object_file": "pages/products_page.py",
+      "page_object_class": "ProductsPage",
+      "elements": {
+        "all_products_heading": "text=All Products",
+        "search_input": "#search_product",
+        "search_button": "#submit_search",
+        "product_cards": ".product-image-wrapper",
+        "product_names": ".productinfo p",
+        "add_to_cart_buttons": "text=Add to cart",
+        "view_product_links": "role=link[name='View Product']",
+        "added_modal": "text=Your product has been added to cart.",
+        "view_cart_link_in_modal": "role=link[name='View Cart']",
+        "continue_shopping_button": "role=button[name='Continue Shopping']"
+      },
+      "multi_match": [
+        "product_cards",
+        "product_names",
+        "add_to_cart_buttons",
+        "view_product_links"
+      ],
+      "multi_match_note": "Keys whose selector matches SEVERAL elements. Read them with get_all_texts / get_count / get_nth_text; never click, fill, wait on or assert against them - Playwright is strict and raises 'resolved to N elements'. Enforced by validators/method_resolution_validator.py at generation time.",
+      "elements_notes": {
+        "add_to_cart_buttons": "MULTI-MATCH, and worse than it looks: every product card renders its Add to cart control TWICE (once in the card, once in the hover overlay), so this matches 68 elements on the all-products page, not 34. Never click it directly - scope to one product's card, or open the product via its View Product link.",
+        "product_names": "MULTI-MATCH and also doubled per card for the same reason. Use get_all_texts() to assert a product IS present rather than indexing into it.",
+        "view_product_links": "MULTI-MATCH, but each href carries the product id (/product_details/<id>), which makes it the reliable way to reach ONE product.",
+        "added_modal": "Adding to cart opens a MODAL rather than navigating. It blocks the page underneath, so a scenario adding two products must dismiss it between them or the second click fails with 'intercepts pointer events'.",
+        "search_input": "UNVERIFIED id, from the site's documented test cases rather than the DOM. Search matches on product NAME and submits to the same page.",
+        "_empty_search": "A search matching nothing renders NO result cards rather than an empty-state message. Assert absence by counting cards, not by looking for text."
+      },
+      "key_methods": [
+        "is_loaded()",
+        "search(term)",
+        "product_names()",
+        "product_count()",
+        "open_product(name)"
+      ]
+    },
+    "cart": {
+      "url": "/view_cart",
+      "components": [
+        "Cart"
+      ],
+      "page_object_file": "pages/cart_page.py",
+      "page_object_class": "CartPage",
+      "elements": {
+        "cart_table": "#cart_info",
+        "cart_rows": "#cart_info tbody tr",
+        "cart_product_names": "#cart_info .cart_description a",
+        "cart_delete_buttons": ".cart_quantity_delete",
+        "proceed_to_checkout_button": "text=Proceed To Checkout",
+        "empty_cart_message": "text=Cart is empty!"
+      },
+      "multi_match": [
+        "cart_rows",
+        "cart_product_names",
+        "cart_delete_buttons"
+      ],
+      "multi_match_note": "Keys whose selector matches SEVERAL elements. Read them with get_all_texts / get_count / get_nth_text; never click, fill, wait on or assert against them.",
+      "elements_notes": {
+        "_test_owned": "The cart belongs to this test's own session or account, so asserting an EXACT row count is safe here - unlike the shared catalogue.",
+        "cart_rows": "MULTI-MATCH. Narrow to the product the test added rather than assuming a row index.",
+        "cart_table": "UNVERIFIED id, from the site's documented test cases rather than the DOM.",
+        "proceed_to_checkout_button": "Proceeding while logged out shows a Register/Login prompt instead of the address form, so a checkout scenario must authenticate first."
+      },
+      "key_methods": [
+        "is_loaded()",
+        "product_names()",
+        "row_count()",
+        "remove_product(name)",
+        "proceed_to_checkout()"
+      ]
+    }
+  }
+}

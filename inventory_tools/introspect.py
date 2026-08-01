@@ -300,20 +300,120 @@ def element_kind(tag: str, attrs: dict) -> str:
     return "element"
 
 
+# Words that carry no meaning in an element name. Stripped from names derived
+# from visible TEXT or LABELS, never from a test-id or `name` attribute - those
+# are the author's deliberate identifier and are kept exactly as written.
+_NAME_STOPWORDS = frozenset({
+    "the", "a", "an", "of", "to", "for", "your", "please", "click", "here",
+    "this", "that", "and", "or", "is", "are", "be", "on", "in", "at", "it",
+})
+
+# Four tokens is enough to be unambiguous; beyond that a name is a sentence.
+_MAX_NAME_TOKENS = 4
+
+# `type` values worth folding into a name. An <input type="email"> with no other
+# identifier is meaningfully an "email input", not an anonymous "input".
+_TYPE_HINTS = frozenset({
+    "email", "password", "search", "tel", "url", "number", "date", "file",
+})
+
+
+def _clean_prose_name(value: str) -> str:
+    """snake_case a human-readable string into an identifier-sized name.
+
+    Drops stopwords and caps the token count, so "Please enter your e-mail
+    address here" becomes `enter_email_address` rather than a sentence. If
+    stripping leaves nothing - a label that is entirely stopwords - the
+    unstripped form is kept: a slightly noisy name beats no name.
+    """
+    slug = _slug_to_name(value)
+    if not slug:
+        return ""
+    tokens = slug.split("_")
+    kept = [t for t in tokens if t not in _NAME_STOPWORDS]
+    tokens = kept or tokens
+    return "_".join(tokens[:_MAX_NAME_TOKENS])
+
+
+def _disambiguate(name: str, used: set, tag: str, attrs: dict,
+                  text: str) -> str:
+    """A distinguishing name when `name` is already taken.
+
+    A bare counter (`input_2`, `input_3`) tells a reader nothing and all but
+    guarantees that whoever writes the page object picks the wrong one. Before
+    falling back to that, say HOW this element differs from the one that
+    claimed the name - its input type, its visible text, or failing both an
+    explicit `_alt`. Returns `name` untouched when there is no collision.
+    """
+    if name not in used:
+        return name
+    a = attrs or {}
+    candidates = []
+    if a.get("type"):
+        candidates.append(f"{name}_{_slug_to_name(a['type'])}")
+    if text.strip():
+        prose = _clean_prose_name(text.strip()[:40])
+        if prose:
+            candidates.append(f"{prose}_{element_kind(tag, a)}")
+    candidates.append(f"{name}_alt")
+    for c in candidates:
+        if c and c != name and c not in used:
+            return c
+    return name
+
+
 def derive_element_name(tag: str, attrs: dict, text: str = "",
-                        test_attrs: tuple = TEST_ID_ATTRS) -> str:
-    """Human-ish snake_case name from the strongest identifier available."""
+                        test_attrs: tuple = TEST_ID_ATTRS,
+                        label: str = "") -> str:
+    """Human-ish snake_case name from the strongest identifier available.
+
+    Priority, strongest first:
+
+        1. test-id attribute   - the author's own deliberate handle
+        2. `name` / aria-label - semantic, stable, author-written
+        3. the field's LABEL   - what a human calls this control on screen
+        4. placeholder
+        5. a non-generated id
+        6. visible text
+        7. the input `type`    - "email input" beats an anonymous "input"
+
+    The label was already collected for selector ranking and then thrown away
+    for naming, which is why anonymous form fields fell through to bare kinds
+    and collided into `input_2`, `input_3`. Real applications label their
+    fields even when the markup carries no usable attribute, so this is the
+    single biggest source of meaningful names.
+    """
     a = attrs or {}
     base = ""
-    for key in (*test_attrs, "name", "aria-label", "placeholder"):
+
+    # 1-2. Author-written identifiers: verbatim, no stopword stripping.
+    for key in (*test_attrs, "name", "aria-label"):
         if a.get(key):
             base = _slug_to_name(a[key])
             break
+
+    # 3-4. Human-facing text for the control.
+    if not base and label.strip():
+        base = _clean_prose_name(label)
+    if not base and a.get("placeholder"):
+        base = _clean_prose_name(a["placeholder"])
+
+    # 5. An id, unless it looks framework-generated.
     if not base and a.get("id") and not _looks_generated_id(a["id"]):
         base = _slug_to_name(a["id"])
+
+    # 6. Visible text (buttons, links).
     if not base and text.strip():
-        base = _slug_to_name(text.strip()[:30])
+        base = _clean_prose_name(text.strip()[:60])
+
     kind = element_kind(tag, a)
+
+    # 7. Last resort: let the input type say something.
+    if not base:
+        itype = (a.get("type") or "").lower()
+        if tag == "input" and itype in _TYPE_HINTS:
+            base = itype
+
     if not base:
         return kind
     # avoid doubled suffixes like "submit_button_button"
@@ -530,8 +630,9 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
         frame_sel = d.get("frame")
         if frame_sel:
             selector = f"{frame_sel} {FRAME_DELIM} {selector}"
-        name = derive_element_name(tag, attrs, text, test_attrs)
-        final = name
+        name = derive_element_name(tag, attrs, text, test_attrs,
+                                   label=d.get("label", ""))
+        final = _disambiguate(name, used, tag, attrs, text)
         i = 2
         while final in used:
             final = f"{name}_{i}"

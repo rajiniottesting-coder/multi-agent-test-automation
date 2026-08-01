@@ -195,7 +195,7 @@ jobs:
           # Onboarding a different app means editing this list to that app's
           # roles - a deliberate trade: an explicit, greppable mapping that
           # matches the GitHub Secrets page one-to-one.
-          APP_USER_ADMIN: ${{ secrets.APP_USER_ADMIN }}
+          APP_USER_REGISTERED: ${{ secrets.APP_USER_REGISTERED }}
         run: |
           pytest tests/step_defs/ \
             --html=reports/pytest-report.html \
@@ -319,9 +319,24 @@ jobs:
                            first_line))
 
               if failed_cases:
+                  # Each failure carries a CAUSE and a FIX, not just a message.
+                  # A raw Playwright error names what the framework was doing,
+                  # never what was wrong with the app, so this summary used to
+                  # say nothing actionable to anyone who had not spent a day
+                  # reading traces.
+                  try:
+                      import sys
+                      sys.path.insert(0, ".")
+                      from core.failure_diagnosis import diagnose
+                  except Exception:
+                      diagnose = None
                   lines += ["### Failures", ""]
                   for test_name, msg in failed_cases:
                       lines += [f"- **`{test_name}`**", f"  - {msg}"]
+                      if diagnose is not None:
+                          d = diagnose(msg)
+                          lines += [f"    - **Cause ({d.label}):** {d.cause}",
+                                    f"    - **Fix:** {d.remedy}"]
                   lines.append("")
 
               print(f"{scope}: {total} total, {passed} passed, {failures} failed, "

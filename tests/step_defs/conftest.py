@@ -16,8 +16,8 @@ import pytest
 import pages as pages_package
 from pages.base_page import BasePage
 from pages.login_page import LoginPage
-from pages.dashboard_page import DashboardPage
-from pages.menu_page import MenuPage
+from pages.home_page import HomePage
+from pages.nav_page import NavPage
 
 
 # === Page objects ===
@@ -28,15 +28,16 @@ def login_page(page):
 
 
 @pytest.fixture
-def dashboard_page(page):
-    return DashboardPage(page)
+def home_page(page):
+    return HomePage(page)
 
 
 @pytest.fixture
-def menu_page(page):
-    """Sidebar and top bar. Present on every authenticated page, so any
-    scenario that navigates between modules needs this."""
-    return MenuPage(page)
+def nav_page(page):
+    """Top navigation. Present on every page, so any scenario that moves
+    between areas of the site needs this. Its Logout link is also the
+    readiness signal for "am I authenticated"."""
+    return NavPage(page)
 
 
 # === Credentials ===

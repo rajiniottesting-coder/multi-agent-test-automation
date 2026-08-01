@@ -32,8 +32,8 @@ def _snake(name: str) -> str:
 
 @pytest.mark.parametrize("class_name,expected", [
     ("LoginPage", "login_page"),
-    ("DashboardPage", "dashboard_page"),
-    ("MenuPage", "menu_page"),
+    ("HomePage", "home_page"),
+    ("NavPage", "nav_page"),
     ("AdminAddUserPage", "admin_add_user_page"),
     ("PIMPage", "p_i_m_page"),          # documents the acronym edge case
 ])
@@ -46,8 +46,8 @@ def test_snake_case_convention(class_name, expected):
 def test_validator_derives_names_from_page_classes():
     names = _auto_registered_page_fixtures(PROJECT_ROOT)
     assert "login_page" in names
-    assert "dashboard_page" in names
-    assert "menu_page" in names
+    assert "home_page" in names
+    assert "nav_page" in names
 
 
 def test_base_page_never_becomes_a_fixture():
@@ -83,7 +83,7 @@ def test_validator_accepts_an_auto_registered_fixture():
     step_def = (
         "from pytest_bdd import given\n\n\n"
         '@given("I am somewhere")\n'
-        "def go(login_page, dashboard_page, menu_page) -> None:\n"
+        "def go(login_page, home_page, nav_page) -> None:\n"
         "    pass\n"
     )
     errors = validate_fixtures_exist(
@@ -114,7 +114,7 @@ def test_explicitly_declared_fixtures_are_not_overwritten():
     fills gaps, so anything declared by hand must survive untouched."""
     import tests.step_defs.conftest as conftest
     auto = getattr(conftest, "AUTO_REGISTERED_PAGE_FIXTURES", [])
-    for explicit in ("login_page", "dashboard_page", "menu_page", "credentials"):
+    for explicit in ("login_page", "home_page", "nav_page", "credentials"):
         assert explicit not in auto, (
             f"{explicit} is declared explicitly and must not be auto-registered"
         )

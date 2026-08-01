@@ -1,33 +1,36 @@
-# Login module
+# Signup / Login page
 
-The login screen at `/web/index.php/auth/login`.
+One page at `/login` carries TWO independent forms, side by side:
 
-## Behaviour
+- **"Login to your account"** — email + password, for an existing account
+- **"New User Signup!"** — name + email, the first step of registration
 
-| Action | Result |
-|---|---|
-| Valid credentials | Redirect to `/web/index.php/dashboard/index` |
-| Wrong password | Banner: **Invalid credentials** |
-| Unknown username | Banner: **Invalid credentials** (same message — the app does not reveal which field was wrong) |
-| Empty username and/or password | Per-field message: **Required** |
+Both forms have an email field. A selector written loosely enough to match
+"the email input" will match BOTH, which Playwright rejects as a strict-mode
+violation. Every field on this page must be addressed through its own form's
+inventory key — never a generic one.
 
-## Points that matter when writing test cases
+## Signing up is two steps
 
-- **The error message does not distinguish username from password.** A test
-  case asserting "the error says the password is wrong" would be wrong; the
-  app deliberately says only "Invalid credentials".
-- **Empty-field validation is per field, not a banner.** Leaving both fields
-  empty produces TWO "Required" messages, one under each field.
-- **The demo prints its own credentials on the login screen.** That is a
-  property of the demo, not something a test should read.
-- There is a "Forgot your password?" link. It navigates away from the login
-  form, so any test that follows it must navigate back.
+Submitting the signup form does not create the account. It navigates to a
+fuller form (`/signup`) asking for title, password, date of birth, address and
+contact details. The account exists only after that second form is submitted,
+and the app then shows an "ACCOUNT CREATED!" page.
 
-## Grouping guidance
+A scenario that says "register a new user" therefore spans two pages. Do not
+assert on the logged-in state straight after the first submit.
 
-"Wrong password", "unknown username" and "both wrong" all produce the SAME
-outcome — the Invalid credentials banner. They are ONE test case with several
-steps, not three test cases.
+## Failure messages
 
-Empty-field validation is a DIFFERENT behaviour (a different message, shown in
-a different place), so it earns its own test case.
+- Wrong credentials → "Your email or password is incorrect!"
+- Signing up with an address that already exists → "Email Address already
+  exist!"
+
+Both render as text on the same page — there is no redirect, and no toast.
+Assert on the message text.
+
+## Logging out
+
+The "Logout" link in the top navigation returns to `/login`. It is only present
+while logged in, so its presence or absence is a reliable readiness signal for
+"am I authenticated".

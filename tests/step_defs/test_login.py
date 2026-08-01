@@ -10,6 +10,8 @@ REFERENCE FILE — Agent 2 copies this style. Rules it demonstrates:
   cannot match "".
 - Log in by ROLE via the `credentials` fixture. Invalid data (empty values,
   wrong passwords) stays literal — it is test data, not a credential.
+- Assert PRESENCE with a waiting reader and ABSENCE with a non-waiting probe.
+  Using the waiting one for absence times out instead of returning False.
 """
 from pytest_bdd import given, when, then, parsers, scenarios
 
@@ -22,7 +24,7 @@ scenarios(str(feature_path("login")))
 # Given
 # ─────────────────────────────────────────────────────────────
 
-@given("I am on the OrangeHRM login page")
+@given("I am on the signup and login page")
 def open_login_page(login_page, base_url):
     login_page.open(base_url)
 
@@ -34,21 +36,21 @@ def open_login_page(login_page, base_url):
 @when(parsers.re(r'I log in as "(?P<role>[^"]*)"$'))
 def login_as_role(login_page, credentials, role):
     """Log in with real credentials resolved from the environment."""
-    username, password = credentials(role)
-    login_page.login_as(username, password)
+    email, password = credentials(role)
+    login_page.login_as(email, password)
 
 
 @when(parsers.re(r'I log in as "(?P<role>[^"]*)" with an incorrect password'))
 def login_as_role_wrong_password(login_page, credentials, role):
-    """Valid username, deliberately wrong password (test data, not a secret)."""
-    username, _ = credentials(role)
-    login_page.login_as(username, "definitely-not-the-password")
+    """Valid email, deliberately wrong password (test data, not a secret)."""
+    email, _ = credentials(role)
+    login_page.login_as(email, "definitely-not-the-password")
 
 
-@when(parsers.re(r'I log in with username "(?P<username>[^"]*)" and password "(?P<password>[^"]*)"'))
-def login_with_literal_credentials(login_page, username, password):
+@when(parsers.re(r'I log in with email "(?P<email>[^"]*)" and password "(?P<password>[^"]*)"'))
+def login_with_literal_credentials(login_page, email, password):
     """Literal values, for invalid and empty-field scenarios."""
-    login_page.login_as(username, password)
+    login_page.login_as(email, password)
 
 
 @when("I clear the credential fields")
@@ -60,29 +62,32 @@ def clear_credentials(login_page):
 # Then
 # ─────────────────────────────────────────────────────────────
 
-@then("I should be redirected to the dashboard")
-def assert_on_dashboard(dashboard_page):
-    assert dashboard_page.is_loaded(), "Dashboard did not load after login"
+@then("I should be logged in")
+def assert_logged_in(nav_page):
+    """The Logout link is rendered only while authenticated, which is more
+    reliable than the URL: this app serves the same path either way."""
+    assert nav_page.wait_until_logged_in(), "No session after logging in"
 
 
-@then(parsers.re(r'I should see the page title "(?P<expected_title>[^"]*)"'))
-def assert_page_title(dashboard_page, expected_title):
-    actual = dashboard_page.get_header_title()
-    assert actual == expected_title, f"Expected title {expected_title!r}, got {actual!r}"
+@then("I should not be logged in")
+def assert_not_logged_in(nav_page):
+    """Non-waiting probe. The waiting reader would time out rather than
+    return False, so the assertion would never be reached."""
+    assert not nav_page.is_logged_in(), "Unexpectedly logged in"
+
+
+@then("I should see my account name in the navigation")
+def assert_account_name_shown(nav_page):
+    banner = nav_page.logged_in_name()
+    assert "Logged in as" in banner, f"Expected a logged-in banner, got {banner!r}"
 
 
 @then(parsers.re(r'I should see the error message "(?P<expected_message>[^"]*)"'))
 def assert_error_message(login_page, expected_message):
-    actual = login_page.get_error_message()
-    assert expected_message in actual, f"Expected {expected_message!r} in {actual!r}"
-
-
-@then(parsers.re(r'I should see the field error "(?P<expected_message>[^"]*)"'))
-def assert_field_error(login_page, expected_message):
-    actual = login_page.get_field_error()
+    actual = login_page.get_login_error()
     assert expected_message in actual, f"Expected {expected_message!r} in {actual!r}"
 
 
 @then("I should remain on the login page")
 def assert_still_on_login(login_page):
-    assert login_page.is_login_form_displayed(), "Expected to stay on the login page"
+    assert login_page.is_loaded(), "Expected to stay on the login page"

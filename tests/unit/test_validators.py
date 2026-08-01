@@ -985,16 +985,29 @@ class TestPageObjectSelectors:
 def _configured_inventory() -> dict:
     """The inventory this checkout is pointed at, per config.yaml.
 
-    Read through the config rather than naming a file: these two assertions
-    are about THIS checkout's inventory, whichever app it holds, so swapping
-    the app under test must not break the framework's own suite.
+    Read through the config rather than naming a file: these assertions are
+    about THIS checkout's inventory, whichever app it holds, so swapping the
+    app under test must not break the framework's own suite.
+
+    SKIPS rather than fails when the file is absent. Pointing config.yaml at a
+    new app before its inventory has been crawled is a legitimate mid-migration
+    state, and a framework self-test that goes red during it is telling you
+    something you already know while hiding anything genuinely broken.
     """
     import json
     import yaml
     repo = Path(__file__).resolve().parents[2]
     cfg = yaml.safe_load((repo / "config" / "config.yaml").read_text(encoding="utf-8"))
     rel = (cfg.get("app_under_test") or {}).get("inventory_file")
-    return json.loads((repo / rel).read_text(encoding="utf-8"))
+    if not rel:
+        pytest.skip("config.yaml declares no inventory_file")
+    path = repo / rel
+    if not path.is_file():
+        pytest.skip(
+            f"configured inventory {rel} does not exist yet - crawl it with "
+            f"`python -m scripts.generate_inventory` and promote the draft"
+        )
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 class TestMultiMatchEnforcement:

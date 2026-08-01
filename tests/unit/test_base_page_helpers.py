@@ -243,9 +243,12 @@ def test_is_showing_passes_the_explicit_timeout_through(monkeypatch):
 
 
 def test_reference_page_object_uses_the_probe():
-    """dashboard_page.is_loaded() is the shape Agent 2 copies. If it goes back
-    to a bare try/except the swallowed-reason regression comes back with it."""
-    src = Path(__file__).resolve().parents[2] / "pages" / "dashboard_page.py"
+    """home_page.is_loaded() is the shape Agent 2 copies. If it goes back to a
+    bare try/except the swallowed-reason regression comes back with it.
+
+    Named through the configured reference rather than a fixed filename would
+    be better still, but the landing page is the one every app has."""
+    src = Path(__file__).resolve().parents[2] / "pages" / "home_page.py"
     body = src.read_text(encoding="utf-8")
     assert "self.is_showing(" in body
     assert "except Exception:" not in body
