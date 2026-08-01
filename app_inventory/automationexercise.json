@@ -2,10 +2,10 @@
   "app_name": "Automation Exercise",
   "base_url": "https://automationexercise.com",
   "description": "E-commerce practice site: browse and search products, add to cart, register an account, place an order.",
-  "_VERIFICATION_STATUS": "STARTER INVENTORY, NOT YET VERIFIED AGAINST THE LIVE DOM (created 31 Jul 2026). Every selector below is role= or text= derived from text observed on the actual pages, so the NAMES are real - but none has been confirmed to resolve to exactly one element. Before trusting it run `python -m scripts.verify_locators --only-problems` and fix whatever it reports. Then crawl a fuller draft with `python -m scripts.generate_inventory` and merge in the elements this file does not cover: the second signup form, product detail, checkout and payment are all missing.",
+  "_VERIFICATION_STATUS": "STARTER INVENTORY, NOT YET VERIFIED AGAINST THE LIVE DOM (31 Jul 2026). The role=, label=, placeholder= and text= selectors are derived from text observed on the real pages, so the names are real - but NONE has been confirmed to resolve to exactly one element. The remaining [data-qa='...'] and #id values are guesses from this site's published test cases and are the most likely to be wrong. Before trusting any of it run `python -m scripts.verify_locators --only-problems` and fix what it reports. Then crawl a fuller draft with `python -m scripts.generate_inventory` and merge in what this file does not cover: the second signup form, product detail, checkout and payment.",
   "_inventory_conventions": {
     "selectors": "Every selector maps to a first-class Playwright locator: [name='x'] / #id (css), role=button[name='Save'] (getByRole), label=X (getByLabel), placeholder=..., alt=..., title=..., text=... . XPath is never emitted. An iframe-chained selector uses ' >>> '. label=/alt=/title= need page.get_by_label/get_by_alt_text/get_by_title - they are NOT page.locator() engine syntax; role= and text= work with page.locator().",
-    "selector_strategy": "This app is server-rendered with semantic HTML and readable button/link text, so role= and text= selectors are preferred over CSS: they survive restyling and read like the page. Where the crawl finds a data-qa attribute, prefer that.",
+    "selector_strategy": "USER-FACING PLAYWRIGHT LOCATORS FIRST. Ranking, following Playwright's own guidance: test-id > role+accessible-name (getByRole) > label (getByLabel) > aria-label > placeholder > alt > title > stable id / name (css) > nameless role > text > css path. `#id` and `[name=...]` are page.locator() css rather than a getBy* method, so they sit BELOW everything user-facing - they remain above text= and a raw css path, because a deliberate id IS an author's contract, but they are not the first thing to reach for. This app is server-rendered with semantic HTML and readable button and link text, so role= and text= locators fit it especially well.",
     "shared_navigation": "Present on every page. Top navigation, so it lives once here rather than repeated on each page.",
     "test_owned_data": "An account's cart, addresses and orders are private to it, so assertions on them are safe. The PRODUCT CATALOGUE is shared and read-only - 34 fixed products - so a named product is safe to assert on, but never assert a total that the site owner could change."
   },
@@ -63,7 +63,7 @@
         "site_logo": "alt=Website for automation practice",
         "subscription_heading": "text=Subscription",
         "subscribe_email_input": "placeholder=Your email address",
-        "subscribe_button": "#subscribe",
+        "subscribe_button": "role=button[name='Subscribe']",
         "subscribe_success": "text=You have been successfully subscribed!"
       },
       "elements_notes": {
@@ -123,8 +123,8 @@
       "page_object_class": "ProductsPage",
       "elements": {
         "all_products_heading": "text=All Products",
-        "search_input": "#search_product",
-        "search_button": "#submit_search",
+        "search_input": "placeholder=Search Product",
+        "search_button": "role=button[name='Search']",
         "product_cards": ".product-image-wrapper",
         "product_names": ".productinfo p",
         "add_to_cart_buttons": "text=Add to cart",
@@ -168,7 +168,7 @@
         "cart_rows": "#cart_info tbody tr",
         "cart_product_names": "#cart_info .cart_description a",
         "cart_delete_buttons": ".cart_quantity_delete",
-        "proceed_to_checkout_button": "text=Proceed To Checkout",
+        "proceed_to_checkout_button": "role=link[name='Proceed To Checkout']",
         "empty_cart_message": "text=Cart is empty!"
       },
       "multi_match": [

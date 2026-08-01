@@ -33,14 +33,14 @@ def open_login_page(login_page, base_url):
 # When
 # ─────────────────────────────────────────────────────────────
 
-@when(parsers.re(r'I log in as "(?P<role>[^"]*)"$'))
+@when(parsers.re(r'I log in as a "(?P<role>[^"]*)" user$'))
 def login_as_role(login_page, credentials, role):
     """Log in with real credentials resolved from the environment."""
     email, password = credentials(role)
     login_page.login_as(email, password)
 
 
-@when(parsers.re(r'I log in as "(?P<role>[^"]*)" with an incorrect password'))
+@when(parsers.re(r'I log in as a "(?P<role>[^"]*)" user with an incorrect password'))
 def login_as_role_wrong_password(login_page, credentials, role):
     """Valid email, deliberately wrong password (test data, not a secret)."""
     email, _ = credentials(role)

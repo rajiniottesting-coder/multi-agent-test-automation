@@ -111,7 +111,7 @@ def credentials():
             # was ever meant to set.
             raise RuntimeError(
                 "Empty login role. The scenario must name a role, e.g. "
-                "'When I log in as \"admin\"'."
+                "'When I log in as a \"admin\" user'."
             )
         user = os.getenv(f"APP_USER_{key}")
         if not user:

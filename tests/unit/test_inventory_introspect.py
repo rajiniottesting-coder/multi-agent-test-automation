@@ -326,10 +326,41 @@ def test_label_locator_preferred_over_generated_id():
     assert sel == "label=Email address" and strat == "label"
 
 
-def test_stable_id_still_beats_label():
-    """A real, human-authored id remains the stronger handle."""
+def test_label_beats_even_a_stable_id():
+    """CONTRACT CHANGED: user-facing locators outrank css.
+
+    This asserted the reverse - that a human-authored `#email-field` beat
+    getByLabel("Email"). Defensible on stability grounds, but it is the
+    opposite of Playwright's own guidance, and it meant that on any app whose
+    forms carry ids (which is most of them) the crawler emitted css for every
+    field and generated page objects read like 2015-era Selenium.
+
+    `#id` is page.locator() css, not a getBy* method. It still ranks above
+    text= and the raw css path - a deliberate id IS an author's contract - but
+    it is no longer the first thing reached for.
+    """
     sel, strat = rank_selector("input", {"id": "email-field"}, label="Email")
-    assert sel == "#email-field" and strat == "id"
+    assert sel == "label=Email" and strat == "label"
+
+
+def test_id_is_used_when_nothing_user_facing_exists():
+    """The css tier is a fallback, not a deletion: an element with no role,
+    label, placeholder, alt or title still gets its id."""
+    sel, strat = rank_selector("div", {"id": "draggable"})
+    assert sel == "#draggable" and strat == "id"
+
+
+def test_role_beats_id_for_a_named_control():
+    """getByRole is Playwright's first recommendation, so a button with both
+    an id and readable text is addressed by role."""
+    sel, strat = rank_selector("button", {"id": "submit-btn"}, text="Sign in")
+    assert sel == "role=button[name='Sign in']" and strat == "role"
+
+
+def test_placeholder_beats_id():
+    """getByPlaceholder is user-facing; #id is not."""
+    sel, strat = rank_selector("input", {"id": "zip-code", "placeholder": "Zip"})
+    assert strat == "placeholder"
 
 
 def test_alt_locator_for_image_inputs():

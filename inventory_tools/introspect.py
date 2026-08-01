@@ -155,16 +155,30 @@ def rank_selector(tag: str, attrs: dict, text: str = "",
                   label: str = "", css_path: str = "") -> tuple[str, str]:
     """Return (selector, strategy) picking the most stable available handle.
 
-    Priority, aligned with Playwright's own locator recommendations:
+    Priority, following Playwright's own locator recommendations:
 
-        test-id attr > stable id > name > role+accessible-name (getByRole)
-        > label (getByLabel) > aria-label > placeholder (getByPlaceholder)
-        > alt (getByAltText) > title (getByTitle) > nameless role
-        > text (getByText) > css fallback
+        test-id attr
+        > role + accessible name  (getByRole)    <- Playwright's first choice
+        > label                   (getByLabel)
+        > aria-label
+        > placeholder             (getByPlaceholder)
+        > alt                     (getByAltText)
+        > title                   (getByTitle)
+        > stable id / name        (css, but an author's deliberate contract)
+        > nameless role
+        > text                    (getByText)
+        > css path fallback
 
-    Every strategy above the css fallback maps to a first-class Playwright
-    locator, so generated page objects use the API Playwright actually
-    recommends rather than brittle css. XPath is deliberately never emitted.
+    USER-FACING LOCATORS COME FIRST. `#id` and `[name=…]` are page.locator()
+    css, not a getBy* method, and they used to outrank role and label - so a
+    labelled form field with an id produced `#email-field` instead of
+    getByLabel("Email"), which is the opposite of Playwright's guidance and
+    made generated page objects read like 2015-era Selenium. They remain ahead
+    of text= and the raw css path, because a deliberate id or name IS a stable
+    contract; they are simply not the first thing to reach for.
+
+    Every strategy above the css path fallback maps to a first-class Playwright
+    locator. XPath is deliberately never emitted.
 
     `label` is the text of the element's associated <label> — a SEPARATE DOM
     element, so it must be supplied by the collector; it cannot be read from
@@ -183,20 +197,6 @@ def rank_selector(tag: str, attrs: dict, text: str = "",
             if prefix:
                 return (f"[{key}^='{_css_escape_value(prefix)}-']", f"{key}-prefix")
             return (f"[{key}='{_css_escape_value(val)}']", key)
-    if a.get("id") and not _looks_generated_id(a["id"]):
-        return (f"#{a['id']}", "id")
-    if a.get("id"):
-        # The id was rejected as generated, but it may still carry a MEANINGFUL
-        # stable prefix worth anchoring on:
-        #     "order-row-20260725" -> [id^='order-row-']
-        # A FRAMEWORK prefix (radix-, ember-, headlessui-) is not meaningful —
-        # every element the library renders shares it — so those are skipped and
-        # ranking continues to name/role/label below.
-        id_prefix = dynamic_attr_prefix(a["id"])
-        if id_prefix and not _FRAMEWORK_ID_PREFIX.match(id_prefix):
-            return (f"[id^='{_css_escape_value(id_prefix)}-']", "id-prefix")
-    if a.get("name"):
-        return (f"{tag}[name='{_css_escape_value(a['name'])}']", "name")
     # accessible role + name — churn-proof, handles custom/div-based widgets.
     role = a.get("role") or _IMPLICIT_ROLE.get(tag)
     acc_name = (a.get("aria-label") or (text or "")).strip()
@@ -231,6 +231,28 @@ def rank_selector(tag: str, attrs: dict, text: str = "",
     if role in _INTERACTIVE_ROLES and acc_name:
         return (f"role={role}[name='{_css_escape_value(acc_name[:40])}']",
                 "role-volatile")
+    # ── CSS tier ────────────────────────────────────────────────────
+    # `#id` and `[name=…]` are page.locator() CSS, not a getBy* method, so they
+    # sit BELOW every user-facing Playwright locator above. They used to sit at
+    # the top, which meant a form field with both an id and a label produced
+    # `#email-field` rather than getByLabel("Email") — the opposite of what
+    # Playwright recommends, and the reason generated page objects looked like
+    # 2015-era Selenium. They stay ahead of text= and raw css because a
+    # deliberate id or name IS an author's stable contract; they are simply not
+    # the FIRST choice.
+    if a.get("id") and not _looks_generated_id(a["id"]):
+        return (f"#{a['id']}", "id")
+    if a.get("id"):
+        # The id was rejected as generated, but it may still carry a MEANINGFUL
+        # stable prefix worth anchoring on:
+        #     "order-row-20260725" -> [id^='order-row-']
+        # A FRAMEWORK prefix (radix-, ember-, headlessui-) is not meaningful —
+        # every element the library renders shares it — so those are skipped.
+        id_prefix = dynamic_attr_prefix(a["id"])
+        if id_prefix and not _FRAMEWORK_ID_PREFIX.match(id_prefix):
+            return (f"[id^='{_css_escape_value(id_prefix)}-']", "id-prefix")
+    if a.get("name"):
+        return (f"{tag}[name='{_css_escape_value(a['name'])}']", "name")
     # Nameless interactive role: churn-proof, but weaker than any named handle
     # above, so it deliberately ranks below label/alt/title.
     if role in _INTERACTIVE_ROLES:

@@ -2,7 +2,8 @@
 #
 # Conventions it demonstrates:
 #   - one Scenario per behaviour, not per input value
-#   - real logins go through a ROLE ("I log in as"); credentials never appear here
+#   - real logins go through a ROLE, phrased so it reads as English:
+#     "I log in as a <role> user". Credentials never appear here.
 #   - INVALID data stays literal — empty strings and wrong passwords are test
 #     data, not secrets
 #   - tags are lowercase single words, so `pytest -m negative` works
@@ -17,13 +18,13 @@ Feature: Automation Exercise login
 
   @smoke @login
   Scenario: Successful login with valid credentials
-    When I log in as "registered"
+    When I log in as a "registered" user
     Then I should be logged in
     And I should see my account name in the navigation
 
   @negative @login
   Scenario: Login fails with an incorrect password
-    When I log in as "registered" with an incorrect password
+    When I log in as a "registered" user with an incorrect password
     Then I should see the error message "Your email or password is incorrect!"
     And I should remain on the login page
 
@@ -44,5 +45,5 @@ Feature: Automation Exercise login
     When I log in with email "no.such.user@example.com" and password "whatever123"
     Then I should see the error message "Your email or password is incorrect!"
     When I clear the credential fields
-    And I log in as "registered"
+    And I log in as a "registered" user
     Then I should be logged in
