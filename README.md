@@ -2,7 +2,7 @@
 
 A reusable framework where **5 specialized AI agents** collaborate to automate the entire software testing lifecycle — from requirement analysis to test execution and reporting — with human-in-the-loop checkpoints at every critical step.
 
-> **App-agnostic by design.** This framework was built for OrangeHRM as the demo app, but the agent code has zero app-specific knowledge. Onboarding a new application means editing one config block — never agent code.
+> **App-agnostic by design.** The agent code has zero app-specific knowledge. Everything an application contributes lives in three places — `config/config.yaml`, `app_inventory/<app>.json` and `prompts/app_context/` — so onboarding a new application means editing configuration, never agent code.
 
 ---
 
@@ -32,7 +32,7 @@ Given a user story in Jira, this system autonomously:
 
 Each agent has a **human approval gate** — agents propose, humans dispose. This is collaborative AI, not full autonomy.
 
-**Default app under test:** [OrangeHRM](https://opensource-demo.orangehrmlive.com) — a free, stable demo e-commerce site for automation practice. Swap to your own app via `config.yaml` (see [GUIDE.md → Onboarding a new app](./docs/GUIDE.md#onboarding-a-new-app)).
+**Default app under test:** [Automation Exercise](https://automationexercise.com) — a free demo e-commerce site for automation practice. Swap to your own app via `config.yaml` (see [GUIDE.md → Onboarding a new app](./docs/GUIDE.md#onboarding-a-new-app)).
 
 ---
 
@@ -154,7 +154,7 @@ multi-agent-test-automation/
 │   └── app_context.md               # App-specific context block (NEW)
 │
 ├── app_inventory/                   # JSON descriptions of each AUT (pages, selectors, page-level errors, components)
-│   └── orangehrm.json
+│   └── automationexercise.json
 │
 ├── scripts/
 │   ├── smoke_test.py                # End-to-end integration check
@@ -269,7 +269,7 @@ The whole point of the recent refactor: **no Python code changes** are needed to
 3. Replace `prompts/app_context.md` with your app's known users, error messages, page flow
 4. Replace the reference files (`features/login.feature`, `tests/step_defs/test_login.py`, `pages/login_page.py`) with one well-written human-authored test for your app — the LLM uses these as its style baseline
 
-Once you're running, `python -m scripts.check_inventory_staleness --fail-on-drift` keeps your inventory honest as the app evolves. Both inventory tools are fully app-agnostic — no OrangeHRM assumptions.
+Once you're running, `python -m scripts.check_inventory_staleness --fail-on-drift` keeps your inventory honest as the app evolves. Both inventory tools are fully app-agnostic — they read whichever app `config.yaml` points at.
 
 Full step-by-step in [GUIDE.md → Onboarding a new app](./docs/GUIDE.md#onboarding-a-new-app).
 

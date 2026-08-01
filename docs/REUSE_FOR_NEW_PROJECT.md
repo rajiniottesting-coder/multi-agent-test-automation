@@ -104,10 +104,10 @@ app_under_test:
 ALSO update the legacy `base_url:` alias at line 61:
 
 ```yaml
-base_url: https://bank.acme.example.com   # was: https://opensource-demo.orangehrmlive.com
+base_url: https://bank.acme.example.com   # was: the previous app's base URL
 ```
 
-ALSO update or REMOVE the `test_users:` block. OrangeHRM-specific test users are in there.
+ALSO update or REMOVE the `test_users:` block - it holds the previous app's roles.
 
 > **⚠️ Credentials — read before onboarding a REAL application.**
 >

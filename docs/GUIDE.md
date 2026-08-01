@@ -306,7 +306,7 @@ browser:               # Playwright settings (headless, viewport, timeout, slow_
 
 base_url: ...          # Legacy alias for tests/conftest.py
 
-test_users: ...        # OrangeHRM-specific test data (move/remove for other apps)
+test_users: ...        # App-specific test data (update when swapping apps)
 
 agents:
   agent1_analyst:
@@ -535,7 +535,7 @@ app_under_test:
 
 ### Step 2: Create `app_inventory/myshop.json`
 
-Describes the pages, selectors, and methods of your app. Use `app_inventory/orangehrm.json` as the example. The schema is documented in [REUSE_FOR_NEW_PROJECT.md → App inventory JSON schema](./REUSE_FOR_NEW_PROJECT.md). Rather than hand-writing from zero, **bootstrap a draft** with `python -m scripts.generate_inventory --crawl` (see [Inventory tooling](#inventory-tooling-bootstrap--staleness) above), then hand-review and fill the human-only fields (`elements_notes`, `key_methods`, page-level `errors`, `components`).
+Describes the pages, selectors, and methods of your app. Use the inventory named by `app_under_test.inventory_file` in `config.yaml` as the example. The schema is documented in [REUSE_FOR_NEW_PROJECT.md → App inventory JSON schema](./REUSE_FOR_NEW_PROJECT.md). Rather than hand-writing from zero, **bootstrap a draft** with `python -m scripts.generate_inventory --crawl` (see [Inventory tooling](#inventory-tooling-bootstrap--staleness) above), then hand-review and fill the human-only fields (`elements_notes`, `key_methods`, page-level `errors`, `components`).
 
 ### Step 3: Populate `prompts/app_context/`
 
@@ -550,13 +550,18 @@ The reference triplet is:
 - `tests/step_defs/test_<reference>.py` — step definitions
 - `pages/<reference>_page.py` — page object
 
-### Step 5: Optional — clean up OrangeHRM leftovers
+### Step 5: Optional — clean up the previous app's leftovers
 
-If you want a pristine repo for your app (no OrangeHRM files):
-- Delete `app_inventory/orangehrm.json`
-- Delete `features/login.feature`, `tests/step_defs/test_login.py`, `pages/login_page.py`, `pages/inventory_page.py`
+If you want a pristine repo for your app:
+- Delete the previous `app_inventory/<old-app>.json`
+- Delete the previous reference trio and any page objects it left behind:
+  `features/<old>.feature`, `tests/step_defs/test_<old>.py`, `pages/<old>_page.py`
+- Rewrite `prompts/app_context/` — those modules describe the OLD app's
+  behaviour and will actively mislead the agents if left in place
 - Update `config.yaml`'s `test_users:` block (or remove it)
 - Update `config.yaml`'s `base_url:` legacy alias
+- Rename the `APP_USER_<ROLE>` variables in `.env` and in GitHub Secrets to
+  match the new app's roles
 
 ### Step 6: Test locally
 
