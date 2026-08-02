@@ -60,7 +60,7 @@ For more diagrams — component view, Agent 2 sequence, and the labels-as-state-
 - **Each agent stops at a checkpoint.** A human reviews before the next agent runs. See [the human-approval gate](#the-human-approval-gate).
 - **Idempotency via Jira labels.** `ai-processed` (Agent 1 done), `ai-coded` (Agent 2 done), `tests-run` (Agent 5 done). Re-running an agent against an already-processed story is a no-op.
 - **Config-driven, not code-driven.** App-specific knowledge (URL, reference files, page inventory) lives in `config.yaml` and `app_inventory/`. Agent code is app-agnostic.
-- **Defensive validators.** Between Agent 2's LLM output and the PR, two validators run: filename consistency (matches feature filename to `feature_path()` calls) and step-def coverage (every Gherkin step has a matching `@given/@when/@then`). These catch LLM drift before it reaches a PR.
+- **Defensive validators.** Between Agent 2's LLM output and the PR, nine static validators run — filename consistency, Gherkin structure, step-def coverage, duplicate steps, imports, method resolution, page-object selectors, unused steps and fixtures. Repairable failures feed a repair loop that regenerates only the broken files; the rest abort before a branch exists.
 
 ---
 
@@ -93,7 +93,7 @@ For more diagrams — component view, Agent 2 sequence, and the labels-as-state-
 2. Optional dedup check: if any test cases are already covered by existing scenarios, skip them. (`ai-regenerate` label bypasses this.)
 3. **Stage 1 (Plan):** Calls the LLM with a Pydantic schema (`CodePlan`) — gets file paths, types, branch name, PR title. NO code yet.
 4. **Stage 2 (Generate):** For EACH file in the plan, calls the LLM in text mode to generate the file's content.
-5. **Validators:** Checks filename consistency (Phase 4) and step-def coverage (Phase 8). Fails loudly if either is wrong.
+5. **Validators:** Nine static checks run before a branch is created — see **The validator gate** below. Repairable failures go through the repair loop; anything still failing aborts the run.
 6. Creates a branch (`auto/<JIRA-KEY>-<feature-name>`), commits files, opens a PR.
 7. Tags the parent story with `ai-coded`.
 
@@ -158,6 +158,27 @@ ABOVE it is per-story and changes every run; content below is static — the
 rules, the reference files, the BasePage helper list. The static portion is
 cached by the provider, so a multi-file story pays for it once rather than per
 file. Adding a rule below the marker is free; adding one above it is not.
+
+**The validator gate:**
+
+Nine static checks run on the generated batch before any branch exists. They
+are ordered cheapest first, so an expensive AST walk only runs if the basic
+checks pass.
+
+| # | Validator | Catches |
+|---|---|---|
+| 1 | `validate_filename_consistency` | A feature written as `login-validation.feature` but referenced as `feature_path("login_validation")` |
+| 2 | `validate_feature_file_structure` | Malformed Gherkin — a Scenario with no Feature, a stray Background |
+| 3 | `validate_step_definitions_complete` | A Gherkin step with no matching `@given/@when/@then` |
+| 4 | `validate_no_duplicate_step_definitions` | The same step phrase defined twice, which pytest-bdd resolves unpredictably |
+| 5 | `validate_imports_resolvable` | An import of a module or symbol that does not exist |
+| 6 | `validate_method_resolution` | A step def calling `page.method()` that the page object never defines |
+| 7 | `validate_page_object_selectors` | A literal selector in a page object, an invented inventory key, or a `multi_match` key used strictly |
+| 8 | `validate_no_unused_step_definitions` | A step definition no scenario uses — usually two phrasings of one step |
+| 9 | `validate_fixtures_exist` | A step def requesting a fixture no conftest provides |
+
+Failures do not abort immediately: repairable ones go to the repair loop above,
+and only what survives four attempts stops the run.
 
 **Regeneration mode:**
 Add label `ai-regenerate` to a parent story. Agent 2 will:
@@ -386,7 +407,7 @@ Consider a single commit touching `validators/method_resolution_validator.py`
 **and** `pages/products_page.py`, pushed to `main`:
 
 - the workflow fires — `validators/**` is a watched path
-- 601 unit tests run and pass
+- the full unit suite runs and passes
 - the browser is never installed, and `tests/step_defs/` is never executed
 
 The validator change is genuinely verified. The page object is not. It reached
@@ -690,7 +711,7 @@ Three distinct test layers exist; they have different triggers and purposes:
 
 | Suite | Trigger | Touches network? | Purpose |
 |---|---|---|---|
-| `tests/unit/` (391 tests) | Every PR — Agent 4 runs `pytest tests/`, which includes them. Also run manually (`python -m pytest tests/unit/ -q`) before committing any framework change. | No — fully offline (no Jira/GitHub/LLM) | Framework correctness: validators, markers, orphan cleanup, usage tracking, ledger, component filtering, repair routing, step-def splicing, inventory tooling, sweeper |
+| `tests/unit/` | Every PR — Agent 4 runs `pytest tests/`, which includes them. Also run manually (`python -m pytest tests/unit/ -q`) before committing any framework change. | No — fully offline (no Jira/GitHub/LLM) | Framework correctness: validators, markers, orphan cleanup, usage tracking, ledger, component filtering, repair routing, step-def splicing, inventory tooling, sweeper |
 | `tests/step_defs/` (generated E2E) | Every PR — same Agent 4 run | Yes — drives a real browser against the app under test | Does the application work |
 | `scripts/smoke_test.py` | **Manual only** — run on first setup, after credential/`.env` changes, on a new machine, or when onboarding a new app | Yes — live Jira login, one real LLM call, one browser hit on the app's `base_url` (config-driven) | Is the *environment* wired correctly |
 
@@ -998,6 +1019,9 @@ flowchart TB
     A4 -->|"junit.xml +<br/>HTML report"| A5
     A5 -->|"summary comment +<br/>label: tests-run"| Story
 
+    PR -.->|"changes requested:<br/>label ai-regenerate<br/>-> fresh rev2 branch"| A2
+    Story -.->|"label ai-update:<br/>splice NEW scenarios<br/>into existing files"| A2
+
     A1 <-.->|"prompt +<br/>structured output"| LLM
     A2 <-.->|"plan + per-file<br/>generation"| LLM
     A3 <-.->|"review prompt"| LLM
@@ -1021,7 +1045,7 @@ flowchart TB
 ```mermaid
 flowchart LR
     subgraph CFG["⚙️ Configuration Layer"]
-        CY["config.yaml<br/>app_under_test, agents, browser"]
+        CY["config.yaml<br/>app_under_test, browser"]
         ENV[".env<br/>secrets"]
         AC["AppContext<br/>app_context.py"]
         CY --> AC
@@ -1029,12 +1053,12 @@ flowchart LR
     end
 
     subgraph DATA["📦 Data Layer"]
-        INV["app_inventory/<app>.json<br/>pages, selectors, methods"]
+        INV["app_inventory/&lt;app&gt;.json<br/>pages + selectors"]
         REF["features/<ref>.feature<br/>tests/step_defs/test_<ref>.py<br/>pages/<ref>_page.py"]
-        ACMD["prompts/app_context/<br/>core.md + per-component modules"]
+        ACMD["prompts/app_context/<br/>core.md + modules<br/>(Agent 1 only)"]
     end
 
-    subgraph PROMPTS["📝 Prompts Layer<br/>(app-agnostic + placeholders)"]
+    subgraph PROMPTS["📝 Prompts Layer<br/>(templated)"]
         P1["agent1_analyst.md"]
         P2P["agent2_coder_plan.md"]
         P2G["agent2_coder_generate.md"]
@@ -1042,7 +1066,7 @@ flowchart LR
         P5["agent5_reporter.md"]
     end
 
-    subgraph AGENTS["🤖 Agents Layer<br/>(app-agnostic)"]
+    subgraph AGENTS["🤖 Agents Layer"]
         AG1["agent1_analyst.py"]
         AG2["agent2_coder.py"]
         AG3["agent3_reviewer.py"]
@@ -1052,7 +1076,7 @@ flowchart LR
     subgraph CLIENTS["🔌 External Adapters"]
         JC["jira_client.py<br/>Jira API"]
         GC["github_client.py<br/>GitHub API"]
-        LC["llm_client.py<br/>provider-agnostic + retry/quota"]
+        LC["llm_client.py<br/>retry + quota"]
     end
 
     AC --> AG1
@@ -1103,7 +1127,7 @@ sequenceDiagram
     participant G as GitHub
 
     U->>A2: --story SCRUM-5
-    A2->>A2: AppContext.load()
+    A2->>A2: AppContext.load()<br/>(config.yaml + inventory)
     A2->>J: get linked Test Cases
     J-->>A2: list of test cases
     A2->>A2: dedup against<br/>existing scenarios
@@ -1133,6 +1157,25 @@ sequenceDiagram
     G-->>A2: PR URL
     A2->>J: label parent ai-coded
 ```
+
+**Reading the sequence above, step by step:**
+
+| Step | What actually happens |
+|---|---|
+| `AppContext.load()` | Reads `config.yaml` → base_url, reference files, reserved paths, and the app inventory. **Not** `prompts/app_context/*.md` — those go to Agent 1 alone. The similar names are unrelated. |
+| `get linked Test Cases` | Jira, filtered on `ai-processed` + `human-approved` |
+| `dedup against existing scenarios` | Skips test cases already covered by a scenario in the repo. `ai-regenerate` bypasses this |
+| **Stage 1 — Plan** | ONE structured LLM call against the `CodePlan` schema: file paths, file types, branch name, PR title. No code yet |
+| `validate_no_reserved_paths` | Aborts if the plan targets a reserved file, so the model cannot overwrite your gold-standard reference |
+| **Stage 2 — Per-file** | One text-mode call per file. Each prompt carries the filtered inventory, the reference trio, the AST-extracted BasePage helpers, and any page object generated earlier in this same run |
+| `extract from markdown fences` | Strips the ```` ```python ```` wrapper the model adds even when told not to |
+| **Hard validators** | The nine checks above. Repairable failures go to the repair loop; the rest abort |
+| `create branch / commit / open PR` | `auto/<KEY>-<feature>`, then `ai-coded` on the parent story |
+
+Why two stages: asking for structure AND large code bodies in one call
+truncates, hallucinates, or returns malformed JSON. A structured plan followed
+by per-file text generation is dramatically more reliable, and it means a
+single bad file can be regenerated without redoing the batch.
 
 ### State / labels lifecycle
 

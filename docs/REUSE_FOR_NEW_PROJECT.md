@@ -12,7 +12,7 @@
 Porting to a new tool means adding ONE file under `integrations/` and changing
 one line in `config/config.yaml`. Nothing in `agents/` changes.
 
-> **Verification status (July 2026):** ALL FIXES PRESENT. All 391 unit tests
+> **Verification status (Aug 2026):** ALL FIXES PRESENT. The full unit suite
 > pass. Deployed: v17/v18 prompt hardening, orphan cleanup (`ai-update` AND
 > `ai-regenerate`), dynamic sprint scoping (`sprint: "auto"` via JIRA_BOARD_ID),
 > and end-to-end LLM token & cost instrumentation (per-run tracker + per-story

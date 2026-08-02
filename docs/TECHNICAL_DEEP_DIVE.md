@@ -91,7 +91,7 @@ prompts/
 
 features/                              — Gherkin .feature files
 tests/step_defs/                       — pytest-bdd step definitions
-tests/unit/                            — 391 unit tests (framework self-tests)
+tests/unit/                            — framework self-tests (~600, offline)
 pages/                                 — Page Object Model classes
   base_page.py                  ← 72 generic Playwright helpers
 
@@ -472,7 +472,7 @@ def run_update(story_id, dry_run=False) -> dict:
 | `tests/unit/test_orphan_cleanup.py` | 20 | Orphan detection across banking + CMS domains |
 | `tests/unit/test_validators.py` | 32 | All validators (filename consistency, feature structure, step completeness, imports, method resolution) |
 
-94 tests for Agent 2. The full unit suite is 391 tests, all passing in ~3 seconds.
+94 tests for Agent 2. The full unit suite runs offline in a few seconds.
 
 ---
 
@@ -1167,7 +1167,7 @@ Agent prompts (`prompts/agent2_coder_plan.md`, `prompts/agent2_coder_generate.md
 | `agents/*.py` (all 11 files) | NO |
 | `prompts/agent*.md` (5 files) | NO |
 | `pages/base_page.py` | NO (universal helpers) |
-| `tests/unit/*.py` (391 tests) | NO |
+| `tests/unit/*.py` | NO |
 | `.github/workflows/*.yml` (6 workflows) | NO |
 
 This isolation is enforced by code, not just convention:
@@ -1278,6 +1278,6 @@ This framework is the result of iterative refinement against real production LLM
 - v18 — BasePage helpers + exact phrase matching + parsers.parse quote handling
 - May 13 — orphan code cleanup for ai-update AND ai-regenerate
 
-Each was a real production failure, debugged from CI logs, fixed at the prompt or validator level. The 391 unit tests are the regression net. The Pydantic schemas are the type contract. The two-stage LLM call with cross-file context injection is the central engineering decision.
+Each was a real production failure, debugged from CI logs, fixed at the prompt or validator level. The unit suite is the regression net. The Pydantic schemas are the type contract. The two-stage LLM call with cross-file context injection is the central engineering decision.
 
 If someone asks you "why is this framework production-grade rather than a demo," the answer is: every line was added because something went wrong, and the test that proves it works is checked in alongside it.

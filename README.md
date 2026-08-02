@@ -126,8 +126,14 @@ multi-agent-test-automation/
 │   ├── jira_client.py               # Jira API wrapper (Adapter pattern)
 │   ├── github_client.py             # GitHub API wrapper
 │   ├── llm_client.py                # Provider-agnostic LLM wrapper + token/cost tracking
-│   ├── schemas.py                   # Pydantic data contracts
-│   └── gherkin_analyzer.py          # Gherkin parsing + dedup + validators (renamed from test_inventory.py)
+│   ├── failure_diagnosis.py         # Maps a raw failure to a plain-English cause + remedy
+│   └── schemas.py                   # Pydantic data contracts
+│
+├── validators/                      # Static checks run before a PR is opened
+│   ├── gherkin_analyzer.py          # Gherkin parsing + dedup + structure
+│   ├── import_validator.py          # Imports resolve to real modules and symbols
+│   ├── method_resolution_validator.py  # Page-object methods, selectors, multi_match
+│   └── orphan_cleanup.py            # Step defs and page methods left behind by an edit
 │
 ├── inventory_tools/                 # App-agnostic inventory generation + staleness (browser-free logic)
 │   ├── introspect.py                # Selector ranking, naming, family-collapse, staleness diff
@@ -295,7 +301,7 @@ Full step-by-step in [GUIDE.md → Onboarding a new app](./docs/GUIDE.md#onboard
 The framework itself has an extensive offline unit suite (dedup engine, validators, inventory tooling, sweeper, component filtering, repair routing):
 
 ```bash
-pytest tests/unit/ -v   # 259 passing
+pytest tests/unit/ -v   # ~600 offline tests, no Jira/GitHub/LLM needed
 ```
 
 These tests don't touch Jira, GitHub, or the LLM — fully offline.

@@ -62,7 +62,7 @@ PR review (a human reads every diff before merge).
 | **Fine-tuning** | Failure modes were fixable with prompt rules (see the "Lessons learned" section below); fine-tuning freezes behavior into an uninspectable artifact. |
 | **Runtime memory / learning loop** | Lessons are curated into prompts at development time — zero marginal token cost. see "Why not runtime learning" in the Lessons learned section below. |
 | **Multi-model routing** | One model keeps behavior predictable; the LLM client is a single swap point if we ever route (e.g., cheap model for Agent 5 summaries). |
-| **Evals / benchmark harness** | Partially covered: 391 unit tests pin validator behavior; the real "eval" is Agent 4 running the generated tests. A dedicated prompt-regression eval set is a fair future item. |
+| **Evals / benchmark harness** | Partially covered: the unit suite pins validator behaviour; the real "eval" is Agent 4 running the generated tests. A dedicated prompt-regression eval set is a fair future item. |
 
 ## 4. Demo Q&A — questions you should expect
 
