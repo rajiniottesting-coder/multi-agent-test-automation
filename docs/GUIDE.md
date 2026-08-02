@@ -14,8 +14,9 @@ Everything you need to operate, configure, extend, and onboard new apps to this 
 8. [Inventory tooling (bootstrap + staleness)](#inventory-tooling-bootstrap--staleness)
 9. [The sweeper (stalled-PR backstop)](#the-sweeper-stalled-pr-backstop)
 10. [Onboarding a new app](#onboarding-a-new-app)
-11. [Reading a test failure](#reading-a-test-failure)
-12. [Troubleshooting](#troubleshooting)
+11. [Diagram reference](#diagram-reference)
+12. [Reading a test failure](#reading-a-test-failure)
+13. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -868,9 +869,18 @@ Check the schema for any constraints beyond the basics (Literal, default, min_le
 
 ---
 
-## Architecture diagrams
+## Diagram reference
 
-This file renders natively on GitHub when viewed in the browser. The Mermaid source is also valuable on its own — paste it into [mermaid.live](https://mermaid.live) to edit.
+The four diagrams below are the detailed views. The high-level one is in
+[Architecture](#architecture) near the top of this file — this section is
+deliberately separate so the overview stays short.
+
+These render natively on GitHub in the browser, which is the most reliable way
+to read them. In VS Code they need the **Markdown Preview Mermaid Support**
+extension (`bierner.markdown-mermaid`), and note that it re-renders on SAVE —
+an unsaved buffer shows an empty box with zoom controls rather than the
+diagram. Any single block can also be pasted into
+[mermaid.live](https://mermaid.live) to view or edit on its own.
 
 ### Pipeline overview
 
@@ -892,7 +902,7 @@ flowchart TB
         A5["🤖 Agent 5: Reporter<br/>agent5_reporter.py"]
     end
 
-    subgraph LLM["🧠 LLM"]
+    subgraph LLMGROUP["🧠 LLM"]
         LLM["Claude via LiteLLM gateway<br/>+ Pydantic structured output"]
     end
 
