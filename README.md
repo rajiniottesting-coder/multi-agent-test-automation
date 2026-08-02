@@ -271,6 +271,21 @@ The whole point of the recent refactor: **no Python code changes** are needed to
 
 Once you're running, `python -m scripts.check_inventory_staleness --fail-on-drift` keeps your inventory honest as the app evolves. Both inventory tools are fully app-agnostic — they read whichever app `config.yaml` points at.
 
+### Inventory Health (nightly)
+
+`.github/workflows/inventory_health.yml` runs `verify_locators` against the live
+application every night and on demand, sweeping every page in the configured
+inventory. It is the only check that proves a selector actually **resolves** —
+the unit suite proves the inventory is structurally sound, but a compiler-style
+check cannot know that a class name still exists on a site someone else deploys.
+
+It reports and never auto-fixes: a regenerated draft carries none of the curated
+`elements_notes`, `multi_match` or `key_methods`, so a bot that regenerated and
+committed would delete the knowledge that prevents these failures.
+
+There is no page list in the workflow — add a page to the inventory and it is
+covered automatically.
+
 Full step-by-step in [GUIDE.md → Onboarding a new app](./docs/GUIDE.md#onboarding-a-new-app).
 
 ---
