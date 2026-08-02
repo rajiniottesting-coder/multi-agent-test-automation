@@ -122,7 +122,7 @@ from core.app_context import AppContext
 from inventory_tools import introspect
 from inventory_tools.browser import (
     crawl_credentials,
-    browser_page, do_login, _resolve_one, resolve_page_url,
+    browser_page, do_login, _resolve_one, resolve_page_url, find_login_path,
     DEFAULT_USERNAME_SELECTOR, DEFAULT_PASSWORD_SELECTOR, DEFAULT_SUBMIT_SELECTOR,
 )
 
@@ -371,7 +371,8 @@ def main() -> int:
     ap.add_argument("--no-login", action="store_true",
                 help="Skip login. Use for public sites.")
     ap.add_argument("--login-url",
-                help="Path to the login form, e.g. /signin. Defaults to base_url.")
+                help="Path to the login form. Defaults to the login page recorded "
+                     "in the app inventory, so this is rarely needed.")
     ap.add_argument("--username-selector", default=None,
                 help="Override auto-detection of the username field.")
     ap.add_argument("--password-selector", default=None,
@@ -391,7 +392,24 @@ def main() -> int:
 
     with browser_page(headless=args.headless) as page:
         if not args.no_login:
-            login_url = (base_url + args.login_url) if args.login_url else base_url + "/"
+            # Where to SIGN IN. Priority: an explicit --login-url, then the
+            # login page recorded in the inventory, then the root as a last
+            # resort. Reading it from the inventory is what makes the flag
+            # unnecessary in normal use - the fact is already curated, and
+            # requiring an operator to repeat it is how a wrong default
+            # ("/" works only if the root redirects to a login screen) stayed
+            # hidden behind a workaround.
+            if args.login_url:
+                login_path = args.login_url
+            else:
+                _inv_path = Path(args.inventory) if args.inventory else ctx.inventory_path()
+                try:
+                    _inv = json.loads(_inv_path.read_text(encoding="utf-8"))
+                except Exception:                       # noqa: BLE001
+                    _inv = {}
+                login_path = find_login_path(_inv) or "/"
+                logger.info("  login page: %s (from the inventory)", login_path)
+            login_url = base_url + login_path
             logged_in = do_login(page, login_url, args.username_selector,
                                  args.password_selector, args.submit_selector,
                                  args.username, args.password)

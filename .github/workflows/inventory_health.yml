@@ -13,6 +13,11 @@ name: Inventory Health
 #   - an autocomplete whose first row is a "Searching...." placeholder
 #   - nav links whose accessible name was polluted by icon ligature text
 #
+# SCOPE: every page in the configured inventory, always. There is no page list
+# in this file on purpose - verify_locators reads config.yaml, resolves
+# inventory_file, and walks whatever is in it. Adding a page to the inventory
+# extends this check automatically; nothing here needs editing as the app grows.
+#
 # None was catchable by a unit test. All three were found in seconds by
 # verify_locators against the live app - after they had already cost a story
 # run each. This runs that check on a schedule so drift surfaces as a morning
@@ -38,13 +43,24 @@ on:
   workflow_dispatch:
     inputs:
       page:
-        description: 'Verify only this inventory page (blank = all pages)'
+        # ── CHECKING ONE PAGE INSTEAD OF ALL OF THEM ──────────────────
+        # Leave BLANK for the normal sweep: verify_locators reads
+        # config.yaml -> inventory_file and walks every page in that JSON,
+        # so a page added to the inventory is picked up here with no change
+        # to this workflow.
+        #
+        # Put a page KEY here to check just that one - the key as it appears
+        # under "pages" in the inventory, e.g. `products`. Useful when a
+        # nightly run flags one page and you want to re-check it after a fix
+        # without waiting on the full sweep.
+        #
+        # Locally the same thing is:
+        #   python -m scripts.verify_locators --page <key> --only-problems
+        # and for a single selector that is not in the inventory yet:
+        #   python -m scripts.verify_locators --selector "<sel>" --url /path
+        description: 'Verify only this inventory page key (blank = all pages)'
         required: false
         default: ''
-      login_url:
-        description: 'Path to the login form'
-        required: false
-        default: '/login'
 
 permissions:
   contents: read
@@ -100,10 +116,13 @@ jobs:
         run: |
           mkdir -p reports
           set +e
+          # No --login-url: verify_locators finds the login page in the
+          # inventory itself. Passing it here would duplicate a fact that is
+          # already curated, and a workflow that repeats inventory data is a
+          # workflow that drifts from it.
           python -m scripts.verify_locators \
             --headless \
             --only-problems \
-            --login-url "${{ github.event.inputs.login_url || '/login' }}" \
             ${{ github.event.inputs.page && format('--page {0}', github.event.inputs.page) || '' }} \
             2>&1 | tee reports/inventory-health.txt
           echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"

@@ -253,3 +253,44 @@ def test_inventory_health_workflow_is_wired():
     steps = wf["jobs"]["verify"]["steps"]
     assert any("verify_locators" in str(s.get("run", "")) for s in steps), \
         "it must actually call verify_locators"
+
+
+def test_inventory_health_does_not_hardcode_the_login_path():
+    """The login page is recorded in the inventory, so the workflow must not
+    repeat it. A workflow that duplicates inventory data is one that drifts
+    from it - and the flag only existed to paper over a wrong default."""
+    wf_path = _repo_root() / ".github" / "workflows" / "inventory_health.yml"
+    verify = [s for s in yaml.safe_load(wf_path.read_text(encoding="utf-8"))
+              ["jobs"]["verify"]["steps"] if s.get("id") == "verify"][0]
+    run = str(verify.get("run", ""))
+    # strip comment lines before asserting - the comment explains the absence
+    code = "\n".join(l for l in run.splitlines() if not l.strip().startswith("#"))
+    assert "--login-url" not in code, \
+        "the login path should come from the inventory, not this workflow"
+
+
+def test_inventory_health_lists_no_pages():
+    """Scope is 'every page in the configured inventory'. A page list here
+    would silently fall behind as the app grows."""
+    wf_path = _repo_root() / ".github" / "workflows" / "inventory_health.yml"
+    wf = yaml.safe_load(wf_path.read_text(encoding="utf-8"))
+    inputs = (wf.get(True) or wf.get("on"))["workflow_dispatch"].get("inputs") or {}
+    assert set(inputs) == {"page"}, \
+        f"unexpected dispatch inputs: {sorted(inputs)}"
+    assert (inputs["page"].get("default") or "") == "", \
+        "the default must be blank so the scheduled run sweeps every page"
+
+
+def test_login_path_comes_from_the_inventory():
+    """find_login_path must locate the login page in whatever app is
+    configured, without naming any application."""
+    import json
+    from inventory_tools.browser import find_login_path
+    from core.app_context import AppContext
+    ctx = AppContext.load()
+    inv = json.loads(Path(ctx.inventory_path()).read_text(encoding="utf-8"))
+    assert find_login_path(inv), (
+        "no login page found in the configured inventory - the browser tools "
+        "would fall back to '/' and fail to sign in on any app whose root is "
+        "not a login screen"
+    )

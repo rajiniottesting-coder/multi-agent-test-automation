@@ -403,6 +403,39 @@ def collect_descriptors(page, url: str, test_attrs: tuple = TEST_ID_ATTRS
     return page.title(), descriptors
 
 
+def find_login_path(inventory: dict) -> str | None:
+    """The login page's path, taken from the inventory itself.
+
+    The browser tools used to default to base_url + "/" - correct only for an
+    app whose root redirects to a login screen. On an app whose root is a
+    public home page there is no password field there, so login failed and
+    every page was then reported stale. The workaround was making the operator
+    pass --login-url on every invocation, which is asking a human to supply a
+    fact the inventory already records.
+
+    Recognised by page KEY or by declared COMPONENT - `login`, `signin`,
+    `sign_in`, `auth`, `logon` - so it works for whichever app is configured
+    without naming any of them. Returns None when nothing matches, and the
+    caller falls back to the old behaviour rather than guessing.
+    """
+    wanted = {"login", "signin", "sign_in", "auth", "logon", "log_in"}
+
+    def _norm(value: str) -> str:
+        return (value or "").strip().lower().replace(" ", "_").replace("-", "_")
+
+    pages = (inventory or {}).get("pages") or {}
+    # A page KEY match is the strongest signal.
+    for key, entry in pages.items():
+        if _norm(key) in wanted and (entry or {}).get("url"):
+            return entry["url"]
+    # Then a declared component.
+    for entry in pages.values():
+        components = (entry or {}).get("components") or []
+        if any(_norm(c) in wanted for c in components) and (entry or {}).get("url"):
+            return entry["url"]
+    return None
+
+
 def resolve_page_url(entry: dict) -> tuple[str, str | None]:
     """(path, skip_reason) for one inventory page entry.
 
