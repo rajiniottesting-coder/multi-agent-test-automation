@@ -106,6 +106,59 @@ Asking the LLM for both structure AND large code bodies in one call has high fai
 - **Filename consistency.** If the LLM generates `features/login-validation.feature` but writes `feature_path("login_validation")` (snake/kebab mismatch), Agent 2 auto-corrects (logs the fix) or fails loudly if the correction is ambiguous. See [DECISIONS.md → ADR-009](./DECISIONS.md) for details.
 - **Step-def coverage.** Pairs each generated `.feature` with its `tests/step_defs/test_*.py` and verifies every Gherkin step has a matching `@given/@when/@then`. Hard-fails if any step is uncovered.
 
+**How Agent 2 knows what methods exist (AST extraction):**
+
+Nobody maintains a list of available helpers. Agent 2 reads them out of the
+code with Python's `ast` module and injects the result into the generation
+prompt, so **the prompt is partly generated from the source**. Rename a method
+and the prompt updates itself on the next run.
+
+Two extractions, both in `agent2_coder.py`:
+
+| Extraction | What it produces |
+|---|---|
+| `_build_base_page_helpers_block()` | Parses `pages/base_page.py`, finds the `BasePage` class, and emits one line per public method: `self.<name>(<args>) -> <return>  # <first docstring line>`. `self` is stripped from the signature and `_`-prefixed helpers are skipped. |
+| `_build_sibling_page_object_context()` | The same for page objects generated EARLIER IN THE SAME RUN. Without it the model would write `click_logout()` in the page object and call `click_logout_link()` from the step definition minutes later — an AttributeError that only surfaces at test time. |
+
+Why AST and not a regex over `def `: a regex cannot tell a method from a
+function nested in another class, gets multi-line signatures wrong, has no idea
+what a decorator does, and will happily match `def something()` written inside a
+docstring. `ast.unparse(node.args)` gives the real signature; `ast.get_docstring`
+gives the real docstring. Both extractions fail SOFT — an unparseable file
+returns an empty block rather than aborting the run, because a missing helper
+list degrades the prompt while a crash loses the whole story.
+
+The validators lean on the same technique far more heavily.
+`method_resolution_validator.py` walks generated step definitions for
+`page.method(...)` calls and checks each against the methods that page object
+actually defines, and walks page objects for `self.<method>(self.sel("key"))`
+to enforce the `multi_match` rules. That is a structural check no amount of
+string matching can do reliably.
+
+**The repair loop:**
+
+Validation failures are not immediately fatal. `_attempt_step_coverage_repair()`
+collects every repairable error, groups them BY FILE, and re-generates only the
+broken files with the validator's own message as feedback — up to
+`max_retries` (4) attempts, one LLM call per broken file per attempt.
+
+Two guards matter:
+
+- **Errors are routed to the file they belong to.** An error naming no file is
+  dropped rather than sent to every file, which would waste attempts rewriting
+  correct code.
+- **No-progress abort.** If an attempt leaves the error set byte-identical, the
+  model is not converging and the loop stops, letting the final gate report it.
+  Without this, a run once spent all four attempts on one unchanged error.
+
+**Prompt caching:**
+
+`prompts/agent2_coder_generate.md` carries a `CACHE BREAKPOINT` marker. Content
+ABOVE it is per-story and changes every run; content below is static — the
+rules, the reference files, the BasePage helper list. The static portion is
+cached by the provider, so a multi-file story pays for it once rather than per
+file. Adding a rule below the marker is free; adding one above it is not.
+
 **Regeneration mode:**
 Add label `ai-regenerate` to a parent story. Agent 2 will:
 - Skip the dedup check
@@ -661,6 +714,31 @@ Notes:
 
 The `app_inventory/<app>.json` file is the LLM's map of the application. Two
 app-agnostic CLIs keep it honest (both need `playwright install chromium`):
+
+> **The inventory is the only app knowledge Agents 2 and 3 receive.**
+> `prompts/app_context/*.md` goes to Agent 1 alone. So anything the code
+> generator must know belongs in `elements_notes` here — writing it only in the
+> markdown sends it to the wrong agent.
+
+### Fields beyond `elements`
+
+Each exists because its absence caused a real failure. Full schema in
+[REUSE_FOR_NEW_PROJECT.md](./REUSE_FOR_NEW_PROJECT.md#app-inventory-json-schema).
+
+| Field | Purpose |
+|---|---|
+| `multi_match` | Keys whose selector matches SEVERAL elements. Playwright runs strict, so clicking or waiting on one raises `resolved to N elements`. **Enforced at generation time** — only the plural readers (`get_all_texts`, `get_count`, the table helpers) are allowed. |
+| `async_family` | A refinement of `multi_match`: a family the app fills asynchronously, where index 0 may be a transient loading row. An index pin (`>> nth=0`) is NEVER valid — select by text. |
+| `conditional` | Elements that exist only after an interaction. The browser tools never click, so they always report these STALE. That is honesty about reach, not a broken selector. |
+| `url_sample` | For a page whose `url` is a template (`/product_details/{product_id}`): a real address the tools can check. Without one they skip the page rather than navigating to a literal `{product_id}`. |
+| `elements_notes` | Per-key traps. The highest-value field in the file. |
+
+Selectors are ranked in Playwright's own recommended order — test-id, then
+`getByRole`, `getByLabel`, placeholder, alt, title, then css `#id`/`[name=]`,
+then text, then a css path. Two traps worth checking before trusting an
+accessible-name selector: an icon-only control has no accessible name at all,
+and an icon font that renders from ligature text puts that text INTO the name,
+so `role=link[name='Products']` can silently match nothing.
 
 **Bootstrap a draft** — crawl the live app and emit a first-draft inventory with
 selectors ranked and page objects guessed:
