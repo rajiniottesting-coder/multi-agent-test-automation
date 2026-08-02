@@ -181,6 +181,7 @@ def test_system_exit_is_re_raised_before_the_broad_handler():
 # instead of in 90 seconds. These lock that shut.
 # ─────────────────────────────────────────────────────────────────────────
 import fnmatch
+import re
 from pathlib import Path
 
 import yaml
@@ -324,7 +325,7 @@ def _step(name_fragment: str) -> dict:
 
 
 def test_the_detection_step_exists_and_is_push_only():
-    step = _step("Detect inventory changes")
+    step = _step("Detect runtime-affecting changes")
     assert step.get("id") == "changes", "the browser steps reference steps.changes"
     assert "github.event_name == 'push'" in str(step.get("if")), \
         "detection is meaningless on pull_request and dispatch, which always run the E2E"
@@ -337,33 +338,219 @@ def test_checkout_fetches_enough_history_to_diff():
     assert checkout.get("with", {}).get("fetch-depth") == 2
 
 
-@pytest.mark.parametrize("step_name", [
+_BROWSER_STEPS = [
     "Cache Playwright browsers",
     "Install Playwright browsers",
     "Run app tests",
     "Upload test report",
-])
-def test_browser_steps_also_run_when_the_inventory_changed(step_name):
+]
+
+
+@pytest.mark.parametrize("step_name", _BROWSER_STEPS)
+def test_browser_steps_also_run_when_a_runtime_file_changed(step_name):
     cond = str(_step(step_name).get("if"))
-    assert "steps.changes.outputs.inventory == 'true'" in cond, (
-        f"{step_name!r} still skips on every push. An inventory edit changes "
+    assert "steps.changes.outputs.inventory" in cond, (
+        f"{step_name!r} still skips on every push. A runtime-file edit changes "
         f"what the existing E2E tests do, so it must run them."
     )
 
 
-def test_detection_matches_only_the_inventory_directory():
-    """prompts/ must NOT trigger the E2E: it shapes what the agents GENERATE
-    next time, and cannot alter code that already exists. And the pattern must
-    be anchored, or a directory merely named similarly would match."""
-    run = str(_step("Detect inventory changes").get("run"))
-    assert "'^app_inventory/'" in run, "the grep pattern must be anchored at ^"
-    assert "prompts/" not in run, "a prompt change must not trigger the browser"
+@pytest.mark.parametrize("step_name", _BROWSER_STEPS)
+def test_browser_steps_fail_open(step_name):
+    """`!= 'false'`, never `== 'true'`.
+
+    With `== 'true'` there were only two ways to run the browser: the detector
+    ran AND wrote 'true'. Every other outcome - crashed, skipped, empty output,
+    a casing typo - evaluated false and SILENTLY skipped the E2E while the job
+    went green reporting "all unit tests passed". An inventory change no
+    browser had exercised, merged on a passing check.
+
+    Only an explicit 'false' may skip. Over-running costs three minutes;
+    under-running ships an untested change behind a green tick.
+    """
+    cond = str(_step(step_name).get("if"))
+    assert "steps.changes.outputs.inventory != 'false'" in cond, (
+        f"{step_name!r} uses a fail-CLOSED condition. A crashed or skipped "
+        f"detector would silently downgrade the run to unit-only."
+    )
+    assert "outputs.inventory == 'true'" not in cond
+
+
+def test_a_crashed_detector_cannot_fail_the_job():
+    """The detector is advisory. If it dies the run must continue and the
+    browser steps must fail open - not turn a diagnostic aid into a new way
+    for the build to go red."""
+    step = _step("Detect runtime-affecting changes")
+    assert step.get("continue-on-error") is True
+
+
+@pytest.mark.parametrize("output_value,should_run", [
+    ("true",  True),   # detector ran, runtime file changed
+    ("false", False),  # detector ran, nothing runtime changed - the ONLY skip
+    ("",      True),   # detector crashed before writing the output
+    (None,    True),   # step skipped entirely
+    ("True",  True),   # casing drift in a future edit
+])
+def test_every_output_value_resolves_correctly(output_value, should_run):
+    """Evaluates the real condition rather than trusting the string match."""
+    cond = str(_step("Run app tests").get("if"))
+    expr = (cond
+            .replace("github.event_name != 'push'", "False")   # a push
+            .replace("steps.changes.outputs.inventory != 'false'",
+                     str(output_value != "false"))
+            .replace("always()", "True")
+            .replace("||", " or ").replace("&&", " and "))
+    assert eval(expr) is should_run, (
+        f"output {output_value!r} should {'run' if should_run else 'skip'} the E2E"
+    )
+
+
+def test_a_pull_request_always_runs_the_e2e():
+    """The detector is push-only, so on a PR its output is empty. The event
+    check must satisfy the condition on its own - otherwise an inventory change
+    on a fix/ branch would skip the browser exactly where it matters most."""
+    cond = str(_step("Run app tests").get("if"))
+    expr = (cond
+            .replace("github.event_name != 'push'", "True")
+            .replace("steps.changes.outputs.inventory != 'false'", "True")
+            .replace("always()", "True")
+            .replace("||", " or ").replace("&&", " and "))
+    assert eval(expr) is True
+
+
+def test_detection_pattern_is_anchored_and_exact():
+    """WIDENED from inventory-only to everything read at test runtime.
+
+    Two properties still matter. The pattern must be anchored at ^, or a
+    directory merely NAMED like a watched one would match. And filenames must
+    be exact with escaped dots, so config/other.yaml and pages/products_page.py
+    - a generated file - are not swept in alongside config/config.yaml and
+    pages/base_page.py.
+    """
+    run = str(_step("Detect runtime-affecting changes").get("run"))
+    pattern = next((l.split("'")[1] for l in run.splitlines()
+                    if l.strip().startswith("RUNTIME=")), None)
+    assert pattern and pattern.startswith("^("), "the pattern must be anchored"
+    assert r"config/config\.yaml" in pattern, "the dot must be escaped"
+    assert not re.search(pattern, "config/other.yaml")
+    assert not re.search(pattern, "pages/products_page.py")
+    assert not re.search(pattern, "app_inventory_old/x.json")
 
 
 def test_detection_fails_safe_when_it_cannot_diff():
     """A first push to a branch has an all-zero before-SHA. Over-running the
     E2E wastes three minutes; skipping it silently ships an untested change."""
-    run = str(_step("Detect inventory changes").get("run"))
+    run = str(_step("Detect runtime-affecting changes").get("run"))
     assert "0000000000000000000000000000000000000000" in run
     assert run.count("inventory=true") >= 3, \
         "each unusable-SHA branch must fall back to running the E2E"
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# The E2E gate covers everything read AT TEST RUNTIME
+#
+# The criterion is not "is this an input to an agent" but "is this loaded when
+# a test runs". Those overlap but differ in both directions: the two conftest
+# files are not agent inputs yet ARE the entire E2E runtime, while prompts/ and
+# core/app_context.py are agent inputs that no test ever reads.
+# ─────────────────────────────────────────────────────────────────────────
+
+_RUNTIME_FILES = [
+    "app_inventory/any_app.json",              # BasePage.sel() resolves here
+    "config/config.yaml",                      # base_url, timeouts, headless
+    "pages/base_page.py",                      # every page object inherits it
+    "tests/conftest.py",                       # browser + evidence capture
+    "tests/step_defs/conftest.py",             # fixtures + credentials
+]
+
+_AGENT_ONLY_FILES = [
+    "prompts/app_context/core.md",             # shapes generation, not a run
+    "prompts/agent2_coder_generate.md",
+    "core/app_context.py",                     # agents load it; tests do not
+    "validators/method_resolution_validator.py",
+]
+
+
+@pytest.mark.parametrize("changed", _RUNTIME_FILES)
+def test_runtime_files_are_in_the_push_paths(changed):
+    """A file the E2E reads must at least trigger the workflow. Both conftest
+    files triggered NOTHING before this - the entire fixture layer was
+    ungated."""
+    assert _fires(changed), f"{changed} triggers no workflow at all"
+
+
+@pytest.mark.parametrize("changed", _RUNTIME_FILES)
+def test_runtime_files_are_matched_by_the_e2e_detector(changed):
+    """...and must also match the detector, or the workflow runs without the
+    browser and the change ships unexercised."""
+    run = str(_step("Detect runtime-affecting changes").get("run"))
+    pattern = next((l.split("'")[1] for l in run.splitlines()
+                    if l.strip().startswith("RUNTIME=")), None)
+    assert pattern, "the RUNTIME pattern is missing from the detection step"
+    assert re.search(pattern.replace("\\.", "\\."), changed), \
+        f"{changed} is in the paths but the detector will not match it"
+
+
+@pytest.mark.parametrize("changed", _AGENT_ONLY_FILES)
+def test_agent_only_files_do_not_trigger_the_browser(changed):
+    """Running a browser for a prompt edit costs three minutes and proves
+    nothing: prompts shape what is GENERATED next time and cannot alter code
+    that already exists."""
+    run = str(_step("Detect runtime-affecting changes").get("run"))
+    pattern = next((l.split("'")[1] for l in run.splitlines()
+                    if l.strip().startswith("RUNTIME=")), None)
+    assert pattern
+    assert not re.search(pattern, changed), \
+        f"{changed} would needlessly run the E2E"
+
+
+def test_generated_step_defs_are_not_swept_in_wholesale():
+    """tests/step_defs/** must NOT be a path: it holds Agent 2's generated step
+    definitions, so merging a story PR would re-fire this gate on files Agent 4
+    has already tested. Only the conftest is listed."""
+    assert "tests/step_defs/**" not in _push_paths()
+    assert "tests/step_defs/conftest.py" in _push_paths()
+    assert not _fires("tests/step_defs/test_some_story.py")
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# The summary must say WHY the E2E did or did not run
+#
+# A push with no runtime change legitimately skips the browser, but the
+# summary read "All 635 tests passed" with no mention of it - inviting the
+# reader to assume the app tests passed too. A green tick should not mean less
+# than it appears to.
+# ─────────────────────────────────────────────────────────────────────────
+
+def _summary_step() -> dict:
+    return _step("Write test summary")
+
+
+def test_summary_receives_the_detector_verdict():
+    """It cannot explain what it was never told."""
+    env = _summary_step().get("env") or {}
+    for key in ("E2E_EVENT", "E2E_DETECTOR", "E2E_DETECTOR_OUTCOME"):
+        assert key in env, f"the summary step needs {key} to explain the E2E"
+
+
+def test_summary_distinguishes_the_three_cases():
+    """Skipped-by-design, detector-failed and no-verdict are different events
+    and must not be conflated - the first is routine, the other two are not."""
+    run = str(_summary_step().get("run"))
+    assert "App E2E not run" in run, "no note for a legitimately skipped E2E"
+    assert "change detector failed" in run, "no note for a crashed detector"
+    assert "produced no verdict" in run, "no note for a missing verdict"
+
+
+def test_summary_names_the_files_that_trigger_the_browser():
+    """A reader who sees 'E2E not run' should not have to hunt for the rule."""
+    run = str(_summary_step().get("run"))
+    for f in ("app_inventory/", "config/config.yaml", "pages/base_page.py", "conftest.py"):
+        assert f in run, f"the skip note should name {f}"
+
+
+def test_the_note_is_push_only():
+    """On a pull request and a manual dispatch the E2E always runs, so a note
+    would be noise."""
+    run = str(_summary_step().get("run"))
+    assert 'event == "push"' in run

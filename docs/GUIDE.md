@@ -421,24 +421,78 @@ about ceremony; it is about which files the push gate actually exercises.
 
 ### What runs, per event
 
-| Step | push (no inventory change) | push (inventory changed) | pull request | manual dispatch |
-|---|---|---|---|---|
-| Unit suite | ✅ | ✅ | ✅ | ✅ |
-| Chromium install | — | ✅ | ✅ | ✅ |
-| App E2E (`tests/step_defs/`) | — | ✅ | ✅ | ✅ |
-| Job summary | ✅ | ✅ | ✅ | ✅ |
-| Agent 5 → Jira | — | — | ✅ | — |
+| # | Situation | Workflow runs? | Unit | E2E | Agent 5 → Jira |
+|---|---|---|---|---|---|
+| 1 | Push to `main`, **runtime file** changed | yes | ✅ | ✅ | — |
+| 2 | Push to `main`, framework only (`prompts/`, `validators/`, `core/`) | yes | ✅ | — | — |
+| 3 | Push to `main`, docs only | **no** | — | — | — |
+| 4 | Push to any non-`main` branch | **no** | — | — | — |
+| 5 | Pull request (opened, synchronize, reopened) | yes | ✅ | ✅ | ✅ |
+| 6 | Manual dispatch | yes | ✅ | ✅ | — |
+| 7 | Push to `main`, **detector crashed** | yes | ✅ | ✅ | — |
 
-**Why an inventory push runs the E2E.** Page objects hold no selectors — they
-call `self.sel("key")`, and `BasePage` reads `app_inventory/<app>.json` at
-RUNTIME. Editing the inventory therefore changes what every existing E2E test
-does, with no code change at all. The unit suite would prove the inventory is
-structurally sound and nothing about whether the tests still pass against it.
+Rows worth explaining:
 
-**Why a prompt push does not.** `prompts/` shapes only what the agents
-*generate* the next time they run. It cannot alter the behaviour of code that
-already exists, so a browser run would prove nothing. Prompt changes get the
-unit suite, which catches a deleted placeholder or a broken template.
+- **Row 3** — `docs/` is not a watched path, so no run is created at all. Nothing
+  validates prose, and running the suite on a typo fix would burn CI for nothing.
+- **Row 4** — the push trigger is `branches: [main]`, so a branch push is silent
+  until you open a PR, at which point row 5 applies and everything runs. Open the
+  PR straight away (a draft is fine) and every later commit is covered by
+  `synchronize`.
+- **Row 5** — Agent 5 posts only here, because only a pull request belongs to a
+  story.
+- **Row 7 — the E2E FAILS OPEN.** The browser steps test
+  `steps.changes.outputs.inventory != 'false'`, not `== 'true'`, so **only an
+  explicit "no" skips them.** A crashed, skipped or empty output runs them. With
+  the earlier `== 'true'`, a detector that died left the output empty, the
+  browser silently skipped, and the job went green reporting "all unit tests
+  passed" — an inventory change no browser had exercised, merged on a passing
+  check. The detector also carries `continue-on-error: true`, so it can only
+  ever downgrade the run, never fail it.
+
+**The summary always says why.** A push that legitimately skips the browser
+used to report "All N tests passed" with no mention of it, which invites the
+reader to assume the app tests passed too. The job summary now carries one of:
+
+| Note | Meaning |
+|---|---|
+| ✅ A runtime-affecting file changed, so the app E2E ran | rows 1 |
+| ℹ️ **App E2E not run** — no runtime-affecting file changed, and which files would have triggered it | row 2 |
+| ⚠️ **The change detector failed**, so the E2E was run anyway | row 7 |
+| ⚠️ **The detector produced no verdict**, so the E2E was run | defensive |
+
+Only on a push. A pull request and a manual dispatch always run the E2E, so a
+note there would be noise.
+
+A detector failure is most often a **force-push**: `github.event.before` then
+points at a commit that no longer exists, and `git diff` cannot resolve it.
+
+**Which pushes run the E2E.** The test doesn't decide by folder — it asks
+whether the file is **read while a test runs**. Change one of these and every
+existing E2E test behaves differently, with no code change at all:
+
+| File | Read at runtime by |
+|---|---|
+| `app_inventory/**` | `BasePage.sel()` resolves every selector here |
+| `config/config.yaml` | `base_url`, `browser.timeout`, `headless` |
+| `pages/base_page.py` | every page object inherits it |
+| `tests/conftest.py` | the browser and the failure-evidence capture |
+| `tests/step_defs/conftest.py` | every page-object fixture and the credential resolver |
+
+**What does NOT run it,** despite being framework code: `prompts/**` and
+`core/app_context.py`. Both are inputs to the AGENTS — they shape what gets
+generated the next time an agent runs, and cannot alter code that already
+exists. A browser run would spend three minutes proving nothing. They still get
+the unit suite, which catches a deleted placeholder or a broken template.
+
+The distinction is worth stating plainly, because "framework input" and
+"runtime dependency" are not the same set. Neither conftest is an agent input,
+yet together they ARE the E2E runtime; `core/app_context.py` is an agent input
+that no test ever loads.
+
+`tests/step_defs/**` is deliberately not watched as a whole — that directory
+also holds Agent 2's generated step definitions, and including it would re-fire
+this gate whenever a story PR merges, on files Agent 4 has already tested.
 
 Two things worth knowing:
 

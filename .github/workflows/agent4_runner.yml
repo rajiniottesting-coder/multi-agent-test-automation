@@ -89,6 +89,18 @@ on:
       # ran - so a typo surfaced during a story run ten minutes and a dollar
       # later instead of here in 90 seconds.
       - 'app_inventory/**'
+      # The two conftest files are not inputs to any agent, but they ARE the
+      # E2E runtime: tests/conftest.py owns the browser and the evidence
+      # capture, tests/step_defs/conftest.py owns every page-object fixture
+      # and the credential resolver. Break either and every E2E test fails,
+      # and until now neither triggered anything at all.
+      #
+      # Listed individually, NOT as tests/step_defs/** - that directory also
+      # holds Agent 2's generated step definitions, and including it would
+      # re-fire this gate when a story PR merges, on files Agent 4 has
+      # already tested.
+      - 'tests/conftest.py'
+      - 'tests/step_defs/conftest.py'
       # Prompts have no structural validation of their own, so this earns less;
       # it is here so that "what the agents read" is uniformly gated rather
       # than half-gated, which is the state that let this gap persist.
@@ -141,15 +153,24 @@ jobs:
       # inventory is structurally sound and nothing about whether the tests
       # still pass against it.
       #
-      # A prompt change is deliberately NOT treated this way. prompts/ shapes
-      # only what the agents GENERATE next time they run; it cannot alter code
-      # that already exists, so running a browser would prove nothing.
+      # The same is true of config.yaml (base_url, timeouts), base_page.py and
+      # the two conftest files - all read while a test runs.
+      #
+      # A prompt change is deliberately NOT treated this way, nor is
+      # core/app_context.py. Both are inputs to the AGENTS: they shape what
+      # gets generated next time and cannot alter code that already exists, so
+      # running a browser would prove nothing.
       #
       # Consulted on push only. pull_request and workflow_dispatch run the E2E
       # unconditionally.
-      - name: Detect inventory changes
+      - name: Detect runtime-affecting changes
         id: changes
         if: github.event_name == 'push'
+        # Advisory only. If this step dies - a git error, a $GITHUB_OUTPUT
+        # write failure - the run must continue and the browser steps must
+        # then FAIL OPEN (see their `!= 'false'` conditions). A detector that
+        # can fail the job turns a diagnostic aid into a new way to go red.
+        continue-on-error: true
         run: |
           BEFORE="${{ github.event.before }}"
           # A first push to a new branch has an all-zero before-SHA and nothing
@@ -165,11 +186,27 @@ jobs:
             echo "inventory=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if git diff --name-only "$BEFORE" "${{ github.sha }}" | grep -q '^app_inventory/'; then
-            echo "inventory changed - the E2E will run"
+          # Files READ WHILE A TEST RUNS. Changing any of them changes what
+          # the existing E2E tests do, with no code change at all:
+          #
+          #   app_inventory/       BasePage.sel() resolves every selector here
+          #   config/config.yaml   base_url, browser.timeout, headless
+          #   pages/base_page.py   every page object inherits it
+          #   tests/**conftest.py  the browser, the fixtures, the credentials
+          #
+          # Deliberately ABSENT: prompts/ and core/app_context.py. Both are
+          # inputs to the AGENTS, not to a test run - they shape what gets
+          # generated next time and cannot alter code that already exists, so
+          # a browser run would prove nothing. The criterion is "is this read
+          # at test runtime", not "is this an agent input".
+          RUNTIME='^(app_inventory/|config/config\.yaml|pages/base_page\.py|tests/conftest\.py|tests/step_defs/conftest\.py)'
+          CHANGED=$(git diff --name-only "$BEFORE" "${{ github.sha }}")
+          if echo "$CHANGED" | grep -qE "$RUNTIME"; then
+            echo "runtime-affecting change - the E2E will run:"
+            echo "$CHANGED" | grep -E "$RUNTIME" | sed 's/^/    /'
             echo "inventory=true" >> "$GITHUB_OUTPUT"
           else
-            echo "inventory unchanged - unit tests only"
+            echo "no runtime-affecting change - unit tests only"
             echo "inventory=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -191,9 +228,18 @@ jobs:
         # to download. Caching it between runs saves significant CI time.
         # Cache key includes OS and requirements.txt hash — if either changes,
         # we re-download (e.g., a new Playwright version may need a new binary).
-        # Skipped on push: the unit gate needs the playwright PACKAGE (already
-        # installed from requirements.txt), never the browser BINARY.
-        if: github.event_name != 'push' || steps.changes.outputs.inventory == 'true'
+        # Skipped on push ONLY when the detector explicitly reported no
+        # runtime-affecting change. The test is `!= 'false'`, not `== 'true'`,
+        # and the difference is the whole point: a skipped, crashed or empty
+        # output must FAIL OPEN. With `== 'true'` a detector that died left the
+        # output empty, the browser steps silently skipped, and the job went
+        # GREEN reporting "all unit tests passed" - an inventory change that no
+        # browser had exercised, merged on a passing check.
+        #
+        # Over-running costs three minutes. Under-running ships an untested
+        # change behind a green tick. Same reasoning as the fallbacks inside
+        # the detector itself.
+        if: github.event_name != 'push' || steps.changes.outputs.inventory != 'false'
         id: playwright-cache
         uses: actions/cache@v4
         with:
@@ -205,7 +251,7 @@ jobs:
         # The browser binary itself is restored from cache when the key matches.
         # OS-level apt packages are NOT cached and need to be reinstalled fresh.
         # Skipped on push — saves ~2-3 min on every framework commit.
-        if: github.event_name != 'push' || steps.changes.outputs.inventory == 'true'
+        if: github.event_name != 'push' || steps.changes.outputs.inventory != 'false'
         run: playwright install --with-deps chromium
 
       - name: Framework self-test (unit tests)
@@ -237,7 +283,7 @@ jobs:
         # always() so a failed unit gate still yields E2E signal on a PR.
         # Never on push: no browser is installed, and the app secrets this
         # step needs are irrelevant to a framework change.
-        if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory == 'true')
+        if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory != 'false')
         # Application credentials. Feature files log in by ROLE; the
         # `credentials` fixture (tests/step_defs/conftest.py) resolves the role
         # from these variables at runtime. Nothing authenticating is ever
@@ -265,7 +311,7 @@ jobs:
         # `report` job (the only consumer) does not run there, and 14-day
         # artifacts for every framework commit are pure storage cost — the
         # job summary below already names the failing tests.
-        if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory == 'true')
+        if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory != 'false')
         uses: actions/upload-artifact@v4
         with:
           name: pytest-report-${{ github.run_id }}
@@ -287,6 +333,13 @@ jobs:
           # indented continuation inside the ${{ }}, and the expression would
           # not evaluate.
           SUMMARY_REPORTS: ${{ github.event_name == 'push' && 'reports/junit-unit.xml|Framework Unit Tests' || 'reports/junit-unit.xml|Framework Unit Tests;reports/junit.xml|App Tests (E2E)' }}
+          # Why the E2E did or did not run, so a green tick cannot mean less
+          # than it appears to. A summary reading "All 635 tests passed" with
+          # no mention of the browser invites the reader to assume the app
+          # tests passed too.
+          E2E_EVENT: ${{ github.event_name }}
+          E2E_DETECTOR: ${{ steps.changes.outputs.inventory }}
+          E2E_DETECTOR_OUTCOME: ${{ steps.changes.outcome }}
         run: |
           python3 << 'PYEOF'
           """Parse the junit report(s) and write a markdown summary to the GitHub
@@ -414,6 +467,39 @@ jobs:
                       "Playwright trace. Download the `pytest-report-*` artifact from "
                       "this run and open `reports/failure-evidence/`; view a trace with "
                       "`playwright show-trace <file>.trace.zip`.", ""]
+
+          # ── Why the browser did or did not run ──────────────────────
+          # Three distinct cases, and conflating them is how a skipped E2E
+          # reads as a passing one.
+          event = os.environ.get("E2E_EVENT", "")
+          verdict = (os.environ.get("E2E_DETECTOR") or "").strip()
+          outcome = (os.environ.get("E2E_DETECTOR_OUTCOME") or "").strip()
+
+          if event == "push":
+              if outcome == "failure":
+                  out += ["> ⚠️ **The change detector failed**, so the app E2E "
+                          "was run anyway rather than skipped. Its result is "
+                          "above. Check the *Detect runtime-affecting changes* "
+                          "step for the error — a force-push is the usual "
+                          "cause, since the previous SHA is then unreachable.",
+                          ""]
+              elif verdict == "false":
+                  out += ["> ℹ️ **App E2E not run.** No runtime-affecting file "
+                          "changed in this push, so only the unit suite ran. "
+                          "The browser runs when `app_inventory/`, "
+                          "`config/config.yaml`, `pages/base_page.py` or either "
+                          "`conftest.py` changes — those are read while a test "
+                          "runs, so editing them changes what the existing "
+                          "tests do.",
+                          ""]
+              elif verdict == "true":
+                  out += ["> ✅ A runtime-affecting file changed, so the app "
+                          "E2E ran as well as the unit suite.", ""]
+              else:
+                  # Empty verdict with a non-failure outcome: the step was
+                  # skipped or produced nothing. The E2E failed open, so say so.
+                  out += ["> ⚠️ **The change detector produced no verdict**, so "
+                          "the app E2E was run rather than skipped.", ""]
 
           out += ["---", "_Generated by Agent 4 (Runner)._"]
 
