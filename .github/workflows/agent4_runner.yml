@@ -82,6 +82,17 @@ on:
       - 'scripts/**'
       - 'tests/unit/**'
       - 'pages/base_page.py'
+      # The inventory is CODE as far as the suite is concerned: a renamed key
+      # fails test_every_sel_key_used_exists_in_the_real_inventory and the
+      # multi_match cross-checks immediately. Without this path an inventory
+      # edit triggered NO workflow at all - not "ran and passed", but never
+      # ran - so a typo surfaced during a story run ten minutes and a dollar
+      # later instead of here in 90 seconds.
+      - 'app_inventory/**'
+      # Prompts have no structural validation of their own, so this earns less;
+      # it is here so that "what the agents read" is uniformly gated rather
+      # than half-gated, which is the state that let this gap persist.
+      - 'prompts/**'
       - 'requirements.txt'
       - 'pytest.ini'
       - '.github/workflows/agent4_runner.yml'

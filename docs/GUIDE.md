@@ -7,13 +7,14 @@ Everything you need to operate, configure, extend, and onboard new apps to this 
 1. [Architecture](#architecture)
 2. [The 5 agents in depth](#the-5-agents-in-depth)
 3. [The human-approval gate](#the-human-approval-gate)
-4. [Branch naming](#branch-naming)
-5. [Configuration](#configuration)
-6. [Running the pipeline](#running-the-pipeline)
-7. [Inventory tooling (bootstrap + staleness)](#inventory-tooling-bootstrap--staleness)
-8. [The sweeper (stalled-PR backstop)](#the-sweeper-stalled-pr-backstop)
-9. [Onboarding a new app](#onboarding-a-new-app)
-10. [Troubleshooting](#troubleshooting)
+4. [Changing the framework itself](#changing-the-framework-itself)
+5. [Branch naming](#branch-naming)
+6. [Configuration](#configuration)
+7. [Running the pipeline](#running-the-pipeline)
+8. [Inventory tooling (bootstrap + staleness)](#inventory-tooling-bootstrap--staleness)
+9. [The sweeper (stalled-PR backstop)](#the-sweeper-stalled-pr-backstop)
+10. [Onboarding a new app](#onboarding-a-new-app)
+11. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -231,6 +232,65 @@ For the full lifecycle view (sticky vs one-shot semantics, who removes what),
 see the "Label semantics table" in the State management deep-dive below.
 
 ---
+
+## Changing the framework itself
+
+Story code arrives through a pull request, gets reviewed by Agent 3 and tested
+by Agent 4 before it can merge. **Framework changes should take the same
+route**, and for the same reason.
+
+### Why not push straight to main
+
+Every agent workflow checks out `main`. The moment a framework change lands
+there it is live for the next scheduled run — there is no window in which the
+change exists but is not yet driving production. The push gate on
+`agent4_runner.yml` does run the unit suite, but it runs *after* the merge, so
+it reports a break rather than preventing one.
+
+Working on a branch closes that window at no cost, because the same gate
+already runs on `pull_request`:
+
+```bash
+git checkout -b fix/selector-ranking
+# ...make the change...
+git push -u origin fix/selector-ranking
+# open a PR; the unit suite runs before you can merge
+```
+
+### What runs, and what it can and cannot prove
+
+| Check | Trigger | Proves |
+|---|---|---|
+| Unit suite (`agent4_runner.yml`) | push to `main`, and every PR | Framework logic; the inventory is structurally sound — every `sel()` key exists, every declared family is real |
+| `Inventory Health` (`inventory_health.yml`) | nightly, or on demand | Selectors actually RESOLVE against the live application |
+
+The distinction matters. The unit suite is the compiler: it catches a renamed
+inventory key or a broken cross-reference in ninety seconds. It cannot catch a
+selector that resolves to the wrong element, because that needs a browser and a
+running app — a row index pointing at a checkbox column, an autocomplete whose
+first row is a loading placeholder, a link whose accessible name is polluted by
+icon ligature text. Each of those cost a full story run before the nightly
+check existed.
+
+### Branch protection
+
+Once the flow is habitual, require the `Agent 4 - Runner / Run Tests` check on
+`main`. That converts the gate from a report into an actual gate. Do it only
+after the pipeline has produced a green run, or the requirement blocks the work
+needed to reach one.
+
+### Changes that are worth a local run first
+
+Anything touching `app_inventory/` or `prompts/` is best proved locally before
+it reaches CI at all — those are the changes the unit suite is weakest at:
+
+```bash
+python -m scripts.verify_locators --only-problems   # selectors resolve?
+pytest tests/step_defs/ --headed -v                 # the reference test passes?
+```
+
+Minutes and no tokens, against ten minutes and roughly a dollar for an agent
+run that fails on the same thing.
 
 ## Branch naming
 

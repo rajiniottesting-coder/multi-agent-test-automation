@@ -1,0 +1,190 @@
+name: Inventory Health
+
+# ─────────────────────────────────────────────────────────────
+# THE MISSING BUILD STEP.
+#
+# The unit suite proves the framework's own logic and that the inventory is
+# STRUCTURALLY sound - every sel() key exists, every declared family is real.
+# It cannot prove a selector RESOLVES, because that needs a browser and a
+# running application. Every expensive failure so far lived in exactly that
+# gap:
+#
+#   - a row selector pinned to nth=0 that was the selection checkbox column
+#   - an autocomplete whose first row is a "Searching...." placeholder
+#   - nav links whose accessible name was polluted by icon ligature text
+#
+# None was catchable by a unit test. All three were found in seconds by
+# verify_locators against the live app - after they had already cost a story
+# run each. This runs that check on a schedule so drift surfaces as a morning
+# notification rather than as a mid-story mystery.
+#
+# WHY A SEPARATE WORKFLOW, NOT A JOB IN agent4_runner:
+#   Agent 4 answers "is THIS pull request good". Whole-inventory drift is not
+#   a property of any pull request, and bolting it on would fail unrelated
+#   story PRs whenever the app changed - the same anti-pattern that made a
+#   framework break show up as a red check on an unrelated auto/SCRUM PR.
+#
+# WHY IT DOES NOT AUTO-FIX:
+#   A regenerated draft carries none of the curation - no elements_notes, no
+#   multi_match, no key_methods - so a bot that regenerated and committed
+#   would silently delete the knowledge that stops the failures above. Detect
+#   automatically, fix by hand.
+# ─────────────────────────────────────────────────────────────
+
+on:
+  schedule:
+    # 02:30 UTC daily — after most deploys, before a working morning in IST.
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+    inputs:
+      page:
+        description: 'Verify only this inventory page (blank = all pages)'
+        required: false
+        default: ''
+      login_url:
+        description: 'Path to the login form'
+        required: false
+        default: '/login'
+
+permissions:
+  contents: read
+
+# One at a time. Two concurrent runs would drive two browser sessions against
+# the same demo account and could log each other out.
+concurrency:
+  group: inventory-health
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify selectors against the live app
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+
+      - name: Install Playwright browsers
+        # OS-level apt packages are not cached and need reinstalling each run.
+        run: playwright install --with-deps chromium
+
+      - name: Verify inventory selectors
+        id: verify
+        # Never fails the step itself: the exit code is captured and read in
+        # the next step, so a login failure and real drift can be reported
+        # differently. `tee` keeps the human-readable output in the log.
+        continue-on-error: true
+        env:
+          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+          APP_USER_REGISTERED: ${{ secrets.APP_USER_REGISTERED }}
+          CI: 'true'
+        run: |
+          mkdir -p reports
+          set +e
+          python -m scripts.verify_locators \
+            --headless \
+            --only-problems \
+            --login-url "${{ github.event.inputs.login_url || '/login' }}" \
+            ${{ github.event.inputs.page && format('--page {0}', github.event.inputs.page) || '' }} \
+            2>&1 | tee reports/inventory-health.txt
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Report
+        # always() so a crashed verify step still produces a summary rather
+        # than a bare red X with nothing to read.
+        if: always()
+        env:
+          CODE: ${{ steps.verify.outputs.code }}
+        run: |
+          python3 << 'PYEOF'
+          """Turn the verifier's exit code and output into a job summary."""
+          import os
+          from pathlib import Path
+
+          code = (os.environ.get("CODE") or "").strip()
+          out = Path("reports/inventory-health.txt")
+          body = out.read_text(encoding="utf-8", errors="replace") if out.exists() else ""
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+
+          # 0 = every selector resolved to exactly one element
+          # 1 = stale or ambiguous selectors found
+          # 2 = login failed, so NOTHING below it can be trusted
+          if code == "0":
+              head = ["## ✅ Inventory healthy", "",
+                      "Every selector resolved to exactly one element against the "
+                      "live application.", ""]
+              exit_code = 0
+          elif code == "2":
+              head = ["## ⚠️ Login failed — inventory NOT checked", "",
+                      "The verifier could not sign in, so it refused to produce a "
+                      "report: every page would have redirected to the login screen "
+                      "and every selector would read as stale. This is a credential "
+                      "or availability problem, **not** inventory drift.", "",
+                      "Check `APP_USER_REGISTERED` / `APP_PASSWORD`, and that the "
+                      "application is up.", ""]
+              exit_code = 1
+          elif code == "1":
+              head = ["## ❌ Selector drift detected", "",
+                      "One or more selectors no longer resolve to exactly one "
+                      "element. Read the report below, then:", "",
+                      "1. Reproduce locally, watching the browser:",
+                      "   `python -m scripts.verify_locators --page <page> --only-problems`",
+                      "2. **STALE** (0 matches) — the app changed. Fix that selector "
+                      "in the inventory by hand.",
+                      "3. **AMBIG** (>1) — if the key is already in that page's "
+                      "`multi_match`, this is expected and not a defect. If it is "
+                      "not, add it.",
+                      "4. Keys listed under `conditional` only exist after an "
+                      "interaction, so a tool that never clicks always reports them "
+                      "stale. Do not 'fix' those.", "",
+                      "Do NOT regenerate the inventory to repair this: a fresh draft "
+                      "carries no `elements_notes`, `multi_match` or `key_methods`, "
+                      "and promoting one would delete the curation that prevents "
+                      "these failures.", ""]
+              exit_code = 1
+          else:
+              head = [f"## ❌ Verifier did not complete (exit {code!r})", "",
+                      "The check crashed rather than reporting a result. The output "
+                      "below is whatever it managed to produce.", ""]
+              exit_code = 1
+
+          if body.strip():
+              head += ["<details><summary>Verifier output</summary>", "",
+                       "```", body.strip()[:8000], "```", "", "</details>", ""]
+          else:
+              head += ["_The verifier produced no output._", ""]
+
+          if summary:
+              with open(summary, "a", encoding="utf-8") as f:
+                  f.write("\n".join(head) + "\n")
+          print("\n".join(head))
+          raise SystemExit(exit_code)
+          PYEOF
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-health-${{ github.run_id }}
+          path: reports/inventory-health.txt
+          retention-days: 14
+          if-no-files-found: ignore

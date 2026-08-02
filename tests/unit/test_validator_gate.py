@@ -170,3 +170,86 @@ def test_system_exit_is_re_raised_before_the_broad_handler():
             assert names.index("SystemExit") < names.index("Exception")
             return
     pytest.fail("no try block re-raises SystemExit")
+
+# ─────────────────────────────────────────────────────────────────────────
+# CI gate coverage
+#
+# The unit suite is only worth anything if it actually RUNS when the thing it
+# validates changes. app_inventory/ and prompts/ were missing from the push
+# paths, so an inventory edit triggered no workflow at all - not "ran and
+# passed", but never ran - and a renamed key surfaced during a story run
+# instead of in 90 seconds. These lock that shut.
+# ─────────────────────────────────────────────────────────────────────────
+import fnmatch
+from pathlib import Path
+
+import yaml
+
+
+def _repo_root():
+    return Path(__file__).resolve().parents[2]
+
+
+def _push_paths() -> list:
+    wf = yaml.safe_load(
+        (_repo_root() / ".github" / "workflows" / "agent4_runner.yml")
+        .read_text(encoding="utf-8")
+    )
+    # PyYAML parses the bare key `on:` as the boolean True.
+    triggers = wf.get(True) or wf.get("on") or {}
+    return (triggers.get("push") or {}).get("paths") or []
+
+
+def _fires(path: str) -> bool:
+    return any(
+        fnmatch.fnmatch(path, pat) or (pat.endswith("/**") and path.startswith(pat[:-2]))
+        for pat in _push_paths()
+    )
+
+
+class TestPushGateCoversWhatTheSuiteValidates:
+
+    @pytest.mark.parametrize("changed", [
+        "app_inventory/anything.json",
+        "prompts/agent2_coder_generate.md",
+        "prompts/app_context/core.md",
+        "core/failure_diagnosis.py",
+        "validators/method_resolution_validator.py",
+        "inventory_tools/introspect.py",
+        "pages/base_page.py",
+        "tests/unit/test_validators.py",
+    ])
+    def test_framework_changes_trigger_the_gate(self, changed):
+        assert _fires(changed), (
+            f"{changed} changes nothing in CI. The suite validates it, so a "
+            f"break there would ship silently."
+        )
+
+    @pytest.mark.parametrize("changed", [
+        "features/some_story.feature",
+        "tests/step_defs/test_some_story.py",
+        "pages/some_story_page.py",
+        "README.md",
+        "docs/GUIDE.md",
+    ])
+    def test_generated_and_doc_files_do_not_trigger_it(self, changed):
+        """Agent-generated files must NOT be in the push paths: merging a story
+        PR would otherwise re-fire the framework gate on files Agent 4 has
+        already tested. pages/base_page.py is listed individually for exactly
+        this reason - it is reserved, the generated page objects are not."""
+        assert not _fires(changed), f"{changed} should not trigger the framework gate"
+
+
+def test_inventory_health_workflow_is_wired():
+    """The nightly DOM check is the only thing that proves a selector RESOLVES.
+    If it stops being scheduled, that class of failure goes back to surfacing
+    mid-story."""
+    wf_path = _repo_root() / ".github" / "workflows" / "inventory_health.yml"
+    assert wf_path.is_file(), "the nightly inventory check is missing"
+    wf = yaml.safe_load(wf_path.read_text(encoding="utf-8"))
+    triggers = wf.get(True) or wf.get("on") or {}
+    assert "schedule" in triggers, "inventory health must run on a schedule"
+    assert "workflow_dispatch" in triggers, "it must also be runnable on demand"
+    steps = wf["jobs"]["verify"]["steps"]
+    assert any("verify_locators" in str(s.get("run", "")) for s in steps), \
+        "it must actually call verify_locators"
