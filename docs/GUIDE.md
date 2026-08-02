@@ -250,7 +250,8 @@ and a PR is the only thing that runs them.
 
 | You changed | Route | Why |
 |---|---|---|
-| `agents/`, `core/`, `validators/`, `integrations/`, `inventory_tools/`, `scripts/`, `config/`, `app_inventory/`, `prompts/`, `tests/unit/` | **Push to `main`** | The unit suite covers these. It runs on push, and a broken validator or a renamed inventory key fails in about 45 seconds. |
+| `agents/`, `core/`, `validators/`, `integrations/`, `inventory_tools/`, `scripts/`, `config/`, `prompts/`, `tests/unit/` | **Push to `main`** | The unit suite covers these. It runs on push, and a broken validator or a bad prompt template fails in about 45 seconds. |
+| `app_inventory/` | **Push to `main`** | Also fine — but this one runs the unit suite **and** the E2E, because page objects read the inventory at runtime. Expect ~3 minutes, not 45 seconds. |
 | `pages/`, `features/`, `tests/step_defs/` | **Branch + PR** | The E2E suite is SKIPPED on push. Nothing executes this code before it lands. |
 | Both in one commit | **Branch + PR** | The stricter rule wins. |
 | Agent 2's output, on a story that already has a PR | **That PR's existing branch** | It is already open; a commit re-runs Agents 3 and 4 on your fix. |
@@ -345,13 +346,24 @@ about ceremony; it is about which files the push gate actually exercises.
 
 ### What runs, per event
 
-| Step | push to `main` | pull request | manual dispatch |
-|---|---|---|---|
-| Unit suite (601 tests) | ✅ | ✅ | ✅ |
-| Chromium install | — | ✅ | ✅ |
-| App E2E (`tests/step_defs/`) | — | ✅ | ✅ |
-| Job summary | ✅ | ✅ | ✅ |
-| Agent 5 → Jira | — | ✅ | — |
+| Step | push (no inventory change) | push (inventory changed) | pull request | manual dispatch |
+|---|---|---|---|---|
+| Unit suite | ✅ | ✅ | ✅ | ✅ |
+| Chromium install | — | ✅ | ✅ | ✅ |
+| App E2E (`tests/step_defs/`) | — | ✅ | ✅ | ✅ |
+| Job summary | ✅ | ✅ | ✅ | ✅ |
+| Agent 5 → Jira | — | — | ✅ | — |
+
+**Why an inventory push runs the E2E.** Page objects hold no selectors — they
+call `self.sel("key")`, and `BasePage` reads `app_inventory/<app>.json` at
+RUNTIME. Editing the inventory therefore changes what every existing E2E test
+does, with no code change at all. The unit suite would prove the inventory is
+structurally sound and nothing about whether the tests still pass against it.
+
+**Why a prompt push does not.** `prompts/` shapes only what the agents
+*generate* the next time they run. It cannot alter the behaviour of code that
+already exists, so a browser run would prove nothing. Prompt changes get the
+unit suite, which catches a deleted placeholder or a broken template.
 
 Two things worth knowing:
 

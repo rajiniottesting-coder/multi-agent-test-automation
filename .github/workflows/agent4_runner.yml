@@ -129,6 +129,49 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.ref || github.ref }}
+          # Two commits is enough for the inventory diff below; a full clone
+          # would slow every run for no benefit.
+          fetch-depth: 2
+
+      # ── DID THIS PUSH TOUCH THE APP INVENTORY? ────────────────────
+      # Page objects hold no selectors: they call self.sel("key") and BasePage
+      # reads app_inventory/<app>.json AT RUNTIME. Editing the inventory
+      # therefore changes what every existing E2E test does, with no code
+      # change at all - and on a push only the unit suite ran, which proves the
+      # inventory is structurally sound and nothing about whether the tests
+      # still pass against it.
+      #
+      # A prompt change is deliberately NOT treated this way. prompts/ shapes
+      # only what the agents GENERATE next time they run; it cannot alter code
+      # that already exists, so running a browser would prove nothing.
+      #
+      # Consulted on push only. pull_request and workflow_dispatch run the E2E
+      # unconditionally.
+      - name: Detect inventory changes
+        id: changes
+        if: github.event_name == 'push'
+        run: |
+          BEFORE="${{ github.event.before }}"
+          # A first push to a new branch has an all-zero before-SHA and nothing
+          # to diff. Fall back to RUNNING the E2E: over-running wastes three
+          # minutes, skipping it silently ships an untested change.
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "no usable before-SHA; running the E2E to be safe"
+            echo "inventory=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo "before-SHA outside this shallow clone; running the E2E to be safe"
+            echo "inventory=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$BEFORE" "${{ github.sha }}" | grep -q '^app_inventory/'; then
+            echo "inventory changed - the E2E will run"
+            echo "inventory=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "inventory unchanged - unit tests only"
+            echo "inventory=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
@@ -150,7 +193,7 @@ jobs:
         # we re-download (e.g., a new Playwright version may need a new binary).
         # Skipped on push: the unit gate needs the playwright PACKAGE (already
         # installed from requirements.txt), never the browser BINARY.
-        if: github.event_name != 'push'
+        if: github.event_name != 'push' || steps.changes.outputs.inventory == 'true'
         id: playwright-cache
         uses: actions/cache@v4
         with:
@@ -162,7 +205,7 @@ jobs:
         # The browser binary itself is restored from cache when the key matches.
         # OS-level apt packages are NOT cached and need to be reinstalled fresh.
         # Skipped on push — saves ~2-3 min on every framework commit.
-        if: github.event_name != 'push'
+        if: github.event_name != 'push' || steps.changes.outputs.inventory == 'true'
         run: playwright install --with-deps chromium
 
       - name: Framework self-test (unit tests)
@@ -194,7 +237,7 @@ jobs:
         # always() so a failed unit gate still yields E2E signal on a PR.
         # Never on push: no browser is installed, and the app secrets this
         # step needs are irrelevant to a framework change.
-        if: always() && github.event_name != 'push'
+        if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory == 'true')
         # Application credentials. Feature files log in by ROLE; the
         # `credentials` fixture (tests/step_defs/conftest.py) resolves the role
         # from these variables at runtime. Nothing authenticating is ever
@@ -222,7 +265,7 @@ jobs:
         # `report` job (the only consumer) does not run there, and 14-day
         # artifacts for every framework commit are pure storage cost — the
         # job summary below already names the failing tests.
-        if: always() && github.event_name != 'push'
+        if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory == 'true')
         uses: actions/upload-artifact@v4
         with:
           name: pytest-report-${{ github.run_id }}

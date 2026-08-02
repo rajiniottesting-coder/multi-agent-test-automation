@@ -294,3 +294,76 @@ def test_login_path_comes_from_the_inventory():
         "would fall back to '/' and fail to sign in on any app whose root is "
         "not a login screen"
     )
+
+# ─────────────────────────────────────────────────────────────────────────
+# Inventory pushes must run the E2E
+#
+# Page objects hold no selectors - they call self.sel("key") and BasePage reads
+# the inventory AT RUNTIME. So an inventory edit changes what every existing
+# E2E test does, with no code change at all. On a push only the unit suite ran,
+# which proves the inventory is structurally sound and nothing about whether
+# the tests still pass against it.
+# ─────────────────────────────────────────────────────────────────────────
+
+def _agent4() -> dict:
+    return yaml.safe_load(
+        (_repo_root() / ".github" / "workflows" / "agent4_runner.yml")
+        .read_text(encoding="utf-8")
+    )
+
+
+def _test_steps() -> list:
+    return _agent4()["jobs"]["test"]["steps"]
+
+
+def _step(name_fragment: str) -> dict:
+    for s in _test_steps():
+        if name_fragment.lower() in (s.get("name") or "").lower():
+            return s
+    raise AssertionError(f"no step matching {name_fragment!r}")
+
+
+def test_the_detection_step_exists_and_is_push_only():
+    step = _step("Detect inventory changes")
+    assert step.get("id") == "changes", "the browser steps reference steps.changes"
+    assert "github.event_name == 'push'" in str(step.get("if")), \
+        "detection is meaningless on pull_request and dispatch, which always run the E2E"
+
+
+def test_checkout_fetches_enough_history_to_diff():
+    """`git diff <before> <sha>` needs the previous commit present. The default
+    depth-1 clone does not have it."""
+    checkout = _test_steps()[0]
+    assert checkout.get("with", {}).get("fetch-depth") == 2
+
+
+@pytest.mark.parametrize("step_name", [
+    "Cache Playwright browsers",
+    "Install Playwright browsers",
+    "Run app tests",
+    "Upload test report",
+])
+def test_browser_steps_also_run_when_the_inventory_changed(step_name):
+    cond = str(_step(step_name).get("if"))
+    assert "steps.changes.outputs.inventory == 'true'" in cond, (
+        f"{step_name!r} still skips on every push. An inventory edit changes "
+        f"what the existing E2E tests do, so it must run them."
+    )
+
+
+def test_detection_matches_only_the_inventory_directory():
+    """prompts/ must NOT trigger the E2E: it shapes what the agents GENERATE
+    next time, and cannot alter code that already exists. And the pattern must
+    be anchored, or a directory merely named similarly would match."""
+    run = str(_step("Detect inventory changes").get("run"))
+    assert "'^app_inventory/'" in run, "the grep pattern must be anchored at ^"
+    assert "prompts/" not in run, "a prompt change must not trigger the browser"
+
+
+def test_detection_fails_safe_when_it_cannot_diff():
+    """A first push to a branch has an all-zero before-SHA. Over-running the
+    E2E wastes three minutes; skipping it silently ships an untested change."""
+    run = str(_step("Detect inventory changes").get("run"))
+    assert "0000000000000000000000000000000000000000" in run
+    assert run.count("inventory=true") >= 3, \
+        "each unusable-SHA branch must fall back to running the E2E"
