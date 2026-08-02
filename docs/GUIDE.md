@@ -454,12 +454,39 @@ Rows worth explaining:
 used to report "All N tests passed" with no mention of it, which invites the
 reader to assume the app tests passed too. The job summary now carries one of:
 
-| Note | Meaning |
-|---|---|
-| ✅ A runtime-affecting file changed, so the app E2E ran | rows 1 |
-| ℹ️ **App E2E not run** — no runtime-affecting file changed, and which files would have triggered it | row 2 |
-| ⚠️ **The change detector failed**, so the E2E was run anyway | row 7 |
-| ⚠️ **The detector produced no verdict**, so the E2E was run | defensive |
+These are the notes verbatim, so you can recognise them in a run.
+
+**Row 1 — a runtime file changed:**
+
+> ✅ A runtime-affecting file changed, so the app E2E ran as well as the unit
+> suite.
+
+**Row 2 — nothing runtime changed.** This is the common one, and the reason it
+exists: without it the summary read "All 639 tests passed" and said nothing
+about the browser, which invites the reader to assume the app tests were among
+them.
+
+> ℹ️ **App E2E not run.** No runtime-affecting file changed in this push, so
+> only the unit suite ran. The browser runs when `app_inventory/`,
+> `config/config.yaml`, `pages/base_page.py` or either `conftest.py` changes —
+> those are read while a test runs, so editing them changes what the existing
+> tests do.
+
+So a push touching only `validators/`, `core/` or `prompts/` gets this note and
+a green tick, and both are correct: those files are read when an AGENT runs, not
+when a test runs, so a browser would spend three minutes proving nothing.
+
+**Row 7 — the detector failed:**
+
+> ⚠️ **The change detector failed**, so the app E2E was run anyway rather than
+> skipped. Its result is above. Check the *Detect runtime-affecting changes*
+> step for the error — a force-push is the usual cause, since the previous SHA
+> is then unreachable.
+
+**Defensive — no verdict at all:**
+
+> ⚠️ **The change detector produced no verdict**, so the app E2E was run rather
+> than skipped.
 
 Only on a push. A pull request and a manual dispatch always run the E2E, so a
 note there would be noise.
