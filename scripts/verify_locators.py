@@ -264,27 +264,52 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
     declared_family = set(entry.get("multi_match") or [])
     measured_family: list[tuple[str, int]] = []
 
+    # The inventory already states which keys are EXPECTED to match several
+    # elements, and which cannot be reached by a tool that never clicks.
+    # Reporting those as faults is how a clean sweep still printed ten
+    # "problems" and buried the one line that mattered.
+    declared_family = set(entry.get("multi_match") or [])
+    declared_conditional = set(entry.get("conditional") or [])
+
     for name, sel in selectors.items():
         try:
             count = _resolve_one(page, sel).count()
         except Exception as e:
             count = -1
             note = f"INVALID ({type(e).__name__})"
+        expected = False
         if count == 1:
             ok += 1
             status, colour = "OK  ", "#22c55e"
         elif count == 0:
-            bad += 1
-            status, colour = "STALE", "#ef4444"
+            if name in declared_conditional:
+                # Declared as existing only after an interaction. This tool
+                # never clicks, so zero is the correct and expected reading.
+                ok += 1
+                expected = True
+                status, colour = "COND ", "#3b82f6"
+            else:
+                bad += 1
+                status, colour = "STALE", "#ef4444"
         elif count > 1:
-            bad += 1
-            status, colour = f"AMBIG({count})", "#f59e0b"
-            measured_family.append((name, count))
+            if name in declared_family:
+                # Declared multi_match. Matching several elements is the
+                # declaration being SATISFIED, not a defect - the validator
+                # already stops anyone clicking it.
+                ok += 1
+                expected = True
+                status, colour = f"FAMILY({count})", "#22c55e"
+            else:
+                bad += 1
+                status, colour = f"AMBIG({count})", "#f59e0b"
+                measured_family.append((name, count))
         else:
             bad += 1
             status, colour = "ERROR", "#ef4444"
 
-        if only_problems and count == 1:
+        # --only-problems means UNEXPECTED findings only. A declared family or
+        # a declared conditional key is not a finding.
+        if only_problems and (count == 1 or expected):
             continue
 
         shown = ""

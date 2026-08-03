@@ -6,6 +6,7 @@ assembly, and the staleness diff — all on plain DOM descriptors.
 import pytest
 
 from inventory_tools.introspect import (
+    diff_page,
     rank_selector,
     derive_element_name,
     element_kind,
@@ -700,3 +701,65 @@ def test_numeric_members_are_pinned_not_collapsed():
     entry = build_page_entry("https://x.test/i", "I", descs, "https://x.test")
     assert entry["multi_match"] == []
     assert all(">> nth=" in s for s in entry["elements"].values())
+
+# ─────────────────────────────────────────────────────────────────────────
+# The tools must honour the inventory's own declarations
+#
+# A clean sweep still printed ten "problems": every declared multi_match family
+# reported as AMBIG, and every declared conditional key as STALE. The operator
+# then has to remember which ten are fine, which is exactly how a real finding
+# gets missed. A declaration that the tooling ignores is not a declaration.
+# ─────────────────────────────────────────────────────────────────────────
+
+def test_a_declared_family_is_not_reported_as_drift():
+    """Matching several elements IS the multi_match declaration being
+    satisfied. The generation-time validator already stops anyone clicking it."""
+    out = diff_page(
+        "products",
+        {"cards": ".card", "heading": "h1"},
+        {".card": 34, "h1": 1},
+        set(),
+        declared_family={"cards"},
+    )
+    assert out["ambiguous"] == []
+
+
+def test_an_undeclared_family_is_still_reported():
+    """The check must keep its teeth: a selector matching many elements that
+    NOBODY declared is the failure this was built to catch."""
+    out = diff_page(
+        "products",
+        {"cards": ".card"},
+        {".card": 34},
+        set(),
+        declared_family=set(),
+    )
+    assert len(out["ambiguous"]) == 1
+    assert out["ambiguous"][0]["matches"] == 34
+
+
+def test_a_declared_conditional_key_is_not_reported_missing():
+    """It exists only after an interaction, and this tool never clicks."""
+    out = diff_page(
+        "login",
+        {"error": "text=Wrong password", "heading": "h1"},
+        {"text=Wrong password": 0, "h1": 1},
+        set(),
+        declared_conditional={"error"},
+    )
+    names = [m.get("element") if isinstance(m, dict) else m for m in out["missing"]]
+    assert "error" not in names
+
+
+def test_an_undeclared_zero_match_is_still_reported():
+    out = diff_page("login", {"error": "text=Wrong password"},
+                    {"text=Wrong password": 0}, set(), declared_conditional=set())
+    names = [m.get("element") if isinstance(m, dict) else m for m in out["missing"]]
+    assert "error" in names
+
+
+def test_declarations_default_to_empty():
+    """Called without the new arguments, behaviour is unchanged - so any other
+    caller keeps working."""
+    out = diff_page("p", {"c": ".card"}, {".card": 5}, set())
+    assert len(out["ambiguous"]) == 1

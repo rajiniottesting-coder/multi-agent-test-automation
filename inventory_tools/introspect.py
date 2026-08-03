@@ -808,7 +808,9 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
 
 def diff_page(page_name: str, inventory_selectors: dict[str, str],
               live_resolved: dict[str, int], live_data_tests: set[str],
-              test_attrs: tuple = TEST_ID_ATTRS) -> dict:
+              test_attrs: tuple = TEST_ID_ATTRS,
+              declared_family: set | None = None,
+              declared_conditional: set | None = None) -> dict:
     """Diff one committed page against the live DOM.
 
     inventory_selectors : {element_name: selector} from the committed inventory
@@ -837,15 +839,25 @@ def diff_page(page_name: str, inventory_selectors: dict[str, str],
     def _covered(value: str) -> bool:
         return value in inv_values or any(value.startswith(p) for p in prefixes)
 
+    # Likewise a key declared `conditional` exists only after an interaction,
+    # and this tool never clicks - zero matches is the correct reading.
+    conditional = declared_conditional or set()
+    missing = [m for m in missing
+               if (m.get("element") if isinstance(m, dict) else m) not in conditional]
+
     new = sorted(v for v in live_data_tests if not _covered(v))
     # Live multi-match. Only ZERO matches were previously reported, so a
     # selector resolving to several elements passed silently and then failed at
     # runtime with a Playwright strict-mode violation.
+    # A key DECLARED multi_match is meant to match several elements - that is
+    # the declaration being satisfied, not drift, and the generation-time
+    # validator already stops anyone clicking it. Reporting it as ambiguous
+    # every night trains the reader to ignore the report.
+    family = declared_family or set()
     ambiguous = sorted(
-        {"element": name, "selector": sel, "matches": live_resolved.get(sel, 0)}.items()
-        and (name, sel, live_resolved.get(sel, 0))
+        (name, sel, live_resolved.get(sel, 0))
         for name, sel in inventory_selectors.items()
-        if live_resolved.get(sel, 0) > 1
+        if live_resolved.get(sel, 0) > 1 and name not in family
     )
     return {"missing": missing, "new_data_tests": new,
             "ambiguous": [{"element": n, "selector": s_, "matches": c}

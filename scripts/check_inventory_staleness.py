@@ -152,7 +152,12 @@ def main() -> int:
                 unreachable.append(name)
                 continue
             per_page[name] = introspect.diff_page(
-                name, selectors, counts, live_test_ids, test_attrs)
+                name, selectors, counts, live_test_ids, test_attrs,
+                # The inventory states which keys are meant to match several
+                # elements and which cannot be reached without a click. Passing
+                # them through stops the nightly report crying wolf.
+                declared_family=set(entry.get("multi_match") or []),
+                declared_conditional=set(entry.get("conditional") or []))
 
     report = introspect.summarize_drift(per_page, unreachable)
     report["pages_missing_notes"] = introspect.pages_missing_notes(inventory)
