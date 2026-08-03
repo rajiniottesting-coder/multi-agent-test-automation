@@ -28,15 +28,15 @@
       "page_object_file": "pages/nav_page.py",
       "page_object_class": "NavPage",
       "elements": {
-        "home_link": "a[href='/']",
-        "products_link": "a[href='/products']",
-        "cart_link": "a[href='/view_cart']",
-        "signup_login_link": "a[href='/login']",
-        "test_cases_link": "a[href='/test_cases']",
-        "api_testing_link": "a[href='/api_list']",
-        "contact_us_link": "a[href='/contact_us']",
-        "logout_link": "a[href='/logout']",
-        "delete_account_link": "a[href='/delete_account']",
+        "home_link": "a[href='/'] >> nth=0",
+        "products_link": "a[href='/products'] >> nth=0",
+        "cart_link": "a[href='/view_cart'] >> nth=0",
+        "signup_login_link": "a[href='/login'] >> nth=0",
+        "test_cases_link": "a[href='/test_cases'] >> nth=0",
+        "api_testing_link": "a[href='/api_list'] >> nth=0",
+        "contact_us_link": "a[href='/contact_us'] >> nth=0",
+        "logout_link": "a[href='/logout'] >> nth=0",
+        "delete_account_link": "a[href='/delete_account'] >> nth=0",
         "logged_in_as": "text=Logged in as"
       },
       "elements_notes": {
@@ -44,7 +44,8 @@
         "logout_link": "Present ONLY while logged in, which makes its presence a reliable readiness signal for 'am I authenticated'. Use is_visible() on it rather than parsing the URL.",
         "logged_in_as": "Reads 'Logged in as <name>'. A substring match, so assert containment rather than equality.",
         "delete_account_link": "Permanently removes the account and shows 'ACCOUNT DELETED!'. A test that registers an account should call this at the end - there is no admin cleanup on this site and abandoned accounts accumulate forever.",
-        "_href_over_role": "These are addressed by href, not by role+name, and that is deliberate. This app's nav mixes icon libraries, and Material Icons renders its glyph from LIGATURE TEXT - <i class='material-icons'>card_travel</i> puts the literal string 'card_travel' in the DOM. Playwright folds that into the accessible name, so the Products link is named 'card_travel Products', not 'Products', and role=link[name='Products'] matches NOTHING because role-name matching is exact. Links whose icon is Font Awesome (empty <i>) were unaffected, which is why 'Test Cases' resolved while eight others did not - proven 1 Aug 2026 both against the live site and against reproduced markup. The href is the author's contract and cannot be polluted this way."
+        "_href_over_role": "These are addressed by href, not by role+name, and that is deliberate. This app's nav mixes icon libraries, and Material Icons renders its glyph from LIGATURE TEXT - <i class='material-icons'>card_travel</i> puts the literal string 'card_travel' in the DOM. Playwright folds that into the accessible name, so the Products link is named 'card_travel Products', not 'Products', and role=link[name='Products'] matches NOTHING because role-name matching is exact. Links whose icon is Font Awesome (empty <i>) were unaffected, which is why 'Test Cases' resolved while eight others did not - proven 1 Aug 2026 both against the live site and against reproduced markup. The href is the author's contract and cannot be polluted this way. Each is pinned with '>> nth=0': verified 2 Aug 2026 that the footer repeats Home, Cart, Test Cases and API Testing, so a bare href matched 2-4 elements. The header block precedes the footer in the DOM, so nth=0 is always the header link.",
+        "signup_login_link": "CONDITIONAL - present only while signed out. Its absence is the same signal as logout_link's presence."
       },
       "key_methods": [
         "go_to_products()",
@@ -53,7 +54,11 @@
         "logout()",
         "is_logged_in()",
         "logged_in_name()"
-      ]
+      ],
+      "conditional": [
+        "signup_login_link"
+      ],
+      "conditional_note": "Rendered only while signed OUT — it is replaced by Logout once a session exists. verify_locators signs in before sweeping, so this key always reads STALE there. That is the tool's reach, not a broken selector; the login feature exercises it for real."
     },
     "home": {
       "url": "/",
@@ -138,7 +143,7 @@
         "product_cards": ".product-image-wrapper",
         "product_names": ".productinfo p",
         "add_to_cart_buttons": "text=Add to cart",
-        "view_product_links": "role=link[name='View Product']",
+        "view_product_links": "a[href^='/product_details/']",
         "added_modal": "text=Your product has been added to cart.",
         "view_cart_link_in_modal": "role=link[name='View Cart']",
         "continue_shopping_button": "role=button[name='Continue Shopping']"
@@ -153,7 +158,7 @@
       "elements_notes": {
         "add_to_cart_buttons": "MULTI-MATCH, and worse than it looks: every product card renders its Add to cart control TWICE (once in the card, once in the hover overlay), so this matches 68 elements on the all-products page, not 34. Never click it directly - scope to one product's card, or open the product via its View Product link.",
         "product_names": "MULTI-MATCH and also doubled per card for the same reason. Use get_all_texts() to assert a product IS present rather than indexing into it.",
-        "view_product_links": "MULTI-MATCH, but each href carries the product id (/product_details/<id>), which makes it the reliable way to reach ONE product.",
+        "view_product_links": "MULTI-MATCH - one per product card. Matched by href PREFIX, not by accessible name: role=link[name='View Product'] resolved to ZERO against the live page (2 Aug 2026). The href is exact, carries the product id, and cannot be affected by icon markup inside the link.",
         "added_modal": "Adding to cart opens a MODAL rather than navigating. It blocks the page underneath, so a scenario adding two products must dismiss it between them or the second click fails with 'intercepts pointer events'.",
         "search_input": "UNVERIFIED id, from the site's documented test cases rather than the DOM. Search matches on product NAME and submits to the same page.",
         "_empty_search": "A search matching nothing renders NO result cards rather than an empty-state message. Assert absence by counting cards, not by looking for text.",
@@ -165,7 +170,13 @@
         "product_names()",
         "product_count()",
         "open_product(name)"
-      ]
+      ],
+      "conditional": [
+        "added_modal",
+        "view_cart_link_in_modal",
+        "continue_shopping_button"
+      ],
+      "conditional_note": "The add-to-cart modal does not exist until a product is added, so these three always read STALE to a tool that never clicks. Do not 'fix' them."
     },
     "cart": {
       "url": "/view_cart",
@@ -179,7 +190,7 @@
         "cart_rows": "#cart_info tbody tr",
         "cart_product_names": "#cart_info .cart_description a",
         "cart_delete_buttons": ".cart_quantity_delete",
-        "proceed_to_checkout_button": "role=link[name='Proceed To Checkout']",
+        "proceed_to_checkout_button": "text=Proceed To Checkout",
         "empty_cart_message": "text=Cart is empty!"
       },
       "multi_match": [
@@ -192,7 +203,7 @@
         "_test_owned": "The cart belongs to this test's own session or account, so asserting an EXACT row count is safe here - unlike the shared catalogue.",
         "cart_rows": "MULTI-MATCH. Narrow to the product the test added rather than assuming a row index.",
         "cart_table": "UNVERIFIED id, from the site's documented test cases rather than the DOM.",
-        "proceed_to_checkout_button": "Proceeding while logged out shows a Register/Login prompt instead of the address form, so a checkout scenario must authenticate first."
+        "proceed_to_checkout_button": "Matched by TEXT. role=link[name='Proceed To Checkout'] resolved to zero (2 Aug 2026) - the control is an anchor without an href, so it carries no link role. Proceeding while signed out shows a Register/Login prompt instead of the address form."
       },
       "key_methods": [
         "is_loaded()",
@@ -200,7 +211,11 @@
         "row_count()",
         "remove_product(name)",
         "proceed_to_checkout()"
-      ]
+      ],
+      "conditional": [
+        "empty_cart_message"
+      ],
+      "conditional_note": "Only rendered when the cart is empty, so it reads STALE whenever the sweep runs against a cart with items in it."
     }
   }
 }
