@@ -197,8 +197,35 @@ def rank_selector(tag: str, attrs: dict, text: str = "",
             if prefix:
                 return (f"[{key}^='{_css_escape_value(prefix)}-']", f"{key}-prefix")
             return (f"[{key}='{_css_escape_value(val)}']", key)
+    # ── ANCHORS: prefer the href over the accessible name ───────────────
+    # An <a> carries its destination, and that destination is immune to the
+    # markup INSIDE the link. An accessible name is not: an icon font that
+    # renders from ligature text prefixes the glyph name onto it, and any
+    # decorative span changes it too - the locator then matches nothing.
+    # Verified against a live app on 2 Aug 2026: a role+name locator for a
+    # per-record link resolved to ZERO while its href matched every card.
+    #
+    # A trailing runtime id segment becomes a prefix match,
+    # which correctly reads as a family; build_page_entry then collapses those
+    # into multi_match.
+    if tag == "a":
+        href = (a.get("href") or "").strip()
+        if href and not href.startswith(("#", "javascript:", "mailto:", "tel:")):
+            last = href.rstrip("/").rsplit("/", 1)[-1]
+            if last.isdigit() and len(href.rstrip("/")) > len(last):
+                stem = href.rstrip("/")[: -len(last)]
+                return (f"a[href^='{_css_escape_value(stem)}']", "href-prefix")
+            return (f"a[href='{_css_escape_value(href)}']", "href")
+
     # accessible role + name — churn-proof, handles custom/div-based widgets.
+    #
+    # An <a> WITHOUT href has no link role at all (ARIA maps it to `generic`),
+    # so emitting role=link[name='...'] for one produces a locator that can
+    # never match. That is exactly how a checkout control styled as a button
+    # shipped as role=link and resolved to zero.
     role = a.get("role") or _IMPLICIT_ROLE.get(tag)
+    if tag == "a" and not a.get("role") and not (a.get("href") or "").strip():
+        role = None
     acc_name = (a.get("aria-label") or (text or "")).strip()
     # getByRole WITH an accessible name — Playwright's first recommendation.
     # getByRole WITH a STABLE accessible name — Playwright's first choice.

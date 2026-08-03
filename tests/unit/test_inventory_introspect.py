@@ -3,6 +3,8 @@
 Covers selector ranking, element naming, repeated-family collapsing, draft page
 assembly, and the staleness diff — all on plain DOM descriptors.
 """
+import pytest
+
 from inventory_tools.introspect import (
     rank_selector,
     derive_element_name,
@@ -44,7 +46,40 @@ def test_rank_name_then_aria_then_placeholder():
 
 
 def test_rank_role_text_fallback():
-    sel, strat = rank_selector("a", {}, text="Continue Shopping")
+    """A BUTTON with readable text still ranks by role+name."""
+    sel, strat = rank_selector("button", {}, text="Continue Shopping")
+    assert strat == "role" and "button" in sel
+
+
+def test_an_anchor_without_href_is_not_a_link():
+    """CORRECTED 2 Aug 2026. `_IMPLICIT_ROLE` maps <a> to `link`, but ARIA only
+    does so when the anchor HAS an href - without one it is `generic`. Emitting
+    role=link[name='...'] for a hrefless anchor produces a locator that can
+    never match, which is exactly how a checkout control styled as a button
+    shipped as role=link and resolved to zero against the live app."""
+    sel, strat = rank_selector("a", {"class": "btn"}, text="Proceed To Checkout")
+    assert "role=link" not in sel
+    assert sel == "text=Proceed To Checkout"
+
+
+def test_an_anchor_prefers_its_href_over_its_name():
+    """The destination is immune to the markup INSIDE the link; an accessible
+    name is not. An icon font rendering from ligature text turned 'Products'
+    into 'card_travel Products' and the role locator matched nothing."""
+    sel, strat = rank_selector("a", {"href": "/products"}, text="card_travel Products")
+    assert sel == "a[href='/products']" and strat == "href"
+
+
+def test_a_record_href_becomes_a_prefix_match():
+    """One anchor per record is a family, not an address."""
+    sel, strat = rank_selector("a", {"href": "/product_details/1"}, text="View Product")
+    assert sel == "a[href^='/product_details/']" and strat == "href-prefix"
+
+
+@pytest.mark.parametrize("href", ["#top", "javascript:void(0)", "mailto:a@b.c", "tel:123"])
+def test_non_navigational_hrefs_fall_through(href):
+    """A fragment or protocol href is not a useful locator - rank by name."""
+    sel, strat = rank_selector("a", {"href": href}, text="Top")
     assert strat == "role" and "link" in sel
 
 
@@ -572,35 +607,35 @@ def test_duplicate_semantic_selectors_get_nth_suffix():
     """Three links reading 'Canada' each rank to the SAME valid locator.
     Playwright is strict, so all three would fail without disambiguation."""
     descriptors = [
-        {"tag": "a", "attrs": {}, "text": "Canada"},
-        {"tag": "a", "attrs": {}, "text": "Canada"},
-        {"tag": "a", "attrs": {}, "text": "Canada"},
+        {"tag": "a", "attrs": {"href": "/canada"}, "text": "Canada"},
+        {"tag": "a", "attrs": {"href": "/canada"}, "text": "Canada"},
+        {"tag": "a", "attrs": {"href": "/canada"}, "text": "Canada"},
     ]
     page = build_page_entry("https://x.com/", "X", descriptors, "https://x.com")
     sels = list(page["elements"].values())
     assert sels == [
-        "role=link[name='Canada'] >> nth=0",
-        "role=link[name='Canada'] >> nth=1",
-        "role=link[name='Canada'] >> nth=2",
+        "a[href='/canada'] >> nth=0",
+        "a[href='/canada'] >> nth=1",
+        "a[href='/canada'] >> nth=2",
     ]
 
 
 def test_unique_selector_gets_no_suffix():
     """Only duplicates are indexed - a unique locator stays clean."""
-    descriptors = [{"tag": "a", "attrs": {}, "text": "Mexico"}]
+    descriptors = [{"tag": "a", "attrs": {"href": "/mexico"}, "text": "Mexico"}]
     page = build_page_entry("https://x.com/", "X", descriptors, "https://x.com")
-    assert list(page["elements"].values()) == ["role=link[name='Mexico']"]
+    assert list(page["elements"].values()) == ["a[href='/mexico']"]
 
 
 def test_collision_still_reported_after_disambiguation():
     """The selectors now work, but the reviewer must still be told - the real
     fix is a data-test attribute in the app."""
     descriptors = [
-        {"tag": "a", "attrs": {}, "text": "Canada"},
-        {"tag": "a", "attrs": {}, "text": "Canada"},
+        {"tag": "a", "attrs": {"href": "/canada"}, "text": "Canada"},
+        {"tag": "a", "attrs": {"href": "/canada"}, "text": "Canada"},
     ]
     page = build_page_entry("https://x.com/", "X", descriptors, "https://x.com")
-    assert "role=link[name='Canada']" in page["_ambiguous_selectors"]["selectors"]
+    assert "a[href='/canada']" in page["_ambiguous_selectors"]["selectors"]
 
 
 # ─────────────────────────────────────────────────────────────────────────
