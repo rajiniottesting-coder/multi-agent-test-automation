@@ -554,3 +554,58 @@ def test_the_note_is_push_only():
     would be noise."""
     run = str(_summary_step().get("run"))
     assert 'event == "push"' in run
+
+# ─────────────────────────────────────────────────────────────────────────
+# CLI scripts must not reference undefined names
+#
+# verify_locators.py used `logger.info(...)` in a module that has no logger
+# and prints everywhere else. It raised NameError on the FIRST line of real
+# work, for anyone who did not pass --login-url - which the previous change
+# had just made the normal case. check_inventory_staleness.py had the same
+# bug from the same edit. Neither is exercised by any unit test, because both
+# need a browser, so nothing caught it.
+#
+# This does not run the scripts. It walks their AST and asserts every name
+# they LOAD is one they define, import, or take as an argument.
+# ─────────────────────────────────────────────────────────────────────────
+import ast
+import builtins
+
+
+def _undefined_names(path: Path) -> list:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    defined = set(dir(builtins)) | {"__file__", "__name__", "__doc__"}
+    for n in ast.walk(tree):
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            defined.add(n.name)
+        elif isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store):
+            defined.add(n.id)
+        elif isinstance(n, ast.arg):
+            defined.add(n.arg)
+        elif isinstance(n, (ast.Import, ast.ImportFrom)):
+            for a in n.names:
+                defined.add((a.asname or a.name).split(".")[0])
+        elif isinstance(n, ast.ExceptHandler) and n.name:
+            defined.add(n.name)
+        elif isinstance(n, ast.Global):
+            defined.update(n.names)
+    used = {n.id for n in ast.walk(tree)
+            if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
+    return sorted(used - defined)
+
+
+@pytest.mark.parametrize("script", [
+    "scripts/verify_locators.py",
+    "scripts/check_inventory_staleness.py",
+    "scripts/generate_inventory.py",
+])
+def test_cli_scripts_reference_only_defined_names(script):
+    path = _repo_root() / script
+    if not path.is_file():
+        pytest.skip(f"{script} is not present in this checkout")
+    missing = _undefined_names(path)
+    assert not missing, (
+        f"{script} loads names it never defines: {missing}. These scripts need "
+        f"a browser, so no unit test executes them - a NameError here only "
+        f"surfaces when someone runs the tool."
+    )

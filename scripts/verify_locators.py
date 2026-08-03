@@ -408,7 +408,10 @@ def main() -> int:
                 except Exception:                       # noqa: BLE001
                     _inv = {}
                 login_path = find_login_path(_inv) or "/"
-                logger.info("  login page: %s (from the inventory)", login_path)
+                # This module prints; it has no logger. Using one here raised
+                # NameError on the very first run for anyone who did not pass
+                # --login-url, which is now the normal case.
+                print(f"  login page: {login_path} (from the inventory)")
             login_url = base_url + login_path
             logged_in = do_login(page, login_url, args.username_selector,
                                  args.password_selector, args.submit_selector,

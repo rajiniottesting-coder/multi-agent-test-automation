@@ -140,7 +140,7 @@ def main() -> int:
             if skip:
                 # A templated page with no sample cannot be visited. Say so and
                 # move on: reporting its selectors as drifted would be a lie.
-                logger.info("  [%s] skipped - %s", name, skip)
+                print(f"  [{name}] skipped - {skip}")
                 continue
             if "<" in url_path:  # templated URL (e.g. ?id=<id>) — skip auto-visit
                 continue
