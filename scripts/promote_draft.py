@@ -17,6 +17,12 @@ WHAT IT DOES NOT DO
     The output is a CLEAN DRAFT, not an inventory ready to commit.
 
 USAGE
+    Example: python -m scripts.promote_draft `
+  app_inventory/login.draft.json app_inventory/full_auth.draft.json `
+  -o app_inventory/clean.draft.json
+
+python -m scripts.verify_locators --inventory app_inventory/clean.draft.json --login-url /login --only-problems
+
     python -m scripts.promote_draft a.draft.json b.draft.json -o merged.json
     python -m scripts.promote_draft *.draft.json -o merged.json --drop-fragile
     python -m scripts.promote_draft a.json b.json -o out.json --dry-run

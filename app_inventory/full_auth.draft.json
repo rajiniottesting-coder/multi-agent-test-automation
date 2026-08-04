@@ -60,14 +60,14 @@
         "tops_shirts_link": "a[href^='/category_products/'] >> nth=6",
         "aswift_3_host_element": "#aswift_3_host",
         "these_are_topics_related_to_the_article_that_might_interest_you_element": "span[aria-label='These are topics related to the article that might interest you']",
-        "software_link": "#aswift_3_host > div > div > div:nth-of-type(2)",
-        "t_shirts_link": "#aswift_3_host > div > div > div:nth-of-type(3)",
+        "dresses_link": "#aswift_3_host > div > div > div:nth-of-type(2)",
+        "software_testing_books_link": "#aswift_3_host > div > div > div:nth-of-type(3)",
         "engineers_link": "#aswift_3_host > div > div > div:nth-of-type(4)",
-        "jeans_link_alt": "#aswift_3_host > div > div > div:nth-of-type(5)",
-        "api_testing_courses_link": "#aswift_3_host > div > div > div:nth-of-type(6)",
-        "dresses_link": "#aswift_3_host > div > div > div:nth-of-type(7)",
-        "t_shirt_link": "#aswift_3_host > div > div > div:nth-of-type(8)",
-        "api_testing_tools_link": "#aswift_3_host > div > div > div:nth-of-type(9)",
+        "apparel_link": "#aswift_3_host > div > div > div:nth-of-type(5)",
+        "automation_practice_website_link": "#aswift_3_host > div > div > div:nth-of-type(6)",
+        "jeans_link_alt": "#aswift_3_host > div > div > div:nth-of-type(7)",
+        "web_development_courses_link": "#aswift_3_host > div > div > div:nth-of-type(8)",
+        "t_shirts_link": "#aswift_3_host > div > div > div:nth-of-type(9)",
         "6_polo_link": "a[href='/brand_products/Polo']",
         "5_h_m_link": "a[href='/brand_products/H&M']",
         "5_madame_link": "a[href='/brand_products/Madame']",
@@ -128,7 +128,6 @@
         "add_cart_link_28": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(16) > div > div:nth-of-type(1) > div:nth-of-type(1) > a",
         "add_cart_link_29": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(16) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a",
         "view_product_link_14": "a[href^='/product_details/'] >> nth=14",
-        "quality_control_tracking_link": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(17) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
         "add_cart_link_30": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(17) > div > div:nth-of-type(1) > div:nth-of-type(1) > a",
         "add_cart_link_31": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(17) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a",
         "view_product_link_15": "a[href^='/product_details/'] >> nth=15",
@@ -138,17 +137,17 @@
         "add_cart_link_34": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(19) > div > div:nth-of-type(1) > div:nth-of-type(1) > a",
         "add_cart_link_35": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(19) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a",
         "view_product_link_17": "a[href^='/product_details/'] >> nth=17",
+        "quality_control_tracking_link": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(20) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
         "add_cart_link_36": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(20) > div > div:nth-of-type(1) > div:nth-of-type(1) > a",
         "add_cart_link_37": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(20) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a",
         "view_product_link_18": "a[href^='/product_details/'] >> nth=18",
         "add_cart_link_38": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(21) > div > div:nth-of-type(1) > div:nth-of-type(1) > a",
         "add_cart_link_39": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(21) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a",
         "view_product_link_19": "a[href^='/product_details/'] >> nth=19",
-        "programming_link": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(22) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
         "add_cart_link_40": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(22) > div > div:nth-of-type(1) > div:nth-of-type(1) > a",
         "add_cart_link_41": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(22) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a",
         "view_product_link_20": "a[href^='/product_details/'] >> nth=20",
-        "t_shirt_link_alt": "a[href='#'] >> nth=2",
+        "t_shirt_link": "a[href='#'] >> nth=2",
         "add_cart_link_42": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(23) > div > div:nth-of-type(1) > div:nth-of-type(1) > a",
         "add_cart_link_43": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(23) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a",
         "view_product_link_21": "a[href^='/product_details/'] >> nth=21",
@@ -185,7 +184,7 @@
         "add_cart_link_64": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(34) > div > div:nth-of-type(1) > div:nth-of-type(1) > a",
         "add_cart_link_65": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(34) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a",
         "view_product_link_32": "a[href^='/product_details/'] >> nth=32",
-        "development_tools_link": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(35) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
+        "software_link": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(35) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
         "add_cart_link_66": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(35) > div > div:nth-of-type(1) > div:nth-of-type(1) > a",
         "add_cart_link_67": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(35) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a",
         "view_product_link_33": "a[href^='/product_details/'] >> nth=33",
@@ -257,14 +256,14 @@
         "tops_shirts_link": "href-prefix",
         "aswift_3_host_element": "id-hidden",
         "these_are_topics_related_to_the_article_that_might_interest_you_element": "aria-label",
-        "software_link": "css-path-hidden",
-        "t_shirts_link": "css-path-hidden",
-        "engineers_link": "css-path-hidden",
-        "jeans_link_alt": "css-path-hidden",
-        "api_testing_courses_link": "css-path-hidden",
         "dresses_link": "css-path-hidden",
-        "t_shirt_link": "css-path-hidden",
-        "api_testing_tools_link": "css-path-hidden",
+        "software_testing_books_link": "css-path-hidden",
+        "engineers_link": "css-path-hidden",
+        "apparel_link": "css-path-hidden",
+        "automation_practice_website_link": "css-path-hidden",
+        "jeans_link_alt": "css-path-hidden",
+        "web_development_courses_link": "css-path-hidden",
+        "t_shirts_link": "css-path-hidden",
         "6_polo_link": "href",
         "5_h_m_link": "href",
         "5_madame_link": "href",
@@ -325,7 +324,6 @@
         "add_cart_link_28": "css-path-hidden",
         "add_cart_link_29": "css-path-hidden",
         "view_product_link_14": "href-prefix",
-        "quality_control_tracking_link": "css-path-hidden",
         "add_cart_link_30": "css-path-hidden",
         "add_cart_link_31": "css-path-hidden",
         "view_product_link_15": "href-prefix",
@@ -335,17 +333,17 @@
         "add_cart_link_34": "css-path-hidden",
         "add_cart_link_35": "css-path-hidden",
         "view_product_link_17": "href-prefix",
+        "quality_control_tracking_link": "css-path-hidden",
         "add_cart_link_36": "css-path-hidden",
         "add_cart_link_37": "css-path-hidden",
         "view_product_link_18": "href-prefix",
         "add_cart_link_38": "css-path-hidden",
         "add_cart_link_39": "css-path-hidden",
         "view_product_link_19": "href-prefix",
-        "programming_link": "css-path-hidden",
         "add_cart_link_40": "css-path-hidden",
         "add_cart_link_41": "css-path-hidden",
         "view_product_link_20": "href-prefix",
-        "t_shirt_link_alt": "href",
+        "t_shirt_link": "href",
         "add_cart_link_42": "css-path-hidden",
         "add_cart_link_43": "css-path-hidden",
         "view_product_link_21": "href-prefix",
@@ -382,7 +380,7 @@
         "add_cart_link_64": "css-path-hidden",
         "add_cart_link_65": "css-path-hidden",
         "view_product_link_32": "href-prefix",
-        "development_tools_link": "css-path-hidden",
+        "software_link": "css-path-hidden",
         "add_cart_link_66": "css-path-hidden",
         "add_cart_link_67": "css-path-hidden",
         "view_product_link_33": "href-prefix",
@@ -492,7 +490,7 @@
           ],
           "a[href='#']": [
             "dress_link_2",
-            "t_shirt_link_alt",
+            "t_shirt_link",
             "tshirt_link"
           ],
           "a[href='#recommended-item-carousel']": [
@@ -536,20 +534,20 @@
       "conditional_note": "AUTO-DETECTED: these were not visible when the page was crawled, so they sit behind an interaction (a collapsed panel, a closed modal, an inactive carousel slide). A tool that only navigates will always read them as absent - that is its reach, not a broken selector. Confirm each one is genuinely interaction-gated and delete any that are not.",
       "_third_party_elements": {
         "elements": [
-          "api_testing_courses_link",
-          "api_testing_tools_link",
+          "apparel_link",
           "aswift_0_element",
           "aswift_0_host_element",
           "aswift_1_host_element",
           "aswift_2_host_element",
           "aswift_3_host_element",
+          "automation_practice_website_link",
           "dresses_link",
           "engineers_link",
           "jeans_link_alt",
-          "software_link",
-          "t_shirt_link",
+          "software_testing_books_link",
           "t_shirts_link",
-          "these_are_topics_related_to_the_article_that_might_interest_you_element"
+          "these_are_topics_related_to_the_article_that_might_interest_you_element",
+          "web_development_courses_link"
         ],
         "warning": "These sit inside a THIRD-PARTY embed container (ad or recommendation widget). Their text is rotated per impression, so each is stale by the next page load and none belongs to the application under test. DELETE them from this draft unless you can see a reason to keep one - the detection is a heuristic and can be wrong either way."
       },
@@ -638,23 +636,22 @@
           "add_cart_link_8",
           "add_cart_link_9",
           "add_cart_link_alt",
-          "api_testing_courses_link",
           "api_testing_link",
-          "api_testing_tools_link",
           "apis_list_practice_button_alt",
           "apis_list_practice_button_button",
           "apis_list_practice_link",
           "apis_list_practice_link_2",
           "apis_list_practice_link_alt",
+          "apparel_link",
           "aswift_0_element",
           "aswift_0_host_element",
           "aswift_3_host_element",
+          "automation_practice_website_link",
           "cart_link",
           "cart_modal_element",
           "contact_us_link",
           "continue_shopping_button",
           "delete_account_link",
-          "development_tools_link",
           "dress_link",
           "dress_link_2",
           "dress_link_alt",
@@ -681,7 +678,6 @@
           "men_element",
           "men_link",
           "products_link",
-          "programming_link",
           "quality_control_tracking_link",
           "recommended_item_carousel_element",
           "saree_link",
@@ -689,10 +685,10 @@
           "slider_carousel_element",
           "slider_element",
           "software_link",
+          "software_testing_books_link",
           "subscribe_button",
           "success_subscribe_element",
           "t_shirt_link",
-          "t_shirt_link_alt",
           "t_shirts_link",
           "test_cases_button_alt",
           "test_cases_button_button",
@@ -740,6 +736,7 @@
           "view_product_link_8",
           "view_product_link_9",
           "view_product_link_alt",
+          "web_development_courses_link",
           "women_element",
           "women_link"
         ],
@@ -772,11 +769,11 @@
             "selector": "#slider-carousel > div > div:nth-of-type(3) > div:nth-of-type(1) > a:nth-of-type(2) > button"
           },
           {
-            "element": "software_link",
+            "element": "dresses_link",
             "selector": "#aswift_3_host > div > div > div:nth-of-type(2)"
           },
           {
-            "element": "t_shirts_link",
+            "element": "software_testing_books_link",
             "selector": "#aswift_3_host > div > div > div:nth-of-type(3)"
           },
           {
@@ -784,23 +781,23 @@
             "selector": "#aswift_3_host > div > div > div:nth-of-type(4)"
           },
           {
-            "element": "jeans_link_alt",
+            "element": "apparel_link",
             "selector": "#aswift_3_host > div > div > div:nth-of-type(5)"
           },
           {
-            "element": "api_testing_courses_link",
+            "element": "automation_practice_website_link",
             "selector": "#aswift_3_host > div > div > div:nth-of-type(6)"
           },
           {
-            "element": "dresses_link",
+            "element": "jeans_link_alt",
             "selector": "#aswift_3_host > div > div > div:nth-of-type(7)"
           },
           {
-            "element": "t_shirt_link",
+            "element": "web_development_courses_link",
             "selector": "#aswift_3_host > div > div > div:nth-of-type(8)"
           },
           {
-            "element": "api_testing_tools_link",
+            "element": "t_shirts_link",
             "selector": "#aswift_3_host > div > div > div:nth-of-type(9)"
           },
           {
@@ -936,10 +933,6 @@
             "selector": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(16) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a"
           },
           {
-            "element": "quality_control_tracking_link",
-            "selector": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(17) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div"
-          },
-          {
             "element": "add_cart_link_30",
             "selector": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(17) > div > div:nth-of-type(1) > div:nth-of-type(1) > a"
           },
@@ -964,6 +957,10 @@
             "selector": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(19) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a"
           },
           {
+            "element": "quality_control_tracking_link",
+            "selector": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(20) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div"
+          },
+          {
             "element": "add_cart_link_36",
             "selector": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(20) > div > div:nth-of-type(1) > div:nth-of-type(1) > a"
           },
@@ -978,10 +975,6 @@
           {
             "element": "add_cart_link_39",
             "selector": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(21) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a"
-          },
-          {
-            "element": "programming_link",
-            "selector": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(22) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div"
           },
           {
             "element": "add_cart_link_40",
@@ -1088,7 +1081,7 @@
             "selector": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(34) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a"
           },
           {
-            "element": "development_tools_link",
+            "element": "software_link",
             "selector": "body > section:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(35) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div"
           },
           {
@@ -1165,14 +1158,14 @@
         "tops_shirts_link": "a[href^='/category_products/'] >> nth=6",
         "aswift_3_host_element": "#aswift_3_host",
         "these_are_topics_related_to_the_article_that_might_interest_you_element": "span[aria-label='These are topics related to the article that might interest you']",
-        "apparel_link": "#aswift_3_host > div > div > div:nth-of-type(2)",
-        "economics_link": "#aswift_3_host > div > div > div:nth-of-type(3)",
-        "colour_blocked_shirts_link": "#aswift_3_host > div > div > div:nth-of-type(4)",
-        "polo_link": "#aswift_3_host > div > div > div:nth-of-type(5)",
-        "summer_wear_link": "#aswift_3_host > div > div > div:nth-of-type(6)",
-        "men_s_t_shirts_link": "#aswift_3_host > div > div > div:nth-of-type(7)",
-        "saree_link_alt": "#aswift_3_host > div > div > div:nth-of-type(8)",
-        "intellectual_property_link": "#aswift_3_host > div > div > div:nth-of-type(9)",
+        "building_materials_supplies_link": "#aswift_3_host > div > div > div:nth-of-type(2)",
+        "women_s_dresses_link": "#aswift_3_host > div > div > div:nth-of-type(3)",
+        "economics_link": "#aswift_3_host > div > div > div:nth-of-type(4)",
+        "sleeveless_dresses_link": "#aswift_3_host > div > div > div:nth-of-type(5)",
+        "cart_management_link": "#aswift_3_host > div > div > div:nth-of-type(6)",
+        "t_shirts_link": "#aswift_3_host > div > div > div:nth-of-type(7)",
+        "clothing_brands_link": "#aswift_3_host > div > div > div:nth-of-type(8)",
+        "printed_t_shirts_link": "#aswift_3_host > div > div > div:nth-of-type(9)",
         "6_polo_link": "a[href='/brand_products/Polo']",
         "5_h_m_link": "a[href='/brand_products/H&M']",
         "5_madame_link": "a[href='/brand_products/Madame']",
@@ -1212,17 +1205,18 @@
         "add_cart_link_14": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(9) > div > div:nth-of-type(1) > div:nth-of-type(1) > a",
         "add_cart_link_15": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(9) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a",
         "view_product_link_7": "a[href^='/product_details/'] >> nth=7",
-        "product_catalog_link": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(10) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
+        "product_search_link": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(10) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
         "add_cart_link_16": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(10) > div > div:nth-of-type(1) > div:nth-of-type(1) > a",
         "add_cart_link_17": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(10) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a",
         "view_product_link_8": "a[href^='/product_details/'] >> nth=8",
+        "v_neck_t_shirts_link": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(11) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
         "add_cart_link_18": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(11) > div > div:nth-of-type(1) > div:nth-of-type(1) > a",
         "add_cart_link_19": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(11) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a",
         "view_product_link_9": "a[href^='/product_details/'] >> nth=9",
         "add_cart_link_20": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(12) > div > div:nth-of-type(1) > div:nth-of-type(1) > a",
         "add_cart_link_21": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(12) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a",
         "view_product_link_10": "a[href^='/product_details/'] >> nth=10",
-        "printed_t_shirts_link": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(13) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
+        "men_s_jeans_link": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(13) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
         "add_cart_link_22": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(13) > div > div:nth-of-type(1) > div:nth-of-type(1) > a",
         "add_cart_link_23": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(13) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a",
         "view_product_link_11": "a[href^='/product_details/'] >> nth=11",
@@ -1235,7 +1229,7 @@
         "add_cart_link_28": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(16) > div > div:nth-of-type(1) > div:nth-of-type(1) > a",
         "add_cart_link_29": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(16) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a",
         "view_product_link_14": "a[href^='/product_details/'] >> nth=14",
-        "sleeveless_dresses_link": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(17) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
+        "kid_s_shirts_link": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(17) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
         "add_cart_link_30": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(17) > div > div:nth-of-type(1) > div:nth-of-type(1) > a",
         "add_cart_link_31": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(17) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a",
         "view_product_link_15": "a[href^='/product_details/'] >> nth=15",
@@ -1245,10 +1239,10 @@
         "add_cart_link_34": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(19) > div > div:nth-of-type(1) > div:nth-of-type(1) > a",
         "add_cart_link_35": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(19) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a",
         "view_product_link_17": "a[href^='/product_details/'] >> nth=17",
-        "kid_s_shirts_link": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(20) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
         "add_cart_link_36": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(20) > div > div:nth-of-type(1) > div:nth-of-type(1) > a",
         "add_cart_link_37": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(20) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a",
         "view_product_link_18": "a[href^='/product_details/'] >> nth=18",
+        "men_s_jeans_link_alt": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(21) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
         "add_cart_link_38": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(21) > div > div:nth-of-type(1) > div:nth-of-type(1) > a",
         "add_cart_link_39": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(21) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a",
         "view_product_link_19": "a[href^='/product_details/'] >> nth=19",
@@ -1292,7 +1286,7 @@
         "add_cart_link_64": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(34) > div > div:nth-of-type(1) > div:nth-of-type(1) > a",
         "add_cart_link_65": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(34) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a",
         "view_product_link_32": "a[href^='/product_details/'] >> nth=32",
-        "sleeveless_dresses_link_alt": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(35) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
+        "kid_s_shirts_link_alt": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(35) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
         "add_cart_link_66": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(35) > div > div:nth-of-type(1) > div:nth-of-type(1) > a",
         "add_cart_link_67": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(35) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a",
         "view_product_link_33": "a[href^='/product_details/'] >> nth=33",
@@ -1344,14 +1338,14 @@
         "tops_shirts_link": "href-prefix",
         "aswift_3_host_element": "id-hidden",
         "these_are_topics_related_to_the_article_that_might_interest_you_element": "aria-label",
-        "apparel_link": "css-path-hidden",
+        "building_materials_supplies_link": "css-path-hidden",
+        "women_s_dresses_link": "css-path-hidden",
         "economics_link": "css-path-hidden",
-        "colour_blocked_shirts_link": "css-path-hidden",
-        "polo_link": "css-path-hidden",
-        "summer_wear_link": "css-path-hidden",
-        "men_s_t_shirts_link": "css-path-hidden",
-        "saree_link_alt": "css-path-hidden",
-        "intellectual_property_link": "css-path-hidden",
+        "sleeveless_dresses_link": "css-path-hidden",
+        "cart_management_link": "css-path-hidden",
+        "t_shirts_link": "css-path-hidden",
+        "clothing_brands_link": "css-path-hidden",
+        "printed_t_shirts_link": "css-path-hidden",
         "6_polo_link": "href",
         "5_h_m_link": "href",
         "5_madame_link": "href",
@@ -1391,17 +1385,18 @@
         "add_cart_link_14": "css-path-hidden",
         "add_cart_link_15": "css-path-hidden",
         "view_product_link_7": "href-prefix",
-        "product_catalog_link": "css-path-hidden",
+        "product_search_link": "css-path-hidden",
         "add_cart_link_16": "css-path-hidden",
         "add_cart_link_17": "css-path-hidden",
         "view_product_link_8": "href-prefix",
+        "v_neck_t_shirts_link": "css-path-hidden",
         "add_cart_link_18": "css-path-hidden",
         "add_cart_link_19": "css-path-hidden",
         "view_product_link_9": "href-prefix",
         "add_cart_link_20": "css-path-hidden",
         "add_cart_link_21": "css-path-hidden",
         "view_product_link_10": "href-prefix",
-        "printed_t_shirts_link": "css-path-hidden",
+        "men_s_jeans_link": "css-path-hidden",
         "add_cart_link_22": "css-path-hidden",
         "add_cart_link_23": "css-path-hidden",
         "view_product_link_11": "href-prefix",
@@ -1414,7 +1409,7 @@
         "add_cart_link_28": "css-path-hidden",
         "add_cart_link_29": "css-path-hidden",
         "view_product_link_14": "href-prefix",
-        "sleeveless_dresses_link": "css-path-hidden",
+        "kid_s_shirts_link": "css-path-hidden",
         "add_cart_link_30": "css-path-hidden",
         "add_cart_link_31": "css-path-hidden",
         "view_product_link_15": "href-prefix",
@@ -1424,10 +1419,10 @@
         "add_cart_link_34": "css-path-hidden",
         "add_cart_link_35": "css-path-hidden",
         "view_product_link_17": "href-prefix",
-        "kid_s_shirts_link": "css-path-hidden",
         "add_cart_link_36": "css-path-hidden",
         "add_cart_link_37": "css-path-hidden",
         "view_product_link_18": "href-prefix",
+        "men_s_jeans_link_alt": "css-path-hidden",
         "add_cart_link_38": "css-path-hidden",
         "add_cart_link_39": "css-path-hidden",
         "view_product_link_19": "href-prefix",
@@ -1471,7 +1466,7 @@
         "add_cart_link_64": "css-path-hidden",
         "add_cart_link_65": "css-path-hidden",
         "view_product_link_32": "href-prefix",
-        "sleeveless_dresses_link_alt": "css-path-hidden",
+        "kid_s_shirts_link_alt": "css-path-hidden",
         "add_cart_link_66": "css-path-hidden",
         "add_cart_link_67": "css-path-hidden",
         "view_product_link_33": "href-prefix",
@@ -1585,7 +1580,6 @@
       "conditional_note": "AUTO-DETECTED: these were not visible when the page was crawled, so they sit behind an interaction (a collapsed panel, a closed modal, an inactive carousel slide). A tool that only navigates will always read them as absent - that is its reach, not a broken selector. Confirm each one is genuinely interaction-gated and delete any that are not.",
       "_third_party_elements": {
         "elements": [
-          "apparel_link",
           "aswift_0_element",
           "aswift_0_host_element",
           "aswift_1_host_element",
@@ -1593,14 +1587,15 @@
           "aswift_3_host_element",
           "aswift_4_element",
           "aswift_4_host_element",
-          "colour_blocked_shirts_link",
+          "building_materials_supplies_link",
+          "cart_management_link",
+          "clothing_brands_link",
           "economics_link",
-          "intellectual_property_link",
-          "men_s_t_shirts_link",
-          "polo_link",
-          "saree_link_alt",
-          "summer_wear_link",
-          "these_are_topics_related_to_the_article_that_might_interest_you_element"
+          "printed_t_shirts_link",
+          "sleeveless_dresses_link",
+          "t_shirts_link",
+          "these_are_topics_related_to_the_article_that_might_interest_you_element",
+          "women_s_dresses_link"
         ],
         "warning": "These sit inside a THIRD-PARTY embed container (ad or recommendation widget). Their text is rotated per impression, so each is stale by the next page load and none belongs to the application under test. DELETE them from this draft unless you can see a reason to keep one - the detection is a heuristic and can be wrong either way."
       },
@@ -1685,13 +1680,14 @@
           "add_cart_link_alt",
           "advertisement_element",
           "api_testing_link",
-          "apparel_link",
           "aswift_0_element",
           "aswift_0_host_element",
           "aswift_3_host_element",
+          "building_materials_supplies_link",
           "cart_link",
+          "cart_management_link",
           "cart_modal_element",
-          "colour_blocked_shirts_link",
+          "clothing_brands_link",
           "contact_us_link",
           "continue_shopping_button",
           "delete_account_link",
@@ -1703,9 +1699,9 @@
           "google_esf_element",
           "header_element",
           "home_link",
-          "intellectual_property_link",
           "jeans_link",
           "kid_s_shirts_link",
+          "kid_s_shirts_link_alt",
           "kids_element",
           "kids_link",
           "link",
@@ -1713,26 +1709,25 @@
           "logout_link",
           "men_element",
           "men_link",
-          "men_s_t_shirts_link",
-          "polo_link",
+          "men_s_jeans_link",
+          "men_s_jeans_link_alt",
           "printed_t_shirts_link",
-          "product_catalog_link",
+          "product_search_link",
           "products_link",
           "saree_link",
-          "saree_link_alt",
           "scroll_up_link",
           "sleeveless_dresses_link",
-          "sleeveless_dresses_link_alt",
           "submit_search_button",
           "subscribe_button",
           "success_subscribe_element",
-          "summer_wear_link",
           "t_shirt_link",
+          "t_shirts_link",
           "test_cases_link",
           "tops_link",
           "tops_shirts_link",
           "tshirt_link",
           "tshirts_link",
+          "v_neck_t_shirts_link",
           "video_tutorials_link",
           "view_cart_link",
           "view_product_link",
@@ -1770,7 +1765,8 @@
           "view_product_link_9",
           "view_product_link_alt",
           "women_element",
-          "women_link"
+          "women_link",
+          "women_s_dresses_link"
         ],
         "warning": "No durable handle found for these — only a fragile css fallback. Add a data-test attribute in the app, or replace with a role/label/text locator, before relying on them."
       },
@@ -1781,35 +1777,35 @@
             "selector": "#header > div > div > div > div:nth-of-type(2) > div > ul > li:nth-of-type(10) > a"
           },
           {
-            "element": "apparel_link",
+            "element": "building_materials_supplies_link",
             "selector": "#aswift_3_host > div > div > div:nth-of-type(2)"
           },
           {
-            "element": "economics_link",
+            "element": "women_s_dresses_link",
             "selector": "#aswift_3_host > div > div > div:nth-of-type(3)"
           },
           {
-            "element": "colour_blocked_shirts_link",
+            "element": "economics_link",
             "selector": "#aswift_3_host > div > div > div:nth-of-type(4)"
           },
           {
-            "element": "polo_link",
+            "element": "sleeveless_dresses_link",
             "selector": "#aswift_3_host > div > div > div:nth-of-type(5)"
           },
           {
-            "element": "summer_wear_link",
+            "element": "cart_management_link",
             "selector": "#aswift_3_host > div > div > div:nth-of-type(6)"
           },
           {
-            "element": "men_s_t_shirts_link",
+            "element": "t_shirts_link",
             "selector": "#aswift_3_host > div > div > div:nth-of-type(7)"
           },
           {
-            "element": "saree_link_alt",
+            "element": "clothing_brands_link",
             "selector": "#aswift_3_host > div > div > div:nth-of-type(8)"
           },
           {
-            "element": "intellectual_property_link",
+            "element": "printed_t_shirts_link",
             "selector": "#aswift_3_host > div > div > div:nth-of-type(9)"
           },
           {
@@ -1881,7 +1877,7 @@
             "selector": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(9) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a"
           },
           {
-            "element": "product_catalog_link",
+            "element": "product_search_link",
             "selector": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(10) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div"
           },
           {
@@ -1891,6 +1887,10 @@
           {
             "element": "add_cart_link_17",
             "selector": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(10) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a"
+          },
+          {
+            "element": "v_neck_t_shirts_link",
+            "selector": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(11) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div"
           },
           {
             "element": "add_cart_link_18",
@@ -1909,7 +1909,7 @@
             "selector": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(12) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a"
           },
           {
-            "element": "printed_t_shirts_link",
+            "element": "men_s_jeans_link",
             "selector": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(13) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div"
           },
           {
@@ -1945,7 +1945,7 @@
             "selector": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(16) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a"
           },
           {
-            "element": "sleeveless_dresses_link",
+            "element": "kid_s_shirts_link",
             "selector": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(17) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div"
           },
           {
@@ -1973,16 +1973,16 @@
             "selector": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(19) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a"
           },
           {
-            "element": "kid_s_shirts_link",
-            "selector": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(20) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div"
-          },
-          {
             "element": "add_cart_link_36",
             "selector": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(20) > div > div:nth-of-type(1) > div:nth-of-type(1) > a"
           },
           {
             "element": "add_cart_link_37",
             "selector": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(20) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a"
+          },
+          {
+            "element": "men_s_jeans_link_alt",
+            "selector": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(21) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div"
           },
           {
             "element": "add_cart_link_38",
@@ -2097,7 +2097,7 @@
             "selector": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(34) > div > div:nth-of-type(1) > div:nth-of-type(2) > div > a"
           },
           {
-            "element": "sleeveless_dresses_link_alt",
+            "element": "kid_s_shirts_link_alt",
             "selector": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(35) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div"
           },
           {
@@ -2160,9 +2160,9 @@
         "scroll_up_link": "a[href='#top']",
         "aswift_1_host_element": "#aswift_1_host",
         "these_are_topics_related_to_the_article_that_might_interest_you_element": "span[aria-label='These are topics related to the article that might interest you']",
-        "shipping_logistics_link": "#aswift_1_host > div > div > div:nth-of-type(2)",
-        "programming_link": "#aswift_1_host > div > div > div:nth-of-type(3)",
-        "commercial_shopping_carts_link": "#aswift_1_host > div > div > div:nth-of-type(4)",
+        "building_materials_supplies_link": "#aswift_1_host > div > div > div:nth-of-type(2)",
+        "tv_video_equipment_link": "#aswift_1_host > div > div > div:nth-of-type(3)",
+        "shopping_cart_link": "#aswift_1_host > div > div > div:nth-of-type(4)",
         "google_esf_element": "#google_esf"
       },
       "multi_match": [],
@@ -2210,9 +2210,9 @@
         "scroll_up_link": "href",
         "aswift_1_host_element": "id-hidden",
         "these_are_topics_related_to_the_article_that_might_interest_you_element": "aria-label",
-        "shipping_logistics_link": "css-path-hidden",
-        "programming_link": "css-path-hidden",
-        "commercial_shopping_carts_link": "css-path-hidden",
+        "building_materials_supplies_link": "css-path-hidden",
+        "tv_video_equipment_link": "css-path-hidden",
+        "shopping_cart_link": "css-path-hidden",
         "google_esf_element": "id-hidden"
       },
       "elements_notes": {},
@@ -2260,10 +2260,10 @@
           "aswift_0_element",
           "aswift_0_host_element",
           "aswift_1_host_element",
-          "commercial_shopping_carts_link",
-          "programming_link",
-          "shipping_logistics_link",
-          "these_are_topics_related_to_the_article_that_might_interest_you_element"
+          "building_materials_supplies_link",
+          "shopping_cart_link",
+          "these_are_topics_related_to_the_article_that_might_interest_you_element",
+          "tv_video_equipment_link"
         ],
         "warning": "These sit inside a THIRD-PARTY embed container (ad or recommendation widget). Their text is rotated per impression, so each is stale by the next page load and none belongs to the application under test. DELETE them from this draft unless you can see a reason to keep one - the detection is a heuristic and can be wrong either way."
       },
@@ -2276,12 +2276,12 @@
           "aswift_0_host_element",
           "aswift_1_host_element",
           "blue_top_link",
+          "building_materials_supplies_link",
           "cart_info_element",
           "cart_info_table_element",
           "cart_items_element",
           "cart_link",
           "checkout_modal_element",
-          "commercial_shopping_carts_link",
           "contact_us_link",
           "continue_cart_button",
           "delete_account_link",
@@ -2304,13 +2304,13 @@
           "product_1_element",
           "product_2_element",
           "products_link",
-          "programming_link",
           "register_login_link",
           "scroll_up_link",
-          "shipping_logistics_link",
+          "shopping_cart_link",
           "subscribe_button",
           "success_subscribe_element",
           "test_cases_link",
+          "tv_video_equipment_link",
           "video_tutorials_link"
         ],
         "warning": "No durable handle found for these — only a fragile css fallback. Add a data-test attribute in the app, or replace with a role/label/text locator, before relying on them."
@@ -2342,15 +2342,15 @@
             "selector": "#product-2 > td:nth-of-type(6) > a"
           },
           {
-            "element": "shipping_logistics_link",
+            "element": "building_materials_supplies_link",
             "selector": "#aswift_1_host > div > div > div:nth-of-type(2)"
           },
           {
-            "element": "programming_link",
+            "element": "tv_video_equipment_link",
             "selector": "#aswift_1_host > div > div > div:nth-of-type(3)"
           },
           {
-            "element": "commercial_shopping_carts_link",
+            "element": "shopping_cart_link",
             "selector": "#aswift_1_host > div > div > div:nth-of-type(4)"
           }
         ],
@@ -2412,7 +2412,10 @@
         "review_section_element": "#review-section",
         "button_review_button": "role=button[name='Submit']",
         "aswift_2_host_element": "#aswift_2_host",
-        "aswift_2_element": "iframe[aria-label='Advertisement']",
+        "these_are_topics_related_to_the_article_that_might_interest_you_element": "span[aria-label='These are topics related to the article that might interest you']",
+        "clothing_reviews_link": "#aswift_2_host > div > div > div:nth-of-type(2)",
+        "fashion_style_link": "#aswift_2_host > div > div > div:nth-of-type(3)",
+        "fashion_trends_link": "#aswift_2_host > div > div > div:nth-of-type(4)",
         "footer_element": "#footer",
         "success_subscribe_element": "#success-subscribe",
         "email_address_input_email": "input[placeholder='Your email address']",
@@ -2421,14 +2424,11 @@
         "aswift_0_element": "#aswift_0",
         "scroll_up_link": "a[href='#top']",
         "aswift_1_host_element": "#aswift_1_host",
-        "these_are_topics_related_to_the_article_that_might_interest_you_element": "span[aria-label='These are topics related to the article that might interest you']",
-        "casual_apparel_link": "#aswift_1_host > div > div > div:nth-of-type(2)",
-        "babies_toddlers_link": "#aswift_1_host > div > div > div:nth-of-type(3)",
-        "online_clothing_store_link": "#aswift_1_host > div > div > div:nth-of-type(4)",
+        "aswift_1_element": "iframe[aria-label='Advertisement']",
         "google_esf_element": "#google_esf"
       },
       "multi_match": [
-        "aswift_2_element"
+        "aswift_1_element"
       ],
       "multi_match_note": "Keys whose selector matches SEVERAL elements. Read them with get_all_texts / get_count / get_nth_text / the table helpers; never click, fill, wait on or assert against them. A `<key>_first` sibling, where present, is the same selector pinned '>> nth=0'. ADD any hand-written family key here - a crawler never clicks, so options and dialog contents are not in this list yet.",
       "_selector_strategies": {
@@ -2480,8 +2480,11 @@
         "review_input": "placeholder",
         "review_section_element": "id-hidden",
         "button_review_button": "role",
-        "aswift_2_host_element": "id",
-        "aswift_2_element": "aria-label",
+        "aswift_2_host_element": "id-hidden",
+        "these_are_topics_related_to_the_article_that_might_interest_you_element": "aria-label",
+        "clothing_reviews_link": "css-path-hidden",
+        "fashion_style_link": "css-path-hidden",
+        "fashion_trends_link": "css-path-hidden",
         "footer_element": "id-hidden",
         "success_subscribe_element": "id-hidden",
         "email_address_input_email": "placeholder",
@@ -2489,11 +2492,8 @@
         "aswift_0_host_element": "id-hidden",
         "aswift_0_element": "id-hidden",
         "scroll_up_link": "href",
-        "aswift_1_host_element": "id-hidden",
-        "these_are_topics_related_to_the_article_that_might_interest_you_element": "aria-label",
-        "casual_apparel_link": "css-path-hidden",
-        "babies_toddlers_link": "css-path-hidden",
-        "online_clothing_store_link": "css-path-hidden",
+        "aswift_1_host_element": "id",
+        "aswift_1_element": "aria-label",
         "google_esf_element": "id-hidden"
       },
       "elements_notes": {},
@@ -2558,12 +2558,12 @@
         "elements": [
           "aswift_0_element",
           "aswift_0_host_element",
+          "aswift_1_element",
           "aswift_1_host_element",
-          "aswift_2_element",
           "aswift_2_host_element",
-          "babies_toddlers_link",
-          "casual_apparel_link",
-          "online_clothing_store_link",
+          "clothing_reviews_link",
+          "fashion_style_link",
+          "fashion_trends_link",
           "these_are_topics_related_to_the_article_that_might_interest_you_element"
         ],
         "warning": "These sit inside a THIRD-PARTY embed container (ad or recommendation widget). Their text is rotated per impression, so each is stale by the next page load and none belongs to the application under test. DELETE them from this draft unless you can see a reason to keep one - the detection is a heuristic and can be wrong either way."
@@ -2583,16 +2583,17 @@
           "api_testing_link",
           "aswift_0_element",
           "aswift_0_host_element",
-          "aswift_1_host_element",
-          "babies_toddlers_link",
+          "aswift_2_host_element",
           "cart_link",
           "cart_modal_element",
-          "casual_apparel_link",
+          "clothing_reviews_link",
           "contact_us_link",
           "continue_shopping_button",
           "delete_account_link",
           "dress_link",
           "dress_link_alt",
+          "fashion_style_link",
+          "fashion_trends_link",
           "footer_element",
           "google_esf_element",
           "header_element",
@@ -2605,7 +2606,6 @@
           "logout_link",
           "men_element",
           "men_link",
-          "online_clothing_store_link",
           "polo_link",
           "products_link",
           "review_section_element",
@@ -2640,16 +2640,16 @@
             "selector": "body > section > div > div > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(2) > div > span > button"
           },
           {
-            "element": "casual_apparel_link",
-            "selector": "#aswift_1_host > div > div > div:nth-of-type(2)"
+            "element": "clothing_reviews_link",
+            "selector": "#aswift_2_host > div > div > div:nth-of-type(2)"
           },
           {
-            "element": "babies_toddlers_link",
-            "selector": "#aswift_1_host > div > div > div:nth-of-type(3)"
+            "element": "fashion_style_link",
+            "selector": "#aswift_2_host > div > div > div:nth-of-type(3)"
           },
           {
-            "element": "online_clothing_store_link",
-            "selector": "#aswift_1_host > div > div > div:nth-of-type(4)"
+            "element": "fashion_trends_link",
+            "selector": "#aswift_2_host > div > div > div:nth-of-type(4)"
           }
         ],
         "warning": "These resolve right now, but only as a STRUCTURAL PATH - they describe where an element sat during this crawl, not what it is. Any content that renders above them shifts the sibling indices and they break silently. Replace with an id, name, href or a data-test added to the app. If the element belongs to a third-party embed, delete it instead."

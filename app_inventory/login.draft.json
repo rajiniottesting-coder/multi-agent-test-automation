@@ -41,9 +41,9 @@
         "aswift_0_element": "#aswift_0",
         "aswift_1_host_element": "#aswift_1_host",
         "these_are_topics_related_to_the_article_that_might_interest_you_element": "span[aria-label='These are topics related to the article that might interest you']",
-        "dictionaries_encyclopedias_link": "#aswift_1_host > div > div > div:nth-of-type(2)",
-        "api_documentation_link": "#aswift_1_host > div > div > div:nth-of-type(3)",
-        "api_testing_services_link": "#aswift_1_host > div > div > div:nth-of-type(4)",
+        "login_system_development_link": "#aswift_1_host > div > div > div:nth-of-type(2)",
+        "user_authentication_services_link": "#aswift_1_host > div > div > div:nth-of-type(3)",
+        "automation_framework_design_link": "#aswift_1_host > div > div > div:nth-of-type(4)",
         "google_esf_element": "#google_esf"
       },
       "multi_match": [],
@@ -75,9 +75,9 @@
         "aswift_0_element": "id-hidden",
         "aswift_1_host_element": "id-hidden",
         "these_are_topics_related_to_the_article_that_might_interest_you_element": "aria-label",
-        "dictionaries_encyclopedias_link": "css-path-hidden",
-        "api_documentation_link": "css-path-hidden",
-        "api_testing_services_link": "css-path-hidden",
+        "login_system_development_link": "css-path-hidden",
+        "user_authentication_services_link": "css-path-hidden",
+        "automation_framework_design_link": "css-path-hidden",
         "google_esf_element": "id-hidden"
       },
       "elements_notes": {},
@@ -104,38 +104,38 @@
       "conditional_note": "AUTO-DETECTED: these were not visible when the page was crawled, so they sit behind an interaction (a collapsed panel, a closed modal, an inactive carousel slide). A tool that only navigates will always read them as absent - that is its reach, not a broken selector. Confirm each one is genuinely interaction-gated and delete any that are not.",
       "_third_party_elements": {
         "elements": [
-          "api_documentation_link",
-          "api_testing_services_link",
           "aswift_0_element",
           "aswift_0_host_element",
           "aswift_1_host_element",
-          "dictionaries_encyclopedias_link",
-          "these_are_topics_related_to_the_article_that_might_interest_you_element"
+          "automation_framework_design_link",
+          "login_system_development_link",
+          "these_are_topics_related_to_the_article_that_might_interest_you_element",
+          "user_authentication_services_link"
         ],
         "warning": "These sit inside a THIRD-PARTY embed container (ad or recommendation widget). Their text is rotated per impression, so each is stale by the next page load and none belongs to the application under test. DELETE them from this draft unless you can see a reason to keep one - the detection is a heuristic and can be wrong either way."
       },
       "_unstable_selectors": {
         "elements": [
-          "api_documentation_link",
           "api_testing_link",
-          "api_testing_services_link",
           "aswift_0_element",
           "aswift_0_host_element",
           "aswift_1_host_element",
+          "automation_framework_design_link",
           "cart_link",
           "contact_us_link",
-          "dictionaries_encyclopedias_link",
           "footer_element",
           "google_esf_element",
           "header_element",
           "home_link",
           "link",
+          "login_system_development_link",
           "products_link",
           "scroll_up_link",
           "signup_login_link",
           "subscribe_button",
           "success_subscribe_element",
           "test_cases_link",
+          "user_authentication_services_link",
           "video_tutorials_link"
         ],
         "warning": "No durable handle found for these — only a fragile css fallback. Add a data-test attribute in the app, or replace with a role/label/text locator, before relying on them."
@@ -143,15 +143,15 @@
       "_fragile_selectors": {
         "elements": [
           {
-            "element": "dictionaries_encyclopedias_link",
+            "element": "login_system_development_link",
             "selector": "#aswift_1_host > div > div > div:nth-of-type(2)"
           },
           {
-            "element": "api_documentation_link",
+            "element": "user_authentication_services_link",
             "selector": "#aswift_1_host > div > div > div:nth-of-type(3)"
           },
           {
-            "element": "api_testing_services_link",
+            "element": "automation_framework_design_link",
             "selector": "#aswift_1_host > div > div > div:nth-of-type(4)"
           }
         ],
