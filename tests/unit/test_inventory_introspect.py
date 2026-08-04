@@ -763,3 +763,70 @@ def test_declarations_default_to_empty():
     caller keeps working."""
     out = diff_page("p", {"c": ".card"}, {".card": 5}, set())
     assert len(out["ambiguous"]) == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Hidden elements have no accessible role
+#
+# The browser measures `visible` during capture, and the value was recorded and
+# then discarded. Every collapsed accordion link, closed-modal button and
+# inactive carousel slide therefore shipped with a role= selector - and the
+# ACCESSIBILITY TREE excludes hidden nodes, so those resolve to zero for as
+# long as the element stays hidden. That produced ~40 STALE lines in one sweep,
+# indistinguishable from genuinely broken selectors.
+#
+# Proven 4 Aug 2026 in a real browser: a display:none link matched 0 via
+# role=link[name='WOMEN'] and 1 via a[href='#women'] on the same node.
+# ─────────────────────────────────────────────────────────────────────────
+
+def test_a_hidden_element_does_not_get_a_role_selector():
+    sel, strat = rank_selector("a", {"href": "#Women"}, text="WOMEN", visible=False)
+    assert "role=" not in sel
+    assert sel == "a[href='#Women']"
+
+
+def test_a_hidden_element_falls_back_to_a_css_path():
+    """When it has no id, name or href, the structural path is the only handle
+    that still resolves while the element is hidden."""
+    sel, strat = rank_selector("button", {"class": "close"}, text="Continue Shopping",
+                               css_path="div.modal button.close", visible=False)
+    assert sel == "div.modal button.close"
+    assert strat == "css-path-hidden"
+
+
+def test_a_hidden_element_still_prefers_a_real_id():
+    sel, strat = rank_selector("div", {"id": "checkout-panel"}, visible=False)
+    assert sel == "#checkout-panel" and strat == "id-hidden"
+
+
+def test_visibility_defaults_to_true_so_existing_callers_are_unaffected():
+    a, _ = rank_selector("button", {}, text="Sign in")
+    b, _ = rank_selector("button", {}, text="Sign in", visible=True)
+    assert a == b == "role=button[name='Sign in']"
+
+
+def test_a_visible_element_is_unchanged():
+    """The fix must not weaken the ranking for anything actually on screen."""
+    sel, strat = rank_selector("button", {"class": "cart"}, text="Add to cart", visible=True)
+    assert sel == "role=button[name='Add to cart']" and strat == "role"
+
+
+def test_hidden_elements_are_auto_declared_conditional():
+    """A hidden element is interaction-gated by definition. Declaring it in the
+    draft means verify_locators reads it as COND (expected) instead of adding
+    it to a wall of STALE lines a human then has to triage by hand."""
+    descs = [
+        {"tag": "a", "attrs": {"href": "/products"}, "text": "Products", "visible": True},
+        {"tag": "a", "attrs": {"href": "#Women"}, "text": "WOMEN", "visible": False,
+         "cssPath": "div.panel a"},
+    ]
+    e = build_page_entry("https://x.test/p", "P", descs, "https://x.test")
+    assert e["conditional"] == ["women_link"]
+    assert "products_link" not in e["conditional"]
+    assert "conditional_note" in e
+
+
+def test_a_page_with_nothing_hidden_declares_no_conditional():
+    descs = [{"tag": "a", "attrs": {"href": "/products"}, "text": "Products", "visible": True}]
+    e = build_page_entry("https://x.test/p", "P", descs, "https://x.test")
+    assert "conditional" not in e

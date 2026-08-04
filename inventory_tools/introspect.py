@@ -152,7 +152,8 @@ def _css_escape_value(value: str) -> str:
 
 def rank_selector(tag: str, attrs: dict, text: str = "",
                   test_attrs: tuple = TEST_ID_ATTRS,
-                  label: str = "", css_path: str = "") -> tuple[str, str]:
+                  label: str = "", css_path: str = "",
+                  visible: bool = True) -> tuple[str, str]:
     """Return (selector, strategy) picking the most stable available handle.
 
     Priority, following Playwright's own locator recommendations:
@@ -216,6 +217,27 @@ def rank_selector(tag: str, attrs: dict, text: str = "",
                 stem = href.rstrip("/")[: -len(last)]
                 return (f"a[href^='{_css_escape_value(stem)}']", "href-prefix")
             return (f"a[href='{_css_escape_value(href)}']", "href")
+
+    # ── HIDDEN ELEMENTS HAVE NO ACCESSIBLE ROLE ────────────────────────
+    # A collapsed accordion panel, a closed modal, an inactive carousel slide:
+    # the DOM has them, so the crawler captures them, but the ACCESSIBILITY
+    # TREE does not - and role= / label= / alt= / title= all read that tree.
+    # Emitting a role+name locator for a collapsed category produces a
+    # locator that resolves to ZERO for as long as the panel stays shut, which
+    # is indistinguishable from a broken selector in a staleness report.
+    #
+    # Verified 4 Aug 2026: a display:none link matched 0 via role= and 1 via
+    # css on the same node. So for hidden elements, skip every a11y-tree
+    # strategy and go straight to a css handle, which still resolves.
+    if not visible:
+        if a.get("id") and not _looks_generated_id(a["id"]):
+            return (f"#{a['id']}", "id-hidden")
+        if a.get("name"):
+            return (f"{tag}[name='{_css_escape_value(a['name'])}']", "name-hidden")
+        if tag == "a" and (a.get("href") or "").strip():
+            return (f"a[href='{_css_escape_value(a['href'].strip())}']", "href-hidden")
+        if css_path:
+            return (css_path, "css-path-hidden")
 
     # accessible role + name — churn-proof, handles custom/div-based widgets.
     #
@@ -663,6 +685,7 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
     path = url_to_path(url, base_url)
     elements: dict[str, dict] = {}
     used: set[str] = set()
+    hidden_names: set[str] = set()
 
     for d in descriptors:
         tag = (d.get("tag") or "").lower()
@@ -671,9 +694,14 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
         if not _is_capturable(tag, attrs, test_attrs):
             continue
         reason = reveals_hidden_content(tag, attrs)
+        # `visible` is measured by the browser during capture. It was recorded
+        # and then discarded, which is how ~40 hidden elements shipped with
+        # role= selectors that could never resolve.
+        is_visible = d.get("visible", True)
         selector, strategy = rank_selector(tag, attrs, text, test_attrs,
                                            label=d.get("label", ""),
-                                           css_path=d.get("cssPath", ""))
+                                           css_path=d.get("cssPath", ""),
+                                           visible=is_visible)
         # Element inside an iframe: prefix with the frame's own selector using
         # the documented `>>>` frame-enter convention.
         frame_sel = d.get("frame")
@@ -687,6 +715,8 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
             final = f"{name}_{i}"
             i += 1
         used.add(final)
+        if not is_visible:
+            hidden_names.add(final)
         elements[final] = {"selector": selector, "strategy": strategy,
                            "framed": bool(frame_sel), "reveals": reason}
 
@@ -792,6 +822,21 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
                         "element a distinct handle (add a data-test attribute) or "
                         "disambiguate with .nth()/.filter() in the page object."),
         }
+    # Elements that were HIDDEN at capture time are, by definition, only
+    # reachable after an interaction — expanding an accordion, opening a modal,
+    # advancing a carousel. That is exactly what `conditional` means, so the
+    # draft declares them rather than leaving a human to rediscover it from a
+    # wall of STALE lines. Pre-declaring them also means verify_locators reads
+    # them as COND (expected) instead of reporting them as faults.
+    if hidden_names:
+        entry["conditional"] = sorted(hidden_names)
+        entry["conditional_note"] = (
+            "AUTO-DETECTED: these were not visible when the page was crawled, so "
+            "they sit behind an interaction (a collapsed panel, a closed modal, an "
+            "inactive carousel slide). A tool that only navigates will always read "
+            "them as absent - that is its reach, not a broken selector. Confirm "
+            "each one is genuinely interaction-gated and delete any that are not."
+        )
     if unstable:
         entry["_unstable_selectors"] = {
             "elements": unstable,

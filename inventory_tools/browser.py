@@ -105,12 +105,21 @@ def _collect_js(test_attrs: tuple) -> str:
     const nodes = root.querySelectorAll('*');
     for (const el of nodes) {
       if (el.matches && el.matches(SEL)) {
+        // A hidden form token is never something a test interacts with, and
+        // its `value` is regenerated every request. Capturing one produced an
+        // element literally named `uoeuu_hosiv72w_tpod_v2f_input` - a locator
+        // keyed to a CSRF nonce, guaranteed stale on the next page load.
+        if (el.tagName === 'INPUT' && el.type === 'hidden') continue;
         const attrs = {};
         for (const a of el.attributes) attrs[a.name] = a.value;
         out.push({
           tag: el.tagName.toLowerCase(),
           attrs,
-          text: (el.innerText || el.value || '').trim().slice(0, 60),
+          // `value` is deliberately NOT a fallback for text. For an <input> it
+          // is RUNTIME DATA - a token, a typed search term, a session id - so
+          // naming or matching on it bakes one request's state into the
+          // inventory. Only a real label/placeholder/name should name a field.
+          text: (el.innerText || '').trim().slice(0, 60),
         // Associated <label> text. Playwright's getByLabel is the recommended
         // locator for form controls, but a label is a SEPARATE DOM element
         // (<label for="x">Email</label><input id="x">), so it can never be

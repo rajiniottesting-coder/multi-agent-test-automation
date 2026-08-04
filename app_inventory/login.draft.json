@@ -1,0 +1,126 @@
+{
+  "app_name": "Automation Exercise",
+  "base_url": "https://automationexercise.com",
+  "description": "AUTO-GENERATED DRAFT — hand-review before committing.",
+  "_inventory_conventions": {
+    "generated": "Draft produced by scripts/generate_inventory.py (backlog 3.1). Tag each page's `components`, add elements_notes/key_methods/errors, delete `_selector_strategies`, `_unstable_selectors`, `_ambiguous_selectors` and `title_seen` after review, and verify every selector before this replaces the real inventory.",
+    "selectors": "Every selector maps to a first-class Playwright locator, in priority order: [data-test='x'] / #id / [name='x'] (css), role=combobox[name='Country'] (getByRole), label=Email (getByLabel), placeholder=... , alt=Search (getByAltText), title=Close (getByTitle), text=Submit (getByText). XPath is never emitted. An iframe-chained selector uses ' >>> ', e.g. iframe#pay >>> [data-test='card']. label=/alt=/title= need page.get_by_label/get_by_alt_text/get_by_title (they are NOT page.locator() engine syntax); role= and text= work with page.locator() directly.",
+    "_unstable_selectors": "If present on a page, these elements had no durable handle (only a fragile css fallback). Add a data-test in the app or replace with a role/label/text locator before relying on them.",
+    "_ambiguous_selectors": "If present, these selectors were produced for MORE THAN ONE element on the page. Playwright locators are strict by default, so each one raises 'strict mode violation: locator resolved to N elements' at runtime. Give each element a distinct handle (add a data-test) or disambiguate with .nth()/.filter() in the page object."
+  },
+  "pages": {
+    "login": {
+      "url": "/login",
+      "components": [],
+      "page_object_file": "pages/login_page.py (AUTO-DRAFT — verify)",
+      "page_object_class": "LoginPage",
+      "elements": {
+        "header_element": "#header",
+        "link": "a[href='/'] >> nth=0",
+        "home_link": "a[href='/'] >> nth=1",
+        "products_link": "a[href='/products']",
+        "cart_link": "a[href='/view_cart']",
+        "signup_login_link": "a[href='/login']",
+        "test_cases_link": "a[href='/test_cases']",
+        "api_testing_link": "a[href='/api_list']",
+        "video_tutorials_link": "a[href='https://www.youtube.com/c/AutomationExercise']",
+        "contact_us_link": "a[href='/contact_us']",
+        "form_element": "#form",
+        "csrfmiddlewaretoken_input": "input[name='csrfmiddlewaretoken'] >> nth=0",
+        "login_email_input": "[data-qa='login-email']",
+        "login_password_input": "[data-qa='login-password']",
+        "login_button": "[data-qa='login-button']",
+        "csrfmiddlewaretoken_input_hidden": "input[name='csrfmiddlewaretoken'] >> nth=1",
+        "signup_name_input": "[data-qa='signup-name']",
+        "signup_email_input": "[data-qa='signup-email']",
+        "form_type_input": "input[name='form_type']",
+        "signup_button": "[data-qa='signup-button']",
+        "footer_element": "#footer",
+        "success_subscribe_element": "#success-subscribe",
+        "uoeuu_hosiv72w_tpod_v2f_input": "input[name='csrfmiddlewaretoken'] >> nth=2",
+        "email_address_input": "input[placeholder='Your email address']",
+        "subscribe_button": "#subscribe",
+        "scroll_up_link": "#scrollUp",
+        "aswift_0_host_element": "#aswift_0_host",
+        "aswift_0_element": "iframe[aria-label='Advertisement']",
+        "aswift_1_host_element": "#aswift_1_host",
+        "these_are_topics_related_to_the_article_that_might_interest_you_element": "span[aria-label='These are topics related to the article that might interest you']",
+        "automation_consulting_link": "role=link[name='Automation consulting']",
+        "login_system_development_link": "role=link[name='Login system development']",
+        "automation_framework_design_link": "role=link[name='Automation framework design']",
+        "google_esf_element": "#google_esf"
+      },
+      "multi_match": [],
+      "multi_match_note": "Keys whose selector matches SEVERAL elements. Read them with get_all_texts / get_count / get_nth_text / the table helpers; never click, fill, wait on or assert against them. A `<key>_first` sibling, where present, is the same selector pinned '>> nth=0'. ADD any hand-written family key here - a crawler never clicks, so options and dialog contents are not in this list yet.",
+      "_selector_strategies": {
+        "header_element": "id",
+        "link": "href",
+        "home_link": "href",
+        "products_link": "href",
+        "cart_link": "href",
+        "signup_login_link": "href",
+        "test_cases_link": "href",
+        "api_testing_link": "href",
+        "video_tutorials_link": "href",
+        "contact_us_link": "href",
+        "form_element": "id",
+        "csrfmiddlewaretoken_input": "name",
+        "login_email_input": "data-qa",
+        "login_password_input": "data-qa",
+        "login_button": "data-qa",
+        "csrfmiddlewaretoken_input_hidden": "name",
+        "signup_name_input": "data-qa",
+        "signup_email_input": "data-qa",
+        "form_type_input": "name",
+        "signup_button": "data-qa",
+        "footer_element": "id",
+        "success_subscribe_element": "id",
+        "uoeuu_hosiv72w_tpod_v2f_input": "name",
+        "email_address_input": "placeholder",
+        "subscribe_button": "id",
+        "scroll_up_link": "id",
+        "aswift_0_host_element": "id",
+        "aswift_0_element": "aria-label",
+        "aswift_1_host_element": "id",
+        "these_are_topics_related_to_the_article_that_might_interest_you_element": "aria-label",
+        "automation_consulting_link": "role",
+        "login_system_development_link": "role",
+        "automation_framework_design_link": "role",
+        "google_esf_element": "id"
+      },
+      "elements_notes": {},
+      "key_methods": [],
+      "errors": {},
+      "implementation_status": "AUTO-GENERATED DRAFT — review every selector, tag `components`, and add elements_notes / key_methods / errors by hand. Machine cannot infer behavior, intended API, or exact error strings.",
+      "title_seen": "Automation Exercise - Signup / Login",
+      "_ambiguous_selectors": {
+        "selectors": {
+          "a[href='/']": [
+            "home_link",
+            "link"
+          ],
+          "input[name='csrfmiddlewaretoken']": [
+            "csrfmiddlewaretoken_input",
+            "csrfmiddlewaretoken_input_hidden",
+            "uoeuu_hosiv72w_tpod_v2f_input"
+          ]
+        },
+        "warning": "Each of these selectors was produced for MORE THAN ONE element on this page. Playwright locators are strict by default, so using one raises 'strict mode violation: locator resolved to N elements' at runtime. Give each element a distinct handle (add a data-test attribute) or disambiguate with .nth()/.filter() in the page object."
+      },
+      "_unstable_selectors": {
+        "elements": [
+          "api_testing_link",
+          "cart_link",
+          "contact_us_link",
+          "home_link",
+          "link",
+          "products_link",
+          "signup_login_link",
+          "test_cases_link",
+          "video_tutorials_link"
+        ],
+        "warning": "No durable handle found for these — only a fragile css fallback. Add a data-test attribute in the app, or replace with a role/label/text locator, before relying on them."
+      }
+    }
+  }
+}
