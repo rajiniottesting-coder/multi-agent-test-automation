@@ -153,7 +153,8 @@ def _css_escape_value(value: str) -> str:
 def rank_selector(tag: str, attrs: dict, text: str = "",
                   test_attrs: tuple = TEST_ID_ATTRS,
                   label: str = "", css_path: str = "",
-                  visible: bool = True) -> tuple[str, str]:
+                  visible: bool = True,
+                  has_icon_child: bool = False) -> tuple[str, str]:
     """Return (selector, strategy) picking the most stable available handle.
 
     Priority, following Playwright's own locator recommendations:
@@ -211,7 +212,10 @@ def rank_selector(tag: str, attrs: dict, text: str = "",
     # into multi_match.
     if tag == "a":
         href = (a.get("href") or "").strip()
-        if href and not href.startswith(("#", "javascript:", "mailto:", "tel:")):
+        # A FRAGMENT href (#section) is kept: it is exact, stable, and unlike an
+        # accessible name it cannot be polluted by icon markup inside the link.
+        # Only protocol hrefs are useless as locators.
+        if href and not href.startswith(("javascript:", "mailto:", "tel:")):
             last = href.rstrip("/").rsplit("/", 1)[-1]
             if last.isdigit() and len(href.rstrip("/")) > len(last):
                 stem = href.rstrip("/")[: -len(last)]
@@ -229,7 +233,12 @@ def rank_selector(tag: str, attrs: dict, text: str = "",
     # Verified 4 Aug 2026: a display:none link matched 0 via role= and 1 via
     # css on the same node. So for hidden elements, skip every a11y-tree
     # strategy and go straight to a css handle, which still resolves.
-    if not visible:
+    # ── AN ICON CHILD POISONS THE ACCESSIBLE NAME ──────────────────────
+    # A CSS ::before glyph is folded into the accessible name but is invisible
+    # to textContent and innerText, so any role=/label=/alt=/title= locator
+    # built from the DOM text will not match. Fall through to a handle that
+    # does not read the accessibility tree.
+    if has_icon_child or not visible:
         if a.get("id") and not _looks_generated_id(a["id"]):
             return (f"#{a['id']}", "id-hidden")
         if a.get("name"):
@@ -702,7 +711,8 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
         selector, strategy = rank_selector(tag, attrs, text, test_attrs,
                                            label=d.get("label", ""),
                                            css_path=d.get("cssPath", ""),
-                                           visible=is_visible)
+                                           visible=is_visible,
+                                           has_icon_child=d.get("hasIconChild", False))
         # Element inside an iframe: prefix with the frame's own selector using
         # the documented `>>>` frame-enter convention.
         frame_sel = d.get("frame")
@@ -952,3 +962,75 @@ def pages_missing_notes(inventory: dict) -> list[str]:
         if isinstance(page, dict) and not page.get("elements_notes"):
             out.append(name)
     return out
+
+def verify_entry_against_page(page, entry: dict) -> dict:
+    """Measure every selector against the live page it came from.
+
+    WHY THIS EXISTS
+        Ranking has to PREDICT what Playwright will do. It reads DOM
+        properties and infers the locator that should match. Every prediction
+        it got wrong shipped a selector that resolved to nothing:
+
+          - innerText carries CSS text-transform; the accessible name does not
+          - a CSS ::before glyph joins the accessible name, invisible to the DOM
+          - a hidden element is absent from the accessibility tree entirely
+          - an <a> without href has no link role to match on
+
+        Four separate bug classes, one cause. The page is still open at this
+        point, so the guess can simply be replaced with a measurement.
+
+    WHAT IT DOES NOT DO
+        It does not repair anything. A selector that fails here is recorded in
+        `_unresolved_selectors` for a human to fix, because the right handle
+        depends on what the element IS - which the crawler cannot know. Silently
+        substituting a css path would trade a visible failure for an invisible
+        brittleness.
+
+    Counts are also recorded, so a genuine family is declared as `multi_match`
+    from measured evidence rather than from a later staleness sweep.
+    """
+    elements = entry.get("elements") or {}
+    if not elements:
+        return entry
+
+    unresolved: list[dict] = []
+    measured_family: list[str] = []
+
+    for name, selector in elements.items():
+        try:
+            count = _count_on_page(page, selector)
+        except Exception as exc:                        # noqa: BLE001
+            unresolved.append({"element": name, "selector": selector,
+                               "matches": -1, "error": type(exc).__name__})
+            continue
+        if count == 0:
+            unresolved.append({"element": name, "selector": selector, "matches": 0})
+        elif count > 1:
+            measured_family.append(name)
+
+    if unresolved:
+        entry["_unresolved_selectors"] = {
+            "elements": unresolved,
+            "warning": ("MEASURED on the live page at crawl time: these matched "
+                        "ZERO elements, so they are wrong as written and no test "
+                        "can use them. Replace each with a handle that does not "
+                        "depend on the accessibility tree - an id, a name, an "
+                        "href, or a data-test attribute added to the app - and "
+                        "re-verify. Do not simply delete them: the element exists, "
+                        "only the locator is wrong."),
+        }
+
+    if measured_family:
+        declared = set(entry.get("multi_match") or [])
+        entry["multi_match"] = sorted(declared | set(measured_family))
+        entry.setdefault("multi_match_note",
+                         "Keys whose selector matches SEVERAL elements. Read them "
+                         "with the plural helpers only; never click, fill or assert "
+                         "on one directly. MEASURED at crawl time, not guessed.")
+    return entry
+
+
+def _count_on_page(page, selector: str) -> int:
+    """How many elements this selector resolves to, right now."""
+    from inventory_tools.browser import _resolve_one
+    return _resolve_one(page, selector).count()

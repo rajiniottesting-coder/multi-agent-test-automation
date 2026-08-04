@@ -181,9 +181,26 @@ def main() -> int:
             page_name = introspect._slug_to_name(
                 path.strip("/").split("?")[0].replace(".html", "") or "home"
             )
-            pages[page_name] = introspect.build_page_entry(
+            entry = introspect.build_page_entry(
                 url, title, descriptors, base_url, test_attrs)
-            print(f"  captured {page_name}: {len(pages[page_name]['elements'])} elements ({path})")
+
+            # ── MEASURE, DO NOT PREDICT ─────────────────────────────────
+            # Every selector is now tested against the page it was derived
+            # from, while that page is still open. Ranking has to GUESS what
+            # Playwright will do - what the accessible name resolves to, what
+            # the a11y tree contains - and each wrong guess shipped a locator
+            # that matched nothing. Guessing produced four separate bug
+            # classes; asking the browser produces a fact.
+            #
+            # A selector that does not resolve here is recorded rather than
+            # silently kept, so a human sees it in the draft instead of
+            # discovering it in a staleness sweep days later.
+            entry = introspect.verify_entry_against_page(page, entry)
+            pages[page_name] = entry
+
+            unresolved = entry.get("_unresolved_selectors", {}).get("elements", [])
+            note = f", {len(unresolved)} UNRESOLVED" if unresolved else ""
+            print(f"  captured {page_name}: {len(entry['elements'])} elements{note} ({path})")
 
             if args.crawl and depth < args.max_depth:
                 for link in _links_from(descriptors, url, base_url):

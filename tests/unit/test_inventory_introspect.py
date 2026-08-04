@@ -7,6 +7,7 @@ import pytest
 from pathlib import Path
 
 from inventory_tools.introspect import (
+    verify_entry_against_page,
     diff_page,
     rank_selector,
     derive_element_name,
@@ -78,11 +79,42 @@ def test_a_record_href_becomes_a_prefix_match():
     assert sel == "a[href^='/product_details/']" and strat == "href-prefix"
 
 
-@pytest.mark.parametrize("href", ["#top", "javascript:void(0)", "mailto:a@b.c", "tel:123"])
-def test_non_navigational_hrefs_fall_through(href):
-    """A fragment or protocol href is not a useful locator - rank by name."""
+@pytest.mark.parametrize("href", ["javascript:void(0)", "mailto:a@b.c", "tel:123"])
+def test_protocol_hrefs_fall_through(href):
+    """A protocol href is not a locator - rank by name instead."""
     sel, strat = rank_selector("a", {"href": href}, text="Top")
     assert strat == "role" and "link" in sel
+
+
+def test_a_fragment_href_IS_used():
+    """CORRECTED 4 Aug 2026. Fragment hrefs were excluded, so a collapsible
+    accordion header (`href="#Women"`) fell through to role=link[name='Women']
+    - and its fa-plus icon child poisoned the accessible name, so the locator
+    matched ZERO. The fragment is exact, stable, and immune to icon markup."""
+    sel, strat = rank_selector("a", {"href": "#Women"}, text="Women")
+    assert sel == "a[href='#Women']" and strat == "href"
+
+
+def test_an_icon_child_blocks_accessible_name_locators():
+    """A CSS ::before glyph is folded into the accessible name but is invisible
+    to textContent and innerText. Proven in a browser: a button whose DOM text
+    is exactly "Add to cart" matched ZERO via role=button[name='Add to cart'].
+    Any element with an icon descendant must avoid the a11y tree entirely."""
+    sel, strat = rank_selector("button", {"class": "cart"}, text="Add to cart",
+                               css_path="div.p button.cart", has_icon_child=True)
+    assert "role=" not in sel
+    assert sel == "div.p button.cart"
+
+
+def test_no_icon_child_still_ranks_by_role():
+    sel, strat = rank_selector("button", {}, text="Sign in", has_icon_child=False)
+    assert sel == "role=button[name='Sign in']" and strat == "role"
+
+
+def test_capture_records_whether_an_element_has_an_icon_child():
+    js = _capture_js()
+    assert "hasIconChild" in js
+    assert "el.querySelector(" in js, "must look at DESCENDANTS, not the element itself"
 
 
 # ── custom widgets: ARIA role / tabindex / contenteditable ────
@@ -895,3 +927,80 @@ def test_a_page_with_no_embeds_has_no_review_block():
     descs = [{"tag": "a", "attrs": {"href": "/p"}, "text": "P", "visible": True}]
     e = build_page_entry("https://x.test/p", "P", descs, "https://x.test")
     assert "_third_party_elements" not in e
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# The crawler MEASURES its selectors instead of predicting them
+#
+# Ranking has to guess what Playwright will do: what the accessible name
+# resolves to, what the a11y tree contains. Four separate bug classes came from
+# wrong guesses - CSS text-transform, ::before icon glyphs, hidden elements,
+# hrefless anchors - and each was found only when a human ran a sweep days
+# later. The page is still open when the entry is built, so the guess can be
+# replaced with a measurement.
+# ─────────────────────────────────────────────────────────────────────────
+
+class _FakeLoc:
+    def __init__(self, n): self._n = n
+    def count(self): return self._n
+
+
+class _FakePage:
+    """Answers with real counts for real selectors, zero for anything else."""
+    def __init__(self, truth): self.truth = truth
+    def locator(self, sel): return _FakeLoc(self.truth.get(sel, 0))
+    def get_by_label(self, t): return _FakeLoc(0)
+    def get_by_placeholder(self, t): return _FakeLoc(0)
+    def get_by_alt_text(self, t): return _FakeLoc(0)
+    def get_by_title(self, t): return _FakeLoc(0)
+
+
+def test_a_selector_that_matches_nothing_is_recorded_not_shipped_silently():
+    page = _FakePage({"a[href='#S']": 1})
+    entry = {"elements": {"good": "a[href='#S']",
+                          "bad": "role=link[name='S']"}}
+    out = verify_entry_against_page(page, entry)
+    names = [u["element"] for u in out["_unresolved_selectors"]["elements"]]
+    assert names == ["bad"]
+    assert "DELETE" not in out["_unresolved_selectors"]["warning"], \
+        "the element exists - only the locator is wrong, so do not tell anyone to delete it"
+
+
+def test_the_element_is_kept_so_the_fix_is_visible():
+    """Dropping it would hide the problem; the draft must still show it."""
+    page = _FakePage({})
+    out = verify_entry_against_page(page, {"elements": {"bad": "role=link[name='X']"}})
+    assert "bad" in out["elements"]
+
+
+def test_a_family_is_declared_from_measurement_not_guesswork():
+    page = _FakePage({".card": 34, "#one": 1})
+    out = verify_entry_against_page(page, {"elements": {"cards": ".card", "one": "#one"}})
+    assert out["multi_match"] == ["cards"]
+    assert "MEASURED" in out["multi_match_note"]
+
+
+def test_measured_families_merge_with_any_already_declared():
+    page = _FakePage({".card": 34, ".row": 5})
+    out = verify_entry_against_page(
+        page, {"elements": {"cards": ".card", "rows": ".row"},
+               "multi_match": ["rows"]})
+    assert out["multi_match"] == ["cards", "rows"]
+
+
+def test_a_clean_page_gains_no_unresolved_block():
+    page = _FakePage({"#a": 1, "#b": 1})
+    out = verify_entry_against_page(page, {"elements": {"a": "#a", "b": "#b"}})
+    assert "_unresolved_selectors" not in out
+
+
+def test_a_broken_selector_engine_is_recorded_not_fatal():
+    """A malformed selector must not abort the whole crawl."""
+    class Boom(_FakePage):
+        def locator(self, sel): raise ValueError("unknown engine")
+    out = verify_entry_against_page(Boom({}), {"elements": {"x": "bogus=1"}})
+    assert out["_unresolved_selectors"]["elements"][0]["matches"] == -1
+
+
+def test_an_empty_page_entry_is_returned_untouched():
+    assert verify_entry_against_page(_FakePage({}), {"elements": {}}) == {"elements": {}}

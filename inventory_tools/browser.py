@@ -164,6 +164,18 @@ def _collect_js(test_attrs: tuple) -> str:
         })(),
           visible: !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length),
           thirdParty,
+          // Does this element contain an ICON whose glyph comes from CSS
+          // ::before/::after content? If so its ACCESSIBLE NAME is
+          // unpredictable from the DOM: the pseudo-element character is
+          // folded into the name, but neither textContent nor innerText can
+          // see it. Proven 4 Aug 2026 - a button whose DOM text matched exactly
+          // a plain verb matched ZERO via a role+name locator built from it
+          // because an icon child contributed a private-use glyph to the name.
+          // Elements flagged here must not be located by accessible name.
+          hasIconChild: !!el.querySelector(
+            'i, svg, [class*="icon"], [class*="fa-"], [class*="glyphicon"], ' +
+            '[class*="material-icons"]'
+          ),
         // Structurally UNIQUE css path, used only as the last-resort fallback.
         // Built here because it needs the live DOM tree (parent chain +
         // sibling index), which the pure ranking logic never sees. Anchored to
