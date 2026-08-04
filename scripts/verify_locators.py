@@ -245,6 +245,28 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
         print(f"  [{page_name}] UNREACHABLE {url}: {type(e).__name__}")
         return 0, 0
 
+    # ── DID WE LAND WHERE WE ASKED? ────────────────────────────────────
+    # A page can redirect: /login sends an authenticated visitor to /. The
+    # render gate below does not catch that, because the site chrome DOES
+    # render at the destination - so every selector unique to the requested
+    # page is then measured against the WRONG page and reported STALE. That
+    # produced eleven false findings on every single run.
+    #
+    # Compare paths only: a query string or trailing slash is not a redirect.
+    def _path_of(u: str) -> str:
+        from urllib.parse import urlparse
+        return (urlparse(u).path or "/").rstrip("/") or "/"
+
+    if _path_of(page.url) != _path_of(url):
+        print(f"  [{page_name}] REDIRECTED {url}\n"
+              f"    landed on {page.url}\n"
+              f"    Nothing measured. Every selector unique to the requested\n"
+              f"    page would read STALE against the destination, which is a\n"
+              f"    false report, not drift. A page that only exists in the\n"
+              f"    OTHER auth state needs the opposite flag: use --no-login\n"
+              f"    for sign-in and sign-up pages, and a session for the rest.")
+        return 0, 0
+
     _pre = {n: s for n, s in (entry.get("elements") or {}).items()
             if isinstance(s, str) and n != "_selector_strategies"}
     if _pre and not _wait_for_render(page, _pre):

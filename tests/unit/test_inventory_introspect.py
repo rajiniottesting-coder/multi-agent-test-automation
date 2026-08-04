@@ -7,6 +7,7 @@ import pytest
 from pathlib import Path
 
 from inventory_tools.introspect import (
+    _is_fragile_path,
     verify_entry_against_page,
     diff_page,
     rank_selector,
@@ -1004,3 +1005,61 @@ def test_a_broken_selector_engine_is_recorded_not_fatal():
 
 def test_an_empty_page_entry_is_returned_untouched():
     assert verify_entry_against_page(_FakePage({}), {"elements": {}}) == {"elements": {}}
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Structural css paths are not handles
+#
+# `div:nth-of-type(14) > div > p > div` describes where an element SAT during
+# one crawl. Ad slots and lazy content shift sibling indices between loads, so
+# it breaks silently the moment anything above it renders differently. Nine of
+# these reached a draft and read as ordinary elements.
+# ─────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("selector", [
+    "body > section:nth-of-type(2) > div > div > div > p > div",
+    "#aswift_1_host > div > div > div:nth-of-type(3)",
+    "div > div > div > div > div > div > span",
+])
+def test_deep_structural_paths_are_fragile(selector):
+    assert _is_fragile_path(selector)
+
+
+@pytest.mark.parametrize("selector", [
+    "#login-form",                 # a bare id IS a handle
+    "a[href='/products']",
+    "role=button[name='Save']",
+    "label=Email",
+    "div.panel button.cart",       # short, class-based
+    "#cart_info tbody tr",         # real curated selector - must stay clean
+    ".product-image-wrapper",
+])
+def test_real_handles_are_not_flagged(selector):
+    assert not _is_fragile_path(selector)
+
+
+def test_an_id_with_descendants_is_still_a_path():
+    """`#host > div:nth-of-type(3)` merely STARTS at a handle - the descendants
+    still encode sibling position, which is the fragile part."""
+    assert _is_fragile_path("#host > div > div:nth-of-type(3)")
+    assert not _is_fragile_path("#host")
+
+
+def test_fragile_selectors_are_surfaced_even_when_they_resolve():
+    """They match today. Surfacing them while the page is open beats a mystery
+    STALE line after the next layout shift."""
+    page = _FakePage({"body > div > div > div > div > div > div > p": 1})
+    out = verify_entry_against_page(
+        page, {"elements": {"x": "body > div > div > div > div > div > div > p"}})
+    assert out["_fragile_selectors"]["elements"][0]["element"] == "x"
+    assert "_unresolved_selectors" not in out, "it resolves - it is fragile, not broken"
+
+
+def test_capture_carries_third_party_across_shadow_boundaries():
+    """el.closest() stops at a shadow root, so an element inside an ad frame's
+    shadow DOM cannot see the ad host above it. Eight selectors rooted at an ad
+    iframe host reached a draft as ordinary elements because of this."""
+    js = _capture_js()
+    assert "inheritedThirdParty" in js
+    assert "walk(el.shadowRoot, hostIsThirdParty)" in js
+    assert "walk(document, false)" in js

@@ -963,6 +963,33 @@ def pages_missing_notes(inventory: dict) -> list[str]:
             out.append(name)
     return out
 
+# A css path this deep is not a locator, it is a description of where an
+# element happened to sit during one page load. Ad slots and lazy content shift
+# sibling indices between loads, so `div:nth-of-type(14) > div > p > div` is
+# stale as soon as anything above it renders differently.
+_FRAGILE_PATH_DEPTH = 6
+
+
+def _is_fragile_path(selector: str) -> bool:
+    """True if this is a long structural css path rather than a real handle."""
+    if not selector:
+        return False
+    # a11y-tree and attribute handles are stable by construction
+    if selector.startswith(("role=", "text=", "label=", "placeholder=",
+                            "alt=", "title=")):
+        return False
+    # A BARE id is a handle. `#host > div > div:nth-of-type(3)` is a path that
+    # merely starts at one - the descendants still encode sibling position.
+    has_descendants = ">" in selector or " " in selector.strip()
+    if selector.startswith("#") and not has_descendants:
+        return False
+    if "[" in selector and "]" in selector and not has_descendants:
+        return False
+    return (selector.count(">") >= _FRAGILE_PATH_DEPTH
+            or "nth-of-type" in selector
+            or "nth-child" in selector)
+
+
 def verify_entry_against_page(page, entry: dict) -> dict:
     """Measure every selector against the live page it came from.
 
@@ -995,6 +1022,7 @@ def verify_entry_against_page(page, entry: dict) -> dict:
 
     unresolved: list[dict] = []
     measured_family: list[str] = []
+    fragile: list[dict] = []
 
     for name, selector in elements.items():
         try:
@@ -1007,6 +1035,11 @@ def verify_entry_against_page(page, entry: dict) -> dict:
             unresolved.append({"element": name, "selector": selector, "matches": 0})
         elif count > 1:
             measured_family.append(name)
+        elif _is_fragile_path(selector):
+            # Resolves TODAY, but only because nothing above it moved. Worth
+            # surfacing while the page is open rather than after a layout shift
+            # turns it into a mystery STALE line.
+            fragile.append({"element": name, "selector": selector})
 
     if unresolved:
         entry["_unresolved_selectors"] = {
@@ -1018,6 +1051,17 @@ def verify_entry_against_page(page, entry: dict) -> dict:
                         "href, or a data-test attribute added to the app - and "
                         "re-verify. Do not simply delete them: the element exists, "
                         "only the locator is wrong."),
+        }
+
+    if fragile:
+        entry["_fragile_selectors"] = {
+            "elements": fragile,
+            "warning": ("These resolve right now, but only as a STRUCTURAL PATH - "
+                        "they describe where an element sat during this crawl, not "
+                        "what it is. Any content that renders above them shifts the "
+                        "sibling indices and they break silently. Replace with an "
+                        "id, name, href or a data-test added to the app. If the "
+                        "element belongs to a third-party embed, delete it instead."),
         }
 
     if measured_family:

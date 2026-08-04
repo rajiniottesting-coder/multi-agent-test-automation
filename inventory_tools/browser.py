@@ -101,7 +101,11 @@ def _collect_js(test_attrs: tuple) -> str:
 () => {
   const out = [];
   const SEL = '__SEL__';
-  function walk(root) {
+  // `inheritedThirdParty` carries the flag DOWN through shadow boundaries.
+  // el.closest() stops at a shadow root, so an element inside an ad frame's
+  // shadow DOM cannot see the ad container that hosts it - which is how eight
+  // selectors rooted at an ad iframe host reached a draft as normal elements.
+  function walk(root, inheritedThirdParty) {
     const nodes = root.querySelectorAll('*');
     for (const el of nodes) {
       if (el.matches && el.matches(SEL)) {
@@ -122,7 +126,7 @@ def _collect_js(test_attrs: tuple) -> str:
         // guess would hide both mistakes. The draft surfaces these for a human
         // to delete, which is the same contract as _unstable_selectors and
         // _ambiguous_selectors already use.
-        const thirdParty = !!el.closest(
+        const thirdParty = inheritedThirdParty || !!el.closest(
           '.adsbygoogle, ins.adsbygoogle, [id^="google_ads"], [id^="aswift"], ' +
           '[id^="div-gpt-ad"], [class*="adsbygoogle"], [data-ad-client], ' +
           '[data-ad-slot], [id^="carbonads"], [class*="taboola"], [class*="outbrain"]'
@@ -207,10 +211,18 @@ def _collect_js(test_attrs: tuple) -> str:
         })()
         });
       }
-      if (el.shadowRoot) walk(el.shadowRoot);   // pierce OPEN shadow DOM
+      if (el.shadowRoot) {
+        // Once inside a third-party host, everything below it is third-party.
+        const hostIsThirdParty = inheritedThirdParty || !!el.closest(
+          '.adsbygoogle, ins.adsbygoogle, [id^="google_ads"], [id^="aswift"], ' +
+          '[id^="div-gpt-ad"], [class*="adsbygoogle"], [data-ad-client], ' +
+          '[data-ad-slot], [id^="carbonads"], [class*="taboola"], [class*="outbrain"]'
+        ) || /^(aswift|google_ads|div-gpt-ad)/.test(el.id || '');
+        walk(el.shadowRoot, hostIsThirdParty);   // pierce OPEN shadow DOM
+      }
     }
   }
-  walk(document);
+  walk(document, false);
   return out;
 }
 """.replace("__SEL__", _match_selector(test_attrs).replace("'", "\\'"))

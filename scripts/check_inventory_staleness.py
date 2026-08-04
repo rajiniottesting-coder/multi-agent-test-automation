@@ -148,6 +148,22 @@ def main() -> int:
             counts, live_test_ids, reachable = resolve_selectors(
                 page, base_url + url_path, list(selectors.values()), test_attrs
             )
+            # A page that REDIRECTED was not measured - it was measured
+            # somewhere else. /login sends an authenticated visitor to /, and
+            # every selector unique to the sign-in form then reads as drift.
+            # Compare paths only; a query string or trailing slash is not a
+            # redirect.
+            def _path_of(u: str) -> str:
+                from urllib.parse import urlparse
+                return (urlparse(u).path or "/").rstrip("/") or "/"
+
+            if reachable and _path_of(page.url) != _path_of(base_url + url_path):
+                print(f"  [{name}] skipped - requested {url_path} but landed on "
+                      f"{_path_of(page.url)}. A page that exists only in the other "
+                      f"auth state cannot be checked in this sweep; reporting its "
+                      f"selectors as drift would be a false alarm.")
+                continue
+
             if not reachable:
                 unreachable.append(name)
                 continue

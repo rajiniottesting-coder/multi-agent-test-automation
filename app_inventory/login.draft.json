@@ -1,0 +1,145 @@
+{
+  "app_name": "Automation Exercise",
+  "base_url": "https://automationexercise.com",
+  "description": "AUTO-GENERATED DRAFT — hand-review before committing.",
+  "_inventory_conventions": {
+    "generated": "Draft produced by scripts/generate_inventory.py (backlog 3.1). Tag each page's `components`, add elements_notes/key_methods/errors, delete `_selector_strategies`, `_unstable_selectors`, `_ambiguous_selectors` and `title_seen` after review, and verify every selector before this replaces the real inventory.",
+    "selectors": "Every selector maps to a first-class Playwright locator, in priority order: [data-test='x'] / #id / [name='x'] (css), role=combobox[name='Country'] (getByRole), label=Email (getByLabel), placeholder=... , alt=Search (getByAltText), title=Close (getByTitle), text=Submit (getByText). XPath is never emitted. An iframe-chained selector uses ' >>> ', e.g. iframe#pay >>> [data-test='card']. label=/alt=/title= need page.get_by_label/get_by_alt_text/get_by_title (they are NOT page.locator() engine syntax); role= and text= work with page.locator() directly.",
+    "_unstable_selectors": "If present on a page, these elements had no durable handle (only a fragile css fallback). Add a data-test in the app or replace with a role/label/text locator before relying on them.",
+    "_ambiguous_selectors": "If present, these selectors were produced for MORE THAN ONE element on the page. Playwright locators are strict by default, so each one raises 'strict mode violation: locator resolved to N elements' at runtime. Give each element a distinct handle (add a data-test) or disambiguate with .nth()/.filter() in the page object."
+  },
+  "pages": {
+    "login": {
+      "url": "/login",
+      "components": [],
+      "page_object_file": "pages/login_page.py (AUTO-DRAFT — verify)",
+      "page_object_class": "LoginPage",
+      "elements": {
+        "header_element": "#header",
+        "link": "a[href='/'] >> nth=0",
+        "home_link": "a[href='/'] >> nth=1",
+        "products_link": "a[href='/products']",
+        "cart_link": "a[href='/view_cart']",
+        "signup_login_link": "a[href='/login']",
+        "test_cases_link": "a[href='/test_cases']",
+        "api_testing_link": "a[href='/api_list']",
+        "video_tutorials_link": "a[href='https://www.youtube.com/c/AutomationExercise']",
+        "contact_us_link": "a[href='/contact_us']",
+        "form_element": "#form",
+        "login_email_input": "[data-qa='login-email']",
+        "login_password_input": "[data-qa='login-password']",
+        "login_button": "[data-qa='login-button']",
+        "signup_name_input": "[data-qa='signup-name']",
+        "signup_email_input": "[data-qa='signup-email']",
+        "signup_button": "[data-qa='signup-button']",
+        "footer_element": "#footer",
+        "success_subscribe_element": "#success-subscribe",
+        "email_address_input": "input[placeholder='Your email address']",
+        "subscribe_button": "#subscribe",
+        "scroll_up_link": "a[href='#top']",
+        "aswift_0_host_element": "#aswift_0_host",
+        "aswift_0_element": "#aswift_0",
+        "aswift_1_host_element": "#aswift_1_host",
+        "these_are_topics_related_to_the_article_that_might_interest_you_element": "span[aria-label='These are topics related to the article that might interest you']",
+        "automation_consulting_link": "#aswift_1_host > div > div > div:nth-of-type(2)",
+        "api_development_tools_link": "#aswift_1_host > div > div > div:nth-of-type(3)",
+        "software_testing_tutorials_link": "#aswift_1_host > div > div > div:nth-of-type(4)",
+        "google_esf_element": "#google_esf"
+      },
+      "multi_match": [],
+      "multi_match_note": "Keys whose selector matches SEVERAL elements. Read them with get_all_texts / get_count / get_nth_text / the table helpers; never click, fill, wait on or assert against them. A `<key>_first` sibling, where present, is the same selector pinned '>> nth=0'. ADD any hand-written family key here - a crawler never clicks, so options and dialog contents are not in this list yet.",
+      "_selector_strategies": {
+        "header_element": "id-hidden",
+        "link": "href",
+        "home_link": "href",
+        "products_link": "href",
+        "cart_link": "href",
+        "signup_login_link": "href",
+        "test_cases_link": "href",
+        "api_testing_link": "href",
+        "video_tutorials_link": "href",
+        "contact_us_link": "href",
+        "form_element": "id",
+        "login_email_input": "data-qa",
+        "login_password_input": "data-qa",
+        "login_button": "data-qa",
+        "signup_name_input": "data-qa",
+        "signup_email_input": "data-qa",
+        "signup_button": "data-qa",
+        "footer_element": "id-hidden",
+        "success_subscribe_element": "id-hidden",
+        "email_address_input": "placeholder",
+        "subscribe_button": "id-hidden",
+        "scroll_up_link": "href",
+        "aswift_0_host_element": "id-hidden",
+        "aswift_0_element": "id-hidden",
+        "aswift_1_host_element": "id-hidden",
+        "these_are_topics_related_to_the_article_that_might_interest_you_element": "aria-label",
+        "automation_consulting_link": "css-path-hidden",
+        "api_development_tools_link": "css-path-hidden",
+        "software_testing_tutorials_link": "css-path-hidden",
+        "google_esf_element": "id-hidden"
+      },
+      "elements_notes": {},
+      "key_methods": [],
+      "errors": {},
+      "implementation_status": "AUTO-GENERATED DRAFT — review every selector, tag `components`, and add elements_notes / key_methods / errors by hand. Machine cannot infer behavior, intended API, or exact error strings.",
+      "title_seen": "Automation Exercise - Signup / Login",
+      "_ambiguous_selectors": {
+        "selectors": {
+          "a[href='/']": [
+            "home_link",
+            "link"
+          ]
+        },
+        "warning": "Each of these selectors was produced for MORE THAN ONE element on this page. Playwright locators are strict by default, so using one raises 'strict mode violation: locator resolved to N elements' at runtime. Give each element a distinct handle (add a data-test attribute) or disambiguate with .nth()/.filter() in the page object."
+      },
+      "conditional": [
+        "aswift_0_element",
+        "aswift_0_host_element",
+        "google_esf_element",
+        "scroll_up_link",
+        "success_subscribe_element"
+      ],
+      "conditional_note": "AUTO-DETECTED: these were not visible when the page was crawled, so they sit behind an interaction (a collapsed panel, a closed modal, an inactive carousel slide). A tool that only navigates will always read them as absent - that is its reach, not a broken selector. Confirm each one is genuinely interaction-gated and delete any that are not.",
+      "_third_party_elements": {
+        "elements": [
+          "api_development_tools_link",
+          "aswift_0_element",
+          "aswift_0_host_element",
+          "aswift_1_host_element",
+          "automation_consulting_link",
+          "software_testing_tutorials_link",
+          "these_are_topics_related_to_the_article_that_might_interest_you_element"
+        ],
+        "warning": "These sit inside a THIRD-PARTY embed container (ad or recommendation widget). Their text is rotated per impression, so each is stale by the next page load and none belongs to the application under test. DELETE them from this draft unless you can see a reason to keep one - the detection is a heuristic and can be wrong either way."
+      },
+      "_unstable_selectors": {
+        "elements": [
+          "api_development_tools_link",
+          "api_testing_link",
+          "aswift_0_element",
+          "aswift_0_host_element",
+          "aswift_1_host_element",
+          "automation_consulting_link",
+          "cart_link",
+          "contact_us_link",
+          "footer_element",
+          "google_esf_element",
+          "header_element",
+          "home_link",
+          "link",
+          "products_link",
+          "scroll_up_link",
+          "signup_login_link",
+          "software_testing_tutorials_link",
+          "subscribe_button",
+          "success_subscribe_element",
+          "test_cases_link",
+          "video_tutorials_link"
+        ],
+        "warning": "No durable handle found for these — only a fragile css fallback. Add a data-test attribute in the app, or replace with a role/label/text locator, before relying on them."
+      }
+    }
+  }
+}
