@@ -686,6 +686,7 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
     elements: dict[str, dict] = {}
     used: set[str] = set()
     hidden_names: set[str] = set()
+    third_party_names: set[str] = set()
 
     for d in descriptors:
         tag = (d.get("tag") or "").lower()
@@ -717,6 +718,8 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
         used.add(final)
         if not is_visible:
             hidden_names.add(final)
+        if d.get("thirdParty"):
+            third_party_names.add(final)
         elements[final] = {"selector": selector, "strategy": strategy,
                            "framed": bool(frame_sel), "reveals": reason}
 
@@ -837,6 +840,20 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
             "them as absent - that is its reach, not a broken selector. Confirm "
             "each one is genuinely interaction-gated and delete any that are not."
         )
+    # Surfaced for a human to delete, not deleted here. The detection is a
+    # heuristic about embed containers, so it can miss a network or catch a
+    # real element sitting in a similarly-named div - deciding on a guess is
+    # exactly what the draft-review step exists to prevent.
+    if third_party_names:
+        entry["_third_party_elements"] = {
+            "elements": sorted(third_party_names),
+            "warning": ("These sit inside a THIRD-PARTY embed container (ad or "
+                        "recommendation widget). Their text is rotated per "
+                        "impression, so each is stale by the next page load and "
+                        "none belongs to the application under test. DELETE them "
+                        "from this draft unless you can see a reason to keep one - "
+                        "the detection is a heuristic and can be wrong either way."),
+        }
     if unstable:
         entry["_unstable_selectors"] = {
             "elements": unstable,

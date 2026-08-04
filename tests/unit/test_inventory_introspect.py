@@ -4,6 +4,7 @@ Covers selector ranking, element naming, repeated-family collapsing, draft page
 assembly, and the staleness diff — all on plain DOM descriptors.
 """
 import pytest
+from pathlib import Path
 
 from inventory_tools.introspect import (
     diff_page,
@@ -830,3 +831,67 @@ def test_a_page_with_nothing_hidden_declares_no_conditional():
     descs = [{"tag": "a", "attrs": {"href": "/products"}, "text": "Products", "visible": True}]
     e = build_page_entry("https://x.test/p", "P", descs, "https://x.test")
     assert "conditional" not in e
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# The capture script's two content rules
+#
+# These live in JS inside inventory_tools/browser.py, so they cannot be called
+# from Python. Asserting on the source is weaker than executing it, but it does
+# stop a future edit quietly dropping a rule that each cost a full sweep to
+# find.
+# ─────────────────────────────────────────────────────────────────────────
+
+def _capture_js() -> str:
+    return (Path(__file__).resolve().parents[2]
+            / "inventory_tools" / "browser.py").read_text(encoding="utf-8")
+
+
+def test_capture_reads_textContent_not_innerText_for_matching():
+    """innerText returns the RENDERED text, with CSS text-transform applied. A
+    link styled `text-transform: uppercase` reads "WOMEN" while the DOM says
+    "Women", and Playwright computes the accessible name from the raw text -
+    so a role locator built from innerText resolves to ZERO. Proven in a real
+    browser: same node, 0 matches via the rendered casing, 2 via the raw."""
+    js = _capture_js()
+    assert "text: (el.textContent" in js, "matching text must come from textContent"
+    assert "renderedText: (el.innerText" in js, "keep innerText separately, for naming"
+
+
+def test_capture_skips_hidden_form_tokens():
+    """A CSRF token's value is regenerated on every request; one crawl produced an
+    element named after the nonce itself."""
+    assert "el.type === 'hidden'" in _capture_js()
+
+
+def test_capture_flags_third_party_content_without_dropping_it():
+    """Ad networks rotate their link text per impression, so every captured ad
+    link is stale by the next page load. But the container list is a HEURISTIC
+    about the web in general - it can miss a network, or catch a real element
+    in a similarly-named div - so the draft flags them for a human to delete
+    rather than deciding on a guess."""
+    js = _capture_js()
+    assert "adsbygoogle" in js
+    assert "el.closest(" in js, "must match by ANCESTOR, not just the element itself"
+    assert "thirdParty," in js, "the flag must reach the descriptor"
+    assert "if (el.closest('.adsbygoogle" not in js, "must FLAG, not silently skip"
+
+
+def test_third_party_elements_are_surfaced_for_review():
+    descs = [
+        {"tag": "a", "attrs": {"href": "/products"}, "text": "Products", "visible": True},
+        {"tag": "a", "attrs": {"href": "/x"}, "text": "Winter Wear",
+         "visible": True, "thirdParty": True},
+    ]
+    e = build_page_entry("https://x.test/p", "P", descs, "https://x.test")
+    # kept, so nothing is lost on a bad guess...
+    assert "winter_wear_link" in e["elements"]
+    # ...but flagged, so a human deletes it deliberately
+    assert e["_third_party_elements"]["elements"] == ["winter_wear_link"]
+    assert "DELETE" in e["_third_party_elements"]["warning"]
+
+
+def test_a_page_with_no_embeds_has_no_review_block():
+    descs = [{"tag": "a", "attrs": {"href": "/p"}, "text": "P", "visible": True}]
+    e = build_page_entry("https://x.test/p", "P", descs, "https://x.test")
+    assert "_third_party_elements" not in e

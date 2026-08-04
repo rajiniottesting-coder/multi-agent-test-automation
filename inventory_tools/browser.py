@@ -110,6 +110,23 @@ def _collect_js(test_attrs: tuple) -> str:
         // element literally named `uoeuu_hosiv72w_tpod_v2f_input` - a locator
         // keyed to a CSRF nonce, guaranteed stale on the next page load.
         if (el.tagName === 'INPUT' && el.type === 'hidden') continue;
+
+        // THIRD-PARTY EMBEDS. Ad and widget networks inject links whose text
+        // is rotated per impression, so every one is stale by the next page
+        // load and none is part of the application under test.
+        //
+        // FLAGGED, NOT DROPPED. The container list below is a heuristic about
+        // the web in general, not a fact about any one app, so it can be wrong
+        // in both directions - it may miss a network, or catch a real element
+        // that happens to sit in a similarly-named div. Silently deleting on a
+        // guess would hide both mistakes. The draft surfaces these for a human
+        // to delete, which is the same contract as _unstable_selectors and
+        // _ambiguous_selectors already use.
+        const thirdParty = !!el.closest(
+          '.adsbygoogle, ins.adsbygoogle, [id^="google_ads"], [id^="aswift"], ' +
+          '[id^="div-gpt-ad"], [class*="adsbygoogle"], [data-ad-client], ' +
+          '[data-ad-slot], [id^="carbonads"], [class*="taboola"], [class*="outbrain"]'
+        );
         const attrs = {};
         for (const a of el.attributes) attrs[a.name] = a.value;
         out.push({
@@ -119,7 +136,18 @@ def _collect_js(test_attrs: tuple) -> str:
           // is RUNTIME DATA - a token, a typed search term, a session id - so
           // naming or matching on it bakes one request's state into the
           // inventory. Only a real label/placeholder/name should name a field.
-          text: (el.innerText || '').trim().slice(0, 60),
+          //
+          // textContent, NOT innerText. innerText returns the RENDERED text,
+          // with CSS text-transform applied: a link styled
+          // `text-transform: uppercase` renders as ALL CAPS while the DOM
+          // still holds the original casing. Playwright computes the
+          // accessible name from the RAW text, so a role locator built from
+          // innerText resolves to ZERO. Proven 4 Aug 2026 in a browser: the
+          // same node matched 0 via the rendered casing and 2 via the raw.
+          text: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60),
+          // Kept separately: what a HUMAN sees on screen. Useful for naming
+          // and for notes, never for building an accessible-name locator.
+          renderedText: (el.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 60),
         // Associated <label> text. Playwright's getByLabel is the recommended
         // locator for form controls, but a label is a SEPARATE DOM element
         // (<label for="x">Email</label><input id="x">), so it can never be
@@ -135,6 +163,7 @@ def _collect_js(test_attrs: tuple) -> str:
           return '';
         })(),
           visible: !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length),
+          thirdParty,
         // Structurally UNIQUE css path, used only as the last-resort fallback.
         // Built here because it needs the live DOM tree (parent chain +
         // sibling index), which the pure ranking logic never sees. Anchored to
@@ -448,15 +477,15 @@ def find_login_path(inventory: dict) -> str | None:
 def resolve_page_url(entry: dict) -> tuple[str, str | None]:
     """(path, skip_reason) for one inventory page entry.
 
-    Some pages are a TEMPLATE, not an address - `/product_details/{product_id}`
+    Some pages are a TEMPLATE, not an address - `/records/{record_id}`
     stands for one page per record. Navigating to that string literally gives a
     404 and every selector on it is then reported STALE, which is a false
     report of exactly the kind these tools exist to avoid.
 
     A templated entry may name a concrete page to check instead::
 
-        "url": "/product_details/{product_id}",
-        "url_sample": "/product_details/1"
+        "url": "/records/{record_id}",
+        "url_sample": "/records/1"
 
     With a sample, that page is checked and the result applies to the template
     - the elements are identical for every record. Without one, the page is

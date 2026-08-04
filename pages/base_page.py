@@ -140,10 +140,10 @@ class BasePage:
         """URL path for this page object's inventory page.
 
         Some pages are a TEMPLATE rather than an address: one page exists per
-        record, so the inventory stores `/product_details/{product_id}` and the
+        record, so the inventory stores `/records/{record_id}` and the
         caller supplies the id at run time::
 
-            self.navigate(base_url + self.page_url(product_id=42))
+            self.navigate(base_url + self.page_url(record_id=42))
 
         Storing a sample id in the inventory instead would be worse than
         untidy: every test would silently couple to whichever record happened
