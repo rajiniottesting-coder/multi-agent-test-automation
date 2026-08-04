@@ -41,9 +41,9 @@
         "aswift_0_element": "#aswift_0",
         "aswift_1_host_element": "#aswift_1_host",
         "these_are_topics_related_to_the_article_that_might_interest_you_element": "span[aria-label='These are topics related to the article that might interest you']",
-        "automation_consulting_link": "#aswift_1_host > div > div > div:nth-of-type(2)",
-        "api_development_tools_link": "#aswift_1_host > div > div > div:nth-of-type(3)",
-        "software_testing_tutorials_link": "#aswift_1_host > div > div > div:nth-of-type(4)",
+        "dictionaries_encyclopedias_link": "#aswift_1_host > div > div > div:nth-of-type(2)",
+        "api_documentation_link": "#aswift_1_host > div > div > div:nth-of-type(3)",
+        "api_testing_services_link": "#aswift_1_host > div > div > div:nth-of-type(4)",
         "google_esf_element": "#google_esf"
       },
       "multi_match": [],
@@ -75,9 +75,9 @@
         "aswift_0_element": "id-hidden",
         "aswift_1_host_element": "id-hidden",
         "these_are_topics_related_to_the_article_that_might_interest_you_element": "aria-label",
-        "automation_consulting_link": "css-path-hidden",
-        "api_development_tools_link": "css-path-hidden",
-        "software_testing_tutorials_link": "css-path-hidden",
+        "dictionaries_encyclopedias_link": "css-path-hidden",
+        "api_documentation_link": "css-path-hidden",
+        "api_testing_services_link": "css-path-hidden",
         "google_esf_element": "id-hidden"
       },
       "elements_notes": {},
@@ -104,26 +104,27 @@
       "conditional_note": "AUTO-DETECTED: these were not visible when the page was crawled, so they sit behind an interaction (a collapsed panel, a closed modal, an inactive carousel slide). A tool that only navigates will always read them as absent - that is its reach, not a broken selector. Confirm each one is genuinely interaction-gated and delete any that are not.",
       "_third_party_elements": {
         "elements": [
-          "api_development_tools_link",
+          "api_documentation_link",
+          "api_testing_services_link",
           "aswift_0_element",
           "aswift_0_host_element",
           "aswift_1_host_element",
-          "automation_consulting_link",
-          "software_testing_tutorials_link",
+          "dictionaries_encyclopedias_link",
           "these_are_topics_related_to_the_article_that_might_interest_you_element"
         ],
         "warning": "These sit inside a THIRD-PARTY embed container (ad or recommendation widget). Their text is rotated per impression, so each is stale by the next page load and none belongs to the application under test. DELETE them from this draft unless you can see a reason to keep one - the detection is a heuristic and can be wrong either way."
       },
       "_unstable_selectors": {
         "elements": [
-          "api_development_tools_link",
+          "api_documentation_link",
           "api_testing_link",
+          "api_testing_services_link",
           "aswift_0_element",
           "aswift_0_host_element",
           "aswift_1_host_element",
-          "automation_consulting_link",
           "cart_link",
           "contact_us_link",
+          "dictionaries_encyclopedias_link",
           "footer_element",
           "google_esf_element",
           "header_element",
@@ -132,13 +133,29 @@
           "products_link",
           "scroll_up_link",
           "signup_login_link",
-          "software_testing_tutorials_link",
           "subscribe_button",
           "success_subscribe_element",
           "test_cases_link",
           "video_tutorials_link"
         ],
         "warning": "No durable handle found for these — only a fragile css fallback. Add a data-test attribute in the app, or replace with a role/label/text locator, before relying on them."
+      },
+      "_fragile_selectors": {
+        "elements": [
+          {
+            "element": "dictionaries_encyclopedias_link",
+            "selector": "#aswift_1_host > div > div > div:nth-of-type(2)"
+          },
+          {
+            "element": "api_documentation_link",
+            "selector": "#aswift_1_host > div > div > div:nth-of-type(3)"
+          },
+          {
+            "element": "api_testing_services_link",
+            "selector": "#aswift_1_host > div > div > div:nth-of-type(4)"
+          }
+        ],
+        "warning": "These resolve right now, but only as a STRUCTURAL PATH - they describe where an element sat during this crawl, not what it is. Any content that renders above them shifts the sibling indices and they break silently. Replace with an id, name, href or a data-test added to the app. If the element belongs to a third-party embed, delete it instead."
       }
     }
   }

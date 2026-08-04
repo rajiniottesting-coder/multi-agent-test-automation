@@ -598,6 +598,7 @@ def _undefined_names(path: Path) -> list:
     "scripts/verify_locators.py",
     "scripts/check_inventory_staleness.py",
     "scripts/generate_inventory.py",
+    "scripts/promote_draft.py",
 ])
 def test_cli_scripts_reference_only_defined_names(script):
     path = _repo_root() / script
