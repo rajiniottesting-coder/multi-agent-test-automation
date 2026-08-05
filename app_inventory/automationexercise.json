@@ -216,6 +216,59 @@
         "empty_cart_message"
       ],
       "conditional_note": "Only rendered when the cart is empty, so it reads STALE whenever the sweep runs against a cart with items in it."
+    },
+    "product_detail": {
+      "url": "/product_details/{product_id}",
+      "url_sample": "/product_details/1",
+      "components": [
+        "Products",
+        "Cart"
+      ],
+      "page_object_file": "pages/product_detail_page.py",
+      "page_object_class": "ProductDetailPage",
+      "elements": {
+        "product_name": ".product-information h2",
+        "product_price": ".product-information span span",
+        "availability": "text=Availability:",
+        "condition": "text=Condition:",
+        "brand": "text=Brand:",
+        "quantity_input": "#quantity",
+        "add_to_cart_button": "button.cart",
+        "added_modal": "#cartModal",
+        "view_cart_link_in_modal": "#cartModal a[href='/view_cart']",
+        "continue_shopping_button": "#cartModal button.close-modal",
+        "write_review_link": "a[href='#reviews']",
+        "review_name_input": "input[placeholder='Your Name']",
+        "review_email_input": "input[placeholder='Email Address']",
+        "review_textarea": "textarea[placeholder='Add Review Here!']",
+        "review_submit_button": "#button-review",
+        "review_success": "text=Thank you for your review."
+      },
+      "conditional": [
+        "added_modal",
+        "view_cart_link_in_modal",
+        "continue_shopping_button",
+        "review_success"
+      ],
+      "conditional_note": "The add-to-cart modal does not exist until a product is added, and the review confirmation not until a review is submitted. A tool that only navigates always reads these as absent - that is its reach, not a broken selector.",
+      "elements_notes": {
+        "_url": "TEMPLATE, not an address: one page per product. Open it with page_url(product_id=...), or better, reach it by clicking a product's View Product link on the listing - that href already carries the id, so the test never invents one.",
+        "add_to_cart_button": "The single add-to-cart control for THIS product. Unlike the listing page's family of 68, this one is unique - which is why a cart scenario should add a product from here rather than from the listing.",
+        "quantity_input": "Type a quantity BEFORE adding to cart; changing it afterwards does not update the cart.",
+        "added_modal": "Adding to cart opens a MODAL rather than navigating, and it blocks the page underneath. A scenario adding two products must dismiss it between them or the second click lands on the overlay.",
+        "product_price": "Rendered as 'Rs. 500'. Assert on the number, not the format."
+      },
+      "key_methods": [
+        "is_loaded()",
+        "open(base_url, product_id)",
+        "product_name()",
+        "set_quantity(n)",
+        "add_to_cart()",
+        "view_cart_from_modal()",
+        "continue_shopping()",
+        "submit_review(name, email, text)"
+      ],
+      "errors": {}
     }
   }
 }
