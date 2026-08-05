@@ -78,6 +78,8 @@ config/
 scripts/
   smoke_test.py                            — Environment wiring check
   generate_inventory.py                    — Bootstrap a draft inventory from the live app (3.1)
+  promote_draft.py                         — Merge crawl drafts, strip third-party embeds
+  verify_locators.py                       — Measure every selector against the live page
   check_inventory_staleness.py             — Diff committed inventory vs live DOM (3.1)
   sweep_stalled_prs.py                     — Re-trigger stalled event-driven PRs (3.4)
 
@@ -793,8 +795,20 @@ human ones), and `diff_page`/`summarize_drift` (staleness). The test-id attribut
 is the configurable `TEST_ID_ATTRS` constant. `inventory_tools/browser.py` is a thin
 Playwright layer (lazy import): `collect_descriptors`, `resolve_selectors`, and a
 generic `do_login` that takes explicit selectors (type-based defaults). Two CLIs wrap
-it: `scripts/generate_inventory.py` (crawl → draft) and
-`scripts/check_inventory_staleness.py` (diff live DOM, `--fail-on-drift` for CI).
+it: `scripts/generate_inventory.py` (crawl → draft), `scripts/promote_draft.py`
+(merge drafts, strip third-party embeds), `scripts/verify_locators.py` (measure
+every selector against the live page) and `scripts/check_inventory_staleness.py`
+(diff live DOM, `--fail-on-drift` for CI).
+
+The crawler MEASURES rather than predicts: every selector it derives is resolved
+against the page it came from before being written, so a locator matching zero
+is reported at crawl time instead of surfacing days later. That change came
+from four separate bug classes with one cause — ranking inferred what Playwright
+would do from DOM properties, and the accessibility tree does not follow them.
+CSS `text-transform` changes the rendered text but not the accessible name; a
+`::before` icon glyph joins the name but is invisible to `textContent`; a hidden
+element is absent from the a11y tree entirely; an `<a>` without `href` has no
+link role. The page is open at that moment, so the guess is now a measurement.
 
 **Sweeper (3.4).** `scripts/sweep_stalled_prs.py` has a pure core —
 `workflow_settled(runs)` and `classify_pr(...)` — plus a PyGithub I/O shell reusing

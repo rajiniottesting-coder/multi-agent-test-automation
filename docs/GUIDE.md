@@ -11,7 +11,7 @@ Everything you need to operate, configure, extend, and onboard new apps to this 
 5. [Branch naming](#branch-naming)
 6. [Configuration](#configuration)
 7. [Running the pipeline](#running-the-pipeline)
-8. [Inventory tooling (bootstrap + staleness)](#inventory-tooling-bootstrap--staleness)
+8. [Inventory tooling — the full sequence](#inventory-tooling--the-full-sequence)
 9. [The sweeper (stalled-PR backstop)](#the-sweeper-stalled-pr-backstop)
 10. [Onboarding a new app](#onboarding-a-new-app)
 11. [Diagram reference](#diagram-reference)
@@ -812,63 +812,170 @@ Notes:
 
 ---
 
-## Inventory tooling (bootstrap + staleness)
+## Inventory tooling — the full sequence
 
-The `app_inventory/<app>.json` file is the LLM's map of the application. Two
-app-agnostic CLIs keep it honest (both need `playwright install chromium`):
+`app_inventory/<app>.json` is the map Agents 2 and 3 use to write code. Four
+app-agnostic CLIs build and maintain it (all need `playwright install chromium`).
 
-> **The inventory is the only app knowledge Agents 2 and 3 receive.**
+> **The inventory is the ONLY app knowledge Agents 2 and 3 receive.**
 > `prompts/app_context/*.md` goes to Agent 1 alone. So anything the code
 > generator must know belongs in `elements_notes` here — writing it only in the
 > markdown sends it to the wrong agent.
 
-### Fields beyond `elements`
+### The sequence, end to end
 
-Each exists because its absence caused a real failure. Full schema in
-[REUSE_FOR_NEW_PROJECT.md](./REUSE_FOR_NEW_PROJECT.md#app-inventory-json-schema).
-
-| Field | Purpose |
-|---|---|
-| `multi_match` | Keys whose selector matches SEVERAL elements. Playwright runs strict, so clicking or waiting on one raises `resolved to N elements`. **Enforced at generation time** — only the plural readers (`get_all_texts`, `get_count`, the table helpers) are allowed. |
-| `async_family` | A refinement of `multi_match`: a family the app fills asynchronously, where index 0 may be a transient loading row. An index pin (`>> nth=0`) is NEVER valid — select by text. |
-| `conditional` | Elements that exist only after an interaction. The browser tools never click, so they always report these STALE. That is honesty about reach, not a broken selector. |
-| `url_sample` | For a page whose `url` is a template (`/product_details/{product_id}`): a real address the tools can check. Without one they skip the page rather than navigating to a literal `{product_id}`. |
-| `elements_notes` | Per-key traps. The highest-value field in the file. |
-
-Selectors are ranked in Playwright's own recommended order — test-id, then
-`getByRole`, `getByLabel`, placeholder, alt, title, then css `#id`/`[name=]`,
-then text, then a css path. Two traps worth checking before trusting an
-accessible-name selector: an icon-only control has no accessible name at all,
-and an icon font that renders from ligature text puts that text INTO the name,
-so `role=link[name='Products']` can silently match nothing.
-
-**Bootstrap a draft** — crawl the live app and emit a first-draft inventory with
-selectors ranked and page objects guessed:
-
-```bash
-INVENTORY_USER="$APP_USER" INVENTORY_PASS="$APP_PASS" \
-  python -m scripts.generate_inventory --crawl --max-pages 20 \
-  --output app_inventory/<app>.draft.json
+```
+  1. generate_inventory   crawl the live app         -> one draft per auth state
+  2. promote_draft        merge + strip embeds       -> one clean draft
+  3. verify_locators      measure every selector     -> what does not resolve
+  4. CURATE BY HAND       notes, methods, families   -> a real inventory
+  5. check_inventory_staleness   nightly drift watch
 ```
 
-Machine-knowable fields are filled; `elements_notes`, `key_methods`, page-level
-`errors`, and `components` are left as visible stubs — **always hand-review**.
+Steps 1–3 are mechanical. **Step 4 is the one that matters** and cannot be
+automated: a crawler records what a page contains, never what it means.
 
-**Check for drift** — diff the committed inventory against the live DOM:
+### 1 · Crawl — `generate_inventory`
+
+One run per auth state, because pages differ between them. A sign-in page does
+not exist for an authenticated visitor, and the navigation changes once a
+session exists.
+
+```bash
+# signed OUT — the only state in which a login/signup form exists
+python -m scripts.generate_inventory --no-login \
+  --urls "/login" --output app_inventory/login.draft.json
+
+# signed IN — everything else
+python -m scripts.generate_inventory --login-url /login \
+  --urls "/,/products,/cart,/records/1" \
+  --output app_inventory/main.draft.json
+```
+
+`--login-url` says where to SIGN IN; it does not add that page to the crawl.
+Add `--headed` to watch. `--crawl --max-pages 20` follows links instead of
+taking an explicit list.
+
+Every selector is measured against the page it came from before it is written,
+so a locator that resolves to zero is reported at crawl time rather than
+discovered days later.
+
+### 2 · Merge and strip — `promote_draft`
+
+```bash
+python -m scripts.promote_draft \
+  app_inventory/login.draft.json app_inventory/main.draft.json \
+  -o app_inventory/clean.draft.json
+```
+
+Removes third-party embeds (ad and recommendation widgets, whose text rotates
+per impression) and every review block. **It does not delete anything belonging
+to the application** — an element flagged as having a weak selector is real, and
+a test may need it, so it survives with the warning attached under
+`_selectors_to_improve`. `--drop-fragile` opts into deleting those too;
+`--dry-run` previews.
+
+A page captured in two auth states is kept as `page__login` and `page__main`
+rather than one silently overwriting the other — those are different states of
+one page, not duplicates.
+
+### 3 · Measure — `verify_locators`
+
+```bash
+python -m scripts.verify_locators --login-url /login --only-problems
+python -m scripts.verify_locators --inventory app_inventory/clean.draft.json --only-problems
+```
+
+Runs headed by default and draws a box round every match: green = 1, amber = >1,
+red = 0. `--only-problems` hides the ones that resolve cleanly.
+
+```bash
+# one page while debugging
+python -m scripts.verify_locators --page products --only-problems
+
+# one selector, without touching the inventory
+python -m scripts.verify_locators --selector "a[href='/cart']" --url /products --login-url /login
+```
+
+**Sign-in and sign-up pages need `--no-login`.** With a session they redirect,
+and the tool reports `REDIRECTED` and measures nothing rather than checking the
+form against the destination.
+
+Exit codes: `0` clean · `1` drift · `2` login failed.
+
+### 4 · Curate — the part no tool can do
+
+The crawler leaves `components`, `elements_notes` and `key_methods` empty. They
+are what stop Agent 2 clicking a 68-match family or inventing a method that does
+not exist. See the table below.
+
+Trim hard while you are here: a crawl of a content-heavy page can yield 190
+elements, of which a story needs perhaps ten. Every element you keep is prompt
+tokens spent on every generated file.
+
+### 5 · Watch for drift — `check_inventory_staleness`
 
 ```bash
 python -m scripts.check_inventory_staleness --fail-on-drift
 ```
 
-It flags stale selectors (the dangerous kind — they make generated tests fail as
-if the test were buggy), untracked live test-ids, and unreachable pages; warns on
-pages with no `elements_notes`; and exits non-zero under `--fail-on-drift` for CI.
+Diffs the committed inventory against the live DOM: stale selectors, untracked
+test-ids, unreachable pages. Exits non-zero under `--fail-on-drift`, which is
+how the nightly `Inventory Health` workflow uses it. Both this and
+`verify_locators` honour `multi_match` and `conditional`, so a declared family
+reads as expected rather than as a fault.
 
-Both tools are app-neutral: `--test-attrs` selects the test-id attribute your app
-uses (default set covers `data-test`, `data-testid`, `data-cy`, and more), and
-login fields auto-detect by input type (override with `--login-url` /
-`--username-selector` / `--password-selector` / `--submit-selector`, or
-`--no-login`).
+### Every section of the inventory JSON, and what to do with it
+
+| Field | What it is | Action |
+|---|---|---|
+| `url` | page path | **keep** |
+| `url_sample` | a real address for a templated `url` (`/records/{id}`) | **add** if the page is a template |
+| `components` | Jira Components that map to this page — crawler leaves it EMPTY | **fill in.** Without it Agent 2 receives the whole inventory instead of this page |
+| `page_object_file` / `page_object_class` | where the page object lives | **keep**, rename if you prefer |
+| `always` | `true` for shared chrome (navigation) | **set** on the nav page |
+| `elements` | key → selector. The inventory itself | **trim to what tests need** |
+| `elements_notes` | per-key traps — crawler leaves it EMPTY | **write this.** Highest-value field in the file |
+| `key_methods` | methods the page object should expose — EMPTY | **write this**, so Agent 2 does not invent them |
+| `multi_match` | keys matching several elements | **verify** — measured at crawl time, confirm it is right |
+| `conditional` | elements that exist only after an interaction | **verify** |
+| `async_family` | a family the app fills asynchronously | **add** where index 0 may be a loading row |
+| `errors` | validation message text | **fill** if the page has any |
+| `implementation_status` | draft marker | **delete** |
+| `title_seen` | page title at crawl time | **delete** |
+| `_selector_strategies` | which ranking tier each selector used | **delete** |
+| `_ambiguous_selectors` | crawl-time duplicates, already resolved with `nth` | **delete** |
+| `_unstable_selectors` | no durable handle — a QUALITY warning | **delete the block, keep the elements** |
+| `_fragile_selectors` | located by a structural css path | **delete the block**; fix the selectors |
+| `_third_party_elements` | ad and widget embeds | **delete block and elements** |
+| `_selectors_to_improve` | real elements on weak selectors, kept deliberately | **keep as a TODO**, or fix and delete |
+| `_unresolved_selectors` | measured ZERO at crawl time | **fix each**; the element exists, the locator does not work |
+
+Anything beginning with `_` is a review note, not inventory — it should not
+survive into a committed file. `implementation_status` and `title_seen` are the
+two non-underscore leftovers.
+
+### Selector ranking, and two traps
+
+Ranked in Playwright's own recommended order: test-id, `getByRole`,
+`getByLabel`, aria-label, placeholder, alt, title, then css `#id` / `[name=]`,
+then text, then a css path. Anchors prefer their `href`, which is exact and
+immune to markup inside the link.
+
+Two traps worth knowing, both of which produced locators that matched nothing:
+
+- **An icon-only control has no accessible name at all**, so `role=button[name=…]`
+  cannot match it. Use its id.
+- **An icon INSIDE a control poisons the name.** A CSS `::before` glyph is folded
+  into the accessible name but is invisible to `textContent`, and an icon font
+  rendering from ligature text prefixes the glyph name onto it. Elements with an
+  icon descendant are located by attribute instead.
+
+Both tools are app-neutral. `--test-attrs` selects the test-id attribute your app
+uses (the default set covers `data-test`, `data-testid`, `data-cy` and more), and
+login fields auto-detect by input type — override with `--login-url`,
+`--username-selector`, `--password-selector`, `--submit-selector`, or skip login
+entirely with `--no-login`.
 
 ## The sweeper (stalled-PR backstop)
 

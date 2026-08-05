@@ -16,7 +16,6 @@ A reusable framework where **5 specialized AI agents** collaborate to automate t
 | [docs/REUSE_FOR_NEW_PROJECT.md](./docs/REUSE_FOR_NEW_PROJECT.md) | Checklist for pointing the framework at a new application, incl. the app-inventory JSON schema |
 | [docs/TECHNICAL_DEEP_DIVE.md](./docs/TECHNICAL_DEEP_DIVE.md) | Function-level walkthrough of every agent and mechanism |
 | [CHANGES.md](./CHANGES.md) | Changelog — what changed, why, how to adapt |
-| [docs/BACKLOG.md](./docs/BACKLOG.md) | Phase-2 backlog — 21 items across 4 tiers, with effort estimates and a suggested sequence |
 
 ---
 
@@ -46,7 +45,7 @@ Each agent has a **human approval gate** — agents propose, humans dispose. Thi
 | 4️⃣ | **Runner** | Executes tests on PR (CI workflow only — no Python module) | `.github/workflows/agent4_runner.yml` |
 | 5️⃣ | **Reporter** | Summarizes results back to Jira | `agents/agent5_reporter.py` |
 
-> **Why is Agent 4 only a workflow file?** It's pure CI orchestration: run pytest, parse junit.xml, upload artifacts. No LLM calls, no API decisions. Putting that logic in Python would just wrap a shell command. The workflow file IS Agent 4. See [GUIDE.md → Agent 4](./docs/GUIDE.md#agent-4-runner-) for details.
+> **Why is Agent 4 only a workflow file?** It's pure CI orchestration: run pytest, parse junit.xml, upload artifacts. No LLM calls, no API decisions. Putting that logic in Python would just wrap a shell command. The workflow file IS Agent 4. See [GUIDE.md → Agent 4](./docs/GUIDE.md#agent-4-runner) for details.
 
 ---
 
@@ -88,7 +87,7 @@ flowchart TB
 - Idempotency labels prevent re-processing the same story twice
 - All secrets stay in `.env` (never committed); placeholders live in `.env.example`
 
-For a deeper breakdown — including agent inputs/outputs, design rationale, and the human-approval gate semantics — see [GUIDE.md → Architecture](./docs/GUIDE.md#architecture). For more diagrams (component view, Agent 2 sequence, label state machine), see [GUIDE.md → Architecture diagrams](./docs/GUIDE.md#architecture-diagrams).
+For a deeper breakdown — including agent inputs/outputs, design rationale, and the human-approval gate semantics — see [GUIDE.md → Architecture](./docs/GUIDE.md#architecture). For more diagrams (component view, Agent 2 sequence, label state machine), see [GUIDE.md → Diagram reference](./docs/GUIDE.md#diagram-reference).
 
 ---
 
@@ -165,6 +164,8 @@ multi-agent-test-automation/
 ├── scripts/
 │   ├── smoke_test.py                # End-to-end integration check
 │   ├── generate_inventory.py        # Bootstrap a DRAFT inventory from the live app (any app)
+│   ├── promote_draft.py             # Merge crawl drafts + strip third-party embeds
+│   ├── verify_locators.py           # Measure every selector against the live page
 │   ├── check_inventory_staleness.py # Diff committed inventory vs live DOM (CI-gateable)
 │   └── sweep_stalled_prs.py         # Re-trigger stalled event-driven PRs
 │
@@ -271,11 +272,11 @@ For the full lifecycle including approval gates, see [GUIDE.md → Running the p
 The whole point of the recent refactor: **no Python code changes** are needed to point this at a new app. The high-level steps:
 
 1. Edit `config/config.yaml` — update the `app_under_test` block (name, base URL, reference files, reserved paths)
-2. Drop a new `app_inventory/<your-app>.json` describing pages and selectors ([schema reference](./docs/REUSE_FOR_NEW_PROJECT.md#app-inventory-json-schema)). To get a head start, **bootstrap a draft** from the live app: `python -m scripts.generate_inventory --crawl` (add `--test-attrs data-cy,...` if your app tags elements with something other than `data-test`), then hand-review.
+2. Drop a new `app_inventory/<your-app>.json` describing pages and selectors ([schema reference](./docs/REUSE_FOR_NEW_PROJECT.md#app-inventory-json-schema)). Build it with the tooling rather than by hand — crawl, merge, measure, then curate. The [full sequence with commands](./docs/GUIDE.md#inventory-tooling--the-full-sequence) is in the guide. Curation is the step that cannot be automated: a crawler records what a page contains, never what it means.
 3. Replace `prompts/app_context.md` with your app's known users, error messages, page flow
 4. Replace the reference files (`features/login.feature`, `tests/step_defs/test_login.py`, `pages/login_page.py`) with one well-written human-authored test for your app — the LLM uses these as its style baseline
 
-Once you're running, `python -m scripts.check_inventory_staleness --fail-on-drift` keeps your inventory honest as the app evolves. Both inventory tools are fully app-agnostic — they read whichever app `config.yaml` points at.
+Once you're running, `python -m scripts.check_inventory_staleness --fail-on-drift` keeps your inventory honest as the app evolves, and the nightly `Inventory Health` workflow runs the same check unattended. All four inventory CLIs are fully app-agnostic — they read whichever app `config.yaml` points at.
 
 ### Inventory Health (nightly)
 

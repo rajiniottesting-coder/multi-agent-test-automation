@@ -342,3 +342,61 @@ Delete:
 - every module under `prompts/app_context/` except your own - they
 
   describe the OLD app's behaviour and will mislead Agent 1 if left.
+
+---
+
+## App inventory JSON schema
+
+The inventory is the **only** application knowledge Agents 2 and 3 receive —
+`prompts/app_context/*.md` goes to Agent 1 alone. Anything the code generator
+must know belongs in `elements_notes` here.
+
+Build it with the tooling rather than by hand; the full sequence, with commands,
+is in [GUIDE.md](./GUIDE.md#inventory-tooling--the-full-sequence):
+
+```
+generate_inventory  ->  promote_draft  ->  verify_locators  ->  CURATE  ->  check_inventory_staleness
+```
+
+Steps one to three are mechanical. **Curation is the step that matters and
+cannot be automated** — a crawler records what a page contains, never what it
+means.
+
+### Fields, and what to do with each
+
+| Field | What it is | Action |
+|---|---|---|
+| `url` | page path | keep |
+| `url_sample` | a real address for a templated `url` (`/records/{id}`) | add if the page is a template |
+| `components` | Jira Components mapping to this page — crawler leaves EMPTY | **fill in**, or Agent 2 gets the whole inventory |
+| `page_object_file` / `page_object_class` | where the page object lives | keep |
+| `always` | `true` for shared chrome (navigation) | set on the nav page |
+| `elements` | key → selector | trim to what tests need |
+| `elements_notes` | per-key traps — crawler leaves EMPTY | **write this.** Highest-value field |
+| `key_methods` | methods the page object should expose — EMPTY | **write this** |
+| `multi_match` | keys matching several elements; enforced at generation time | verify |
+| `conditional` | elements that exist only after an interaction | verify |
+| `async_family` | a family the app fills asynchronously; an index pin is never valid | add where relevant |
+| `errors` | validation message text | fill if the page has any |
+| `implementation_status`, `title_seen` | draft markers | **delete** |
+| `_selector_strategies`, `_ambiguous_selectors`, `_unstable_selectors`, `_fragile_selectors` | crawl-time review notes | **delete the blocks**, keep the elements |
+| `_third_party_elements` | ad and widget embeds | **delete block and elements** |
+| `_selectors_to_improve` | real elements on weak selectors | keep as a TODO, or fix |
+| `_unresolved_selectors` | measured ZERO at crawl time | fix each — the element exists, the locator does not |
+
+Anything beginning with `_` is a review note and must not survive into a
+committed inventory.
+
+### Selector ranking
+
+test-id → `getByRole` → `getByLabel` → aria-label → placeholder → alt → title →
+css `#id`/`[name=]` → text → css path. Anchors prefer their `href`, which is
+exact and immune to markup inside the link. XPath is never emitted.
+
+Two traps that each produced locators matching nothing:
+
+- **An icon-only control has no accessible name**, so `role=button[name=…]`
+  cannot match it — use its id.
+- **An icon INSIDE a control poisons the name.** A CSS `::before` glyph joins
+  the accessible name but is invisible to `textContent`. Elements with an icon
+  descendant are located by attribute instead.
