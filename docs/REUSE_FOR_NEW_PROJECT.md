@@ -345,6 +345,84 @@ Delete:
 
 ---
 
+## Changing the test stack (e.g. Playwright + Python to Playwright + JS)
+
+This is a DIFFERENT and larger job than changing the app. Changing the app
+touches configuration; changing the language the generated tests are WRITTEN in
+touches the layer that reads and checks that code.
+
+### What does not change
+
+Most of the repository, which is the claim "agent code never changes between
+projects" tested against something harder than an app swap.
+
+| Layer | Why it survives |
+|---|---|
+| All five agents' orchestration | They read a tracker, call an LLM, write text files, open a PR. None of them knows what language the text is in. |
+| `core/llm_client.py`, `core/schemas.py` | Schema-in-prompt and Pydantic validation; provider- and language-agnostic. |
+| `integrations/` — Tracker (12 ops), RepoHost (15 ops) | Nothing to do with the test stack. |
+| **`app_inventory/*.json`** | `role=`, `text=` and `label=` are PLAYWRIGHT concepts, not Python ones. `page.getByRole('button', {name:'Save'})` in JS resolves the identical locator, so **the whole inventory carries over unchanged**. |
+| `inventory_tools/` — crawler, ranking, staleness | Produces selectors, not code. |
+| CI workflow structure, the label state machine, the sweeper | Unchanged. |
+
+### What does change, in order
+
+**1 · The reference trio — highest leverage.** `features/*.feature` stays as it
+is: Gherkin is language-neutral. Rewrite the step-definition module and the
+reference page object in JS, using Cucumber-JS's `Given/When/Then`. Everything
+Agent 2 generates copies this style, so it shapes every later file.
+
+**2 · `pages/base_page.py` → `base_page.js`.** 75 helpers. Keep every method
+NAME: the inventory's `key_methods` and the validators both reference them.
+Mechanical, but not small.
+
+**3 · The runner.** `pytest.ini` becomes `cucumber.js`; Agent 4's workflow runs
+`npx cucumber-js` instead of `pytest tests/step_defs/`. It must still emit
+**junit.xml**, or Agent 5 has nothing to parse.
+
+**4 · Five validators need a JavaScript parser — the real work.**
+`agents/agent2_coder.py`, `validators/method_resolution_validator.py`,
+`gherkin_analyzer.py`, `import_validator.py` and `orphan_cleanup.py` all use
+Python's `ast` module, which cannot read JS. Swap for `@babel/parser` or
+`ts-morph`. **The RULES survive; the tree-walking code is rewritten.** This also
+covers the AST extraction that injects BasePage's method signatures into the
+generation prompt.
+
+**5 · Three prompts.** `agent2_coder_generate.md`, `agent2_coder_plan.md` and
+`agent3_reviewer.md` carry Python syntax in every code example and convention.
+
+**6 · Framework unit tests.** Around nine files assert pytest-bdd behaviour —
+for instance that step definitions are MODULE-SCOPED. Cucumber-JS resolves steps
+GLOBALLY, so those assertions must be re-derived against the new runner's actual
+behaviour, not translated.
+
+### Sizing, honestly
+
+Steps 1–3 and 5 are a focused week. **Step 4 is the risk**: it is the
+enforcement layer that stops the model shipping unusable code, and until it
+works Agent 2 has no guardrails at all. Keep the Python stack running until
+step 4 passes rather than switching wholesale.
+
+### And if the target were Selenium instead
+
+Substantially larger again, for two specific reasons rather than because Java or
+C# is harder:
+
+- **No `role=` / `text=` / `label=` engines.** The entire selector-ranking
+  function has nothing to rank toward, so it needs re-deriving rather than
+  translating — and you fall back to CSS/XPath more often, which is the
+  brittleness this framework exists to avoid.
+- **No strict mode.** Playwright THROWS when a locator matches several elements;
+  that is the mechanism `multi_match` enforcement leans on. Selenium's
+  `findElement()` silently returns the first match, so a 68-match locator
+  becomes a silent wrong click instead of a loud failure. You would have to
+  build that safety net yourself.
+
+Also: no auto-waiting, so every BasePage helper needs explicit waits written by
+hand.
+
+---
+
 ## App inventory JSON schema
 
 The inventory is the **only** application knowledge Agents 2 and 3 receive —
