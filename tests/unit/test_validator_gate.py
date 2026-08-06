@@ -610,3 +610,52 @@ def test_cli_scripts_reference_only_defined_names(script):
         f"a browser, so no unit test executes them - a NameError here only "
         f"surfaces when someone runs the tool."
     )
+
+# ─────────────────────────────────────────────────────────────────────────
+# The draft carries its own review checklist
+#
+# A generated inventory is not committable: components, elements_notes and
+# key_methods are empty by construction, and several review blocks must be
+# acted on and removed. Keeping that checklist only in the guide meant the
+# person editing the file had to remember it was there.
+# ─────────────────────────────────────────────────────────────────────────
+
+def _conventions_source() -> str:
+    return (_repo_root() / "scripts" / "generate_inventory.py").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("step", [
+    "1_WRITE", "2_VERIFY_AND_CORRECT_never_delete",
+    "3_FIX_THEN_DELETE_THE_BLOCK", "4_DELETE_OUTRIGHT", "5_THEN_MEASURE",
+])
+def test_the_checklist_has_all_five_stages(step):
+    assert step in _conventions_source()
+
+
+@pytest.mark.parametrize("key", [
+    "components", "elements_notes", "key_methods", "errors",
+    "url + url_sample", "always",
+    "multi_match", "conditional",
+    "_selectors_to_improve", "_families_without_a_shared_handle",
+    "_third_party_elements", "_unresolved_selectors",
+    "implementation_status", "title_seen",
+])
+def test_every_field_a_draft_carries_is_in_the_checklist(key):
+    """A field the crawler emits but the checklist omits is a field someone
+    will leave half-reviewed."""
+    assert key in _conventions_source(), f"{key} is not covered by the checklist"
+
+
+def test_the_enforced_fields_are_marked_verify_not_delete():
+    """multi_match is what rejects generated code that clicks a family; deleting
+    it removes that protection silently. conditional reaches Agent 2 and stops
+    verify_locators reporting those keys as faults. Neither is a review
+    artefact, and the checklist must not read as though they are."""
+    src = _conventions_source()
+    verify_block = src[src.index("2_VERIFY_AND_CORRECT_never_delete"):
+                       src.index("3_FIX_THEN_DELETE_THE_BLOCK")]
+    assert "multi_match" in verify_block
+    assert "conditional" in verify_block
+    delete_block = src[src.index("4_DELETE_OUTRIGHT"):src.index("5_THEN_MEASURE")]
+    assert "multi_match" not in delete_block
+    assert '"conditional"' not in delete_block

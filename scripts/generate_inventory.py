@@ -218,11 +218,82 @@ def main() -> int:
         "base_url": ctx.base_url,
         "description": "AUTO-GENERATED DRAFT — hand-review before committing.",
         "_inventory_conventions": {
-            "generated": "Draft produced by scripts/generate_inventory.py (backlog 3.1). "
-                         "Tag each page's `components`, add elements_notes/key_methods/errors, "
-                         "delete `_selector_strategies`, `_unstable_selectors`, `_ambiguous_selectors` and `title_seen` "
-                         "after review, and verify every selector before this replaces the real "
-                         "inventory.",
+            "generated":
+                "Draft produced by scripts/generate_inventory.py. NOT ready to "
+                "commit. Work through the checklist below - the machine filled "
+                "what it can measure; everything here is what it cannot know.",
+            "review_checklist": {
+                "1_WRITE": {
+                    "components": "Jira Component name(s) this page serves, e.g. "
+                                  "['Products']. Left EMPTY by the crawler. Without "
+                                  "it Agent 2 receives the whole inventory for every "
+                                  "story instead of just this page.",
+                    "elements_notes": "Per-key traps: what breaks, what to do "
+                                      "instead. The highest-value field in the file, "
+                                      "and the one a crawler can never produce.",
+                    "key_methods": "The methods this page object should expose, as "
+                                   "business verbs - login_as(email, password), not "
+                                   "type_then_click(). OPTIONAL once the page object "
+                                   "exists: Agent 2 reads its real signatures from "
+                                   "the repo. Write it for a page not yet built.",
+                    "errors": "Exact validation message text, if the page has any.",
+                    "url + url_sample": "A page crawled at one RECORD's address "
+                        "arrives pinned to it, e.g. '/records/1'. Rewrite the url "
+                        "as a template - '/records/{record_id}' - and add "
+                        "url_sample: '/records/1' so the browser tools still have "
+                        "a concrete address to visit. Rename the page too: "
+                        "'records_1' should become 'record_detail'.",
+                    "always": "Set true on shared chrome (the navigation bar) and "
+                        "move its elements there. A crawler cannot tell chrome from "
+                        "page content, so every page arrives carrying its own copy "
+                        "of the nav - five copies to keep in step, and five page "
+                        "objects each with their own click_cart().",
+                },
+                "2_VERIFY_AND_CORRECT_never_delete": {
+                    "elements": "Trim to what tests actually need. A content-heavy "
+                                "page can yield 150+ keys where a story uses ten, "
+                                "and every one costs prompt tokens on every "
+                                "generated file.",
+                    "multi_match": "Keys matching SEVERAL elements. ENFORCED at "
+                                   "generation time - it is what rejects code that "
+                                   "clicks a 68-match family. Measured at crawl "
+                                   "time; confirm it, never remove it.",
+                    "conditional": "Elements that exist only after an interaction. "
+                                   "AUTO-DETECTED for anything hidden at crawl time, "
+                                   "but a modal absent from the DOM entirely cannot "
+                                   "be detected - add those by hand.",
+                    "multi_match_note / conditional_note": "Permanent guidance sent "
+                                   "to the LLM, not review artefacts. Keep them.",
+                },
+                "3_FIX_THEN_DELETE_THE_BLOCK": {
+                    "_selectors_to_improve": "Real elements located by a STRUCTURAL "
+                        "PATH. They resolve today and break when anything above them "
+                        "re-renders. Replace each with an id, name, href or a "
+                        "data-test added to the app, remove the key from the list, "
+                        "then delete the block when it is empty.",
+                    "_families_without_a_shared_handle": "A repeated widget whose "
+                        "instances had NO selector in common, so only one was kept. "
+                        "Find the shared class in DevTools (usually there is one), "
+                        "set it as the family selector and add the key to "
+                        "multi_match - or avoid the family entirely by acting on one "
+                        "record's own page, where the control is unique.",
+                    "_third_party_elements": "Ad and widget embeds. Delete the "
+                        "elements AND the block; their text rotates per impression.",
+                    "_unresolved_selectors": "Measured ZERO against the live page. "
+                        "The element exists - the locator does not work. Fix each.",
+                },
+                "4_DELETE_OUTRIGHT": [
+                    "implementation_status",
+                    "title_seen",
+                    "any remaining key beginning with '_' (review notes, never inventory)",
+                    "the ' (AUTO-DRAFT — verify)' suffix on page_object_file",
+                    "this _inventory_conventions block itself",
+                ],
+                "5_THEN_MEASURE": "python -m scripts.verify_locators --inventory "
+                                  "<file> --only-problems   (add --no-login for "
+                                  "sign-in and sign-up pages: with a session they "
+                                  "redirect and nothing can be measured)",
+            },
             "selectors": "Every selector maps to a first-class Playwright locator, in priority order: [data-test='x'] / #id / [name='x'] (css), role=combobox[name='Country'] (getByRole), label=Email (getByLabel), placeholder=... , alt=Search (getByAltText), title=Close (getByTitle), text=Submit (getByText). XPath is never emitted. An iframe-chained selector uses ' >>> ', e.g. iframe#pay >>> [data-test='card']. label=/alt=/title= need page.get_by_label/get_by_alt_text/get_by_title (they are NOT page.locator() engine syntax); role= and text= work with page.locator() directly.",
             "_unstable_selectors": "If present on a page, these elements had no durable handle "
                          "(only a fragile css fallback). Add a data-test in the app or replace "
