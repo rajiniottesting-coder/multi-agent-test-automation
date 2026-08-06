@@ -641,8 +641,9 @@ def test_volatile_name_used_only_when_nothing_stable_exists():
 def test_duplicate_semantic_selectors_get_nth_suffix():
     """Three links reading 'Canada' each rank to the SAME valid locator.
     Playwright is strict, so all three would fail without disambiguation."""
+    # TWO members: still disambiguated by index. Three or more is a repeated
+    # WIDGET and collapses into a family instead - see the test below.
     descriptors = [
-        {"tag": "a", "attrs": {"href": "/canada"}, "text": "Canada"},
         {"tag": "a", "attrs": {"href": "/canada"}, "text": "Canada"},
         {"tag": "a", "attrs": {"href": "/canada"}, "text": "Canada"},
     ]
@@ -651,8 +652,45 @@ def test_duplicate_semantic_selectors_get_nth_suffix():
     assert sels == [
         "a[href='/canada'] >> nth=0",
         "a[href='/canada'] >> nth=1",
-        "a[href='/canada'] >> nth=2",
     ]
+
+
+def test_three_or_more_repeats_collapse_into_one_family():
+    """CHANGED 5 Aug 2026. A repeated widget produced one key per instance:
+    68 named add_cart_link, add_cart_link_2, add_cart_link_3 ... A test cannot
+    know which index is a given product, every key costs prompt tokens on every
+    generated file, and nothing declared the family a validator should protect.
+
+    They share a base selector here, so the family key IS that base and the
+    collapse loses nothing."""
+    descriptors = [
+        {"tag": "a", "attrs": {"href": "/canada"}, "text": "Canada"},
+        {"tag": "a", "attrs": {"href": "/canada"}, "text": "Canada"},
+        {"tag": "a", "attrs": {"href": "/canada"}, "text": "Canada"},
+    ]
+    page = build_page_entry("https://x.com/", "X", descriptors, "https://x.com")
+    assert list(page["elements"]) == ["canada_links"]
+    assert page["elements"]["canada_links"] == "a[href='/canada']"
+    assert page["multi_match"] == ["canada_links"]
+    assert page.get("multi_match_note"), "a declared family needs its note"
+
+
+def test_a_family_with_no_shared_selector_is_reported():
+    """When every instance fell back to its own structural path there is no
+    locator that matches the family, so inventing one would be a lie. One is
+    kept as a representative and the gap is surfaced for a human to close."""
+    # Hidden, so each falls to its OWN css path - there is no shared handle.
+    # Identical visible text would collapse to `text=Buy` and share a base,
+    # which is the case the branch above already covers.
+    descriptors = [
+        {"tag": "a", "attrs": {}, "text": "Buy", "visible": False,
+         "cssPath": f"body > div:nth-of-type({i}) > a"}
+        for i in range(4)
+    ]
+    page = build_page_entry("https://x.com/", "X", descriptors, "https://x.com")
+    gap = page.get("_families_without_a_shared_handle", {})
+    assert gap.get("elements"), "a family with no shared handle must be reported"
+    assert "data-test" in gap["warning"], "the warning must say how to fix it"
 
 
 def test_unique_selector_gets_no_suffix():

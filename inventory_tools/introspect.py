@@ -14,6 +14,7 @@ fully unit-testable without a browser. The two entry points are:
 from __future__ import annotations
 
 import re
+import re as _re
 from urllib.parse import urlparse
 
 
@@ -543,6 +544,77 @@ def _lcp_segments(values: list[str]) -> list[str]:
     return common
 
 
+# A repeated widget produces one element per instance. Left alone that is 68
+# keys named row_link, row_link_2, row_link_3 ... which is worse
+# than useless: a test cannot know which index is a given record, every one
+# spends prompt tokens on every generated file, and the family that a validator
+# should be protecting is invisible because nothing declares it.
+#
+# `collapse_repeated_families` above only fires on TEST-ID attributes. An app
+# with no data-test attributes gets no collapsing at all, which is how 68 keys
+# reached a draft.
+_MIN_COLLAPSE = 3
+_INDEX_SUFFIX = _re.compile(r"(_alt|_\d+)$")
+_NTH_SUFFIX = _re.compile(r"\s*>>\s*nth=\d+\s*$")
+
+
+def collapse_indexed_families(elements: dict[str, dict],
+                              min_family: int = _MIN_COLLAPSE
+                              ) -> tuple[dict[str, dict], list[str], list[str]]:
+    """Collapse `name`, `name_alt`, `name_2` ... back into one family key.
+
+    Returns (elements, family_names, needs_shared_handle).
+
+    Two shapes, deliberately treated differently:
+
+    SHARED BASE - every member is the same selector with a different `>> nth=`.
+        The base matches them all, so the family key IS that base and the
+        collapse loses nothing.
+
+    DISTINCT SELECTORS - each member got its own structural css path, because
+        the ranker found no durable handle for any of them. There is no
+        selector that matches the family, so collapsing would invent one.
+        Instead the FIRST member is kept as a representative and the rest are
+        dropped, with the name reported so a human can add a real handle (a
+        class, or a data-test in the app). Keeping 67 unusable paths to avoid
+        admitting one gap is the worse trade.
+    """
+    by_stem: dict[str, list[str]] = {}
+    for name in elements:
+        by_stem.setdefault(_INDEX_SUFFIX.sub("", name), []).append(name)
+
+    out: dict[str, dict] = {}
+    families: list[str] = []
+    needs_handle: list[str] = []
+
+    for name, entry in elements.items():
+        stem = _INDEX_SUFFIX.sub("", name)
+        members = by_stem[stem]
+        if len(members) < min_family:
+            out[name] = entry
+            continue
+        if name != members[0]:
+            continue                      # folded into the representative
+
+        bases = {_NTH_SUFFIX.sub("", elements[m].get("selector", "")) for m in members}
+        family_name = _plural(stem)
+        if len(bases) == 1:
+            base = bases.pop()
+            out[family_name] = {**entry, "selector": base}
+            families.append(family_name)
+        else:
+            out[family_name] = dict(entry)
+            families.append(family_name)
+            needs_handle.append(family_name)
+
+    return out, families, needs_handle
+
+
+def _plural(stem: str) -> str:
+    """`row_link` -> `row_links`; leave an existing plural alone."""
+    return stem if stem.endswith("s") else stem + "s"
+
+
 def collapse_repeated_families(elements: dict[str, dict], min_family: int = 2,
                                test_attrs: tuple = TEST_ID_ATTRS
                                ) -> dict[str, dict]:
@@ -734,6 +806,13 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
                            "framed": bool(frame_sel), "reveals": reason}
 
     elements = collapse_repeated_families(elements, test_attrs=test_attrs)
+
+    # Then collapse REPEATED WIDGETS - one element per product card, per table
+    # row, per carousel slide. The test-id collapse above cannot see these:
+    # an app with no data-test attributes produced 68 keys named
+    # row_link, row_link_2 ... which no test can use and which cost
+    # prompt tokens on every generated file.
+    elements, _measured_families, _needs_handle = collapse_indexed_families(elements)
     # NOTE: built AFTER disambiguation below so the nth= suffixes are included.
 
     strategies = {n: e.get("strategy", "css") for n, e in elements.items()}
@@ -841,6 +920,27 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
     # draft declares them rather than leaving a human to rediscover it from a
     # wall of STALE lines. Pre-declaring them also means verify_locators reads
     # them as COND (expected) instead of reporting them as faults.
+    if _measured_families:
+        declared = set(entry.get("multi_match") or [])
+        entry["multi_match"] = sorted(declared | set(_measured_families))
+        entry.setdefault("multi_match_note",
+                         "Keys whose selector matches SEVERAL elements - one per "
+                         "product card, table row or carousel slide. Read them with "
+                         "the plural helpers only; never click, fill or assert on "
+                         "one directly. Collapsed from per-instance keys at crawl "
+                         "time.")
+    if _needs_handle:
+        entry["_families_without_a_shared_handle"] = {
+            "elements": sorted(_needs_handle),
+            "warning": ("Each of these is a repeated widget whose instances had NO "
+                        "selector in common - every one fell back to its own "
+                        "structural path, so there is no locator that matches the "
+                        "family. One instance is kept as a representative and the "
+                        "rest were dropped. Give the widget a stable class or a "
+                        "data-test attribute in the app, then re-crawl. Until then "
+                        "a test can reach these only one instance at a time."),
+        }
+
     if hidden_names:
         entry["conditional"] = sorted(hidden_names)
         entry["conditional_note"] = (
