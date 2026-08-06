@@ -193,3 +193,77 @@ def test_load_missing_file_still_raises(tmp_path, monkeypatch):
     monkeypatch.setattr(AppContext, "inventory_path", lambda self: tmp_path / "nope.json")
     with pytest.raises(FileNotFoundError):
         ctx.load_page_inventory_json(["Login"])
+
+# ─────────────────────────────────────────────────────────────────────────
+# Review artefacts never reach the LLM
+#
+# Convention: anything whose key starts with `_` is a note for a HUMAN to act
+# on and delete before committing. Previously only `components` and `always`
+# were stripped, so a half-curated draft sent _unstable_selectors,
+# _fragile_selectors and _third_party_elements straight into the prompt —
+# tokens spent on lists the model must ignore, and an invitation to treat a
+# flagged element as ordinary.
+# ─────────────────────────────────────────────────────────────────────────
+
+def test_underscore_blocks_are_stripped_before_the_llm():
+    inv = {"pages": {"p": {
+        "components": ["X"], "always": False,
+        "elements": {"a": "#a"},
+        "elements_notes": {"a": "a note"},
+        "key_methods": ["go()"],
+        "multi_match": ["a"],
+        "conditional": ["a"],
+        "_unstable_selectors": {"elements": ["a"]},
+        "_fragile_selectors": {"elements": []},
+        "_third_party_elements": {"elements": ["ad"]},
+        "_selectors_to_improve": {"elements": ["a"]},
+        "_unresolved_selectors": {"elements": []},
+    }}}
+    out = filter_inventory_by_components(inv, ["X"])
+    kept = set(out["pages"]["p"])
+    assert kept == {"elements", "elements_notes", "key_methods",
+                    "multi_match", "conditional"}
+    assert not any(k.startswith("_") for k in kept)
+
+
+def test_the_fields_agent_2_needs_still_arrive():
+    """multi_match is ENFORCED by a validator and conditional is documentation
+    the model acts on — stripping either would be a regression, not a cleanup."""
+    inv = {"pages": {"p": {"components": ["X"], "elements": {"a": "#a"},
+                           "multi_match": ["a"], "conditional": ["a"],
+                           "elements_notes": {}, "key_methods": []}}}
+    page = filter_inventory_by_components(inv, ["X"])["pages"]["p"]
+    for field in ("elements", "multi_match", "conditional",
+                  "elements_notes", "key_methods"):
+        assert field in page
+
+
+def test_routing_metadata_is_still_stripped():
+    """components and always decide WHICH pages are sent; repeating them
+    inside the payload is noise."""
+    inv = {"pages": {"p": {"components": ["X"], "always": True, "elements": {}}}}
+    assert set(filter_inventory_by_components(inv, ["X"])["pages"]["p"]) == {"elements"}
+
+
+def test_top_level_underscore_keys_are_stripped_too():
+    """A curated file carries `_VERIFICATION_STATUS` and `_inventory_conventions`
+    at the top level. Both are notes to a human, and page-level stripping alone
+    left them spending tokens in every generation prompt."""
+    inv = {"app_name": "X", "base_url": "u",
+           "_VERIFICATION_STATUS": "checked 2 Aug",
+           "_inventory_conventions": {"selectors": "..."},
+           "pages": {"p": {"components": ["X"], "elements": {"a": "#a"}}}}
+    out = filter_inventory_by_components(inv, ["X"])
+    assert not any(k.startswith("_") for k in out)
+    assert out["app_name"] == "X" and "pages" in out
+
+
+def test_underscore_keys_inside_elements_are_not_treated_as_selectors():
+    """The tools excluded one key by NAME (`_selector_strategies`). The crawler
+    has since grown several more, and each new one would have been measured as
+    if it were a locator."""
+    page = {"elements": {"real": "#real", "_selector_strategies": {"real": "id"},
+                         "_anything_new": {"x": 1}}}
+    selectors = {n: s for n, s in page["elements"].items()
+                 if isinstance(s, str) and not n.startswith("_")}
+    assert selectors == {"real": "#real"}

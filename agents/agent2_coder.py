@@ -40,6 +40,7 @@ cases. --help also carries copy-pasteable examples.
 """
 import argparse
 import ast
+from types import SimpleNamespace
 import hashlib
 import logging
 import re
@@ -596,6 +597,45 @@ def _build_base_page_helpers_block(project_root=None) -> str:
     )
 
 
+def _existing_page_objects_on_main(gh, plan_paths: set[str]) -> list:
+    """Page objects already committed, as pseudo-GeneratedFile records.
+
+    Why this exists:
+        `_build_sibling_page_object_context` only ever saw files generated in
+        the SAME run, so a story that reuses a page object from an earlier
+        story got no ground truth about its methods and the model invented
+        names. That is the gap `key_methods` was filling by hand - a
+        specification written before the code existed, which then had to be
+        kept in step with it.
+
+        The page object on disk IS the contract. Reading it removes the
+        duplicate source of truth: fix the code and the constraint follows.
+
+    Fails soft in every direction. A missing file, an unreadable repo, an
+    unparseable module - each yields nothing rather than raising, because a
+    thinner prompt is a far better outcome than a failed story.
+    """
+    out = []
+    try:
+        paths = gh.list_files_in_directory("pages", branch="main")
+    except Exception:                                     # noqa: BLE001
+        logger.debug("Could not list pages/ on main; no existing-page context.")
+        return out
+
+    for path in paths or []:
+        if not path.endswith("_page.py") or path.endswith("base_page.py"):
+            continue
+        if path in plan_paths:
+            continue        # being written this run - the batch copy wins
+        try:
+            content = gh.get_file_content(path, branch="main")
+        except Exception:                                 # noqa: BLE001
+            continue
+        if content:
+            out.append(SimpleNamespace(file_path=path, content=content))
+    return out
+
+
 def _build_sibling_page_object_context(
     already_generated: list[GeneratedFile],
 ) -> str:
@@ -1137,6 +1177,7 @@ def generate_file_content(
     validator_feedback: list[str] | None = None,
     previous_attempt: str | None = None,
     already_generated: list[GeneratedFile] | None = None,
+    existing_page_objects: list | None = None,
 ) -> str:
     """Stage 2: For ONE file in the plan, get its full content as raw text.
 
@@ -1245,8 +1286,16 @@ def generate_file_content(
 
     sibling_block = ""
     authoritative_steps_block = ""
+    # Page objects ALREADY ON MAIN count as siblings too. Previously only files
+    # generated in this same run were shown, so a story reusing a page object
+    # from an earlier story saw nothing and the model invented method names -
+    # the gap `key_methods` was filling by hand. `existing_page_objects` is
+    # passed in by the caller; when it is absent (any unit test, any caller
+    # that has no repo handle) behaviour is exactly as before.
+    _siblings = list(already_generated or []) + list(existing_page_objects or [])
+    if file_plan.file_type in ("step_definitions", "page_object") and _siblings:
+        sibling_block = _build_sibling_page_object_context(_siblings)
     if file_plan.file_type == "step_definitions" and already_generated:
-        sibling_block = _build_sibling_page_object_context(already_generated)
         authoritative_steps_block = _build_authoritative_steps_block(
             file_plan, already_generated)
         if authoritative_steps_block:
@@ -2140,6 +2189,7 @@ def _regenerate_step_defs_whole(
     ctx: AppContext,
     references: dict,
     page_inventory: str,
+    existing_page_objects: list | None = None,
 ) -> str:
     """Regenerate the step-defs file whole based on the spliced feature."""
     from core.schemas import FilePlan
@@ -2175,9 +2225,13 @@ def _regenerate_step_defs_whole(
         files_to_create=[file_plan],
         notes="Step-def regeneration triggered by ai-update.",
     )
+    # ai-update regenerates a step def against page objects that ALREADY
+    # EXIST. This is the case where invented method names hurt most, because
+    # nothing else in the batch defines them - so pass the real signatures.
     return generate_file_content(
         llm, file_plan, minimal_plan,
         synthetic_tcs, references, page_inventory, ctx,
+        existing_page_objects=existing_page_objects,
     )
 
 
@@ -2345,10 +2399,18 @@ def _splice_step_defs_incremental(
       - "regenerated" : fell back to whole-file regeneration (Tier C)
     """
     def _whole() -> tuple[str, str]:
+        # ai-update regenerates against page objects that already exist on
+        # main, so their real method signatures are the ground truth here.
+        # Fails soft: no repo, no context, same behaviour as before.
+        try:
+            _existing = _existing_page_objects_on_main(gh, {step_defs_path})
+        except Exception:                                      # noqa: BLE001
+            _existing = []
         return (
             _regenerate_step_defs_whole(
                 llm, feature_file_path, spliced_feature_content,
                 step_defs_path, ctx, references, page_inventory,
+                existing_page_objects=_existing,
             ),
             "regenerated",
         )
@@ -2889,12 +2951,28 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     # generated in this batch (Hotfix v5 — prevents cross-file naming
     # mismatches like `click_logout()` vs `click_logout_link()`).
     ordered_files = _sort_files_for_generation(plan.files_to_create)
+
+    # Page objects already committed on main. Fetched ONCE, before the loop:
+    # they do not change while this batch is generated, and a per-file fetch
+    # would multiply API calls for no benefit. Fails soft to an empty list, in
+    # which case behaviour is exactly as it was before.
+    _plan_paths = {f.file_path for f in ordered_files}
+    existing_pos: list = []
+    try:
+        existing_pos = _existing_page_objects_on_main(gh, _plan_paths)
+        if existing_pos:
+            logger.info("Stage 2: injecting method signatures from %d page "
+                        "object(s) already on main.", len(existing_pos))
+    except Exception as exc:                                   # noqa: BLE001
+        logger.debug("No existing-page-object context: %s", exc)
+
     generated_files: list[GeneratedFile] = []
     for file_plan in ordered_files:
         try:
             content = generate_file_content(
                 llm, file_plan, plan, new_test_cases, references, page_inventory, ctx,
                 already_generated=generated_files,
+                existing_page_objects=existing_pos,
             )
             generated_files.append(GeneratedFile(
                 file_path=file_plan.file_path,

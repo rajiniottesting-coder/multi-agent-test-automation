@@ -93,6 +93,11 @@ def filter_inventory_by_components(
 
     out = {k: v for k, v in data.items() if k != "_inventory_conventions"}
 
+    # Same convention at the TOP level. A curated file can carry
+    # `_VERIFICATION_STATUS` or `_inventory_conventions`; both are notes to a
+    # human and neither should spend tokens in every generation prompt.
+    out = {k: v for k, v in out.items() if not k.startswith("_")}
+
     pages = out.get("pages")
     if not isinstance(pages, dict) or not pages:
         return out
@@ -100,7 +105,19 @@ def filter_inventory_by_components(
     requested = {_norm_component(c) for c in (components or []) if c}
 
     def _strip(page: dict) -> dict:
-        return {k: v for k, v in page.items() if k not in _INVENTORY_META_KEYS}
+        # `components` and `always` are routing metadata - they decide WHICH
+        # pages are sent, and repeating them inside the payload is noise.
+        #
+        # Anything starting with `_` is a REVIEW ARTEFACT from the crawler
+        # (_unstable_selectors, _fragile_selectors, _third_party_elements,
+        # _selectors_to_improve, _unresolved_selectors...). Those exist to tell
+        # a human what to fix before committing. A draft that reaches the LLM
+        # with them still attached spends tokens on lists of selectors the
+        # model must ignore, and invites it to treat a flagged element as
+        # ordinary. Stripping them here means a half-curated inventory degrades
+        # to "fewer notes" rather than "actively misleading".
+        return {k: v for k, v in page.items()
+                if k not in _INVENTORY_META_KEYS and not k.startswith("_")}
 
     if not requested:
         out["pages"] = {name: _strip(p) for name, p in pages.items()}

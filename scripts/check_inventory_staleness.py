@@ -63,15 +63,17 @@ from inventory_tools.browser import (
 )
 
 
-# meta keys inside a page's `elements` that are not element selectors
-_NON_ELEMENT_KEYS = {"_selector_strategies"}
+# Anything inside `elements` whose key starts with `_` is a note, not a
+# selector. Naming one such key was fragile: the crawler has since grown
+# several more, and each new one would have been measured as if it were a
+# locator.
 
 
 def _page_selectors(page: dict) -> dict[str, str]:
     """Return {element_name: selector} for a page, skipping non-selector values."""
     els = page.get("elements") or {}
     return {n: s for n, s in els.items()
-            if isinstance(s, str) and n not in _NON_ELEMENT_KEYS}
+            if isinstance(s, str) and not n.startswith("_")}
 
 
 def _abs(base_url: str, path_or_url: str) -> str:

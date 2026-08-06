@@ -268,7 +268,7 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
         return 0, 0
 
     _pre = {n: s for n, s in (entry.get("elements") or {}).items()
-            if isinstance(s, str) and n != "_selector_strategies"}
+            if isinstance(s, str) and not n.startswith("_")}
     if _pre and not _wait_for_render(page, _pre):
         print(f"  [{page_name}] {url}\n"
               f"    PAGE DID NOT RENDER - not one of its {len(_pre)} selectors "
@@ -280,7 +280,7 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
         return 0, 0
 
     selectors = {n: s for n, s in (entry.get("elements") or {}).items()
-                 if isinstance(s, str) and n != "_selector_strategies"}
+                 if isinstance(s, str) and not n.startswith("_")}
     print(f"\n  [{page_name}] {url}  -  {len(selectors)} element(s)")
     ok = bad = 0
     declared_family = set(entry.get("multi_match") or [])
