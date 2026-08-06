@@ -203,3 +203,56 @@ def test_a_feature_file_gets_no_method_signatures():
     """Gherkin describes behaviour and calls nothing. Injecting Python method
     names there would be tokens spent on noise."""
     assert "has_product" not in _run_generation("feature")
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# The read prefers the story's OWN branch
+#
+# A re-run — a fix pushed onto an open PR, or ai-update on a story already
+# coded — must see the methods that run wrote, not the older ones on main, or
+# it renames its own work.
+# ─────────────────────────────────────────────────────────────────────────
+
+class _BranchRepo:
+    """Different content per branch, as a real repo has."""
+
+    def __init__(self, per_branch, missing_branches=()):
+        self.per_branch = per_branch
+        self.missing = set(missing_branches)
+
+    def list_files_in_directory(self, directory, branch="main"):
+        if branch in self.missing:
+            raise RuntimeError(f"no such branch: {branch}")
+        return list(self.per_branch.get(branch, {}))
+
+    def get_file_content(self, path, branch="main"):
+        return self.per_branch[branch][path]
+
+
+_ON_MAIN = "class ProductsPage:\n    def old_name(self): pass\n"
+_ON_BRANCH = "class ProductsPage:\n    def new_name(self): pass\n"
+
+
+def test_the_story_branch_wins_over_main():
+    repo = _BranchRepo({"main": {"pages/products_page.py": _ON_MAIN},
+                        "auto/S-1-x": {"pages/products_page.py": _ON_BRANCH}})
+    got = _existing_page_objects_on_main(repo, set(), branch="auto/S-1-x")
+    assert "new_name" in got[0].content, "a re-run must see its own earlier work"
+
+
+def test_main_is_used_when_the_branch_does_not_exist_yet():
+    """The first generation for a story runs before its branch is pushed."""
+    repo = _BranchRepo({"main": {"pages/products_page.py": _ON_MAIN}},
+                       missing_branches={"auto/S-2-y"})
+    got = _existing_page_objects_on_main(repo, set(), branch="auto/S-2-y")
+    assert "old_name" in got[0].content
+
+
+def test_no_branch_argument_behaves_exactly_as_before():
+    repo = _BranchRepo({"main": {"pages/products_page.py": _ON_MAIN}})
+    assert "old_name" in _existing_page_objects_on_main(repo, set())[0].content
+
+
+def test_both_branches_unreachable_yields_nothing():
+    repo = _BranchRepo({}, missing_branches={"main", "auto/S-3-z"})
+    assert _existing_page_objects_on_main(repo, set(), branch="auto/S-3-z") == []

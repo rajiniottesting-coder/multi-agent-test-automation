@@ -71,6 +71,7 @@ SCOPE LIMITS (intentional):
 from __future__ import annotations
 
 import ast
+import ast as _ast
 import logging
 import re
 from pathlib import Path
@@ -952,4 +953,96 @@ def validate_page_object_selectors(
                     f"`notes` so it can be added to the inventory."
                 )
 
+    return errors
+
+# ─────────────────────────────────────────────────────────────────────────
+# Redundant page-object methods
+#
+# Two stories touching the same page object both branch from `main`, so
+# neither can see the other's work. Story A adds `filter_by_brand()`, story B
+# adds `filter_products_by_brand()`, and if the additions land far enough apart
+# git merges both cleanly. Nothing fails: the page object simply grows two
+# methods that do the same thing, and the duplication rots quietly.
+#
+# `validate_method_resolution` cannot catch this — it checks that a called
+# method EXISTS, not that two methods are the same idea twice.
+# ─────────────────────────────────────────────────────────────────────────
+
+# Filler words only. `get` and `set` are deliberately NOT here: they are the
+# difference between an accessor and a mutator, and treating them as noise made
+# set_quantity and get_quantity look like one method twice.
+_STOPWORDS = frozenset({
+    "the", "a", "an", "to", "for", "by", "of", "on", "in", "with", "and",
+    "then", "page",
+})
+
+
+def _semantic_tokens(method_name: str) -> frozenset:
+    """Meaning-bearing words in a method name, order- and filler-independent.
+
+    `filter_by_brand` and `filter_products_by_brand` differ by one noun that
+    the class already implies, so both reduce to {filter, brand} once the
+    stopwords and the page's own noun are removed.
+    """
+    parts = [p for p in method_name.strip("_").split("_") if p]
+    return frozenset(p for p in parts if p not in _STOPWORDS)
+
+
+def find_redundant_methods(source: str, page_noun: str = "") -> list[tuple[str, str]]:
+    """Pairs of public methods in one class whose names mean the same thing.
+
+    `page_noun` is the page's own subject ("products", "cart"), dropped from
+    every name because a method on ProductsPage saying "products" adds nothing.
+
+    Returns [] when the source will not parse: a half-written file is the
+    repair loop's problem, not this check's.
+    """
+    try:
+        tree = _ast.parse(source)
+    except SyntaxError:
+        return []
+
+    noun = {page_noun.lower().rstrip("s"), page_noun.lower()} if page_noun else set()
+    pairs: list[tuple[str, str]] = []
+
+    for node in _ast.walk(tree):
+        if not isinstance(node, _ast.ClassDef):
+            continue
+        methods = [n.name for n in node.body
+                   if isinstance(n, (_ast.FunctionDef, _ast.AsyncFunctionDef))
+                   and not n.name.startswith("_")]
+        seen: dict[frozenset, str] = {}
+        for name in methods:
+            key = _semantic_tokens(name) - noun
+            if not key:
+                continue
+            if key in seen:
+                pairs.append((seen[key], name))
+            else:
+                seen[key] = name
+    return pairs
+
+
+def validate_no_duplicate_page_object_methods(
+    generated_files: list, page_inventory: str = "") -> list[str]:
+    """Fail when one page object gains two methods meaning the same thing.
+
+    Runs at the generation gate, which is where a human is already looking at
+    the diff — far cheaper than discovering it months later in a page object
+    nobody can safely refactor.
+    """
+    errors: list[str] = []
+    for f in generated_files or []:
+        path = getattr(f, "file_path", "") or ""
+        if not path.endswith("_page.py") or path.endswith("base_page.py"):
+            continue
+        noun = path.rsplit("/", 1)[-1].replace("_page.py", "")
+        for first, second in find_redundant_methods(getattr(f, "content", ""), noun):
+            errors.append(
+                f"{path}: '{first}' and '{second}' mean the same thing. Two "
+                f"stories editing this page object cannot see each other's "
+                f"branches, so both may add their own name for one behaviour. "
+                f"Keep whichever name the existing step definitions already "
+                f"call and delete the other."
+            )
     return errors

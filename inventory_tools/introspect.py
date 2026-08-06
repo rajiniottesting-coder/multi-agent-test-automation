@@ -673,7 +673,7 @@ def collapse_repeated_families(elements: dict[str, dict], min_family: int = 2,
 # ─────────────────────────────────────────────────────────────
 
 def url_to_path(url: str, base_url: str = "") -> str:
-    """Normalize an absolute URL to an app-relative path ('/products')."""
+    """Normalize an absolute URL to an app-relative path ('/some/path')."""
     p = urlparse(url)
     path = p.path or "/"
     if p.query:

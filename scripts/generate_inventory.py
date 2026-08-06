@@ -26,7 +26,7 @@ Examples:
    --output app_inventory/login.draft.json
  
  python -m scripts.generate_inventory --login-url /login `
-   --urls "/,/products,/view_cart,/product_details/1" `
+   --urls "/,/<listing>,/<cart>,/<record>/1" `
    --output app_inventory/full_auth.draft.json
 
     # Specific paths, no login, app that tags elements with data-cy:

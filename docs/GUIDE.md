@@ -529,6 +529,32 @@ Two things worth knowing:
 - **Agent 5 is skipped on push and on dispatch by design.** Its job is to
   report a story's result, and neither of those events belongs to a story.
 
+### Two stories on one page object
+
+Agent 2 reads the page objects that already exist before it writes, so a story
+reusing an earlier story's page object sees its real method names rather than
+inventing new ones. It reads the story's OWN branch first, falling back to
+`main` — a re-run, or an `ai-update` on a story already coded, therefore sees
+the methods that run wrote instead of renaming its own work.
+
+What it cannot see is ANOTHER story's open branch. Two stories touching one
+page object both branch from `main`, so if one adds `filter_by_brand()` and the
+other adds `filter_products_by_brand()`, and the additions land far enough
+apart, git merges both cleanly. Nothing fails; the page object simply grows two
+methods for one behaviour.
+
+Three things address this, in order:
+
+| | |
+|---|---|
+| **Sequence them** | Dispatch the second story only after the first MERGES. Costs nothing and removes the window entirely. |
+| **Branch-aware read** | Handles the common case — the same story generated more than once. |
+| **`validate_no_duplicate_page_object_methods`** | Fails the gate when one page object gains two methods meaning the same thing, comparing names by their meaning-bearing words so word order and filler do not hide it. |
+
+The validator is deliberately narrow: `get_quantity` and `set_quantity` are an
+accessor and a mutator, not a duplicate, so `get` and `set` are not treated as
+filler. A false positive here would cost a repair attempt on correct code.
+
 ### Fix the branch, or fix the inventory?
 
 A one-off correction belongs on the story's branch (Route 2). A *systemic* one

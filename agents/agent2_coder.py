@@ -58,6 +58,7 @@ from validators.import_validator import validate_imports_resolvable
 from validators.method_resolution_validator import (
     validate_method_resolution,
     validate_page_object_selectors,
+    validate_no_duplicate_page_object_methods,
 )
 from core.llm_client import LLMClient, OutputTruncatedError
 from core.schemas import CodePlan, GeneratedFile, CodeGenerationOutput
@@ -597,7 +598,8 @@ def _build_base_page_helpers_block(project_root=None) -> str:
     )
 
 
-def _existing_page_objects_on_main(gh, plan_paths: set[str]) -> list:
+def _existing_page_objects_on_main(gh, plan_paths: set[str],
+                                   branch: str | None = None) -> list:
     """Page objects already committed, as pseudo-GeneratedFile records.
 
     Why this exists:
@@ -615,11 +617,25 @@ def _existing_page_objects_on_main(gh, plan_paths: set[str]) -> list:
     unparseable module - each yields nothing rather than raising, because a
     thinner prompt is a far better outcome than a failed story.
     """
+    # Read the STORY'S OWN BRANCH first where one exists, falling back to main.
+    # A re-run - a fix pushed onto an open PR, or `ai-update` on a story already
+    # coded - must see the methods that run wrote, not the older ones on main,
+    # or it renames its own work. Cross-branch redundancy is a different problem
+    # and is caught by validate_no_duplicate_page_object_methods at the gate.
     out = []
-    try:
-        paths = gh.list_files_in_directory("pages", branch="main")
-    except Exception:                                     # noqa: BLE001
-        logger.debug("Could not list pages/ on main; no existing-page context.")
+    branches = [b for b in (branch, "main") if b]
+    paths, source = [], None
+    for candidate in branches:
+        try:
+            found = gh.list_files_in_directory("pages", branch=candidate)
+        except Exception:                                 # noqa: BLE001
+            continue
+        if found:
+            paths, source = found, candidate
+            break
+    if not paths:
+        logger.debug("Could not list pages/ on %s; no existing-page context.",
+                     " or ".join(branches))
         return out
 
     for path in paths or []:
@@ -628,9 +644,14 @@ def _existing_page_objects_on_main(gh, plan_paths: set[str]) -> list:
         if path in plan_paths:
             continue        # being written this run - the batch copy wins
         try:
-            content = gh.get_file_content(path, branch="main")
+            content = gh.get_file_content(path, branch=source)
         except Exception:                                 # noqa: BLE001
-            continue
+            # Present in the listing but unreadable on this branch - fall back
+            # to main rather than losing the file's context entirely.
+            try:
+                content = gh.get_file_content(path, branch="main")
+            except Exception:                             # noqa: BLE001
+                continue
         if content:
             out.append(SimpleNamespace(file_path=path, content=content))
     return out
@@ -1670,6 +1691,11 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     # attempts at whatever else was wrong and ZERO at the page object, then
     # the run died on feedback it had never been shown (SCRUM-103).
     errors.extend(validate_page_object_selectors(generated_files, PROJECT_ROOT))
+    # Two stories editing one page object branch from main independently, so
+    # neither sees the other's work and both may add their own name for one
+    # behaviour. Git merges the additions cleanly when they land apart, and
+    # nothing else notices.
+    errors.extend(validate_no_duplicate_page_object_methods(generated_files))
     errors.extend(validate_feature_file_structure(generated_files))
     coverage_errors = validate_step_definitions_complete(generated_files)
     unused_errors = validate_no_unused_step_definitions(generated_files)
@@ -2390,6 +2416,7 @@ def _splice_step_defs_incremental(
     ctx: AppContext,
     references: dict,
     page_inventory: str,
+    branch: str | None = None,
 ) -> tuple[str, str]:
     """Produce the step-def file for an ai-update by splicing (backlog 2.4).
 
@@ -2403,7 +2430,8 @@ def _splice_step_defs_incremental(
         # main, so their real method signatures are the ground truth here.
         # Fails soft: no repo, no context, same behaviour as before.
         try:
-            _existing = _existing_page_objects_on_main(gh, {step_defs_path})
+            _existing = _existing_page_objects_on_main(
+                gh, {step_defs_path}, branch=branch)
         except Exception:                                      # noqa: BLE001
             _existing = []
         return (
@@ -2959,10 +2987,11 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     _plan_paths = {f.file_path for f in ordered_files}
     existing_pos: list = []
     try:
-        existing_pos = _existing_page_objects_on_main(gh, _plan_paths)
+        existing_pos = _existing_page_objects_on_main(
+            gh, _plan_paths, branch=getattr(plan, "branch_name", None))
         if existing_pos:
-            logger.info("Stage 2: injecting method signatures from %d page "
-                        "object(s) already on main.", len(existing_pos))
+            logger.info("Stage 2: injecting method signatures from %d existing "
+                        "page object(s).", len(existing_pos))
     except Exception as exc:                                   # noqa: BLE001
         logger.debug("No existing-page-object context: %s", exc)
 
