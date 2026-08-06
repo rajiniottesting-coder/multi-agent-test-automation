@@ -553,6 +553,11 @@ def _lcp_segments(values: list[str]) -> list[str]:
 # `collapse_repeated_families` above only fires on TEST-ID attributes. An app
 # with no data-test attributes gets no collapsing at all, which is how 68 keys
 # reached a draft.
+# Frame ids used by the common ad networks. Matched against the FRAME's own
+# selector because nothing inside the frame can see its container.
+_AD_FRAME_ID = _re.compile(r"(aswift|google_ads|div-gpt-ad|doubleclick|adsbygoogle)",
+                           _re.I)
+
 _MIN_COLLAPSE = 3
 _INDEX_SUFFIX = _re.compile(r"(_alt|_\d+)$")
 _NTH_SUFFIX = _re.compile(r"\s*>>\s*nth=\d+\s*$")
@@ -788,6 +793,14 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
         # Element inside an iframe: prefix with the frame's own selector using
         # the documented `>>>` frame-enter convention.
         frame_sel = d.get("frame")
+        # An element inside an AD IFRAME is third-party, and `el.closest()`
+        # cannot see that: it stops at the document boundary, exactly as it
+        # stopped at a shadow root. The frame's own selector is the only
+        # evidence available here, so match on it. Without this, one crawl put
+        # ~30 keys on a page - doubleclick tracking links, mute panels,
+        # `#abgc`, `#mys-wrapper` - all of them ad chrome, none of them the
+        # application.
+        in_ad_frame = bool(frame_sel and _AD_FRAME_ID.search(frame_sel))
         if frame_sel:
             selector = f"{frame_sel} {FRAME_DELIM} {selector}"
         name = derive_element_name(tag, attrs, text, test_attrs,
@@ -800,7 +813,7 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
         used.add(final)
         if not is_visible:
             hidden_names.add(final)
-        if d.get("thirdParty"):
+        if d.get("thirdParty") or in_ad_frame:
             third_party_names.add(final)
         elements[final] = {"selector": selector, "strategy": strategy,
                            "framed": bool(frame_sel), "reveals": reason}

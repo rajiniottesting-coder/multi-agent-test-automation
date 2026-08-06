@@ -39,6 +39,27 @@ Invalid data is different and SHOULD be explicit: empty values, malformed email
 addresses and deliberately-wrong passwords are test data, not credentials, so
 write them literally in the test case.
 
+## Known products — use these names, do not invent one
+
+The catalogue is read-only: nothing in the UI adds or removes a product, so a
+named product is safe to assert on and safe to reuse across scenarios.
+
+| Product | Price | Notes |
+|---|---|---|
+| `Blue Top` | Rs. 500 | First on the all-products page. The default choice. |
+| `Men Tshirt` | Rs. 400 | Second. Use when a scenario needs TWO different products. |
+| `Sleeveless Dress` | Rs. 1000 | A third, for a three-item cart. |
+
+**A scenario must name the product it acts on.** "Search for a product" is not
+a test case; "search for `Blue Top`" is. An invented name — `Red Shirt`, `Test
+Product` — produces code that is valid, passes every static check, and then
+fails at runtime because the row is never found. Nothing catches that before a
+browser runs, which makes it one of the more expensive ways to be wrong.
+
+If a scenario genuinely needs an arbitrary product rather than a specific one,
+say so explicitly ("the first product in the list") and reach it by position,
+not by a guessed name.
+
 ## Page flow (end to end)
 
     /  →  /login  →  register  →  /account_created  →  logged in

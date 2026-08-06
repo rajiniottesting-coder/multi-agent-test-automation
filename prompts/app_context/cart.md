@@ -1,5 +1,18 @@
 # Cart and checkout
 
+## Which products to put in the cart
+
+Use the names from `core.md`: `Blue Top`, `Men Tshirt`, `Sleeveless Dress`. A
+cart scenario needs a NAMED product — "add a product to the cart" cannot be
+asserted on, because the assertion has nothing to compare against.
+
+Add a named product by opening its detail page first. On the listing the
+add-to-cart control matches 68 elements and clicking it is rejected at
+generation time; on the detail page it is unique. Adding two DIFFERENT products
+means two different names, not the same one twice — quantity and distinct
+line items are different behaviours and a scenario should not conflate them.
+
+
 ## Adding to cart opens a modal
 
 Clicking "Add to cart" does NOT navigate. A modal appears reading "Added! Your

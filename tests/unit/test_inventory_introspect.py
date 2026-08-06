@@ -1101,3 +1101,40 @@ def test_capture_carries_third_party_across_shadow_boundaries():
     assert "inheritedThirdParty" in js
     assert "walk(el.shadowRoot, hostIsThirdParty)" in js
     assert "walk(document, false)" in js
+
+def test_elements_inside_an_ad_iframe_are_flagged():
+    """`el.closest()` stops at the document boundary, exactly as it stopped at
+    a shadow root — so nothing inside an ad iframe can see the frame hosting
+    it. One crawl put ~30 keys on a single page from this: doubleclick tracking
+    links, mute panels, `#abgc`, `#mys-wrapper`. The frame's own selector is
+    the only evidence available, so match on that."""
+    descs = [
+        {"tag": "a", "attrs": {"href": "https://googleads.g.doubleclick.net/aclk?x=1"},
+         "text": "Ad", "visible": True, "frame": "iframe#aswift_2"},
+        {"tag": "div", "attrs": {"id": "mys-wrapper"}, "text": "",
+         "visible": True, "frame": "iframe#aswift_2"},
+    ]
+    e = build_page_entry("https://x.test/p", "P", descs, "https://x.test")
+    flagged = e["_third_party_elements"]["elements"]
+    assert "ad_link" in flagged and "mys_wrapper_element" in flagged
+
+
+def test_a_genuine_third_party_iframe_is_not_flagged():
+    """A payment or mapping widget is third-party CODE but part of the
+    application's flow — a test may well need to reach into it. Only known ad
+    frame ids are matched, not every iframe."""
+    descs = [{"tag": "div", "attrs": {"id": "card-number"}, "text": "",
+              "visible": True, "frame": "iframe#payment"}]
+    e = build_page_entry("https://x.test/p", "P", descs, "https://x.test")
+    assert "card_number_element" in e["elements"]
+    assert "_third_party_elements" not in e
+
+
+def test_an_element_outside_any_frame_is_never_flagged_by_frame_rules():
+    """Regression: the first version of this check recorded the flag before the
+    element's final name was known, and mislabelled an unrelated form field."""
+    descs = [{"tag": "input", "attrs": {"data-qa": "login-email"}, "text": "", "visible": True},
+             {"tag": "a", "attrs": {"href": "/x"}, "text": "Ad", "visible": True,
+              "frame": "iframe#aswift_2"}]
+    e = build_page_entry("https://x.test/p", "P", descs, "https://x.test")
+    assert "login_email_input" not in e["_third_party_elements"]["elements"]
