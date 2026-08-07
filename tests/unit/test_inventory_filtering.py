@@ -74,7 +74,7 @@ def test_matching_is_case_space_hyphen_insensitive():
             assert _pages(out) == {"login", "cart", "checkout", "menu"}
 
 
-def test_unknown_component_falls_back_to_all():
+def test_unknown_component_injects_all_INVENTORY_PAGES():
     out = filter_inventory_by_components(SAMPLE, ["Nonexistent"])
     assert _pages(out) == {"login", "cart", "checkout", "menu"}
 

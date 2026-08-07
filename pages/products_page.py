@@ -22,7 +22,7 @@ class ProductsPage(BasePage):
     INVENTORY_PAGE = "products"
 
     # ── actions ──────────────────────────────────────────────
-    def open(self, base_url: str) -> None:
+    def open_listing(self, base_url: str) -> None:
         """Navigate to the all-products page."""
         self.navigate(f"{base_url.rstrip('/')}{self.page_url()}")
 

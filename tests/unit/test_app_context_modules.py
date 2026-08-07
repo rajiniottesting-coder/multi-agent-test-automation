@@ -104,7 +104,7 @@ def test_none_components_injects_all_modules(module_folder):
         assert token in out
 
 
-def test_unknown_component_falls_back_to_all(module_folder):
+def test_unknown_component_injects_all_MODULES(module_folder):
     """A component with no matching file → inject all (never silently empty)."""
     out = analyst.load_app_context_block(["NonexistentModule"])
     for token in ("CORE", "ORDERS", "BILLING", "USERS"):

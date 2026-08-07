@@ -17,6 +17,25 @@ You are in Stage 2 of a two-stage workflow. The plan has already been decided. Y
 
 {sibling_page_objects_block}
 
+## Method names must say WHAT
+
+Never name a page-object method with a bare verb. `open()`, `click()`,
+`submit()`, `check()`, `get()` say nothing about their subject, and a page
+object almost always needs more than one of each.
+
+    open()              ->  open_listing()      /  open_product()
+    submit()            ->  submit_review()     /  submit_search()
+    get_name()          ->  product_name()      /  customer_name()
+
+A generation gate rejects two methods on one page object whose names mean the
+same thing, comparing them by their meaning-bearing words. A bare verb has
+almost none, so it collides with the first specific method that shares it —
+`open()` and `open_product()` both reduce to "open". Naming the subject removes
+the ambiguity for the check and for the next person reading the file.
+
+Do NOT pad the other way either. On `ProductsPage`, `search_products_for()`
+repeats what the class already says: `search_for()` is the name.
+
 {authoritative_steps_block}
 
 {base_page_helpers_block}

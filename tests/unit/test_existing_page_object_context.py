@@ -256,3 +256,32 @@ def test_no_branch_argument_behaves_exactly_as_before():
 def test_both_branches_unreachable_yields_nothing():
     repo = _BranchRepo({}, missing_branches={"main", "auto/S-3-z"})
     assert _existing_page_objects_on_main(repo, set(), branch="auto/S-3-z") == []
+
+
+@pytest.mark.parametrize("label,per_branch,list_raises,read_raises,branch,expected", [
+    ("branch empty falls back to main",
+     {"main": {"pages/a_page.py": "class P:\n    def go(self): pass\n"}, "br": {}}, (), (), "br", 1),
+    ("branch lists but its files are unreadable -> main",
+     {"main": {"pages/a_page.py": "class P:\n    def go(self): pass\n"},
+      "br": {"pages/a_page.py": "class P:\n    def go(self): pass\n"}}, (), ("br",), "br", 1),
+    ("empty branch string behaves as no branch",
+     {"main": {"pages/a_page.py": "class P:\n    def go(self): pass\n"}}, (), (), "", 1),
+    ("branch is literally 'main'",
+     {"main": {"pages/a_page.py": "class P:\n    def go(self): pass\n"}}, (), (), "main", 1),
+])
+def test_branch_fallback_edge_cases(label, per_branch, list_raises, read_raises,
+                                    branch, expected):
+    """Every one of these must degrade to fewer files, never to an exception:
+    a story is not worth failing over missing prompt context."""
+    class Repo:
+        def list_files_in_directory(self, directory, branch="main"):
+            if branch in list_raises:
+                raise RuntimeError("unreachable")
+            return list(per_branch.get(branch, {}))
+
+        def get_file_content(self, path, branch="main"):
+            if branch in read_raises:
+                raise RuntimeError("unreadable")
+            return per_branch[branch][path]
+
+    assert len(_existing_page_objects_on_main(Repo(), set(), branch=branch)) == expected

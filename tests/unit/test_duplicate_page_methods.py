@@ -109,3 +109,52 @@ def test_an_unparseable_file_does_not_crash_the_gate():
 def test_no_generated_files_is_safe():
     assert validate_no_duplicate_page_object_methods([]) == []
     assert validate_no_duplicate_page_object_methods(None) == []
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Edge cases — the gate must never take down a story for a reason unrelated
+# to the code it was checking.
+# ─────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("content", [
+    None,               # an upstream fetch returned nothing
+    b"class P: pass",   # bytes rather than str
+    123,                # wrong type entirely
+    "",                 # empty
+    "   \n  ",          # whitespace only
+    "\x00\x00",         # null bytes
+    "def (((",          # unparseable
+])
+def test_unusable_content_never_raises(content):
+    """`content=None` raised TypeError before this: SyntaxError alone does not
+    cover a non-string, and a gate that dies on a failed fetch fails the story
+    for the wrong reason."""
+    assert validate_no_duplicate_page_object_methods(
+        [SimpleNamespace(file_path="pages/x_page.py", content=content)]) == []
+
+
+@pytest.mark.parametrize("src,flagged", [
+    ("", False),
+    ("def free_function(): pass\n", False),                       # no class
+    ("class P:\n    pass\n", False),                              # no methods
+    ("class P:\n    def only_one(self): pass\n", False),
+    ("class P:\n    def _a_b(self): pass\n    def _b_a(self): pass\n", False),   # private
+    ("class P:\n    def __init__(self): pass\n    def __repr__(self): pass\n", False),
+    ("class P:\n    async def load_page(self): pass\n"
+     "    async def load_the_page(self): pass\n", True),          # async counts
+    ("class P:\n    @property\n    def total_price(self): pass\n"
+     "    @property\n    def the_total_price(self): pass\n", True),  # decorated counts
+    ("class P:\n    def remove_item(self): pass\n    def remove_the_item(self): pass\n"
+     "    def remove_an_item(self): pass\n", True),               # three-way
+    ("class P:\n    def the_page(self): pass\n    def a_page(self): pass\n", False),  # all filler
+])
+def test_structural_edge_cases(src, flagged):
+    assert bool(find_redundant_methods(src, "products")) is flagged
+
+
+def test_methods_in_a_NESTED_class_are_not_compared_with_the_outer_one():
+    src = ("class Outer:\n"
+           "    class Inner:\n"
+           "        def go_home(self): pass\n"
+           "    def go_home(self): pass\n")
+    assert find_redundant_methods(src) == []

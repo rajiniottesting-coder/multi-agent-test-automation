@@ -247,12 +247,12 @@
         "add_cart_links": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(1) > a",
         "view_product_links": "a[href^='/product_details/']",
         "tshirt_link": "a[href='#'] >> nth=0",
-        "cart_management_link": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(10) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
+        "product_catalog_link": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(10) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
         "printed_t_shirts_link": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(14) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
-        "men_s_jeans_link": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(17) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
+        "kid_s_clothing_link": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(17) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
         "kid_s_shirts_link": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(22) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
         "t_shirt_link": "a[href='#'] >> nth=1",
-        "men_s_jeans_link_alt": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(35) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
+        "kid_s_clothing_link_alt": "body > section:nth-of-type(2) > div > div > div:nth-of-type(2) > div > div:nth-of-type(35) > div > div:nth-of-type(1) > div:nth-of-type(1) > p > div",
         "footer_element": "#footer",
         "success_subscribe_element": "#success-subscribe",
         "email_address_input": "input[placeholder='Your email address']",
@@ -297,13 +297,13 @@
       "_selectors_to_improve": {
         "elements": [
           "add_cart_links",
-          "cart_management_link",
           "continue_shopping_button",
+          "kid_s_clothing_link",
+          "kid_s_clothing_link_alt",
           "kid_s_shirts_link",
           "logged_as_rajkumar_link",
-          "men_s_jeans_link",
-          "men_s_jeans_link_alt",
-          "printed_t_shirts_link"
+          "printed_t_shirts_link",
+          "product_catalog_link"
         ],
         "warning": "KEPT because the element is real and a test may need it, but each of these is located by a STRUCTURAL PATH that describes where it sat during one crawl. They resolve today and break when anything above them re-renders. Replace with an id, name, href or a data-test added to the app, then delete this block."
       }

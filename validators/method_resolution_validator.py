@@ -997,9 +997,15 @@ def find_redundant_methods(source: str, page_noun: str = "") -> list[tuple[str, 
     Returns [] when the source will not parse: a half-written file is the
     repair loop's problem, not this check's.
     """
+    # A file may arrive with content=None when an upstream fetch failed. That
+    # is not a syntax error, so SyntaxError alone does not cover it - and a
+    # gate that raises on a failed fetch would take down a story for a reason
+    # unrelated to the code it was checking.
+    if not isinstance(source, str) or not source.strip():
+        return []
     try:
         tree = _ast.parse(source)
-    except SyntaxError:
+    except (SyntaxError, ValueError):
         return []
 
     noun = {page_noun.lower().rstrip("s"), page_noun.lower()} if page_noun else set()
@@ -1013,6 +1019,16 @@ def find_redundant_methods(source: str, page_noun: str = "") -> list[tuple[str, 
                    and not n.name.startswith("_")]
         seen: dict[frozenset, str] = {}
         for name in methods:
+            # The page's own noun is dropped: a method on ProductsPage saying
+            # "products" adds nothing, so filter_by_brand and
+            # filter_products_by_brand are one behaviour under two names.
+            #
+            # This is strict on purpose, and it makes a BLUNT method name a
+            # liability: `open()` and `open_product()` both reduce to {open}
+            # and read as duplicates. That is the right pressure - a page
+            # object method should say what it opens. Name them
+            # `open_listing()` and `open_product()` and the ambiguity is gone
+            # for a reader as well as for this check.
             key = _semantic_tokens(name) - noun
             if not key:
                 continue
