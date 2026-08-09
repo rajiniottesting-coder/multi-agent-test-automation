@@ -285,7 +285,12 @@ def main() -> int:
                 "4_DELETE_OUTRIGHT": [
                     "implementation_status",
                     "title_seen",
-                    "any remaining key beginning with '_' (review notes, never inventory)",
+                    "any remaining PAGE-LEVEL key beginning with '_'. NOT the "
+                    "ones inside elements_notes - `_url`, `_naming`, `_shared` "
+                    "there are page-wide notes rather than element names, they "
+                    "ARE sent to the agents, and they carry the guidance that "
+                    "stops the generator inventing a record id or asserting on "
+                    "shared data. Keep those.",
                     "the ' (AUTO-DRAFT — verify)' suffix on page_object_file",
                     "this _inventory_conventions block itself",
                 ],

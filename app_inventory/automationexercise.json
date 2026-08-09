@@ -47,14 +47,7 @@
         "_href_over_role": "These are addressed by href, not by role+name, and that is deliberate. This app's nav mixes icon libraries, and Material Icons renders its glyph from LIGATURE TEXT - <i class='material-icons'>card_travel</i> puts the literal string 'card_travel' in the DOM. Playwright folds that into the accessible name, so the Products link is named 'card_travel Products', not 'Products', and role=link[name='Products'] matches NOTHING because role-name matching is exact. Links whose icon is Font Awesome (empty <i>) were unaffected, which is why 'Test Cases' resolved while eight others did not - proven 1 Aug 2026 both against the live site and against reproduced markup. The href is the author's contract and cannot be polluted this way. Each is pinned with '>> nth=0': verified 2 Aug 2026 that the footer repeats Home, Cart, Test Cases and API Testing, so a bare href matched 2-4 elements. The header block precedes the footer in the DOM, so nth=0 is always the header link.",
         "signup_login_link": "CONDITIONAL - present only while signed out. Its absence is the same signal as logout_link's presence."
       },
-      "key_methods": [
-        "go_to_products()",
-        "go_to_cart()",
-        "go_to_login()",
-        "logout()",
-        "is_logged_in()",
-        "logged_in_name()"
-      ],
+      "key_methods": [],
       "conditional": [
         "signup_login_link"
       ],
@@ -78,10 +71,7 @@
         "subscribe_button": "Icon-only button - an arrow glyph, no text - so it has NO accessible name and role=button[name='Subscribe'] matches nothing (verified 1 Aug 2026). The id is the only handle it offers. This is the case where css is genuinely correct.",
         "subscribe_success": "Rendered in place after subscribing - there is no navigation and no toast."
       },
-      "key_methods": [
-        "is_loaded()",
-        "subscribe(email)"
-      ]
+      "key_methods": []
     },
     "login": {
       "url": "/login",
@@ -111,13 +101,7 @@
         "signup_error": "CONDITIONAL - rendered only after submitting the signup form with an email address that already exists. Absent from a fresh page load.",
         "_verified": "1 Aug 2026: all 8 unconditional selectors on this page resolve to exactly one element against the live DOM, including every [data-qa='...'] value. The two conditional keys above are unreachable to a tool that cannot click."
       },
-      "key_methods": [
-        "is_loaded()",
-        "login_as(email, password)",
-        "start_signup(name, email)",
-        "get_login_error()",
-        "has_login_error()"
-      ],
+      "key_methods": [],
       "errors": {
         "invalid_login": "Your email or password is incorrect!",
         "email_already_exists": "Email Address already exist!"
@@ -146,7 +130,8 @@
         "view_product_links": "a[href^='/product_details/']",
         "added_modal": "text=Your product has been added to cart.",
         "view_cart_link_in_modal": "role=link[name='View Cart']",
-        "continue_shopping_button": "role=button[name='Continue Shopping']"
+        "continue_shopping_button": "role=button[name='Continue Shopping']",
+        "searched_products_heading": "text=Searched Products"
       },
       "multi_match": [
         "product_cards",
@@ -162,19 +147,16 @@
         "added_modal": "Adding to cart opens a MODAL rather than navigating. It blocks the page underneath, so a scenario adding two products must dismiss it between them or the second click fails with 'intercepts pointer events'.",
         "search_input": "UNVERIFIED id, from the site's documented test cases rather than the DOM. Search matches on product NAME and submits to the same page.",
         "_empty_search": "A search matching nothing renders NO result cards rather than an empty-state message. Assert absence by counting cards, not by looking for text.",
-        "search_button": "Icon-only button (magnifier glyph), no accessible name - same as home.subscribe_button. css id is the right locator here."
+        "search_button": "Icon-only button (magnifier glyph), no accessible name - same as home.subscribe_button. css id is the right locator here.",
+        "searched_products_heading": "Replaces the All Products heading once a search has run. This is the only reliable signal that the search EXECUTED - a result count alone cannot tell 'the search returned one product' from 'the search never ran and the page still shows the full catalogue'. Assert on it before asserting on results.",
+        "all_products_heading": "Shown on the unsearched listing. Its DISAPPEARANCE is the mirror signal to searched_products_heading."
       },
-      "key_methods": [
-        "is_loaded()",
-        "search(term)",
-        "product_names()",
-        "product_count()",
-        "open_product(name)"
-      ],
+      "key_methods": [],
       "conditional": [
         "added_modal",
-        "view_cart_link_in_modal",
-        "continue_shopping_button"
+        "continue_shopping_button",
+        "searched_products_heading",
+        "view_cart_link_in_modal"
       ],
       "conditional_note": "The add-to-cart modal does not exist until a product is added, so these three always read STALE to a tool that never clicks. Do not 'fix' them."
     },
@@ -205,13 +187,7 @@
         "cart_table": "UNVERIFIED id, from the site's documented test cases rather than the DOM.",
         "proceed_to_checkout_button": "Matched by TEXT. role=link[name='Proceed To Checkout'] resolved to zero (2 Aug 2026) - the control is an anchor without an href, so it carries no link role. Proceeding while signed out shows a Register/Login prompt instead of the address form."
       },
-      "key_methods": [
-        "is_loaded()",
-        "product_names()",
-        "row_count()",
-        "remove_product(name)",
-        "proceed_to_checkout()"
-      ],
+      "key_methods": [],
       "conditional": [
         "empty_cart_message"
       ],
@@ -256,18 +232,10 @@
         "add_to_cart_button": "The single add-to-cart control for THIS product. Unlike the listing page's family of 68, this one is unique - which is why a cart scenario should add a product from here rather than from the listing.",
         "quantity_input": "Type a quantity BEFORE adding to cart; changing it afterwards does not update the cart.",
         "added_modal": "Adding to cart opens a MODAL rather than navigating, and it blocks the page underneath. A scenario adding two products must dismiss it between them or the second click lands on the overlay.",
-        "product_price": "Rendered as 'Rs. 500'. Assert on the number, not the format."
+        "product_price": "Rendered as 'Rs. 500'. Assert on the number, not the format.",
+        "_naming": "No page object exists for this page yet. Agent 2 chooses its method names, guided by the naming rule in the generation prompt: a bare verb such as open() or submit() collides with the first specific method that shares it, so a method must say WHAT it acts on - open_product(), not open(). Every later story reads the real signatures back from the file, so the names are chosen once. Do not fill key_methods back in."
       },
-      "key_methods": [
-        "is_loaded()",
-        "open(base_url, product_id)",
-        "product_name()",
-        "set_quantity(n)",
-        "add_to_cart()",
-        "view_cart_from_modal()",
-        "continue_shopping()",
-        "submit_review(name, email, text)"
-      ],
+      "key_methods": [],
       "errors": {}
     }
   }

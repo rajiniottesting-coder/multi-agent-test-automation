@@ -267,3 +267,33 @@ def test_underscore_keys_inside_elements_are_not_treated_as_selectors():
     selectors = {n: s for n, s in page["elements"].items()
                  if isinstance(s, str) and not n.startswith("_")}
     assert selectors == {"real": "#real"}
+
+def test_page_wide_notes_inside_elements_notes_are_NOT_stripped():
+    """`_` means two different things and the difference matters.
+
+    At page level and top level it marks a review artefact, stripped before the
+    prompt. Inside `elements_notes` every other key is an ELEMENT NAME, so the
+    prefix only distinguishes a page-wide note from a per-element one - and
+    those notes carry the guidance that stops the generator inventing a record
+    id or asserting on shared data.
+
+    Applying "anything with an underscore goes" to all three levels would throw
+    away some of the most valuable content in the file.
+    """
+    inv = {
+        "_top_level_note": "for a human",
+        "pages": {"p": {
+            "components": ["X"],
+            "elements": {"a": "#a"},
+            "elements_notes": {"a": "per-element note", "_url": "page-wide note"},
+            "_selectors_to_improve": {"elements": ["a"]},
+        }},
+    }
+    out = filter_inventory_by_components(inv, ["X"])
+    page = out["pages"]["p"]
+
+    assert "_top_level_note" not in out
+    assert "_selectors_to_improve" not in page
+    assert page["elements_notes"]["_url"] == "page-wide note", \
+        "a page-wide note must survive - it is guidance, not a review artefact"
+    assert page["elements_notes"]["a"] == "per-element note"

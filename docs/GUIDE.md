@@ -977,9 +977,27 @@ reads as expected rather than as a fault.
 | `_selectors_to_improve` | real elements on weak selectors, kept deliberately | **keep as a TODO**, or fix and delete |
 | `_unresolved_selectors` | measured ZERO at crawl time | **fix each**; the element exists, the locator does not work |
 
-Anything beginning with `_` is a review note, not inventory — it should not
-survive into a committed file. `implementation_status` and `title_seen` are the
-two non-underscore leftovers.
+### The underscore prefix means two different things
+
+This trips people up, and deleting the wrong ones costs real guidance.
+
+| Where the key sits | What `_` means | Reaches Agents 2 and 3? |
+|---|---|---|
+| **Page level** — `_selectors_to_improve`, `_third_party_elements`, `_fragile_selectors`, `_unresolved_selectors`, `_families_without_a_shared_handle`, `_unstable_selectors`, `_ambiguous_selectors`, `_selector_strategies` | a REVIEW ARTEFACT — act on it, then delete it | ❌ stripped |
+| **Top level** — `_inventory_conventions`, `_VERIFICATION_STATUS` | a note to a human | ❌ stripped |
+| **Inside `elements_notes`** — `_url`, `_naming`, `_shared`, `_test_owned` | a note about the PAGE rather than about one element | ✅ **sent, and meant to be** |
+
+Inside `elements_notes` every other key is an ELEMENT name, so the prefix is
+just saying "this one is not an element". Those notes are some of the most
+valuable content in the file — that a URL is a template and should be reached
+by clicking a link rather than by inventing an id, or that a cart is private to
+its account and therefore safe to assert on. **Keep them.**
+
+`implementation_status` and `title_seen` are review leftovers that carry no
+prefix at all, so they have to be removed by name.
+
+Only the first two rows are stripped before the prompt, so a half-curated file
+degrades to "fewer notes" rather than "actively misleading".
 
 ### Selector ranking, and two traps
 

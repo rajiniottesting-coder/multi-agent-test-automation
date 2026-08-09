@@ -462,8 +462,21 @@ means.
 | `_selectors_to_improve` | real elements on weak selectors | keep as a TODO, or fix |
 | `_unresolved_selectors` | measured ZERO at crawl time | fix each — the element exists, the locator does not |
 
-Anything beginning with `_` is a review note and must not survive into a
-committed inventory.
+### `_` means two different things
+
+| Where | Meaning | Sent to Agents 2 and 3? |
+|---|---|---|
+| Page level (`_selectors_to_improve`, `_third_party_elements`, ...) | review artefact — act on it, then delete | ❌ stripped |
+| Top level (`_inventory_conventions`) | note to a human | ❌ stripped |
+| **Inside `elements_notes`** (`_url`, `_naming`, `_shared`) | a note about the PAGE, not one element | ✅ **sent — keep them** |
+
+Inside `elements_notes` every other key is an element NAME, so the prefix only
+distinguishes a page-wide note from a per-element one. Deleting those on the
+"anything with an underscore goes" rule throws away the guidance that stops the
+generator inventing a record id or asserting on shared data.
+
+`implementation_status` and `title_seen` carry no prefix and must be removed by
+name.
 
 ### Selector ranking
 
