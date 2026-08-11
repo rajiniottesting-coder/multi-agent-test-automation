@@ -149,7 +149,9 @@
         "_empty_search": "A search matching nothing renders NO result cards rather than an empty-state message. Assert absence by counting cards, not by looking for text.",
         "search_button": "Icon-only button (magnifier glyph), no accessible name - same as home.subscribe_button. css id is the right locator here.",
         "searched_products_heading": "Replaces the All Products heading once a search has run. This is the only reliable signal that the search EXECUTED - a result count alone cannot tell 'the search returned one product' from 'the search never ran and the page still shows the full catalogue'. Assert on it before asserting on results.",
-        "all_products_heading": "Shown on the unsearched listing. Its DISAPPEARANCE is the mirror signal to searched_products_heading."
+        "all_products_heading": "Shown on the unsearched listing. Its DISAPPEARANCE is the mirror signal to searched_products_heading.",
+        "continue_shopping_button": "INSIDE the add-to-cart modal, so a product must be added before it exists. Use it to dismiss the modal and stay on the listing - a scenario adding a SECOND product must click this first, or the next click lands on the overlay rather than the page.",
+        "view_cart_link_in_modal": "INSIDE the add-to-cart modal. The other way out of it: navigates to the cart instead of dismissing. Prefer this over the nav Cart link when a scenario has just added a product, because it also proves the modal appeared."
       },
       "key_methods": [],
       "conditional": [
@@ -158,7 +160,7 @@
         "searched_products_heading",
         "view_cart_link_in_modal"
       ],
-      "conditional_note": "The add-to-cart modal does not exist until a product is added, so these three always read STALE to a tool that never clicks. Do not 'fix' them."
+      "conditional_note": "None of these exist on a freshly loaded page, so a tool that only navigates always reads them as absent - that is its reach, not a broken selector. added_modal, continue_shopping_button and view_cart_link_in_modal appear only after a product is added to the cart. searched_products_heading appears only after a search has run."
     },
     "cart": {
       "url": "/view_cart",
@@ -185,7 +187,8 @@
         "_test_owned": "The cart belongs to this test's own session or account, so asserting an EXACT row count is safe here - unlike the shared catalogue.",
         "cart_rows": "MULTI-MATCH. Narrow to the product the test added rather than assuming a row index.",
         "cart_table": "UNVERIFIED id, from the site's documented test cases rather than the DOM.",
-        "proceed_to_checkout_button": "Matched by TEXT. role=link[name='Proceed To Checkout'] resolved to zero (2 Aug 2026) - the control is an anchor without an href, so it carries no link role. Proceeding while signed out shows a Register/Login prompt instead of the address form."
+        "proceed_to_checkout_button": "Matched by TEXT. role=link[name='Proceed To Checkout'] resolved to zero (2 Aug 2026) - the control is an anchor without an href, so it carries no link role. Proceeding while signed out shows a Register/Login prompt instead of the address form.",
+        "empty_cart_message": "Rendered ONLY when the cart holds nothing - the mirror of cart_rows. Assert on it after removing the last item, and never alongside cart_rows: exactly one of the two is present at any moment."
       },
       "key_methods": [],
       "conditional": [
@@ -226,14 +229,17 @@
         "continue_shopping_button",
         "review_success"
       ],
-      "conditional_note": "The add-to-cart modal does not exist until a product is added, and the review confirmation not until a review is submitted. A tool that only navigates always reads these as absent - that is its reach, not a broken selector.",
+      "conditional_note": "The add-to-cart modal does not exist until Add to cart is clicked, and review_success not until a review is submitted. A tool that only navigates always reads these as absent - that is its reach, not a broken selector.",
       "elements_notes": {
         "_url": "TEMPLATE, not an address: one page per product. Open it with page_url(product_id=...), or better, reach it by clicking a product's View Product link on the listing - that href already carries the id, so the test never invents one.",
         "add_to_cart_button": "The single add-to-cart control for THIS product. Unlike the listing page's family of 68, this one is unique - which is why a cart scenario should add a product from here rather than from the listing.",
         "quantity_input": "Type a quantity BEFORE adding to cart; changing it afterwards does not update the cart.",
         "added_modal": "Adding to cart opens a MODAL rather than navigating, and it blocks the page underneath. A scenario adding two products must dismiss it between them or the second click lands on the overlay.",
         "product_price": "Rendered as 'Rs. 500'. Assert on the number, not the format.",
-        "_naming": "No page object exists for this page yet. Agent 2 chooses its method names, guided by the naming rule in the generation prompt: a bare verb such as open() or submit() collides with the first specific method that shares it, so a method must say WHAT it acts on - open_product(), not open(). Every later story reads the real signatures back from the file, so the names are chosen once. Do not fill key_methods back in."
+        "_naming": "No page object exists for this page yet. Agent 2 chooses its method names, guided by the naming rule in the generation prompt: a bare verb such as open() or submit() collides with the first specific method that shares it, so a method must say WHAT it acts on - open_product(), not open(). Every later story reads the real signatures back from the file, so the names are chosen once. Do not fill key_methods back in.",
+        "view_cart_link_in_modal": "INSIDE the add-to-cart modal, which appears only after Add to cart is clicked on this page. Navigates to the cart.",
+        "continue_shopping_button": "INSIDE the add-to-cart modal. Dismisses it and stays on this product. Needed before any further interaction with the page underneath, because the modal blocks it.",
+        "review_success": "Appears only after a review is submitted successfully. A review needs a name, an email and review text; submitting an incomplete form is blocked by the browser's own validation, so nothing app-authored appears and this element never renders."
       },
       "key_methods": [],
       "errors": {}
