@@ -6,6 +6,7 @@ fixtures are never overwritten, and the matching derivation in the validator -
 the two must agree or a fixture that works at runtime gets reported as missing.
 """
 import re
+from pathlib import Path
 
 import pytest
 
@@ -41,13 +42,58 @@ def test_snake_case_convention(class_name, expected):
     assert _snake(class_name) == expected
 
 
+# ── helpers: ask the project, never name this application's pages ────────
+
+_PROJECT = Path(__file__).resolve().parents[2]
+
+
+def _explicit_conftest_fixtures() -> set:
+    """Fixture names conftest declares BY HAND, read from its source.
+
+    Auto-registered fixtures are injected into the same module namespace, so a
+    runtime scan cannot tell the two apart.
+    """
+    import ast
+    src = (_PROJECT / "tests" / "step_defs" / "conftest.py").read_text(encoding="utf-8")
+    return {
+        node.name
+        for node in ast.walk(ast.parse(src))
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and any("fixture" in ast.dump(d) for d in node.decorator_list)
+    }
+
+
+def _available_page_fixtures() -> set:
+    """Every page fixture this project actually offers, however registered."""
+    return (_auto_registered_page_fixtures(PROJECT_ROOT)
+            | {n for n in _explicit_conftest_fixtures() if n.endswith("_page")})
+
+
 # ── validator derivation ─────────────────────────────────────────────────
 
 def test_validator_derives_names_from_page_classes():
+    """Every page class on disk yields a fixture named in snake_case.
+
+    Asserts the RULE against whatever pages/ holds, rather than naming this
+    application's pages: those files are Agent 2's output, so a hardcoded name
+    makes a framework test fail whenever a page is deleted or regenerated - and
+    stops it running against another app entirely.
+    """
+    import ast
     names = _auto_registered_page_fixtures(PROJECT_ROOT)
-    assert "login_page" in names
-    assert "home_page" in names
-    assert "nav_page" in names
+
+    expected = set()
+    for f in (_PROJECT / "pages").glob("*_page.py"):
+        if f.name == "base_page.py":
+            continue
+        for node in ast.walk(ast.parse(f.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ClassDef) and node.name.endswith("Page"):
+                expected.add(_snake(node.name))
+
+    assert expected, "pages/ holds no page objects - the test is vacuous"
+    assert expected <= names | _explicit_conftest_fixtures(), (
+        f"page class(es) with no fixture: {sorted(expected - names)}"
+    )
 
 
 def test_base_page_never_becomes_a_fixture():
@@ -83,7 +129,7 @@ def test_validator_accepts_an_auto_registered_fixture():
     step_def = (
         "from pytest_bdd import given\n\n\n"
         '@given("I am somewhere")\n'
-        "def go(login_page, home_page, nav_page) -> None:\n"
+        f"def go({', '.join(sorted(_available_page_fixtures())[:2])}) -> None:\n"
         "    pass\n"
     )
     errors = validate_fixtures_exist(
@@ -113,11 +159,32 @@ def test_explicitly_declared_fixtures_are_not_overwritten():
     """A hand-written fixture may have custom setup; auto-registration only
     fills gaps, so anything declared by hand must survive untouched."""
     import tests.step_defs.conftest as conftest
-    auto = getattr(conftest, "AUTO_REGISTERED_PAGE_FIXTURES", [])
-    for explicit in ("login_page", "home_page", "nav_page", "credentials"):
-        assert explicit not in auto, (
-            f"{explicit} is declared explicitly and must not be auto-registered"
-        )
+    auto = set(getattr(conftest, "AUTO_REGISTERED_PAGE_FIXTURES", []))
+
+    # Ask conftest what it declares rather than naming this application's
+    # pages. A hardcoded list makes a FRAMEWORK test fail the moment a page
+    # object is deleted or regenerated - which is Agent 2's job - and it can
+    # never run against a different app.
+    #
+    # Read the SOURCE, not the module namespace: auto-registered fixtures are
+    # injected into that same namespace at import, so a runtime scan cannot
+    # tell them from the hand-written ones and every fixture looks like both.
+    import ast
+    source = Path(conftest.__file__).read_text(encoding="utf-8")
+    declared = {
+        node.name
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and any("fixture" in ast.dump(d) for d in node.decorator_list)
+    }
+    assert declared, "conftest declares no fixtures at all - the test is vacuous"
+
+    overlap = declared & auto
+    assert not overlap, (
+        f"{sorted(overlap)} declared by hand AND auto-registered. Auto-"
+        f"registration only fills gaps: a hand-written fixture may carry setup "
+        f"the generated one would silently drop."
+    )
 
 
 def test_every_page_class_on_disk_is_reachable_as_a_fixture():

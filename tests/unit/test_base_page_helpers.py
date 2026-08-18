@@ -243,13 +243,15 @@ def test_is_showing_passes_the_explicit_timeout_through(monkeypatch):
 
 
 def test_reference_page_object_uses_the_probe():
-    """home_page.is_loaded() is the shape Agent 2 copies. If it goes back to a
-    bare try/except the swallowed-reason regression comes back with it.
+    """The reference page object is the shape Agent 2 copies. If it goes back
+    to a bare try/except, the swallowed-reason regression comes back with it.
 
-    Named through the configured reference rather than a fixed filename would
-    be better still, but the landing page is the one every app has."""
-    src = Path(__file__).resolve().parents[2] / "pages" / "home_page.py"
-    body = src.read_text(encoding="utf-8")
+    Read through the CONFIGURED reference rather than a hardcoded filename: a
+    framework test that names one application's page object breaks the moment
+    that page is deleted or regenerated, and it cannot run against any other
+    app at all."""
+    from core.app_context import AppContext
+    body = AppContext.load().load_reference_files()["page_object"]
     assert "self.is_showing(" in body
     assert "except Exception:" not in body
 

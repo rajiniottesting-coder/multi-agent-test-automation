@@ -16,7 +16,6 @@ import pytest
 import pages as pages_package
 from pages.base_page import BasePage
 from pages.login_page import LoginPage
-from pages.home_page import HomePage
 from pages.nav_page import NavPage
 
 
@@ -25,11 +24,6 @@ from pages.nav_page import NavPage
 @pytest.fixture
 def login_page(page):
     return LoginPage(page)
-
-
-@pytest.fixture
-def home_page(page):
-    return HomePage(page)
 
 
 @pytest.fixture
