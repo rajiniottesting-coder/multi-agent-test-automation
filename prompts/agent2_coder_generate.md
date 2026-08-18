@@ -17,6 +17,28 @@ You are in Stage 2 of a two-stage workflow. The plan has already been decided. Y
 
 {sibling_page_objects_block}
 
+## Acting on ONE member of a family
+
+A key listed under `multi_match` matches several elements. Clicking it raises
+Playwright's strict-mode violation, and the generation gate rejects it.
+
+To act on one member, find it by what it SAYS and then reach it by position:
+
+    index = self.find_row_index_by_text(self.sel("<row_family>"), name)
+    self.click_nth(self.sel("<control_family>"), index)
+
+The two families run in lockstep - one row, one control per row - so the index
+found in the first is valid in the second. Use the real key names from the
+inventory you were given.
+
+NEVER build the locator yourself:
+
+    self.click(f'{self.sel("<control_family>")} >> nth={index}')   # rejected
+
+That welds a raw locator fragment onto a resolved value, which is a literal
+selector in a page object wearing a disguise. `click_nth` exists so the
+index-pinning lives in BasePage, where the selector validator can see it.
+
 ## Method names must say WHAT
 
 Never name a page-object method with a bare verb. `open()`, `click()`,

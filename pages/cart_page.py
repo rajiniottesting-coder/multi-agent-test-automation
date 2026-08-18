@@ -31,7 +31,7 @@ class CartPage(BasePage):
         the moment the cart holds more than one line.
         """
         index = self.find_row_index_by_text(self.sel("cart_rows"), name)
-        self.click(f'{self.sel("cart_delete_buttons")} >> nth={index}')
+        self.click_nth(self.sel("cart_delete_buttons"), index)
 
     def proceed_to_checkout(self) -> None:
         """Start checkout.

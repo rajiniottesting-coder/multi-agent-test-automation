@@ -652,6 +652,12 @@ _FAMILY_READERS = frozenset({
 # use, and the repair loop then rewrote correct code (SCRUM-103, 31 Jul 2026).
 _FAMILY_CONSUMERS = frozenset({
     "select_autocomplete_suggestion",
+    # Address ONE member of a family by position. This is the sanctioned
+    # alternative to building `">> nth=" + index` in a page object, and the
+    # index is expected to come from find_row_index_by_text() - so the element
+    # is identified by what it SAYS before it is reached by where it sits.
+    "click_nth",
+    "get_nth_attribute",
 })
 
 _PLURAL_SAFE_METHODS = _FAMILY_READERS | _FAMILY_CONSUMERS
@@ -827,6 +833,56 @@ def validate_page_object_selectors(
                     f"selector."
                 )
 
+        # ── 1b. locator SYNTAX assembled in code ──────────────────────
+        syntax_lines: set[int] = set()
+        # A page object may resolve a key and it may pass that key around, but
+        # it must never build Playwright locator syntax itself. `f"{self.sel(
+        # 'rows')} >> nth={i}"` reads as inventory-driven and is not: it welds
+        # a raw locator fragment onto a resolved value, in the one place the
+        # literal-selector scan above cannot see, because the literal is a
+        # format-string tail rather than a quoted selector.
+        #
+        # It shipped on main and reached a pull request. Agent 3 flagged it -
+        # correctly - but Agent 3 only advises. This makes it blocking.
+        # Lines that sit INSIDE a string constant are prose, not code. The
+        # prefix test used elsewhere only catches a line that STARTS with a
+        # quote, so the middle of a multi-line docstring slips through - and
+        # documenting an anti-pattern by showing it is exactly the house style
+        # base_page.py uses and Agent 2 copies. Ask the AST instead of guessing.
+        doc_lines: set[int] = set()
+        try:
+            for node in _ast.walk(_ast.parse(source)):
+                # A DOCSTRING is a bare string statement - an Expr whose value
+                # is a plain string. Matching every string Constant instead
+                # would swallow the f-string parts of the very expression this
+                # rule exists to catch, because `f"...>> nth={i}"` is built
+                # from Constant pieces too.
+                if (isinstance(node, _ast.Expr)
+                        and isinstance(node.value, _ast.Constant)
+                        and isinstance(node.value.value, str)):
+                    doc_lines.update(
+                        range(node.lineno, (node.end_lineno or node.lineno) + 1))
+        except SyntaxError:
+            # Unparseable: fall back to scanning every line. A half-written
+            # file is the repair loop's problem, and over-reporting here is
+            # safer than letting a real violation through.
+            pass
+
+        for lineno, line in enumerate(source.splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith(("#", '"', "'", "*")) or lineno in doc_lines:
+                continue
+            if ">> nth=" in line or ">>nth=" in line:
+                syntax_lines.add(lineno)
+                errors.append(
+                    f"{_ERROR_PREFIX} in '{path}' line {lineno}: locator "
+                    f"syntax built in code `{stripped[:70]}`. Use "
+                    f"self.click_nth(self.sel(\"<key>\"), index) - the "
+                    f"index-pinning belongs in BasePage, not assembled from a "
+                    f"string here. To find the index by what the row SAYS, "
+                    f"use self.find_row_index_by_text(...) first."
+                )
+
         # ── 2 & 3. inventory wiring ───────────────────────────────────
         try:
             tree = ast.parse(source)
@@ -928,6 +984,13 @@ def validate_page_object_selectors(
                             f"no legal path exists, drop the behaviour and say "
                             f"so in `notes`"
                         )
+                    if lineno in syntax_lines:
+                        # This line was already reported for building locator
+                        # syntax, and the remedy given there - click_nth - is
+                        # also the correct answer to this complaint. Reporting
+                        # both would be one defect described twice, which is
+                        # what trains a reader to skim the gate output.
+                        continue
                     errors.append(
                         f"{_ERROR_PREFIX} in '{path}' line {lineno}: "
                         f"{node.name}.{method}() is called with "

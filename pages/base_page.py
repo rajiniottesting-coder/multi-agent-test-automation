@@ -228,8 +228,74 @@ class BasePage:
     # ============================================================
 
     def navigate(self, url: str) -> None:
-        """Go to an absolute URL."""
-        self.page.goto(url)
+        """Go to an absolute URL, and FAIL NOW if the server did not serve it.
+
+        page.goto() succeeds as long as a response arrives - a 403, a 503, a
+        bot-check interstitial or a captcha page are all "successful"
+        navigations to Playwright. The test then carries on and dies 30 seconds
+        later on the first locator, reporting a timeout on an element that was
+        never going to exist.
+
+        That is exactly how a whole CI run failed: nine tests, nine identical
+        `Locator.fill: Timeout 30000ms exceeded` errors, four and a half
+        minutes burned, and the reported cause ("covered by an overlay,
+        disabled, or still animating") was wrong for all nine. The page had not
+        loaded at all.
+
+        A bad status is raised immediately, naming the code and the URL, so the
+        failure says what actually happened.
+        """
+        response = self.page.goto(url)
+        if response is not None and not response.ok:
+            raise AssertionError(
+                f"Navigation to {url} returned HTTP {response.status} "
+                f"({response.status_text}). The page did not load, so every "
+                f"selector on it will time out. From CI this usually means the "
+                f"host is blocking the runner's IP range, or the site is down "
+                f"- check whether the same URL loads from a browser."
+            )
+
+    def click_nth(self, locator: str, index: int) -> None:
+        """Click one member of a family, addressed by position.
+
+        Page objects must never build `">> nth=" + index` themselves: that puts
+        locator SYNTAX in code the selector validator cannot see into, and it
+        is the one place a raw locator fragment can re-enter a page object
+        after every other route has been closed off.
+
+        The index almost always comes from find_row_index_by_text(), so the
+        element is identified by what it SAYS and only then reached by where
+        it sits.
+        """
+        try:
+            self._locator(locator).nth(index).click(
+                timeout=self._default_timeout_ms())
+        except Exception:
+            # An index past the end of the family waits out the whole timeout
+            # and then reports a plain "element not found", which sends the
+            # reader looking at the selector rather than at the index. Count
+            # AFTER the failure - never before, because a family the app fills
+            # asynchronously can legitimately be empty at the moment of asking,
+            # and a pre-check would turn a passing test into a flaky one.
+            try:
+                found = self._locator(locator).count()
+            except Exception:                                     # noqa: BLE001
+                raise
+            if index >= found:
+                raise AssertionError(
+                    f"Asked for index {index} of `{locator}`, but it matches "
+                    f"{found} element(s) — valid indices are 0 to {found - 1}. "
+                    f"An index is almost always the wrong way to choose: find "
+                    f"the one you want by its text with "
+                    f"find_row_index_by_text() and pass THAT index, so the "
+                    f"test still picks the right element when the order "
+                    f"changes."
+                ) from None
+            raise
+
+    def get_nth_attribute(self, locator: str, index: int, name: str) -> Optional[str]:
+        """Read one attribute from one member of a family."""
+        return self._locator(locator).nth(index).get_attribute(name)
 
     def reload(self) -> None:
         """Reload the current page."""

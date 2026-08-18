@@ -172,3 +172,44 @@ def test_every_sel_key_used_exists_in_the_real_inventory():
                         f"{f.name}:{node.lineno}: sel({key!r}) not in "
                         f"inventory page {page_key!r}")
     assert not problems, "\n  " + "\n  ".join(problems)
+
+def test_no_page_object_builds_locator_syntax_in_code():
+    """Applied to whatever `pages/` contains, not to a fixture.
+
+    The generation gate rejects `f"{self.sel('rows')} >> nth={i}"`, but a gate
+    only guards what passes THROUGH it. These files are Agent 2's output and
+    they live on disk: a regeneration, a hand-edit, or a merge that predates
+    the rule can all reintroduce the pattern without the gate ever running.
+
+    This is the check that makes the fix durable rather than a one-time
+    cleanup - it fails the suite on whatever is actually committed.
+    """
+    offenders = []
+    for f in _page_object_files():
+        source = f.read_text(encoding="utf-8")
+        # Docstrings legitimately SHOW the anti-pattern while teaching it, and
+        # base_page.py sets that example. Ask the AST rather than guessing
+        # from a line prefix, which only catches a line STARTING with a quote.
+        doc_lines = set()
+        try:
+            for node in ast.walk(ast.parse(source)):
+                if (isinstance(node, ast.Expr)
+                        and isinstance(node.value, ast.Constant)
+                        and isinstance(node.value.value, str)):
+                    doc_lines.update(
+                        range(node.lineno, (node.end_lineno or node.lineno) + 1))
+        except SyntaxError:
+            pass
+
+        for i, line in enumerate(source.splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith(("#", '"', "'", "*")) or i in doc_lines:
+                continue
+            if ">> nth=" in line or ">>nth=" in line:
+                offenders.append(f"{f.name}:{i}: {stripped[:70]}")
+
+    assert not offenders, (
+        "locator syntax built in code — use "
+        'self.click_nth(self.sel("<key>"), index), and get the index from '
+        "self.find_row_index_by_text(...) so the element is chosen by what it "
+        "SAYS before it is reached by where it sits:\n  " + "\n  ".join(offenders))

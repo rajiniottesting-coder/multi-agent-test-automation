@@ -41,8 +41,16 @@ class ProductsPage(BasePage):
         Addresses the product BY TEXT rather than by index: the listing order
         is the site owner's, not ours, and an index silently points at a
         different product the moment the catalogue is reordered.
+
+        The name is matched against the product-name family, and the SAME
+        position is then used on the view-link family - the two run in
+        lockstep, one per card. It cannot use the link's accessible name:
+        elements_notes on view_product_links records that a role+name locator
+        for these links resolved to ZERO against the live page, because icon
+        markup inside the anchor pollutes the computed name.
         """
-        self.click_role("link", name)
+        index = self.find_row_index_by_text(self.sel("product_names"), name)
+        self.click_nth(self.sel("view_product_links"), index)
 
     def dismiss_added_modal(self) -> None:
         """Close the 'added to cart' modal and stay on the listing.

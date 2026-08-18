@@ -1242,3 +1242,90 @@ class TestMultiMatchEnforcement:
         for page, entry in inv["pages"].items():
             for key in entry.get("multi_match") or []:
                 assert key in entry["elements"], f"{page}.multi_match names unknown {key!r}"
+
+class TestLocatorSyntaxInCode:
+    """A page object may resolve a key; it may not BUILD locator syntax.
+
+    `f"{self.sel('rows')} >> nth={i}"` reads as inventory-driven and is not:
+    it welds a raw Playwright fragment onto a resolved value, in the one place
+    the literal-selector scan cannot see - because the literal is a
+    format-string tail rather than a quoted selector.
+
+    It shipped on main and reached a pull request. Agent 3 flagged it, and
+    correctly, but Agent 3 only advises. This makes it blocking.
+    """
+
+    def test_a_composed_nth_fragment_is_rejected(self, project_root):
+        errors = validate_page_object_selectors(
+            [_widgets_page('    def go(self, i) -> None:\n'
+                           '        self.click(f"{self.sel(\'rows\')} >> nth={i}")\n')],
+            project_root, inventory=_INV_MM)
+        assert any("locator syntax built in code" in e for e in errors)
+
+    def test_the_remedy_names_the_helper_and_how_to_get_the_index(self, project_root):
+        errors = validate_page_object_selectors(
+            [_widgets_page('    def go(self, i) -> None:\n'
+                           '        self.click(f"{self.sel(\'rows\')} >> nth={i}")\n')],
+            project_root, inventory=_INV_MM)
+        message = next(e for e in errors if "locator syntax" in e)
+        assert "click_nth" in message
+        assert "find_row_index_by_text" in message, \
+            "index-by-position without index-by-text invites a brittle test"
+
+    def test_the_spacing_variant_is_caught_too(self, project_root):
+        errors = validate_page_object_selectors(
+            [_widgets_page('    def go(self) -> None:\n'
+                           '        self.click(f"{self.sel(\'rows\')} >>nth=0")\n')],
+            project_root, inventory=_INV_MM)
+        assert any("locator syntax built in code" in e for e in errors)
+
+    def test_the_sanctioned_helper_passes(self, project_root):
+        errors = validate_page_object_selectors(
+            [_widgets_page('    def go(self, i) -> None:\n'
+                           '        self.click_nth(self.sel("rows"), i)\n')],
+            project_root, inventory=_INV_MM)
+        assert errors == [], \
+            "click_nth on a family is the CORRECT pattern, not a violation"
+
+    def test_one_line_yields_one_error(self, project_root):
+        """The composed fragment breaks two rules at once. Reporting both would
+        be one defect described twice, and the locator-syntax remedy already
+        resolves the multi_match complaint."""
+        errors = validate_page_object_selectors(
+            [_widgets_page('    def go(self) -> None:\n'
+                           '        self.click(f"{self.sel(\'rows\')} >> nth=0")\n')],
+            project_root, inventory=_INV_MM)
+        assert len(errors) == 1
+
+    def test_prose_showing_the_pattern_is_not_flagged(self, project_root):
+        """Docstrings and comments teach the rule by showing what breaks it."""
+        errors = validate_page_object_selectors(
+            [_widgets_page('    def go(self) -> None:\n'
+                           '        # never write: self.sel("rows") >> nth=0\n'
+                           '        self.click_nth(self.sel("rows"), 0)\n')],
+            project_root, inventory=_INV_MM)
+        assert errors == []
+
+    def test_a_docstring_teaching_the_rule_is_not_flagged(self, project_root):
+        """base_page.py documents anti-patterns by SHOWING them, and Agent 2
+        copies that style. A prefix test only catches a line STARTING with a
+        quote, so the middle of a multi-line docstring slipped through - the
+        AST is asked instead."""
+        errors = validate_page_object_selectors(
+            [_widgets_page('    def go(self, i) -> None:\n'
+                           '        """Never build it yourself:\n'
+                           '            self.click(f"{self.sel(\'rows\')} >> nth={i}")\n'
+                           '        Use click_nth.\n'
+                           '        """\n'
+                           '        self.click_nth(self.sel("rows"), i)\n')],
+            project_root, inventory=_INV_MM)
+        assert errors == []
+
+    def test_an_unparseable_file_still_scans_every_line(self, project_root):
+        """A half-written file cannot be AST-walked. Over-reporting there is
+        safer than letting a real violation through on a syntax error."""
+        errors = validate_page_object_selectors(
+            [_widgets_page('    def go(self, i) -> None:\n'
+                           '        self.click(f"{self.sel(\'rows\')} >> nth={i}"\n')],
+            project_root, inventory=_INV_MM)
+        assert any("locator syntax built in code" in e for e in errors)
