@@ -133,12 +133,12 @@ jobs:
           LLM_PRICE_OUTPUT_PER_1M: ${{ vars.LLM_PRICE_OUTPUT_PER_1M }}
 
           # Jira credentials
-          JIRA_URL: ${{ secrets.JIRA_URL }}
+          JIRA_URL: ${{ vars.JIRA_URL }}
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
-          JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
           # Optional — needed only when config.yaml uses sprint: "auto".
-          JIRA_BOARD_ID: ${{ secrets.JIRA_BOARD_ID }}
+          JIRA_BOARD_ID: ${{ vars.JIRA_BOARD_ID }}
 
           # GitHub credentials — Agent 2's GitHubClient reads GITHUB_TOKEN env.
           # GitHub reserves the GITHUB_* prefix for built-in vars/secrets, so
@@ -156,7 +156,7 @@ jobs:
           # rotation strategy. The PAT is scoped to this repo only with
           # Contents:R/W + PullRequests:R/W + Metadata:R.
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
-          GITHUB_REPO: ${{ secrets.GH_REPO }}
+          GITHUB_REPO: ${{ vars.GH_REPO }}
         run: |
           # Pick the right CLI flags based on workflow inputs:
           #   - With story_key:     process that one story

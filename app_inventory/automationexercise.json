@@ -139,7 +139,7 @@
         "add_to_cart_buttons",
         "view_product_links"
       ],
-      "multi_match_note": "Keys whose selector matches SEVERAL elements. Read them with get_all_texts / get_count / get_nth_text; never click, fill, wait on or assert against them - Playwright is strict and raises 'resolved to N elements'. Enforced by validators/method_resolution_validator.py at generation time.",
+      "multi_match_note": "Keys whose selector matches SEVERAL elements. Read them with get_all_texts / get_count / get_nth_text; to act on ONE member, scope to the row containing its text with click_in_row(); never click, fill or assert on the family as a whole. Enforced by validators/method_resolution_validator.py at generation time.",
       "elements_notes": {
         "add_to_cart_buttons": "MULTI-MATCH, and worse than it looks: every product card renders its Add to cart control TWICE (once in the card, once in the hover overlay), so this matches 68 elements on the all-products page, not 34. Never click it directly - scope to one product's card, or open the product via its View Product link.",
         "product_names": "MULTI-MATCH and also doubled per card for the same reason. Use get_all_texts() to assert a product IS present rather than indexing into it.",
@@ -183,7 +183,7 @@
         "cart_product_names",
         "cart_delete_buttons"
       ],
-      "multi_match_note": "Keys whose selector matches SEVERAL elements. Read them with get_all_texts / get_count / get_nth_text; never click, fill, wait on or assert against them.",
+      "multi_match_note": "Keys whose selector matches SEVERAL elements. Read them with get_all_texts / get_count / get_nth_text; to act on ONE member, scope to the row containing its text with click_in_row(); never click, fill or assert on the family as a whole.",
       "elements_notes": {
         "_test_owned": "The cart belongs to this test's own session or account, so asserting an EXACT row count is safe here - unlike the shared catalogue.",
         "cart_rows": "MULTI-MATCH. Narrow to the product the test added rather than assuming a row index.",

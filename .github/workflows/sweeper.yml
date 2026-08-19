@@ -78,7 +78,7 @@ jobs:
         env:
           # PAT (not the built-in token) so the reopen re-fires pull_request.
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
-          GITHUB_REPO: ${{ secrets.GH_REPO }}
+          GITHUB_REPO: ${{ vars.GH_REPO }}
         run: |
           DRY_RUN_FLAG=""
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then

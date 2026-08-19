@@ -891,7 +891,7 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
         "multi_match_note": (
             "Keys whose selector matches SEVERAL elements. Read them with "
             "get_all_texts / get_count / get_nth_text / the table helpers; "
-            "never click, fill, wait on or assert against them. A `<key>_first` "
+            "never click, fill, wait on or assert against the family AS A WHOLE. To act on ONE member, scope to the row containing its text with click_in_row(). A `<key>_first` "
             "sibling, where present, is the same selector pinned '>> nth=0'. "
             "ADD any hand-written family key here - a crawler never clicks, so "
             "options and dialog contents are not in this list yet."
@@ -939,7 +939,7 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
         entry.setdefault("multi_match_note",
                          "Keys whose selector matches SEVERAL elements - one per "
                          "product card, table row or carousel slide. Read them with "
-                         "the plural helpers only; never click, fill or assert on "
+                         "the plural helpers; to act on ONE member use click_in_row(). Never click, fill or assert on "
                          "one directly. Collapsed from per-instance keys at crawl "
                          "time.")
     if _needs_handle:
@@ -1182,7 +1182,7 @@ def verify_entry_against_page(page, entry: dict) -> dict:
         entry["multi_match"] = sorted(declared | set(measured_family))
         entry.setdefault("multi_match_note",
                          "Keys whose selector matches SEVERAL elements. Read them "
-                         "with the plural helpers only; never click, fill or assert "
+                         "with the plural helpers; to act on ONE member use click_in_row(). Never click, fill or assert "
                          "on one directly. MEASURED at crawl time, not guessed.")
     return entry
 

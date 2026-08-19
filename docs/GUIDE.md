@@ -721,7 +721,35 @@ Finding your board ID: open your board in Jira; the URL contains
 
 ### CI secrets
 
-For GitHub Actions, set the same names listed above under repo Settings → Secrets and variables → Actions. The workflows reference them via `${{ secrets.NAME }}`. Add `JIRA_BOARD_ID` as a secret if using `sprint: "auto"`. The two `LLM_PRICE_*` values go on the **Variables** tab (they're not sensitive).
+For GitHub Actions, set the same names under repo Settings → Secrets and
+variables → Actions.
+
+**Credentials go on the Secrets tab; identifiers go on the Variables tab.**
+The split is not cosmetic. GitHub masks every occurrence of a secret's VALUE
+anywhere in a log, so a short or numeric identifier redacts itself everywhere
+it appears. A board id of `1` stored as a secret turns this:
+
+```
+12:52:00 [INFO] ... in=31294 out=1295 ... cost=$1.3616
+```
+
+into this:
+
+```
+***2:52:00 [INFO] ... in=3***294 out=***295 ... cost=$***.36***6
+```
+
+Timestamps, token counts, costs and issue keys all become unreadable, and
+nothing is protected — a board id and a project key appear in every Jira URL.
+
+| Tab | Names |
+|---|---|
+| **Secrets** | `JIRA_API_TOKEN`, `JIRA_EMAIL`, `OPENAI_API_KEY`, `GH_PAT`, `APP_USER_REGISTERED`, `APP_PASSWORD` |
+| **Variables** | `JIRA_URL`, `JIRA_PROJECT_KEY`, `JIRA_BOARD_ID`, `GH_REPO`, `LLM_MODEL`, both `LLM_PRICE_*` |
+
+The workflows reference them as `${{ secrets.NAME }}` and `${{ vars.NAME }}`
+respectively; `tests/unit/test_workflow_secrets.py` fails if an identifier is
+moved back to Secrets.
 
 ### LLM token & cost tracking
 

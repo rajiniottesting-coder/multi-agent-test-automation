@@ -658,6 +658,11 @@ _FAMILY_CONSUMERS = frozenset({
     # is identified by what it SAYS before it is reached by where it sits.
     "click_nth",
     "get_nth_attribute",
+    # Scope to the row containing a text, then act inside it. This is the
+    # PREFERRED way to touch one member of a family - it needs no index, so two
+    # families never have to agree on cardinality or order.
+    "click_in_row",
+    "row_containing",
 })
 
 _PLURAL_SAFE_METHODS = _FAMILY_READERS | _FAMILY_CONSUMERS
@@ -1000,7 +1005,9 @@ def validate_page_object_selectors(
                         f"strict, so this raises 'strict mode violation: "
                         f"locator(...) resolved to N elements' at runtime. "
                         f"Either {remedy}, or, if you meant the whole set, "
-                        f"read it with one of: "
+                        f"To act on ONE member, scope to the row that contains "
+                        f"its text: click_in_row(<row family>, text, <control>). "
+                        f"Or, if you meant the whole set, read it with one of: "
                         f"{', '.join(sorted(_FAMILY_READERS))}."
                     )
 

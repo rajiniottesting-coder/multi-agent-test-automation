@@ -83,7 +83,7 @@ jobs:
           # GitHub reserves GITHUB_* prefix for its own use:
           #   GitHub Secret: GH_REPO  →  Env Var: GITHUB_REPO  (what code reads)
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPO: ${{ secrets.GH_REPO }}
+          GITHUB_REPO: ${{ vars.GH_REPO }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
           LLM_MODEL: ${{ vars.LLM_MODEL || 'claude-opus-4-6' }}
@@ -94,9 +94,9 @@ jobs:
           # for manual workflow_dispatch we override it here:
           PR_NUMBER: ${{ github.event.inputs.pr_number }}
           # Jira creds — kept here for forward-compat (Agent 5 will need these)
-          JIRA_URL: ${{ secrets.JIRA_URL }}
+          JIRA_URL: ${{ vars.JIRA_URL }}
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
-          JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
         run: |
           python -m agents.agent3_reviewer

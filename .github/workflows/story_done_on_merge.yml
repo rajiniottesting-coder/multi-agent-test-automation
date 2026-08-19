@@ -51,10 +51,10 @@ jobs:
 
       - name: Move story to Done
         env:
-          JIRA_URL: ${{ secrets.JIRA_URL }}
+          JIRA_URL: ${{ vars.JIRA_URL }}
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
-          JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
         run: |
           python -m scripts.close_merged_story \
             --branch "${{ github.event.pull_request.head.ref || inputs.branch }}" \
