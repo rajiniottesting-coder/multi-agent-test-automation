@@ -184,13 +184,41 @@ class BasePage:
         page.frame_locator('iframe#pay').locator('[data-test=card]').
         """
         if ">>>" not in locator:
-            return self.page.locator(locator)
+            return self._resolve(self.page, locator)
         parts = [p.strip() for p in locator.split(">>>")]
         element = parts[-1]
         scope: Any = self.page
         for frame_selector in parts[:-1]:
             scope = scope.frame_locator(frame_selector)
-        return scope.locator(element)
+        return self._resolve(scope, element)
+
+    @staticmethod
+    def _resolve(scope: Any, selector: str) -> Locator:
+        """Turn an inventory selector into a Playwright locator.
+
+        `placeholder=`, `label=`, `alt=` and `title=` are NOT selector engines.
+        Passing "placeholder=Some hint text" to locator() raises
+        `Unknown engine "placeholder"` - which is an ERROR rather than a miss,
+        so it does not read as a stale selector and sends the reader looking at
+        the wrong thing.
+
+        The sweep in inventory_tools learned this on 1 Aug 2026 and taught only
+        itself. BasePage kept calling locator() directly, so an inventory
+        written in the get_by_* spelling passed verify_locators and then failed
+        every test that touched it: two resolvers, one vocabulary, and the tool
+        meant to catch the problem could not see it. This is the same routing,
+        so what the sweep accepts is exactly what the runtime accepts.
+        """
+        if selector.startswith("placeholder="):
+            return scope.get_by_placeholder(selector[len("placeholder="):])
+        if selector.startswith("label="):
+            return scope.get_by_label(selector[len("label="):])
+        if selector.startswith("alt="):
+            return scope.get_by_alt_text(selector[len("alt="):])
+        if selector.startswith("title="):
+            return scope.get_by_title(selector[len("title="):])
+        # css, text= and role= are native to the selector engine.
+        return scope.locator(selector)
 
     @classmethod
     def _default_timeout_ms(cls) -> int:

@@ -354,7 +354,7 @@ def _cache_fields(response) -> tuple:
         return None, None
 
 
-def _record_usage(response, label: str) -> None:
+def _record_usage(response, label: str, cache_requested: bool = False) -> None:
     """Extract usage from a LangChain response and log call + running totals.
 
     Never raises — usage tracking must not break a run.
@@ -388,6 +388,22 @@ def _record_usage(response, label: str) -> None:
                 label,
                 f"{created:,}" if created else "0",
                 f"{read:,}" if read else "0",
+            )
+        elif cache_requested:
+            # A cache breakpoint WAS sent and the reply reports nothing back.
+            # Silence used to be the only outcome here, which made "caching is
+            # off" and "the endpoint ignored the breakpoint" look identical -
+            # and a whole run's logs showed no cache line at all while every
+            # call billed the full prefix. Say so, once per call, with the
+            # thing to check.
+            logger.info(
+                "LLM cache [%s]: requested but NOT reported by the endpoint "
+                "(written=0 read=0). Either the model priced this call without "
+                "caching, or the gateway dropped the cache_control block - "
+                "OpenAI-compatible proxies commonly strip it. Compare in= "
+                "across consecutive calls: an active cache makes it fall by "
+                "the size of the static prefix.",
+                label,
             )
     except Exception as e:
         logger.debug(f"Usage tracking failed (non-fatal): {e}")
@@ -659,7 +675,7 @@ class LLMClient:
         content = response.content or ""
 
         # Record token usage in the run-level tracker (logs per-call + totals)
-        _record_usage(response, "text:code-gen")
+        _record_usage(response, "text:code-gen", cache_requested=cache_prefix)
         _check_output_not_truncated(
             response,
             label="text:code-gen",

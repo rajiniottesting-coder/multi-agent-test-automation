@@ -297,3 +297,54 @@ class TestReviewIssueDefault:
         import pydantic
         with pytest.raises(pydantic.ValidationError):
             ReviewIssue(severity="major", file_path="p", description="d")
+
+# ─────────────────────────────────────────────────────────────────────────
+# Cache reporting must distinguish "off" from "ignored"
+#
+# A whole CI run produced not one cache line. That was indistinguishable from
+# caching being disabled - so the obvious reading, "we just aren't using it",
+# was wrong: the breakpoint WAS sent and the gateway dropped it. Every call
+# billed the full ~9,800-token static prefix and nothing said so.
+#
+# Silence is not a measurement.
+# ─────────────────────────────────────────────────────────────────────────
+
+class _CacheReply:
+    def __init__(self, **usage):
+        self.usage_metadata = {"input_tokens": 1000, "output_tokens": 100, **usage}
+
+
+def test_a_cache_hit_is_reported(caplog):
+    from core.llm_client import _record_usage
+    with caplog.at_level("INFO"):
+        _record_usage(_CacheReply(input_token_details={"cache_read": 9800}),
+                      "text:code-gen", cache_requested=True)
+    assert "LLM cache" in caplog.text
+    assert "read=9,800" in caplog.text
+
+
+def test_a_requested_but_unreported_cache_says_so(caplog):
+    """The case that cost a run: breakpoint sent, nothing reported back."""
+    from core.llm_client import _record_usage
+    with caplog.at_level("INFO"):
+        _record_usage(_CacheReply(), "text:code-gen", cache_requested=True)
+    assert "requested but NOT reported" in caplog.text
+    assert "gateway" in caplog.text, "name the likely cause"
+    assert "in=" in caplog.text, "tell the reader how to confirm it themselves"
+
+
+def test_no_cache_line_when_no_prefix_was_sent(caplog):
+    """Agents 1, 3 and 5 make one call each - there is nothing to reuse, so a
+    cache line there would be noise."""
+    from core.llm_client import _record_usage
+    with caplog.at_level("INFO"):
+        _record_usage(_CacheReply(), "structured:CodePlan", cache_requested=False)
+    assert "LLM cache" not in caplog.text
+
+
+def test_usage_is_still_logged_either_way(caplog):
+    from core.llm_client import _record_usage
+    with caplog.at_level("INFO"):
+        _record_usage(_CacheReply(), "text:code-gen", cache_requested=True)
+    assert "LLM usage" in caplog.text
+    assert "in=1000" in caplog.text and "out=100" in caplog.text
