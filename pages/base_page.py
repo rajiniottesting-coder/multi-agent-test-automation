@@ -321,6 +321,40 @@ class BasePage:
                 ) from None
             raise
 
+    def click_in_row(self, row_locator: str, text: str, target_locator: str) -> None:
+        """Click a control INSIDE the row that contains `text`.
+
+        The alternative - find_row_index_by_text() on one family, then
+        click_nth() on another - only works when the two families run in true
+        lockstep, one member each per row. That is an assumption about the
+        page, and pages break it routinely: a listing that renders each card's
+        controls twice (once in the card, once in a hover overlay) gives one
+        family 68 members and its neighbour 34, so an index found in the first
+        addresses the wrong element in the second. Nothing fails loudly; the
+        wrong record is acted on.
+
+        Scoping removes the assumption. The row is found by what it SAYS, and
+        the control is found INSIDE that row, so the two families never have to
+        agree on cardinality or order.
+
+        `row_locator` must match the repeating container - a table row, a card -
+        not the text element within it.
+        """
+        row = self._locator(row_locator).filter(has_text=text)
+        count = row.count()
+        if count == 0:
+            raise AssertionError(
+                f"No row matching `{row_locator}` contains {text!r}. Check the "
+                f"text is exact and that the row locator matches the repeating "
+                f"CONTAINER rather than the text element inside it."
+            )
+        row.first.locator(target_locator).click(
+            timeout=self._default_timeout_ms())
+
+    def row_containing(self, row_locator: str, text: str) -> Locator:
+        """The first row that contains `text`, for reading rather than clicking."""
+        return self._locator(row_locator).filter(has_text=text).first
+
     def get_nth_attribute(self, locator: str, index: int, name: str) -> Optional[str]:
         """Read one attribute from one member of a family."""
         return self._locator(locator).nth(index).get_attribute(name)

@@ -337,3 +337,74 @@ class TestToolsHandleTemplatedPages:
         """A sample that was never filled in is not a usable address."""
         _, skip = resolve_page_url({"url": "/a/{id}", "url_sample": "/a/{id}"})
         assert skip is not None
+
+# ─────────────────────────────────────────────────────────────────────────
+# Scoping beats indexing across families
+#
+# find_row_index_by_text() on one family then click_nth() on another assumes
+# the two run in lockstep, one member each per row. A listing that renders
+# every card's controls twice - once in the card, once in a hover overlay -
+# gives one family 68 members and its neighbour 34. An index found in the first
+# addresses the wrong element in the second, and nothing fails: the wrong
+# record is simply acted on.
+#
+# click_in_row removes the assumption. The row is found by what it SAYS, the
+# control is found INSIDE it, and the two families never have to agree.
+# ─────────────────────────────────────────────────────────────────────────
+
+class _Row:
+    def __init__(self, label, targets):
+        self.label, self._targets, self.clicked = label, targets, None
+
+    def locator(self, sel):
+        self.clicked = sel
+        return self
+
+    def click(self, timeout=None):
+        self._targets.append((self.label, self.clicked))
+
+
+class _Rows:
+    """A repeating container; .filter(has_text=...) narrows it."""
+
+    def __init__(self, labels, sink):
+        self._labels, self._sink, self._match = labels, sink, None
+
+    def filter(self, has_text=None):
+        out = _Rows([l for l in self._labels if has_text in l], self._sink)
+        return out
+
+    def count(self):
+        return len(self._labels)
+
+    @property
+    def first(self):
+        return _Row(self._labels[0], self._sink)
+
+
+def _page_with_rows(labels, sink):
+    obj = BasePage.__new__(BasePage)
+    obj._locator = lambda sel: _Rows(labels, sink)
+    return obj
+
+
+def test_the_control_inside_the_named_row_is_clicked():
+    sink = []
+    _page_with_rows(["Row A", "Row B", "Row C"], sink).click_in_row(
+        ".row", "Row B", "a.action")
+    assert sink == [("Row B", "a.action")]
+
+
+def test_a_missing_row_says_what_to_check():
+    """A silent miss here would click nothing and let the test carry on."""
+    with pytest.raises(AssertionError) as excinfo:
+        _page_with_rows(["Row A"], []).click_in_row(".row", "Row Z", "a.action")
+    message = str(excinfo.value)
+    assert "Row Z" in message
+    assert "CONTAINER" in message, \
+        "the usual mistake is passing the text element, not the row around it"
+
+
+def test_row_containing_returns_the_row_for_reading():
+    row = _page_with_rows(["Row A", "Row B"], []).row_containing(".row", "Row B")
+    assert row.label == "Row B"

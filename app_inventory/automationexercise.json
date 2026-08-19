@@ -151,7 +151,8 @@
         "searched_products_heading": "Replaces the All Products heading once a search has run. This is the only reliable signal that the search EXECUTED - a result count alone cannot tell 'the search returned one product' from 'the search never ran and the page still shows the full catalogue'. Assert on it before asserting on results.",
         "all_products_heading": "Shown on the unsearched listing. Its DISAPPEARANCE is the mirror signal to searched_products_heading.",
         "continue_shopping_button": "INSIDE the add-to-cart modal, so a product must be added before it exists. Use it to dismiss the modal and stay on the listing - a scenario adding a SECOND product must click this first, or the next click lands on the overlay rather than the page.",
-        "view_cart_link_in_modal": "INSIDE the add-to-cart modal. The other way out of it: navigates to the cart instead of dismissing. Prefer this over the nav Cart link when a scenario has just added a product, because it also proves the modal appeared."
+        "view_cart_link_in_modal": "INSIDE the add-to-cart modal. The other way out of it: navigates to the cart instead of dismissing. Prefer this over the nav Cart link when a scenario has just added a product, because it also proves the modal appeared.",
+        "product_cards": "MULTI-MATCH, one per card. NOT doubled - unlike product_names and add_to_cart_buttons, which render twice per card. Never take an index from a doubled family and apply it to this one: use click_in_row() to scope to the card containing the product name instead."
       },
       "key_methods": [],
       "conditional": [
@@ -188,7 +189,8 @@
         "cart_rows": "MULTI-MATCH. Narrow to the product the test added rather than assuming a row index.",
         "cart_table": "UNVERIFIED id, from the site's documented test cases rather than the DOM.",
         "proceed_to_checkout_button": "Matched by TEXT. role=link[name='Proceed To Checkout'] resolved to zero (2 Aug 2026) - the control is an anchor without an href, so it carries no link role. Proceeding while signed out shows a Register/Login prompt instead of the address form.",
-        "empty_cart_message": "Rendered ONLY when the cart holds nothing - the mirror of cart_rows. Assert on it after removing the last item, and never alongside cart_rows: exactly one of the two is present at any moment."
+        "empty_cart_message": "Rendered ONLY when the cart holds nothing - the mirror of cart_rows. Assert on it after removing the last item, and never alongside cart_rows: exactly one of the two is present at any moment.",
+        "_starting_state": "The cart PERSISTS for a registered account between sessions and between runs. Private to the account is not the same as empty: a run that added an item and then failed before removing it leaves that item behind, and the next run counting rows finds one more than it put there. A scenario that asserts an absolute row COUNT must empty the cart first, or assert on the presence of its own named product instead of on a total."
       },
       "key_methods": [],
       "conditional": [

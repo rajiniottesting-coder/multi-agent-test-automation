@@ -22,7 +22,20 @@ You are in Stage 2 of a two-stage workflow. The plan has already been decided. Y
 A key listed under `multi_match` matches several elements. Clicking it raises
 Playwright's strict-mode violation, and the generation gate rejects it.
 
-To act on one member, find it by what it SAYS and then reach it by position:
+PREFER SCOPING to indexing. Find the ROW that contains the text, then act on
+the control inside that row:
+
+    self.click_in_row(self.sel("<row_family>"), name, self.sel("<control>"))
+
+Indexing across two families only works if they run in true lockstep, one
+member each per row - and pages break that routinely. A listing that renders
+each card's controls twice, once in the card and once in a hover overlay,
+gives one family twice the members of its neighbour, so an index found in the
+first addresses the wrong element in the second. Nothing fails; the wrong
+record is acted on.
+
+Use the index form only when the control is NOT inside the row, and check the
+inventory notes for a family that says it is doubled:
 
     index = self.find_row_index_by_text(self.sel("<row_family>"), name)
     self.click_nth(self.sel("<control_family>"), index)
