@@ -158,3 +158,44 @@ def test_methods_in_a_NESTED_class_are_not_compared_with_the_outer_one():
            "        def go_home(self): pass\n"
            "    def go_home(self): pass\n")
     assert find_redundant_methods(src) == []
+
+# ─────────────────────────────────────────────────────────────────────────
+# The same rule, pointed at what is COMMITTED
+#
+# Everything above tests the validator against synthetic files. That covers
+# the generation gate - but a gate only guards what passes THROUGH it, and the
+# case this rule exists for never does.
+#
+# Two stories touching one page object both branch from main, so neither sees
+# the other. Story A adds filter_by_brand(), story B adds
+# filter_products_by_brand(). If the additions land far enough apart, git
+# merges both cleanly: nothing conflicts, nothing fails, and the page object
+# quietly grows two methods for one behaviour. The validator never runs on the
+# merged result, because merging is not generating.
+#
+# This is the same function applied to whatever pages/ actually holds, so a bad
+# merge fails CI on main. It is not an eleventh validator - it is the tenth,
+# aimed at a second target.
+# ─────────────────────────────────────────────────────────────────────────
+
+def test_no_committed_page_object_holds_duplicate_methods():
+    from pathlib import Path
+
+    pages_dir = Path(__file__).resolve().parents[2] / "pages"
+    files = [f for f in sorted(pages_dir.glob("*_page.py"))
+             if f.name != "base_page.py"]
+    if not files:
+        import pytest as _pytest
+        _pytest.skip("no page objects committed yet - Agent 2 has not run")
+
+    errors = validate_no_duplicate_page_object_methods([
+        SimpleNamespace(file_path=f"pages/{f.name}",
+                        content=f.read_text(encoding="utf-8"))
+        for f in files
+    ])
+    assert not errors, (
+        "a committed page object holds two methods meaning the same thing. "
+        "This is what a clean merge between two concurrent branches produces: "
+        "neither could see the other, so both added their own name for one "
+        "behaviour. Keep whichever name the existing step definitions call and "
+        "delete the other.\n  " + "\n  ".join(errors))

@@ -289,11 +289,25 @@ def test_conftest_refuses_reserved_names_too():
 
 
 def test_factory_builds_the_right_class():
-    """The registered fixture must construct the class it was derived from."""
+    """The registered fixture must construct the class it was derived from.
+
+    Built from a LOCAL class rather than imported from this application's
+    pages/: the factory's behaviour has nothing to do with which app is under
+    test, and importing a real page object made a framework test fail the
+    moment that file was renamed or replaced during an app migration.
+    """
     import tests.step_defs.conftest as conftest
-    from pages.login_page import LoginPage
-    fixture = conftest._make_page_fixture(LoginPage)
+    from pages.base_page import BasePage
+
+    class SomeWidgetPage(BasePage):
+        INVENTORY_PAGE = "some_widget"
+
+        def __init__(self, page):
+            self.page = page
+
+    fixture = conftest._make_page_fixture(SomeWidgetPage)
     assert hasattr(fixture, "_pytestfixturefunction")
     instance = fixture.__wrapped__(page="<stand-in>")
-    assert isinstance(instance, LoginPage)
-    assert fixture.__wrapped__.__doc__ and "LoginPage" in fixture.__wrapped__.__doc__
+    assert isinstance(instance, SomeWidgetPage)
+    assert fixture.__wrapped__.__doc__
+    assert "SomeWidgetPage" in fixture.__wrapped__.__doc__
