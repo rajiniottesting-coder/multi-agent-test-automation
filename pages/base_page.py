@@ -321,6 +321,45 @@ class BasePage:
                 ) from None
             raise
 
+    # Ad networks show a full-screen interstitial that SWALLOWS the first
+    # navigation after a page load. Google calls its version a Vignette: the
+    # click is consumed, the address gains a `#google_vignette` fragment, and
+    # the page stays where it was until the ad is dismissed or times out.
+    #
+    # A trace showed exactly that - a nav link clicked at +3.7s, the next
+    # action starting at +4.3s and waiting the full 30 seconds for an element
+    # that only exists on the destination. The screenshot taken afterwards
+    # showed the destination loaded and looking perfectly healthy, because by
+    # then the ad had gone. Nothing in the evidence pointed at the ad.
+    _INTERSTITIAL_FRAGMENTS = ("#google_vignette", "#aswift", "#dismiss")
+
+    def _interstitial_showing(self) -> bool:
+        """True when an ad interstitial is sitting over the page."""
+        try:
+            return any(f in (self.page.url or "")
+                       for f in self._INTERSTITIAL_FRAGMENTS)
+        except Exception:                                      # noqa: BLE001
+            return False
+
+    def dismiss_interstitial(self) -> bool:
+        """Close an ad interstitial if one is showing. True if one was closed.
+
+        Pressing Escape and going back are both cheap and safe: neither does
+        anything when no interstitial is present, which is why this can be
+        called speculatively before giving up on an action.
+        """
+        if not self._interstitial_showing():
+            return False
+        try:
+            self.page.keyboard.press("Escape")
+            self.page.wait_for_timeout(300)
+            if self._interstitial_showing():
+                self.page.go_back(wait_until="domcontentloaded")
+                self.page.wait_for_timeout(300)
+            return True
+        except Exception:                                      # noqa: BLE001
+            return False
+
     def click_in_row(self, row_locator: str, text: str, target_locator: str) -> None:
         """Click a control INSIDE the row that contains `text`.
 

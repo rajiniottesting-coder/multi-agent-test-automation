@@ -74,6 +74,44 @@ _SIGNATURES: list[tuple[re.Pattern, Diagnosis]] = [
         ),
     ),
     (
+        # An action waited for an element that only exists on ANOTHER page,
+        # which almost always means the navigation that should have taken us
+        # there did not happen. The commonest cause on an ad-supported site is
+        # an interstitial: Google's Vignette consumes the first navigation
+        # after a page load, parks the address on `#google_vignette`, and lets
+        # the click through only once it is dismissed.
+        #
+        # The evidence is deceptive. By the time the failure screenshot is
+        # taken the ad has gone and the destination looks perfectly healthy -
+        # a trace showed a nav click at +3.7s, the next action waiting the full
+        # 30s, and a screenshot at +34.9s of the page it had been waiting for.
+        # Only when the log shows a wait that NEVER resolved. A log containing
+        # "locator resolved to" is the hidden case below, whose remedy is the
+        # opposite - my first version of this pattern matched both and stole
+        # it, which is the same mistake in reverse.
+        re.compile(
+            r"(?s)\A(?!.*locator resolved to).*"
+            r"waiting for (?:get_by_placeholder|get_by_label|get_by_alt_text"
+            r"|get_by_title|get_by_role)",
+            re.I),
+        Diagnosis(
+            "element never appeared - probably the wrong page",
+            "The wait never resolved at all: no 'locator resolved to' line "
+            "means zero matches, not a hidden or blocked element. The element "
+            "is almost certainly on a page the browser never reached.",
+            "Compare the action timeline in the trace: if a navigation happened "
+            "shortly before this wait, check whether it actually landed. An ad "
+            "INTERSTITIAL is the usual culprit - it swallows the first "
+            "navigation after a page load and parks the URL on a fragment such "
+            "as #google_vignette, so the click appears to work and nothing "
+            "moves. The failure screenshot is taken after the ad has gone, so "
+            "it shows the destination looking healthy and proves nothing. "
+            "BasePage.dismiss_interstitial() clears one; a step that navigates "
+            "should confirm the destination is ready before the next step acts "
+            "on it.",
+        ),
+    ),
+    (
         # PRESENT BUT HIDDEN. Playwright says "expected to be visible" for both
         # a missing element and one that is in the DOM and not shown, and the
         # readiness-probe entry below then advises checking the selector. That
