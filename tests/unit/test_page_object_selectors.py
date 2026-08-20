@@ -28,12 +28,16 @@ from pages.base_page import BasePage
 PAGES_DIR = Path(__file__).resolve().parents[2] / "pages"
 
 # A selector-looking literal: css, or one of Playwright's engine prefixes.
+# A selector literal, wherever it appears. The original pattern required an
+# `= "..."`, so it caught an ASSIGNMENT - `SELECTOR = "#id"` - and missed the
+# commoner shape by far: the literal handed straight to a helper,
+# `self.click("#id")`. One injected into a committed page object passed the
+# entire suite. Matching the quoted string itself covers both, and both quote
+# styles.
 _SELECTOR_LITERAL = re.compile(
-    r'=\s*"(?:'
-    r'\s*[.#\[]'                                     # .class  #id  [attr=…]
-    r'|(?:role|text|label|alt|title|placeholder)='   # playwright engines
-    r')[^"]*"'
+    r"""["'](?:\s*[.#\[]|(?:role|text|label|alt|title|placeholder)=)[^"']*["']"""
 )
+
 
 # A synthetic app. Deliberately nothing to do with the app under test.
 _FAKE_INVENTORY = {
