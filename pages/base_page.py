@@ -525,22 +525,57 @@ class BasePage:
 
         Use is_visible() when you want a true zero-wait probe, and this when
         you are waiting for something to arrive.
+
+        A failed probe tries ONCE more after dismissing an ad interstitial,
+        and only when the URL says one is actually up. An interstitial
+        swallows the navigation that was supposed to bring the browser here,
+        so the probe waits on a page the browser never left - the failure
+        that took a day to read, because every piece of evidence is captured
+        after the ad has gone and shows the destination looking healthy.
+
+        This is where the retry belongs: the probe is a page object asking
+        "did I arrive?", and an interstitial is the thing that answers that
+        question wrongly. It cannot rescue a genuine failure, because
+        dismiss_interstitial() returns False without touching the page when
+        no interstitial fragment is in the URL.
         """
+        showing, reason = self._probe_visible(locator, timeout_ms)
+        if showing:
+            return True
+
+        if self.dismiss_interstitial():
+            logger.warning(
+                "%s.is_showing(%r) failed behind an ad interstitial at %s — "
+                "dismissed it and retried once.",
+                type(self).__name__, locator, self._where(),
+            )
+            showing, reason = self._probe_visible(locator, timeout_ms)
+            if showing:
+                return True
+
+        logger.warning(
+            "%s.is_showing(%r) is False after %d ms at %s — %s",
+            type(self).__name__, locator, self._timeout(timeout_ms),
+            self._where(), reason,
+        )
+        return False
+
+    def _where(self) -> str:
+        """The current URL, or a placeholder when the page has gone away."""
+        try:
+            return self.page.url
+        except Exception:                                 # noqa: BLE001
+            return "(url unavailable)"
+
+    def _probe_visible(self, locator: str,
+                       timeout_ms: Optional[int]) -> tuple:
+        """(True, "") if the element became visible, else (False, reason)."""
         try:
             self.wait_visible(locator, timeout_ms=timeout_ms)
-            return True
+            return True, ""
         except Exception as exc:                          # noqa: BLE001
-            reason = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
-            try:
-                where = self.page.url
-            except Exception:                             # noqa: BLE001
-                where = "(url unavailable)"
-            logger.warning(
-                "%s.is_showing(%r) is False after %d ms at %s — %s",
-                type(self).__name__, locator, self._timeout(timeout_ms),
-                where, reason,
-            )
-            return False
+            text = str(exc)
+            return False, (text.splitlines()[0] if text else type(exc).__name__)
 
     def is_enabled(self, locator: str) -> bool:
         """True if the element is enabled."""

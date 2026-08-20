@@ -290,3 +290,77 @@ def format_failure(test_name: str, error_text: str,
     lines = [f"{indent}FAILED {test_name}", f"{indent}WHAT:  {headline}"]
     lines += d.as_lines(indent)
     return "\n".join(lines)
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# Classifying a failure whose evidence is NOT in the traceback
+#
+# `BasePage.is_showing()` swallows the Playwright error by design and logs it
+# at WARNING, so a readiness assertion surfaces as nothing but `assert False`.
+# The sentence that classifies the failure - "PRESENT in the DOM but HIDDEN" -
+# lands in the CAPTURED LOG, and the captured log is not part of
+# `report.longrepr`. Both callers passed only the traceback, so a failure this
+# module can read perfectly was reported "unclassified" while its own diagnosis
+# was printed six lines above.
+#
+# The widening is PROGRESSIVE and only ever runs on text that already came back
+# unclassified. That is deliberate: matching over more text can only create new
+# false positives, so every reading that is correct today stays byte-identical,
+# and the extra sources are consulted in order of how much they can be trusted.
+# ═════════════════════════════════════════════════════════════════════════
+
+def diagnose_with_context(primary: str, *supplementary: str) -> Diagnosis:
+    """Read PRIMARY; widen into SUPPLEMENTARY only while unclassified.
+
+    PRIMARY is the traceback. SUPPLEMENTARY should be passed most-trustworthy
+    first (captured log, then stdout, then stderr): each is appended in turn
+    and the result returned as soon as anything matches.
+
+    A caller that passes no supplementary text gets exactly `diagnose()`.
+    """
+    text = primary or ""
+    result = diagnose(text)
+    if result is not _UNKNOWN:
+        return result
+
+    for extra in supplementary:
+        if not extra:
+            continue
+        text = f"{text}\n{extra}"
+        result = diagnose(text)
+        if result is not _UNKNOWN:
+            return result
+    return _UNKNOWN
+
+
+def attach_diagnosis(report) -> bool:
+    """Attach a CAUSE / FIX section to one failed pytest report.
+
+    Lives here rather than inline in a conftest hook so that the behaviour is
+    importable and can be exercised by a test. The previous version was four
+    lines inside `pytest_runtest_makereport`, which meant the only thing a
+    guard could check was that `diagnose()` classifies a string - never that
+    the string the hook actually hands it is the one that carries the answer.
+    It was not, for a year.
+
+    Returns True if a section was attached. Never raises: a diagnosis is a
+    convenience and must not be able to turn a test failure into an error, or
+    mask a real result.
+    """
+    try:
+        if not getattr(report, "failed", False):
+            return False
+
+        d = diagnose_with_context(
+            str(report.longrepr),
+            getattr(report, "caplog", "") or "",
+            getattr(report, "capstdout", "") or "",
+            getattr(report, "capstderr", "") or "",
+        )
+        report.sections.append((
+            "Why this failed",
+            f"CAUSE ({d.label}): {d.cause}\n\nFIX: {d.remedy}",
+        ))
+        return True
+    except Exception:                                     # noqa: BLE001
+        return False

@@ -99,3 +99,172 @@ def test_it_does_not_steal_the_hidden_case():
     """The first version of this pattern matched any 'waiting for locator' line
     and hijacked the hidden diagnosis, whose remedy is the opposite."""
     assert "hidden" in diagnose(_HIDDEN_LOG).label.lower()
+
+
+# =========================================================================
+# THE CLASSIFIER MUST BE GIVEN THE TEXT THAT CLASSIFIES
+#
+# Every test above hands diagnose() a raw Playwright error. The pytest hook
+# never had one to hand it. is_showing() catches the Playwright error by
+# design and logs it, so a readiness assertion arrives as `assert False` and
+# nothing else, and the sentence that names the cause is in the CAPTURED LOG.
+# report.caplog carries it; str(report.longrepr) does not.
+#
+# The hook passed str(report.longrepr). So the whole probe class - the one
+# this module was written for - came back "unclassified" in CI while the
+# framework's own reading of it was printed six lines higher up. Nine months
+# of green unit tests, because the guard tested the function and the bug was
+# in the argument.
+#
+# These run a REAL failing pytest session through the real hook body and read
+# what comes out, and one of them asserts the old behaviour still fails.
+# =========================================================================
+
+_PROBE_TRACEBACK = """tests/step_defs/test_x.py:151: in assert_state
+    assert some_page.is_empty(), "Expected the collection to be empty"
+E   AssertionError: Expected the collection to be empty
+E   assert False
+E    +  where False = is_empty()"""
+
+_PROBE_CAPLOG = (
+    "WARNING  pages.base_page:base_page.py:538 SomePage.is_showing("
+    "\'text=Nothing here\') is False after 30000 ms at http://app.test/x "
+    "\u2014 `text=Nothing here` is PRESENT in the DOM but HIDDEN at "
+    "http://app.test/x."
+)
+
+
+def test_the_traceback_alone_is_not_enough():
+    """The negative control. If this ever starts passing, the widening below
+    is no longer load-bearing and the reason for it has been lost."""
+    from core.failure_diagnosis import diagnose
+
+    assert diagnose(_PROBE_TRACEBACK).label == "unclassified", (
+        "the traceback of a swallowed probe failure carries no signature - "
+        "that is the whole reason the captured log has to be read too"
+    )
+
+
+def test_the_captured_log_rescues_it():
+    from core.failure_diagnosis import diagnose_with_context
+
+    d = diagnose_with_context(_PROBE_TRACEBACK, _PROBE_CAPLOG)
+    assert d.label == "element present but hidden", (
+        f"expected the hidden reading once the log is included, got {d.label!r}"
+    )
+
+
+def test_widening_never_overrides_a_reading_that_already_matched():
+    """Widening must be a fallback, not a re-read. A log line from an earlier
+    retry can contain any signature going; if it could displace a traceback
+    that already classified, this change would break correct readings."""
+    from core.failure_diagnosis import diagnose, diagnose_with_context
+
+    noise = "Timeout 30000ms exceeded. ModuleNotFoundError: no such thing"
+    for sample in (_HIDDEN_LOG, _NOT_FOUND_LOG, _NEVER_RESOLVED):
+        assert diagnose_with_context(sample, noise) is diagnose(sample), (
+            "supplementary text changed a reading that the primary text had "
+            "already made"
+        )
+
+
+def test_no_supplementary_text_behaves_exactly_like_diagnose():
+    from core.failure_diagnosis import diagnose, diagnose_with_context
+
+    for sample in (_HIDDEN_LOG, _NOT_FOUND_LOG, _NEVER_RESOLVED, ""):
+        assert diagnose_with_context(sample) is diagnose(sample)
+
+
+def _run_probe_session(tmp_path, hook_body: str) -> str:
+    """Run one failing pytest session in tmp_path and return its output.
+
+    The failure is shaped exactly like the probe class: a helper module logs
+    at WARNING and returns False, and the test asserts on the return value.
+    The warning must come from a DIFFERENT module than the test, or pytest
+    inlines the call into the traceback and the point is lost.
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+
+    (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    (tmp_path / "probe_helper.py").write_text(
+        "import logging\n"
+        "logger = logging.getLogger('pages.base_page')\n"
+        "def is_empty():\n"
+        "    logger.warning(%r)\n"
+        "    return False\n" % _PROBE_CAPLOG.split("base_page.py:538 ")[1],
+        encoding="utf-8",
+    )
+    (tmp_path / "conftest.py").write_text(
+        "import sys, pytest\n"
+        f"sys.path.insert(0, {str(root)!r})\n" + hook_body,
+        encoding="utf-8",
+    )
+    (tmp_path / "test_probe.py").write_text(
+        "from probe_helper import is_empty\n"
+        "def test_probe():\n"
+        "    assert is_empty(), 'Expected the collection to be empty'\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-q",
+         str(tmp_path)],
+        cwd=str(tmp_path), capture_output=True, text=True,
+    )
+    return result.stdout + result.stderr
+
+
+_REAL_HOOK = """
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    if report.failed:
+        from core.failure_diagnosis import attach_diagnosis
+        attach_diagnosis(report)
+"""
+
+_OLD_HOOK = """
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    if report.failed:
+        from core.failure_diagnosis import diagnose
+        d = diagnose(str(report.longrepr))
+        report.sections.append(
+            ("Why this failed", "CAUSE (%s): %s" % (d.label, d.cause)))
+"""
+
+
+def test_a_real_failing_session_gets_the_right_reading(tmp_path):
+    """End to end through the hook body tests/conftest.py actually installs."""
+    output = _run_probe_session(tmp_path, _REAL_HOOK)
+
+    assert "element present but hidden" in output, (
+        "a real probe-shaped failure was not classified by the hook:\n" + output
+    )
+    assert "CAUSE (unclassified)" not in output, (
+        "the hook still reported a classifiable failure as unclassified"
+    )
+
+
+def test_the_guard_fails_against_the_version_that_had_the_bug(tmp_path):
+    """Break the thing the guard guards.
+
+    A guard that has never failed has not been tested. This runs the OLD hook -
+    traceback only - and requires it to produce exactly the unclassified
+    verdict seen in CI. If this stops holding, the test above is passing for
+    some reason other than the fix.
+    """
+    output = _run_probe_session(tmp_path, _OLD_HOOK)
+
+    assert "CAUSE (unclassified)" in output, (
+        "the pre-fix hook should still misread this failure; if it no longer "
+        "does, this probe no longer reproduces the bug and proves nothing:\n"
+        + output
+    )

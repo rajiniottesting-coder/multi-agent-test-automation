@@ -421,9 +421,22 @@ jobs:
                       first_line = msg.splitlines()[0] if msg else "(no message)"
                       if len(first_line) > 200:
                           first_line = first_line[:197] + "..."
+
+                      # The DISPLAY line stays one line. The text handed to the
+                      # classifier does not: for the readiness-probe class the
+                      # message is only `assert False` and the sentence that
+                      # classifies it is in the captured log, which pytest.ini
+                      # now routes into <system-out> (junit_logging = log).
+                      # Reading the message alone reported these "unclassified".
+                      body = "\n".join(
+                          part for part in (msg, issue.text or "") if part)
+                      captured = "\n".join(
+                          (node.text or "")
+                          for tag in ("system-out", "system-err")
+                          for node in case.findall(tag))
                       failed_cases.append(
                           (f'{case.get("classname", "")}::{case.get("name", "")}',
-                           first_line))
+                           first_line, body, captured))
 
               if failed_cases:
                   # Each failure carries a CAUSE and a FIX, not just a message.
@@ -431,17 +444,30 @@ jobs:
                   # never what was wrong with the app, so this summary used to
                   # say nothing actionable to anyone who had not spent a day
                   # reading traces.
+                  #
+                  # diagnose_with_context, not diagnose: it widens into the
+                  # captured log ONLY when the traceback alone came back
+                  # unclassified, so every reading that is right today is
+                  # unchanged and the probe class stops falling through.
                   try:
                       import sys
                       sys.path.insert(0, ".")
-                      from core.failure_diagnosis import diagnose
-                  except Exception:
-                      diagnose = None
+                      from core.failure_diagnosis import diagnose_with_context
+                  except Exception as exc:
+                      diagnose_with_context = None
+                      import_error = exc
                   lines += ["### Failures", ""]
-                  for test_name, msg in failed_cases:
-                      lines += [f"- **`{test_name}`**", f"  - {msg}"]
-                      if diagnose is not None:
-                          d = diagnose(msg)
+                  if diagnose_with_context is None:
+                      # Say so. A summary that silently drops the Cause/Fix
+                      # lines looks like a failure nobody could read, which is
+                      # the exact silence this whole mechanism exists to end.
+                      lines += [f"> Could not import the failure classifier "
+                                f"(`{import_error}`), so the readings below "
+                                f"are missing.", ""]
+                  for test_name, first_line, body, captured in failed_cases:
+                      lines += [f"- **`{test_name}`**", f"  - {first_line}"]
+                      if diagnose_with_context is not None:
+                          d = diagnose_with_context(body, captured)
                           lines += [f"    - **Cause ({d.label}):** {d.cause}",
                                     f"    - **Fix:** {d.remedy}"]
                   lines.append("")

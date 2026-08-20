@@ -35,10 +35,21 @@ over, which makes "add then log in" a legitimate scenario rather than a trap.
 
 Each row shows product name, price, quantity and total, plus a delete control.
 Row selectors match every row, so narrow to the product the test added rather
-than assuming a row index. The cart is test-owned data, so asserting an exact
+than assuming a row index.
 
-Private is not the same as empty. The cart survives logout and survives the run, so a scenario reusing the shared account inherits whatever a previous run left behind. Assert an ABSOLUTE state only from an account this test registered; otherwise assert relatively - that the product this test added is present - which is true whatever the cart started with.
-row count IS safe here — unlike the catalogue.
+
+## The cart is test-owned, and test-owned is not the same as empty
+
+Unlike the catalogue, the cart holds only what a test put there, so a row count
+is a legitimate thing to assert on. What it does NOT do is start at zero.
+
+Private is not the same as empty. The cart survives logout and survives the
+run, so a scenario reusing the shared account inherits whatever a previous run
+left behind — including a run that died between adding a product and removing
+it. Assert an ABSOLUTE state ("the cart is empty", "the cart holds exactly one
+row") only from an account this test registered itself; otherwise assert
+relatively — that the product this test added is present, or is gone — which
+is true whatever the cart started with.
 
 ## Checkout requires an account
 

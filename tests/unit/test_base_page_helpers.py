@@ -242,6 +242,136 @@ def test_is_showing_passes_the_explicit_timeout_through(monkeypatch):
     assert seen == [("#thing", 250)]
 
 
+# =========================================================================
+# The interstitial handler must actually be CALLED
+#
+# dismiss_interstitial() sat in BasePage for months with no caller anywhere in
+# the repo. It was written after an ad swallowed a navigation and cost a day
+# of reading a trace, and then it never ran once. A helper nobody calls is a
+# comment.
+#
+# The probe is where it belongs: is_showing() is a page object asking "did I
+# arrive?", and an interstitial is precisely the thing that answers that
+# question wrongly - the click is consumed, the URL gains a fragment, the page
+# never moves, and the probe waits out its full timeout on a page the browser
+# never left.
+#
+# These are BEHAVIOURAL. A textual check that the name appears somewhere would
+# pass on a mention in a docstring, which is how the previous version of this
+# class of guard passed while the feature was broken.
+# =========================================================================
+
+class _InterstitialPage:
+    """A page whose URL carries an interstitial fragment until it is dismissed."""
+
+    def __init__(self, clears: bool = True):
+        # Read the fragment from the framework's own constant rather than
+        # naming an ad vendor here. The test then follows the tuple if it
+        # ever changes, and no unit test carries a third-party literal.
+        self.url = ("https://app.example/somewhere"
+                    + BasePage._INTERSTITIAL_FRAGMENTS[0])
+        self._clears = clears
+        self.escapes = 0
+
+    class _Keyboard:
+        def __init__(self, outer):
+            self._outer = outer
+
+        def press(self, key):
+            self._outer.escapes += 1
+            if self._outer._clears:
+                self._outer.url = "https://app.example/somewhere"
+
+    @property
+    def keyboard(self):
+        return self._Keyboard(self)
+
+    def wait_for_timeout(self, ms):
+        pass
+
+    def go_back(self, **kwargs):
+        self.url = "https://app.example/somewhere"
+
+
+def _probe_with_page(monkeypatch, page, outcomes):
+    """A BasePage over `page`, whose wait_visible fails/succeeds per outcomes."""
+    obj = BasePage(page)
+    calls = {"n": 0}
+
+    def fake_wait_visible(locator, timeout_ms=None):
+        calls["n"] += 1
+        if not outcomes.pop(0):
+            raise RuntimeError("Timeout 5000ms exceeded.\nwaiting for locator")
+
+    monkeypatch.setattr(obj, "wait_visible", fake_wait_visible)
+    return obj, calls
+
+
+def test_a_failed_probe_dismisses_an_interstitial_and_retries(monkeypatch):
+    """The whole point: the first wait dies behind the ad, the second sees the
+    page that was there all along."""
+    page = _InterstitialPage()
+    obj, calls = _probe_with_page(monkeypatch, page, [False, True])
+
+    assert obj.is_showing("#thing") is True
+    assert calls["n"] == 2, "the probe must be retried after the ad is cleared"
+    assert page.escapes == 1
+
+
+def test_no_interstitial_means_no_retry(monkeypatch):
+    """Break the thing the guard guards.
+
+    If the retry fired on every failure it would double the wait on every
+    ordinary miss - 30 seconds becomes 60 across a suite. It must be gated on
+    the URL saying an interstitial is genuinely up.
+    """
+    obj, calls = _probe_with_page(monkeypatch, _FakePage(), [False])
+
+    assert obj.is_showing("#thing") is False
+    assert calls["n"] == 1, "an ordinary failure must not be retried"
+
+
+def test_a_retry_that_also_fails_still_reports_the_original_reason(monkeypatch):
+    """Dismissing the ad must not cost the reader the diagnosis. The log line
+    is the only place the readiness class carries its cause."""
+    obj, calls = _probe_with_page(monkeypatch, _InterstitialPage(), [False, False])
+
+    import logging
+    with _caplog_at(logging.WARNING) as records:
+        assert obj.is_showing("#missing") is False
+
+    text = "\n".join(records)
+    assert calls["n"] == 2
+    assert "#missing" in text
+    assert "Timeout" in text, "the Playwright reason must survive the retry"
+
+
+class _caplog_at:
+    """Minimal log capture - caplog is a fixture and this file uses plain
+    functions for the probe tests."""
+
+    def __init__(self, level):
+        self.level = level
+        self.records: list = []
+
+    def __enter__(self):
+        import logging
+        self.handler = logging.Handler()
+        self.handler.emit = lambda record: self.records.append(
+            record.getMessage() % () if not record.args
+            else record.getMessage())
+        self.logger = logging.getLogger("pages.base_page")
+        self.logger.addHandler(self.handler)
+        self._old = self.logger.level
+        self.logger.setLevel(self.level)
+        return self.records
+
+    def __exit__(self, *exc):
+        self.logger.removeHandler(self.handler)
+        self.logger.setLevel(self._old)
+        return False
+
+
 def test_reference_page_object_uses_the_probe():
     """The reference page object is the shape Agent 2 copies. If it goes back
     to a bare try/except, the swallowed-reason regression comes back with it.

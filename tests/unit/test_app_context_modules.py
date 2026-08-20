@@ -239,3 +239,109 @@ def test_a_test_owned_data_claim_also_states_whether_it_starts_clean():
             f"the fallback: a relative assertion - that the thing this test "
             f"added is present - is true whatever the account started with."
         )
+
+
+# =========================================================================
+# A CONTEXT PARAGRAPH MUST NOT END MID-SENTENCE
+#
+# The starting-state warning the check above looks for was once added to a
+# context module by pasting it into the MIDDLE of an existing sentence. What
+# the model read was the first half of one instruction, then the warning,
+# then the second half - and the two halves said the opposite of the warning
+# between them. Agent 2 followed the half that suited it.
+#
+# The check above passed throughout, because it asks whether the warning is
+# PRESENT and it was: present, and buried inside a broken sentence arguing
+# against it.
+#
+# So this checks STRUCTURE, not vocabulary. A prose paragraph that ends
+# without terminal punctuation has had something inserted into it, and
+# whatever was inserted is now sitting inside a sentence it did not belong
+# to. That is detectable without knowing anything about the application,
+# which is the only kind of check allowed to live in this file.
+# =========================================================================
+
+_TERMINAL = (".", "!", "?", ":", ";", '"', "'", ")", "`")
+
+
+def _prose_paragraphs(text: str):
+    """Blank-line-separated blocks that are prose, not markup.
+
+    Skipped: headings, tables, lists, block quotes, fenced code, ASCII flow
+    diagrams (an arrow is not a sentence) and prompt placeholders.
+    """
+    blocks, current, in_fence = [], [], False
+    for line in text.splitlines():
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
+            current.append(line)
+            continue
+        if not line.strip() and not in_fence:
+            if current:
+                blocks.append(current)
+                current = []
+        else:
+            current.append(line)
+    if current:
+        blocks.append(current)
+
+    for block in blocks:
+        joined = "\n".join(block)
+        if block[0].lstrip().startswith(("#", "|", "-", "*", ">", "```")):
+            continue
+        if any(token in joined for token in ("```", "\u2192", "->", "{")):
+            continue
+        yield block
+
+
+def test_a_context_paragraph_never_ends_mid_sentence():
+    from pathlib import Path
+
+    folder = Path(__file__).resolve().parents[2] / "prompts" / "app_context"
+    if not folder.is_dir():
+        pytest.skip("no app_context modules in this checkout")
+
+    for module in sorted(folder.glob("*.md")):
+        for block in _prose_paragraphs(module.read_text(encoding="utf-8")):
+            last = block[-1].rstrip()
+            assert last.endswith(_TERMINAL), (
+                f"{module.name}: a paragraph ends mid-sentence:\n"
+                f"    ...{last[-70:]!r}\n"
+                f"Something has been inserted into this sentence, which means "
+                f"the model is reading the inserted text as part of a "
+                f"different instruction. Close the sentence, then add the new "
+                f"paragraph after it."
+            )
+
+
+def test_the_paragraph_check_catches_a_real_splice():
+    """Break the thing the guard guards.
+
+    The exact shape that shipped: a paragraph pasted between the two halves of
+    a sentence. If this stops being detected, the check above has stopped
+    doing anything.
+    """
+    spliced = (
+        "A sentence that starts here, states something the model is meant\n"
+        "to act on, and is interrupted before it reaches the\n"
+        "\n"
+        "An inserted warning that says the opposite of the sentence it landed\n"
+        "in the middle of.\n"
+        "\n"
+        "qualification that would have changed its meaning.\n"
+    )
+    unterminated = [
+        block for block in _prose_paragraphs(spliced)
+        if not block[-1].rstrip().endswith(_TERMINAL)
+    ]
+    assert unterminated, "the splice shape must be detectable"
+
+    clean = (
+        "A sentence that starts here and reaches its own full stop.\n"
+        "\n"
+        "A warning that stands on its own, after a closed sentence.\n"
+    )
+    assert not [
+        block for block in _prose_paragraphs(clean)
+        if not block[-1].rstrip().endswith(_TERMINAL)
+    ], "well-formed prose must not be flagged"

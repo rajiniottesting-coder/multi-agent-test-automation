@@ -175,14 +175,23 @@ def pytest_runtest_makereport(item, call):
     # Written to the report SECTIONS, so it appears in the terminal output,
     # in reports/pytest-report.html and in the CI log - everywhere someone
     # might read a failure - without touching the assertion itself.
+    #
+    # The reading itself is core.failure_diagnosis.attach_diagnosis, NOT four
+    # lines here. It has to read `report.caplog` as well as the traceback:
+    # is_showing() swallows the Playwright error and logs it, so for the whole
+    # readiness-probe class the traceback holds only `assert False` and the
+    # sentence that classifies the failure sits in the CAPTURED LOG. This hook
+    # passed the traceback alone, so those failures were reported
+    # "unclassified" six lines under a log line naming the exact cause.
+    #
+    # Keeping the body importable is the other half of the fix: while it lived
+    # inline, the only thing a guard could check was that diagnose() classifies
+    # a string - never that the string this hook hands it is the one carrying
+    # the answer. It was not.
     if report.failed:
         try:
-            from core.failure_diagnosis import diagnose
-            d = diagnose(str(report.longrepr))
-            report.sections.append((
-                "Why this failed",
-                f"CAUSE ({d.label}): {d.cause}\n\nFIX: {d.remedy}",
-            ))
+            from core.failure_diagnosis import attach_diagnosis
+            attach_diagnosis(report)
         except Exception:                                 # noqa: BLE001
             # Diagnosis is a convenience. It must never be able to turn a
             # test failure into a collection error or mask the real result.
