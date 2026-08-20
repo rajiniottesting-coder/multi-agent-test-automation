@@ -153,7 +153,7 @@ class BasePage:
         Raises:
             KeyError, naming the placeholders the template needs, when a
             templated page is opened without them - far better than navigating
-            to a literal "{product_id}" and reporting every selector missing.
+            to a literal "{record_id}" and reporting every selector missing.
         """
         if not cls.INVENTORY_PAGE:
             raise RuntimeError(f"{cls.__name__} has no INVENTORY_PAGE set.")
@@ -413,9 +413,41 @@ class BasePage:
 
     def wait_visible(self, locator: str,
                      timeout_ms: Optional[int] = None) -> None:
-        """Wait until the element is visible; raises if it never appears."""
-        expect(self._locator(locator)).to_be_visible(
-            timeout=self._timeout(timeout_ms))
+        """Wait until the element is visible; raises if it never appears.
+
+        Distinguishes ABSENT from HIDDEN, because they mean opposite things and
+        the remedies have nothing in common:
+
+          absent  - the element is not in the DOM. Either the selector is wrong
+                    or the page is not the one the step assumed.
+          hidden  - the element IS in the DOM and the app is deliberately not
+                    showing it. The selector is right and the page is right;
+                    the app is not in the state the step expected.
+
+        Playwright reports both as "expected to be visible", so a hidden
+        element sent a reader off to check a selector that was never at fault.
+        """
+        target = self._locator(locator)
+        try:
+            expect(target).to_be_visible(timeout=self._timeout(timeout_ms))
+        except AssertionError:
+            try:
+                present = target.count() > 0
+            except Exception:                                  # noqa: BLE001
+                raise
+            if present:
+                raise AssertionError(
+                    f"`{locator}` is PRESENT in the DOM but HIDDEN at "
+                    f"{self.page.url}. The selector is correct and so is the "
+                    f"page - the application is simply not in the state this "
+                    f"step expected, so look at what was supposed to put it "
+                    f"there rather than at the selector. A common cause is a "
+                    f"scenario that assumes a starting state it never "
+                    f"established: anything the application stores against the "
+                    f"signed-in user usually survives logout and survives the "
+                    f"run, so a previous run's leftovers are still there."
+                ) from None
+            raise
 
     def wait_hidden(self, locator: str,
                     timeout_ms: Optional[int] = None) -> None:

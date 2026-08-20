@@ -74,6 +74,32 @@ _SIGNATURES: list[tuple[re.Pattern, Diagnosis]] = [
         ),
     ),
     (
+        # PRESENT BUT HIDDEN. Playwright says "expected to be visible" for both
+        # a missing element and one that is in the DOM and not shown, and the
+        # readiness-probe entry below then advises checking the selector. That
+        # advice is exactly wrong here: the call log says the locator RESOLVED,
+        # so the selector and the page are both right and only the app's STATE
+        # is unexpected. This pattern must be tried BEFORE that one.
+        re.compile(r"unexpected value \"hidden\"|PRESENT in the DOM but HIDDEN", re.I),
+        Diagnosis(
+            "element present but hidden",
+            "The element IS in the DOM - the call log says the locator "
+            "resolved - and the application is simply not showing it. The "
+            "selector is right and so is the page; only the STATE is "
+            "unexpected.",
+            "The selector matched and the page is the right one; the "
+            "application is simply not showing the element. Do NOT go looking "
+            "at the selector. Look at the step that was supposed to put the "
+            "app into this state, and at what the state was BEFORE the "
+            "scenario started: anything the application stores against the "
+            "signed-in user usually survives logout and survives the run, so "
+            "a scenario asserting an absolute state must either register a "
+            "fresh account or clear that state first. The trace in "
+            "reports/failure-evidence/ shows the DOM at the moment of failure "
+            "and will confirm it in seconds.",
+        ),
+    ),
+    (
         # The readiness-probe shape. is_showing() swallows the Playwright error
         # by design and returns False, so the assertion reads `assert False` and
         # the real detail lands in a WARNING log line instead of the traceback.
