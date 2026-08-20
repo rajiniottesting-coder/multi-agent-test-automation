@@ -1015,12 +1015,48 @@ def validate_page_object_selectors(
                 if key in elements:
                     continue
                 available = ", ".join(sorted(elements)[:_MAX_KEYS_LISTED]) or "(none)"
+
+                # Is the key real, but on ANOTHER page?
+                #
+                # This branch used to say "do not invent the key" to every
+                # miss. A run was abandoned over a key that existed - a
+                # navigation link, correctly named, sitting on the shared nav
+                # page. Nothing had been invented; the model had reached across
+                # page objects, which is a different mistake with a different
+                # fix, and the message described neither.
+                #
+                # It also told the model to request the element "in the plan's
+                # `notes`", which the repair loop cannot do: repair regenerates
+                # a FILE, not the plan. The one instruction offered after a
+                # rejection was impossible to carry out.
+                elsewhere = sorted(
+                    other for other, entry in (pages or {}).items()
+                    if other != inv_page
+                    and isinstance(entry, dict)
+                    and key in (entry.get("elements") or {})
+                )
+                if elsewhere:
+                    owners = ", ".join(f"'{o}'" for o in elsewhere)
+                    errors.append(
+                        f"{_ERROR_PREFIX} in '{path}': class {node.name} calls "
+                        f"self.sel('{key}'), which belongs to inventory page "
+                        f"{owners}, not to '{inv_page}'. A page object may only "
+                        f"use keys from its OWN page - self.sel() resolves "
+                        f"against INVENTORY_PAGE = '{inv_page}' and would raise "
+                        f"at runtime. Drive that element through the page object "
+                        f"for {owners} instead, from the step definition that "
+                        f"owns the flow. Keys on this page: {available}."
+                    )
+                    continue
+
                 errors.append(
                     f"{_ERROR_PREFIX} in '{path}': class {node.name} calls "
                     f"self.sel('{key}'), but '{key}' is not an element on "
-                    f"inventory page '{inv_page}'. Available keys: {available}. "
-                    f"Do not invent the key — request the element in the plan's "
-                    f"`notes` so it can be added to the inventory."
+                    f"inventory page '{inv_page}', nor on any other page in the "
+                    f"inventory. Use one of the keys on this page: {available}. "
+                    f"If the element genuinely does not exist yet, drop the "
+                    f"behaviour and say so in `notes` - do not invent a key, and "
+                    f"do not write a literal selector instead."
                 )
 
     return errors

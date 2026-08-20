@@ -893,6 +893,43 @@ def _build_error_type_guidance(errors: list[str]) -> str:
     return "\n".join(hints)
 
 
+_MAX_FEEDBACK_CHARS = 900
+
+
+def _trim_error(error: str) -> str:
+    """Shorten one validator error WITHOUT destroying it.
+
+    This replaced `error.split(":", 2)[-1].strip()[:150]`, which was written
+    for a single error shape and silently mangled every other one. A selector
+    error reads:
+
+        Selector inventory error in 'pages/x_page.py': class XPage calls
+        self.sel('a_key'), but 'a_key' is not an element on inventory page
+        'x'. Available keys: <eleven names>. Do not invent the key - ...
+
+    Two colons in, the split lands after "Available keys", so `[-1]` is the
+    KEY LIST and nothing else. Truncated at 150 characters it arrived as a
+    fragment beginning mid-sentence and ending mid-word, naming neither the
+    file, nor the offending key, nor what was wrong with it. That fragment
+    was the entire repair instruction. The model changed nothing, twice, and
+    the run was abandoned as unrepairable.
+
+    The repair message is the voice with the LAST WORD - it is what the model
+    reads after a rejection - so it is the one place a summary must not lose
+    the answer. Keep the head, not the tail; cut at a sentence boundary; and
+    give it room. Nine hundred characters costs a rounding error in tokens
+    against a failed story.
+    """
+    text = " ".join((error or "").split())
+    if len(text) <= _MAX_FEEDBACK_CHARS:
+        return text
+    cut = text[:_MAX_FEEDBACK_CHARS]
+    boundary = max(cut.rfind(". "), cut.rfind("; "))
+    if boundary > _MAX_FEEDBACK_CHARS // 2:
+        cut = cut[:boundary + 1]
+    return cut.rstrip() + " [...]"
+
+
 def _summarize_validator_feedback(errors: list[str]) -> str:
     """Compact validator errors into a prompt-friendly summary.
 
@@ -915,8 +952,7 @@ def _summarize_validator_feedback(errors: list[str]) -> str:
         if match:
             extracted.append(match.group(1))
         else:
-            # Non-step-coverage error (e.g., import error) — keep first 150 chars
-            extracted.append(err.split(":", 2)[-1].strip()[:150])
+            extracted.append(_trim_error(err))
 
     if len(extracted) <= _MAX_FEEDBACK_ERRORS_VERBATIM:
         return "\n".join(f"  - {phrase}" for phrase in extracted)
@@ -2092,6 +2128,48 @@ def _inject_markers_into_feature(content: str, test_cases: list[dict]) -> str:
     refreshes: list[tuple[int, str]] = []   # (line_idx, new_line)
     inserts: list[tuple[int, str]] = []     # (insert_at_idx, marker_line)
 
+    # Pair each scenario with the test case it MATCHES, not the one at the same
+    # index.
+    #
+    # Positional pairing assumes the feature file lists scenarios in the order
+    # the test cases arrived. A run arrived with the two lists exactly
+    # reversed - scenario 1 opposite the last case, scenario 4 opposite the
+    # first - so every pair scored under 0.07, every marker was skipped, and
+    # the feature file shipped with no traceability at all. `ai-update` cannot
+    # splice a scenario that has no marker, so that story lost incremental
+    # updates permanently over a sort order.
+    #
+    # Greedy best-match, highest score first, each case claimed once. When the
+    # orders already agree the best match IS the positional one, so nothing
+    # changes for a run that was working. The 0.3 floor still applies to the
+    # best available pair: a scenario with no plausible case stays unmarkered
+    # rather than mislabelled, which was the right call and stays the default.
+    _claimed: set = set()
+    _pairing: dict = {}
+    for _idx in scenario_starts[:min(n_scenarios, n_cases)]:
+        if _idx in existing_marker_above:
+            continue                       # keeps its own key; handled below
+        _line = lines[_idx]
+        _title = _line.lstrip().partition(":")[2].strip()
+        _scored = sorted(
+            ((_title_similarity(_title, c.get("summary", "")), i)
+             for i, c in enumerate(test_cases)),
+            key=lambda pair: -pair[0],
+        )
+        _pairing[_idx] = _scored
+
+    _chosen: dict = {}
+    _ranked = sorted(
+        ((scores[0][0], idx) for idx, scores in _pairing.items() if scores),
+        key=lambda pair: -pair[0],
+    )
+    for _, _idx in _ranked:
+        for _score, _i in _pairing[_idx]:
+            if _i not in _claimed:
+                _claimed.add(_i)
+                _chosen[_idx] = (_score, test_cases[_i])
+                break
+
     for k in range(min(n_scenarios, n_cases)):
         scenario_idx = scenario_starts[k]
         tc = test_cases[k]
@@ -2111,10 +2189,10 @@ def _inject_markers_into_feature(content: str, test_cases: list[dict]) -> str:
             refreshes.append((marker_idx, f"{indent}{new_marker}\n"))
             continue
 
-        # No existing marker: positional match, gated by title-similarity.
+        # No existing marker: best-match, gated by title-similarity.
         scenario_line = lines[scenario_idx]
         title = scenario_line.lstrip().partition(":")[2].strip()
-        sim = _title_similarity(title, tc.get("summary", ""))
+        sim, tc = _chosen.get(scenario_idx, (0.0, tc))
 
         # If only one pair exists, accept it unconditionally (no ambiguity).
         if min(n_scenarios, n_cases) > 1 and sim < 0.3:

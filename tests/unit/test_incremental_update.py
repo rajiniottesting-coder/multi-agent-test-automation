@@ -474,3 +474,107 @@ class TestExtractCodeFromResponse:
         """Combination: over-escaped fence + no language tag."""
         from agents.agent2_coder import extract_code_from_response
         assert extract_code_from_response("``````\ncontent\n``````").strip() == "content"
+
+# =========================================================================
+# SCENARIOS ARE MATCHED TO TEST CASES, NOT TO INDEXES
+#
+# The pairing was positional: scenario k opposite test case k, gated by a
+# title-similarity floor so a bad pair is skipped rather than mislabelled.
+# The gate did its job. The pairing did not.
+#
+# A run arrived with the two lists exactly reversed - whatever order the
+# tracker returned its cases in did not match the order the feature file was
+# written in. Every pair scored under 0.07, every marker was skipped, and the
+# feature file shipped with no traceability whatsoever. `ai-update` cannot
+# splice a scenario that has no marker, so that story lost incremental
+# updates permanently, over a sort order.
+#
+# Greedy best-match fixes it, and cannot regress the working case: when the
+# orders already agree, the best match IS the positional one.
+# =========================================================================
+
+_FOUR_SCENARIOS = """Feature: A flow
+
+  @smoke
+  Scenario: Sign in, act on a record, and sign out
+    Given a thing
+
+  Scenario: Sign-in attempts with wrong, unknown, or empty credentials
+    Given a thing
+
+  Scenario: Searching for a name that does not exist returns nothing
+    Given a thing
+
+  Scenario: A case-insensitive partial search finds the known record
+    Given a thing
+"""
+
+_CASES_IN_ORDER = [
+    {"key": "T-1", "summary": "[Positive] Sign in, act on a record, and sign out",
+     "description": "d"},
+    {"key": "T-2", "summary": "[Negative] Sign-in attempts with wrong, unknown, or empty credentials",
+     "description": "d"},
+    {"key": "T-3", "summary": "[Edge] Searching for a name that does not exist returns nothing",
+     "description": "d"},
+    {"key": "T-4", "summary": "[Edge] A case-insensitive partial search finds the known record",
+     "description": "d"},
+]
+
+
+from agents.agent2_coder import _inject_markers_into_feature
+
+
+def _markers(feature_text: str) -> list:
+    """The tracker keys marked, in the order they appear in the file."""
+    import re
+    return re.findall(r"#\s*JIRA:\s*(\S+)", feature_text)
+
+
+def test_reversed_order_still_marks_every_scenario_correctly():
+    """The exact shape that shipped an unmarkered feature file."""
+    reversed_cases = list(reversed(_CASES_IN_ORDER))
+
+    out = _inject_markers_into_feature(_FOUR_SCENARIOS, reversed_cases)
+
+    assert _markers(out) == ["T-1", "T-2", "T-3", "T-4"], (
+        "each scenario must get the case that MATCHES it, whatever order the "
+        "cases arrived in"
+    )
+
+
+def test_matching_order_is_unchanged():
+    """Break the thing the guard guards. Best-match must reproduce positional
+    pairing exactly when the orders already agree, or this is a rewrite rather
+    than a fix."""
+    out = _inject_markers_into_feature(_FOUR_SCENARIOS, _CASES_IN_ORDER)
+    assert _markers(out) == ["T-1", "T-2", "T-3", "T-4"]
+
+
+def test_a_case_is_never_used_twice():
+    """Two similar scenarios must not both claim the closest case, leaving
+    another scenario unmarkered and one case double-counted."""
+    out = _inject_markers_into_feature(
+        _FOUR_SCENARIOS, list(reversed(_CASES_IN_ORDER)))
+    marks = _markers(out)
+    assert len(marks) == len(set(marks)), f"a case was reused: {marks}"
+
+
+def test_a_scenario_with_no_plausible_case_stays_unmarkered():
+    """The floor still holds. Mislabelling is worse than not labelling - a
+    wrong marker silently splices the wrong scenario on the next update."""
+    unrelated = [
+        {"key": "T-9", "summary": "Completely unrelated subject matter here",
+         "description": "d"},
+        {"key": "T-8", "summary": "Another thing entirely, sharing no words",
+         "description": "d"},
+    ]
+    feature = """Feature: A flow
+
+  Scenario: Sign in, act on a record, and sign out
+    Given a thing
+
+  Scenario: Searching for a name that does not exist returns nothing
+    Given a thing
+"""
+    out = _inject_markers_into_feature(feature, unrelated)
+    assert _markers(out) == [], "a bad pair must be skipped, not forced"
