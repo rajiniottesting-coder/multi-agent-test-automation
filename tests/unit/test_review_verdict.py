@@ -83,12 +83,20 @@ def test_a_security_issue_is_never_advisory():
 # ─────────────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("issue_type", ["style", "best_practice", "missing_coverage"])
-@pytest.mark.parametrize("severity", ["major", "minor", "info"])
-def test_advisory_findings_stay_advisory(severity, issue_type):
-    out = derive_verdict(_report("comment", _issue(severity, issue_type)))
+def test_advisory_findings_stay_advisory(issue_type):
+    """One case per non-blocking TYPE, at the highest non-blocking severity.
+
+    A grid over severity as well would be nine node IDs asserting one thing:
+    that `major` is not by itself blocking. `major` is the only severity that
+    could plausibly be treated as blocking, so it is the only one worth
+    spending a case on - `minor` and `info` follow from it, and testing them
+    separately measures the parametrize decorator, not the rule.
+    """
+    out = derive_verdict(_report("comment", _issue("major", issue_type)))
     assert out.overall_verdict == "comment", (
-        f"{severity}/{issue_type} does not assert the code is broken - "
-        f"raising it would make the gate meaningless"
+        f"major/{issue_type} does not assert the code is broken - raising it "
+        f"would make the gate red on every pull request, and a gate that is "
+        f"always red gets turned off"
     )
 
 

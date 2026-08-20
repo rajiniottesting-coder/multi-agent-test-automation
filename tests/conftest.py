@@ -2,15 +2,19 @@
 Pytest fixtures shared across all tests.
 The `page` fixture provides a fresh Playwright Browser tab for each scenario.
 """
+import logging
 import os
 import yaml
 import pytest
 from pathlib import Path
+from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright, Page, Browser
 from dotenv import load_dotenv
 from config.paths import CONFIG_YAML
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 def load_config():
@@ -42,6 +46,32 @@ def is_headless_mode(config_value: bool) -> bool:
 
     # Fall back to config
     return config_value
+
+
+def should_block_request(url: str, blocked_hosts) -> bool:
+    """True if `url`'s host ends with one of `blocked_hosts`.
+
+    Suffix matching, so one entry covers a whole network's subdomains -
+    `pagead2.x.com` and `tpc.x.com` both match `x.com`. Anchored on a dot
+    boundary as well as the bare host, so a suffix can never match a
+    DIFFERENT domain that merely ends with the same letters.
+
+    Pure and browser-free on purpose: the routing rule is the part worth
+    testing, and a test that needs a real browser to check a string comparison
+    does not get written.
+    """
+    if not blocked_hosts:
+        return False
+    try:
+        host = urlsplit(url).hostname or ""
+    except Exception:                                     # noqa: BLE001
+        return False
+    host = host.lower()
+    for blocked in blocked_hosts:
+        blocked = str(blocked).lower().lstrip(".")
+        if host == blocked or host.endswith("." + blocked):
+            return True
+    return False
 
 
 @pytest.fixture(scope="session")
@@ -110,10 +140,38 @@ def page(browser, config, request) -> Page:
         record_video_dir=str(evidence_dir),   # Playwright records every test...
     )
     context.tracing.start(screenshots=True, snapshots=True, sources=True)
+
+    # Refuse third-party hosts listed in config.yaml before anything loads.
+    #
+    # An ad network served an interstitial that consumed the first navigation
+    # after a page load: the click reported success, the browser did not move,
+    # and the next action spent its full timeout on a page nobody reached. It
+    # fired on some runs and not others, so the same code passed and failed.
+    #
+    # Every framework defence against that is a recovery after the fact. Not
+    # loading the ad removes the failure mode instead of handling it. The list
+    # lives in config.yaml because WHICH hosts to refuse is a property of the
+    # site under test; this code reads a list and knows nothing else.
+    blocked_hosts = browser_config.get("block_hosts") or []
+    blocked_count = {"n": 0}
+    if blocked_hosts:
+        def _refuse_blocked(route, request):
+            if should_block_request(request.url, blocked_hosts):
+                blocked_count["n"] += 1
+                route.abort()
+            else:
+                route.continue_()
+
+        context.route("**/*", _refuse_blocked)
+
     page = context.new_page()
     page.set_default_timeout(browser_config["timeout"])
 
     yield page
+
+    if blocked_count["n"]:
+        logger.info("Blocked %d third-party request(s) from %s.",
+                    blocked_count["n"], ", ".join(map(str, blocked_hosts)))
 
     # Decide outcome from the hook-attached report (see makereport below).
     failed = getattr(request.node, "rep_call", None) is not None and request.node.rep_call.failed

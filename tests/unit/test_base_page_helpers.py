@@ -477,7 +477,12 @@ def test_clearing_does_not_re_enter_itself():
 # =========================================================================
 
 class _DestinationPage(BasePage):
+    """A page with a fixed address."""
     INVENTORY_PAGE = "destination"
+
+    @classmethod
+    def _declared_url(cls):
+        return "/destination"
 
     @classmethod
     def page_url(cls, **params):
@@ -485,11 +490,16 @@ class _DestinationPage(BasePage):
 
 
 class _TemplatedDestination(BasePage):
+    """One page per record: /records/{record_id}."""
     INVENTORY_PAGE = "record"
 
     @classmethod
+    def _declared_url(cls):
+        return "/records/{record_id}"
+
+    @classmethod
     def page_url(cls, **params):
-        raise KeyError("needs ['record_id']")
+        return "/records/{record_id}".format(**params)
 
 
 def test_a_swallowed_navigation_is_re_issued():
@@ -527,15 +537,61 @@ def test_the_ad_is_cleared_even_when_the_page_is_right():
     assert page.gotos == [], "the browser is already here - do not reload it"
 
 
-def test_a_templated_page_is_not_guessed_at():
-    """page_url() raises without its parameters. Navigating to a literal
-    '{record_id}' would report every selector on the page as missing."""
+# ─────────────────────────────────────────────────────────────────────────
+# A TEMPLATED destination - one page per record
+#
+# The first version of confirm_arrival() returned quietly when page_url()
+# could not be built without its parameters. The next run clicked through to
+# a per-record page, the ad ate the navigation, confirm_arrival() shrugged,
+# and the step spent thirty seconds waiting for a control that only exists
+# on that page - then reported a timeout that pointed at the selector.
+#
+# It cannot rebuild the URL. It can refuse to pretend everything is fine.
+# ─────────────────────────────────────────────────────────────────────────
+
+def test_a_templated_page_recognises_that_it_arrived():
+    """The fixed part before the placeholder is the most that can honestly be
+    checked, and it is enough to tell 'arrived' from 'never left'."""
+    page = _AdPage(path="/records/42")
+    page.url = page.origin + "/records/42"
+    obj = _TemplatedDestination(page)
+
+    obj.confirm_arrival()                       # must not raise
+
+    assert page.gotos == []
+
+
+def test_a_templated_page_refuses_to_continue_from_the_wrong_page():
     page = _AdPage(path="/previous")
     obj = _TemplatedDestination(page)
 
-    obj.confirm_arrival()
+    with pytest.raises(AssertionError) as exc:
+        obj.confirm_arrival()
 
-    assert page.gotos == []
+    message = str(exc.value)
+    assert "/records/{record_id}" in message, "say where it should have been"
+    assert "/previous" in message, "say where it actually is"
+    assert "identifier" in message, "say how to make it recoverable"
+
+
+def test_a_templated_page_recovers_when_given_its_identifier():
+    page = _AdPage(path="/previous")
+    obj = _TemplatedDestination(page)
+
+    obj.confirm_arrival(record_id=42)
+
+    assert page.gotos == ["https://app.example/records/42"]
+
+
+def test_the_ad_is_cleared_before_the_templated_page_gives_up():
+    """If dismissing reveals that the browser DID arrive, that is the answer -
+    raising there would fail a run that was fine."""
+    page = _AdPage(path="/records/42")          # here, behind an ad
+    obj = _TemplatedDestination(page)
+
+    obj.confirm_arrival()                       # must not raise
+
+    assert page.escapes == 1
 
 
 def test_reference_page_object_uses_the_probe():
@@ -554,7 +610,7 @@ def test_reference_page_object_uses_the_probe():
 # ─────────────────────────────────────────────────────────────────────────
 # Templated page URLs
 #
-# Some pages are a TEMPLATE, not an address: /product_details/{product_id}
+# Some pages are a TEMPLATE, not an address: /records/{record_id}
 # stands for one page per record. Storing a sample id instead would couple
 # every test to whichever record happened to be crawled, and would read as one
 # page when it stands for thousands.
@@ -572,24 +628,24 @@ class _TemplatedPage(BasePage):
 
 
 def test_plain_url_is_returned_unchanged():
-    _TemplatedPage._URL = "/view_cart"
-    assert _TemplatedPage.page_url() == "/view_cart"
+    _TemplatedPage._URL = "/dashboard"
+    assert _TemplatedPage.page_url() == "/dashboard"
 
 
 def test_plain_url_ignores_stray_params():
     """Passing an id to a non-templated page must not blow up."""
-    _TemplatedPage._URL = "/view_cart"
-    assert _TemplatedPage.page_url(product_id=9) == "/view_cart"
+    _TemplatedPage._URL = "/dashboard"
+    assert _TemplatedPage.page_url(record_id=9) == "/dashboard"
 
 
 def test_template_is_substituted_at_runtime():
-    _TemplatedPage._URL = "/product_details/{product_id}"
-    assert _TemplatedPage.page_url(product_id=42) == "/product_details/42"
+    _TemplatedPage._URL = "/records/{record_id}"
+    assert _TemplatedPage.page_url(record_id=42) == "/records/42"
 
 
 def test_template_accepts_a_non_numeric_id():
-    _TemplatedPage._URL = "/product_details/{product_id}"
-    assert _TemplatedPage.page_url(product_id="blue-top") == "/product_details/blue-top"
+    _TemplatedPage._URL = "/records/{record_id}"
+    assert _TemplatedPage.page_url(record_id="a-slug") == "/records/a-slug"
 
 
 def test_template_with_several_placeholders():
@@ -599,35 +655,35 @@ def test_template_with_several_placeholders():
 
 @pytest.mark.parametrize("params", [{}, {"wrong_name": 1}])
 def test_missing_param_names_what_is_needed(params):
-    """Far better than navigating to a literal "{product_id}" and reporting
+    """Far better than navigating to a literal "{record_id}" and reporting
     every selector on the page as missing."""
-    _TemplatedPage._URL = "/product_details/{product_id}"
+    _TemplatedPage._URL = "/records/{record_id}"
     with pytest.raises(KeyError) as excinfo:
         _TemplatedPage.page_url(**params)
-    assert "product_id" in str(excinfo.value)
+    assert "record_id" in str(excinfo.value)
     assert "template" in str(excinfo.value)
 
 
 class TestToolsHandleTemplatedPages:
     """verify_locators and check_inventory_staleness would otherwise navigate
-    to a literal "{product_id}", 404, and report every selector STALE - the
+    to a literal "{record_id}", 404, and report every selector STALE - the
     false-report class these tools exist to avoid."""
 
     def test_plain_entry_proceeds(self):
-        assert resolve_page_url({"url": "/view_cart"}) == ("/view_cart", None)
+        assert resolve_page_url({"url": "/dashboard"}) == ("/dashboard", None)
 
     def test_missing_url_defaults_to_root(self):
         assert resolve_page_url({}) == ("/", None)
 
     def test_sample_is_used_for_a_template(self):
-        path, skip = resolve_page_url({"url": "/product_details/{product_id}",
-                                       "url_sample": "/product_details/1"})
-        assert path == "/product_details/1" and skip is None
+        path, skip = resolve_page_url({"url": "/records/{record_id}",
+                                       "url_sample": "/records/1"})
+        assert path == "/records/1" and skip is None
 
     def test_template_without_a_sample_is_skipped_with_a_reason(self):
-        path, skip = resolve_page_url({"url": "/product_details/{product_id}"})
+        path, skip = resolve_page_url({"url": "/records/{record_id}"})
         assert path == ""
-        assert "url_sample" in skip and "product_id" in skip
+        assert "url_sample" in skip and "record_id" in skip
 
     def test_a_still_templated_sample_is_rejected(self):
         """A sample that was never filled in is not a usable address."""

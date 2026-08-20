@@ -130,7 +130,7 @@ def _is_third_party_known(top_module: str, requirements: set[str]) -> bool:
 def _module_to_repo_path(module_path: str) -> list[str]:
     """Translate a dotted module path to candidate repo file paths.
 
-    `pages.cart_page` -> ['pages/cart_page.py', 'pages/cart_page/__init__.py']
+    `pages.widget_page` -> ['pages/widget_page.py', 'pages/widget_page/__init__.py']
     """
     parts = module_path.split(".")
     return [

@@ -82,7 +82,7 @@ def project_root(tmp_path: Path) -> Path:
     """).strip())
 
     # SomePage (RESERVED — must never be modified)
-    (tmp_path / "pages" / "login_page.py").write_text(textwrap.dedent("""
+    (tmp_path / "pages" / "some_page.py").write_text(textwrap.dedent("""
         from pages.base_page import BasePage
 
         class SomePage(BasePage):
@@ -556,7 +556,7 @@ class TestImportResolution:
 
     def test_existing_import_passes(self, project_root: Path):
         step_def = gf("tests/step_defs/test_x.py", textwrap.dedent("""
-            from pages.login_page import SomePage
+            from pages.some_page import SomePage
             from pages.inventory_page import InventoryPage
             import pytest
             def s1(): pass
@@ -566,9 +566,9 @@ class TestImportResolution:
     def test_planned_in_batch_passes(self, project_root: Path):
         """Importing a page object that's being created in this same batch
         should pass — it'll exist when the PR is merged."""
-        new_page = gf("pages/cart_page.py", "from pages.base_page import BasePage\nclass CartPage(BasePage): pass")
+        new_page = gf("pages/widget_page.py", "from pages.base_page import BasePage\nclass WidgetPage(BasePage): pass")
         step_def = gf("tests/step_defs/test_cart.py", textwrap.dedent("""
-            from pages.cart_page import CartPage
+            from pages.widget_page import WidgetPage
             def s1(): pass
         """).strip())
         assert validate_imports_resolvable([new_page, step_def], project_root) == []
@@ -617,7 +617,7 @@ class TestMethodResolution:
         step_def = gf("tests/step_defs/test_logout.py", textwrap.dedent("""
             import pytest
             from pytest_bdd import then
-            from pages.login_page import SomePage
+            from pages.some_page import SomePage
 
             @pytest.fixture
             def login_page(page):

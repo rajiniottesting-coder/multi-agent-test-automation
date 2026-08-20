@@ -76,8 +76,8 @@ def test_an_anchor_prefers_its_href_over_its_name():
 
 def test_a_record_href_becomes_a_prefix_match():
     """One anchor per record is a family, not an address."""
-    sel, strat = rank_selector("a", {"href": "/product_details/1"}, text="View Product")
-    assert sel == "a[href^='/product_details/']" and strat == "href-prefix"
+    sel, strat = rank_selector("a", {"href": "/records/1"}, text="View Record")
+    assert sel == "a[href^='/records/']" and strat == "href-prefix"
 
 
 @pytest.mark.parametrize("href", ["javascript:void(0)", "mailto:a@b.c", "tel:123"])

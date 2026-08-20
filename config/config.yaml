@@ -121,6 +121,34 @@ browser:
     height: 720
   timeout: 30000        # 30 seconds default
 
+  # Third-party hosts to refuse at the browser.
+  #
+  # WHY THIS EXISTS
+  #   An ad network on the site under test served a full-screen interstitial
+  #   that CONSUMED the first navigation after a page load. The click reported
+  #   success, the address gained a `#google_vignette` fragment, the browser
+  #   never moved, and the next action waited its whole 30-second timeout for
+  #   an element on a page nobody had reached. It appeared on some runs and
+  #   not others, so the same suite passed and failed with no code change.
+  #
+  #   Every framework-side defence against this is a recovery AFTER the fact.
+  #   Not loading the ad at all removes the failure mode instead of handling
+  #   it, and it costs nothing: no advertising network is part of any
+  #   application under test.
+  #
+  # These are HOST SUFFIXES, matched against the request's hostname. Add a
+  # host here rather than teaching the framework about any particular network
+  # - the code reads this list and knows nothing else.
+  #
+  # Set to an empty list to disable blocking entirely.
+  block_hosts:
+    - doubleclick.net
+    - googlesyndication.com
+    - googleadservices.com
+    - adtrafficquality.google
+    - fundingchoicesmessages.google.com
+    - 2mdn.net
+
 # Legacy alias — agents now read from app_under_test.base_url, but this
 # is kept so conftest.py (which uses BASE_URL env var fallback) still works.
 base_url: https://automationexercise.com

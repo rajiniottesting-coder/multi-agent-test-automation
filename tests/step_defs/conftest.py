@@ -15,23 +15,22 @@ import pytest
 
 import pages as pages_package
 from pages.base_page import BasePage
-from pages.login_page import LoginPage
-from pages.nav_page import NavPage
 
 
 # === Page objects ===
-
-@pytest.fixture
-def login_page(page):
-    return LoginPage(page)
-
-
-@pytest.fixture
-def nav_page(page):
-    """Top navigation. Present on every page, so any scenario that moves
-    between areas of the site needs this. Its Logout link is also the
-    readiness signal for "am I authenticated"."""
-    return NavPage(page)
+#
+# There are none by hand, deliberately.
+#
+# This file used to import two of this application's page objects by name and
+# wrap each in a fixture. Both were already produced, identically, by the
+# auto-registration factory at the bottom of this file - so the imports bought
+# nothing and cost the framework its portability: pointing config.yaml at a
+# different application left `from pages.<one app's page> import ...` at the
+# top of a shared conftest, and collection died with ModuleNotFoundError
+# before a single test ran.
+#
+# Declare a fixture here only when a page object needs setup the factory
+# cannot do. Never merely to name it.
 
 
 # === Credentials ===

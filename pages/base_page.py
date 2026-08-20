@@ -407,6 +407,39 @@ class BasePage:
         finally:
             self._clearing_interstitial = False
 
+    @classmethod
+    def _declared_url(cls):
+        """The raw url this page object declares in the inventory, or None.
+
+        Raw, not resolved: a templated page keeps its `{placeholder}` so a
+        caller can tell "one page per record" from a fixed address.
+        """
+        try:
+            if not cls.INVENTORY_PAGE:
+                return None
+            pages = cls._inventory().get("pages") or {}
+            return (pages.get(cls.INVENTORY_PAGE) or {}).get("url") or None
+        except Exception:                                     # noqa: BLE001
+            return None
+
+    def _is_here(self, path: str) -> bool:
+        """True if `path` is this page object's page.
+
+        A TEMPLATED page is matched on the fixed part before the first
+        placeholder: `/records/{record_id}` is "any path under /records/".
+        One page exists per record, so an exact comparison is impossible and
+        the prefix is the most that can honestly be checked - but it is
+        enough to tell "arrived" from "never left the previous page", which
+        is the only question being asked.
+        """
+        declared = self._declared_url()
+        if not declared:
+            return True                     # nothing declared: nothing to check
+        if "{" in declared:
+            prefix = declared.split("{", 1)[0]
+            return path.startswith(prefix) and prefix.strip("/") != ""
+        return path.rstrip("/") == declared.rstrip("/")
+
     def confirm_arrival(self, **params: object) -> None:
         """Confirm the browser reached THIS page object's page; recover if not.
 
@@ -415,43 +448,65 @@ class BasePage:
         navigation after a page load: the click is consumed, the address gains
         a fragment, and the browser stays exactly where it was. The next
         action then waits its whole timeout for an element on a page nobody
-        ever reached - which is what a trace showed, a nav click followed by a
-        thirty-second fill on a URL still sitting at the previous page.
+        reached - a trace showed exactly that, a nav click followed by a
+        thirty-second wait on a URL still sitting at the previous page.
 
         Dismissing the ad is not enough, because the click is gone. So the
-        navigation is re-issued directly, to the URL this page object declares
-        in the inventory - the destination is read from the page object it is
-        called on, never guessed from where the browser happens to be.
+        navigation is re-issued to the URL this page object declares in the
+        inventory. The destination is read from the object this is called on,
+        never guessed from where the browser happens to be.
+
+        A TEMPLATED destination - one page per record - cannot be rebuilt
+        without its identifier, so it cannot be re-issued. Pass the identifier
+        (`confirm_arrival(record_id=7)`) and it can. Without one, this RAISES
+        rather than returning quietly: an earlier version returned, and the
+        run that followed spent thirty seconds waiting for a detail-page
+        control while sitting on the listing, then reported a timeout that
+        pointed at the selector. Failing here names the real problem in the
+        first line of the traceback.
 
         Silent and free when the browser is already here, which is every
-        ordinary run. A templated page whose parameters were not supplied is
-        left alone rather than guessed at.
+        ordinary run.
         """
-        try:
-            expected = self.page_url(**params)
-        except (KeyError, RuntimeError) as exc:
-            logger.debug("confirm_arrival: no usable page URL (%s)", exc)
-            return
-
         from urllib.parse import urlsplit, urlunsplit
+
         try:
             here = urlsplit(self.page.url)
         except Exception:                                     # noqa: BLE001
             return
 
-        if here.path.rstrip("/") == expected.rstrip("/") and not here.fragment:
-            return
-        if here.path.rstrip("/") == expected.rstrip("/"):
-            self._clear_interstitial_before_acting()
+        if self._is_here(here.path):
+            if here.fragment:
+                self._clear_interstitial_before_acting()
             return
 
+        # Not here. Clear anything covering the page and look again.
         self._clear_interstitial_before_acting()
         try:
             here = urlsplit(self.page.url)
         except Exception:                                     # noqa: BLE001
             return
-        if here.path.rstrip("/") == expected.rstrip("/"):
+        if self._is_here(here.path):
             return
+
+        declared = self._declared_url()
+        if not declared:
+            return
+
+        try:
+            expected = self.page_url(**params)
+        except (KeyError, RuntimeError):
+            raise AssertionError(
+                f"{type(self).__name__}.confirm_arrival(): the browser is at "
+                f"{self.page.url}, which is not {declared}. The click that "
+                f"should have navigated here did not land - on an ad-supported "
+                f"site an interstitial consumes the first navigation after a "
+                f"page load. This page is a TEMPLATE, so the navigation cannot "
+                f"be re-issued without its identifier: pass it "
+                f"(confirm_arrival(<id>=<value>)) to make this recoverable. "
+                f"Refusing to continue - every selector on this page would "
+                f"time out and blame itself."
+            ) from None
 
         target = urlunsplit((here.scheme, here.netloc, expected, "", ""))
         logger.warning(

@@ -311,3 +311,62 @@ def test_factory_builds_the_right_class():
     assert isinstance(instance, SomeWidgetPage)
     assert fixture.__wrapped__.__doc__
     assert "SomeWidgetPage" in fixture.__wrapped__.__doc__
+
+# =========================================================================
+# THE SHARED CONFTEST MUST NOT IMPORT ONE APPLICATION'S PAGE OBJECTS
+#
+# It imported two by name and wrapped each in a fixture the auto-registration
+# factory below already produced, identically. The imports bought nothing and
+# cost the framework its portability: point config.yaml at another
+# application, replace the page objects, and collection dies with
+# ModuleNotFoundError at the top of a SHARED conftest before one test runs.
+#
+# The golden rule's own acceptance test - swap the app, run the suite, it
+# passes - did not pass. Nothing checked, because every check ran against the
+# one application whose page objects happened to be on disk.
+#
+# `pages.base_page` is exempt: it is the framework's own class, and the
+# factory needs it to recognise a page object at all.
+# =========================================================================
+
+def test_the_shared_conftest_imports_no_application_page_object():
+    import ast
+
+    source = (_PROJECT / "tests" / "step_defs" / "conftest.py").read_text(
+        encoding="utf-8")
+
+    offenders = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("pages."):
+            if node.module == "pages.base_page":
+                continue
+            offenders.append(node.module)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("pages.") and alias.name != "pages.base_page":
+                    offenders.append(alias.name)
+
+    assert not offenders, (
+        f"tests/step_defs/conftest.py imports {offenders}. A shared conftest "
+        f"naming one application's page objects cannot be pointed at another "
+        f"application - collection fails before any test runs. Page-object "
+        f"fixtures are auto-registered from pages/*.py; delete the import and "
+        f"the hand-written fixture with it."
+    )
+
+
+def test_every_page_object_on_disk_gets_a_fixture_without_being_named():
+    """The other half. Removing the hand-written fixtures is only safe if the
+    factory really does cover everything, whatever the application is."""
+    import tests.step_defs.conftest as conftest
+
+    auto = set(getattr(conftest, "AUTO_REGISTERED_PAGE_FIXTURES", []))
+    on_disk = _auto_registered_page_fixtures(PROJECT_ROOT)
+
+    assert on_disk, "no page objects found on disk - the check would be vacuous"
+    missing = on_disk - auto
+    assert not missing, (
+        f"{sorted(missing)} exist as page objects but have no fixture. The "
+        f"factory is the only thing registering them now, so a gap here is a "
+        f"gap everywhere."
+    )
