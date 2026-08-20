@@ -151,6 +151,52 @@ def dedupe_and_cap_issues(report: ReviewReport, max_issues: int = MAX_ISSUES) ->
     return report.model_copy(update={"issues": deduped})
 
 
+# The verdict must FOLLOW from the issues, not be chosen alongside them.
+#
+# A review reported a `major` / `functional_bug` issue - and the schema defines
+# functional_bug as "test will fail" - while simultaneously returning the
+# verdict `comment`, which renders as "Advisory comments". The finding was
+# correct: the test failed on exactly the line the review named, in the run
+# that followed. Nothing acted on it, because nothing connected the severity
+# the model assigned to the verdict the model chose. Two fields, filled
+# independently, free to disagree.
+#
+# So the verdict is DERIVED. The model reports what it found; what that means
+# for the pull request is arithmetic, not a second judgement call.
+_BLOCKING_SEVERITIES = frozenset({"blocking"})
+_BLOCKING_ISSUE_TYPES = frozenset({"functional_bug", "security"})
+
+
+def derive_verdict(report: ReviewReport) -> ReviewReport:
+    """Recompute overall_verdict from the issues the review actually found.
+
+    An issue counts as blocking when its SEVERITY says so, or when its TYPE is
+    one whose own definition already asserts the code is broken: functional_bug
+    ("test will fail") and security. A report that contains one of those and
+    calls itself advisory has contradicted itself, and the issue is the more
+    specific of the two statements.
+
+    Only ever raises. A model that returned request_changes keeps it, whatever
+    the severities look like.
+    """
+    blocking = [
+        issue for issue in report.issues
+        if issue.severity in _BLOCKING_SEVERITIES
+        or issue.issue_type in _BLOCKING_ISSUE_TYPES
+    ]
+    if not blocking or report.overall_verdict == "request_changes":
+        return report
+
+    logger.warning(
+        "Verdict raised from %r to 'request_changes': %d issue(s) assert the "
+        "code is broken (%s). A review cannot report that a test will fail and "
+        "call itself advisory.",
+        report.overall_verdict, len(blocking),
+        ", ".join(sorted({f"{i.severity}/{i.issue_type}" for i in blocking})),
+    )
+    return report.model_copy(update={"overall_verdict": "request_changes"})
+
+
 # ─────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────
@@ -316,6 +362,7 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
 
     # 3b. POST-PROCESS: dedupe and cap (handles LLM repetition collapse)
     report = dedupe_and_cap_issues(report, max_issues=MAX_ISSUES)
+    report = derive_verdict(report)
 
     logger.info(f"Review verdict: {report.overall_verdict}")
     logger.info(f"Issues found: {len(report.issues)}")
@@ -407,6 +454,20 @@ def main():
         if result.get("comment_url"):
             print(f"   Comment: {result['comment_url']}")
         print("=" * 60)
+
+        # A review that requests changes must FAIL THE JOB.
+        #
+        # Agent 3 used to post its comment and exit 0 whatever it found, so a
+        # correct "this test will fail" finding sat in a PR comment while the
+        # runner went ahead and proved it right. A red check is the cheapest
+        # thing that makes the finding impossible to walk past.
+        #
+        # This turns the check red; it does not by itself prevent a merge.
+        # Add "Agent 3 - Reviewer" to the branch's required status checks to
+        # make it binding.
+        if result.get("verdict") == "request_changes":
+            print("REVIEW GATE: changes requested - see the PR comment above.")
+            sys.exit(1)
     except Exception as e:
         logger.error(f"Agent 3 failed: {type(e).__name__}: {e}", exc_info=True)
         sys.exit(1)

@@ -372,6 +372,172 @@ class _caplog_at:
         return False
 
 
+# =========================================================================
+# AN INTERSTITIAL HAS TO BE CLEARED WHERE EVERY HELPER PASSES
+#
+# The handler was called from the readiness probe, and the very next run died
+# in fill(), which is not a probe. A trace settled it: a nav click at +4.0s,
+# a fill at +4.9s, thirty seconds of nothing, and a URL that had never left
+# the previous page.
+#
+# _locator() is the one chokepoint every action and every wait goes through,
+# and the check is a string comparison against the URL, so the ad is cleared
+# BEFORE the wait starts instead of after it expires.
+# =========================================================================
+
+def _fragment() -> str:
+    """An interstitial fragment, read from the framework's own constant."""
+    return BasePage._INTERSTITIAL_FRAGMENTS[0]
+
+
+class _AdPage:
+    """A page showing an interstitial until Escape is pressed."""
+
+    def __init__(self, path: str = "/somewhere", clears: bool = True):
+        self.origin = "https://app.example"
+        self.path = path
+        self.url = self.origin + path + _fragment()
+        self._clears = clears
+        self.escapes = 0
+        self.gotos: list = []
+
+    class _Keyboard:
+        def __init__(self, outer):
+            self._outer = outer
+
+        def press(self, key):
+            self._outer.escapes += 1
+            if self._outer._clears:
+                self._outer.url = self._outer.origin + self._outer.path
+
+    @property
+    def keyboard(self):
+        return self._Keyboard(self)
+
+    def wait_for_timeout(self, ms):
+        pass
+
+    def go_back(self, **kwargs):
+        self.url = self.origin + self.path
+
+    def goto(self, url):
+        self.gotos.append(url)
+        self.url = url
+        return None
+
+    def locator(self, selector, **kwargs):
+        return ("locator", selector)
+
+
+def test_an_action_clears_an_interstitial_before_it_waits():
+    """The failure this replaces spent its whole timeout behind the ad."""
+    page = _AdPage()
+    obj = BasePage(page)
+
+    obj._locator("#anything")
+
+    assert page.escapes == 1, "the ad must be dismissed before the action runs"
+    assert _fragment() not in page.url
+
+
+def test_an_ordinary_page_is_left_completely_alone():
+    """Break the thing the guard guards.
+
+    _locator() runs on every single helper call. If the check were not free
+    and not gated on the URL, this would be a cost on the whole suite.
+    """
+    page = _AdPage()
+    page.url = page.origin + page.path          # no fragment
+    obj = BasePage(page)
+
+    obj._locator("#anything")
+
+    assert page.escapes == 0, "no interstitial means nothing should happen"
+
+
+def test_clearing_does_not_re_enter_itself():
+    """dismiss_interstitial() drives the page; a re-entrant call through a
+    helper would recurse."""
+    page = _AdPage(clears=False)                # Escape never clears it
+    obj = BasePage(page)
+
+    obj._locator("#anything")                   # must return, not recurse
+
+    assert page.escapes == 1
+
+
+# =========================================================================
+# ...AND A SWALLOWED NAVIGATION HAS TO BE RE-ISSUED
+#
+# Dismissing is not enough on its own. The click was CONSUMED: the browser
+# never left, so clearing the ad leaves it on the wrong page with the click
+# gone. confirm_arrival() re-issues the navigation to the URL the page object
+# declares - the destination comes from the page object it is called on, so
+# it is never guessed from wherever the browser happens to be.
+# =========================================================================
+
+class _DestinationPage(BasePage):
+    INVENTORY_PAGE = "destination"
+
+    @classmethod
+    def page_url(cls, **params):
+        return "/destination"
+
+
+class _TemplatedDestination(BasePage):
+    INVENTORY_PAGE = "record"
+
+    @classmethod
+    def page_url(cls, **params):
+        raise KeyError("needs ['record_id']")
+
+
+def test_a_swallowed_navigation_is_re_issued():
+    page = _AdPage(path="/previous")            # the click never landed
+    obj = _DestinationPage(page)
+
+    obj.confirm_arrival()
+
+    assert page.gotos == ["https://app.example/destination"], (
+        "clearing the ad does not replay the click - the navigation has to be "
+        "re-issued to the page object's own declared URL"
+    )
+
+
+def test_arriving_normally_costs_nothing():
+    """Break the thing the guard guards. Every ordinary run hits this path."""
+    page = _AdPage(path="/destination")
+    page.url = page.origin + "/destination"     # already here, no fragment
+    obj = _DestinationPage(page)
+
+    obj.confirm_arrival()
+
+    assert page.gotos == [], "no navigation when the browser is already here"
+    assert page.escapes == 0
+
+
+def test_the_ad_is_cleared_even_when_the_page_is_right():
+    """Arrived, but the ad is still covering it."""
+    page = _AdPage(path="/destination")
+    obj = _DestinationPage(page)
+
+    obj.confirm_arrival()
+
+    assert page.escapes == 1
+    assert page.gotos == [], "the browser is already here - do not reload it"
+
+
+def test_a_templated_page_is_not_guessed_at():
+    """page_url() raises without its parameters. Navigating to a literal
+    '{record_id}' would report every selector on the page as missing."""
+    page = _AdPage(path="/previous")
+    obj = _TemplatedDestination(page)
+
+    obj.confirm_arrival()
+
+    assert page.gotos == []
+
+
 def test_reference_page_object_uses_the_probe():
     """The reference page object is the shape Agent 2 copies. If it goes back
     to a bare try/except, the swallowed-reason regression comes back with it.

@@ -36,6 +36,30 @@ Do not substitute something that looks more descriptive. If no `readiness` key
 is present, pick the most state-independent element on the page and say in
 `notes` why you chose it.
 
+## A method that clicks its way to another page must confirm it arrived
+
+If a page-object method clicks a control expected to land on ANOTHER page,
+end that method with the destination page object's `confirm_arrival()`:
+
+    def open_listing(self) -> None:
+        self.click(self.sel("<the nav control>"))
+        self.confirm_arrival()
+
+`confirm_arrival()` is free and silent when the browser is already there,
+which is every ordinary run.
+
+It exists because a click is not a guarantee. An ad interstitial consumes the
+first navigation after a page load: the click reports success, the address
+gains a fragment, and the browser does not move. The next step then waits its
+entire timeout for an element on a page nobody reached, and the failure
+screenshot - taken once the ad has expired - shows the destination looking
+perfectly healthy. `confirm_arrival()` compares where the browser IS against
+the URL this page declares in the inventory, and re-issues the navigation if
+they differ. Dismissing the ad alone cannot help, because the click is gone.
+
+Call it on the page object for the DESTINATION, never the origin: it reads
+the target URL from the object it is called on.
+
 ## Acting on ONE member of a family
 
 A key listed under `multi_match` matches several elements. Clicking it raises

@@ -182,7 +182,15 @@ class BasePage:
 
         'iframe#pay >>> [data-test=card]' becomes
         page.frame_locator('iframe#pay').locator('[data-test=card]').
+
+        Clears an ad interstitial first, if one is up. This is the single
+        chokepoint every action and every wait passes through, and the check
+        is one string comparison against the current URL, so an interstitial
+        is dismissed BEFORE a thirty-second wait begins rather than after it
+        has expired. When no interstitial fragment is present - the normal
+        case, every call - nothing happens at all.
         """
+        self._clear_interstitial_before_acting()
         if ">>>" not in locator:
             return self._resolve(self.page, locator)
         parts = [p.strip() for p in locator.split(">>>")]
@@ -359,6 +367,99 @@ class BasePage:
             return True
         except Exception:                                      # noqa: BLE001
             return False
+
+    _clearing_interstitial = False
+
+    def _clear_interstitial_before_acting(self) -> None:
+        """Dismiss an interstitial before an action waits behind it.
+
+        dismiss_interstitial() was added, then called from nowhere, then
+        called only from the readiness probe - and the run that followed died
+        in fill(), which is not a probe. An interstitial does not care which
+        helper is next; it has to be cleared where EVERY helper passes, and
+        that is here.
+
+        What this does and does not fix. It clears an ad that is COVERING the
+        page, which is what makes an element unclickable or invisible. It
+        cannot replay a navigation the ad already swallowed: the click was
+        consumed, the browser never left, and no amount of dismissing puts it
+        on the page it should be on. confirm_arrival() is the answer to that
+        one, and it has to be called by the page object that knows where it
+        was going.
+
+        Re-entrancy matters: dismiss_interstitial() drives the page, and the
+        flag stops a recursive call from re-entering through a helper.
+        """
+        if self._clearing_interstitial:
+            return
+        if not self._interstitial_showing():
+            return
+        self._clearing_interstitial = True
+        try:
+            if self.dismiss_interstitial():
+                logger.warning(
+                    "%s: an ad interstitial was covering %s - dismissed it "
+                    "before acting. If the step before this one navigated, it "
+                    "may have been swallowed; confirm_arrival() is what "
+                    "recovers that.",
+                    type(self).__name__, self._where(),
+                )
+        finally:
+            self._clearing_interstitial = False
+
+    def confirm_arrival(self, **params: object) -> None:
+        """Confirm the browser reached THIS page object's page; recover if not.
+
+        Call at the end of any page-object method that clicks a control
+        expected to navigate HERE. An ad interstitial swallows the first
+        navigation after a page load: the click is consumed, the address gains
+        a fragment, and the browser stays exactly where it was. The next
+        action then waits its whole timeout for an element on a page nobody
+        ever reached - which is what a trace showed, a nav click followed by a
+        thirty-second fill on a URL still sitting at the previous page.
+
+        Dismissing the ad is not enough, because the click is gone. So the
+        navigation is re-issued directly, to the URL this page object declares
+        in the inventory - the destination is read from the page object it is
+        called on, never guessed from where the browser happens to be.
+
+        Silent and free when the browser is already here, which is every
+        ordinary run. A templated page whose parameters were not supplied is
+        left alone rather than guessed at.
+        """
+        try:
+            expected = self.page_url(**params)
+        except (KeyError, RuntimeError) as exc:
+            logger.debug("confirm_arrival: no usable page URL (%s)", exc)
+            return
+
+        from urllib.parse import urlsplit, urlunsplit
+        try:
+            here = urlsplit(self.page.url)
+        except Exception:                                     # noqa: BLE001
+            return
+
+        if here.path.rstrip("/") == expected.rstrip("/") and not here.fragment:
+            return
+        if here.path.rstrip("/") == expected.rstrip("/"):
+            self._clear_interstitial_before_acting()
+            return
+
+        self._clear_interstitial_before_acting()
+        try:
+            here = urlsplit(self.page.url)
+        except Exception:                                     # noqa: BLE001
+            return
+        if here.path.rstrip("/") == expected.rstrip("/"):
+            return
+
+        target = urlunsplit((here.scheme, here.netloc, expected, "", ""))
+        logger.warning(
+            "%s.confirm_arrival(): expected %s, found %s. The navigation that "
+            "should have landed here did not - re-issuing it directly.",
+            type(self).__name__, expected, self.page.url,
+        )
+        self.navigate(target)
 
     def click_in_row(self, row_locator: str, text: str, target_locator: str) -> None:
         """Click a control INSIDE the row that contains `text`.

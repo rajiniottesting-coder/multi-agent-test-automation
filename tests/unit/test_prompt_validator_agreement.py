@@ -168,3 +168,46 @@ def test_committed_inventory_notes_do_not_forbid_it_either():
                 f"{_ONE_MEMBER_HELPER}(). Agent 2 reads this note and the "
                 f"prompt, and they disagree."
             )
+
+# =========================================================================
+# A HELPER THE PROMPT RECOMMENDS MUST EXIST ON BasePage
+#
+# The same contradiction in its simplest form. The prompt now tells Agent 2
+# to end a navigating method with confirm_arrival(); if that name is ever
+# renamed or dropped from BasePage, every generated page object calls a
+# method that is not there and the whole suite errors on import.
+#
+# Read from the prompt rather than a hardcoded list, so this tracks whatever
+# the prompt actually says.
+# =========================================================================
+
+def _bare_helpers_the_prompt_recommends() -> set:
+    """self.<helper>() calls in the prompt's samples that take no selector."""
+    text = _PROMPT.read_text(encoding="utf-8")
+    found = set()
+    for line in text.splitlines():
+        if "rejected" in line or "never" in line.lower():
+            continue
+        for m in re.finditer(r"self\.(\w+)\(\s*\)", line):
+            found.add(m.group(1))
+    return found
+
+
+def test_every_bare_helper_the_prompt_recommends_exists_on_base_page():
+    source = (_PROJECT / "pages" / "base_page.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    defined = {
+        node.name
+        for cls in tree.body if isinstance(cls, ast.ClassDef)
+        for node in cls.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    # Methods the page object DEFINES rather than inherits are not BasePage's.
+    generated_locally = {"is_loaded"}
+
+    for helper in _bare_helpers_the_prompt_recommends() - generated_locally:
+        assert helper in defined, (
+            f"the generation prompt shows self.{helper}(), but BasePage has no "
+            f"{helper}(). Agent 2 will follow the prompt and every generated "
+            f"page object will fail on the call."
+        )
