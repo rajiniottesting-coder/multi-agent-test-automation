@@ -3,7 +3,14 @@
 ## Registering inside a test
 
 Registration is the cleanest source of test-owned data on this site: the test
-creates the account, so nothing about it can be changed by anyone else.
+creates the account, so nothing about it can be changed by anyone else — and,
+unlike the shared `registered` role, it genuinely starts EMPTY. Private is not
+the same as empty: the shared account's cart and address book survive logout
+and survive the run, so a scenario reusing it inherits whatever a previous run
+left behind. Register a fresh account whenever the scenario asserts an
+ABSOLUTE state; where that is impractical, assert relatively instead — that
+the thing this test added is present, which is true whatever the account
+started with.
 
 Use a run-unique email address. The `unique_username` fixture pattern in
 `tests/step_defs/conftest.py` exists for exactly this — derive the address from

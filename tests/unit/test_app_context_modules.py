@@ -189,3 +189,53 @@ def test_missing_inventory_still_raises(tmp_path, monkeypatch):
     monkeypatch.setattr(type(ctx), "inventory_path", lambda self: missing)
     with pytest.raises(FileNotFoundError):
         ctx.load_page_inventory_json()
+
+# ─────────────────────────────────────────────────────────────────────────
+# If the context claims data is test-owned, it must also say whether it is
+# CLEAN
+#
+# One app's context said an account's data "cannot be seen or changed by anyone
+# else", and that was read as "starts empty". It does not: the state survived
+# logout and survived the run. Two CI failures came from it - a collection
+# expected to hold one item held two, and one expected to be empty after a
+# removal still showed a leftover from a run that had died mid-scenario.
+#
+# The test is conditional BY DESIGN. Plenty of applications have no persistent
+# per-account state, and forcing every context module to carry a warning about
+# one would be this framework telling a new project what its app is like. The
+# check fires only where the context itself raises the subject.
+# ─────────────────────────────────────────────────────────────────────────
+
+def test_a_test_owned_data_claim_also_states_whether_it_starts_clean():
+    from pathlib import Path
+
+    folder = Path(__file__).resolve().parents[2] / "prompts" / "app_context"
+    if not folder.is_dir():
+        pytest.skip("no app_context modules in this checkout")
+
+    for module in sorted(folder.glob("*.md")):
+        body = module.read_text(encoding="utf-8")
+        # Markdown wraps at the column, so a phrase can be split by a newline.
+        # Collapse whitespace before matching, or the check depends on where
+        # the author happened to break the line.
+        lowered = " ".join(body.lower().split())
+        claims_ownership = (
+            "test-owned" in lowered
+            or "cannot be seen or changed by anyone else" in lowered
+        )
+        if not claims_ownership:
+            continue
+
+        assert "not the same as empty" in lowered, (
+            f"{module.name} tells the model that data is private to the test's "
+            f"own account without saying whether that account starts CLEAN. "
+            f"Private and empty are different claims, and a model reading only "
+            f"the first will assume a fresh start and write an absolute "
+            f"assertion that fails on the second run. If this application "
+            f"really does start clean every time, say so explicitly."
+        )
+        assert "relativ" in lowered, (
+            f"{module.name} raises the starting-state problem without naming "
+            f"the fallback: a relative assertion - that the thing this test "
+            f"added is present - is true whatever the account started with."
+        )

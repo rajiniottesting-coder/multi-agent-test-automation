@@ -189,8 +189,8 @@
         "cart_rows": "MULTI-MATCH. Narrow to the product the test added rather than assuming a row index.",
         "cart_table": "UNVERIFIED id, from the site's documented test cases rather than the DOM.",
         "proceed_to_checkout_button": "Matched by TEXT. role=link[name='Proceed To Checkout'] resolved to zero (2 Aug 2026) - the control is an anchor without an href, so it carries no link role. Proceeding while signed out shows a Register/Login prompt instead of the address form.",
-        "empty_cart_message": "Rendered ONLY when the cart holds nothing - the mirror of cart_rows. Assert on it after removing the last item, and never alongside cart_rows: exactly one of the two is present at any moment.",
-        "_starting_state": "The cart PERSISTS for a registered account between sessions and between runs. Private to the account is not the same as empty: a run that added an item and then failed before removing it leaves that item behind, and the next run counting rows finds one more than it put there. A scenario that asserts an absolute row COUNT must empty the cart first, or assert on the presence of its own named product instead of on a total."
+        "empty_cart_message": "Rendered ONLY when the cart holds nothing - the mirror of cart_rows, and exactly one of the two is present at any moment. Asserting on it means asserting the cart is empty ABSOLUTELY, so the scenario must have started from a known state: see _starting_state.",
+        "_starting_state": "The cart PERSISTS for a registered account across logout and across runs. Private to the account is not the same as empty: a run that added an item and failed before removing it leaves that item behind, so the next run finds one more than it put there - and a scenario asserting the cart is EMPTY after its own removal still sees the leftover. A scenario asserting an absolute state must own its starting state: register a fresh account with the unique_username fixture, or empty the cart first. Otherwise assert relatively - that the product this test added is present - which is true whatever the account started with."
       },
       "key_methods": [],
       "conditional": [

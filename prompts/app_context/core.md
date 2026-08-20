@@ -15,6 +15,49 @@ address book and order history cannot be seen or changed by anyone else. Build
 every assertion on data the test itself created — a user it registered, a cart
 it filled.
 
+**PRIVATE IS NOT THE SAME AS EMPTY.** That account's state SURVIVES logout, and
+survives the end of the run. A scenario that added something and then failed
+before removing it leaves that item behind, and the next run finds it: a cart
+expected to hold one product holds two, and a cart expected to be empty after a
+removal still shows the leftover. The test is correct; its starting assumption
+is not.
+
+So a scenario asserting an ABSOLUTE end state — "the cart is empty", "there are
+two items" — must own its starting state. In order of preference:
+
+| | |
+|---|---|
+| **Register a fresh account** | Use the `unique_username` fixture. A brand-new account starts genuinely empty, every time, with nothing to clean up. The only option a previous run cannot defeat. |
+| **Empty it first** | Sign in as the shared role and clear everything before the scenario's own actions. A run killed mid-way still leaves state behind. |
+
+If neither is practical, assert RELATIVELY: that the cart contains the product
+this test added, or that the count rose by one. A relative assertion is true
+whatever the account started with.
+
+Scenarios that only READ — searching, browsing, viewing — need none of this.
+
+**PRIVATE IS NOT THE SAME AS EMPTY.** That account's state SURVIVES logout, and
+survives the end of the run. A scenario that added something and then failed
+before removing it leaves that item behind, and the next run finds it: a cart
+expected to hold one product holds two, and a cart expected to be empty after a
+removal still shows the leftover. The test is correct; its starting assumption
+is not.
+
+So a scenario that asserts an ABSOLUTE end state — "the cart is empty", "there
+are two items" — must own its starting state. Two ways, in order of preference:
+
+| | |
+|---|---|
+| **Register a fresh account** | Use the `unique_username` fixture. A brand-new account starts with a genuinely empty cart, every time, with nothing to clean up. This is the only option that cannot be defeated by a previous run. |
+| **Empty it first** | Sign in as the shared role, then remove everything before the scenario's own actions. Works, but a run killed mid-way still leaves state behind for the next one. |
+
+If neither is practical, assert RELATIVELY instead: that the cart contains the
+product this test added, or that its count went up by one. A relative assertion
+is true whatever the account started with.
+
+Scenarios that only READ — searching, browsing, viewing a product — need none
+of this. It applies to anything that adds, removes or changes account state.
+
 The PRODUCT CATALOGUE is the exception. It is shared, read-only and fixed by
 the site owner: 34 products across Women / Men / Kids categories and eight
 brands. Products cannot be added or deleted through the UI, so their names and
