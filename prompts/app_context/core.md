@@ -27,6 +27,26 @@ two items" — must own its starting state. In order of preference:
 
 | | |
 |---|---|
+| **Register a fresh account** | Use the `unique_username` fixture. A brand-new account starts genuinely empty, every time. The only option a previous run cannot defeat. |
+| **Empty it first** | Clear everything before the scenario's own actions. A run killed mid-way still leaves state behind. |
+
+If neither is practical, assert RELATIVELY: that the cart contains the product
+this test added. A relative assertion is true whatever the account started with.
+
+Scenarios that only READ — searching, browsing, viewing — need none of this.
+
+**PRIVATE IS NOT THE SAME AS EMPTY.** That account's state SURVIVES logout, and
+survives the end of the run. A scenario that added something and then failed
+before removing it leaves that item behind, and the next run finds it: a cart
+expected to hold one product holds two, and a cart expected to be empty after a
+removal still shows the leftover. The test is correct; its starting assumption
+is not.
+
+So a scenario asserting an ABSOLUTE end state — "the cart is empty", "there are
+two items" — must own its starting state. In order of preference:
+
+| | |
+|---|---|
 | **Register a fresh account** | Use the `unique_username` fixture. A brand-new account starts genuinely empty, every time, with nothing to clean up. The only option a previous run cannot defeat. |
 | **Empty it first** | Sign in as the shared role and clear everything before the scenario's own actions. A run killed mid-way still leaves state behind. |
 

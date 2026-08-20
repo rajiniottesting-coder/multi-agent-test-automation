@@ -348,3 +348,62 @@ def test_usage_is_still_logged_either_way(caplog):
         _record_usage(_CacheReply(), "text:code-gen", cache_requested=True)
     assert "LLM usage" in caplog.text
     assert "in=1000" in caplog.text and "out=100" in caplog.text
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# A cached run costs less, and the ledger must say so
+#
+# A cached prefix is RE-SENT on every call, so the input token count never
+# falls - only the price does. Reading the raw `in=` figure and concluding
+# caching is not working is the natural mistake, and the cost line encouraged
+# it: every token was charged at the full input rate, so a run with two cache
+# hits reported the same cost it would have had with none.
+#
+# On one real run that overstated the input cost by 28%.
+# ─────────────────────────────────────────────────────────────────────────
+
+def _priced_tracker(monkeypatch):
+    monkeypatch.setenv("LLM_PRICE_INPUT_PER_1M", "15.0")
+    monkeypatch.setenv("LLM_PRICE_OUTPUT_PER_1M", "75.0")
+    from core.llm_client import _UsageTracker
+    return _UsageTracker()
+
+
+def test_a_cache_read_costs_less_than_a_fresh_token(monkeypatch):
+    fresh = _priced_tracker(monkeypatch)
+    fresh.add(10_000, 0)
+    cached = _priced_tracker(monkeypatch)
+    cached.add(10_000, 0, cache_read_tokens=8_000)
+    assert cached.input_cost_usd() < fresh.input_cost_usd(), \
+        "a cached run must cost less than the same tokens sent fresh"
+
+
+def test_the_token_COUNT_is_unchanged_by_caching(monkeypatch):
+    """The prefix is still sent. Anyone reading `in=` and expecting it to drop
+    is reading the wrong number - the saving is in the rate."""
+    t = _priced_tracker(monkeypatch)
+    t.add(31_325, 0, cache_read_tokens=13_846)
+    assert t.input_tokens == 31_325
+
+
+def test_cache_reads_are_discounted_not_double_counted(monkeypatch):
+    """They are already inside input_tokens; adding a separate term would
+    charge for them twice."""
+    t = _priced_tracker(monkeypatch)
+    t.add(10_000, 0, cache_read_tokens=10_000)
+    # every token cached -> a tenth of the full-rate cost
+    assert abs(t.input_cost_usd() - (10_000 / 1_000_000) * 15.0 * 0.10) < 1e-9
+
+
+def test_a_read_larger_than_the_input_cannot_make_the_cost_negative(monkeypatch):
+    """Providers disagree on whether cached tokens are inside or beside the
+    input count. Clamping keeps a mis-reporting endpoint from inventing credit."""
+    t = _priced_tracker(monkeypatch)
+    t.add(1_000, 0, cache_read_tokens=99_999)
+    assert t.input_cost_usd() >= 0
+
+
+def test_an_uncached_run_is_unaffected(monkeypatch):
+    t = _priced_tracker(monkeypatch)
+    t.add(10_000, 0)
+    assert t.input_cost_usd() == (10_000 / 1_000_000) * 15.0

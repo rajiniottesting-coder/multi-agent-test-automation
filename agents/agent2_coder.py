@@ -59,6 +59,7 @@ from validators.method_resolution_validator import (
     validate_method_resolution,
     validate_page_object_selectors,
     validate_no_duplicate_page_object_methods,
+    validate_readiness_probe,
 )
 from core.llm_client import LLMClient, OutputTruncatedError
 from core.schemas import CodePlan, GeneratedFile, CodeGenerationOutput
@@ -1696,6 +1697,10 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     # behaviour. Git merges the additions cleanly when they land apart, and
     # nothing else notices.
     errors.extend(validate_no_duplicate_page_object_methods(generated_files))
+    # A readiness probe must hold in every state the page can be in. The
+    # generator cannot know which element does; a human who has seen the page
+    # in each state declares it, and this makes that declaration binding.
+    errors.extend(validate_readiness_probe(generated_files, PROJECT_ROOT))
     errors.extend(validate_feature_file_structure(generated_files))
     coverage_errors = validate_step_definitions_complete(generated_files)
     unused_errors = validate_no_unused_step_definitions(generated_files)

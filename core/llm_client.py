@@ -149,12 +149,22 @@ class _UsageTracker:
         self.calls = 0
         self.input_tokens = 0
         self.output_tokens = 0
+        self.cache_read_tokens = 0    # part of input_tokens, billed cheaper
         self.calls_without_usage = 0  # endpoint didn't report usage
 
-    def add(self, input_tokens: int, output_tokens: int) -> None:
+    # A cached prefix is re-SENT on every call, so the input token COUNT never
+    # falls - only the price does. Providers bill a cache read at roughly a
+    # tenth of the normal input rate, so charging every token at full rate
+    # overstates a cached run by around a quarter, and the ledger posted to the
+    # story reads as though caching had never been switched on.
+    CACHE_READ_RATE = 0.10
+
+    def add(self, input_tokens: int, output_tokens: int,
+            cache_read_tokens: int = 0) -> None:
         self.calls += 1
         self.input_tokens += input_tokens
         self.output_tokens += output_tokens
+        self.cache_read_tokens += cache_read_tokens
 
     def add_unreported(self) -> None:
         self.calls += 1
@@ -190,7 +200,11 @@ class _UsageTracker:
         p_in, _ = self._prices()
         if p_in is None:
             return None
-        return (self.input_tokens / 1_000_000) * p_in
+        # Cache reads are already counted inside input_tokens, so discount
+        # them rather than adding a second term.
+        cached = min(self.cache_read_tokens, self.input_tokens)
+        billable = (self.input_tokens - cached) + cached * self.CACHE_READ_RATE
+        return (billable / 1_000_000) * p_in
 
     def output_cost_usd(self):
         """Output-side cost in USD, or None if pricing env vars are unset."""
@@ -371,7 +385,8 @@ def _record_usage(response, label: str, cache_requested: bool = False) -> None:
                 label, _tracker.calls, _tracker.total_tokens,
             )
             return
-        _tracker.add(int(inp), int(out))
+        _created, _read = _cache_fields(response)
+        _tracker.add(int(inp), int(out), int(_read or 0))
         logger.info(
             "LLM usage [%s]: in=%d out=%d | run totals: calls=%d in=%d out=%d cost=%s",
             label, inp, out,

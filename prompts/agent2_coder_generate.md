@@ -17,6 +17,25 @@ You are in Stage 2 of a two-stage workflow. The plan has already been decided. Y
 
 {sibling_page_objects_block}
 
+## is_loaded() must probe the page's declared readiness element
+
+If a page entry carries a `readiness` key, `is_loaded()` MUST probe that
+element and nothing else:
+
+    def is_loaded(self) -> bool:
+        return self.is_showing(self.sel("<the readiness key>"))
+
+The point is that a readiness probe has to hold in EVERY state the page can be
+in. A heading that a search replaces, a banner that only appears when a list is
+empty, a control that a filter hides - each is true in one state and false in
+another, so a probe built on one reports "not loaded" for a page that has
+loaded perfectly well. The `readiness` key names an element that survives all
+of them, and it is chosen by a human who has seen the page in each state.
+
+Do not substitute something that looks more descriptive. If no `readiness` key
+is present, pick the most state-independent element on the page and say in
+`notes` why you chose it.
+
 ## Acting on ONE member of a family
 
 A key listed under `multi_match` matches several elements. Clicking it raises

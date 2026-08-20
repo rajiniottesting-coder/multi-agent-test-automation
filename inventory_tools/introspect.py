@@ -897,6 +897,13 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
             "options and dialog contents are not in this list yet."
         ),
         "_selector_strategies": strategies,  # draft aid; delete after review
+        # STUB. Name the element that proves this page loaded, in EVERY state
+        # it can be in. A heading a search replaces, or a banner that only
+        # shows when a list is empty, is true in one state and false in
+        # another - a probe built on one reports "not loaded" for a page that
+        # loaded perfectly well. Only a human who has seen the page in each
+        # state can choose it, which is why it is left empty.
+        "readiness": "",
         "elements_notes": {},   # STUB — fill behavioral quirks by hand
         "key_methods": [],      # STUB — fill intended page-object API by hand
         "errors": {},           # STUB — page-level errors (see 2.2 synergy)

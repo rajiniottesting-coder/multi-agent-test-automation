@@ -1109,6 +1109,76 @@ def find_redundant_methods(source: str, page_noun: str = "") -> list[tuple[str, 
     return pairs
 
 
+def validate_readiness_probe(generated_files: list, project_root=None,
+                             inventory: dict | None = None) -> list:
+    """A page that declares `readiness` must probe THAT element in is_loaded().
+
+    A readiness probe has to hold in every state the page can be in. A heading
+    that a search replaces is true in one state and false in another, so a
+    probe built on it reports "not loaded" for a page that loaded perfectly
+    well - three tests failed that way on a listing whose heading changes after
+    a search.
+
+    The generator could not have got this right on its own. Both headings were
+    in the inventory; the state-dependent one was declared `conditional`, which
+    correctly means "do not expect this on page load", so the model reasonably
+    chose the other. Nothing said which element survives every state, because
+    nothing could: only someone who has seen the page in each state knows.
+    `readiness` is that answer, and this makes it binding.
+    """
+    errors: list = []
+    if inventory is None:
+        inventory = _load_configured_inventory(Path(project_root or '.'))
+    if not inventory:
+        return errors
+
+    for f in generated_files or []:
+        path = (getattr(f, "file_path", "") or "").replace("\\", "/")
+        if not _is_page_object_path(path):
+            continue
+        source = getattr(f, "content", "") or ""
+        if not isinstance(source, str):
+            continue
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            continue
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            inv_page = _class_inventory_page(node)
+            entry = (inventory.get("pages") or {}).get(inv_page) or {}
+            expected = entry.get("readiness")
+            if not expected:
+                continue
+
+            probe = next((n for n in node.body
+                          if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                          and n.name == "is_loaded"), None)
+            if probe is None:
+                continue
+
+            used = {
+                c.args[0].value
+                for c in ast.walk(probe)
+                if isinstance(c, ast.Call)
+                and isinstance(c.func, ast.Attribute) and c.func.attr == "sel"
+                and c.args and isinstance(c.args[0], ast.Constant)
+                and isinstance(c.args[0].value, str)
+            }
+            if expected not in used:
+                errors.append(
+                    f"{_ERROR_PREFIX} in '{path}': {node.name}.is_loaded() "
+                    f"probes {sorted(used) or 'nothing'}, but inventory page "
+                    f"'{inv_page}' declares readiness = '{expected}'. A probe "
+                    f"has to hold in EVERY state the page can be in; the "
+                    f"declared element is the one that does. Use "
+                    f"self.is_showing(self.sel(\"{expected}\"))."
+                )
+    return errors
+
+
 def validate_no_duplicate_page_object_methods(
     generated_files: list, page_inventory: str = "") -> list[str]:
     """Fail when one page object gains two methods meaning the same thing.
