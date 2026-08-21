@@ -1642,6 +1642,19 @@ _STATE_OWNING_CALLS = re.compile(
 _DEFAULT_FRESH_FIXTURES = ("unique_username",)
 
 
+def _shared_account_names(project_root) -> frozenset:
+    """Account keys the inventory declares under `test_users`.
+
+    These are SHARED. Signing in as one inherits whatever every previous run
+    left behind, which is the entire reason the persistent-state rule exists.
+    """
+    try:
+        inventory = _load_configured_inventory(Path(project_root)) or {}
+        return frozenset((inventory.get("test_users") or {}).keys())
+    except Exception:                                     # noqa: BLE001
+        return frozenset()
+
+
 def _starting_state_rules(project_root) -> tuple:
     """(fresh-identity fixtures, calls that establish a clean start).
 
@@ -1827,6 +1840,7 @@ def validate_persistent_state_assertions(
     if not fixtures:
         return []
     fresh_fixtures, establishing_calls = _starting_state_rules(project_root)
+    shared_accounts = _shared_account_names(project_root)
 
     errors: list[str] = []
     for f in generated_files or []:
@@ -1850,6 +1864,43 @@ def validate_persistent_state_assertions(
                      if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef))
                      for a in fn.args.args}
         owns_state = bool(requested & fresh_fixtures)
+
+        # A fresh identity that is then ABANDONED owns nothing.
+        #
+        # Third version of this check, third version of one mistake. It
+        # believed a word in a step name, then a promising method name, and
+        # now a fixture merely being REQUESTED. Each moved closer to behaviour
+        # and stopped one step short.
+        #
+        # A file that asks for a fresh identity and then authenticates with an
+        # account the inventory declares SHARED has contradicted itself: the
+        # new identity is created and discarded, the session belongs to the
+        # shared account, and every absolute assertion afterwards is a coin
+        # toss on what the last run left. Both halves are declared - the
+        # fixtures under `_starting_state`, the shared accounts under
+        # `test_users` - so this needs no guessing.
+        if owns_state and shared_accounts:
+            used_shared = sorted({
+                node.value for node in ast.walk(tree)
+                if isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and node.value in shared_accounts
+            })
+            if used_shared:
+                owns_state = False
+                contradiction = (
+                    f" This file asks for a fresh identity "
+                    f"({', '.join(sorted(requested & fresh_fixtures))}) and "
+                    f"then signs in as {', '.join(repr(u) for u in used_shared)}, "
+                    f"which the inventory declares under `test_users` as a "
+                    f"SHARED account. The new identity is created and "
+                    f"discarded; the session belongs to the shared account, so "
+                    f"the assertion runs against whatever the last run left."
+                )
+            else:
+                contradiction = ""
+        else:
+            contradiction = ""
         if not owns_state:
             for node in ast.walk(tree):
                 if (isinstance(node, ast.Call)
@@ -1901,6 +1952,7 @@ def validate_persistent_state_assertions(
                     f"Given step), or the assertion must be relative - that what "
                     f"this scenario added is present, or is gone - which holds "
                     f"whatever the state started as."
+                    + contradiction
                 )
     return errors
 

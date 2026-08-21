@@ -133,6 +133,23 @@ If the check needs a new query, add it to the page object - the probe goes
 inside the method. A key in a step definition puts it in two places at once,
 so the inventory can be re-crawled without the step ever noticing.
 
+## A waiting predicate's docstring must say it waits
+
+    def is_empty(self) -> bool:
+        """True once the collection is empty. WAITS, and times out if it is not.
+
+        Call this only where emptiness is the expected answer. A step asking
+        "is it empty?" to branch on the reply will pay the full timeout every
+        time the answer is no.
+        """
+        return self.is_showing(self.sel("<the empty-state message>"))
+
+The waiting form is required for a predicate a test asserts on, and the cost
+of that is real: it can only answer "no" by running out of time. Saying so in
+the docstring is what lets the next reader tell an assertion helper from a
+branching one, which is the same distinction the reference page object draws
+between its waiting and non-waiting readers.
+
 ## Absence is its own call, never a negated presence check
 
     # rejected - waits the full timeout on every run

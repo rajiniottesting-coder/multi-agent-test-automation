@@ -336,3 +336,112 @@ def test_the_framework_fixture_still_counts_without_any_declaration(project):
         def assert_empty(basket_page):
             assert basket_page.is_empty()
     ''')], project) == []
+
+
+# =========================================================================
+# A FRESH IDENTITY THAT IS THEN ABANDONED OWNS NOTHING
+#
+# Third version of this check, third version of one mistake.
+#
+#   1. it believed a WORD in a step name  - @given("a newly registered account")
+#   2. it believed a promising CALL name  - begin_signup(), which does not register
+#   3. it believed a fixture being REQUESTED
+#
+# Each moved closer to behaviour and stopped one step short. The third
+# version passed a file that asked for a fresh identity and then signed in
+# with the shared account anyway: the new identity was created and discarded,
+# the session belonged to the shared account, and the absolute assertion ran
+# against whatever the previous run left.
+#
+# Both halves of that contradiction are DECLARED - the fixtures under
+# `_starting_state`, the shared accounts under `test_users` - so this needs no
+# guessing about what any name means.
+# =========================================================================
+
+def _shared_account_project(tmp_path):
+    """A project declaring one persistent page and one shared account."""
+    import json
+
+    (tmp_path / "app_inventory").mkdir(exist_ok=True)
+    (tmp_path / "config").mkdir(exist_ok=True)
+    (tmp_path / "app_inventory" / "app.json").write_text(json.dumps({
+        "app_name": "Test App",
+        "test_users": {"member": "A pre-existing shared account."},
+        "_starting_state": {"fresh_identity_fixtures": ["unique_username"],
+                            "establishing_calls": ["remove_all_items"]},
+        "pages": {"basket": {"url": "/basket", "page_object_class": "BasketPage",
+                             "elements": {"rows": "#rows"},
+                             "persistent_state": True}},
+    }), encoding="utf-8")
+    (tmp_path / "config" / "config.yaml").write_text(
+        "app_under_test:\n  name: Test App\n"
+        "  inventory_file: app_inventory/app.json\n", encoding="utf-8")
+    return tmp_path
+
+
+def test_a_fresh_identity_then_a_shared_login_is_rejected(tmp_path):
+    """The shape that shipped."""
+    root = _shared_account_project(tmp_path)
+    errors = validate_persistent_state_assertions([_flow('''
+        @given("a newly registered account")
+        def given_fresh(account_page, unique_username):
+            account_page.begin_signup("QA", unique_username)
+
+        @given("the usual account")
+        def shared(account_page, credentials):
+            account_page.sign_in_as(*credentials("member"))
+
+        @then("the basket should be empty")
+        def assert_empty(basket_page):
+            assert basket_page.is_empty()
+    ''')], root)
+
+    assert errors, "asking for a fresh identity and then not using it owns nothing"
+    message = errors[0]
+    assert "unique_username" in message, "name the identity that was abandoned"
+    assert "'member'" in message, "name the shared account that was used instead"
+    assert "SHARED" in message
+
+
+def test_a_fresh_identity_actually_used_is_accepted(tmp_path):
+    """Break the thing the guard guards. Registering properly is the whole
+    point of the rule - blocking it would leave no way to satisfy the check."""
+    root = _shared_account_project(tmp_path)
+    assert validate_persistent_state_assertions([_flow('''
+        @given("a newly registered account")
+        def given_fresh(account_page, unique_username):
+            account_page.complete_registration(unique_username)
+
+        @then("the basket should be empty")
+        def assert_empty(basket_page):
+            assert basket_page.is_empty()
+    ''')], root) == []
+
+
+def test_a_shared_login_with_a_relative_assertion_is_fine(tmp_path):
+    """The shared account is not the problem. Asserting ABSOLUTE state on it
+    is. A relative assertion holds whatever the state started as."""
+    root = _shared_account_project(tmp_path)
+    assert validate_persistent_state_assertions([_flow('''
+        @given("the usual account")
+        def shared(account_page, credentials):
+            account_page.sign_in_as(*credentials("member"))
+
+        @then("the item is in the basket")
+        def assert_present(basket_page, item_name):
+            assert item_name in basket_page.item_names()
+    ''')], root) == []
+
+
+def test_an_application_declaring_no_shared_accounts_is_untouched(project):
+    """`test_users` is optional. Without it there is no contradiction to find,
+    and the earlier rules must behave exactly as before."""
+    assert validate_persistent_state_assertions([_flow('''
+        @given("a newly registered account")
+        def given_fresh(account_page, unique_username):
+            account_page.complete_registration(unique_username)
+
+        @then("the basket should be empty")
+        def assert_empty(basket_page):
+            assert basket_page.is_empty()
+    ''')], project) == []
