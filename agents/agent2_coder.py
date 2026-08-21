@@ -63,6 +63,7 @@ from validators.method_resolution_validator import (
     validate_predicates_wait,
     validate_no_selectors_in_step_defs,
     validate_persistent_state_assertions,
+    validate_page_method_names_are_specific,
 )
 from core.llm_client import LLMClient, OutputTruncatedError
 from core.schemas import CodePlan, GeneratedFile, CodeGenerationOutput
@@ -1736,6 +1737,7 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     # behaviour. Git merges the additions cleanly when they land apart, and
     # nothing else notices.
     errors.extend(validate_no_duplicate_page_object_methods(generated_files))
+    errors.extend(validate_page_method_names_are_specific(generated_files))
     # A readiness probe must hold in every state the page can be in. The
     # generator cannot know which element does; a human who has seen the page
     # in each state declares it, and this makes that declaration binding.

@@ -26,7 +26,7 @@ scenarios(str(feature_path("login")))
 
 @given("I am on the signup and login page")
 def open_login_page(login_page, base_url):
-    login_page.open(base_url)
+    login_page.open_login_page(base_url)
 
 
 # ─────────────────────────────────────────────────────────────

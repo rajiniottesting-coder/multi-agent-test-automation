@@ -36,6 +36,23 @@ Do not substitute something that looks more descriptive. If no `readiness` key
 is present, pick the most state-independent element on the page and say in
 `notes` why you chose it.
 
+## A page-object method must say what it acts on
+
+    # rejected
+    def open(self, base_url): ...
+
+    # correct
+    def open_listing(self, base_url): ...
+
+`open()` on a listing page opens what? A reader cannot tell, and neither can
+the next story: a bare verb collides with every `<verb>_<noun>()` method added
+beside it later. The duplicate-method check drops the page's own noun, so
+`open` and `open_product` reduce to the same thing and a legitimate pair gets
+rejected as a duplicate - which is exactly how one run died.
+
+Verbs that take no object are fine on their own: `logout()`, `refresh()`,
+`submit()`. They stop being fine the moment something shares their stem.
+
 ## State the application KEEPS cannot be asserted absolutely
 
 An inventory page carrying `persistent_state: true` shows something the

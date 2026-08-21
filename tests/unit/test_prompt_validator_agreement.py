@@ -211,3 +211,73 @@ def test_every_bare_helper_the_prompt_recommends_exists_on_base_page():
             f"{helper}(). Agent 2 will follow the prompt and every generated "
             f"page object will fail on the call."
         )
+
+# =========================================================================
+# THE REFERENCE PAGE OBJECT MUST PASS THE RULES IT TEACHES
+#
+# The reference trio is what Agent 2 is shown as the gold standard. It defined
+# `open(base_url)`. Agent 2 copied the convention onto a listing page, added
+# `open_product()` beside it, and the duplicate-method check rejected the pair
+# - the page's own noun is dropped, so `open_product` reduces to `open`.
+#
+# The framework taught a name and then punished it. The remedy it printed
+# ("delete the other") would have broken the tests, because the two methods do
+# different things.
+#
+# Whatever the reference teaches, Agent 2 will write. So the reference goes
+# through the same validators as generated code.
+# =========================================================================
+
+def test_the_reference_page_object_passes_the_page_object_validators():
+    from types import SimpleNamespace
+
+    from validators.method_resolution_validator import (
+        validate_no_duplicate_page_object_methods,
+        validate_page_method_names_are_specific,
+        validate_predicates_wait,
+    )
+
+    import yaml
+    config = yaml.safe_load(
+        (_PROJECT / "config" / "config.yaml").read_text(encoding="utf-8"))
+    rel = ((config.get("app_under_test") or {}).get("reference_files") or {}
+           ).get("page_object")
+    assert rel, "config.yaml names no reference page object"
+
+    path = _PROJECT / rel
+    assert path.exists(), f"the reference page object {rel} is missing"
+
+    reference = [SimpleNamespace(file_path=rel,
+                                 content=path.read_text(encoding="utf-8"))]
+
+    for check in (validate_no_duplicate_page_object_methods,
+                  validate_page_method_names_are_specific,
+                  validate_predicates_wait):
+        errors = check(reference)
+        assert not errors, (
+            f"{rel} is the example Agent 2 copies, and it fails "
+            f"{check.__name__}:\n  " + "\n  ".join(errors) + "\n"
+            f"Whatever the reference teaches, the generated code will do - and "
+            f"the gate will then reject it for following the example."
+        )
+
+
+def test_every_committed_page_object_passes_the_naming_rule():
+    """The second home. A gate only guards what passes through it, and a
+    hand-edited page object never passes through the generation gate."""
+    from types import SimpleNamespace
+
+    from validators.method_resolution_validator import (
+        validate_page_method_names_are_specific,
+    )
+
+    files = [
+        SimpleNamespace(file_path=f"pages/{f.name}",
+                        content=f.read_text(encoding="utf-8"))
+        for f in sorted((_PROJECT / "pages").glob("*_page.py"))
+        if f.name != "base_page.py"
+    ]
+    if not files:
+        pytest.skip("no page objects committed yet")
+
+    assert not validate_page_method_names_are_specific(files)

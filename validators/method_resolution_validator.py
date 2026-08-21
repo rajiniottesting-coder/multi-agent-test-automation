@@ -1231,11 +1231,24 @@ def validate_no_duplicate_page_object_methods(
         noun = path.rsplit("/", 1)[-1].replace("_page.py", "")
         for first, second in find_redundant_methods(getattr(f, "content", ""), noun):
             errors.append(
-                f"{path}: '{first}' and '{second}' mean the same thing. Two "
-                f"stories editing this page object cannot see each other's "
-                f"branches, so both may add their own name for one behaviour. "
-                f"Keep whichever name the existing step definitions already "
-                f"call and delete the other."
+                # `... error in '<path>':` is the shape the repair loop's
+                # grouper reads. This message did not use it, so a duplicate
+                # was never routed to a file and never got a targeted repair
+                # attempt - it went straight to the final gate and killed the
+                # story with no explanation of what to change.
+                f"Duplicate method error in '{path}': "
+                f"'{first}' and '{second}' read as the same thing "
+                f"once the page's own noun is dropped. Two stories editing "
+                f"this page object cannot see each other's branches, so both "
+                f"may add their own name for one behaviour.\n"
+                f"  If they ARE one behaviour: keep whichever name the "
+                f"existing step definitions already call and delete the "
+                f"other.\n"
+                f"  If they are genuinely different - '{first}' being a bare "
+                f"verb that does not say what it acts on is the usual cause - "
+                f"RENAME the vaguer one so it does. Do not delete either: "
+                f"deleting a method the tests call breaks them, and this "
+                f"message used to advise exactly that."
             )
     return errors
 
@@ -1318,8 +1331,8 @@ def validate_predicates_wait(generated_files: list) -> list[str]:
                 if not probe:
                     continue
                 errors.append(
-                    f"{path} line {node.lineno}: {cls.name}.{node.name}() "
-                    f"returns self.{probe}(...), which reads the page ONCE and "
+                    f"Waiting predicate error in '{path}' line {node.lineno}: "
+                    f"{cls.name}.{node.name}() returns self.{probe}(...), which reads the page ONCE and "
                     f"logs nothing. A step definition asserting on this races "
                     f"any state change that has not finished - most often the "
                     f"action immediately before it - and when it loses, the "
@@ -1370,7 +1383,8 @@ def validate_no_selectors_in_step_defs(generated_files: list) -> list[str]:
             if node.args and isinstance(node.args[0], ast.Constant):
                 key = f"'{node.args[0].value}'"
             errors.append(
-                f"{path} line {node.lineno}: this step definition calls "
+                f"Selector boundary error in '{path}' line {node.lineno}: "
+                f"this step definition calls "
                 f"{owner}.sel({key}). Selector keys belong inside the page "
                 f"object; a step definition should read as the behaviour it "
                 f"describes and call a named method. Add the query to the page "
@@ -1616,8 +1630,8 @@ def validate_persistent_state_assertions(
                 if not fixture:
                     continue
                 errors.append(
-                    f"{path} line {node.lineno}: this asserts an ABSOLUTE state "
-                    f"on {fixture}, whose inventory page '{fixtures[fixture]}' is "
+                    f"Persistent state error in '{path}' line {node.lineno}: "
+                    f"this asserts an ABSOLUTE state on {fixture}, whose inventory page '{fixtures[fixture]}' is "
                     f"declared persistent_state - the application keeps it against "
                     f"the signed-in user, so it survives logout and survives the "
                     f"run. A previous run's leftovers are counted too, and no wait "
@@ -1626,5 +1640,92 @@ def validate_persistent_state_assertions(
                     f"Given step), or the assertion must be relative - that what "
                     f"this scenario added is present, or is gone - which holds "
                     f"whatever the state started as."
+                )
+    return errors
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# A page-object method must say what it acts on
+#
+# The reference page object defined `open(base_url)`. Agent 2 copied the
+# convention onto a listing page, added `open_product()` for the detail page,
+# and the duplicate-method check rejected the pair: strip the page's own noun
+# from `open_product` and what is left is `open`.
+#
+# The two are not one behaviour - one opens the listing, one opens a single
+# record - so the framework had taught a name and then punished it, and the
+# remedy it printed ("delete the other") would have broken the tests.
+#
+# No syntactic rule can separate that pair from a real duplicate after the
+# fact: `filter_by_brand` / `filter_products_by_brand` has the identical
+# shape and IS one behaviour. So the check moves earlier. A bare verb collides
+# with every `verb_object` name that will ever be added beside it, and it is
+# unreadable on its own - `open()` on a listing page opens what? Requiring the
+# object at the point the method is written costs nothing and removes the
+# collision before there is anything to collide with.
+# ─────────────────────────────────────────────────────────────────────────
+
+# Framework-mandated names, which the base class or a validator requires
+# verbatim and which no page object is free to rename.
+_MANDATED_METHOD_NAMES = frozenset({
+    "is_loaded", "page_url", "confirm_arrival", "sel",
+})
+
+# Verbs that take no object. "logout what?" is not a question, and a rule that
+# demanded `logout_session()` would be renaming working code to satisfy a
+# check. The first draft of this validator flagged NavPage.logout() and was
+# wrong to - the list exists because being right about `open()` does not make
+# a rule right about every bare verb.
+_INTRANSITIVE_ACTIONS = frozenset({
+    "logout", "refresh", "reload", "submit", "back", "close", "dismiss",
+    "cancel", "confirm", "continue", "proceed", "accept", "decline",
+})
+
+
+def validate_page_method_names_are_specific(generated_files: list) -> list[str]:
+    """Fail a public page-object method whose name is a bare verb."""
+    errors: list[str] = []
+    for f in generated_files or []:
+        path = getattr(f, "file_path", "") or ""
+        if not path.startswith("pages/") or not path.endswith(".py"):
+            continue
+        if path.endswith("base_page.py"):
+            continue
+        try:
+            tree = ast.parse(getattr(f, "content", "") or "")
+        except SyntaxError:
+            continue
+
+        for cls in tree.body:
+            if not isinstance(cls, ast.ClassDef):
+                continue
+            for node in cls.body:
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                name = node.name
+                if name.startswith("_") or name in _MANDATED_METHOD_NAMES:
+                    continue
+                if "_" in name:
+                    continue
+
+                # A lone intransitive verb is fine UNTIL something shares its
+                # stem, which is the moment the collision becomes real.
+                shares_stem = any(
+                    isinstance(sibling, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and sibling.name.startswith(f"{name}_")
+                    for sibling in cls.body
+                )
+                if name in _INTRANSITIVE_ACTIONS and not shares_stem:
+                    continue
+
+                errors.append(
+                    f"Method naming error in '{path}' line {node.lineno}: "
+                    f"{cls.name}.{name}() is a bare verb and does not say what it acts on. Name it "
+                    f"{name}_<what>() - on this page, what does {name}() "
+                    f"{name}? A bare verb also collides with every "
+                    f"{name}_<something>() method added beside it later: the "
+                    f"duplicate-method check drops the page's own noun, so "
+                    f"'{name}' and '{name}_<noun>' reduce to the same thing "
+                    f"and a legitimate pair gets rejected as a duplicate."
                 )
     return errors

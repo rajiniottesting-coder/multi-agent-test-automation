@@ -30,7 +30,7 @@ class LoginPage(BasePage):
     INVENTORY_PAGE = "login"
 
     # ── actions ──────────────────────────────────────────────
-    def open(self, base_url: str) -> None:
+    def open_login_page(self, base_url: str) -> None:
         """Navigate to the Signup / Login screen.
 
         Args:
