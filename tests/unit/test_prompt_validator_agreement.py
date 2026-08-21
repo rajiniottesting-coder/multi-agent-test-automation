@@ -296,26 +296,114 @@ def test_every_committed_page_object_passes_the_naming_rule():
 
     assert not validate_page_method_names_are_specific(files)
 
-def test_a_helper_the_prompt_recommends_for_a_family_is_sanctioned_for_one():
-    """The first entry in the failure history, repeated.
+def test_the_validator_reads_the_family_lists_from_base_page():
+    """One source of truth, not two copies kept in step by hand.
 
-    A multi_match key may only reach a helper listed in _FAMILY_READERS or
-    _FAMILY_CONSUMERS. wait_for_count() was added to BasePage, recommended in
-    the prompt for counting rows - which are always a family - and left out of
-    both sets. The gate then rejected the prompt's own advice, and no rewrite
-    could satisfy both voices.
+    The validator used to hold its own copy of "which helpers may take a
+    multi_match key". Twice, a family-aware helper was added to BasePage and
+    recommended in the generation prompt with the validator never told - so the
+    gate rejected the prompt's own advice, and Agent 2 spent its repair budget
+    moving one call between lines because no rewrite satisfied both voices.
+
+    The lists now live in pages/base_page.py beside the helpers, and this
+    checks the validator actually reads them rather than falling back to a
+    stale copy.
     """
+    import ast
+
+    from validators.method_resolution_validator import (
+        _FAMILY_CONSUMERS,
+        _FAMILY_READERS,
+    )
+
+    tree = ast.parse((_PROJECT / "pages" / "base_page.py").read_text(encoding="utf-8"))
+    declared = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if not isinstance(target, ast.Name):
+                continue
+            if target.id in ("FAMILY_READERS", "FAMILY_CONSUMERS"):
+                call = node.value
+                declared[target.id] = frozenset(
+                    e.value for e in call.args[0].elts
+                    if isinstance(e, ast.Constant))
+
+    assert declared, "pages/base_page.py declares no FAMILY_* lists"
+    assert _FAMILY_READERS == declared["FAMILY_READERS"], (
+        "the validator's family readers differ from what BasePage declares - "
+        "it is reading a stale copy"
+    )
+    assert _FAMILY_CONSUMERS == declared["FAMILY_CONSUMERS"]
+
+
+def test_every_sanctioned_helper_actually_exists_on_base_page():
+    """A name in the list that BasePage does not define sends the model to a
+    method that is not there. This is the same failure in the other
+    direction."""
+    import ast
+
+    from validators.method_resolution_validator import (
+        _FAMILY_CONSUMERS,
+        _FAMILY_READERS,
+    )
+
+    tree = ast.parse((_PROJECT / "pages" / "base_page.py").read_text(encoding="utf-8"))
+    defined = {
+        node.name
+        for cls in tree.body if isinstance(cls, ast.ClassDef)
+        for node in cls.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+    for helper in sorted(_FAMILY_READERS | _FAMILY_CONSUMERS):
+        assert helper in defined, (
+            f"{helper!r} is sanctioned for a multi_match key but BasePage does "
+            f"not define it"
+        )
+
+
+def test_a_family_helper_the_prompt_recommends_is_sanctioned():
+    """The rule this test used to be, restored.
+
+    It had degenerated into `assert "wait_for_count" in sanctioned` - a fact
+    about one helper rather than a rule - after the general form false-flagged
+    a single-element helper. Narrowing it removed the only thing that would
+    have caught the NEXT one, and the next one arrived: wait_for_row, added to
+    BasePage and the prompt, unsanctioned, rejected at the gate.
+
+    The general form works now because the prompt writes a family argument as a
+    placeholder - `<the row family>` - so a recommendation involving a family
+    is identifiable without guessing.
+    """
+    import re
+
     from validators.method_resolution_validator import (
         _FAMILY_CONSUMERS,
         _FAMILY_READERS,
     )
 
     sanctioned = _FAMILY_READERS | _FAMILY_CONSUMERS
+    text = _PROMPT.read_text(encoding="utf-8")
 
-    assert "wait_for_count" in sanctioned, (
-        "wait_for_count counts a family by definition - rows, cards, results. "
-        "Leaving it out of the sanctioned sets is what made the gate reject "
-        "the prompt's own recommendation."
+    recommended = set()
+    for line in text.splitlines():
+        if "rejected" in line.lower() or "never" in line.lower():
+            continue
+        for match in re.finditer(r"self\.(\w+)\(|\.(\w+)\(", line):
+            helper = match.group(1) or match.group(2)
+            if "family" in line.lower() or "row family" in line:
+                recommended.add(helper)
+
+    unsanctioned = {h for h in recommended
+                    if h not in sanctioned and h not in ("sel", "format")}
+    assert not unsanctioned, (
+        f"the generation prompt recommends {sorted(unsanctioned)} with a "
+        f"family argument, but none of them is in FAMILY_READERS or "
+        f"FAMILY_CONSUMERS. Agent 2 will follow the prompt and the selector "
+        f"gate will reject it - the two voices disagree and no rewrite "
+        f"satisfies both."
     )
 
 

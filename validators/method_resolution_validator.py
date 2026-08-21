@@ -653,39 +653,52 @@ _MAX_KEYS_LISTED = 25
 # built to take.
 # Helpers that READ a whole family. These are what the error message offers
 # when someone wants the set rather than one member.
-_FAMILY_READERS = frozenset({
-    "get_all_texts", "get_count", "exists", "get_nth_text",
-    "get_row_count", "get_column_values", "find_row_index_by_text",
-    "get_cell_text",
-    # The waiting form of get_count. Added to BasePage and recommended in the
-    # generation prompt WITHOUT being added here, so the gate rejected the
-    # helper its own prompt had just asked for - the first entry in the failure
-    # history, repeated exactly. Agent 2 spent four repair attempts moving
-    # wait_for_count() from line to line because no rewrite could satisfy both
-    # voices.
-    "wait_for_count",
-})
+def _family_sets_from_base_page() -> tuple:
+    """(readers, consumers) as pages/base_page.py declares them.
 
-# Helpers BUILT to take a family selector and resolve it to one element
-# internally. Passing a family key to these is not a mistake, it is the
-# documented signature - select_autocomplete_suggestion exists precisely so a
-# page object never has to disambiguate an async suggestion list by hand.
-# Without this set the validator rejected the very helper it tells people to
-# use, and the repair loop then rewrote correct code (SCRUM-103, 31 Jul 2026).
-_FAMILY_CONSUMERS = frozenset({
-    "select_autocomplete_suggestion",
-    # Address ONE member of a family by position. This is the sanctioned
-    # alternative to building `">> nth=" + index` in a page object, and the
-    # index is expected to come from find_row_index_by_text() - so the element
-    # is identified by what it SAYS before it is reached by where it sits.
-    "click_nth",
-    "get_nth_attribute",
-    # Scope to the row containing a text, then act inside it. This is the
-    # PREFERRED way to touch one member of a family - it needs no index, so two
-    # families never have to agree on cardinality or order.
-    "click_in_row",
-    "row_containing",
-})
+    Read by AST rather than imported: importing BasePage would pull Playwright
+    into every validator run, and a validator must not need a browser library
+    to read a list of names.
+
+    The lists live beside the helpers because keeping a second copy here failed
+    twice - a family-aware helper added to BasePage and recommended in the
+    prompt, with this file never told, so the gate rejected the prompt's own
+    advice. The fallback below is the same content, used only if base_page.py
+    cannot be read at all; a validator must never be the reason a run dies.
+    """
+    fallback = (
+        frozenset({"exists", "find_row_index_by_text", "get_all_texts",
+                   "get_cell_text", "get_column_values", "get_count",
+                   "get_nth_text", "get_row_count", "wait_for_count"}),
+        frozenset({"click_in_row", "click_nth", "get_nth_attribute",
+                   "row_containing", "select_autocomplete_suggestion",
+                   "wait_for_row"}),
+    )
+    try:
+        here = Path(__file__).resolve().parents[1] / "pages" / "base_page.py"
+        tree = ast.parse(here.read_text(encoding="utf-8"))
+        found = {}
+        for node in tree.body:
+            if not isinstance(node, ast.Assign):
+                continue
+            names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            for name in names:
+                if name not in ("FAMILY_READERS", "FAMILY_CONSUMERS"):
+                    continue
+                call = node.value
+                if (isinstance(call, ast.Call) and call.args
+                        and isinstance(call.args[0], ast.Set)):
+                    found[name] = frozenset(
+                        e.value for e in call.args[0].elts
+                        if isinstance(e, ast.Constant))
+        if "FAMILY_READERS" in found and "FAMILY_CONSUMERS" in found:
+            return found["FAMILY_READERS"], found["FAMILY_CONSUMERS"]
+    except Exception:                                     # noqa: BLE001
+        logger.debug("family sets: falling back to the built-in copy")
+    return fallback
+
+
+_FAMILY_READERS, _FAMILY_CONSUMERS = _family_sets_from_base_page()
 
 _PLURAL_SAFE_METHODS = _FAMILY_READERS | _FAMILY_CONSUMERS
 
@@ -2002,3 +2015,4 @@ def validate_step_parameter_types(generated_files: list, project_root=None) -> l
                     f"or change the reader's return type."
                 )
     return errors
+

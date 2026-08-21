@@ -292,7 +292,7 @@ _CORPUS = [
     ('    self.navigate(base_url + "/basket")', False),
     ('    return self.get_text(self.sel("total"))', False),
     ('    name = "a plain string"', False),
-    ("    return self.sel('cart_rows')", False),
+    ("    return self.sel('table_rows')", False),
 ]
 
 

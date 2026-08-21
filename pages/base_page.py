@@ -50,6 +50,55 @@ from playwright.sync_api import Locator, Page, expect
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------
+# Which helpers may be handed a multi_match key
+#
+# A key the inventory declares multi_match matches several elements, and
+# Playwright is strict: clicking, filling or asserting on such a locator raises
+# "strict mode violation: locator(...) resolved to N elements". So the selector
+# validator rejects a family key unless the helper receiving it is one of these.
+#
+# THESE LISTS LIVE HERE, BESIDE THE HELPERS, ON PURPOSE.
+#
+# They used to live in the validator, as its own copy of what BasePage offers.
+# Keeping two lists in step by hand failed twice, the same way both times: a
+# family-aware helper was added here and recommended in the generation prompt,
+# and the validator - never told - rejected the prompt's own advice. Agent 2
+# then burned its repair attempts moving one call from line to line, because no
+# rewrite could satisfy both voices.
+#
+# Adding a helper and sanctioning it are now one edit in one file. The validator
+# reads these names out of this module, so the two cannot drift.
+
+# Helpers that read or count the WHOLE match set. Safe by construction: none of
+# them acts on a single element.
+FAMILY_READERS = frozenset({
+    "exists",
+    "find_row_index_by_text",
+    "get_all_texts",
+    "get_cell_text",
+    "get_column_values",
+    "get_count",
+    "get_nth_text",
+    "get_row_count",
+    "wait_for_count",
+})
+
+# Helpers BUILT to take a family and resolve it to one member internally -
+# by text, by position, or by the row that contains something. Passing a family
+# key to these is not a mistake, it is the documented signature.
+FAMILY_CONSUMERS = frozenset({
+    "click_in_row",
+    "click_nth",
+    "get_nth_attribute",
+    "row_containing",
+    "select_autocomplete_suggestion",
+    "wait_for_row",
+})
+
+FAMILY_SAFE_HELPERS = FAMILY_READERS | FAMILY_CONSUMERS
+
+
 class BasePage:
     """Every page object inherits from this."""
 
