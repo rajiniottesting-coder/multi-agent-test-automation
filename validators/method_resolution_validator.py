@@ -1474,7 +1474,7 @@ def _conditional_keys(project_root) -> set:
 def _has_waiting_sibling(cls: ast.ClassDef, name: str) -> bool:
     """True if the class offers a waiting form of the same question.
 
-    `is_logged_in()` beside `wait_until_logged_in()` is a deliberate PAIR, not
+    `is_signed_in()` beside `wait_until_signed_in()` is a deliberate PAIR, not
     an oversight: one answers now, one waits. Rejecting the fast half of a
     documented pair is how this validator sent a repair loop round four times
     renaming a method it should have left alone.
@@ -1501,7 +1501,7 @@ def validate_predicates_wait(generated_files: list, project_root=None) -> list[s
     the inventory declares CONDITIONAL is right to glance: waiting for
     something legitimately absent burns the full timeout on every negative
     answer. And a predicate with a waiting sibling on the same class is half
-    of a deliberate pair - `is_logged_in()` and `wait_until_logged_in()` - so
+    of a deliberate pair - `is_signed_in()` and `wait_until_signed_in()` - so
     rejecting it asks for the pair to be destroyed.
     """
     conditional = _conditional_keys(project_root or Path("."))

@@ -269,8 +269,8 @@ def test_a_step_named_after_registering_is_not_evidence_of_registering(project):
             account_page.begin_signup("QA User", "qa@example.test")
 
         @when("I log in as the new account")
-        def do_login(login_page, credentials):
-            login_page.login_as(*credentials("shared"))
+        def do_login(account_page, credentials):
+            account_page.sign_in_as(*credentials("shared"))
 
         @then("the basket should be empty")
         def assert_empty(basket_page):
