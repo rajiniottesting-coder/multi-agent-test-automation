@@ -9,7 +9,7 @@ PURPOSE:
     planned and never created.
 
 THE FAILURE MODE THIS CATCHES:
-    Step def files imported `pages.product_detail_page.ProductDetailPage`
+    Step def files imported `pages.product_detail_page.RecordDetailPage`
     but `pages/product_detail_page.py` was never planned, never created,
     and didn't exist in the repo. Tests crashed at collection time with
     `ModuleNotFoundError`.
@@ -34,7 +34,7 @@ DESIGN PRINCIPLES (app-agnostic, reusable across projects):
 
     4. SCOPE IS LIMITED.
        Only flags imports that clearly cannot resolve. Doesn't try to
-       verify that the imported NAME (e.g., `ProductDetailPage` class)
+       verify that the imported NAME (e.g., `RecordDetailPage` class)
        exists inside a file — that would require executing the file.
        Module-level resolution is enough to catch the common LLM mistake.
 

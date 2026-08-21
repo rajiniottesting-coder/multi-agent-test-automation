@@ -12,9 +12,9 @@ WHAT HAPPENED
     after "Available keys", so what survived was the key list alone,
     truncated mid-word:
 
-        - add_to_cart_buttons, added_modal, all_products_heading,
-          continue_shopping_button, product_cards, product_names,
-          search_button, search_input, searched_
+        - add_row_buttons, confirm_modal, listing_heading,
+          continue_button, record_cards, record_names,
+          filter_button, filter_input, searched_
 
     No file, no key, no statement of what was wrong. The repair loop then
     reported that the model "changed nothing" and gave up.

@@ -768,11 +768,24 @@ def validate_no_duplicate_step_definitions(
     project_root=None,
     repair_format: bool = False,
 ) -> list:
-    """Cross-file step duplication is SAFE in pytest-bdd — always returns [].
+    """Flag the same step phrase declared TWICE IN ONE FILE.
 
-    RETAINED AS A NO-OP (ADR-013). This validator used to flag the same step
-    phrase appearing in two step-def files, believing pytest-bdd "registers
-    step definitions globally across the package". That belief is FALSE.
+    Two halves, and only one of them was ever safe.
+
+    CROSS-FILE duplication is safe, and this returns nothing for it (ADR-013).
+    The validator once flagged the same phrase in two step-def modules,
+    believing pytest-bdd "registers step definitions globally across the
+    package". That belief is FALSE.
+
+    SAME-FILE duplication is a different question, and hollowing out the
+    cross-file half threw it away too. Two identical decorators in ONE module
+    do not error - verified empirically, the run goes green. The SECOND
+    definition silently shadows the first, so the assertion written first
+    never executes and nothing says so. That is worse than a collection
+    error: an error gets fixed, a dead assertion gets trusted.
+
+    `validate_no_unused_step_definitions` does not catch it either - both
+    decorators match a feature step, so neither is unused.
 
     pytest-bdd implements step definitions as pytest FIXTURES, which are
     MODULE-SCOPED. Two modules declaring the same step text each resolve their
@@ -793,8 +806,8 @@ def validate_no_duplicate_step_definitions(
             never named as the repair target (it is reserved and correct).
 
     Returns:
-        list[str]: human-readable error messages, one per genuine collision.
-        Empty list means no cross-file duplicates.
+        list[str]: one message per phrase declared twice in a single file.
+        Empty list means no same-file duplicates.
     """
     from pathlib import Path as _Path
 
@@ -845,9 +858,32 @@ def validate_no_duplicate_step_definitions(
         if _gf_path(f).startswith("tests/step_defs/") and _gf_path(f).endswith(".py")
     }
 
-    return []  # cross-file duplication is safe — see docstring (ADR-013)
-
+    # Cross-file duplication is safe (ADR-013) - the registry above spans
+    # files and is deliberately NOT reported on. What follows counts declarations
+    # WITHIN each file, which is the half that was never safe.
     errors: list[str] = []
+    for f in step_def_files:
+        path = _gf_path(f)
+        seen: dict = {}
+        for kind, phrase, parser_type in _extract_decorator_phrases(_gf_content(f)):
+            key = (kind, parser_type, phrase.strip())
+            seen[key] = seen.get(key, 0) + 1
+        for (kind, parser_type, phrase), count in sorted(seen.items()):
+            if count < 2:
+                continue
+            phrase_disp = phrase if len(phrase) <= 80 else phrase[:77] + "..."
+            errors.append(
+                f"Duplicate step-definition error in '{path}': "
+                f"@{kind}('{phrase_disp}') is declared {count} times in this "
+                f"file. pytest-bdd does not error on this - the LAST "
+                f"declaration silently shadows the earlier one, so the first "
+                f"function never runs and its assertion is never made. The "
+                f"suite goes green on a test that does not test. Keep one "
+                f"declaration; if the two do different things, they need "
+                f"different step text in the feature file."
+            )
+    return errors
+
     for (kind, parser_type, phrase), paths in sorted(registry.items()):
         if len(paths) <= 1:
             continue

@@ -111,13 +111,48 @@ def test_parameterised_different_varname_no_collision():
     assert validate_no_duplicate_step_definitions(files) == []
 
 
-def test_duplicate_within_single_file_not_flagged_here():
-    """A dup within ONE file is a different problem; this validator is cross-file only."""
+def test_duplicate_within_single_file_IS_flagged():
+    """A dup within ONE file is a different problem - and it is this one.
+
+    The previous version of this test asserted the opposite, and its own
+    docstring said "a dup within ONE file is a different problem" while
+    asserting that nothing catches it. Nothing did.
+
+    Hollowing this validator out for the CROSS-file case (ADR-013, correct:
+    pytest-bdd steps are module-scoped fixtures and never collide across
+    modules) threw the same-file case away with it. Two identical decorators
+    in one module do not error - verified by running pytest-bdd - the SECOND
+    silently shadows the first. The assertion written first never executes and
+    the suite goes green on a test that does not test.
+
+    Found in review, not by any gate.
+    """
     files = [
         _gf("tests/step_defs/test_a.py",
             '@given("x")\ndef _(): pass\n@given("x")\ndef __(): pass'),
     ]
-    # Only one file involved → registry maps the key to a single path → no error.
+    errors = validate_no_duplicate_step_definitions(files)
+
+    assert len(errors) == 1, errors
+    assert "declared 2 times" in errors[0]
+    assert "shadows" in errors[0], (
+        "say what actually happens - 'duplicate' sounds harmless, and a "
+        "silently dead assertion is not"
+    )
+
+
+def test_the_same_phrase_in_two_files_is_still_allowed():
+    """Break the thing the guard guards.
+
+    Cross-file duplication is SAFE and every generated step-def file is
+    deliberately self-contained because of it. Reporting it again would undo
+    ADR-013 and put the fragile "is this step shared?" judgement back on the
+    generator.
+    """
+    files = [
+        _gf("tests/step_defs/test_a.py", '@given("x")\ndef _(): pass'),
+        _gf("tests/step_defs/test_b.py", '@given("x")\ndef _(): pass'),
+    ]
     assert validate_no_duplicate_step_definitions(files) == []
 
 

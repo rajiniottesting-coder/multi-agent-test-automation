@@ -198,3 +198,158 @@ def test_a_brand_new_page_object_is_not_judged():
         _PROJECT)
         if "no longer defines" in e]
     assert not errors
+
+
+# =========================================================================
+# NO APPLICATION VOCABULARY IN A FRAMEWORK FILE
+#
+# The golden rule's acceptance test - swap the application, run the suite -
+# passes even with app names scattered through comments and fixtures, because
+# those are synthetic strings rather than lookups. So it never caught them,
+# and forty-one accumulated: page-object class names in a validator docstring,
+# inventory element keys quoted in a test, a CSS id in a ranking fixture.
+#
+# Hand-written token lists did not catch them either. Every sweep in this
+# project was a list of words somebody thought of, and it missed whatever
+# nobody thought of.
+#
+# So the vocabulary is HARVESTED from the application's own permitted homes -
+# its inventory and its page objects - and every framework file is scanned for
+# it. A token this application coins cannot be in a framework file, whoever
+# adds it and whatever they call it.
+#
+# Only COINED tokens count: element keys, page-object class and method names,
+# and structural selector fragments. Ordinary English that happens to appear
+# in the application's UI text is not its property - a comment may say
+# "address" without meaning the app's address field.
+# =========================================================================
+
+# Names that are POM convention everywhere, not this application's property.
+_CONVENTIONAL = frozenset({
+    "LoginPage", "NavPage", "HomePage", "BasePage",
+    "login_as", "is_loaded", "page_url", "open_login_page", "clear_credentials",
+    "data-qa", "data-test", "data-testid", "data-cy",
+})
+
+_FRAMEWORK_PATHS = (
+    "agents", "core", "validators", "integrations", "inventory_tools",
+    "scripts", "pages/base_page.py", "tests/unit", "tests/conftest.py",
+    "tests/step_defs/conftest.py",
+    "prompts/agent1_analyst.md", "prompts/agent2_coder_generate.md",
+    "prompts/agent2_coder_plan.md", "prompts/agent3_reviewer.md",
+    "prompts/agent5_reporter.md",
+)
+
+
+def _coined_by_the_application() -> dict:
+    """{token: where it was coined} from the inventory and the page objects."""
+    import ast as _ast
+    import json
+    import re
+
+    import yaml
+
+    coined: dict = {}
+
+    def add(token, kind):
+        text = str(token).strip()
+        distinctive = (len(text) >= 5 and re.search(r"[_\-.#\[]", text)) or (
+            len(text) >= 6 and text[:1].isupper())
+        if distinctive and text not in _CONVENTIONAL:
+            coined.setdefault(text, kind)
+
+    config = yaml.safe_load(
+        (_PROJECT / "config" / "config.yaml").read_text(encoding="utf-8"))
+    app = config.get("app_under_test") or {}
+
+    inventory_path = _PROJECT / app.get("inventory_file", "")
+    if inventory_path.is_file():
+        inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+        for entry in (inventory.get("pages") or {}).values():
+            if not isinstance(entry, dict):
+                continue
+            add(entry.get("page_object_class", ""), "page-object class")
+            for key, selector in (entry.get("elements") or {}).items():
+                add(key, "inventory element key")
+                for fragment in re.findall(r"[#.\[][\w\-\[\]='\"]{4,}", str(selector)):
+                    add(fragment.strip("'\"[]"), "selector fragment")
+
+    # Page-object CLASS names only. Method names are deliberately NOT
+    # harvested: they are shared vocabulary, not coined. Two unrelated
+    # applications both have sign_in(), is_empty(), submit() - flagging those
+    # would report a framework file for using ordinary POM verbs, and a check
+    # that cries wolf gets deleted.
+    #
+    # Nothing is lost by the omission: every one of the forty-one leaks this
+    # scan first found was an element key, a class name or a selector
+    # fragment. Not one was a method name.
+    for path in sorted((_PROJECT / "pages").glob("*_page.py")):
+        if path.name == "base_page.py":
+            continue
+        for cls in _ast.parse(path.read_text(encoding="utf-8")).body:
+            if isinstance(cls, _ast.ClassDef):
+                add(cls.name, "page-object class")
+    return coined
+
+
+def _framework_files() -> list:
+    files = []
+    for entry in _FRAMEWORK_PATHS:
+        path = _PROJECT / entry
+        if path.is_file():
+            files.append(path)
+        elif path.is_dir():
+            files += [f for f in path.rglob("*")
+                      if f.suffix in (".py", ".md") and "__pycache__" not in f.parts]
+    return files
+
+
+def test_no_framework_file_names_anything_the_application_coins():
+    import re
+
+    coined = _coined_by_the_application()
+    if not coined:
+        pytest.skip("no inventory or page objects to harvest a vocabulary from")
+
+    files = _framework_files()
+    assert files, "no framework files found - the scan would be vacuous"
+
+    offences = []
+    for token, kind in coined.items():
+        pattern = re.compile(rf"(?<![\w\-]){re.escape(token)}(?![\w\-])")
+        for path in files:
+            text = path.read_text(encoding="utf-8", errors="replace")
+            for number, line in enumerate(text.splitlines(), 1):
+                if pattern.search(line):
+                    rel = path.relative_to(_PROJECT)
+                    offences.append(f"{rel}:{number}  {token}  ({kind})")
+
+    assert not offences, (
+        f"{len(offences)} application-specific name(s) in framework files. "
+        f"These come from the inventory and the page objects, which are where "
+        f"app knowledge belongs - a framework file naming one cannot be "
+        f"pointed at a different application without reading as a lie:\n  "
+        + "\n  ".join(sorted(offences)[:25])
+        + ("\n  ..." if len(offences) > 25 else "")
+    )
+
+
+def test_the_scan_would_notice_a_leak():
+    """Break the thing the guard guards.
+
+    A harvester that returns nothing, or a pattern that matches nothing, would
+    make the test above pass by doing nothing at all.
+    """
+    import re
+
+    coined = _coined_by_the_application()
+    assert len(coined) >= 10, (
+        f"only {len(coined)} coined token(s) harvested - the scan is too thin "
+        f"to be protecting anything"
+    )
+
+    sample = sorted(coined)[0]
+    pattern = re.compile(rf"(?<![\w\-]){re.escape(sample)}(?![\w\-])")
+    assert pattern.search(f"    self.click(self.sel(\"{sample}\"))"), (
+        "the pattern does not match its own token in a realistic line"
+    )

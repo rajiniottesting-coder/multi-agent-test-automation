@@ -26,7 +26,7 @@ from agents.agent2_coder import (
 
 PAGE_OBJECT = (
     "from pages.base_page import BasePage\n\n\n"
-    "class ProductsPage(BasePage):\n"
+    "class ListingPage(BasePage):\n"
     '    INVENTORY_PAGE = "products"\n\n'
     "    def search(self, term: str) -> None:\n"
     '        """Search the catalogue."""\n'
@@ -229,8 +229,8 @@ class _BranchRepo:
         return self.per_branch[branch][path]
 
 
-_ON_MAIN = "class ProductsPage:\n    def old_name(self): pass\n"
-_ON_BRANCH = "class ProductsPage:\n    def new_name(self): pass\n"
+_ON_MAIN = "class ListingPage:\n    def old_name(self): pass\n"
+_ON_BRANCH = "class ListingPage:\n    def new_name(self): pass\n"
 
 
 def test_the_story_branch_wins_over_main():

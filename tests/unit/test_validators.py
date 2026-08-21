@@ -88,7 +88,7 @@ def project_root(tmp_path: Path) -> Path:
         class SomePage(BasePage):
             USERNAME_INPUT = "[data-test='username']"
             PASSWORD_INPUT = "[data-test='password']"
-            LOGIN_BUTTON = "[data-test='login-button']"
+            LOGIN_BUTTON = "[data-test='signin-button']"
             ERROR_MESSAGE = "[data-test='error']"
 
             def open(self, base_url: str) -> None:
@@ -541,7 +541,7 @@ class TestPathPolicy:
 # =============================================================================
 class TestImportResolution:
     """The LLM hallucinated `from pages.product_detail_page import
-    ProductDetailPage` when no such file was planned. Validator catches
+    RecordDetailPage` when no such file was planned. Validator catches
     this before tests crash at collection time.
     """
 

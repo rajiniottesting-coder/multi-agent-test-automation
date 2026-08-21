@@ -153,11 +153,11 @@ for no reason.
 Do not read the whole list and assert membership:
 
     names = <page>.<a reader>()
-    assert product_name not in names          # rejected: a snapshot
+    assert record_name not in names          # rejected: a snapshot
 
 Wait for the row instead:
 
-    <page>.wait_for_row(<the row family>, product_name, present=False)
+    <page>.wait_for_row(<the row family>, record_name, present=False)
 
 `present=False` after a removal, `present=True` after an addition. It
 re-checks until the timeout; reading the list looks once, and the moment worth
@@ -253,7 +253,7 @@ object almost always needs more than one of each.
 
     open()              ->  open_listing()      /  open_product()
     submit()            ->  submit_review()     /  submit_search()
-    get_name()          ->  product_name()      /  customer_name()
+    get_name()          ->  record_name()      /  customer_name()
 
 A generation gate rejects two methods on one page object whose names mean the
 same thing, comparing them by their meaning-bearing words. A bare verb has
@@ -261,7 +261,7 @@ almost none, so it collides with the first specific method that shares it —
 `open()` and `open_product()` both reduce to "open". Naming the subject removes
 the ambiguity for the check and for the next person reading the file.
 
-Do NOT pad the other way either. On `ProductsPage`, `search_products_for()`
+Do NOT pad the other way either. On `ListingPage`, `search_products_for()`
 repeats what the class already says: `search_for()` is the name.
 
 {authoritative_steps_block}
@@ -736,7 +736,7 @@ way.
 ```python
 class MyPage(BasePage):
     SORT_SELECT = "[data-test='sort-select']"
-    PRODUCT_NAMES = "[data-test='product-name']"
+    PRODUCT_NAMES = "[data-test='record-name']"
 
     def sort_by(self, option_label: str) -> None:
         """Sort the list by visible option text; waits for the change to apply."""
@@ -746,7 +746,7 @@ class MyPage(BasePage):
         """Return the visible text of the currently selected sort option."""
         return self.get_select_label(self.SORT_SELECT)
 
-    def get_product_names(self) -> list[str]:
+    def get_record_names(self) -> list[str]:
         """Return all visible product names as a list of strings."""
         return self.get_all_texts(self.PRODUCT_NAMES)
 ```

@@ -37,7 +37,7 @@ def test_named_elements_reads_both_block_shapes():
 
 def test_only_third_party_elements_are_removed_by_default():
     """A "fragile" flag means the ELEMENT IS REAL and only its handle is poor.
-    Verified against a live draft: add_cart_button, continue_shopping_button and
+    Verified against a live draft: add_cart_button, continue_button and
     continue_cart_button were all flagged fragile, and a cart story needs all
     three. Deleting a real element because its locator is weak loses work;
     improving the locator does not."""

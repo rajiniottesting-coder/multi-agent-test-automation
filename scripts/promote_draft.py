@@ -39,7 +39,7 @@ from pathlib import Path
 # Only third-party embeds are deleted by default. A "fragile" selector means
 # the ELEMENT IS REAL and only its handle is poor - deleting it would throw
 # away something a test needs. Verified on a live draft: add_cart_button,
-# continue_shopping_button and continue_cart_button were all flagged fragile,
+# continue_button and continue_cart_button were all flagged fragile,
 # and all three are required by a cart story. Improving a weak locator beats
 # losing the element.
 _DROP_ELEMENTS_FROM = ("_third_party_elements",)

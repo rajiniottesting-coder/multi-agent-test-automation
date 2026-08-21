@@ -1237,7 +1237,7 @@ def find_redundant_methods(source: str, page_noun: str = "") -> list[tuple[str, 
     """Pairs of public methods in one class whose names mean the same thing.
 
     `page_noun` is the page's own subject ("products", "cart"), dropped from
-    every name because a method on ProductsPage saying "products" adds nothing.
+    every name because a method on ListingPage saying "products" adds nothing.
 
     Returns [] when the source will not parse: a half-written file is the
     repair loop's problem, not this check's.
@@ -1264,7 +1264,7 @@ def find_redundant_methods(source: str, page_noun: str = "") -> list[tuple[str, 
                    and not n.name.startswith("_")]
         seen: dict[frozenset, str] = {}
         for name in methods:
-            # The page's own noun is dropped: a method on ProductsPage saying
+            # The page's own noun is dropped: a method on ListingPage saying
             # "products" adds nothing, so filter_by_brand and
             # filter_products_by_brand are one behaviour under two names.
             #
@@ -2038,8 +2038,8 @@ def validate_page_object_methods(generated_files: list) -> list[str]:
 # `-> str` hands it a string. Comparing them is always False:
 #
 #     @then(parsers.parse("the quantity should be {quantity:d}"))
-#     def assert_quantity(cart_page, product_name, quantity):
-#         actual = cart_page.get_quantity(product_name)   # -> str
+#     def assert_quantity(cart_page, record_name, quantity):
+#         actual = cart_page.get_quantity(record_name)   # -> str
 #         assert actual == quantity                       # "2" == 2, never true
 #
 # This is the worst shape a test can have. It does not error, it does not

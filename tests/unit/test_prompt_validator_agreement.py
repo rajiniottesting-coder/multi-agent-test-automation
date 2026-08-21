@@ -58,7 +58,7 @@ def test_every_helper_the_prompt_recommends_is_sanctioned():
     assert recommended, "no self.<helper>(self.sel(...)) samples found in the prompt"
 
     # Only helpers that touch a FAMILY need sanctioning; a single-element call
-    # such as fill(self.sel("search_input")) is legal without being listed.
+    # such as fill(self.sel("filter_input")) is legal without being listed.
     family_samples = {
         h for h in recommended
         if h in _SANCTIONED or h in {"click_in_row", "row_containing", "click_nth"}

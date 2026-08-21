@@ -27,7 +27,7 @@ from validators.method_resolution_validator import (
 )
 
 
-def _cls(*methods: str, name: str = "ProductsPage") -> str:
+def _cls(*methods: str, name: str = "ListingPage") -> str:
     body = "\n".join(f"    def {m}(self): pass" for m in methods)
     return f"class {name}(BasePage):\n    INVENTORY_PAGE = 'products'\n{body}\n"
 
@@ -56,7 +56,7 @@ def test_word_order_does_not_hide_a_duplicate():
     ("set_quantity", "get_quantity"),      # mutator vs accessor
     ("add_to_cart", "remove_from_cart"),   # opposite verbs
     ("is_loaded", "open"),
-    ("product_name", "product_price"),
+    ("record_name", "record_price"),
     ("submit_review", "write_review_link_is_visible"),
 ])
 def test_genuinely_different_methods_pass(methods):
@@ -71,7 +71,7 @@ def test_private_methods_are_ignored():
 
 
 def test_methods_in_different_classes_are_not_compared():
-    src = _cls("filter_by_brand") + "\n" + _cls("filter_products_by_brand", name="CartPage")
+    src = _cls("filter_by_brand") + "\n" + _cls("filter_products_by_brand", name="BasketPage")
     assert find_redundant_methods(src) == []
 
 

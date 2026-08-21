@@ -185,14 +185,14 @@ def test_generated_id_detection():
     assert _looks_generated_id("radix-42")
     assert _looks_generated_id("ember1234")
     assert _looks_generated_id("x1234567")
-    assert not _looks_generated_id("login-button")
+    assert not _looks_generated_id("signin-button")
     assert not _looks_generated_id("react-burger-menu-btn")
 
 
 # ── naming + kind ─────────────────────────────────────────────
 
 def test_derive_name_from_data_test():
-    assert derive_element_name("button", {"data-test": "login-button"}) == "login_button"
+    assert derive_element_name("button", {"data-test": "signin-button"}) == "signin_button"
 
 
 def test_derive_name_camelcase_split():
@@ -200,8 +200,8 @@ def test_derive_name_camelcase_split():
 
 
 def test_derive_name_avoids_double_suffix():
-    # base already ends in the kind -> no "login_button_button"
-    assert derive_element_name("button", {"data-test": "login-button"}) == "login_button"
+    # base already ends in the kind -> no "signin_button_button"
+    assert derive_element_name("button", {"data-test": "signin-button"}) == "signin_button"
 
 
 def test_element_kind_by_input_type():
@@ -217,11 +217,11 @@ def test_collapse_repeated_family():
     els = {
         "add_to_cart_backpack_button": {"selector": "[data-test='add-to-cart-backpack']"},
         "add_to_cart_bike_light_button": {"selector": "[data-test='add-to-cart-bike-light']"},
-        "login_button": {"selector": "[data-test='login-button']"},
+        "signin_button": {"selector": "[data-test='signin-button']"},
     }
     out = collapse_repeated_families(els)
     assert any(v["selector"] == "[data-test^='add-to-cart-']" for v in out.values())
-    assert "login_button" in out  # unrelated element preserved
+    assert "signin_button" in out  # unrelated element preserved
 
 
 def test_collapse_leaves_singletons_alone():
@@ -248,14 +248,14 @@ def test_build_page_entry_shape_and_stubs():
     descriptors = [
         {"tag": "input", "attrs": {"data-test": "username"}, "text": ""},
         {"tag": "input", "attrs": {"data-test": "password", "type": "password"}, "text": ""},
-        {"tag": "input", "attrs": {"data-test": "login-button", "type": "submit"}, "text": "Login"},
+        {"tag": "input", "attrs": {"data-test": "signin-button", "type": "submit"}, "text": "Login"},
         {"tag": "div", "attrs": {}, "text": "ignore me"},  # non-interactable, untagged -> skipped
     ]
     page = build_page_entry("https://shop.example.com/", "Example Shop", descriptors,
                             "https://shop.example.com")
     assert page["url"] == "/"
     assert page["elements"]["username_input"] == "[data-test='username']"
-    assert page["elements"]["login_button"] == "[data-test='login-button']"
+    assert page["elements"]["signin_button"] == "[data-test='signin-button']"
     assert "ignore" not in str(page["elements"])  # noise skipped
     # human-only stubs present so the gap is visible
     assert page["elements_notes"] == {} and page["key_methods"] == [] and page["errors"] == {}
@@ -276,10 +276,10 @@ def test_build_page_entry_dedupes_names():
 # ── staleness diff ────────────────────────────────────────────
 
 def test_diff_page_flags_missing_selector():
-    inv = {"login_button": "[data-test='login-button']", "user": "[data-test='username']"}
-    live_resolved = {"[data-test='login-button']": 0, "[data-test='username']": 1}
+    inv = {"signin_button": "[data-test='signin-button']", "user": "[data-test='username']"}
+    live_resolved = {"[data-test='signin-button']": 0, "[data-test='username']": 1}
     out = diff_page("login", inv, live_resolved, {"username"})
-    assert out["missing"] == [{"element": "login_button", "selector": "[data-test='login-button']"}]
+    assert out["missing"] == [{"element": "signin_button", "selector": "[data-test='signin-button']"}]
 
 
 def test_diff_page_flags_new_data_test():
@@ -333,12 +333,13 @@ def test_data_cy_in_default_set():
 def test_build_page_entry_with_custom_attrs():
     descriptors = [
         {"tag": "div", "attrs": {"data-cy": "menu-toggle"}, "text": ""},  # tagged div captured
-        {"tag": "input", "attrs": {"data-cy": "search"}, "text": ""},
+        {"tag": "input", "attrs": {"data-cy": "filter"}, "text": ""},
     ]
     page = build_page_entry("https://x.com/", "X", descriptors, "https://x.com",
                             test_attrs=("data-cy",))
     assert page["elements"]["menu_toggle_element"] == "[data-cy='menu-toggle']"
-    assert page["elements"]["search_input"] == "[data-cy='search']"
+    # The KEY is derived from the attribute, so the two must move together.
+    assert page["elements"]["filter_input"] == "[data-cy='filter']"
 
 
 def test_family_collapse_custom_attr_preserves_attribute():
@@ -731,7 +732,7 @@ def test_collapsed_family_is_reported_as_multi_match():
     assert entry["multi_match"], "the collapsed family must be declared"
     fam = entry["multi_match"][0]
     assert "^=" in entry["elements"][fam], "a prefix selector is a family by construction"
-    assert "search_input" not in entry["multi_match"], "a singleton is not a family"
+    assert "filter_input" not in entry["multi_match"], "a singleton is not a family"
 
 
 def test_multi_match_is_present_even_when_empty():
@@ -894,7 +895,7 @@ def test_hidden_elements_are_auto_declared_conditional():
     ]
     e = build_page_entry("https://x.test/p", "P", descs, "https://x.test")
     assert e["conditional"] == ["women_link"]
-    assert "products_link" not in e["conditional"]
+    assert "listing_link" not in e["conditional"]
     assert "conditional_note" in e
 
 
@@ -1069,7 +1070,7 @@ def test_deep_structural_paths_are_fragile(selector):
     "role=button[name='Save']",
     "label=Email",
     "div.panel button.cart",       # short, class-based
-    "#cart_info tbody tr",         # real curated selector - must stay clean
+    "#table_info tbody tr",         # real curated selector - must stay clean
     ".card-image-wrapper",
 ])
 def test_real_handles_are_not_flagged(selector):
@@ -1137,4 +1138,4 @@ def test_an_element_outside_any_frame_is_never_flagged_by_frame_rules():
              {"tag": "a", "attrs": {"href": "/x"}, "text": "Ad", "visible": True,
               "frame": "iframe#aswift_2"}]
     e = build_page_entry("https://x.test/p", "P", descs, "https://x.test")
-    assert "login_email_input" not in e["_third_party_elements"]["elements"]
+    assert "signin_email_input" not in e["_third_party_elements"]["elements"]
