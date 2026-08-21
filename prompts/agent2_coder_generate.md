@@ -115,6 +115,26 @@ If the check needs a new query, add it to the page object - the probe goes
 inside the method. A key in a step definition puts it in two places at once,
 so the inventory can be re-crawled without the step ever noticing.
 
+## Asserting a named row is there, or gone
+
+Do not read the whole list and assert membership:
+
+    names = <page>.<a reader>()
+    assert product_name not in names          # rejected: a snapshot
+
+Wait for the row instead:
+
+    <page>.wait_for_row(<the row family>, product_name, present=False)
+
+`present=False` after a removal, `present=True` after an addition. It
+re-checks until the timeout; reading the list looks once, and the moment worth
+looking is right after the action that changed it - which is exactly when the
+list is still settling. A run removed a product, read the names immediately,
+and reported the product still present. Only the reading was early.
+
+If the entry is still wrong after waiting, it is starting state and no wait
+helps - see the rule above about state the application keeps.
+
 ## Counting after something changed the count
 
 To ASSERT how many things are on screen, use `wait_for_count`:

@@ -550,6 +550,29 @@ class BasePage:
         """The first row that contains `text`, for reading rather than clicking."""
         return self._locator(row_locator).filter(has_text=text).first
 
+    def wait_for_row(self, row_locator: str, text: str,
+                     present: bool = True,
+                     timeout_ms: Optional[int] = None) -> None:
+        """Wait until a row containing `text` is there, or is gone.
+
+        The waiting form of "is it in the list?". Reading the whole list and
+        asserting membership is a snapshot, and the moment worth checking is
+        right after the action that adds or removes the row - which is exactly
+        when the list is still settling.
+
+        A run removed a product, read the names immediately, and asserted the
+        name was absent. It was still there. The failure said the row had not
+        been removed; only the reading had been too early.
+
+        Use this for the presence or absence of ONE named row. Use
+        wait_for_count when the NUMBER of rows is the point.
+        """
+        target = self._locator(row_locator).filter(has_text=text)
+        if present:
+            expect(target).not_to_have_count(0, timeout=self._timeout(timeout_ms))
+        else:
+            expect(target).to_have_count(0, timeout=self._timeout(timeout_ms))
+
     def get_nth_attribute(self, locator: str, index: int, name: str) -> Optional[str]:
         """Read one attribute from one member of a family."""
         return self._locator(locator).nth(index).get_attribute(name)

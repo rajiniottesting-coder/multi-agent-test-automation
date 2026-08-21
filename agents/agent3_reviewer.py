@@ -164,7 +164,25 @@ def dedupe_and_cap_issues(report: ReviewReport, max_issues: int = MAX_ISSUES) ->
 # So the verdict is DERIVED. The model reports what it found; what that means
 # for the pull request is arithmetic, not a second judgement call.
 _BLOCKING_SEVERITIES = frozenset({"blocking"})
-_BLOCKING_ISSUE_TYPES = frozenset({"functional_bug", "security"})
+
+# Types whose definition asserts the code is broken - but only when the model
+# also judged the impact to be worth acting on.
+#
+# The first version blocked on the TYPE alone. A review then filed a
+# `minor` / `functional_bug` whose own suggested fix read "No change required
+# for current scenarios", and the pull request went red over it. Severity is
+# the model's judgement of how much a finding matters; ignoring it turned every
+# passing observation into a stop sign, and a gate that is red on advisory
+# notes gets switched off.
+# Security is categorically different: a "minor" security finding is still a
+# security finding, and stopping for it costs one look.
+_ALWAYS_BLOCKING_TYPES = frozenset({"security"})
+
+# functional_bug means "test will fail" - true at major, and routinely used at
+# minor for a passing observation. Both are useful; only one should stop a
+# pull request.
+_BLOCKING_ISSUE_TYPES = frozenset({"functional_bug"})
+_TYPE_BLOCKS_AT = frozenset({"blocking", "major"})
 
 
 def derive_verdict(report: ReviewReport) -> ReviewReport:
@@ -182,7 +200,9 @@ def derive_verdict(report: ReviewReport) -> ReviewReport:
     blocking = [
         issue for issue in report.issues
         if issue.severity in _BLOCKING_SEVERITIES
-        or issue.issue_type in _BLOCKING_ISSUE_TYPES
+        or issue.issue_type in _ALWAYS_BLOCKING_TYPES
+        or (issue.issue_type in _BLOCKING_ISSUE_TYPES
+            and issue.severity in _TYPE_BLOCKS_AT)
     ]
     if not blocking or report.overall_verdict == "request_changes":
         return report

@@ -247,6 +247,28 @@ _SIGNATURES: list[tuple[re.Pattern, Diagnosis]] = [
         ),
     ),
     (
+        # `assert 'X' not in ['X']` / `assert 'X' in []` - a membership test
+        # against a list the step read a moment earlier.
+        re.compile(r"assert\s+.{1,80}?\s+(?:not\s+)?in\s+\[", re.S),
+        Diagnosis(
+            "membership assertion",
+            "A named thing was expected in, or expected gone from, a list the "
+            "step had already read. The list is a SNAPSHOT: reading it "
+            "straight after the action that adds or removes the entry returns "
+            "what was there before the action finished. That is the usual "
+            "cause when the assertion is about something this scenario just "
+            "did. The other cause is starting state - anything the "
+            "application stores against the signed-in user survives the run, "
+            "so an entry a previous run left behind is in the list too.",
+            "Wait for the row rather than reading the list: "
+            "BasePage.wait_for_row(<row family>, text, present=False) after a "
+            "removal, present=True after an addition. It re-checks until the "
+            "timeout instead of looking once. If the entry is still wrong "
+            "after waiting, it is starting state and no wait will help - the "
+            "scenario has to own what it asserts on.",
+        ),
+    ),
+    (
         # `assert 2 == 1` - two integers, no quotes. Almost always a COUNT.
         #
         # Reported "unclassified" until a run removed one of two rows, counted
