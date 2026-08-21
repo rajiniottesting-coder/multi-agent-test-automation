@@ -1,0 +1,60 @@
+@cart
+Feature: Automation Exercise cart management
+  As a shopper
+  I want to manage the products in my cart
+  So that I can review and adjust my order before checkout
+
+  @smoke @cart
+  # JIRA: SCRUM-125 (hash: 21fadcc5)
+  Scenario: Full cart lifecycle: add, add second, remove one, remove all
+    Given I start with an empty cart
+    When I open the products listing
+    And I open the product "Blue Top" from the listing
+    And I add the product to the cart
+    And I view the cart from the product modal
+    Then the cart should contain exactly 1 row
+    And the cart should contain the product "Blue Top"
+    When I open the products listing
+    And I open the product "Men Tshirt" from the listing
+    And I add the product to the cart
+    And I view the cart from the product modal
+    Then the cart should contain exactly 2 rows
+    And the cart should contain the product "Blue Top"
+    And the cart should contain the product "Men Tshirt"
+    When I remove the product "Blue Top" from the cart
+    Then the cart should contain exactly 1 row
+    And the cart should contain the product "Men Tshirt"
+    When I remove the product "Men Tshirt" from the cart
+    Then the cart should be empty
+
+  @regression @cart
+  # JIRA: SCRUM-126 (hash: 4bdc92a2)
+  Scenario: Adding the same product twice increases its quantity
+    Given I start with an empty cart
+    When I open the products listing
+    And I open the product "Blue Top" from the listing
+    And I add the product to the cart
+    And I continue shopping from the product modal
+    And I add the product to the cart
+    And I view the cart from the product modal
+    Then the cart should contain exactly 1 row
+    And the cart should contain the product "Blue Top"
+    And the "Blue Top" row should show quantity "2"
+
+  @regression @cart
+  # JIRA: SCRUM-127 (hash: 38e2df4c)
+  Scenario: Cart contents persist across page refresh and navigation
+    Given I start with an empty cart
+    When I open the products listing
+    And I open the product "Blue Top" from the listing
+    And I add the product to the cart
+    And I view the cart from the product modal
+    Then the cart should contain exactly 1 row
+    And the cart should contain the product "Blue Top"
+    When I reload the cart page
+    Then the cart should contain exactly 1 row
+    And the cart should contain the product "Blue Top"
+    When I open the products listing
+    And I open the cart from the navigation
+    Then the cart should contain exactly 1 row
+    And the cart should contain the product "Blue Top"
