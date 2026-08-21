@@ -36,6 +36,24 @@ Do not substitute something that looks more descriptive. If no `readiness` key
 is present, pick the most state-independent element on the page and say in
 `notes` why you chose it.
 
+## Extending a page object: keep everything that is already there
+
+You emit a WHOLE FILE, not a patch. When the page object already exists, every
+public method it currently defines must appear in what you write, unchanged,
+with yours added beside them.
+
+Dropping one is not a small edit. The step definitions that call it are
+usually not in this batch - they are already on main, written by an earlier
+story or shipped as the reference suite - so nothing in your own output will
+miss it, and the failure surfaces as AttributeError at run time in tests you
+never touched.
+
+A story once regenerated the shared navigation page object, kept the two
+methods it needed and dropped eight. Three of those were called by the
+reference login suite. Every check in the batch passed.
+
+The existing methods are shown to you with their real signatures. Copy them.
+
 ## A page-object method must say what it acts on
 
     # rejected

@@ -551,8 +551,112 @@ def validate_method_resolution(
                 err += f"Available methods on `{class_name}`: [{methods_list}]."
                 errors.append(err)
 
+    errors.extend(_methods_removed_by_regeneration(generated_files, project_root))
+
     return errors
 
+
+
+def _methods_removed_by_regeneration(generated_files: list,
+                                     project_root: Path) -> list:
+    """Public methods a regenerated page object DROPS, and who still calls them.
+
+    Agent 2 emits a whole file, not a patch. When the file already exists, the
+    replacement is free to lose methods the story did not happen to need - and
+    the batch's own step definitions will not miss them, because they were
+    written against the same replacement.
+
+    What misses them is everything ALREADY on main. A story regenerated the
+    shared navigation page object, kept two of its own methods and dropped
+    eight, three of which the reference login suite calls. Every check in the
+    batch passed: the generated step definitions resolved perfectly against
+    the generated page object. The reference suite then failed at run time
+    with AttributeError, and the committed-tree unit test caught it only after
+    the branch existed.
+
+    This closes that gap at the generation gate, where it can still be
+    repaired. It reads the CURRENT file from disk, the generated replacement,
+    and every committed step definition - the callers that were never in the
+    batch to speak for themselves.
+
+    Returns error strings in the standard format, so the repair loop routes
+    them to the page object that dropped the method.
+    """
+    errors: list = []
+    try:
+        root = Path(project_root)
+        step_def_dir = root / "tests" / "step_defs"
+        committed: dict = {}
+        if step_def_dir.is_dir():
+            for path in sorted(step_def_dir.glob("*.py")):
+                if path.name in ("__init__.py", "conftest.py"):
+                    continue
+                committed[f"tests/step_defs/{path.name}"] = path.read_text(
+                    encoding="utf-8")
+    except Exception:                                     # noqa: BLE001
+        return errors
+
+    batch_paths = {getattr(f, "file_path", "") for f in generated_files or []}
+
+    for gen in generated_files or []:
+        path = getattr(gen, "file_path", "") or ""
+        if not (path.startswith("pages/") and path.endswith(".py")):
+            continue
+        if path.endswith("base_page.py"):
+            continue
+
+        on_disk = Path(project_root) / path
+        if not on_disk.is_file():
+            continue                                      # a new page object
+
+        try:
+            before = ast.parse(on_disk.read_text(encoding="utf-8"))
+            after = ast.parse(getattr(gen, "content", "") or "")
+        except (SyntaxError, OSError):
+            continue
+
+        def public_methods(tree):
+            out: dict = {}
+            for cls in tree.body:
+                if not isinstance(cls, ast.ClassDef):
+                    continue
+                out[cls.name] = {
+                    n.name for n in cls.body
+                    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and not n.name.startswith("_")
+                }
+            return out
+
+        old_methods = public_methods(before)
+        new_methods = public_methods(after)
+
+        for class_name, old_set in old_methods.items():
+            removed = old_set - new_methods.get(class_name, set())
+            if not removed:
+                continue
+
+            fixture = _camel_to_snake(class_name)
+            for method in sorted(removed):
+                callers = []
+                for step_path, source in committed.items():
+                    if step_path in batch_paths:
+                        continue          # regenerated too; it speaks for itself
+                    if re.search(rf"\b{re.escape(fixture)}\.{re.escape(method)}\s*\(",
+                                 source):
+                        callers.append(step_path)
+                if not callers:
+                    continue
+                errors.append(
+                    f"Method resolution error in '{path}': the regenerated "
+                    f"`{class_name}` no longer defines `{method}()`, but "
+                    f"{', '.join(callers)} still calls it. Agent 2 emits a "
+                    f"whole file, so a replacement silently drops what this "
+                    f"story did not need - and the callers already on main are "
+                    f"not in this batch to notice. Keep every public method the "
+                    f"current file defines and add yours beside them; removing "
+                    f"one is only safe when nothing else calls it."
+                )
+    return errors
 
 def _find_similar_methods(target: str, available: set[str]) -> list[str]:
     """Find method names similar to `target` from `available`.
@@ -2015,4 +2119,3 @@ def validate_step_parameter_types(generated_files: list, project_root=None) -> l
                     f"or change the reader's return type."
                 )
     return errors
-
