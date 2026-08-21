@@ -36,6 +36,35 @@ Do not substitute something that looks more descriptive. If no `readiness` key
 is present, pick the most state-independent element on the page and say in
 `notes` why you chose it.
 
+## State the application KEEPS cannot be asserted absolutely
+
+An inventory page carrying `persistent_state: true` shows something the
+application stores against the signed-in user. It survives logout and it
+survives the run, so a scenario reusing a shared account inherits whatever a
+previous run left behind.
+
+A test case may still say "should contain exactly one". You cannot write that
+against such a page unless the scenario OWNS the starting state. Two ways:
+
+    # the scenario creates its own account, so the state starts genuinely empty
+    Given a newly registered account
+
+    # or it clears the state first, as a Given
+    Given an empty <collection>
+
+If neither is available, assert RELATIVELY instead - that what this scenario
+added is present, or is gone:
+
+    assert <the thing this test added> in <page>.<a reader>()
+
+That holds whatever the state started as, and it is what the test case
+actually cares about.
+
+Waiting does not help here. A leftover is really there; retrying for thirty
+seconds finds it thirty seconds later. This is rejected at the gate rather
+than left to guidance, because a run once asserted one item and found two -
+one added by the scenario, one left over from the run before.
+
 ## A method a test asserts on must WAIT
 
 A page-object method named like a question - `is_...`, `has_...` - is

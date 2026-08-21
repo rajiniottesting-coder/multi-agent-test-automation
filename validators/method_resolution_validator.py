@@ -1379,3 +1379,252 @@ def validate_no_selectors_in_step_defs(generated_files: list) -> list[str]:
                 f"can be re-crawled without this file noticing."
             )
     return errors
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# An absolute assertion on state the application KEEPS
+#
+# The failure this exists for, from the trace: one add-to-cart click in the
+# whole run, one product added, and the collection read half a second later
+# held two - the second left behind by a previous run against the same shared
+# account.
+#
+# No wait fixes that. wait_for_count() would have retried for thirty seconds
+# and found the same leftover. The scenario asserted an ABSOLUTE number
+# against state it did not create and does not own.
+#
+# This was guidance in the context modules for months and was regenerated away
+# every time, because a model reading "assert relatively" and a test case
+# saying "the cart should contain exactly one product" will write what the
+# test case says. Guidance loses that argument; a gate does not.
+#
+# The rule fires only where the inventory DECLARES the state persistent, so an
+# application without shared per-user state is untouched, and an application
+# that has it says so in the one place app knowledge belongs.
+# ─────────────────────────────────────────────────────────────────────────
+
+# Verbs that DO something, so a question-shaped name cannot look like a
+# remedy. `is_empty` matched a bare "empty" here and marked the file as owning
+# its state - the assertion under test was read as its own mitigation, and the
+# check passed the exact code it was written to stop.
+_STATE_OWNING_CALLS = re.compile(
+    r"(clear|reset|remove_all|delete_all|purge|empty_the|make_empty)", re.I)
+_FRESH_ACCOUNT_MARKERS = ("unique_username", "register")
+
+
+def _camel_to_snake(name: str) -> str:
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+
+def _persistent_pages(project_root) -> set:
+    """Inventory pages that declare they hold state surviving the run."""
+    try:
+        inventory = _load_configured_inventory(Path(project_root))
+    except Exception:                                     # noqa: BLE001
+        return set()
+    pages = (inventory or {}).get("pages") or {}
+    return {
+        name for name, entry in pages.items()
+        if isinstance(entry, dict) and entry.get("persistent_state")
+    }
+
+
+def _fixtures_for_pages(generated_files: list, project_root, pages: set) -> dict:
+    """{fixture_name: inventory_page} for page objects bound to `pages`.
+
+    Three sources, most authoritative last: the inventory's own
+    `page_object_class`, then page objects on disk, then the ones being
+    generated now.
+
+    The inventory has to be one of them. A step definition can be regenerated
+    while its page object is not - `ai-update` does exactly that - and a check
+    that only reads generated files would then find no mapping and pass a
+    scenario it should have stopped. Silence from a missing lookup is the
+    failure mode this whole file exists to avoid.
+    """
+    fixtures: dict = {}
+    try:
+        inventory = _load_configured_inventory(Path(project_root)) or {}
+        for page in pages:
+            entry = (inventory.get("pages") or {}).get(page) or {}
+            cls = entry.get("page_object_class")
+            fixtures[_camel_to_snake(cls) if cls else f"{page}_page"] = page
+    except Exception:                                     # noqa: BLE001
+        pass
+
+    sources: dict = {}
+    try:
+        for path in sorted(Path(project_root).glob("pages/*_page.py")):
+            if path.name == "base_page.py":
+                continue
+            sources[f"pages/{path.name}"] = path.read_text(encoding="utf-8")
+    except Exception:                                     # noqa: BLE001
+        pass
+    for f in generated_files or []:
+        path = getattr(f, "file_path", "") or ""
+        if path.startswith("pages/") and path.endswith(".py"):
+            sources[path] = getattr(f, "content", "") or ""
+
+    for path, source in sources.items():
+        if path.endswith("base_page.py"):
+            continue
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            continue
+        for cls in tree.body:
+            if not isinstance(cls, ast.ClassDef):
+                continue
+            for node in cls.body:
+                if not isinstance(node, ast.Assign):
+                    continue
+                targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
+                if "INVENTORY_PAGE" not in targets:
+                    continue
+                if isinstance(node.value, ast.Constant) and node.value.value in pages:
+                    fixtures[_camel_to_snake(cls.name)] = node.value.value
+    return fixtures
+
+
+def _names_derived_from(func: ast.AST, fixtures: dict) -> set:
+    """Fixture names, plus locals assigned from one of them.
+
+    Generated step definitions rarely assert on the fixture inline. They read
+    it into a local first:
+
+        names = collection_page.item_names()
+        assert len(names) == count
+
+    A check that only looked at the assert expression saw `len(names) == count`
+    and no fixture at all - which is how the first version of this validator
+    passed the exact code it was written to stop.
+    """
+    derived = {name for name in fixtures}
+    changed = True
+    while changed:                       # a local assigned from another local
+        changed = False
+        for node in ast.walk(func):
+            if not isinstance(node, ast.Assign):
+                continue
+            targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            if not targets or all(t in derived for t in targets):
+                continue
+            for inner in ast.walk(node.value):
+                if isinstance(inner, ast.Name) and inner.id in derived:
+                    derived.update(targets)
+                    changed = True
+                    break
+    return derived
+
+
+def _absolute_assertion_target(test: ast.AST, derived: set, fixtures: dict):
+    """The persistent fixture this assertion makes an ABSOLUTE claim about.
+
+    Absolute means a fixed shape of the whole collection - a cardinality, an
+    equality against a full list, or emptiness:
+
+        assert len(names) == count        assert x.count() == 2
+        assert names == expected          assert x.is_empty()
+
+    Relative claims are what the guidance asks for and are left alone:
+
+        assert product in names           assert product not in names
+
+    The comparison value is deliberately NOT required to be a literal. The
+    failing scenario compared against `count`, a parameter parsed out of the
+    Gherkin step - which is an absolute claim written the ordinary way.
+    """
+    def touches(node) -> bool:
+        return any(isinstance(n, ast.Name) and n.id in derived
+                   for n in ast.walk(node))
+
+    if isinstance(test, ast.Compare):
+        if not any(isinstance(op, (ast.Eq, ast.NotEq)) for op in test.ops):
+            return None
+        if not (touches(test.left) or any(touches(c) for c in test.comparators)):
+            return None
+    elif isinstance(test, ast.Call):
+        func = test.func
+        if not (isinstance(func, ast.Attribute)
+                and re.search(r"(^|_)empty$", func.attr)
+                and touches(test)):
+            return None
+    else:
+        return None
+
+    for node in ast.walk(test):
+        if isinstance(node, ast.Name) and node.id in fixtures:
+            return node.id
+    return next(iter(fixtures), None)
+
+
+def validate_persistent_state_assertions(
+        generated_files: list, project_root=None) -> list[str]:
+    """Fail an absolute assertion on state the inventory says the app keeps."""
+    project_root = project_root or Path(".")
+    pages = _persistent_pages(project_root)
+    if not pages:
+        return []
+    fixtures = _fixtures_for_pages(generated_files, project_root, pages)
+    if not fixtures:
+        return []
+
+    errors: list[str] = []
+    for f in generated_files or []:
+        path = getattr(f, "file_path", "") or ""
+        if not path.startswith("tests/step_defs/") or not path.endswith(".py"):
+            continue
+        source = getattr(f, "content", "") or ""
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            continue
+
+        # Does this file establish its own starting state anywhere?
+        owns_state = any(m in source for m in _FRESH_ACCOUNT_MARKERS)
+        if not owns_state:
+            # Only a call made for its EFFECT counts - its own statement, not
+            # something buried inside the assertion being judged.
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Expr):
+                    continue
+                if not isinstance(node.value, ast.Call):
+                    continue
+                func = node.value.func
+                if (isinstance(func, ast.Attribute)
+                        and not func.attr.startswith(("is_", "has_"))
+                        and _STATE_OWNING_CALLS.search(func.attr)):
+                    owns_state = True
+                    break
+        if owns_state:
+            continue
+
+        for func in ast.walk(tree):
+            if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            args = {a.arg for a in func.args.args}
+            if not (args & set(fixtures)):
+                continue                 # this step does not touch such a page
+            derived = _names_derived_from(func, {
+                k: v for k, v in fixtures.items() if k in args})
+            for node in ast.walk(func):
+                if not isinstance(node, ast.Assert):
+                    continue
+                fixture = _absolute_assertion_target(
+                    node.test, derived,
+                    {k: v for k, v in fixtures.items() if k in args})
+                if not fixture:
+                    continue
+                errors.append(
+                    f"{path} line {node.lineno}: this asserts an ABSOLUTE state "
+                    f"on {fixture}, whose inventory page '{fixtures[fixture]}' is "
+                    f"declared persistent_state - the application keeps it against "
+                    f"the signed-in user, so it survives logout and survives the "
+                    f"run. A previous run's leftovers are counted too, and no wait "
+                    f"removes them. Either the scenario must OWN its starting "
+                    f"state (register a fresh account, or clear the state in a "
+                    f"Given step), or the assertion must be relative - that what "
+                    f"this scenario added is present, or is gone - which holds "
+                    f"whatever the state started as."
+                )
+    return errors
