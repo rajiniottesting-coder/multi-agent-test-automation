@@ -60,6 +60,8 @@ from validators.method_resolution_validator import (
     validate_page_object_selectors,
     validate_no_duplicate_page_object_methods,
     validate_readiness_probe,
+    validate_predicates_wait,
+    validate_no_selectors_in_step_defs,
 )
 from core.llm_client import LLMClient, OutputTruncatedError
 from core.schemas import CodePlan, GeneratedFile, CodeGenerationOutput
@@ -1737,6 +1739,8 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     # generator cannot know which element does; a human who has seen the page
     # in each state declares it, and this makes that declaration binding.
     errors.extend(validate_readiness_probe(generated_files, PROJECT_ROOT))
+    errors.extend(validate_predicates_wait(generated_files))
+    errors.extend(validate_no_selectors_in_step_defs(generated_files))
     errors.extend(validate_feature_file_structure(generated_files))
     coverage_errors = validate_step_definitions_complete(generated_files)
     unused_errors = validate_no_unused_step_definitions(generated_files)

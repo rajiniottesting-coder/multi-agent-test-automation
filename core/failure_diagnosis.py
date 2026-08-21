@@ -189,7 +189,12 @@ _SIGNATURES: list[tuple[re.Pattern, Diagnosis]] = [
         ),
     ),
     (
-        re.compile(r"Records Found|Record Found", re.I),
+        # A results-summary line, in whatever nouns the application uses.
+        # This pattern named ONE application's exact wording until a sweep
+        # found it sitting in core/ - a framework file is the one place
+        # that string could never belong.
+        re.compile(r"\b\d+\s+(?:results?|records?|items?|rows?|matches)\s+found\b",
+                   re.I),
         Diagnosis(
             "result-count assertion",
             "A results-summary assertion failed. Two usual reasons: the summary "
@@ -201,6 +206,69 @@ _SIGNATURES: list[tuple[re.Pattern, Diagnosis]] = [
             "search field was typed into (not filled) and that the page had "
             "finished navigating first. Summary wording is often "
             "grammatically variable for exactly one match.",
+        ),
+    ),
+    (
+        # pytest's assertion rewriting, on `assert some_page.is_thing()`:
+        #
+        #     assert False
+        #      +  where False = is_thing()
+        #      +    where is_thing = <pages.x_page.XPage object at 0x...>.is_thing
+        #
+        # A page-object predicate returned False and said NOTHING about why.
+        # This arrived unclassified twice, and the second time there was not
+        # even a captured log line to widen into - the predicate had been
+        # written on is_visible(), which is a zero-wait probe that logs
+        # nothing, so the run produced no evidence at all.
+        re.compile(
+            r"where\s+False\s*=\s*\w+\(\)"
+            r".{0,200}?where\s+\w+\s*=\s*<[\w.]*[Pp]age[^>]*>",
+            re.S,
+        ),
+        Diagnosis(
+            "silent page-object predicate",
+            "A boolean method on a page object returned False. The assertion "
+            "records only that, so on its own it says nothing about WHICH "
+            "condition failed or why. Two things produce this. The predicate "
+            "may be built on a NON-WAITING probe - is_visible() and "
+            "get_count() read the DOM once and log nothing - so it raced a "
+            "state change that had not finished, most often immediately after "
+            "the action that was supposed to cause it. Or the state was never "
+            "established at all, because the scenario assumed a starting "
+            "point it did not create: anything the application stores against "
+            "the signed-in user survives logout and survives the run.",
+            "Look at the page object, not the step. If the predicate calls "
+            "is_visible() or compares get_count(), rebuild it on the waiting "
+            "equivalent - is_showing() or wait_for_count() - which retries "
+            "AND logs the reason it gave up, so the next failure explains "
+            "itself. If it already waits and still returned False, the state "
+            "is genuinely absent: check what was supposed to establish it, "
+            "and whether the scenario owns its own starting state.",
+        ),
+    ),
+    (
+        # `assert 2 == 1` - two integers, no quotes. Almost always a COUNT.
+        #
+        # Reported "unclassified" until a run removed one of two rows, counted
+        # immediately, and got two. Playwright auto-retries a wait; `.count()`
+        # does not - it is a snapshot, and a snapshot taken straight after the
+        # click that changes it reads the value from before the click.
+        re.compile(r"^\s*E?\s*assert\s+\d+\s*==\s*\d+\s*$", re.M),
+        Diagnosis(
+            "count assertion",
+            "Two integers were compared and differed. The number is nearly "
+            "always how many elements matched something, and there are two "
+            "usual reasons it is wrong. Either it was READ TOO EARLY - "
+            "get_count() is a snapshot with no retry, so counting straight "
+            "after the action that changes the list returns the value from "
+            "before it. Or the page did not start where the scenario assumed: "
+            "anything the application stores against the signed-in user "
+            "survives the run, so a previous run's leftovers are counted too.",
+            "Use BasePage.wait_for_count(locator, expected), which retries "
+            "until the timeout instead of reading once. If the number is "
+            "still wrong after waiting, it is starting state, not timing: the "
+            "scenario has to own what it asserts on - register a fresh "
+            "account, or clear the state first, or assert relatively.",
         ),
     ),
     (

@@ -75,7 +75,7 @@ import ast as _ast
 import logging
 import re
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -1236,5 +1236,146 @@ def validate_no_duplicate_page_object_methods(
                 f"branches, so both may add their own name for one behaviour. "
                 f"Keep whichever name the existing step definitions already "
                 f"call and delete the other."
+            )
+    return errors
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# A predicate that backs an assertion must WAIT
+#
+# A scenario removed an item, then asserted the collection was empty. It was
+# not - yet. The predicate was built on is_visible(), which reads the DOM once
+# and returns. No retry, and - this is the part that cost the day - no log
+# line either, so the run produced a bare `assert False` and no evidence
+# whatsoever about which condition failed or why.
+#
+# The reviewer had already flagged the same pattern elsewhere in the same pull
+# request, correctly, as a race against a state change. Advice alone does not
+# hold: this is statically checkable, so it is checked.
+#
+# The rule is narrow on purpose. is_visible() and get_count() are the right
+# tools for BRANCHING - "is the banner up, and if so dismiss it" - where
+# waiting for something that is legitimately absent would cost a full timeout
+# every time. What they are not is the basis of a method whose name promises a
+# yes/no answer a test will assert on.
+# ─────────────────────────────────────────────────────────────────────────
+
+_NON_WAITING_PROBES = {"is_visible": "is_showing", "get_count": "wait_for_count"}
+_PREDICATE_PREFIXES = ("is_", "has_", "was_", "can_", "does_", "did_")
+
+
+def _returns_non_waiting_probe(func: ast.AST) -> Optional[str]:
+    """The non-waiting helper this function RETURNS, if it returns one.
+
+    Only `return`ed calls count. A predicate that calls is_visible() partway
+    through and then waits properly is doing something more interesting than
+    this check can judge, and guessing at it would produce the kind of false
+    positive that gets a validator switched off.
+    """
+    for node in ast.walk(func):
+        if not isinstance(node, ast.Return) or node.value is None:
+            continue
+        for inner in ast.walk(node.value):
+            if not isinstance(inner, ast.Call):
+                continue
+            attr = inner.func
+            if (isinstance(attr, ast.Attribute)
+                    and isinstance(attr.value, ast.Name)
+                    and attr.value.id == "self"
+                    and attr.attr in _NON_WAITING_PROBES):
+                return attr.attr
+    return None
+
+
+def validate_predicates_wait(generated_files: list) -> list[str]:
+    """Fail a page-object predicate whose answer is read from a single glance.
+
+    Applies to page objects only, and only to methods named like a question -
+    `is_*`, `has_*`, `was_*` and friends - that RETURN the result of a
+    non-waiting probe.
+    """
+    errors: list[str] = []
+    for f in generated_files or []:
+        path = getattr(f, "file_path", "") or ""
+        if not path.startswith("pages/") or not path.endswith(".py"):
+            continue
+        if path.endswith("base_page.py"):
+            continue                       # the helpers themselves live here
+        try:
+            tree = ast.parse(getattr(f, "content", "") or "")
+        except SyntaxError:
+            continue                       # a syntax error is reported elsewhere
+
+        for cls in tree.body:
+            if not isinstance(cls, ast.ClassDef):
+                continue
+            for node in cls.body:
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                if not node.name.startswith(_PREDICATE_PREFIXES):
+                    continue
+                probe = _returns_non_waiting_probe(node)
+                if not probe:
+                    continue
+                errors.append(
+                    f"{path} line {node.lineno}: {cls.name}.{node.name}() "
+                    f"returns self.{probe}(...), which reads the page ONCE and "
+                    f"logs nothing. A step definition asserting on this races "
+                    f"any state change that has not finished - most often the "
+                    f"action immediately before it - and when it loses, the "
+                    f"failure is a bare `assert False` with no evidence at "
+                    f"all. Use self.{_NON_WAITING_PROBES[probe]}(...), which "
+                    f"retries until the timeout and logs the reason it gave "
+                    f"up. Keep self.{probe}() for BRANCHING on optional state, "
+                    f"where waiting for something legitimately absent would "
+                    f"cost a full timeout - not for a method whose name "
+                    f"promises an answer a test will assert on."
+                )
+    return errors
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# A step definition must not resolve selectors
+#
+# `nav_page.sel("some_key")` in a step definition puts a selector key in the
+# step layer. It works, which is why it keeps appearing - and it quietly
+# undoes the reason page objects exist. The key is now in two places, the
+# inventory can be re-crawled without the step noticing, and the step reads
+# as plumbing rather than as the behaviour it is supposed to describe.
+#
+# The reviewer catches this most times and describes it well. Most times is
+# not a gate.
+# ─────────────────────────────────────────────────────────────────────────
+
+def validate_no_selectors_in_step_defs(generated_files: list) -> list[str]:
+    """Fail a step-definition file that calls .sel() on anything."""
+    errors: list[str] = []
+    for f in generated_files or []:
+        path = getattr(f, "file_path", "") or ""
+        if not path.startswith("tests/step_defs/") or not path.endswith(".py"):
+            continue
+        try:
+            tree = ast.parse(getattr(f, "content", "") or "")
+        except SyntaxError:
+            continue
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            attr = node.func
+            if not (isinstance(attr, ast.Attribute) and attr.attr == "sel"):
+                continue
+            owner = getattr(attr.value, "id", None) or "<a page object>"
+            key = ""
+            if node.args and isinstance(node.args[0], ast.Constant):
+                key = f"'{node.args[0].value}'"
+            errors.append(
+                f"{path} line {node.lineno}: this step definition calls "
+                f"{owner}.sel({key}). Selector keys belong inside the page "
+                f"object; a step definition should read as the behaviour it "
+                f"describes and call a named method. Add the query to the page "
+                f"object - a method that does the probe internally - and call "
+                f"that from the step. Putting the key here means the inventory "
+                f"can be re-crawled without this file noticing."
             )
     return errors

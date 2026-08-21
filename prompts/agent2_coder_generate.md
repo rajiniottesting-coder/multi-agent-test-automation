@@ -36,6 +36,57 @@ Do not substitute something that looks more descriptive. If no `readiness` key
 is present, pick the most state-independent element on the page and say in
 `notes` why you chose it.
 
+## A method a test asserts on must WAIT
+
+A page-object method named like a question - `is_...`, `has_...` - is
+something a step definition will assert on. Build it on a WAITING probe:
+
+    def is_empty(self) -> bool:
+        return self.is_showing(self.sel("<the empty-state message>"))
+
+Never `return self.is_visible(...)` from such a method. `is_visible()` reads
+the page once and logs nothing, so a step asserting on it races whatever state
+change was supposed to have happened - usually the action immediately before -
+and when it loses, the failure is a bare `assert False` with no evidence at
+all about which condition failed or why. `is_showing()` retries until the
+timeout AND logs the reason it gave up.
+
+`is_visible()` and `get_count()` are for BRANCHING on optional state - "if the
+banner is up, dismiss it" - where waiting for something legitimately absent
+would cost a full timeout every run. That is the only place they belong.
+
+## Selector keys never appear in a step definition
+
+A step definition calls named methods and nothing else:
+
+    # rejected
+    assert <a>_page.sel("<some key>") ...
+
+    # correct
+    assert <a>_page.<a named query method>(), "..."
+
+If the check needs a new query, add it to the page object - the probe goes
+inside the method. A key in a step definition puts it in two places at once,
+so the inventory can be re-crawled without the step ever noticing.
+
+## Counting after something changed the count
+
+To ASSERT how many things are on screen, use `wait_for_count`:
+
+    def assert_row_count(self, expected: int) -> None:
+        self.wait_for_count(self.sel("<the row family>"), expected)
+
+Never `assert self.get_count(...) == expected`. `get_count()` is a snapshot
+with no retry, and the moment worth counting is right after the action that
+changed the number - a removal, an addition, a filter. At that instant the
+page is usually still updating, so the snapshot returns the PREVIOUS count and
+the failure reads as a wrong number rather than a missing wait. A run removed
+one of two rows, counted immediately, and reported finding two.
+
+`wait_for_count` re-checks until the timeout and names both numbers if it
+never settles. Use `get_count()` only to READ a number you are not asserting
+on.
+
 ## A method that clicks its way to another page must confirm it arrived
 
 If a page-object method clicks a control expected to land on ANOTHER page,
