@@ -585,7 +585,8 @@ Available helpers on `self.<method>()` from any page object subclass:
 **For waiting:**
 - `self.wait_visible(locator)` → waits for an element to become visible (raises on timeout)
 - `self.wait_for_text(locator, expected_text)` → waits for element text to match (raises on timeout)
-- `self.wait_for_url_contains(substring)` → waits for URL to contain substring
+- `self.wait_for_url(url_pattern)` → waits for the URL to match a pattern (raises on timeout)
+- `self.wait_for_count(locator, expected)` → waits until exactly `expected` elements match
 
 **For visibility checks:**
 - `self.is_visible(locator)` → returns True/False (doesn't raise)

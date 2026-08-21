@@ -1742,7 +1742,7 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     # generator cannot know which element does; a human who has seen the page
     # in each state declares it, and this makes that declaration binding.
     errors.extend(validate_readiness_probe(generated_files, PROJECT_ROOT))
-    errors.extend(validate_predicates_wait(generated_files))
+    errors.extend(validate_predicates_wait(generated_files, PROJECT_ROOT))
     errors.extend(validate_no_selectors_in_step_defs(generated_files))
     errors.extend(validate_persistent_state_assertions(generated_files, PROJECT_ROOT))
     errors.extend(validate_feature_file_structure(generated_files))

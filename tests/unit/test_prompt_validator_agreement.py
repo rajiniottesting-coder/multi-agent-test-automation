@@ -181,16 +181,30 @@ def test_committed_inventory_notes_do_not_forbid_it_either():
 # the prompt actually says.
 # =========================================================================
 
-def _bare_helpers_the_prompt_recommends() -> set:
-    """self.<helper>() calls in the prompt's samples that take no selector."""
+def _helpers_the_prompt_recommends() -> set:
+    """Every self.<helper>(...) the prompt shows in a sample it endorses.
+
+    Arguments included. The first version matched only `self.x()` with EMPTY
+    parentheses, so `self.wait_for_count(self.sel(...), n)` was never checked -
+    and wait_for_count was then added to BasePage and to the prompt without
+    being added to the validator's sanctioned family readers. The gate rejected
+    the helper its own prompt had just recommended, and a repair loop burned
+    four attempts on it.
+
+    A helper is only as sanctioned as the narrowest check that sees it.
+    """
     text = _PROMPT.read_text(encoding="utf-8")
     found = set()
     for line in text.splitlines():
         if "rejected" in line or "never" in line.lower():
             continue
-        for m in re.finditer(r"self\.(\w+)\(\s*\)", line):
+        for m in re.finditer(r"self\.(\w+)\s*\(", line):
             found.add(m.group(1))
     return found
+
+
+# Backwards-compatible alias for the narrower original.
+_bare_helpers_the_prompt_recommends = _helpers_the_prompt_recommends
 
 
 def test_every_bare_helper_the_prompt_recommends_exists_on_base_page():
@@ -205,7 +219,7 @@ def test_every_bare_helper_the_prompt_recommends_exists_on_base_page():
     # Methods the page object DEFINES rather than inherits are not BasePage's.
     generated_locally = {"is_loaded"}
 
-    for helper in _bare_helpers_the_prompt_recommends() - generated_locally:
+    for helper in _helpers_the_prompt_recommends() - generated_locally:
         assert helper in defined, (
             f"the generation prompt shows self.{helper}(), but BasePage has no "
             f"{helper}(). Agent 2 will follow the prompt and every generated "
@@ -281,3 +295,49 @@ def test_every_committed_page_object_passes_the_naming_rule():
         pytest.skip("no page objects committed yet")
 
     assert not validate_page_method_names_are_specific(files)
+
+def test_a_helper_the_prompt_recommends_for_a_family_is_sanctioned_for_one():
+    """The first entry in the failure history, repeated.
+
+    A multi_match key may only reach a helper listed in _FAMILY_READERS or
+    _FAMILY_CONSUMERS. wait_for_count() was added to BasePage, recommended in
+    the prompt for counting rows - which are always a family - and left out of
+    both sets. The gate then rejected the prompt's own advice, and no rewrite
+    could satisfy both voices.
+    """
+    from validators.method_resolution_validator import (
+        _FAMILY_CONSUMERS,
+        _FAMILY_READERS,
+    )
+
+    sanctioned = _FAMILY_READERS | _FAMILY_CONSUMERS
+
+    assert "wait_for_count" in sanctioned, (
+        "wait_for_count counts a family by definition - rows, cards, results. "
+        "Leaving it out of the sanctioned sets is what made the gate reject "
+        "the prompt's own recommendation."
+    )
+
+
+def test_every_committed_page_object_passes_the_predicate_rule():
+    """The second home. validate_predicates_wait runs at the GENERATION gate,
+    so it never sees a page object that was hand-edited or merged - and the
+    committed nav page object violated it while the whole suite stayed green."""
+    from types import SimpleNamespace
+
+    from validators.method_resolution_validator import validate_predicates_wait
+
+    files = [
+        SimpleNamespace(file_path=f"pages/{f.name}",
+                        content=f.read_text(encoding="utf-8"))
+        for f in sorted((_PROJECT / "pages").glob("*_page.py"))
+        if f.name != "base_page.py"
+    ]
+    if not files:
+        pytest.skip("no page objects committed yet")
+
+    errors = validate_predicates_wait(files, _PROJECT)
+    assert not errors, (
+        "a committed page object fails the rule generated code is held to:\n  "
+        + "\n  ".join(errors)
+    )

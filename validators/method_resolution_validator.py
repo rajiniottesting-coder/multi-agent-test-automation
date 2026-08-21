@@ -642,6 +642,13 @@ _FAMILY_READERS = frozenset({
     "get_all_texts", "get_count", "exists", "get_nth_text",
     "get_row_count", "get_column_values", "find_row_index_by_text",
     "get_cell_text",
+    # The waiting form of get_count. Added to BasePage and recommended in the
+    # generation prompt WITHOUT being added here, so the gate rejected the
+    # helper its own prompt had just asked for - the first entry in the failure
+    # history, repeated exactly. Agent 2 spent four repair attempts moving
+    # wait_for_count() from line to line because no rewrite could satisfy both
+    # voices.
+    "wait_for_count",
 })
 
 # Helpers BUILT to take a family selector and resolve it to one element
@@ -1277,6 +1284,19 @@ _NON_WAITING_PROBES = {"is_visible": "is_showing", "get_count": "wait_for_count"
 _PREDICATE_PREFIXES = ("is_", "has_", "was_", "can_", "does_", "did_")
 
 
+def _sel_keys_in(func: ast.AST) -> set:
+    """Every literal key passed to self.sel(...) inside one function."""
+    keys: set = set()
+    for node in ast.walk(func):
+        if (isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "sel"
+                and node.args
+                and isinstance(node.args[0], ast.Constant)):
+            keys.add(node.args[0].value)
+    return keys
+
+
 def _returns_non_waiting_probe(func: ast.AST) -> Optional[str]:
     """The non-waiting helper this function RETURNS, if it returns one.
 
@@ -1300,13 +1320,59 @@ def _returns_non_waiting_probe(func: ast.AST) -> Optional[str]:
     return None
 
 
-def validate_predicates_wait(generated_files: list) -> list[str]:
+def _conditional_keys(project_root) -> set:
+    """Selector keys the inventory declares as CONDITIONAL, on any page.
+
+    A conditional element is one that is legitimately absent in some states -
+    a sign-out link while signed out. Waiting for it costs a full timeout
+    every time the answer is "no", which is exactly when a predicate is most
+    useful. `is_visible()` is the right tool there.
+    """
+    keys: set = set()
+    try:
+        inventory = _load_configured_inventory(Path(project_root)) or {}
+        for entry in (inventory.get("pages") or {}).values():
+            if isinstance(entry, dict):
+                keys.update(entry.get("conditional") or [])
+    except Exception:                                     # noqa: BLE001
+        pass
+    return keys
+
+
+def _has_waiting_sibling(cls: ast.ClassDef, name: str) -> bool:
+    """True if the class offers a waiting form of the same question.
+
+    `is_logged_in()` beside `wait_until_logged_in()` is a deliberate PAIR, not
+    an oversight: one answers now, one waits. Rejecting the fast half of a
+    documented pair is how this validator sent a repair loop round four times
+    renaming a method it should have left alone.
+    """
+    stem = re.sub(r"^(is|has|was|can|does|did)_", "", name)
+    for node in cls.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.name == name or not node.name.startswith("wait"):
+            continue
+        if stem and stem in node.name:
+            return True
+    return False
+
+
+def validate_predicates_wait(generated_files: list, project_root=None) -> list[str]:
     """Fail a page-object predicate whose answer is read from a single glance.
 
     Applies to page objects only, and only to methods named like a question -
     `is_*`, `has_*`, `was_*` and friends - that RETURN the result of a
     non-waiting probe.
+
+    Two exemptions, both learned the hard way. A predicate probing an element
+    the inventory declares CONDITIONAL is right to glance: waiting for
+    something legitimately absent burns the full timeout on every negative
+    answer. And a predicate with a waiting sibling on the same class is half
+    of a deliberate pair - `is_logged_in()` and `wait_until_logged_in()` - so
+    rejecting it asks for the pair to be destroyed.
     """
+    conditional = _conditional_keys(project_root or Path("."))
     errors: list[str] = []
     for f in generated_files or []:
         path = getattr(f, "file_path", "") or ""
@@ -1329,6 +1395,10 @@ def validate_predicates_wait(generated_files: list) -> list[str]:
                     continue
                 probe = _returns_non_waiting_probe(node)
                 if not probe:
+                    continue
+                if _has_waiting_sibling(cls, node.name):
+                    continue
+                if conditional & _sel_keys_in(node):
                     continue
                 errors.append(
                     f"Waiting predicate error in '{path}' line {node.lineno}: "
