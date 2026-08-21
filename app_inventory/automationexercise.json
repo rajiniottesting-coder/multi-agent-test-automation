@@ -249,5 +249,16 @@
       "key_methods": [],
       "errors": {}
     }
+  },
+  "_starting_state": {
+    "note": "How a scenario can honestly own its starting state in THIS application. Read by validate_persistent_state_assertions: an absolute assertion on a persistent_state page is rejected unless the scenario does one of the things named here. Nothing is inferred from method names - a step called 'a newly registered account' once called a helper that does not register, and the check believed the name.",
+    "fresh_identity_fixtures": [
+      "unique_username"
+    ],
+    "establishing_calls": [
+      "remove_all_products",
+      "empty_the_cart"
+    ],
+    "registration_note": "Registration here is TWO forms. start_signup() submits the first and lands on a second asking for password, address and contact details; the account exists only after that is submitted. There is no single call that registers, so 'register a fresh account' is not on its own a way to own the starting state in this application - clear the cart in a Given, or assert relatively."
   }
 }

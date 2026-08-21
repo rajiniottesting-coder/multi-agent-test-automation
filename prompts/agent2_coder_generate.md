@@ -133,6 +133,21 @@ If the check needs a new query, add it to the page object - the probe goes
 inside the method. A key in a step definition puts it in two places at once,
 so the inventory can be re-crawled without the step ever noticing.
 
+## Absence is its own call, never a negated presence check
+
+    # rejected - waits the full timeout on every run
+    assert not <page>.has_<thing>(name)
+
+    # correct
+    <page>.wait_for_row(<the row family>, name, present=False)
+
+A presence probe can only answer "no" by exhausting its timeout, because that
+is what waiting means. Negating it turns every passing absence assertion into
+a thirty-second pause, and a suite that is correct but three minutes slower
+for no reason.
+
+`present=False` waits for the row to GO, and returns the moment it does.
+
 ## Asserting a named row is there, or gone
 
 Do not read the whole list and assert membership:

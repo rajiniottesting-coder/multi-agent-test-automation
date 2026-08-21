@@ -1625,7 +1625,49 @@ def validate_no_selectors_in_step_defs(generated_files: list) -> list[str]:
 # check passed the exact code it was written to stop.
 _STATE_OWNING_CALLS = re.compile(
     r"(clear|reset|remove_all|delete_all|purge|empty_the|make_empty)", re.I)
-_FRESH_ACCOUNT_MARKERS = ("unique_username", "register")
+# A scenario owns its starting state only if it DOES something about it.
+#
+# This was a substring scan over the whole file, `register` included. A step
+# named `@given("a newly registered account")` contains the word, so the check
+# read the scenario's description of itself as proof of what it does - and the
+# step behind that name called a helper whose own docstring says "This does
+# NOT create the account", then signed in as the shared role. The scenario
+# claimed a fresh account, used a shared one, and asserted the collection was
+# empty. It passed on a run where the leftovers happened to be gone.
+#
+# Same shape as the earlier `is_empty` bug in this file: the check read its own
+# subject as its own mitigation. Names are claims; calls are evidence.
+# The framework-provided fixture is the one thing that is app-agnostic: it
+# yields an identity nothing has used before. Everything else is declared.
+_DEFAULT_FRESH_FIXTURES = ("unique_username",)
+
+
+def _starting_state_rules(project_root) -> tuple:
+    """(fresh-identity fixtures, calls that establish a clean start).
+
+    Read from the inventory's `_starting_state` block, because WHICH call
+    genuinely gives a scenario a clean slate is a property of the application.
+
+    The first version guessed from method names - anything matching
+    register|signup|create_account counted. That is exactly the mistake this
+    check exists to catch: a step named "a newly registered account" called
+    begin_signup(), whose own docstring says "This does NOT create the
+    account", and the check passed it. Then the name-based pattern passed it a
+    second time, for the same reason in a different place.
+
+    Names are claims. A declaration is a claim somebody made deliberately,
+    in the file where app knowledge belongs, next to the pages it describes.
+    """
+    fixtures = set(_DEFAULT_FRESH_FIXTURES)
+    calls: set = set()
+    try:
+        inventory = _load_configured_inventory(Path(project_root)) or {}
+        block = inventory.get("_starting_state") or {}
+        fixtures.update(block.get("fresh_identity_fixtures") or [])
+        calls.update(block.get("establishing_calls") or [])
+    except Exception:                                     # noqa: BLE001
+        pass
+    return frozenset(fixtures), frozenset(calls)
 
 
 def _camel_to_snake(name: str) -> str:
@@ -1784,6 +1826,7 @@ def validate_persistent_state_assertions(
     fixtures = _fixtures_for_pages(generated_files, project_root, pages)
     if not fixtures:
         return []
+    fresh_fixtures, establishing_calls = _starting_state_rules(project_root)
 
     errors: list[str] = []
     for f in generated_files or []:
@@ -1797,7 +1840,23 @@ def validate_persistent_state_assertions(
             continue
 
         # Does this file establish its own starting state anywhere?
-        owns_state = any(m in source for m in _FRESH_ACCOUNT_MARKERS)
+        #
+        # Two ways, both evidence rather than assertion: a step REQUESTS a
+        # fresh-identity fixture, or a call is MADE whose name says it creates
+        # an account. A word appearing in a Gherkin step name proves nothing -
+        # that is the scenario describing its intent, and intent is exactly
+        # what this check exists to verify.
+        requested = {a.arg for fn in ast.walk(tree)
+                     if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef))
+                     for a in fn.args.args}
+        owns_state = bool(requested & fresh_fixtures)
+        if not owns_state:
+            for node in ast.walk(tree):
+                if (isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Attribute)
+                        and node.func.attr in establishing_calls):
+                    owns_state = True
+                    break
         if not owns_state:
             # Only a call made for its EFFECT counts - its own statement, not
             # something buried inside the assertion being judged.

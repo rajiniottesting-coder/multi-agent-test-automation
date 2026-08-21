@@ -150,6 +150,8 @@ class _UsageTracker:
         self.input_tokens = 0
         self.output_tokens = 0
         self.cache_read_tokens = 0    # part of input_tokens, billed cheaper
+        self.cache_write_tokens = 0   # part of input_tokens, billed dearer
+        self.cache_writes = []        # sizes, to spot a prefix written twice
         self.calls_without_usage = 0  # endpoint didn't report usage
 
     # A cached prefix is re-SENT on every call, so the input token COUNT never
@@ -159,12 +161,38 @@ class _UsageTracker:
     # story reads as though caching had never been switched on.
     CACHE_READ_RATE = 0.10
 
+    # A write costs MORE than an ordinary input token - the provider stores the
+    # prefix. One write that serves many reads is a large saving; a prefix
+    # written repeatedly is pure loss, and it was invisible here because the
+    # ledger priced a write like any other input token. A run wrote the same
+    # 13,889-token prefix three times before the gateway served a single read.
+    CACHE_WRITE_RATE = 1.25
+
     def add(self, input_tokens: int, output_tokens: int,
-            cache_read_tokens: int = 0) -> None:
+            cache_read_tokens: int = 0, cache_write_tokens: int = 0) -> None:
         self.calls += 1
         self.input_tokens += input_tokens
         self.output_tokens += output_tokens
         self.cache_read_tokens += cache_read_tokens
+        self.cache_write_tokens += cache_write_tokens
+        if cache_write_tokens:
+            self.cache_writes.append(cache_write_tokens)
+
+    def repeated_write(self) -> int:
+        """How many times a prefix of a size already written was written again.
+
+        A prefix is written once and read many times, so a second write of the
+        same size means the cache is not being served - the entry expired, or
+        the gateway is not honouring the breakpoint. Either way the run is
+        paying the write premium repeatedly for nothing, and nothing said so.
+        """
+        seen: set = set()
+        repeats = 0
+        for size in self.cache_writes:
+            if size in seen:
+                repeats += 1
+            seen.add(size)
+        return repeats
 
     def add_unreported(self) -> None:
         self.calls += 1
@@ -178,6 +206,14 @@ class _UsageTracker:
         self.calls = 0
         self.input_tokens = 0
         self.output_tokens = 0
+        # Was omitted. In scan mode reset_usage() runs between stories, so the
+        # cached count carried over into the next story while input_tokens
+        # started from zero. input_cost_usd() clamps with min(), which kept the
+        # COST right by accident, but every reported cached figure after the
+        # first story was somebody else's.
+        self.cache_read_tokens = 0
+        self.cache_write_tokens = 0
+        self.cache_writes = []
         self.calls_without_usage = 0
 
     @staticmethod
@@ -200,10 +236,15 @@ class _UsageTracker:
         p_in, _ = self._prices()
         if p_in is None:
             return None
-        # Cache reads are already counted inside input_tokens, so discount
-        # them rather than adding a second term.
-        cached = min(self.cache_read_tokens, self.input_tokens)
-        billable = (self.input_tokens - cached) + cached * self.CACHE_READ_RATE
+        # Cache reads AND writes are already counted inside input_tokens, so
+        # re-price them in place rather than adding a second term. Reads are
+        # cheaper, writes dearer; an ordinary token is neither.
+        read = min(self.cache_read_tokens, self.input_tokens)
+        write = min(self.cache_write_tokens, self.input_tokens - read)
+        plain = self.input_tokens - read - write
+        billable = (plain
+                    + read * self.CACHE_READ_RATE
+                    + write * self.CACHE_WRITE_RATE)
         return (billable / 1_000_000) * p_in
 
     def output_cost_usd(self):
@@ -386,10 +427,29 @@ def _record_usage(response, label: str, cache_requested: bool = False) -> None:
             )
             return
         _created, _read = _cache_fields(response)
-        _tracker.add(int(inp), int(out), int(_read or 0))
+        _before = _tracker.repeated_write()
+        _tracker.add(int(inp), int(out), int(_read or 0), int(_created or 0))
+        if _tracker.repeated_write() > _before:
+            logger.warning(
+                "LLM cache [%s]: this %s-token prefix has been WRITTEN before "
+                "in this run. A prefix is meant to be written once and read "
+                "many times; writing it again pays the storage premium for "
+                "nothing. Either the entry expired between calls, or the "
+                "gateway is not serving reads from it.",
+                label, f"{int(_created or 0):,}",
+            )
+        # Spell out the split. `in=` counts every input token INCLUDING the
+        # cached ones - they are re-sent on every call, so the number does not
+        # fall when caching works. Printing `in=32,199` on one line and
+        # `read=13,846` on the next made the two look like rival measurements
+        # of the same thing, and reasonably led to "is caching even on?".
+        cached_now = int(_read or 0)
+        split = (f" ({cached_now:,} cached, {int(inp) - cached_now:,} fresh)"
+                 if cached_now else "")
         logger.info(
-            "LLM usage [%s]: in=%d out=%d | run totals: calls=%d in=%d out=%d cost=%s",
-            label, inp, out,
+            "LLM usage [%s]: in=%d%s out=%d | run totals: calls=%d in=%d "
+            "out=%d cost=%s",
+            label, inp, split, out,
             _tracker.calls, _tracker.input_tokens, _tracker.output_tokens,
             _tracker.cost_str(),
         )
@@ -415,9 +475,11 @@ def _record_usage(response, label: str, cache_requested: bool = False) -> None:
                 "LLM cache [%s]: requested but NOT reported by the endpoint "
                 "(written=0 read=0). Either the model priced this call without "
                 "caching, or the gateway dropped the cache_control block - "
-                "OpenAI-compatible proxies commonly strip it. Compare in= "
-                "across consecutive calls: an active cache makes it fall by "
-                "the size of the static prefix.",
+                "OpenAI-compatible proxies commonly strip it. Do NOT judge this "
+                "by watching in=: a cached prefix is RE-SENT on every call, so "
+                "the input token count never falls. Only the price does. The "
+                "written=/read= numbers on this line are the only evidence "
+                "either way.",
                 label,
             )
     except Exception as e:
@@ -450,6 +512,20 @@ def log_usage_summary(context: str) -> dict:
         context, s["llm_calls"],
         f"{s['input_tokens']:,}", f"{s['output_tokens']:,}", f"{s['total_tokens']:,}",
     )
+    # The input figure above INCLUDES every cached token: a cached prefix is
+    # re-sent on every call, so the count never falls when caching works. Only
+    # the price does. Saying so here is the difference between "caching is on"
+    # and a reasonable suspicion that it is not.
+    if _tracker.cache_read_tokens or _tracker.cache_write_tokens:
+        logger.info(
+            "  of that input: %s served from cache, %s written to cache"
+            "%s. The input count does NOT fall when caching works - the "
+            "prefix is re-sent every call and only the price changes.",
+            f"{_tracker.cache_read_tokens:,}",
+            f"{_tracker.cache_write_tokens:,}",
+            (f" ({_tracker.repeated_write()} repeat write(s) - see warnings)"
+             if _tracker.repeated_write() else ""),
+        )
     if s["estimated_cost_usd"] is not None:
         logger.info(
             "LLM COST [%s]: $%.4f total (input $%.4f + output $%.4f)",

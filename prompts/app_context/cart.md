@@ -38,6 +38,25 @@ Row selectors match every row, so narrow to the product the test added rather
 than assuming a row index.
 
 
+## "Register a fresh account" is not available here in one step
+
+Registration is TWO forms. `start_signup(name, email)` submits the first and
+lands on a second asking for password, address and contact details; the
+account exists only after that second form is submitted. The method's own
+docstring says so.
+
+So a scenario cannot own its starting state by calling `start_signup()` and
+then signing in - that signs in as the SHARED account, inheriting whatever a
+previous run left. A step named "a newly registered account" that does this is
+describing an intention, not a fact, and the cart assertion after it is a
+coin toss.
+
+Two things work here:
+
+- clear the cart in a Given, using the method the inventory names under
+  `_starting_state.establishing_calls`
+- assert relatively - that what this scenario added is present, or is gone
+
 ## The cart is test-owned, and test-owned is not the same as empty
 
 Unlike the catalogue, the cart holds only what a test put there, so a row count

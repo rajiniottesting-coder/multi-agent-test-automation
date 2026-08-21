@@ -227,3 +227,112 @@ def test_the_mapping_survives_a_page_object_that_was_not_regenerated(project):
             assert basket_page.is_empty()
     ''')], project)
     assert len(errors) == 1, "no page object was supplied, and it still fired"
+
+
+# =========================================================================
+# A STEP NAME IS A CLAIM, NOT EVIDENCE
+#
+# The check asked "does this file establish its own starting state?" by
+# searching the source for the word `register`. A step declared
+#
+#     @given("a newly registered account")
+#
+# contains it. Behind that name the step called a helper whose own docstring
+# reads "This does NOT create the account", and then signed in as the shared
+# role - so the scenario claimed a fresh account, used a shared one, and
+# asserted the collection was empty. It passed on a run where the leftovers
+# happened to be gone, which is worse than failing.
+#
+# The reviewer caught it by reading the page object. This check had read a
+# label.
+#
+# The second attempt guessed from CALL names instead - anything matching
+# register|signup|create_account. `begin_signup` matches. Same mistake, one
+# layer down: a name that describes an intention is not a description of
+# behaviour, wherever the name happens to sit.
+#
+# So the rules are DECLARED, in the inventory, beside the pages they concern.
+# =========================================================================
+
+def _flow(body: str):
+    import textwrap
+    from types import SimpleNamespace
+    return SimpleNamespace(file_path="tests/step_defs/test_flow.py",
+                           content=textwrap.dedent(body))
+
+
+def test_a_step_named_after_registering_is_not_evidence_of_registering(project):
+    """The exact scenario that shipped."""
+    errors = validate_persistent_state_assertions([_flow('''
+        @given("a newly registered account")
+        def given_fresh(login_page, base_url):
+            account_page.begin_signup("QA User", "qa@example.test")
+
+        @when("I log in as the new account")
+        def do_login(login_page, credentials):
+            login_page.login_as(*credentials("shared"))
+
+        @then("the basket should be empty")
+        def assert_empty(basket_page):
+            assert basket_page.is_empty()
+    ''')], project)
+
+    assert errors, (
+        "the step is named after registering and does not register - the "
+        "check must judge what the code does, not what the step calls itself"
+    )
+
+
+def test_a_call_named_after_signing_up_is_not_evidence_either(project):
+    """Break the thing the guard guards, from the other side.
+
+    The second draft matched call names against register|signup|... , and
+    `begin_signup` matched. A partial flow with a promising name is exactly
+    the case this check exists for.
+    """
+    errors = validate_persistent_state_assertions([_flow('''
+        @given("a fresh account")
+        def given_fresh(login_page):
+            account_page.begin_signup("QA", "qa@example.test")
+
+        @then("the basket should be empty")
+        def assert_empty(basket_page):
+            assert basket_page.is_empty()
+    ''')], project)
+
+    assert errors, "begin_signup does not create an account; its name says it does"
+
+
+def test_a_declared_establishing_call_is_accepted(project, tmp_path):
+    """What the inventory names IS evidence - somebody declared it deliberately,
+    in the file where app knowledge belongs."""
+    import json
+
+    path = tmp_path / "app_inventory" / "app.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["_starting_state"] = {"establishing_calls": ["remove_all_items"]}
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    assert validate_persistent_state_assertions([_flow('''
+        @given("an empty basket")
+        def given_empty(basket_page):
+            basket_page.remove_all_items()
+
+        @then("the basket should be empty")
+        def assert_empty(basket_page):
+            assert basket_page.is_empty()
+    ''')], tmp_path) == []
+
+
+def test_the_framework_fixture_still_counts_without_any_declaration(project):
+    """unique_username is the one app-agnostic answer: it yields an identity
+    nothing has used. It must work with no inventory block at all."""
+    assert validate_persistent_state_assertions([_flow('''
+        @given("a newly registered account")
+        def given_fresh(signup_page, unique_username):
+            signup_page.complete(unique_username)
+
+        @then("the basket should be empty")
+        def assert_empty(basket_page):
+            assert basket_page.is_empty()
+    ''')], project) == []
