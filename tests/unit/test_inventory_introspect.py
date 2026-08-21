@@ -1070,7 +1070,7 @@ def test_deep_structural_paths_are_fragile(selector):
     "label=Email",
     "div.panel button.cart",       # short, class-based
     "#cart_info tbody tr",         # real curated selector - must stay clean
-    ".product-image-wrapper",
+    ".card-image-wrapper",
 ])
 def test_real_handles_are_not_flagged(selector):
     assert not _is_fragile_path(selector)

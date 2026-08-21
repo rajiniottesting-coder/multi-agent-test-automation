@@ -72,7 +72,7 @@ def test_get_by_prefixes_are_not_passed_to_locator(selector, expected):
     "input[placeholder='Some hint']",       # the css form is NOT a get_by_
     "text=Add to cart",
     "role=button[name='Sign in']",
-    ".product-image-wrapper",
+    ".card-image-wrapper",
 ])
 def test_real_engines_still_go_to_locator(selector):
     """css, text= and role= are native. Routing them anywhere else would break

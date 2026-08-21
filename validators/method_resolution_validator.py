@@ -1817,6 +1817,45 @@ def validate_page_method_names_are_specific(generated_files: list) -> list[str]:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# One entry point for the three rules about a page-object METHOD's shape
+#
+# These three judge the same thing from three angles: what a method DEFINITION
+# on a page object is allowed to look like. They take the same input, run in
+# the same walk, and every one of them fires on the same kind of code review
+# comment. Reading them as one cluster is easier than remembering three names.
+#
+# What is NOT here, deliberately:
+#
+#   validate_method_resolution      judges a CALL in a step definition against
+#                                   the page object it names. Different input,
+#                                   different failure, different fix - folding
+#                                   it in would hide that.
+#   validate_page_object_selectors  judges the SELECTORS a method uses, not the
+#                                   method itself.
+#
+# Each rule keeps its own function, its own error prefix and its own tests. The
+# prefix matters: the repair loop routes on it, and a merged prefix would tell
+# the model "something about this method is wrong" instead of which thing.
+# ─────────────────────────────────────────────────────────────────────────
+
+def validate_page_object_methods(generated_files: list) -> list[str]:
+    """Every rule about how a page-object method may be defined.
+
+    Runs, in order:
+      - no two methods meaning the same thing on one class
+      - no bare verb that does not say what it acts on
+      - no question-shaped method built on a non-waiting probe
+
+    Returns the concatenation, unchanged. Calling the three directly is still
+    supported and still tested; this exists so a caller has one thing to wire
+    and one place to read about the cluster.
+    """
+    return (validate_no_duplicate_page_object_methods(generated_files)
+            + validate_page_method_names_are_specific(generated_files)
+            + validate_predicates_wait(generated_files))
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # A parsed step parameter compared against the wrong type
 #
 # pytest-bdd's `{name:d}` hands the step an int. A page-object reader annotated

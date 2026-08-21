@@ -765,6 +765,25 @@ class BasePage:
         """Number of elements matching the locator."""
         return self._locator(locator).count()
 
+    def wait_for_count(self, locator: str, expected: int,
+                       timeout_ms: Optional[int] = None) -> None:
+        """Wait until exactly `expected` elements match, then return.
+
+        The assertion form of get_count(). Playwright re-checks until the
+        timeout, so this is correct immediately after an action that adds or
+        removes rows - which is the only interesting moment to count.
+
+        Prefer this to `assert page.get_count(x) == n` anywhere the number
+        can still be settling, which is almost everywhere. Reading once and
+        comparing turns every asynchronous update into a race, and the race
+        is lost silently: the number is simply the previous one, and the
+        failure blames the count rather than the wait that was never done.
+
+        Raises AssertionError naming both numbers if the count never settles.
+        """
+        expect(self._locator(locator)).to_have_count(
+            expected, timeout=self._timeout(timeout_ms))
+
     # ============================================================
     # Text inputs
     # ============================================================

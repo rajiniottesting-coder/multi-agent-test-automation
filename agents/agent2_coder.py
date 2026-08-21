@@ -59,16 +59,18 @@ from validators.method_resolution_validator import (
     validate_method_resolution,
     validate_page_object_selectors,
     validate_no_duplicate_page_object_methods,
+    validate_page_object_methods,
+    validate_step_parameter_types,
     validate_readiness_probe,
     validate_predicates_wait,
     validate_no_selectors_in_step_defs,
     validate_persistent_state_assertions,
     validate_page_method_names_are_specific,
-    validate_step_parameter_types,
 )
 from core.llm_client import LLMClient, OutputTruncatedError
 from core.schemas import CodePlan, GeneratedFile, CodeGenerationOutput
 from validators.gherkin_analyzer import (
+    validate_step_coverage,
     validate_no_duplicate_step_definitions,
     scan_features_dir,
     filter_duplicate_test_cases,
@@ -1737,50 +1739,26 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     # neither sees the other's work and both may add their own name for one
     # behaviour. Git merges the additions cleanly when they land apart, and
     # nothing else notices.
-    errors.extend(validate_no_duplicate_page_object_methods(generated_files))
-    errors.extend(validate_page_method_names_are_specific(generated_files))
+    # Three rules about what a page-object METHOD DEFINITION may look like:
+    # no two methods meaning the same thing, no bare verb, no question-shaped
+    # method built on a non-waiting probe. One entry point, three prefixes -
+    # the repair loop still routes each to the rule it broke.
+    errors.extend(validate_page_object_methods(generated_files))
     # A readiness probe must hold in every state the page can be in. The
     # generator cannot know which element does; a human who has seen the page
     # in each state declares it, and this makes that declaration binding.
     errors.extend(validate_readiness_probe(generated_files, PROJECT_ROOT))
-    errors.extend(validate_predicates_wait(generated_files, PROJECT_ROOT))
     errors.extend(validate_no_selectors_in_step_defs(generated_files))
     errors.extend(validate_persistent_state_assertions(generated_files, PROJECT_ROOT))
     errors.extend(validate_step_parameter_types(generated_files, PROJECT_ROOT))
     errors.extend(validate_feature_file_structure(generated_files))
-    coverage_errors = validate_step_definitions_complete(generated_files)
-    unused_errors = validate_no_unused_step_definitions(generated_files)
-    drifted, drift_phrases = detect_drifted_steps(generated_files)
-    if drifted:
-        # A drifted pair IS one uncovered step plus one unused decorator
-        # describing the same underlying mistake. Feeding the model both
-        # halves separately makes it oscillate: deleting the decorator
-        # fixes "unused" but creates "missing coverage", and vice versa
-        # (observed undoing itself across attempts 3-4 of a live run).
-        # Suppress any individual error whose quoted phrase appears in a
-        # drifted-pair message, so the model sees ONE instruction: align
-        # the wording.
-        def _explained(err: str) -> bool:
-            # Exact-phrase membership only. Fuzzy matching against the
-            # combined message text over-suppressed: short quoted
-            # fragments appearing anywhere in the drift message silently
-            # hid genuinely missing steps. Caught by a negative test.
-            quoted = [q[1:-1].strip() for q in
-                      re.findall(r"`[^`]+`|'[^']+'", err)]
-            def _bare(p: str) -> str:
-                # coverage errors quote 'keyword phrase'; strip the keyword
-                parts = p.split(None, 1)
-                return parts[1] if len(parts) == 2 and parts[0].lower() in (
-                    'given', 'when', 'then', 'and', 'but') else p
-            return any(
-                q and (_bare(q) in drift_phrases or q in drift_phrases)
-                for q in quoted
-            )
-        coverage_errors = [e for e in coverage_errors if not _explained(e)]
-        unused_errors = [e for e in unused_errors if not _explained(e)]
-        errors.extend(drifted)
-    errors.extend(coverage_errors)
-    errors.extend(unused_errors)
+    # Coverage, unused decorators and the drift between them are one question
+    # asked three ways, so they are combined where they live rather than here.
+    # The pairing rule - a drifted pair suppresses both halves and speaks once
+    # - moved into validate_step_coverage() verbatim; a test runs the old
+    # composition and the new one against the same input and requires the same
+    # output.
+    errors.extend(validate_step_coverage(generated_files))
     errors.extend(validate_fixtures_exist(generated_files, PROJECT_ROOT))
     errors.extend(validate_imports_resolvable(generated_files, PROJECT_ROOT))
     errors.extend(validate_method_resolution(generated_files, PROJECT_ROOT))

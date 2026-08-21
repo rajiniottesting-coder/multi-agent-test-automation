@@ -1722,3 +1722,65 @@ def detect_drifted_steps(generated_files: list) -> list:
             suppressed_phrases.add(fphrase.strip())
             suppressed_phrases.add(dphrase.strip())
     return errors, suppressed_phrases
+
+
+# ---------------------------------------------------------------------
+# One entry point for the three checks that read a feature against its steps
+#
+# These three are one question asked three ways: does every Gherkin step have
+# a definition, does every definition have a step, and where the two nearly
+# match, is it the same mistake seen from both ends?
+#
+# The pairing rule used to live in agents/agent2_coder.py - thirty-five lines
+# of validation logic inside the orchestrator, where nobody looking for "how
+# does step coverage work" would think to look. It belongs beside the checks
+# it pairs. Moved verbatim; there is a test that runs the old composition and
+# this one against the same input and requires identical output.
+#
+# Each check keeps its own function and its own error prefix. The repair loop
+# routes on the prefix, so one merged prefix would tell the model "something
+# about your steps is wrong" instead of which thing.
+# ---------------------------------------------------------------------
+
+def validate_step_coverage(generated_files: list) -> list:
+    """Coverage, unused decorators, and the drift between them - combined.
+
+    A drifted pair IS one uncovered step plus one unused decorator describing
+    the same underlying mistake. Reported separately the model oscillates:
+    deleting the decorator fixes "unused" and creates "missing coverage", and
+    back again - observed undoing itself across attempts 3 and 4 of a live
+    run. So a drifted pair suppresses both halves and speaks once: align the
+    wording.
+    """
+    coverage_errors = validate_step_definitions_complete(generated_files)
+    unused_errors = validate_no_unused_step_definitions(generated_files)
+    drifted, drift_phrases = detect_drifted_steps(generated_files)
+
+    errors: list = []
+    if drifted:
+        def _explained(err: str) -> bool:
+            # Exact-phrase membership only. Fuzzy matching against the
+            # combined message text over-suppressed: short quoted fragments
+            # appearing anywhere in the drift message silently hid genuinely
+            # missing steps. Caught by a negative test.
+            quoted = [q[1:-1].strip() for q in
+                      re.findall(r"`[^`]+`|'[^']+'", err)]
+
+            def _bare(phrase: str) -> str:
+                # coverage errors quote 'keyword phrase'; strip the keyword
+                parts = phrase.split(None, 1)
+                return parts[1] if len(parts) == 2 and parts[0].lower() in (
+                    "given", "when", "then", "and", "but") else phrase
+
+            return any(
+                q and (_bare(q) in drift_phrases or q in drift_phrases)
+                for q in quoted
+            )
+
+        coverage_errors = [e for e in coverage_errors if not _explained(e)]
+        unused_errors = [e for e in unused_errors if not _explained(e)]
+        errors.extend(drifted)
+
+    errors.extend(coverage_errors)
+    errors.extend(unused_errors)
+    return errors
