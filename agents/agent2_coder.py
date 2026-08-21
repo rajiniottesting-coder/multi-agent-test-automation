@@ -64,6 +64,7 @@ from validators.method_resolution_validator import (
     validate_no_selectors_in_step_defs,
     validate_persistent_state_assertions,
     validate_page_method_names_are_specific,
+    validate_step_parameter_types,
 )
 from core.llm_client import LLMClient, OutputTruncatedError
 from core.schemas import CodePlan, GeneratedFile, CodeGenerationOutput
@@ -1745,6 +1746,7 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     errors.extend(validate_predicates_wait(generated_files, PROJECT_ROOT))
     errors.extend(validate_no_selectors_in_step_defs(generated_files))
     errors.extend(validate_persistent_state_assertions(generated_files, PROJECT_ROOT))
+    errors.extend(validate_step_parameter_types(generated_files, PROJECT_ROOT))
     errors.extend(validate_feature_file_structure(generated_files))
     coverage_errors = validate_step_definitions_complete(generated_files)
     unused_errors = validate_no_unused_step_definitions(generated_files)

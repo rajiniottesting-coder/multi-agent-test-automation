@@ -611,13 +611,28 @@ def _find_similar_methods(target: str, available: set[str]) -> list[str]:
 # ═════════════════════════════════════════════════════════════════════════
 
 # A selector-looking literal: bare CSS, or one of Playwright's engine prefixes.
-# Deliberately the SAME shape as tests/unit/test_page_object_selectors.py — the
-# two must agree, or generation passes and the unit gate still fails.
+#
+# Deliberately the SAME shape as tests/unit/test_page_object_selectors.py. The
+# comment said that before this pattern did: the generation-time version
+# required an ASSIGNMENT (`= "..."`), so a literal handed straight to a call
+# slipped past it.
+#
+#     row = self.row_containing(self.sel("rows"), name)
+#     return row.locator(".row-quantity").inner_text()
+#                        ^^^^^^^^^^^^^^^^ no `=` in front, so never seen
+#
+# The gate passed it, the page object shipped, and the committed-tree scan -
+# whose pattern had no such requirement - failed the build afterwards. The two
+# checks disagreeing is the precise failure the original comment warned about.
+#
+# Matching a quoted literal ANYWHERE is safe here because the shape is
+# specific: an inventory key never starts with . # [ or a Playwright engine
+# prefix, and comment / docstring lines are skipped before this runs.
 _SELECTOR_LITERAL_RE = re.compile(
-    r'=\s*"(?:'
-    r'\s*[.#\[]'                                    # .class  #id  [attr=…]
-    r'|(?:role|text|label|alt|title|placeholder)='   # playwright engines
-    r')[^"]*"'
+    r"""["'](?:"""
+    r"""\s*[.#\[]"""                                   # .class  #id  [attr=…]
+    r"""|(?:role|text|label|alt|title|placeholder)="""   # playwright engines
+    r""")[^"']*["']"""
 )
 
 _ERROR_PREFIX = "Selector inventory error"
@@ -1797,5 +1812,154 @@ def validate_page_method_names_are_specific(generated_files: list) -> list[str]:
                     f"duplicate-method check drops the page's own noun, so "
                     f"'{name}' and '{name}_<noun>' reduce to the same thing "
                     f"and a legitimate pair gets rejected as a duplicate."
+                )
+    return errors
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# A parsed step parameter compared against the wrong type
+#
+# pytest-bdd's `{name:d}` hands the step an int. A page-object reader annotated
+# `-> str` hands it a string. Comparing them is always False:
+#
+#     @then(parsers.parse("the quantity should be {quantity:d}"))
+#     def assert_quantity(cart_page, product_name, quantity):
+#         actual = cart_page.get_quantity(product_name)   # -> str
+#         assert actual == quantity                       # "2" == 2, never true
+#
+# This is the worst shape a test can have. It does not error, it does not
+# flake - it fails every single time, including when the application is
+# perfectly correct, so the failure points at the app and the app is fine.
+#
+# Both halves are declared: the format spec is in the decorator, the return
+# type is in the page object's annotation. Nothing has to be inferred.
+# ─────────────────────────────────────────────────────────────────────────
+
+_PARSER_TYPES = {"d": "int", "n": "int", "f": "float", "e": "float", "g": "float"}
+
+
+def _parsed_param_types(func: ast.AST) -> dict:
+    """{param_name: python_type} for typed placeholders in the step decorator."""
+    types: dict = {}
+    for dec in getattr(func, "decorator_list", []):
+        for node in ast.walk(dec):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                for m in re.finditer(r"\{(\w+):(\w+)\}", node.value):
+                    kind = _PARSER_TYPES.get(m.group(2))
+                    if kind:
+                        types[m.group(1)] = kind
+    return types
+
+
+def _page_method_return_types(generated_files: list, project_root) -> dict:
+    """{(ClassName, method): annotation} for page objects, generated or on disk."""
+    sources: dict = {}
+    try:
+        for path in sorted(Path(project_root).glob("pages/*.py")):
+            sources[f"pages/{path.name}"] = path.read_text(encoding="utf-8")
+    except Exception:                                     # noqa: BLE001
+        pass
+    for f in generated_files or []:
+        path = getattr(f, "file_path", "") or ""
+        if path.startswith("pages/") and path.endswith(".py"):
+            sources[path] = getattr(f, "content", "") or ""
+
+    out: dict = {}
+    for source in sources.values():
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            continue
+        for cls in tree.body:
+            if not isinstance(cls, ast.ClassDef):
+                continue
+            for node in cls.body:
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                ann = node.returns
+                if isinstance(ann, ast.Name):
+                    out[(cls.name, node.name)] = ann.id
+    return out
+
+
+def validate_step_parameter_types(generated_files: list, project_root=None) -> list[str]:
+    """Fail a comparison between a parsed step parameter and a mistyped reader."""
+    project_root = project_root or Path(".")
+    returns = _page_method_return_types(generated_files, project_root)
+    if not returns:
+        return []
+    by_method: dict = {}
+    for (cls, method), ann in returns.items():
+        by_method.setdefault(method, set()).add(ann)
+
+    errors: list[str] = []
+    for f in generated_files or []:
+        path = getattr(f, "file_path", "") or ""
+        if not path.startswith("tests/step_defs/") or not path.endswith(".py"):
+            continue
+        try:
+            tree = ast.parse(getattr(f, "content", "") or "")
+        except SyntaxError:
+            continue
+
+        for func in ast.walk(tree):
+            if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            parsed = _parsed_param_types(func)
+            if not parsed:
+                continue
+
+            # locals assigned from a page-object call, with that call's return type
+            local_types: dict = {}
+            for node in ast.walk(func):
+                if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+                    continue
+                target = node.targets[0]
+                call = node.value
+                if not (isinstance(target, ast.Name) and isinstance(call, ast.Call)
+                        and isinstance(call.func, ast.Attribute)):
+                    continue
+                anns = by_method.get(call.func.attr)
+                if anns and len(anns) == 1:
+                    local_types[target.id] = next(iter(anns))
+
+            for node in ast.walk(func):
+                if not isinstance(node, ast.Compare):
+                    continue
+                if not any(isinstance(op, (ast.Eq, ast.NotEq)) for op in node.ops):
+                    continue
+                sides = [node.left] + list(node.comparators)
+                found: list = []
+                for side in sides:
+                    if isinstance(side, ast.Name):
+                        if side.id in local_types:
+                            found.append(("reader", side.id, local_types[side.id]))
+                        elif side.id in parsed:
+                            found.append(("param", side.id, parsed[side.id]))
+                    elif (isinstance(side, ast.Call)
+                          and isinstance(side.func, ast.Attribute)):
+                        anns = by_method.get(side.func.attr)
+                        if anns and len(anns) == 1:
+                            found.append(("reader", side.func.attr + "()",
+                                          next(iter(anns))))
+                if len(found) < 2:
+                    continue
+                kinds = {t for _, _, t in found}
+                if len(kinds) < 2:
+                    continue
+
+                reader = next((x for x in found if x[0] == "reader"), None)
+                param = next((x for x in found if x[0] == "param"), None)
+                if not (reader and param):
+                    continue
+                errors.append(
+                    f"Step parameter type error in '{path}' line {node.lineno}: "
+                    f"`{param[1]}` is parsed as {param[2]} by the step decorator, "
+                    f"but `{reader[1]}` returns {reader[2]}. Comparing them is "
+                    f"ALWAYS False - the test fails even when the application is "
+                    f"correct, every run, so the failure points at the app and the "
+                    f"app is fine. Convert one side explicitly: "
+                    f"`{'int(' + reader[1] + ')' if reader[2] == 'str' else 'str(' + param[1] + ')'}`, "
+                    f"or change the reader's return type."
                 )
     return errors
