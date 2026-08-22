@@ -1889,18 +1889,63 @@ def _enclosing_step_text(func: ast.AST) -> str:
 def _feature_in_batch(step_source: str, generated_files: list) -> Optional[str]:
     """The .feature file this step-def module drives, if it is in this batch.
 
-    Read from `scenarios("x.feature")`, which every generated step-def file
-    declares. Returns the batch path so an error can be reported against it -
-    the repair loop routes on the path in the message, so naming the feature
-    file is what makes the feature file the thing that gets regenerated.
+    Returns the batch path so an error can be reported against it - the repair
+    loop routes on the path in the message, so resolving this is what makes
+    the feature file the thing that gets regenerated. When it resolves to
+    None every such error falls back to the step-definition file, and a
+    scenario that only the feature file can fix is never fixed.
+
+    IT HAD NEVER RESOLVED. The first version matched
+    `scenarios("<something>")` with a regex requiring a quote straight after
+    the bracket. But the generation prompt and the reference step definition
+    both mandate a different call:
+
+        scenarios(str(feature_path("<the feature stem>")))
+
+    - a helper, not a literal path, so the quote is three tokens away and the
+    string is a bare snake_case name with no directory and no extension. The
+    regex matched nothing on every file the framework actually produces, and
+    the feature file was never once blamed in a real run. Two separate fixes
+    were built on top of this and inherited its silence; both looked correct
+    in isolation because their tests used a literal-path call the prompt does
+    not allow.
+
+    So the shape is no longer guessed. Every string constant inside the
+    `scenarios(...)` call is a candidate, whatever wraps it, and each is
+    compared by STEM so a bare name, a name with `.feature`, and a full
+    relative path all resolve alike. test_feature_resolution_matches_the_real_convention
+    reads the committed reference step definition and requires this to
+    resolve it, so the two cannot drift apart again.
     """
-    match = re.search(r"scenarios\(\s*[\"']([^\"']+)[\"']", step_source)
-    if not match:
+    try:
+        tree = ast.parse(step_source or "")
+    except SyntaxError:
         return None
-    stem = match.group(1).rsplit("/", 1)[-1]
+
+    candidates: list = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        name = getattr(func, "id", None) or getattr(func, "attr", None)
+        if name not in {"scenarios", "scenario"}:
+            continue
+        # Any string anywhere inside the call - `feature_path("x")`,
+        # `str(...)`, an f-string prefix, a plain literal.
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                candidates.append(sub.value)
+    if not candidates:
+        return None
+
+    def stem(value: str) -> str:
+        base = value.replace("\\", "/").rsplit("/", 1)[-1]
+        return base[:-len(".feature")] if base.endswith(".feature") else base
+
+    wanted = {stem(c) for c in candidates if c.strip()}
     for f in generated_files or []:
         path = getattr(f, "file_path", "") or ""
-        if path.endswith(".feature") and path.rsplit("/", 1)[-1] == stem:
+        if path.endswith(".feature") and stem(path) in wanted:
             return path
     return None
 

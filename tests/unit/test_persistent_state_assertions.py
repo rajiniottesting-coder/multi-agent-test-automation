@@ -37,7 +37,10 @@ from types import SimpleNamespace
 
 import pytest
 
+import re
+
 from validators.method_resolution_validator import (
+    _feature_in_batch,
     validate_persistent_state_assertions,
 )
 
@@ -1060,3 +1063,156 @@ def test_the_two_checks_converge_instead_of_ping_ponging(project):
     # 3. sentence reworded too - both checks clean, the loop terminates
     assert totals('"the removed item should be gone"',
                   '    basket_page.wait_for_item("X", present=False)') == (0, 0)
+
+
+# =========================================================================
+# The feature file must actually resolve - it never had
+#
+# WHAT HAPPENED
+#   Three separate fixes routed an error to the feature file so the scenario
+#   text could be rewritten. All three were inert. _feature_in_batch matched
+#   `scenarios("<path>")` with a regex requiring a quote straight after the
+#   bracket, but the generation prompt and the committed reference step
+#   definition both mandate
+#
+#       scenarios(str(feature_path("<the feature stem>")))
+#
+#   so the quote is three tokens away and the string is a bare snake_case
+#   name. It resolved to None on every file the framework actually produces.
+#   The feature file was never blamed in a real run, every error fell back to
+#   the step definition, and a repair loop oscillated between two rules that
+#   only the feature file could reconcile - four attempts, then failure.
+#
+#   Each fix was verified against a literal-path call that the prompt does
+#   not allow. That is the mistake this test exists to make impossible: the
+#   convention is now READ FROM THE REPO rather than restated here, so a
+#   change to either side fails loudly instead of silently doing nothing.
+# =========================================================================
+
+
+def _reference_step_def() -> tuple:
+    """(source, feature_stem) for whatever THIS project declares as its
+    reference step definition.
+
+    Read from config, never hardcoded. `reference_files` in config.yaml is
+    how the framework is pointed at a different application - naming one
+    app's file here would make this test pass for that app and silently skip
+    or fail for every other.
+    """
+    root = Path(__file__).resolve().parents[2]
+    try:
+        from core.app_context import AppContext
+        rel = AppContext.load().reference_step_def
+    except Exception:                                     # noqa: BLE001
+        pytest.skip("no app context configured in this checkout")
+    ref = root / rel
+    if not ref.is_file():
+        pytest.skip(f"reference step definition {rel} not in this checkout")
+    return ref.read_text(encoding="utf-8"), ref.stem.removeprefix("test_")
+
+
+def _balanced_scenarios_calls(text: str) -> list:
+    """Every `scenarios(...)` call in `text`, brackets balanced.
+
+    A non-greedy regex stops at the first `)` and truncates
+    `scenarios(str(feature_path("x")))` into something unparseable, which
+    made this check fail on a prompt that was perfectly correct.
+    """
+    calls = []
+    for m in re.finditer(r"scenarios\(", text):
+        depth, i = 0, m.end() - 1
+        while i < len(text):
+            if text[i] == "(":
+                depth += 1
+            elif text[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    calls.append(text[m.start():i + 1])
+                    break
+            elif text[i] == "\n":
+                break
+            i += 1
+    return calls
+
+
+def test_feature_resolution_matches_the_real_convention():
+    """The committed reference is the contract. If this fails, either the
+    convention moved or the resolver did, and every feature-file error has
+    silently stopped being delivered."""
+    source, stem = _reference_step_def()
+    path = f"features/{stem}.feature"
+    feature = SimpleNamespace(file_path=path, content="")
+
+    assert _feature_in_batch(source, [feature]) == path, (
+        "the resolver cannot read the scenarios() call the reference step "
+        "definition actually uses. Every error routed to a feature file is "
+        "now silently reported against the step definition instead, where it "
+        "cannot be fixed - which is exactly how a repair loop deadlocks."
+    )
+
+
+def test_the_prompt_still_mandates_the_shape_the_resolver_reads():
+    """Belt and braces: the prompt is where Agent 2 learns the call."""
+    root = Path(__file__).resolve().parents[2]
+    prompt = root / "prompts" / "agent2_coder_generate.md"
+    if not prompt.is_file():
+        pytest.skip("no generation prompt in this checkout")
+    text = prompt.read_text(encoding="utf-8")
+
+    quoted = _balanced_scenarios_calls(text)
+    assert quoted, "the prompt no longer shows a scenarios() call at all"
+    feature = SimpleNamespace(file_path="features/feature_name.feature", content="")
+    assert any(
+        _feature_in_batch(f'{call}', [feature]) == "features/feature_name.feature"
+        for call in quoted
+    ), (
+        f"none of the scenarios() forms the prompt teaches can be resolved: "
+        f"{quoted}. Agent 2 will write one of these and the feature file will "
+        f"never be blamed."
+    )
+
+
+@pytest.mark.parametrize("call", [
+    'scenarios(str(feature_path("flow")))',      # the mandated form
+    'scenarios(feature_path("flow"))',
+    'scenarios("flow.feature")',
+    'scenarios("../../features/flow.feature")',
+    'scenario(str(feature_path("flow")), "S")',
+])
+def test_every_call_shape_resolves(call):
+    feature = SimpleNamespace(file_path="features/flow.feature", content="")
+    assert _feature_in_batch(call, [feature]) == "features/flow.feature"
+
+
+@pytest.mark.parametrize("call", [
+    'scenarios(str(feature_path("something_else")))',   # a different feature
+    'x = 1',                                            # no scenarios call
+    'def (:',                                           # unparseable
+])
+def test_it_does_not_resolve_what_it_should_not(call):
+    """Break the thing the guard guards. Matching too eagerly would blame a
+    feature file the step definition does not drive."""
+    feature = SimpleNamespace(file_path="features/flow.feature", content="")
+    assert _feature_in_batch(call, [feature]) is None
+
+
+def test_the_persistent_state_error_reaches_the_feature_with_the_real_call(project):
+    """End to end, using the convention rather than a convenient literal.
+    This is the assertion that would have caught all three inert fixes."""
+    step = SimpleNamespace(
+        file_path="tests/step_defs/test_flow.py",
+        content=textwrap.dedent('''
+            from pytest_bdd import scenarios, then
+            from config.paths import feature_path
+            scenarios(str(feature_path("flow")))
+
+            @then("the basket should be empty")
+            def assert_empty(basket_page):
+                assert basket_page.is_empty()
+        '''),
+    )
+    errors = validate_persistent_state_assertions([_CLAIM_FEATURE, step], project)
+    assert any("features/flow.feature" in e for e in errors), (
+        "with the real scenarios() call the feature file must still be "
+        "blamed - it never was"
+    )
