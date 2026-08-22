@@ -3330,7 +3330,35 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
         }
 
     # Real run — branch must contain a Jira key for downstream agents to work
-    assert_valid_branch_for_pipeline(output.branch_name)
+    branch_key = assert_valid_branch_for_pipeline(output.branch_name)
+
+    # ...and it must be THIS story's key, not one of its test cases.
+    #
+    # The plan prompt asks for `auto/<jira-key>-<feature>` without saying which
+    # key, so the model used whichever appeared first in its input - the test
+    # cases. A story about a shopping session became
+    # `auto/<TESTCASE>-shopping-session` while the story itself was a
+    # different key.
+    #
+    # Three places then disagreed about who owns the work: the branch said one
+    # thing, the PR body another, the board a third. Agent 5 reads the BRANCH,
+    # so the usage ledger posted its cost comment to a test case - and the
+    # story's Jira page quietly had no record of what it cost.
+    #
+    # Corrected rather than rejected. The model chose a reasonable key from an
+    # ambiguous instruction; failing the story over a name would waste a
+    # generation that is otherwise fine.
+    if branch_key != story_id:
+        corrected = output.branch_name.replace(branch_key, story_id, 1)
+        logger.warning(
+            "Branch %r is named after %s, which is not the story being "
+            "processed (%s) - almost certainly one of its test cases. "
+            "Renaming to %r so the branch, the pull request and the board "
+            "agree, and so Agent 5 posts usage to the story.",
+            output.branch_name, branch_key, story_id, corrected,
+        )
+        output.branch_name = corrected
+        assert_valid_branch_for_pipeline(output.branch_name)
 
     gh = get_repo_host()
 
@@ -3444,22 +3472,78 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
-def _print_scan_summary(results: list[dict]) -> None:
-    print("\n" + "=" * 60)
-    print(f"[OK] Agent 2 scan finished -- processed {len(results)} stories")
+_SCAN_MARKERS = {
+    "pr_opened": "OK",
+    "skipped_all_duplicates": "SKIP",
+    "failed": "FAIL",
+}
+
+
+def _scan_summary_lines(results: list[dict]) -> list[str]:
+    """One line per story, saying what happened and - on failure - why.
+
+    A scan of several stories used to end with `[FAIL] <STORY>: failed`.
+    The reason was captured into the result dict by the loop's except clause
+    and then never printed, so reading a multi-story run meant scrolling back
+    through the log of every OTHER story to find the traceback.
+
+    That matters more the more stories run at once, which is the whole point
+    of scanning several.
+    """
+    counts: dict = {}
+    for r in results:
+        counts[r.get("status", "unknown")] = counts.get(r.get("status", "unknown"), 0) + 1
+
+    tally = ", ".join(f"{n} {status.replace('_', ' ')}"
+                      for status, n in sorted(counts.items()))
+    lines = [f"Agent 2 scan finished - {len(results)} story/stories: {tally}"]
+
     for r in results:
         status = r.get("status", "unknown")
-        if status == "pr_opened":
-            marker = "OK"
-        elif status == "skipped_all_duplicates":
-            marker = "SKIP"
-        elif status == "failed":
-            marker = "FAIL"
-        else:
-            marker = "??"
-        pr_info = f" -> {r.get('pr_url')}" if r.get("pr_url") else ""
-        print(f"   [{marker}] {r.get('story_id')}: {status}{pr_info}")
+        marker = _SCAN_MARKERS.get(status, "??")
+        story = r.get("story_id", "?")
+        detail = ""
+        if r.get("pr_url"):
+            detail = f" -> {r['pr_url']}"
+        elif r.get("branch_name"):
+            detail = f" (branch {r['branch_name']})"
+        lines.append(f"[{marker}] {story}: {status}{detail}")
+
+        # The reason, on the line below, indented. One story's failure should
+        # be readable without hunting for it among the others.
+        error = (r.get("error") or "").strip()
+        if error:
+            first = error.splitlines()[0]
+            lines.append(f"       {first[:300]}")
+    return lines
+
+
+def _print_scan_summary(results: list[dict]) -> None:
+    lines = _scan_summary_lines(results)
+    print("\n" + "=" * 60)
+    for line in lines:
+        print(f"   {line}" if not line.startswith("Agent 2") else f"[OK] {line}")
     print("=" * 60)
+
+    # Also into the CI job summary, where a multi-story run is actually read.
+    # Without this the only record is the log, and the log of a five-story
+    # scan is long enough that nobody reaches the end of it.
+    import os
+
+    summary_path = os.getenv("GITHUB_STEP_SUMMARY")
+    if not summary_path:
+        return
+    try:
+        with open(summary_path, "a", encoding="utf-8") as handle:
+            handle.write("\n## Agent 2 (Coder)\n\n")
+            handle.write(f"{lines[0]}\n\n")
+            for line in lines[1:]:
+                if line.startswith("["):
+                    handle.write(f"- `{line}`\n")
+                else:
+                    handle.write(f"  - {line.strip()}\n")
+    except Exception:                                     # noqa: BLE001
+        logger.debug("could not write the scan summary to GITHUB_STEP_SUMMARY")
 
 
 def main():

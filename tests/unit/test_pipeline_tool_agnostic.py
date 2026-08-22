@@ -14,6 +14,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pathlib import Path as _P
+
+_PROJ_ROOT = _P(__file__).resolve().parents[2]
+
 from core.schemas import (CodePlan, FilePlan, JiraCommentDraft,
                             TestCase, TestCaseList, TestStep)
 
@@ -315,3 +319,83 @@ def test_repo_host_dict_keys_are_exactly_as_documented():
         "state", "author", "url"}
     assert set(hub.find_open_pr_for_story("S-1")) == {
         "number", "head_ref", "head_sha", "url", "title"}
+
+
+# =========================================================================
+# THE BRANCH MUST NAME THE STORY, NOT ONE OF ITS TEST CASES
+#
+# A story about a shopping session produced the branch
+# `auto/<TESTCASE>-shopping-session` while the story itself was a different
+# key. Three places then disagreed about who owned the work: the branch said
+# one issue, the pull-request body another, the board a third.
+#
+# Agent 5 reads the BRANCH to decide where to post the run cost, so the usage
+# comment landed on a test case and the story's own page had no record of what
+# it cost. Nothing failed; the number was simply somewhere nobody looks.
+#
+# The plan prompt said `auto/<jira-key>-<feature>` without saying WHICH key,
+# and the test cases appear first in the model's input.
+# =========================================================================
+
+def test_a_branch_named_after_a_test_case_is_corrected_to_the_story():
+    """Corrected, not rejected.
+
+    The model picked a reasonable key from an ambiguous instruction. Failing
+    the story over a name would throw away a generation that is otherwise
+    fine, and the repair loop cannot fix a branch name - it regenerates files.
+    """
+    from config import assert_valid_branch_for_pipeline
+
+    story = "PROJ-100"
+    branch = "auto/PROJ-207-shopping-session"        # a test case of that story
+
+    key = assert_valid_branch_for_pipeline(branch)
+    assert key != story, "the sample must actually be wrong, or this proves nothing"
+
+    corrected = branch.replace(key, story, 1)
+    assert corrected == "auto/PROJ-100-shopping-session"
+    assert assert_valid_branch_for_pipeline(corrected) == story
+
+
+def test_a_branch_already_naming_the_story_is_left_alone():
+    """Break the thing the guard guards. Rewriting a correct branch would
+    churn every story for nothing."""
+    from config import assert_valid_branch_for_pipeline
+
+    story = "PROJ-100"
+    branch = "auto/PROJ-100-shopping-session"
+    assert assert_valid_branch_for_pipeline(branch) == story
+
+
+def test_the_correction_is_wired_into_the_run():
+    """The comparison has to happen where story_id is in scope. A helper that
+    nothing calls is the shape this project has been bitten by repeatedly."""
+    source = (_PROJ_ROOT / "agents" / "agent2_coder.py").read_text(encoding="utf-8")
+    body = " ".join(source.split())
+
+    assert "branch_key = assert_valid_branch_for_pipeline(" in body, (
+        "the extracted key is discarded again - nothing can compare it"
+    )
+    assert "if branch_key != story_id:" in body, (
+        "nothing compares the branch key against the story being processed"
+    )
+
+
+def test_the_plan_prompt_says_which_key():
+    """The durable half. Correcting after the fact works; not needing to is
+    better, and the prompt is where the ambiguity was."""
+    prompt = (_PROJ_ROOT / "prompts" / "agent2_coder_plan.md").read_text(
+        encoding="utf-8")
+    lowered = " ".join(prompt.split()).lower()
+
+    assert "story" in lowered and "branch_name" in prompt, "name the field"
+    # Strip markdown emphasis before matching. The prompt writes "**not** any
+    # of the test-case keys", and a literal match failed on the asterisks -
+    # a guard that reads prose has to read it the way a reader does.
+    import re
+    plain = re.sub(r"[*_`]", "", lowered)
+
+    assert "not any of the test-case keys" in plain, (
+        "the prompt must say which key explicitly - 'jira-key' alone is what "
+        "let the model reach for the test cases, which appear first in its input"
+    )

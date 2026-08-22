@@ -64,7 +64,7 @@ Set `is_new_file: true` for these.
 # Your Output
 Return a `CodePlan` with:
 - `feature_name`: short kebab-case slug used for the BRANCH only (e.g., `login-validation`, `cart-checkout`). Feature FILES and step def files use the snake_case form of this same slug — see Naming Convention below.
-- `branch_name`: format `auto/<jira-key>-<feature-name>` (e.g., `auto/SCRUM-5-login-validation`)
+- `branch_name`: format `auto/<PARENT STORY KEY>-<feature-name>` (e.g., `auto/SCRUM-5-login-validation`). Use the key of the STORY you are implementing, **not** any of the test-case keys linked to it. The test cases appear first in your input, which makes one of them the easy thing to reach for - and then the branch, the pull request body and the board all name different issues, and the cost report lands on a test case instead of the story.
 - `pr_title`: concise PR title
 - `pr_body`: Markdown body explaining what's being added (list test cases automated)
 - `files_to_create`: list of `FilePlan` objects, each with:
