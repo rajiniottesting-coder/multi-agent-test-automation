@@ -150,6 +150,29 @@ the docstring is what lets the next reader tell an assertion helper from a
 branching one, which is the same distinction the reference page object draws
 between its waiting and non-waiting readers.
 
+## Owning the starting state is a THREE-FILE decision, so decide it now
+
+If a scenario will assert an ABSOLUTE state - "exactly 2 rows", "is empty" -
+on a page the inventory marks `persistent_state`, it has to own that state,
+and owning it touches three files at once:
+
+1. a `Given` line in the `.feature` that clears the state
+2. a clearing method on the page object
+3. the step definition binding them
+
+Write all three in this generation, or do not assert absolutely at all.
+
+There is no later opportunity. A repair regenerates ONE file, so a step
+definition that reaches the gate with an absolute assertion and no clearing
+Given cannot be fixed by adding one - the feature file and the page object are
+not in front of you at that point. The only repair available is to rewrite the
+assertion as a relative one, and a scenario whose whole point was the absolute
+count then verifies something weaker than it was asked to.
+
+The cheap default is the relative assertion: that what this scenario added is
+present, or is gone. It holds whatever the state started as, it needs one
+file, and it is what the test case usually means.
+
 ## A step definition must not hardcode one scenario's data
 
     # rejected - the step says "empty", the body checks two specific records

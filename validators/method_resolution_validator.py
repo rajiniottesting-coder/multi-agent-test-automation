@@ -1676,13 +1676,37 @@ def _available_remedies(fresh_fixtures, establishing_calls) -> str:
             "This application declares no way to establish a clean start "
             "(`_starting_state` in the inventory is empty), so the assertion "
             "must be RELATIVE - that what this scenario added is present, or "
-            "is gone - which holds whatever the state started as."
+            "is gone - which holds whatever the state started as. That is a "
+            "change to this file alone."
         )
+    # ORDER MATTERS, and it is not the order of preference.
+    #
+    # The repair loop regenerates ONE file. Owning the starting state needs
+    # three: a Given line in the .feature, a clearing method on the page
+    # object, and the step definition that joins them. A model repairing the
+    # step-def file alone cannot do any of that - it can only rewrite the
+    # assertion in front of it.
+    #
+    # The message used to lead with owning the state. A story spent four
+    # repair attempts and 3,170 characters of feedback trying to follow it,
+    # produced the same four errors each time, and was abandoned. The one
+    # thing it could have done was listed second and described as the
+    # fallback.
+    #
+    # So the achievable remedy comes first, and the other is labelled with the
+    # files it needs, which is the fact that decides whether it is available.
     return (
-        "Either the scenario must OWN its starting state (" + "; or ".join(options)
-        + "), or the assertion must be relative - that what this scenario "
-        "added is present, or is gone - which holds whatever the state "
-        "started as. Do not invent a way to own the state that the inventory "
+        "IF YOU ARE EDITING ONLY THE STEP-DEFINITION FILE - which is the case "
+        "during a repair - the fix available to you is to make the assertion "
+        "RELATIVE: assert that what this scenario added is present, or is "
+        "gone, which holds whatever the state started as. That needs no other "
+        "file.\n"
+        "The alternative is for the scenario to OWN its starting state ("
+        + "; or ".join(options)
+        + "), but that spans THREE files - a Given line in the .feature, a "
+        "clearing method on the page object, and the step definition binding "
+        "them - so it is not something a single-file repair can deliver. "
+        "Do not invent a way to own the state that the inventory "
         "cannot express: a registration flow the inventory does not describe "
         "cannot be written, and half of one fails at run time."
     )
@@ -1842,6 +1866,43 @@ def _names_derived_from(func: ast.AST, fixtures: dict) -> set:
                     changed = True
                     break
     return derived
+
+
+# Gherkin wording that CLAIMS an exact state. A step definition implementing
+# one of these has no choice: the phrase is the requirement, and a relative
+# assertion would not satisfy the sentence it is bound to.
+_ABSOLUTE_STEP_TEXT = re.compile(
+    r"\b(exactly|only|precisely)\b|\bshould be empty\b|\bis empty\b|\bno \w+ (?:left|remain)",
+    re.I)
+
+
+def _enclosing_step_text(func: ast.AST) -> str:
+    """The Gherkin phrase this step definition is bound to, from its decorator."""
+    parts: list = []
+    for dec in getattr(func, "decorator_list", []):
+        for node in ast.walk(dec):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                parts.append(node.value)
+    return " ".join(parts)
+
+
+def _feature_in_batch(step_source: str, generated_files: list) -> Optional[str]:
+    """The .feature file this step-def module drives, if it is in this batch.
+
+    Read from `scenarios("x.feature")`, which every generated step-def file
+    declares. Returns the batch path so an error can be reported against it -
+    the repair loop routes on the path in the message, so naming the feature
+    file is what makes the feature file the thing that gets regenerated.
+    """
+    match = re.search(r"scenarios\(\s*[\"']([^\"']+)[\"']", step_source)
+    if not match:
+        return None
+    stem = match.group(1).rsplit("/", 1)[-1]
+    for f in generated_files or []:
+        path = getattr(f, "file_path", "") or ""
+        if path.endswith(".feature") and path.rsplit("/", 1)[-1] == stem:
+            return path
+    return None
 
 
 def _absolute_assertion_helpers(generated_files: list, project_root) -> set:
@@ -2063,6 +2124,43 @@ def validate_persistent_state_assertions(
                         fixture = owner.id
                 if not fixture:
                     continue
+                # WHICH FILE has to change?
+                #
+                # If the Gherkin phrase itself claims an exact state - "exactly
+                # 2 rows", "should be empty" - the step definition is not free
+                # to assert relatively. The repair prompt injects the feature
+                # file as AUTHORITATIVE, so the model must implement the
+                # sentence it was given, and the sentence is the problem.
+                #
+                # Reporting against the step-def file asked a model to fix a
+                # file that could not be fixed. It spent four attempts and
+                # 3,170 characters on it and was abandoned - not because the
+                # advice was wrong, but because it was addressed to the wrong
+                # file. The repair loop routes on the path in this message, so
+                # naming the feature file is what lets the scenario text be
+                # rewritten, after which the step definition follows.
+                step_text = _enclosing_step_text(func)
+                feature_path = None
+                if _ABSOLUTE_STEP_TEXT.search(step_text):
+                    feature_path = _feature_in_batch(source, generated_files)
+
+                if feature_path:
+                    errors.append(
+                        f"Persistent state error in '{feature_path}': the step "
+                        f"`{step_text.strip()[:90]}` claims an EXACT state on "
+                        f"a page the inventory declares persistent_state - the "
+                        f"application keeps it against the signed-in user, so "
+                        f"it survives logout and survives the run, and a "
+                        f"previous run's leftovers are counted too. The step "
+                        f"DEFINITION cannot fix this: it must implement the "
+                        f"phrase it is given. Rewrite the SCENARIO so it asks "
+                        f"for something true whatever the state started as - "
+                        f"that the item this scenario added is present, or is "
+                        f"gone - or add a Given to this feature that clears "
+                        f"the state first."
+                    )
+                    continue
+
                 errors.append(
                     f"Persistent state error in '{path}' line {node.lineno}: "
                     f"this asserts an ABSOLUTE state on {fixture}, whose inventory page '{fixtures[fixture]}' is "

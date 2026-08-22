@@ -607,3 +607,163 @@ def test_the_helper_is_recognised_by_behaviour_not_by_name(project):
             basket_page.check_something()
     ''')], project)
     assert ignored == [], "a checking-sounding name that does not count is not an assertion"
+
+
+# =========================================================================
+# THE REMEDY MUST BE ONE THE READER CAN CARRY OUT
+#
+# The repair loop regenerates ONE file. Owning the starting state spans
+# three: a Given line in the .feature, a clearing method on the page object,
+# and the step definition binding them.
+#
+# The message led with owning the state anyway. A story spent four repair
+# attempts and 3,170 characters of feedback trying to follow it, produced the
+# same four errors every time, and was abandoned. The one thing the model
+# could actually do - rewrite the assertion in the file in front of it - was
+# listed second and framed as the fallback.
+#
+# "Unsatisfiable guidance gets approximated" is a reading rule here. This is
+# the third place it has applied: the prompt, then the error's list of
+# options, and now the ORDER of that list. Being reachable is not enough if
+# the unreachable one is offered first.
+# =========================================================================
+
+def test_the_message_leads_with_what_a_single_file_repair_can_do(project):
+    errors = validate_persistent_state_assertions([_flow('''
+        def assert_empty(basket_page):
+            assert basket_page.is_empty()
+    ''')], project)
+    message = errors[0]
+
+    relative_at = message.lower().find("relative")
+    owning_at = message.lower().find("own its starting state")
+    assert relative_at != -1, "the achievable remedy must be present"
+    if owning_at != -1:
+        assert relative_at < owning_at, (
+            "the remedy that needs three files is offered before the one that "
+            "needs none - a repair regenerates a single file and cannot "
+            "deliver the first"
+        )
+
+
+def test_the_multi_file_remedy_says_it_spans_several_files(project):
+    """Break the thing the guard guards.
+
+    Reordering alone would still leave a model free to attempt the other
+    route. Naming the cost is what makes the choice obvious - and it is the
+    fact that decides whether the option exists at all.
+    """
+    errors = validate_persistent_state_assertions([_flow('''
+        def assert_empty(basket_page):
+            assert basket_page.is_empty()
+    ''')], project)
+    message = errors[0].lower()
+
+    if "own its starting state" in message:
+        assert "three files" in message or "spans" in message, (
+            "say that owning the state needs more than the file being repaired"
+        )
+
+
+# =========================================================================
+# BLAME THE FILE THAT CAN BE FIXED
+#
+# The repair loop regenerates whichever file the error NAMES, and the
+# step-def prompt injects the feature file as AUTHORITATIVE. So a step bound
+# to `Then the cart should contain exactly 1 product` has no freedom: it must
+# implement the sentence it was given, and the sentence is what is wrong.
+#
+# The error named the step-def file anyway. A story spent four repair
+# attempts and 3,170 characters on a file that could not be fixed, produced
+# the same errors every time, and was abandoned. The advice was correct and
+# addressed to the wrong file.
+#
+# Naming the feature file is what lets the SCENARIO be rewritten - after
+# which the step definition follows, because the coverage check will pull it
+# into line on the next pass.
+#
+# Not every case belongs to the feature. When the Gherkin is neutral and the
+# step definition over-asserts of its own accord, the step definition is both
+# at fault and fixable, and it keeps the blame.
+# =========================================================================
+
+def _feature(body: str = "Feature: F\n"):
+    from types import SimpleNamespace
+    return SimpleNamespace(file_path="features/f.feature", content=body)
+
+
+def _bound_step(body: str):
+    import textwrap
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        file_path="tests/step_defs/test_f.py",
+        content=('from pytest_bdd import scenarios, given, then, parsers\n\n'
+                 'scenarios("f.feature")\n\n') + textwrap.dedent(body))
+
+
+def _blamed(errors):
+    return errors[0].split("'")[1] if errors else None
+
+
+def test_an_absolute_gherkin_phrase_blames_the_feature_file(project):
+    """The shape that was abandoned."""
+    errors = validate_persistent_state_assertions([_feature(), _bound_step('''
+        @then(parsers.parse("the basket should hold exactly {count:d} rows"))
+        def a(basket_page, count):
+            assert len(basket_page.item_names()) == count
+    ''')], project)
+
+    assert _blamed(errors) == "features/f.feature", (
+        "the step definition must implement the phrase it is bound to - "
+        "reporting against it asks for a fix that file cannot make"
+    )
+    assert "cannot fix this" in errors[0], "say why the step def is not the place"
+
+
+def test_an_emptiness_phrase_also_blames_the_feature_file(project):
+    errors = validate_persistent_state_assertions([_feature(), _bound_step('''
+        @then("the basket should be empty")
+        def a(basket_page):
+            assert basket_page.is_empty()
+    ''')], project)
+    assert _blamed(errors) == "features/f.feature"
+
+
+def test_a_neutral_phrase_keeps_the_blame_on_the_step_definition(project):
+    """Break the thing the guard guards.
+
+    Blaming the feature file for everything would send the model rewriting
+    scenarios that are perfectly well phrased. When the Gherkin asks for
+    something relative and the step definition asserts a count anyway, the
+    step definition is both at fault and able to fix itself.
+    """
+    errors = validate_persistent_state_assertions([_feature(), _bound_step('''
+        @then("the added item is in the basket")
+        def a(basket_page):
+            assert len(basket_page.item_names()) == 1
+    ''')], project)
+
+    assert _blamed(errors) == "tests/step_defs/test_f.py"
+
+
+def test_a_relative_assertion_is_still_clean(project):
+    assert validate_persistent_state_assertions([_feature(), _bound_step('''
+        @then("the added item is in the basket")
+        def a(basket_page, item_name):
+            assert item_name in basket_page.item_names()
+    ''')], project) == []
+
+
+def test_the_feature_must_be_in_the_batch_to_be_blamed(project):
+    """A feature file that is not being generated cannot be repaired either,
+    so the error stays where something CAN act on it."""
+    errors = validate_persistent_state_assertions([_bound_step('''
+        @then(parsers.parse("the basket should hold exactly {count:d} rows"))
+        def a(basket_page, count):
+            assert len(basket_page.item_names()) == count
+    ''')], project)
+
+    assert _blamed(errors) == "tests/step_defs/test_f.py", (
+        "no feature file in the batch - blaming one would route the repair at "
+        "a file that is not there"
+    )
