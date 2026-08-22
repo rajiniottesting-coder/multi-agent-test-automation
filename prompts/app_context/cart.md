@@ -59,8 +59,20 @@ Two things work here:
 
 ## The cart is test-owned, and test-owned is not the same as empty
 
-Unlike the catalogue, the cart holds only what a test put there, so a row count
-is a legitimate thing to assert on. What it does NOT do is start at zero.
+Unlike the catalogue, the cart holds only what a test put there. What it does
+NOT do is start at zero.
+
+So a row count is NOT something a scenario may assert on by default. This
+application cannot register a fresh account from generated code (see above),
+which leaves exactly one way to earn an absolute assertion: clear the cart
+first, in a Given, with `CartPage.empty_the_cart()` - the call named under
+`_starting_state.establishing_calls`. Own the state and "exactly two rows" or
+"the cart is empty" are honest.
+
+Without that Given, assert MEMBERSHIP instead: the product this test added is
+present, or is gone. A test case whose expected result names a count or an
+empty cart, in a scenario that never clears it, cannot be automated as
+written.
 
 Private is not the same as empty. The cart survives logout and survives the
 run, so a scenario reusing the shared account inherits whatever a previous run

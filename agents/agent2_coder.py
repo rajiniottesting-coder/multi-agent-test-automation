@@ -978,18 +978,77 @@ def _summarize_validator_feedback(errors: list[str]) -> str:
         # consequence are all in there, and any of them may be the fix.
         return "\n".join(f"  - {_trim_error(err)}" for err in errors)
 
-    extracted: list[str] = [_phrase_only(err) for err in errors]
+    # MANY ERRORS: is it ONE problem repeated, or several different ones?
+    #
+    # The compaction above assumed the former - "the pattern is the message
+    # and each line is one more instance of it" - and appended a tail naming
+    # the single remedy that pattern needs. That holds only while every error
+    # IS the same kind.
+    #
+    # A repair arrived with 18: eleven steps missing a decorator, and seven
+    # step definitions that were defined and unused. Opposite remedies - add
+    # these, delete those. All 18 were flattened to bare phrases, the first
+    # eight sent, and the tail told the model that every error meant a
+    # decorator was MISSING and it should write more. None of the seven
+    # "delete this" errors reached it at all. So it added decorators, which
+    # created more unused ones, and the next attempt looked the same. The
+    # feedback was not merely lossy, it pointed the wrong way.
+    #
+    # So homogeneity is checked rather than assumed. One class keeps the old
+    # behaviour exactly - it was right for what it was built for. Several
+    # classes get whole errors dealt round-robin, so no class can be crowded
+    # out by a noisier one, and a tail that counts each class instead of
+    # prescribing one fix.
+    by_class: dict = {}
+    for err in errors:
+        match = re.match(r"\s*([A-Za-z][A-Za-z \-]*?error)\s+in\s+'", err or "")
+        key = match.group(1).lower() if match else "other"
+        by_class.setdefault(key, []).append(err)
 
-    head = "\n".join(
-        f"  - {phrase}" for phrase in extracted[:_MAX_FEEDBACK_ERRORS_VERBATIM]
+    if len(by_class) == 1:
+        extracted: list[str] = [_phrase_only(err) for err in errors]
+        head = "\n".join(
+            f"  - {phrase}" for phrase in extracted[:_MAX_FEEDBACK_ERRORS_VERBATIM]
+        )
+        remaining = len(extracted) - _MAX_FEEDBACK_ERRORS_VERBATIM
+        return (
+            f"{head}\n"
+            f"  ... and {remaining} more similar error(s). The pattern is the "
+            f"same: each Gherkin step in the feature file needs a matching "
+            f"decorator. Re-read the feature file and write a decorator for "
+            f"every Given / When / Then / And / But line."
+        )
+
+    # Round-robin so every class is represented before any class gets a
+    # second slot. A class that happens to be listed first cannot use up the
+    # budget and silence the others.
+    picked: list = []
+    shown: dict = {key: 0 for key in by_class}
+    while len(picked) < _MAX_FEEDBACK_ERRORS_VERBATIM:
+        progressed = False
+        for key, group in by_class.items():
+            if shown[key] < len(group) and len(picked) < _MAX_FEEDBACK_ERRORS_VERBATIM:
+                picked.append(group[shown[key]])
+                shown[key] += 1
+                progressed = True
+        if not progressed:
+            break
+
+    head = "\n".join(f"  - {_trim_error(err)}" for err in picked)
+    hidden = [
+        f"{len(group) - shown[key]} more {key}"
+        for key, group in by_class.items() if len(group) - shown[key] > 0
+    ]
+    tail = (
+        f"\n  ... and {', '.join(hidden)}." if hidden else ""
     )
-    remaining = len(extracted) - _MAX_FEEDBACK_ERRORS_VERBATIM
     return (
-        f"{head}\n"
-        f"  ... and {remaining} more similar error(s). The pattern is the "
-        f"same: each Gherkin step in the feature file needs a matching "
-        f"decorator. Re-read the feature file and write a decorator for "
-        f"every Given / When / Then / And / But line."
+        f"{head}{tail}\n"
+        f"  These are {len(by_class)} DIFFERENT kinds of problem and their "
+        f"fixes are different - one may ask you to add something and another "
+        f"to remove something. Read each line above and satisfy every kind, "
+        f"not only the first. Fixing one kind while ignoring another leaves "
+        f"the file failing on the next attempt."
     )
 
 

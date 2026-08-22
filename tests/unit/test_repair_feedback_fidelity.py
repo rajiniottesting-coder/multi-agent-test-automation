@@ -239,3 +239,108 @@ def test_every_rejection_lists_the_keys_that_would_work(tmp_path, bad_key):
         [_page_object("listing", bad_key)], root)
 
     assert errors and "grid" in errors[0]
+
+
+# =========================================================================
+# Several kinds of problem are not one pattern repeated
+#
+# WHAT HAPPENED
+#   The many-errors regime compacts each error to its Gherkin phrase and
+#   appends a tail naming the single remedy that pattern needs. It was built
+#   for one problem repeated across a whole feature, and for that it is
+#   right.
+#
+#   A repair then arrived with 18 errors of TWO kinds: eleven feature steps
+#   with no decorator, and seven step definitions defined and never used.
+#   Opposite fixes - add these, delete those. All 18 were flattened, the
+#   first eight sent, and the tail told the model that every error meant a
+#   decorator was missing and it should write more. Not one of the seven
+#   "delete this" errors reached it.
+#
+#   So the model added decorators, which produced more unused ones, and the
+#   next attempt looked the same. Four attempts, then the story failed. The
+#   feedback was not merely lossy - it pointed the wrong way.
+# =========================================================================
+
+
+def _coverage_error(i: int) -> str:
+    return (
+        f"Step coverage error in 'tests/step_defs/t.py': feature step "
+        f"`Then step {i}` (from 'features/f.feature') has no matching "
+        f"@then() decorator. pytest-bdd would fail with "
+        f"StepDefinitionNotFoundError at test collection time."
+    )
+
+
+def _unused_error(i: int) -> str:
+    return (
+        f"Unused step-definition error in 'tests/step_defs/t.py': "
+        f"@then('old phrasing {i}') is defined but no scenario in "
+        f"'features/f.feature' uses it. Either use it in a scenario or "
+        f"delete the function."
+    )
+
+
+_MIXED = ([_coverage_error(i) for i in range(11)]
+          + [_unused_error(i) for i in range(7)])
+
+
+def test_every_kind_of_error_reaches_the_model():
+    """The regression. A whole class was silently dropped."""
+    out = _summarize_validator_feedback(_MIXED)
+    assert "has no matching @then() decorator" in out, "coverage class missing"
+    assert "is defined but no scenario" in out, (
+        "the entire 'unused step definition' class was dropped, so the model "
+        "was never told to delete anything"
+    )
+
+
+def test_the_tail_does_not_prescribe_one_remedy():
+    """The tail asserted every error meant a decorator was MISSING, which is
+    the opposite of what half of them said."""
+    out = _summarize_validator_feedback(_MIXED)
+    assert "write a decorator for" not in out, (
+        "telling the model to add a decorator for every line, when seven "
+        "errors ask it to delete definitions, makes each attempt worse"
+    )
+    assert "DIFFERENT kinds" in out
+
+
+def test_no_class_can_crowd_out_another():
+    """Round-robin. A class listed first must not use up the budget."""
+    lopsided = [_coverage_error(i) for i in range(30)] + [_unused_error(0)]
+    out = _summarize_validator_feedback(lopsided)
+    assert "is defined but no scenario" in out, (
+        "one error of a second kind, behind thirty of the first, must still "
+        "be shown - it is the one the model would otherwise never fix"
+    )
+
+
+def test_the_hidden_count_is_broken_down_by_kind():
+    out = _summarize_validator_feedback(_MIXED)
+    assert "more step coverage error" in out
+    assert "more unused step-definition error" in out
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Break the thing the guard guards
+#
+# The single-class compaction was built deliberately and is right for what
+# it was built for. Making the mixed case work must not disturb it.
+# ─────────────────────────────────────────────────────────────────────────
+
+def test_one_kind_repeated_keeps_the_old_compaction():
+    out = _summarize_validator_feedback([_coverage_error(i) for i in range(34)])
+    shown = [l for l in out.splitlines() if l.startswith("  - ")]
+    assert all(l.startswith("  - Then step") for l in shown), (
+        "with a single kind the phrase alone IS the message - compacting it "
+        "is what stops the model drowning in repetition"
+    )
+    assert "write a decorator for" in out, "the one-kind remedy is correct here"
+
+
+def test_a_small_mixed_set_is_still_sent_whole():
+    """Under the verbatim threshold nothing is compacted, whatever the mix."""
+    out = _summarize_validator_feedback([_coverage_error(0), _unused_error(0)])
+    assert "StepDefinitionNotFoundError" in out
+    assert "delete the function" in out
