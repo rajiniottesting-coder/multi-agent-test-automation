@@ -1676,6 +1676,33 @@ def _validate_generated_files(
 # ---------------------------------------------------------------------------
 # Self-correcting retry loop (handles weak-model step coverage failures)
 # ---------------------------------------------------------------------------
+    # Everything the repair loop can find, the gate must be able to stop.
+    #
+    # Six checks lived only in _collect_repairable_errors: they were detected,
+    # fed to the repair loop, and when four attempts failed the loop logged
+    # "Final validator will raise" and returned the files anyway. Nothing
+    # raised. The pull request opened with the defect the framework had already
+    # named - a persistent-state assertion on a shared account, in the run that
+    # exposed this.
+    #
+    # Reported LAST so the specific messages above keep their own wording and
+    # their own remediation advice; this is the backstop for the rest.
+    remaining = _collect_repairable_errors(generated_files)
+    if remaining:
+        logger.error(
+            f"Final gate FAILED with {len(remaining)} unrepaired error(s):"
+        )
+        for err in remaining:
+            logger.error(f"  - {err}")
+        raise ValueError(
+            f"Validation failed for {story_id}: {len(remaining)} error(s) "
+            f"remain after the repair loop exhausted its attempts. These were "
+            f"detected and the model was given the feedback; it could not "
+            f"satisfy them. Shipping anyway would open a pull request "
+            f"containing a defect this framework had already named. "
+            f"See logs for each error and the file it belongs to."
+        )
+
 def _group_validator_errors_by_file(
     validator_errors: list[str],
 ) -> dict[str, list[str]]:

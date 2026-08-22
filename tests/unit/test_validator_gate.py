@@ -14,6 +14,10 @@ import inspect
 
 import pytest
 
+from pathlib import Path as _Path
+
+_ROOT = _Path(__file__).resolve().parents[2]
+
 import agents.agent2_coder as agent2
 from validators.gherkin_analyzer import validate_fixtures_exist
 
@@ -659,3 +663,96 @@ def test_the_enforced_fields_are_marked_verify_not_delete():
     delete_block = src[src.index("4_DELETE_OUTRIGHT"):src.index("5_THEN_MEASURE")]
     assert "multi_match" not in delete_block
     assert '"conditional"' not in delete_block
+
+
+# =========================================================================
+# EVERYTHING THE REPAIR LOOP FINDS, THE GATE MUST BE ABLE TO STOP
+#
+# Six checks lived only in _collect_repairable_errors. They were detected,
+# fed to the repair loop, and when four attempts failed the loop logged
+#
+#     "Validator repair exhausted 4 retry attempt(s); N error(s) remain.
+#      Final validator will raise."
+#
+# and returned the files. The final validator did not run them. Nothing
+# raised. The pull request opened carrying the defect the framework had
+# already named, in the exact words it would have used to reject it.
+#
+# The log line was not a lie anyone wrote deliberately - it was true when the
+# repairable set and the gate held the same checks, and stopped being true
+# each time one was added to the loop and not the gate. Six times.
+#
+# A detected-but-unenforced check is worse than no check: it costs four LLM
+# calls, prints a warning nobody reads, and ships anyway.
+# =========================================================================
+
+def _a_real_inventory_page() -> str:
+    """A page name the inventory actually declares.
+
+    Discovered, not named: which pages exist is the application's business,
+    and hardcoding one would put app knowledge in a framework test.
+    """
+    import json
+
+    import yaml
+
+    config = yaml.safe_load(
+        (_ROOT / "config" / "config.yaml").read_text(encoding="utf-8"))
+    rel = (config.get("app_under_test") or {}).get("inventory_file")
+    inventory = json.loads((_ROOT / rel).read_text(encoding="utf-8"))
+    return next(iter(inventory.get("pages") or {}), "")
+
+
+def _page_object_with(method: str) -> "SimpleNamespace":
+    from types import SimpleNamespace
+    page = _a_real_inventory_page()
+    return SimpleNamespace(
+        file_path="pages/widget_page.py", is_new_file=True,
+        content=('"""Widget page object."""\n'
+                 "from pages.base_page import BasePage\n\n\n"
+                 "class WidgetPage(BasePage):\n"
+                 f'    INVENTORY_PAGE = "{page}"\n\n'
+                 f"    def {method}(self, base_url: str) -> None:\n"
+                 "        self.navigate(base_url)\n"),
+    )
+
+
+def test_every_repairable_check_can_stop_a_pull_request():
+    """The gate must raise on anything the repair loop can still find.
+
+    `open()` is a bare verb - rejected by validate_page_object_methods, which
+    lives ONLY in the repairable set. Nothing in the gate's own nine checks
+    objects to this file, so if the gate stays silent the pull request opens
+    carrying a defect the framework already named.
+    """
+    from agents.agent2_coder import _collect_repairable_errors, _validate_generated_files
+
+    batch = [_page_object_with("open")]
+    if not _a_real_inventory_page():
+        pytest.skip("no inventory in this checkout")
+
+    assert _collect_repairable_errors(batch), (
+        "the sample batch is clean - this test would pass vacuously"
+    )
+
+    with pytest.raises(ValueError) as excinfo:
+        _validate_generated_files(batch, "STORY-1")
+    assert "STORY-1" in str(excinfo.value), "name the story that was stopped"
+
+
+def test_a_clean_batch_still_passes_the_gate():
+    """Break the thing the guard guards.
+
+    A backstop that raised on everything would stop every story. The same file
+    with a method that says what it opens must pass.
+    """
+    from agents.agent2_coder import _collect_repairable_errors, _validate_generated_files
+
+    batch = [_page_object_with("open_widget")]
+    if not _a_real_inventory_page():
+        pytest.skip("no inventory in this checkout")
+
+    assert _collect_repairable_errors(batch) == [], (
+        "the sample is not clean; adjust it rather than weakening the gate"
+    )
+    _validate_generated_files(batch, "STORY-2")   # must not raise
