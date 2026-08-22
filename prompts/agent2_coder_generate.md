@@ -537,17 +537,39 @@ Examples (study these — they catch the #1 most common parsers.parse mistake):
 **Step 4 (MANDATORY FINAL CHECK): Count and verify before you finish.**
 Before declaring this file complete, perform this exact procedure:
 
-a. Scan the feature file. List every `Given` / `When` / `Then` / `And` / `But` line.
+a. Scan the feature file. List every `Given` / `When` / `Then` / `And` / `But` line
+   as a **(KEYWORD, phrase) PAIR**.
    Resolve `And` / `But` to its inherited keyword (Given / When / Then).
    De-duplicate phrases that differ only in concrete data (`""` vs `"alice"` is the same phrase).
+   **Do NOT de-duplicate across keywords.** `Given I am on the listing page` and
+   `When I am on the listing page` are TWO pairs, not one — pytest-bdd matches on
+   the keyword as well as the text, and a `@given` will not satisfy a `When` step.
+   It raises `StepDefinitionNotFoundError` at collection, which fails every
+   scenario in the file.
    Call this count **N**.
 
-b. Scan your step def file. Count every `@given(...)` / `@when(...)` / `@then(...)` decorator.
+b. Scan your step def file. Count every `@given(...)` / `@when(...)` / `@then(...)`
+   decorator — **each decorator counts, including two on the same function**.
    Call this count **M**.
 
 c. **M must be ≥ N.** If M < N, you have missed steps. Stop, find the missed ones, add them. Do not submit the file until M ≥ N.
 
-d. For each Gherkin phrase, locate its matching decorator. If any phrase has no match, the file is INCOMPLETE — fix it before submitting.
+d. For each **(KEYWORD, phrase) pair**, locate a decorator of that keyword carrying
+   that phrase. If any pair has no match, the file is INCOMPLETE — fix it before
+   submitting. Matching on the phrase alone will tell you the file is complete when
+   it is not.
+
+**When one phrase appears under two keywords, stack the decorators on one function:**
+
+    @given("I am on the listing page")
+    @when("I am on the listing page")
+    def on_listing(listing_page):
+        listing_page.open_listing(base_url)
+
+That is correct pytest-bdd and both scenarios pass. It is not a duplicate: the
+duplicate rule is about the same phrase under the **same** keyword, where the
+second declaration silently shadows the first. Different keywords are different
+steps, and the feature file needs both.
 
 This step-count check is the difference between a working test run and a rejection. The validator will run this same check after you submit; you can short-circuit a wasted retry by running it yourself first.
 

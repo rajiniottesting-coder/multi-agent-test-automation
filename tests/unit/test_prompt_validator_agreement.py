@@ -523,3 +523,112 @@ def test_the_check_can_tell_the_two_probe_kinds_apart():
         "that distinction is the entire content of the absence rule"
     )
     assert "wait_for_row" in prompt, "the waiting form for absence must be named"
+
+
+# =========================================================================
+# THE PROMPT'S FINAL CHECK MUST MATCH THE VALIDATOR'S
+#
+# The prompt gave Agent 2 a mandatory self-check before submitting, and it
+# counted PHRASES:
+#
+#     "De-duplicate phrases that differ only in concrete data"
+#     "For each Gherkin phrase, locate its matching decorator"
+#
+# The validator counts (KEYWORD, phrase) PAIRS, because pytest-bdd does -
+# verified by running it: a `@given` does not satisfy a `When` step, it raises
+# StepDefinitionNotFoundError at collection and every scenario in the file
+# fails.
+#
+# A feature using one phrase under two keywords therefore needs two
+# decorators. The model, following its own mandated check, counted the phrase
+# once, found one decorator, and concluded the file was complete. The gate
+# then rejected it, the repair loop fed the rejection back, and the model
+# re-ran the same check and reached the same conclusion - four times, then the
+# story was abandoned.
+#
+# It was not a weak model. It was following the instructions it was given.
+# =========================================================================
+
+def test_the_prompt_counts_keyword_and_phrase_not_phrase_alone():
+    """The self-check the prompt mandates must agree with the gate that runs
+    after it, or the model's own verification tells it to submit."""
+    prompt = _PROMPT.read_text(encoding="utf-8").replace("\r\n", "\n")
+    plain = " ".join(prompt.split())
+
+    assert "(KEYWORD, phrase)" in prompt, (
+        "the final check counts phrases, not keyword+phrase pairs - so a "
+        "phrase used under two keywords passes the model's own check and "
+        "fails the gate"
+    )
+    assert "do not de-duplicate across keywords" in plain.lower(), (
+        "without this the model collapses `Given X` and `When X` into one"
+    )
+
+
+def test_the_prompt_shows_how_to_satisfy_two_keywords():
+    """Naming the rule is not enough - the answer looks like a duplicate, and
+    a model avoiding duplicates will not reach for it unaided."""
+    prompt = _PROMPT.read_text(encoding="utf-8").replace("\r\n", "\n")
+
+    assert "@given(" in prompt and "@when(" in prompt
+    stacked = [
+        block for block in prompt.split("\n\n")
+        if "@given(" in block and "@when(" in block
+        and block.index("@given(") < block.index("@when(")
+    ]
+    assert stacked, (
+        "the prompt never shows two keyword decorators stacked on one "
+        "function, which is the fix for a phrase used under two keywords"
+    )
+
+
+def test_the_validator_accepts_the_form_the_prompt_teaches():
+    """The other half of prompt/validator agreement, and the one that has
+    bitten this project most: the gate must accept what the prompt recommends.
+    """
+    import textwrap
+    from types import SimpleNamespace
+
+    from validators.gherkin_analyzer import (
+        validate_no_duplicate_step_definitions,
+        validate_step_definitions_complete,
+    )
+
+    feature = SimpleNamespace(file_path="features/x.feature",
+                              content=textwrap.dedent('''
+        Feature: F
+
+          Scenario: A
+            Given I am on a page
+            Then something happens
+
+          Scenario: B
+            When I am on a page
+            Then something happens
+    '''))
+    stacked = SimpleNamespace(file_path="tests/step_defs/test_x.py",
+                              content=textwrap.dedent('''
+        from pytest_bdd import scenarios, given, when, then
+
+        scenarios("x.feature")
+
+
+        @given("I am on a page")
+        @when("I am on a page")
+        def on_a_page():
+            pass
+
+
+        @then("something happens")
+        def something():
+            pass
+    '''))
+
+    assert validate_step_definitions_complete([feature, stacked]) == [], (
+        "the coverage check must see BOTH decorators on the stacked function"
+    )
+    assert validate_no_duplicate_step_definitions([stacked], _PROJECT) == [], (
+        "the same phrase under DIFFERENT keywords is not a duplicate - the "
+        "duplicate rule is about the same keyword, where the second "
+        "declaration silently shadows the first"
+    )
