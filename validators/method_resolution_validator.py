@@ -2505,6 +2505,17 @@ def _step_texts(func: ast.AST) -> list:
     return out
 
 
+def _step_keywords(func: ast.AST) -> set:
+    """The pytest-bdd keywords binding this function: given / when / then."""
+    out: set = set()
+    for dec in getattr(func, "decorator_list", []):
+        node = dec.func if isinstance(dec, ast.Call) else dec
+        name = getattr(node, "id", None) or getattr(node, "attr", None)
+        if name in {"given", "when", "then"}:
+            out.add(name)
+    return out
+
+
 def _captured_params(func: ast.AST) -> set:
     """Placeholder names in the step phrase, typed `{n:d}` or bare `{n}`."""
     names = set()
@@ -2575,7 +2586,20 @@ def validate_step_claims_are_verified(
 
             # (2) A sentence promising a quantity, and a body that never
             #     compares, counts or reads emptiness.
-            claims = bool(_CLAIMS_A_QUANTITY.search(phrase))
+            #
+            # ONLY FOR AN ASSERTION STEP. A `@then` claims something is true
+            # and must check it. A `@given` does the opposite: it MAKES the
+            # sentence true. "Given the cart is empty" bound to a clearing
+            # call is not an unverified claim, it is the arrangement - and it
+            # is exactly the fix the persistent-state error asks for.
+            #
+            # Not distinguishing them meant this check rejected the one exit
+            # the framework had spent four other checks pointing at. A story
+            # reached the gate with a correct clearing Given and one error:
+            # this one, on that Given. `@when` is the same - an action, not a
+            # claim.
+            claims = ("then" in _step_keywords(func)
+                      and bool(_CLAIMS_A_QUANTITY.search(phrase)))
             unverified = claims and not _body_verifies_a_quantity(func)
 
             if not unused and not unverified:

@@ -1577,3 +1577,107 @@ def test_an_application_declaring_nothing_is_unaffected(tmp_path):
         encoding="utf-8")
     assert _methods_removed_by_regeneration(
         [_regenerated("class ThingPage:\n    pass\n")], tmp_path) == []
+
+
+# =========================================================================
+# A Given MAKES its sentence true; only a Then CLAIMS it
+#
+# WHAT HAPPENED
+#   Four separate checks spent several runs telling the model the same
+#   thing: to assert an absolute state on a page the application keeps, add
+#   a Given that clears the state first. It finally did - a correct
+#   `Given the cart is empty` bound to the clearing call - and the story
+#   failed at the gate with exactly one error, on that Given.
+#
+#   validate_step_claims_are_verified read every step the same way. A phrase
+#   naming a quantity had to be verified by its body, so a Given whose body
+#   CLEARS rather than counts looked like an unverified claim. The check
+#   rejected the one exit the rest of the framework had been pointing at.
+#
+#   The distinction is the pytest-bdd keyword, and it is not a detail:
+#     @given  arranges - it MAKES the sentence true
+#     @when   acts
+#     @then   claims - and must check what it claims
+#
+#   The unused-capture half stays keyword-blind. A placeholder the body never
+#   receives is a bug under any keyword.
+# =========================================================================
+
+
+def _steps_file(body: str):
+    return SimpleNamespace(
+        file_path="tests/step_defs/test_flow.py",
+        content=("from pytest_bdd import scenarios, given, when, then, parsers\n"
+                 'scenarios("../../features/flow.feature")\n')
+                + textwrap.dedent(body),
+    )
+
+
+_FLOW = SimpleNamespace(file_path="features/flow.feature", content="Feature: F\n")
+
+
+def test_a_given_that_establishes_the_state_is_not_a_claim(project):
+    """The regression. This exact step is what every other check asks for."""
+    errors = validate_step_claims_are_verified([_FLOW, _steps_file('''
+        @given("the basket is empty")
+        def arrange(basket_page):
+            basket_page.clear_the_basket()
+    ''')], project)
+    assert errors == [], (
+        "a Given whose body CLEARS the state was read as an unverified "
+        "claim, so the gate rejected the fix it had been demanding"
+    )
+
+
+def test_a_when_is_an_action_not_a_claim(project):
+    errors = validate_step_claims_are_verified([_FLOW, _steps_file('''
+        @when("I empty the basket")
+        def act(basket_page):
+            basket_page.clear_the_basket()
+    ''')], project)
+    assert errors == []
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Break the thing the guard guards
+#
+# Exempting Given and When must not exempt the assertions this check exists
+# for - that would make it silently useless.
+# ─────────────────────────────────────────────────────────────────────────
+
+def test_a_then_claiming_emptiness_must_still_check_it(project):
+    errors = validate_step_claims_are_verified([_FLOW, _steps_file('''
+        @then("the basket should be empty")
+        def assert_state(basket_page):
+            basket_page.wait_for_row("Some Item", present=False)
+    ''')], project)
+    assert errors, "a Then that names emptiness and never reads it is the bug"
+
+
+def test_a_then_claiming_a_count_must_still_count(project):
+    errors = validate_step_claims_are_verified([_FLOW, _steps_file('''
+        @then("the basket should contain exactly 2 rows")
+        def assert_state(basket_page):
+            basket_page.wait_for_row("Some Item", present=True)
+    ''')], project)
+    assert errors
+
+
+def test_a_then_that_does_check_is_accepted(project):
+    errors = validate_step_claims_are_verified([_FLOW, _steps_file('''
+        @then("the basket should be empty")
+        def assert_state(basket_page):
+            assert basket_page.is_empty()
+    ''')], project)
+    assert errors == []
+
+
+def test_an_unused_capture_is_a_bug_under_any_keyword(project):
+    """Keyword-blind on purpose: pytest-bdd ignores the extra capture, so the
+    step behaves identically for every value whatever binds it."""
+    errors = validate_step_claims_are_verified([_FLOW, _steps_file('''
+        @given(parsers.parse("the basket holds {count:d} items"))
+        def arrange(basket_page):
+            basket_page.clear_the_basket()
+    ''')], project)
+    assert errors and "count" in errors[0]
