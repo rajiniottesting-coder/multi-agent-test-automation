@@ -29,7 +29,10 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
+import json
 import pytest
+
+from types import SimpleNamespace
 
 from validators.gherkin_analyzer import (
     validate_filename_consistency,
@@ -1329,3 +1332,147 @@ class TestLocatorSyntaxInCode:
                            '        self.click(f"{self.sel(\'rows\')} >> nth={i}"\n')],
             project_root, inventory=_INV_MM)
         assert any("locator syntax built in code" in e for e in errors)
+
+
+# =========================================================================
+# A reader must return what its NAME promises, not the container
+#
+# WHAT SHIPPED, AND WHAT IT COST
+#   A page object grew a reader named for one field whose body returned the
+#   whole row - every cell concatenated. The step definition compared it for
+#   equality against that field's value. Two scenarios failed in CI with the
+#   expected value plainly visible INSIDE the value it was compared against:
+#
+#       Expected quantity '2', got '<name>\n<category>\n<price>\n2\n<total>'
+#
+#   The equality could not hold on any data, in any run. Agent 3 caught it by
+#   reading the code; nothing else did.
+#
+# WHY THE MODEL WROTE IT
+#   The story needed a field the inventory declares no element for.
+#   `row_containing()` returns a whole row and says it is "for reading rather
+#   than clicking", so reading the row was the only move available. The
+#   method was then NAMED for the field, and every caller believed the name.
+#
+#   This is the FIRST defect this framework ever caught, relocated: a value
+#   asserted against something that cannot equal it. There a family held
+#   names and the assertion wanted a price. Here a family holds rows and the
+#   assertion wants a cell.
+#
+#   BasePage already had the right tools - get_cell_text, get_column_values,
+#   find_row_index_by_text. The error message names them, because a rule that
+#   only says "no" gets approximated.
+# =========================================================================
+
+from validators.method_resolution_validator import (
+    validate_readers_return_what_they_name,
+)
+
+
+def _rows_project(tmp_path):
+    """A SECOND application with a row family, built here rather than
+    borrowed - a check that only works for the configured app is not a
+    framework check."""
+    (tmp_path / "app_inventory").mkdir()
+    (tmp_path / "config").mkdir()
+    (tmp_path / "app_inventory" / "a.json").write_text(json.dumps({
+        "app_name": "Bookworm Library",
+        "pages": {"loans": {
+            "url": "/loans", "page_object_class": "LoansPage",
+            "multi_match": ["loan_rows", "loan_titles"],
+            "elements": {"loan_rows": ".row", "loan_titles": ".title",
+                         "due_notice": "#due"}}}}), encoding="utf-8")
+    (tmp_path / "config" / "config.yaml").write_text(
+        "app_under_test:\n  name: Bookworm Library\n"
+        "  inventory_file: app_inventory/a.json\n", encoding="utf-8")
+    return tmp_path
+
+
+def _loans_page(body: str):
+    return SimpleNamespace(
+        file_path="pages/loans_page.py",
+        content=("from pages.base_page import BasePage\n\n\n"
+                 "class LoansPage(BasePage):\n"
+                 '    INVENTORY_PAGE = "loans"\n')
+                + textwrap.indent(textwrap.dedent(body), "    "),
+    )
+
+
+def test_a_reader_named_for_a_field_may_not_return_the_row(tmp_path):
+    """The regression."""
+    errors = validate_readers_return_what_they_name([_loans_page('''
+        def get_due_date_for(self, title):
+            return self.row_containing(self.sel("loan_rows"), title).inner_text()
+    ''')], _rows_project(tmp_path))
+    assert errors, "the shape that failed twice in CI must not reach a browser"
+    assert "due" in errors[0] and "loan_rows" in errors[0]
+
+
+def test_the_message_names_the_helper_that_does_work(tmp_path):
+    """A rule that only says no gets approximated - this module's own words."""
+    errors = validate_readers_return_what_they_name([_loans_page('''
+        def get_due_date_for(self, title):
+            return self.row_containing(self.sel("loan_rows"), title).inner_text()
+    ''')], _rows_project(tmp_path))
+    assert "get_cell_text" in errors[0]
+    assert "find_row_index_by_text" in errors[0]
+    assert "not readable on this page" in errors[0].lower(), (
+        "when the inventory describes no cell, saying so is the honest exit"
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Break the thing the guard guards
+#
+# Firing on honest readers would make every page object red, and a gate that
+# is always red gets removed.
+# ─────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("body", [
+    # names the ROW, so returning the row is honest
+    '''
+    def get_row_text_for(self, title):
+        return self.row_containing(self.sel("loan_rows"), title).inner_text()
+    ''',
+    # the promised noun IS the key it reads
+    '''
+    def loan_titles(self):
+        return self.get_all_texts(self.sel("loan_titles"))
+    ''',
+    # addresses the cell properly
+    '''
+    def due_date_for(self, title):
+        index = self.find_row_index_by_text(self.sel("loan_rows"), title)
+        return self.get_cell_text(self.sel("loan_rows"), index, 2)
+    ''',
+    # touches the family but reads no text
+    '''
+    def row_count(self):
+        return self.get_count(self.sel("loan_rows"))
+    ''',
+    # reads a single (non-family) element
+    '''
+    def due_notice(self):
+        return self.get_text(self.sel("due_notice"))
+    ''',
+])
+def test_honest_readers_are_not_flagged(tmp_path, body):
+    assert validate_readers_return_what_they_name(
+        [_loans_page(body)], _rows_project(tmp_path)) == []
+
+
+def test_a_page_with_no_family_is_untouched(tmp_path):
+    """No multi_match means no rows, so nothing to confuse with a cell."""
+    root = tmp_path
+    (root / "app_inventory").mkdir(); (root / "config").mkdir()
+    (root / "app_inventory" / "a.json").write_text(json.dumps({
+        "app_name": "Thing", "pages": {"loans": {
+            "url": "/l", "page_object_class": "LoansPage",
+            "elements": {"banner": "#b"}}}}), encoding="utf-8")
+    (root / "config" / "config.yaml").write_text(
+        "app_under_test:\n  name: Thing\n"
+        "  inventory_file: app_inventory/a.json\n", encoding="utf-8")
+    assert validate_readers_return_what_they_name([_loans_page('''
+        def get_due_date_for(self, title):
+            return self.get_text(self.sel("banner"))
+    ''')], root) == []

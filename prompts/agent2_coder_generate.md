@@ -100,6 +100,59 @@ seconds finds it thirty seconds later. This is rejected at the gate rather
 than left to guidance, because a run once asserted one item and found two -
 one added by the scenario, one left over from the run before.
 
+## confirm_arrival() belongs where you ARRIVE, not where you clicked
+
+It re-issues the navigation to the url THIS page object declares. So it
+goes at the end of a method that lands on THIS page - never at the end of
+one that leaves it.
+
+    # rejected - a shared navigation object's links go everywhere except its own page
+    class <Nav>Page(BasePage):
+        INVENTORY_PAGE = "<the nav entry>"
+        def go_to_<somewhere else>(self):
+            self.click(self.sel("<a link>"))
+            self.confirm_arrival()          # rejected: asserts we are on the NAV page
+
+    # correct - the destination's own object confirms it
+    class <Destination>Page(BasePage):
+        INVENTORY_PAGE = "<the destination entry>"
+        def open_<itself>(self, base_url):
+            self.navigate(f"{base_url.rstrip('/')}{self.page_url()}")
+            self.confirm_arrival()
+
+On a CORRECT landing the rejected version decides the run went wrong and
+navigates back, so the page the click had just reached is thrown away and
+the next step times out on a control that only exists there - blaming its
+own selector. A method that leaves this page should simply click.
+
+## A reader must return what its NAME promises
+
+A row family holds ROWS. Reading one gives every cell concatenated - the
+name, the price, the quantity, the total, run together.
+
+    # rejected - the name says one field, the body returns the whole row
+    def get_<a field>_for(self, <record>):
+        return self.row_containing(self.sel("<row family>"), <record>).inner_text()   # rejected
+
+    # correct - address the CELL
+    def <a field>_for(self, <record>):
+        index = self.find_row_index_by_text(self.sel("<row family>"), <record>)
+        return self.get_cell_text(self.sel("<row family>"), index, <cell index>)
+
+The rejected version is worse than wrong, it is undetectable at a glance:
+the value the caller wants IS inside the string it gets back, so the code
+reads as if it works. An equality comparison against it can never hold, on
+any data, in any run - and the failure names the application, which is
+fine.
+
+`get_column_values(<row family>, <cell selector>)` reads one column across
+every row when that is what you need.
+
+If the inventory describes no cell for the value, it is NOT readable on
+that page. Do not name a method after it: say so, and assert something the
+page can show. A method named for a field it cannot isolate is a promise
+every caller downstream will believe.
+
 ## A method a test asserts on must WAIT
 
 A page-object method named like a question - `is_...`, `has_...` - is

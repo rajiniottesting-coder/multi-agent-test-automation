@@ -61,6 +61,8 @@ from validators.method_resolution_validator import (
     validate_no_duplicate_page_object_methods,
     validate_page_object_methods,
     validate_persistent_pages_can_be_cleared,
+    validate_confirm_arrival_targets_this_page,
+    validate_readers_return_what_they_name,
     validate_step_parameter_types,
     validate_step_claims_are_verified,
     validate_readiness_probe,
@@ -2014,6 +2016,10 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     errors.extend(validate_persistent_state_assertions(generated_files, PROJECT_ROOT))
     errors.extend(validate_step_parameter_types(generated_files, PROJECT_ROOT))
     errors.extend(validate_persistent_pages_can_be_cleared(
+        generated_files, PROJECT_ROOT))
+    errors.extend(validate_readers_return_what_they_name(
+        generated_files, PROJECT_ROOT))
+    errors.extend(validate_confirm_arrival_targets_this_page(
         generated_files, PROJECT_ROOT))
     errors.extend(validate_step_claims_are_verified(generated_files, PROJECT_ROOT))
     errors.extend(validate_feature_file_structure(generated_files))

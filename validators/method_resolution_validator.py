@@ -2732,6 +2732,270 @@ def validate_persistent_pages_can_be_cleared(
     return errors
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# A reader must return what its NAME promises, not the container
+#
+# WHAT SHIPPED
+#     def get_<a field>_for(self, record):
+#         return self.row_containing(self.sel("<row family>"), record).inner_text()
+#
+#     assert actual == quantity        # quantity is "2"
+#
+#   `actual` is the whole row - name, category, price, quantity and total
+#   concatenated - so the equality can never hold on any data, in any run.
+#   Two scenarios failed in CI with the expected value plainly visible INSIDE
+#   the value they were compared against.
+#
+# WHY THE MODEL WROTE IT
+#   The story needed a quantity and the inventory declares no element for
+#   one. `row_containing()` returns a whole row and its docstring says it is
+#   "for reading rather than clicking", so reading the row was the only move
+#   on offer. The method was then NAMED for the field it was supposed to
+#   isolate, and everything downstream trusted the name.
+#
+#   This is the first defect this framework ever caught, in a new place: a
+#   value asserted against something that cannot equal it. There the family
+#   held names and the assertion wanted a price. Here the family holds rows
+#   and the assertion wants a cell.
+#
+# THE FIX IS NAMED IN THE MESSAGE
+#   BasePage already has get_cell_text() and get_column_values() for exactly
+#   this - a cell inside a row, addressed by index or by a cell selector. If
+#   neither can be used because the inventory describes no cell, then the
+#   value is not readable on that page and the honest move is to say so
+#   rather than to name a method after it.
+#
+# Deliberately narrow. It fires only when a method reads ROW-LEVEL text - a
+# selector key the inventory itself lists under `multi_match` - and is named
+# after something that key does not contain.
+# ─────────────────────────────────────────────────────────────────────────
+
+# Words that describe the ROW itself. A method named with one of these is
+# honest about returning the whole thing.
+_ROW_LEVEL_WORDS = frozenset({
+    "row", "rows", "text", "texts", "line", "lines", "raw", "content",
+    "contents", "entry", "entries", "record", "records", "all", "each",
+})
+
+# Leading verbs a reader conventionally starts with, stripped before the
+# promised noun is read off the name.
+_READER_VERBS = frozenset({
+    "get", "read", "fetch", "find", "value", "values", "for", "of", "the",
+    "by", "from", "in", "at", "with", "current", "displayed", "shown",
+})
+
+# How row text gets read. Playwright's own accessor and the sanctioned
+# BasePage readers that return text.
+_TEXT_READERS = frozenset({
+    "inner_text", "text_content", "get_text", "get_all_texts", "get_nth_text",
+})
+
+
+def _rows_families(inventory: dict, page_name: str) -> set:
+    """Selector keys the inventory itself calls a family on this page."""
+    page = ((inventory or {}).get("pages") or {}).get(page_name) or {}
+    return {k for k in (page.get("multi_match") or []) if k}
+
+
+def _promised_nouns(method_name: str) -> set:
+    """The words a reader's name promises to return."""
+    parts = [w for w in method_name.strip("_").split("_") if w]
+    return {w for w in parts if w not in _READER_VERBS}
+
+
+def validate_readers_return_what_they_name(
+        generated_files: list, project_root=None) -> list[str]:
+    """Fail a reader named for a field that returns whole-row text."""
+    project_root = project_root or Path(".")
+    try:
+        inventory = _load_configured_inventory(Path(project_root)) or {}
+    except Exception:                                     # noqa: BLE001
+        return []
+    if not inventory:
+        return []
+
+    errors: list[str] = []
+    for f in generated_files or []:
+        path = (getattr(f, "file_path", "") or "").replace("\\", "/")
+        if not (path.startswith("pages/") and path.endswith(".py")):
+            continue
+        if path.endswith("base_page.py"):
+            continue
+        try:
+            tree = ast.parse(getattr(f, "content", "") or "")
+        except SyntaxError:
+            continue
+
+        for cls in ast.walk(tree):
+            if not isinstance(cls, ast.ClassDef):
+                continue
+            page_name = ""
+            for stmt in cls.body:
+                if (isinstance(stmt, ast.Assign)
+                        and any(getattr(t, "id", "") == "INVENTORY_PAGE"
+                                for t in stmt.targets)
+                        and isinstance(stmt.value, ast.Constant)):
+                    page_name = str(stmt.value.value)
+            families = _rows_families(inventory, page_name)
+            if not families:
+                continue
+
+            for fn in cls.body:
+                if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                if fn.name.startswith("_"):
+                    continue
+
+                # Which family keys does this method read, and does it read
+                # them as TEXT?
+                keys = {
+                    n.args[0].value
+                    for n in ast.walk(fn)
+                    if isinstance(n, ast.Call)
+                    and getattr(n.func, "attr", "") == "sel"
+                    and n.args and isinstance(n.args[0], ast.Constant)
+                    and isinstance(n.args[0].value, str)
+                }
+                read_as_text = any(
+                    getattr(n.func, "attr", "") in _TEXT_READERS
+                    for n in ast.walk(fn) if isinstance(n, ast.Call)
+                )
+                touched = keys & families
+                if not touched or not read_as_text:
+                    continue
+
+                promised = _promised_nouns(fn.name)
+                if not promised:
+                    continue
+                # Honest if the name describes the row itself, or if every
+                # promised word appears in the key it reads.
+                if promised & _ROW_LEVEL_WORDS:
+                    continue
+                key_words = {w for k in touched for w in k.split("_")}
+                if promised <= key_words:
+                    continue
+
+                unmatched = ", ".join(sorted(promised - key_words))
+                key = sorted(touched)[0]
+                errors.append(
+                    f"Reader naming error in '{path}' line {fn.lineno}: "
+                    f"`{fn.name}()` promises {unmatched} but reads TEXT from "
+                    f"`{key}`, which the inventory lists under multi_match - "
+                    f"a whole row, not one field. The return value is every "
+                    f"cell concatenated, so a caller comparing it for "
+                    f"equality against one field's value can never match, on "
+                    f"any data, in any run. Read the cell instead: "
+                    f"BasePage.get_cell_text(<row family>, row_index, "
+                    f"cell_index) or get_column_values(<row family>, "
+                    f"<cell selector>), with find_row_index_by_text() to "
+                    f"locate the row. If the inventory describes no cell for "
+                    f"{unmatched}, then it is NOT readable on this page - say "
+                    f"so rather than naming a method after it, and assert "
+                    f"something this page can actually show."
+                )
+    return errors
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# confirm_arrival() belongs on the DESTINATION's page object
+#
+# It re-issues the navigation to the url THIS page object declares. That is
+# right at the end of a method that clicks a control expected to land HERE,
+# which is what its docstring says.
+#
+# A shared navigation object is the exception, and it is the common case: its
+# links go everywhere EXCEPT its own page. A generated `go_to_<somewhere>()`
+# ending in confirm_arrival() asserted the browser was on the navigation
+# object's own url, decided a correct landing was a failure, and navigated
+# back - so a run that had reached the listing was returned to the home page
+# and the next step waited its full timeout for a control that only exists on
+# the listing. Three scenarios failed that way, each blaming its own selector.
+#
+# BasePage now refuses to re-issue when the browser is on another page the
+# inventory declares, so the damage is contained at run time. This stops it
+# being written: the method NAMES a destination, and if that destination is
+# not this page object's own page, confirm_arrival() here is asserting the
+# wrong thing.
+# ─────────────────────────────────────────────────────────────────────────
+
+_GOES_ELSEWHERE = re.compile(
+    r"^(?:go_to|goto|open|navigate_to|visit)_(?P<dest>\w+)$")
+
+
+def validate_confirm_arrival_targets_this_page(
+        generated_files: list, project_root=None) -> list[str]:
+    """Fail confirm_arrival() in a method that navigates somewhere else."""
+    project_root = project_root or Path(".")
+    try:
+        inventory = _load_configured_inventory(Path(project_root)) or {}
+    except Exception:                                     # noqa: BLE001
+        return []
+    page_names = set((inventory.get("pages") or {}).keys())
+    if not page_names:
+        return []
+
+    errors: list[str] = []
+    for f in generated_files or []:
+        path = (getattr(f, "file_path", "") or "").replace("\\", "/")
+        if not (path.startswith("pages/") and path.endswith(".py")):
+            continue
+        if path.endswith("base_page.py"):
+            continue
+        try:
+            tree = ast.parse(getattr(f, "content", "") or "")
+        except SyntaxError:
+            continue
+
+        for cls in ast.walk(tree):
+            if not isinstance(cls, ast.ClassDef):
+                continue
+            own = ""
+            for stmt in cls.body:
+                if (isinstance(stmt, ast.Assign)
+                        and any(getattr(t, "id", "") == "INVENTORY_PAGE"
+                                for t in stmt.targets)
+                        and isinstance(stmt.value, ast.Constant)):
+                    own = str(stmt.value.value)
+            if not own:
+                continue
+
+            for fn in cls.body:
+                if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                calls_confirm = any(
+                    getattr(n.func, "attr", "") == "confirm_arrival"
+                    for n in ast.walk(fn) if isinstance(n, ast.Call))
+                if not calls_confirm:
+                    continue
+                match = _GOES_ELSEWHERE.match(fn.name)
+                if not match:
+                    continue
+                dest = match.group("dest")
+                # Honest when the method goes to this object's own page.
+                own_words = set(own.split("_"))
+                if dest in own_words or set(dest.split("_")) & own_words:
+                    continue
+                # Only complain when the name points at a page that EXISTS -
+                # otherwise the word is just part of a verb phrase.
+                if dest not in page_names and f"{dest}_page" not in page_names:
+                    continue
+                errors.append(
+                    f"Arrival check error in '{path}' line {fn.lineno}: "
+                    f"`{fn.name}()` navigates to '{dest}', but it calls "
+                    f"confirm_arrival() on `{cls.name}`, whose INVENTORY_PAGE "
+                    f"is '{own}'. confirm_arrival() re-issues the navigation "
+                    f"to the url THIS page object declares, so on a correct "
+                    f"landing it decides the run went wrong and navigates "
+                    f"BACK - leaving the page the click had just reached. The "
+                    f"next step then times out on a control that only exists "
+                    f"at the destination, and blames its own selector. Either "
+                    f"drop the call, or make it on the page object for "
+                    f"'{dest}' - confirm_arrival() belongs where you ARRIVE, "
+                    f"not where you clicked."
+                )
+    return errors
+
+
 def validate_page_method_names_are_specific(generated_files: list) -> list[str]:
     """Fail a public page-object method whose name is a bare verb."""
     errors: list[str] = []

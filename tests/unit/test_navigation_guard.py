@@ -14,6 +14,8 @@ WHAT HAPPENED
 """
 from types import SimpleNamespace
 
+import json
+import textwrap
 import pytest
 
 from pages.base_page import BasePage
@@ -161,3 +163,133 @@ def test_a_genuine_failure_on_a_valid_index_is_not_reworded():
             raise TimeoutError("element intercepts pointer events")
     with pytest.raises(TimeoutError):
         _with_locator(Covered(count=5)).click_nth(".row", 1)
+
+
+# =========================================================================
+# confirm_arrival() must not undo a navigation that WORKED
+#
+# WHAT HAPPENED
+#   A generated shared-navigation page object ended `go_to_<somewhere>()`
+#   with confirm_arrival(). That call re-issues the navigation to the url
+#   THIS page object declares - the navigation entry's own url, the home
+#   page. So a click that had correctly reached the listing was judged a
+#   failure and the browser was sent home:
+#
+#       <Menu>Page.confirm_arrival(): expected /, found /<destination>.
+#       The navigation that should have landed here did not - re-issuing.
+#
+#   The next step then waited its full timeout for a control that only
+#   exists on the listing, and reported a selector timeout. Three scenarios
+#   failed that way in one run, each blaming its own selector, on a suite
+#   that had been green.
+#
+# TWO HALVES
+#   Run time: refuse to re-issue when the browser is on ANOTHER page the
+#   inventory declares - that is proof the navigation landed, just not here.
+#   The interstitial case is untouched: there the click is consumed and the
+#   browser sits on the previous page or a fragment, not on a different
+#   declared destination.
+#
+#   Generation time: validate_confirm_arrival_targets_this_page rejects the
+#   call in a method whose name points at a page that is not this object's.
+# =========================================================================
+
+from validators.method_resolution_validator import (
+    validate_confirm_arrival_targets_this_page,
+)
+
+
+def _library_project(tmp_path):
+    """A SECOND application, so this is a framework rule and not a fix for
+    the configured app's page names."""
+    (tmp_path / "app_inventory").mkdir()
+    (tmp_path / "config").mkdir()
+    (tmp_path / "app_inventory" / "a.json").write_text(json.dumps({
+        "app_name": "Bookworm Library",
+        "pages": {
+            "menu": {"url": "/", "page_object_class": "MenuPage",
+                    "elements": {"loans_link": "#l"}},
+            "loans": {"url": "/loans", "page_object_class": "LoansPage",
+                      "elements": {"rows": ".row"}},
+        }}), encoding="utf-8")
+    (tmp_path / "config" / "config.yaml").write_text(
+        "app_under_test:\n  name: Bookworm Library\n"
+        "  inventory_file: app_inventory/a.json\n", encoding="utf-8")
+    return tmp_path
+
+
+def _arrival_page(cls: str, inventory_page: str, body: str):
+    return SimpleNamespace(
+        file_path=f"pages/{inventory_page}_page.py",
+        content=("from pages.base_page import BasePage\n\n\n"
+                 f"class {cls}(BasePage):\n"
+                 f'    INVENTORY_PAGE = "{inventory_page}"\n')
+                + textwrap.indent(textwrap.dedent(body), "    "),
+    )
+
+
+def test_confirming_arrival_after_leaving_this_page_is_rejected(tmp_path):
+    """The regression."""
+    errors = validate_confirm_arrival_targets_this_page(
+        [_arrival_page("MenuPage", "menu", '''
+            def go_to_loans(self):
+                self.click(self.sel("loans_link"))
+                self.confirm_arrival()
+        ''')], _library_project(tmp_path))
+    assert errors, (
+        "confirm_arrival() on the object whose control was clicked sends the "
+        "browser back off the page the click had just reached"
+    )
+    assert "loans" in errors[0] and "menu" in errors[0]
+
+
+def test_the_message_says_where_the_call_belongs(tmp_path):
+    errors = validate_confirm_arrival_targets_this_page(
+        [_arrival_page("MenuPage", "menu", '''
+            def go_to_loans(self):
+                self.click(self.sel("loans_link"))
+                self.confirm_arrival()
+        ''')], _library_project(tmp_path))
+    assert "where you ARRIVE" in errors[0]
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Break the thing the guard guards
+#
+# confirm_arrival() is load-bearing against ad interstitials. A check that
+# discouraged it generally would reopen the failure it was built for.
+# ─────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("cls,inv,body", [
+    # confirming arrival on THIS page object's own page - the correct use
+    ("LoansPage", "loans", '''
+        def open_loans(self, base_url):
+            self.navigate(base_url)
+            self.confirm_arrival()
+    '''),
+    # leaving, but not claiming to have arrived
+    ("MenuPage", "menu", '''
+        def go_to_loans(self):
+            self.click(self.sel("loans_link"))
+    '''),
+    # a method that does not navigate at all
+    ("LoansPage", "loans", '''
+        def refresh_rows(self):
+            self.reload()
+            self.confirm_arrival()
+    '''),
+])
+def test_correct_uses_are_not_flagged(tmp_path, cls, inv, body):
+    assert validate_confirm_arrival_targets_this_page(
+        [_arrival_page(cls, inv, body)], _library_project(tmp_path)) == []
+
+
+def test_a_destination_the_inventory_does_not_know_is_not_flagged(tmp_path):
+    """`open_dialog()` names no page, so the word is part of a verb phrase
+    rather than a destination."""
+    assert validate_confirm_arrival_targets_this_page(
+        [_arrival_page("LoansPage", "loans", '''
+            def open_dialog(self):
+                self.click(self.sel("rows"))
+                self.confirm_arrival()
+        ''')], _library_project(tmp_path)) == []

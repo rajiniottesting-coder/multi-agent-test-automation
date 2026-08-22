@@ -61,6 +61,43 @@ _SIGNATURES: list[tuple[re.Pattern, Diagnosis]] = [
         ),
     ),
     (
+        # `Expected <short>, got <much longer text CONTAINING it>`.
+        #
+        # The expected value is INSIDE the actual - the signature of
+        # comparing a field against the container it lives in. A reader
+        # named for one cell returned the whole row, and the equality could
+        # not hold on any data. It arrived from CI as "unclassified", so the
+        # generic reading sent the reader to the trace viewer, where the
+        # page is perfectly healthy and the value is right there in the row.
+        #
+        # Placed BEFORE the empty-value check deliberately: that one needs
+        # `got ''` so the two cannot overlap, and this must not fall through
+        # to the membership reading, whose remedy is to wait.
+        re.compile(
+            r"expected\s+.{0,40}?['\"](?P<want>[^'\"]{1,40})['\"].{0,60}?"
+            r"got\s+['\"](?P<got>[^'\"]{60,})['\"]",
+            re.I | re.S,
+        ),
+        Diagnosis(
+            "field compared against its container",
+            "A short expected value was compared against a much longer "
+            "string that appears to CONTAIN it. That is what happens when a "
+            "reader returns the whole row - every cell concatenated - and "
+            "the assertion wants one cell from it. The equality cannot hold "
+            "on any data, in any run, so the page is fine and the test could "
+            "never have passed. Read the actual value in the message: if the "
+            "expected value is visible inside it, this is the cause.",
+            "Read the CELL, not the row. BasePage.get_cell_text(<row "
+            "family>, row_index, cell_index) addresses one cell, and "
+            "find_row_index_by_text() locates the row first; "
+            "get_column_values(<row family>, <cell selector>) reads one "
+            "column across every row. Rename the page-object method if it "
+            "promised a field and returned a row. If the inventory describes "
+            "no cell for that value it is not readable on this page - assert "
+            "something the page can actually show.",
+        ),
+    ),
+    (
         re.compile(r"assert\s+''\s*==|Expected.*got ''|== ''", re.I),
         Diagnosis(
             "element found but empty",

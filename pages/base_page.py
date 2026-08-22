@@ -471,6 +471,37 @@ class BasePage:
         except Exception:                                     # noqa: BLE001
             return None
 
+    @classmethod
+    def _other_declared_page(cls, path: str):
+        """The inventory page name `path` belongs to, if it is not ours.
+
+        Used to tell "the navigation went somewhere else" from "the
+        navigation never happened". Only a FIXED url counts: a templated
+        one matches by prefix and would claim half the site.
+        """
+        try:
+            pages = cls._inventory().get("pages") or {}
+        except Exception:                                     # noqa: BLE001
+            return None
+        current = (path or "").rstrip("/") or "/"
+        # A page that declares OUR address is not somewhere else, whatever
+        # it is called - a shared navigation object and a home page
+        # legitimately share one url.
+        ours = (cls._declared_url() or "")
+        ours = (ours.rstrip("/") or "/") if "{" not in ours else None
+        for name, page in pages.items():
+            if name == cls.INVENTORY_PAGE:
+                continue
+            url = (page or {}).get("url")
+            if not url or "{" in url:
+                continue
+            candidate = url.rstrip("/") or "/"
+            if ours is not None and candidate == ours:
+                continue
+            if candidate == current:
+                return name
+        return None
+
     def _is_here(self, path: str) -> bool:
         """True if `path` is this page object's page.
 
@@ -556,6 +587,34 @@ class BasePage:
                 f"Refusing to continue - every selector on this page would "
                 f"time out and blame itself."
             ) from None
+
+        # IS THE BROWSER ON A DIFFERENT PAGE THIS INVENTORY KNOWS?
+        #
+        # If so the navigation demonstrably WORKED - it simply did not land
+        # on the page object this was called on. That is a coding mistake
+        # (confirm_arrival() belongs on the object for the DESTINATION), not
+        # a swallowed click, and re-issuing here does real damage: a shared
+        # navigation object declares the home page, so a link that correctly
+        # reached a listing was dragged back home, and the next step spent
+        # its whole timeout waiting for a control that only exists on the
+        # listing. Three scenarios failed that way, each blaming its own
+        # selector.
+        #
+        # The interstitial case is untouched: there the click is consumed and
+        # the browser never leaves, so the path is the PREVIOUS page or a
+        # fragment of it - not some other declared destination.
+        elsewhere = self._other_declared_page(here.path)
+        if elsewhere:
+            logger.warning(
+                "%s.confirm_arrival(): the browser is at %s, which this "
+                "inventory declares as page %r - so the navigation DID "
+                "land, just not here. Not re-issuing: doing so would leave "
+                "a page the run had correctly reached. Call "
+                "confirm_arrival() on the page object for the DESTINATION, "
+                "not on the one whose control was clicked.",
+                type(self).__name__, self.page.url, elsewhere,
+            )
+            return
 
         target = urlunsplit((here.scheme, here.netloc, expected, "", ""))
         logger.warning(

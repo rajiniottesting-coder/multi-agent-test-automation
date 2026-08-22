@@ -100,6 +100,7 @@ app_under_test:
     - "tests/step_defs/test_login.py"
     - "pages/login_page.py"
     - "pages/base_page.py"
+    - "pages/nav_page.py"
 
   # Extendable paths: existing files Agent 2 MAY modify by adding new methods,
   # but must not break or remove existing methods/signatures.
