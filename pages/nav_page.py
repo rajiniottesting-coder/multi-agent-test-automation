@@ -1,15 +1,17 @@
 """
-NavPage — the top navigation, present on every page.
+NavPage — the top navigation bar shared by every page.
 
-The navigation is shared, so it lives in one page object rather than being
-repeated on each screen. Any scenario that moves between areas of the site
-needs this, and its `logout_link` doubles as the readiness signal for "am I
-authenticated".
+Selectors: see `pages.nav` in the app inventory. The nav is present on every
+screen, so its links and the logged-in signal live here once rather than being
+repeated on each page object.
+
+The logged-in / logged-out signal is read from the nav rather than the URL:
+this app serves the same path ('/') whether or not a session exists, so the
+presence of the Logout link (only rendered while authenticated) and the
+Login/Signup link (only rendered while signed out) are the reliable signals.
 
 App: https://automationexercise.com
 """
-from typing import Optional
-
 from pages.base_page import BasePage
 
 
@@ -18,52 +20,62 @@ class NavPage(BasePage):
 
     INVENTORY_PAGE = "nav"
 
-    # ── actions ──────────────────────────────────────────────
-    def go_to_products(self) -> None:
-        """Open the all-products page."""
+    # ── navigation actions ──────────────────────────────────
+    def open_products(self) -> None:
+        """Click the Products link in the top navigation."""
         self.click(self.sel("products_link"))
 
-    def go_to_cart(self) -> None:
-        """Open the cart."""
+    def open_cart(self) -> None:
+        """Click the Cart link in the top navigation."""
         self.click(self.sel("cart_link"))
 
-    def go_to_login(self) -> None:
-        """Open the Signup / Login page."""
-        self.click(self.sel("signup_login_link"))
-
     def logout(self) -> None:
-        """Log out, returning to the Signup / Login page."""
+        """Click the Logout link, ending the session."""
         self.click(self.sel("logout_link"))
 
-    def delete_account(self) -> None:
-        """Permanently delete the signed-in account.
-
-        A scenario that registers an account should call this at the end.
-        This site has no admin cleanup, so abandoned accounts accumulate
-        forever — the same litter that makes shared demos unreliable, caused
-        by us rather than by someone else.
-        """
-        self.click(self.sel("delete_account_link"))
-
-    # ── queries ──────────────────────────────────────────────
+    # ── logged-in queries ────────────────────────────────────
     def is_logged_in(self) -> bool:
-        """True if a session is active right now. Never waits, never raises.
+        """True if a session exists right now. Never waits, never raises.
 
-        The Logout link is rendered only while authenticated, which makes its
-        presence a more reliable signal than the URL: this app serves the same
-        path to signed-in and signed-out visitors.
+        Non-waiting probe for BRANCHING or for asserting ABSENCE of a session
+        (assert not is_logged_in()). To assert that a login SUCCEEDED, use the
+        waiting reader wait_until_logged_in() instead — this one would race the
+        login and report False while the app is still authenticating.
         """
         return self.is_visible(self.sel("logout_link"))
 
-    def wait_until_logged_in(self, timeout_ms: Optional[int] = None) -> bool:
-        """True once a session is active, WAITING for it.
+    def wait_until_logged_in(self) -> bool:
+        """True once a session exists. WAITS, and times out if none appears.
 
-        The waiting counterpart to is_logged_in(), for asserting that a login
-        succeeded. Logs the selector, the wait and the URL when it gives up.
+        Call this only where being logged in is the expected answer — after a
+        valid login. A step asking merely to branch on the reply will pay the
+        full timeout every time the answer is no; use is_logged_in() for that.
         """
-        return self.is_showing(self.sel("logout_link"), timeout_ms=timeout_ms)
+        return self.is_showing(self.sel("logout_link"))
+
+    def is_logged_out(self) -> bool:
+        """True if no session exists right now. Never waits, never raises.
+
+        Non-waiting probe: the Login/Signup link is rendered only while signed
+        out, so its presence is the mirror of is_logged_in(). Safe to negate.
+        """
+        return self.is_visible(self.sel("signup_login_link"))
+
+    def wait_until_logged_out(self) -> bool:
+        """True once no session exists. WAITS, and times out if one persists.
+
+        Call this only where being logged out is the expected answer — after a
+        logout. It confirms the Login/Signup link has reappeared, which is the
+        signal the app itself renders for 'you are no longer recognised'.
+        """
+        return self.is_showing(self.sel("signup_login_link"))
 
     def logged_in_name(self) -> str:
-        """The text of the 'Logged in as <name>' banner. WAITS for it."""
+        """The 'Logged in as <name>' banner text. WAITS for it to appear.
+
+        Only call this when a session IS expected. Assert containment
+        ('Logged in as' in ...) rather than equality — the banner includes the
+        account name.
+        """
         self.wait_visible(self.sel("logged_in_as"))
         return self.get_text(self.sel("logged_in_as"))
