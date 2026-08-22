@@ -1216,3 +1216,364 @@ def test_the_persistent_state_error_reaches_the_feature_with_the_real_call(proje
         "with the real scenarios() call the feature file must still be "
         "blamed - it never was"
     )
+
+
+# =========================================================================
+# The model was corrected against a name it had never been shown
+#
+# THE WHOLE CHAIN, AND WHY IT LOOKED LIKE THE MODEL REFUSING TO COMPLY
+#   1. The prompt told Agent 2 that owning a starting state needs "a clearing
+#      method on the page object", and never said what it is called.
+#   2. The name lives under `_starting_state.establishing_calls`, and
+#      filter_inventory_by_components strips every top-level `_` key before
+#      the inventory is sent. The one block naming it was deleted on the way
+#      in.
+#   3. The app-context module pointed AT that block by name - a pointer to
+#      something that had been removed.
+#   4. The validator demanded exactly those names, and every repair remedy
+#      printed them.
+#
+#   So the model was asked for a method whose required name it had never
+#   seen, corrected against that name, and could not comply. Story after
+#   story failed, and each log read like a model ignoring an available fix.
+#
+#   Stripping `_` keys is right; they are notes to a human. The mistake was
+#   that one of them had quietly become a CONTRACT. It is now rendered into
+#   the prompt as instructions, and enforced here so it cannot be left to
+#   guidance again.
+#
+#   The page object is also the one file a repair can never reach - the loop
+#   regenerates the feature and the step definitions only - so if it is not
+#   written during generation, the absolute assertion is lost for the run.
+# =========================================================================
+
+from validators.method_resolution_validator import (
+    validate_persistent_pages_can_be_cleared,
+)
+
+
+def _bookworm(tmp_path, starting_state, persistent=True):
+    """A SECOND application, built here rather than borrowed from the one
+    under test. Anything that only works for the configured app is not a
+    framework fix."""
+    (tmp_path / "app_inventory").mkdir()
+    (tmp_path / "config").mkdir()
+    inventory = {"app_name": "Bookworm Library", "pages": {
+        "loans": {"url": "/loans", "page_object_class": "LoansPage",
+                  "elements": {"rows": "#r"},
+                  **({"persistent_state": True} if persistent else {})}}}
+    if starting_state is not None:
+        inventory["_starting_state"] = starting_state
+    (tmp_path / "app_inventory" / "a.json").write_text(
+        json.dumps(inventory), encoding="utf-8")
+    (tmp_path / "config" / "config.yaml").write_text(
+        "app_under_test:\n  name: Bookworm Library\n"
+        "  inventory_file: app_inventory/a.json\n", encoding="utf-8")
+    return tmp_path
+
+
+def _loans_page(methods: str):
+    return SimpleNamespace(
+        file_path="pages/loans_page.py",
+        content="class LoansPage:\n" + methods)
+
+
+def test_the_prompt_states_the_required_name(tmp_path):
+    """The regression. The name was never in the model's context."""
+    from agents.agent2_coder import _build_starting_state_block
+
+    root = _bookworm(tmp_path, {"fresh_identity_fixtures": [],
+                                "establishing_calls": ["return_all_loans"]})
+    block = _build_starting_state_block(root)
+    assert "return_all_loans" in block, (
+        "the model is asked for this method by name at the gate; it has to "
+        "be told the name before it writes the file"
+    )
+    assert "LoansPage" in block, "and which page object must carry it"
+
+
+def test_the_prompt_names_the_fresh_identity_fixture_when_there_is_one(tmp_path):
+    from agents.agent2_coder import _build_starting_state_block
+
+    root = _bookworm(tmp_path, {"fresh_identity_fixtures": ["unique_member"],
+                                "establishing_calls": ["return_all_loans"]})
+    assert "unique_member" in _build_starting_state_block(root)
+
+
+def test_the_prompt_says_so_when_there_is_no_fresh_identity(tmp_path):
+    """Silence here is what produced steps claiming to register an account in
+    an application that cannot."""
+    from agents.agent2_coder import _build_starting_state_block
+
+    root = _bookworm(tmp_path, {"fresh_identity_fixtures": [],
+                                "establishing_calls": ["return_all_loans"]})
+    assert "NO fresh-identity fixture" in _build_starting_state_block(root)
+
+
+def test_a_persistent_page_object_without_the_call_is_rejected(tmp_path):
+    root = _bookworm(tmp_path, {"establishing_calls": ["return_all_loans"]})
+    errors = validate_persistent_pages_can_be_cleared(
+        [_loans_page("    def open_loans(self): pass\n")], root)
+    assert errors and "return_all_loans" in errors[0]
+
+
+@pytest.mark.parametrize("method", ["return_all_loans", "clear_loans"])
+def test_either_declared_call_satisfies_it(tmp_path, method):
+    root = _bookworm(tmp_path, {
+        "establishing_calls": ["return_all_loans", "clear_loans"]})
+    assert validate_persistent_pages_can_be_cleared(
+        [_loans_page(f"    def {method}(self): pass\n")], root) == []
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Break the thing the guard guards
+#
+# A check that fires on page objects it has no business touching would make
+# the gate red on every story, and a gate that is always red gets removed.
+# ─────────────────────────────────────────────────────────────────────────
+
+def test_a_non_persistent_page_object_is_left_alone(tmp_path):
+    root = _bookworm(tmp_path, {"establishing_calls": ["return_all_loans"]},
+                     persistent=False)
+    assert validate_persistent_pages_can_be_cleared(
+        [_loans_page("    def open_loans(self): pass\n")], root) == []
+
+
+def test_an_application_declaring_nothing_is_untouched(tmp_path):
+    from agents.agent2_coder import _build_starting_state_block
+
+    root = _bookworm(tmp_path, None)
+    assert _build_starting_state_block(root) == ""
+    assert validate_persistent_pages_can_be_cleared(
+        [_loans_page("    pass\n")], root) == []
+
+
+def test_base_page_is_exempt(tmp_path):
+    """BasePage is reserved and shared; it is not any page's owner."""
+    root = _bookworm(tmp_path, {"establishing_calls": ["return_all_loans"]})
+    assert validate_persistent_pages_can_be_cleared(
+        [SimpleNamespace(file_path="pages/base_page.py",
+                         content="class LoansPage:\n    pass\n")], root) == []
+
+
+# =========================================================================
+# The remedy must be TRUE at the moment it is read
+#
+# TWO WAYS IT WAS NOT
+#
+# 1. IT NAMED A CALL THAT DID NOT EXIST.
+#    `_starting_state.establishing_calls` is a declaration of intent. Nothing
+#    checked that any page object defines the method. For a whole run the
+#    inventory advertised a clearing call, the app context told the generator
+#    to use it, every error message named it, and no page object anywhere had
+#    it. The model was told to call something that was not there - the exact
+#    failure this module already names: unsatisfiable guidance gets
+#    approximated.
+#
+# 2. IT CONTRADICTED THE MESSAGE SENT BESIDE IT.
+#    The step-def remedy opened "IF YOU ARE EDITING ONLY THE STEP-DEFINITION
+#    FILE - which is the case during a repair". That stopped being true when
+#    the feature file became routable: both are now repaired in one pass. So
+#    in a single attempt the feature was told "add a Given that clears the
+#    state" while the step definition was told owning the state "is not
+#    something a single-file repair can deliver". It obeyed the message in
+#    front of it, never bound the Given the feature had just grown, and the
+#    next attempt reverted the feature. Three rounds of that, then failure.
+# =========================================================================
+
+from validators.method_resolution_validator import (
+    _available_remedies,
+    _resolvable_establishing_calls,
+)
+
+
+def _page(name: str, methods: str):
+    return SimpleNamespace(
+        file_path=f"pages/{name}.py",
+        content=textwrap.dedent(f'''
+            class SomePage:
+            {methods}
+        '''),
+    )
+
+
+def test_a_call_no_page_object_defines_is_not_offered(tmp_path):
+    (tmp_path / "pages").mkdir()
+    usable = _resolvable_establishing_calls(
+        {"clear_the_collection"}, [], tmp_path)
+    assert usable == set(), (
+        "offering a method nothing defines is how a run spent every attempt "
+        "being told to call something that was not there"
+    )
+
+
+def test_a_call_defined_in_the_batch_is_offered(tmp_path):
+    (tmp_path / "pages").mkdir()
+    usable = _resolvable_establishing_calls(
+        {"clear_the_collection"},
+        [_page("thing_page", "    def clear_the_collection(self): pass")],
+        tmp_path,
+    )
+    assert usable == {"clear_the_collection"}
+
+
+def test_a_call_defined_on_disk_is_offered(tmp_path):
+    """The committed page object counts. That is the whole point of
+    committing one: it is available to every future story."""
+    (tmp_path / "pages").mkdir()
+    (tmp_path / "pages" / "thing_page.py").write_text(
+        "class ThingPage:\n    def clear_the_collection(self):\n        pass\n",
+        encoding="utf-8")
+    assert _resolvable_establishing_calls(
+        {"clear_the_collection"}, [], tmp_path) == {"clear_the_collection"}
+
+
+def test_the_message_says_declared_but_missing_rather_than_absent(tmp_path):
+    """WHY there is nothing to offer changes where the reader should look."""
+    text = _available_remedies(
+        set(), set(), feature_in_batch=True,
+        declared_calls={"clear_the_collection"})
+    assert "DECLARES" in text and "no page object defines it" in text
+    assert "Do NOT call clear_the_collection()" in text
+    assert "`_starting_state` in the inventory is empty" not in text, (
+        "saying the inventory declares nothing, when it declares a call that "
+        "simply does not exist, sends the reader to the wrong file"
+    )
+
+
+def test_an_empty_declaration_still_reads_as_empty():
+    """Break the thing the guard guards: the two cases must stay distinct."""
+    text = _available_remedies(set(), set(), feature_in_batch=True,
+                               declared_calls=set())
+    assert "`_starting_state` in the inventory is empty" in text
+    assert "DECLARES" not in text
+
+
+def test_the_two_messages_of_one_attempt_do_not_contradict():
+    """The regression. With the feature in the same batch, the step-def
+    remedy must not call the three-file fix undeliverable."""
+    text = _available_remedies(
+        set(), {"clear_the_collection"}, feature_in_batch=True)
+    assert "three-file fix IS available" in text
+    assert "not something a single-file repair can deliver" not in text, (
+        "the feature is being told to add a clearing Given in this same "
+        "attempt; telling the step definition it cannot be done is why the "
+        "Given was never bound"
+    )
+
+
+def test_without_the_feature_the_old_advice_is_kept():
+    """ai-update regenerates step definitions against a feature already on
+    main. There the single-file framing is correct and must survive."""
+    text = _available_remedies(
+        set(), {"clear_the_collection"}, feature_in_batch=False)
+    assert "ONLY THE STEP-DEFINITION FILE" in text
+    assert "not something a single-file repair can deliver" in text
+    assert "three-file fix IS available" not in text
+
+
+# =========================================================================
+# A declared starting-state method survives regeneration with no caller
+#
+# WHY THIS IS NOT COVERED BY THE EXISTING REMOVAL CHECK
+#   _methods_removed_by_regeneration protects a dropped method only when a
+#   COMMITTED step definition still calls it - "nothing calls it, so dropping
+#   it is safe". That is right for an ordinary helper.
+#
+#   It is exactly wrong for a method the inventory names under
+#   `_starting_state.establishing_calls`. That method exists so a scenario can
+#   own its starting state, and the first scenario to need it has not been
+#   written - by definition it has NO caller on the day it is committed. So
+#   the next regeneration of its own page object would delete it silently,
+#   and every persistent-state remedy would go back to naming a call that
+#   does not exist.
+#
+#   The asset the whole remedy depends on had no protection at all.
+# =========================================================================
+
+from validators.method_resolution_validator import (
+    _methods_removed_by_regeneration,
+)
+
+
+def _project_with_clearing_method(tmp_path, method: str):
+    """A minimal project whose inventory DECLARES `method` and whose page
+    object defines it. Built here rather than borrowed from the app under
+    test, so this stays true for any application."""
+    (tmp_path / "pages").mkdir()
+    (tmp_path / "config").mkdir()
+    (tmp_path / "app_inventory").mkdir()
+    (tmp_path / "app_inventory" / "app.json").write_text(json.dumps({
+        "app_name": "Thing", "base_url": "https://example.test",
+        "_starting_state": {"fresh_identity_fixtures": [],
+                            "establishing_calls": [method]},
+        "pages": {"collection": {"url": "/c", "page_object_class": "ThingPage",
+                                 "persistent_state": True,
+                                 "elements": {"rows": "#r"}}},
+    }), encoding="utf-8")
+    (tmp_path / "config" / "config.yaml").write_text(
+        "app_under_test:\n  name: Thing\n"
+        "  inventory_file: app_inventory/app.json\n", encoding="utf-8")
+    (tmp_path / "pages" / "thing_page.py").write_text(
+        f"class ThingPage:\n"
+        f"    def {method}(self):\n        pass\n"
+        f"    def ordinary_helper(self):\n        pass\n", encoding="utf-8")
+    return tmp_path
+
+
+def _regenerated(content: str):
+    return SimpleNamespace(file_path="pages/thing_page.py", content=content)
+
+
+def test_a_declared_clearing_method_cannot_be_dropped(tmp_path):
+    """The regression. No caller exists, and that is the point."""
+    root = _project_with_clearing_method(tmp_path, "clear_the_collection")
+    errors = _methods_removed_by_regeneration(
+        [_regenerated("class ThingPage:\n    def ordinary_helper(self):\n"
+                      "        pass\n")], root)
+    assert errors, (
+        "the method every persistent-state remedy names was deleted by a "
+        "regeneration and nothing objected"
+    )
+    assert "clear_the_collection" in errors[0]
+    assert "Nothing calls it YET" in errors[0]
+
+
+def test_keeping_it_raises_nothing(tmp_path):
+    root = _project_with_clearing_method(tmp_path, "clear_the_collection")
+    assert _methods_removed_by_regeneration(
+        [_regenerated("class ThingPage:\n"
+                      "    def clear_the_collection(self):\n        pass\n"
+                      "    def ordinary_helper(self):\n        pass\n"
+                      "    def added_by_this_story(self):\n        pass\n")],
+        root) == []
+
+
+def test_an_ordinary_uncalled_method_may_still_be_dropped(tmp_path):
+    """Break the thing the guard guards.
+
+    Protecting EVERY uncalled method would freeze page objects: a story could
+    never remove a helper it had just replaced. Only the declared ones are
+    load-bearing without a caller.
+    """
+    root = _project_with_clearing_method(tmp_path, "clear_the_collection")
+    assert _methods_removed_by_regeneration(
+        [_regenerated("class ThingPage:\n"
+                      "    def clear_the_collection(self):\n        pass\n")],
+        root) == [], "ordinary_helper has no caller and no declaration"
+
+
+def test_an_application_declaring_nothing_is_unaffected(tmp_path):
+    """No `_starting_state` at all must behave exactly as before."""
+    (tmp_path / "pages").mkdir(); (tmp_path / "config").mkdir()
+    (tmp_path / "app_inventory").mkdir()
+    (tmp_path / "app_inventory" / "app.json").write_text(json.dumps({
+        "app_name": "Thing", "pages": {}}), encoding="utf-8")
+    (tmp_path / "config" / "config.yaml").write_text(
+        "app_under_test:\n  name: Thing\n"
+        "  inventory_file: app_inventory/app.json\n", encoding="utf-8")
+    (tmp_path / "pages" / "thing_page.py").write_text(
+        "class ThingPage:\n    def anything(self):\n        pass\n",
+        encoding="utf-8")
+    assert _methods_removed_by_regeneration(
+        [_regenerated("class ThingPage:\n    pass\n")], tmp_path) == []

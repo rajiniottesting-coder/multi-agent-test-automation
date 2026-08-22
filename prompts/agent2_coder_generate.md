@@ -475,6 +475,10 @@ Use `self.page_url()` for the page path — it comes from the same entry.
 {page_inventory_json}
 ```
 
+# Starting State This Application Can Establish
+
+{starting_state_block}
+
 # Test Cases This File Should Address
 {test_cases_text}
 

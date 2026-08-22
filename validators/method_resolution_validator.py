@@ -598,6 +598,13 @@ def _methods_removed_by_regeneration(generated_files: list,
 
     batch_paths = {getattr(f, "file_path", "") for f in generated_files or []}
 
+    # Methods the inventory declares as starting-state remedies. These are
+    # protected even with no caller - see the branch below.
+    try:
+        _, declared_calls = _starting_state_rules(project_root)
+    except Exception:                                     # noqa: BLE001
+        declared_calls = set()
+
     for gen in generated_files or []:
         path = getattr(gen, "file_path", "") or ""
         if not (path.startswith("pages/") and path.endswith(".py")):
@@ -645,6 +652,35 @@ def _methods_removed_by_regeneration(generated_files: list,
                                  source):
                         callers.append(step_path)
                 if not callers:
+                    # A METHOD WITH NO CALLER YET CAN STILL BE LOAD-BEARING.
+                    #
+                    # "Nothing calls it, so dropping it is safe" holds for an
+                    # ordinary helper. It does not hold for a method the
+                    # INVENTORY names under `_starting_state.establishing_
+                    # calls`: that method exists so a scenario can own its
+                    # starting state, and the first scenario to need it has
+                    # not been written yet. By definition it has no caller on
+                    # the day it is committed.
+                    #
+                    # Without this branch the asset is deleted by the next
+                    # regeneration of its own page object, silently, and every
+                    # persistent-state remedy goes back to naming a call that
+                    # does not exist - the failure this pair of checks was
+                    # built to end.
+                    if method not in declared_calls:
+                        continue
+                    errors.append(
+                        f"Method resolution error in '{path}': the regenerated "
+                        f"`{class_name}` no longer defines `{method}()`. "
+                        f"Nothing calls it YET, which is exactly why it must "
+                        f"survive: the inventory names it under "
+                        f"`_starting_state.establishing_calls` as the way a "
+                        f"scenario owns its starting state, so the first "
+                        f"scenario to need it has not been written. Deleting "
+                        f"it leaves every persistent-state error naming a "
+                        f"method that does not exist. Keep it and add your "
+                        f"methods beside it."
+                    )
                     continue
                 errors.append(
                     f"Method resolution error in '{path}': the regenerated "
@@ -1642,7 +1678,52 @@ _STATE_OWNING_CALLS = re.compile(
 _DEFAULT_FRESH_FIXTURES = ("unique_username",)
 
 
-def _available_remedies(fresh_fixtures, establishing_calls) -> str:
+def _resolvable_establishing_calls(establishing_calls, generated_files,
+                                   project_root) -> set:
+    """Of the calls the inventory advertises, the ones that actually EXIST.
+
+    `_starting_state.establishing_calls` is a declaration of intent. Nothing
+    checked that a page object anywhere defines the method, and for one whole
+    run nothing did: the inventory advertised two clearing calls, the app
+    context told the generator to use them, the remedy in every error
+    message named them, and no page object in the batch or on disk defined
+    either. The model was told to call something that was not there.
+
+    That is the failure this module already has a name for - unsatisfiable
+    guidance gets approximated - applied to the remedy itself. So the remedy
+    only offers what resolves. If nothing does, the caller falls back to the
+    relative assertion, which is always available.
+    """
+    if not establishing_calls:
+        return set()
+
+    defined: set = set()
+    for f in generated_files or []:
+        path = (getattr(f, "file_path", "") or "").replace("\\", "/")
+        if path.startswith("pages/") and path.endswith(".py"):
+            try:
+                tree = ast.parse(getattr(f, "content", "") or "")
+            except SyntaxError:
+                continue
+            defined |= {n.name for n in ast.walk(tree)
+                        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+    pages_dir = Path(project_root or ".") / "pages"
+    if pages_dir.is_dir():
+        for path in pages_dir.glob("*.py"):
+            try:
+                tree = ast.parse(path.read_text(encoding="utf-8"))
+            except (SyntaxError, OSError, UnicodeDecodeError):
+                continue
+            defined |= {n.name for n in ast.walk(tree)
+                        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+    return {c for c in establishing_calls if c in defined}
+
+
+def _available_remedies(fresh_fixtures, establishing_calls,
+                        feature_in_batch: bool = False,
+                        declared_calls=None) -> str:
     """The ways to own a clean start that THIS application can express.
 
     The remedy sentence used to be hardcoded, and it led with "register a
@@ -1672,6 +1753,21 @@ def _available_remedies(fresh_fixtures, establishing_calls) -> str:
             f"{' or '.join(sorted(establishing_calls))}()"
         )
     if not options:
+        # WHY there is nothing to offer changes what the reader should do,
+        # so the two cases are not collapsed. Saying "the inventory declares
+        # nothing" when it declares two calls that simply do not exist sends
+        # whoever reads this log looking in the wrong file.
+        unresolved = sorted(set(declared_calls or ()) - set(establishing_calls or ()))
+        if unresolved:
+            return (
+                f"This application DECLARES a way to establish a clean start "
+                f"({', '.join(unresolved)}) but no page object defines it, so "
+                f"it cannot be called. Until one does, the assertion must be "
+                f"RELATIVE - that what this scenario added is present, or is "
+                f"gone - which holds whatever the state started as. That is a "
+                f"change to this file alone. Do NOT call "
+                f"{unresolved[0]}(): it does not exist."
+            )
         return (
             "This application declares no way to establish a clean start "
             "(`_starting_state` in the inventory is empty), so the assertion "
@@ -1695,9 +1791,48 @@ def _available_remedies(fresh_fixtures, establishing_calls) -> str:
     #
     # So the achievable remedy comes first, and the other is labelled with the
     # files it needs, which is the fact that decides whether it is available.
+    if feature_in_batch:
+        # THE FEATURE FILE IS BEING REPAIRED IN THIS SAME ATTEMPT.
+        #
+        # The text below used to be sent unconditionally, and it opened
+        # "IF YOU ARE EDITING ONLY THE STEP-DEFINITION FILE - which is the
+        # case during a repair". That stopped being true once the feature
+        # file could be routed to: both files are now repaired in one pass,
+        # the feature first, and the step-def prompt is given the rewritten
+        # scenario.
+        #
+        # So the two messages of that same attempt contradicted each other.
+        # The feature was told "add a Given that clears the state first"; the
+        # step definition was told, in the same breath, that owning the state
+        # "is not something a single-file repair can deliver" and that it
+        # should assert relatively instead. It obeyed the message in front of
+        # it, never bound the Given the feature had just grown, and the next
+        # attempt regenerated the feature back to where it started. Three
+        # attempts of that, then the story failed.
+        #
+        # When the scenario can change, the three-file fix IS available and
+        # this is where the model is told so.
+        return (
+            "The feature file for this scenario is being repaired in THIS "
+            "SAME attempt, so the three-file fix IS available to you now: "
+            "the scenario may gain a Given that clears the state, and this "
+            "file binds it. If the scenario has one - or gains one - "
+            "implement it ("
+            + "; or ".join(options)
+            + ") and then the absolute assertion below it is honest, because "
+            "the scenario put the state there itself.\n"
+            "If the scenario does NOT clear the state, make this assertion "
+            "RELATIVE instead: assert that what this scenario added is "
+            "present, or is gone, which holds whatever the state started as. "
+            "Do not invent a way to own the state that the inventory cannot "
+            "express: a registration flow the inventory does not describe "
+            "cannot be written, and half of one fails at run time."
+        )
+
     return (
         "IF YOU ARE EDITING ONLY THE STEP-DEFINITION FILE - which is the case "
-        "during a repair - the fix available to you is to make the assertion "
+        "here, because the feature file is not part of this batch - the fix "
+        "available to you is to make the assertion "
         "RELATIVE: assert that what this scenario added is present, or is "
         "gone, which holds whatever the state started as. That needs no other "
         "file.\n"
@@ -2066,6 +2201,11 @@ def validate_persistent_state_assertions(
     if not fixtures:
         return []
     fresh_fixtures, establishing_calls = _starting_state_rules(project_root)
+    # Only advertise remedies that exist. See _resolvable_establishing_calls:
+    # a run spent every attempt being told to call a clearing method that no
+    # page object defined.
+    usable_calls = _resolvable_establishing_calls(
+        establishing_calls, generated_files, project_root)
     assertion_helpers = _absolute_assertion_helpers(generated_files, project_root)
     shared_accounts = _shared_account_names(project_root)
 
@@ -2258,7 +2398,9 @@ def validate_persistent_state_assertions(
                     f"the signed-in user, so it survives logout and survives the "
                     f"run. A previous run's leftovers are counted too, and no wait "
                     f"removes them. "
-                    + _available_remedies(fresh_fixtures, establishing_calls)
+                    + _available_remedies(fresh_fixtures, usable_calls,
+                                          feature_in_batch=bool(feature_path),
+                                          declared_calls=establishing_calls)
                     + contradiction
                 )
     return errors
@@ -2477,6 +2619,91 @@ def validate_step_claims_are_verified(
                 f"compare against it, or assert the count through the page "
                 f"object - and if the step is not meant to check a quantity, "
                 f"the SENTENCE is what has to change, not the body."
+            )
+    return errors
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# A persistent page object must carry the clearing call by NAME
+#
+# Owning a starting state is a three-file decision and the page object is one
+# of the three. It is also the ONLY one a repair cannot reach: the repair loop
+# regenerates the feature and the step definitions, never the page object. So
+# a page object that reaches the gate without the clearing method has closed
+# the door on the absolute assertion for the rest of the run - the scenario
+# either weakens to a relative check or the story fails.
+#
+# Leaving that to guidance did not work, for a reason that was nobody's fault
+# to read: the required NAME lives under `_starting_state.establishing_calls`,
+# and every top-level `_` key is stripped before the inventory reaches the
+# model. It was asked for a method it had never been shown the name of, then
+# corrected against that name. The prompt now renders the contract explicitly
+# (_build_starting_state_block); this makes it enforced rather than requested.
+#
+# Deliberately narrow: it fires only for a page the inventory itself marks
+# `persistent_state`, only when the inventory declares a call, and only for a
+# page object being generated in this batch. An application declaring nothing
+# is untouched.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def validate_persistent_pages_can_be_cleared(
+        generated_files: list, project_root=None) -> list[str]:
+    """Fail a generated page object for a persistent page that cannot clear."""
+    project_root = project_root or Path(".")
+    try:
+        _, establishing = _starting_state_rules(project_root)
+        inventory = _load_configured_inventory(Path(project_root)) or {}
+    except Exception:                                     # noqa: BLE001
+        return []
+    if not establishing:
+        return []
+
+    # {PageObjectClass: inventory page name} for persistent pages only.
+    owners = {
+        (page.get("page_object_class") or ""): name
+        for name, page in (inventory.get("pages") or {}).items()
+        if isinstance(page, dict) and page.get("persistent_state")
+        and page.get("page_object_class")
+    }
+    if not owners:
+        return []
+
+    required = sorted(establishing)[0]
+    errors: list[str] = []
+    for f in generated_files or []:
+        path = (getattr(f, "file_path", "") or "").replace("\\", "/")
+        if not (path.startswith("pages/") and path.endswith(".py")):
+            continue
+        if path.endswith("base_page.py"):
+            continue
+        try:
+            tree = ast.parse(getattr(f, "content", "") or "")
+        except SyntaxError:
+            continue
+
+        for cls in ast.walk(tree):
+            if not isinstance(cls, ast.ClassDef) or cls.name not in owners:
+                continue
+            defined = {
+                n.name for n in cls.body
+                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+            }
+            if defined & set(establishing):
+                continue
+            errors.append(
+                f"Starting state error in '{path}': `{cls.name}` is the page "
+                f"object for inventory page '{owners[cls.name]}', which is "
+                f"declared persistent_state, but it defines none of the "
+                f"clearing calls the inventory names "
+                f"({', '.join(sorted(establishing))}). Add `{required}()`, "
+                f"with that exact name - it removes every entry so a scenario "
+                f"can OWN its starting state in a Given and then assert an "
+                f"absolute count honestly. Write it even if this story does "
+                f"not call it: a repair regenerates the feature and the step "
+                f"definitions but NEVER the page object, so this is the only "
+                f"moment it can be added, and every persistent-state message "
+                f"tells the reader to call it."
             )
     return errors
 

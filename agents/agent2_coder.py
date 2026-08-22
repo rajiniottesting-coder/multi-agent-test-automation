@@ -60,6 +60,7 @@ from validators.method_resolution_validator import (
     validate_page_object_selectors,
     validate_no_duplicate_page_object_methods,
     validate_page_object_methods,
+    validate_persistent_pages_can_be_cleared,
     validate_step_parameter_types,
     validate_step_claims_are_verified,
     validate_readiness_probe,
@@ -532,6 +533,122 @@ def _read_extendable_file_content(file_path: str) -> str:
         )
         return f"# (file '{file_path}' does not exist yet — generate fresh content)"
     return abs_path.read_text(encoding="utf-8")
+
+
+def _build_starting_state_block(project_root=None) -> str:
+    """The starting-state CONTRACT, rendered from the inventory.
+
+    WHY THIS EXISTS
+
+        The prompt tells Agent 2 that owning a starting state is a three-file
+        decision and that one of the three is "a clearing method on the page
+        object". It never said what that method is CALLED. The name lives in
+        the inventory under `_starting_state.establishing_calls`, and
+        `filter_inventory_by_components` strips every top-level key beginning
+        with an underscore before the inventory is sent - so the one block
+        naming it was deleted from the model's context on the way in.
+
+        The app-context module then pointed at it by name: "using the method
+        the inventory names under `_starting_state.establishing_calls`". A
+        pointer to a block that had been removed.
+
+        Meanwhile the validator demanded exactly those names, and the repair
+        remedy printed them. So the model was asked to produce a method whose
+        required name it had never been shown, was corrected against that
+        name, and could not comply. Several stories failed that way, and it
+        read like the model refusing to take an exit it had never been told
+        about.
+
+        Stripping `_`-prefixed keys is right - they are notes to a human and
+        should not spend tokens. The mistake was that one of them had stopped
+        being a note and become a contract. So it is rendered explicitly,
+        here, as instructions rather than as JSON.
+
+    Derived entirely from the inventory, so it is correct for whatever
+    application is configured. An inventory that declares nothing produces an
+    empty block and the prompt is unchanged.
+    """
+    try:
+        from validators.method_resolution_validator import (
+            _load_configured_inventory,
+        )
+        root = Path(project_root or PROJECT_ROOT)
+        inventory = _load_configured_inventory(root) or {}
+    except Exception:                                     # noqa: BLE001
+        return ""
+
+    block = inventory.get("_starting_state") or {}
+    fixtures = [f for f in (block.get("fresh_identity_fixtures") or []) if f]
+    calls = [c for c in (block.get("establishing_calls") or []) if c]
+    if not fixtures and not calls:
+        return ""
+
+    pages = inventory.get("pages") or {}
+    persistent = {
+        name: page.get("page_object_class") or ""
+        for name, page in pages.items()
+        if isinstance(page, dict) and page.get("persistent_state")
+    }
+    if not persistent:
+        return ""
+
+    lines = [
+        "The pages below hold state the application KEEPS against the "
+        "signed-in user. A scenario cannot assert an absolute state on one "
+        "of them unless it OWNS that state first, and these are the ONLY "
+        "ways this application can establish it.",
+        "",
+    ]
+    for name, cls in sorted(persistent.items()):
+        lines.append(f"- inventory page `{name}` -> `{cls or '<its page object>'}`")
+    lines.append("")
+
+    if calls:
+        chosen = sorted(calls)[0]
+        lines += [
+            f"CLEARING CALL - required name: `{chosen}()`"
+            + (f"  (accepted alternatives: {', '.join(sorted(calls))})"
+               if len(calls) > 1 else ""),
+            "",
+            "When you generate the page object for a page listed above, give "
+            "it this method, with this exact name. Write it even if the "
+            "current story never calls it: the name is fixed by the "
+            "inventory, a later repair CANNOT add it (a repair regenerates "
+            "the feature and the step definitions, never the page object), "
+            "and every persistent-state error message tells the reader to "
+            "call it. A page object without it makes that advice a lie.",
+            "",
+            "    def " + chosen + "(self) -> None:",
+            '        """Remove every entry, leaving the collection genuinely empty.',
+            "",
+            "        Bind this to a Given. After it, an ABSOLUTE assertion is",
+            "        honest, because the scenario put the state there itself.",
+            '        """',
+            "        # re-read after each removal: the list re-renders",
+            "",
+            "Then a scenario may own its state:",
+            "",
+            "    Given <the collection> is empty        # in the .feature",
+            "    <page>." + chosen + "()                # in the step definition",
+            "",
+        ]
+    if fixtures:
+        lines += [
+            "FRESH IDENTITY - fixtures: "
+            + ", ".join(f"`{f}`" for f in sorted(fixtures)),
+            "A step that requests one of these fixtures establishes a "
+            "genuinely new account, so its state starts empty.",
+            "",
+        ]
+    if not fixtures:
+        lines += [
+            "There is NO fresh-identity fixture in this application. Do not "
+            "write a step that claims to register a new account - the "
+            "inventory cannot express it, and half a registration flow fails "
+            "at run time.",
+            "",
+        ]
+    return "\n".join(lines).rstrip()
 
 
 def _build_base_page_helpers_block(project_root=None) -> str:
@@ -1231,6 +1348,7 @@ _SUBSTITUTED_PLACEHOLDERS = (
     "{reference_page_object_path}", "{reference_feature_content}",
     "{reference_step_def_content}", "{reference_page_object_content}",
     "{page_inventory_json}", "{test_cases_text}",
+    "{starting_state_block}",
 )
 
 _GENERATE_SYSTEM_ROLE = (
@@ -1505,6 +1623,7 @@ def generate_file_content(
         .replace("{sibling_page_objects_block}", sibling_block)
         .replace("{authoritative_steps_block}", authoritative_steps_block)
         .replace("{base_page_helpers_block}", base_helpers_block)
+        .replace("{starting_state_block}", _build_starting_state_block())
         .replace("{reference_feature_path}", ctx.reference_feature)
         .replace("{reference_step_def_path}", ctx.reference_step_def)
         .replace("{reference_page_object_path}", ctx.reference_page_object)
@@ -1894,6 +2013,8 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     errors.extend(validate_no_selectors_in_step_defs(generated_files))
     errors.extend(validate_persistent_state_assertions(generated_files, PROJECT_ROOT))
     errors.extend(validate_step_parameter_types(generated_files, PROJECT_ROOT))
+    errors.extend(validate_persistent_pages_can_be_cleared(
+        generated_files, PROJECT_ROOT))
     errors.extend(validate_step_claims_are_verified(generated_files, PROJECT_ROOT))
     errors.extend(validate_feature_file_structure(generated_files))
     # Coverage, unused decorators and the drift between them are one question
