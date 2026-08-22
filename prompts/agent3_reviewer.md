@@ -89,6 +89,11 @@ Each `ReviewIssue` has:
 - Missing fixtures
 - Incorrect import paths
 - Step text mismatch between `.feature` file and Python step decorators
+- **A step whose sentence promises a quantity its body never checks** — a phrase saying `exactly N`, `only N` or `should be empty` whose function compares nothing, counts nothing and reads no emptiness helper. It passes whatever the real number is, and inside a `Scenario Outline` it passes every row. Report the SENTENCE and the body together: on a page the inventory marks `persistent_state` the body is not permitted to assert the count, so the scenario wording is the thing that has to change.
+
+### What is NOT a binding error
+
+`pytest-bdd` injects only the arguments a step function declares and **ignores every other captured placeholder**. So `@then(parsers.parse("... exactly {count:d} ..."))` bound to `def check(cart_page):` does NOT raise, does not fail to bind, and runs green — a review reported it as a blocking binding failure and the same run passed in CI. Do not claim a binding or fixture-mismatch error for an unused capture. The real defect is the one above: the step is parameterised and behaves identically for every value. Report THAT, at the severity it deserves, and describe it accurately.
 
 ### Regex Semantics Reference for parsers.re Patterns
 

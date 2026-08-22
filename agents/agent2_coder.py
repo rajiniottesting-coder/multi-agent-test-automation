@@ -61,6 +61,7 @@ from validators.method_resolution_validator import (
     validate_no_duplicate_page_object_methods,
     validate_page_object_methods,
     validate_step_parameter_types,
+    validate_step_claims_are_verified,
     validate_readiness_probe,
     validate_predicates_wait,
     validate_no_selectors_in_step_defs,
@@ -1793,6 +1794,7 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     errors.extend(validate_no_selectors_in_step_defs(generated_files))
     errors.extend(validate_persistent_state_assertions(generated_files, PROJECT_ROOT))
     errors.extend(validate_step_parameter_types(generated_files, PROJECT_ROOT))
+    errors.extend(validate_step_claims_are_verified(generated_files, PROJECT_ROOT))
     errors.extend(validate_feature_file_structure(generated_files))
     # Coverage, unused decorators and the drift between them are one question
     # asked three ways, so they are combined where they live rather than here.

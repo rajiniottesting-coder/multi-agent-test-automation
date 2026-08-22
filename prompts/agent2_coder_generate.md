@@ -242,6 +242,33 @@ Asserting the absence of one thing to imply the presence of another passes for
 reasons the step never claimed: an error page has no Logout link either. Where
 a page object exposes a probe for the state the step actually names, use it.
 
+## A step must verify the quantity its own sentence names
+
+    # rejected - the phrase says a number, the body checks a name
+    @then(parsers.parse("the list should contain exactly {count:d} rows"))
+    def assert_count(<page>):                 # `count` never accepted
+        <page>.wait_for_row(<the row family>, "First Item", present=True)
+
+    # correct
+    @then(parsers.parse("the list should contain exactly {count:d} rows"))
+    def assert_count(<page>, count):
+        <page>.assert_row_count(count)
+
+The rejected version passes for one row, two rows and ninety-nine, and in a
+`Scenario Outline` it passes every row. Nothing catches it at run time:
+pytest-bdd injects only the arguments the function declares and ignores the
+rest, so an unused capture runs green forever.
+
+This interacts with the persistent-state rule above, and the interaction is
+the whole point. When a page keeps state, the body may NOT assert the count -
+so a sentence promising one cannot be satisfied by any body, and weakening the
+body while leaving the sentence alone is not an escape. The SENTENCE has to
+change: ask for something true whatever the state started as, or add a Given
+that clears the state and then assert the count honestly.
+
+Whenever you find yourself writing a body that does less than its phrase
+promises, the phrase is what is wrong.
+
 ## Assert only a value some element on that page can yield
 
 A test case names an expected value. Before writing the assertion, find the

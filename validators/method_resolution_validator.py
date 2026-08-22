@@ -2250,6 +2250,185 @@ _INTRANSITIVE_ACTIONS = frozenset({
 })
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# A step definition must verify the quantity its own sentence names
+#
+# WHAT SHIPPED
+#   Two stories reached review with step definitions whose Gherkin promised
+#   a count and whose bodies checked something else:
+#
+#       @then(parsers.parse("the list should contain exactly {count:d} rows"))
+#       def assert_count(some_page):            # `count` never accepted
+#           some_page.wait_for_row("First Item", present=True)
+#
+#   The phrase says exactly N. The body waits for one hard-coded name and
+#   never counts anything, so it passes for N=1, N=2 and N=99 alike - and in
+#   a Scenario Outline it passes every row. The reviewer caught both, which
+#   is the expensive way to find something a parser can see.
+#
+# WHY IT APPEARED NOW, AND WHY THIS CLOSES THE LOOP
+#   The persistent-state check forbids an absolute assertion on a page the
+#   application keeps state for, and tells a single-file repair to assert
+#   RELATIVELY. That is correct advice for the BODY and says nothing about
+#   the sentence. So the cheapest way to satisfy it is to weaken the body and
+#   leave the phrase promising a count nobody checks - which is what the
+#   model did, twice.
+#
+#   With this check the shortcut is closed. On a persistent page the body may
+#   not assert the count and this rule says the phrase may not claim one, so
+#   the only way out is to change the SENTENCE - which is what the feature
+#   error has been asking for all along. On an ordinary page both are legal
+#   and the body simply has to do what it says.
+#
+#   That is why routing follows persistence rather than being reported
+#   against the step definition every time: telling a model to assert a count
+#   the other validator rejects is the deadlock this pair exists to avoid.
+
+# A phrase that promises a QUANTITY. Deliberately narrower than
+# _ABSOLUTE_STEP_TEXT, which also matches "exactly the item I added" - a
+# perfectly good relative phrase where "exactly" modifies a thing, not a
+# number. Only a number, a placeholder or an emptiness word counts.
+_CLAIMS_A_QUANTITY = re.compile(
+    r"\b(?:exactly|only|precisely)\s+"
+    r"(?:\{[^}]*\}|\d+|one|two|three|four|five|no)\b"
+    r"|\b(?:should\s+be|is|are|remains?)\s+empty\b"
+    r"|\bno\s+\w+\s+(?:left|remain\w*)\b",
+    re.I,
+)
+
+# Calls whose whole job is to verify a quantity. A body containing one of
+# these has done what the sentence promised.
+_COUNTS_SOMETHING = re.compile(r"count|(^|_)empty$|^len$", re.I)
+
+
+def _step_texts(func: ast.AST) -> list:
+    """Every Gherkin phrase this function is bound to."""
+    out = []
+    for dec in getattr(func, "decorator_list", []):
+        for node in ast.walk(dec):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                out.append(node.value)
+    return out
+
+
+def _captured_params(func: ast.AST) -> set:
+    """Placeholder names in the step phrase, typed `{n:d}` or bare `{n}`."""
+    names = set()
+    for text in _step_texts(func):
+        for m in re.finditer(r"\{(\w+)(?::\w+)?\}", text):
+            names.add(m.group(1))
+    return names
+
+
+def _body_verifies_a_quantity(func: ast.AST) -> bool:
+    """True when the body compares or waits on a number, or reads emptiness."""
+    for node in ast.walk(func):
+        if isinstance(node, ast.Compare) and any(
+                isinstance(op, (ast.Eq, ast.NotEq, ast.Lt, ast.LtE,
+                                ast.Gt, ast.GtE)) for op in node.ops):
+            return True
+        if isinstance(node, ast.Call):
+            name = None
+            if isinstance(node.func, ast.Attribute):
+                name = node.func.attr
+            elif isinstance(node.func, ast.Name):
+                name = node.func.id
+            if name and _COUNTS_SOMETHING.search(name):
+                return True
+    return False
+
+
+def validate_step_claims_are_verified(
+        generated_files: list, project_root=None) -> list[str]:
+    """Fail a step whose sentence promises a quantity its body never checks."""
+    project_root = project_root or Path(".")
+    persistent = _persistent_pages(project_root)
+    fixtures = _fixtures_for_pages(generated_files, project_root, persistent) \
+        if persistent else {}
+
+    errors: list[str] = []
+    for f in generated_files or []:
+        path = getattr(f, "file_path", "") or ""
+        if not path.startswith("tests/step_defs/") or not path.endswith(".py"):
+            continue
+        source = getattr(f, "content", "") or ""
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            continue
+        feature_path = _feature_in_batch(source, generated_files)
+
+        for func in ast.walk(tree):
+            if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            texts = _step_texts(func)
+            if not texts:
+                continue
+            phrase = " ".join(texts)
+            accepted = {a.arg for a in func.args.args}
+            # Does this step drive a page whose state the application keeps?
+            # If so the body is not ALLOWED to assert the count, so the
+            # sentence is the only thing that can change.
+            touches_persistent = bool(accepted & set(fixtures))
+
+            # (1) A captured placeholder the body never receives.
+            #
+            # Not a binding error - pytest-bdd injects only what the function
+            # asks for and ignores the rest, so this runs green. That is the
+            # problem: the step is parameterised and behaves identically for
+            # every value, so a Scenario Outline passes every row.
+            unused = sorted(_captured_params(func) - accepted)
+
+            # (2) A sentence promising a quantity, and a body that never
+            #     compares, counts or reads emptiness.
+            claims = bool(_CLAIMS_A_QUANTITY.search(phrase))
+            unverified = claims and not _body_verifies_a_quantity(func)
+
+            if not unused and not unverified:
+                continue
+
+            what = []
+            if unused:
+                what.append(
+                    f"captures {', '.join(repr(u) for u in unused)} which the "
+                    f"function never accepts, so the step behaves identically "
+                    f"for every value and a Scenario Outline passes every row"
+                )
+            if unverified:
+                what.append(
+                    "promises a quantity that the body never compares, counts "
+                    "or reads emptiness for, so it passes whatever the real "
+                    "number is"
+                )
+            said = " and ".join(what)
+            short = phrase.strip()[:90]
+
+            if touches_persistent and feature_path:
+                errors.append(
+                    f"Step claim error in '{feature_path}': the step "
+                    f"`{short}` {said}. This step drives a page the inventory "
+                    f"declares persistent_state, so the body is NOT permitted "
+                    f"to assert the count either - the persistent-state check "
+                    f"rejects exactly that. The sentence is the only thing "
+                    f"that can change: reword the scenario to ask for "
+                    f"something true whatever the state started as (that what "
+                    f"this scenario added is present, or is gone), or add a "
+                    f"Given that clears the state first and then assert the "
+                    f"count honestly."
+                )
+                continue
+
+            errors.append(
+                f"Step claim error in '{path}' line {func.lineno}: the step "
+                f"`{short}` {said}. A step definition must verify what its "
+                f"own sentence says. Accept the captured parameter and "
+                f"compare against it, or assert the count through the page "
+                f"object - and if the step is not meant to check a quantity, "
+                f"the SENTENCE is what has to change, not the body."
+            )
+    return errors
+
+
 def validate_page_method_names_are_specific(generated_files: list) -> list[str]:
     """Fail a public page-object method whose name is a bare verb."""
     errors: list[str] = []

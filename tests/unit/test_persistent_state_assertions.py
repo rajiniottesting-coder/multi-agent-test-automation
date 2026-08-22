@@ -906,3 +906,157 @@ def test_without_a_feature_in_the_batch_only_the_step_def_is_told(project):
     assert len(errors) == 1
     assert "features/" not in errors[0]
     assert "tests/step_defs/test_flow.py" in errors[0]
+
+
+# =========================================================================
+# A step must verify the quantity its own sentence names
+#
+# WHAT SHIPPED, TWICE, IN THE SAME BATCH
+#   Two stories reached review with step definitions whose Gherkin promised
+#   a count and whose bodies checked a hard-coded name instead. The reviewer
+#   caught both. Nothing else did.
+#
+# WHY IT APPEARED WHEN IT DID
+#   The persistent-state check tells a single-file repair to assert
+#   RELATIVELY. That is right advice for the BODY and says nothing about the
+#   sentence, so the cheapest way to satisfy it is to weaken the body and
+#   leave a phrase promising a count nobody checks. The gate went green on a
+#   step that verified nothing.
+#
+#   These two checks now close on each other. On a persistent page the body
+#   may not assert the count AND the sentence may not claim one, so the only
+#   move left is to change the sentence - which is what the feature error
+#   has been asking for the whole time. The convergence test at the bottom
+#   is the one that matters: it walks the exact sequence a repair takes and
+#   requires it to terminate.
+# =========================================================================
+
+from validators.method_resolution_validator import (
+    validate_step_claims_are_verified,
+)
+
+
+def _claim_step(phrase: str, body: str, args: str = "basket_page"):
+    return SimpleNamespace(
+        file_path="tests/step_defs/test_flow.py",
+        content=textwrap.dedent(f'''
+            from pytest_bdd import scenarios, then, parsers
+            scenarios("../../features/flow.feature")
+
+            @then({phrase})
+            def assert_state({args}):
+            {body}
+        '''),
+    )
+
+
+_CLAIM_FEATURE = SimpleNamespace(
+    file_path="features/flow.feature",
+    content="Feature: F\n  Scenario: S\n    Then the state is checked\n",
+)
+
+
+def test_a_captured_parameter_the_body_never_accepts_is_rejected(project):
+    """Runs GREEN today: pytest-bdd injects only what the function declares
+    and ignores the rest. So the step is parameterised, behaves identically
+    for every value, and a Scenario Outline passes every row."""
+    errors = validate_step_claims_are_verified([_CLAIM_FEATURE, _claim_step(
+        'parsers.parse("the basket should contain exactly {count:d} items")',
+        '    basket_page.wait_for_item("First Item", present=True)',
+    )], project)
+    assert errors, "an unused capture is invisible at run time - this is the gate"
+    assert "count" in errors[0]
+
+
+def test_a_sentence_promising_a_count_needs_a_body_that_counts(project):
+    errors = validate_step_claims_are_verified([_CLAIM_FEATURE, _claim_step(
+        '"the basket should show exactly 1 item"',
+        '    basket_page.wait_for_item("First Item", present=True)',
+    )], project)
+    assert errors
+
+
+def test_a_sentence_promising_emptiness_needs_a_body_that_reads_it(project):
+    errors = validate_step_claims_are_verified([_CLAIM_FEATURE, _claim_step(
+        '"the basket should be empty"',
+        '    basket_page.wait_for_item("First Item", present=False)',
+    )], project)
+    assert errors
+
+
+def test_the_sentence_is_blamed_when_the_page_keeps_state(project):
+    """Routing is not a style choice. On a persistent page the OTHER check
+    forbids asserting the count, so telling the body to assert it would be
+    the two validators contradicting each other - the deadlock this pair
+    exists to avoid."""
+    errors = validate_step_claims_are_verified([_CLAIM_FEATURE, _claim_step(
+        '"the basket should be empty"',
+        '    basket_page.wait_for_item("First Item", present=False)',
+    )], project)
+    assert "features/flow.feature" in errors[0], (
+        "the body cannot legally assert the count here, so the sentence is "
+        "the only thing that can change"
+    )
+
+
+def test_an_ordinary_page_is_told_to_fix_the_body(project):
+    """`listing` is not persistent, so asserting the count IS legal and the
+    step definition is both at fault and able to fix itself."""
+    errors = validate_step_claims_are_verified([_CLAIM_FEATURE, _claim_step(
+        '"the listing should show exactly 3 cards"',
+        '    listing_page.wait_for_card("First", present=True)',
+        args="listing_page",
+    )], project)
+    assert errors and "tests/step_defs/test_flow.py" in errors[0]
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Break the thing the guard guards
+#
+# A quantity check that fires on ordinary phrasing would make the gate red
+# on every pull request, and a gate that is always red gets switched off.
+# ─────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("phrase,body,args", [
+    # count captured and actually used
+    ('parsers.parse("the basket should contain exactly {count:d} items")',
+     "    basket_page.assert_row_count(count)", "basket_page, count"),
+    # emptiness asserted through the page object
+    ('"the basket should be empty"', "    assert basket_page.is_empty()", "basket_page"),
+    # a relative phrase with a relative body - the shape the guidance asks for
+    ('parsers.parse(\'the basket should contain "{name}"\')',
+     "    basket_page.wait_for_item(name, present=True)", "basket_page, name"),
+    # "exactly" modifying a THING, not a number
+    ('parsers.parse(\'I see exactly the item I added "{name}"\')',
+     "    basket_page.wait_for_item(name, present=True)", "basket_page, name"),
+    # an action step claims nothing
+    ('"I remove the item"', "    basket_page.remove_item(\"X\")", "basket_page"),
+])
+def test_well_formed_steps_are_not_flagged(project, phrase, body, args):
+    assert validate_step_claims_are_verified(
+        [_CLAIM_FEATURE, _claim_step(phrase, body, args)], project) == []
+
+
+def test_the_two_checks_converge_instead_of_ping_ponging(project):
+    """The sequence a repair actually walks. If this cycles, the loop burns
+    four attempts and the story fails - which is the failure both of these
+    checks were built to stop."""
+    def totals(phrase, body):
+        files = [_CLAIM_FEATURE, _claim_step(phrase, body)]
+        return (len(validate_persistent_state_assertions(files, project)),
+                len(validate_step_claims_are_verified(files, project)))
+
+    # 1. as generated: absolute phrase, absolute body
+    assert totals('"the basket should be empty"',
+                  "    assert basket_page.is_empty()")[0] > 0
+
+    # 2. body weakened, sentence left alone - what shipped. Must NOT be clean.
+    assert totals('"the basket should be empty"',
+                  '    basket_page.wait_for_item("X", present=False)')[1] > 0, (
+        "weakening the body while the sentence still promises emptiness is "
+        "the escape hatch that let an unverified step through the gate"
+    )
+
+    # 3. sentence reworded too - both checks clean, the loop terminates
+    assert totals('"the removed item should be gone"',
+                  '    basket_page.wait_for_item("X", present=False)') == (0, 0)
