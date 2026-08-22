@@ -143,3 +143,108 @@ def test_requesting_changes_fails_the_job():
         "a requested-changes verdict must fail the job. Posting a comment and "
         "exiting 0 is how a correct finding got walked past."
     )
+
+
+# =========================================================================
+# A finding that withdraws itself does not stop a pull request
+#
+# THE SAME BUG, THREE TIMES, EACH TIME ONE NOTCH HIGHER
+#   v1 blocked on issue TYPE alone. A `minor` / `functional_bug` whose fix
+#   read "No change required for current scenarios" turned the PR red.
+#   v2 required severity >= major. A `major` / `functional_bug` whose
+#   description ended "the pattern is acceptable given actual scenario data"
+#   and whose fix opened "No change required for current scenarios" turned
+#   the PR red. Same sentence, same outcome, one severity up.
+#
+#   The threshold cannot go higher without discarding functional_bug
+#   detection entirely, so the threshold was never the answer. The finding
+#   contradicts ITSELF - the same shape as the verdict/severity split this
+#   module already resolves - and is read the same way: the more specific
+#   statement wins.
+# =========================================================================
+
+
+def _waived(severity: str, issue_type: str, fix: str) -> ReviewIssue:
+    return ReviewIssue(
+        severity=severity,
+        file_path="some/file.py",
+        line_number=1,
+        issue_type=issue_type,
+        description="d",
+        suggested_fix=fix,
+    )
+
+
+_THE_REAL_ONE = (
+    "No change required for current scenarios since search terms are always "
+    "non-empty. If empty search is ever added, switch to parsers.re with "
+    "r'I search for \"(?P<term>[^\"]*)\"'."
+)
+
+
+def test_the_finding_that_shipped_does_not_block():
+    """major / functional_bug whose own fix opens 'No change required'."""
+    out = derive_verdict(_report(
+        "comment", _waived("major", "functional_bug", _THE_REAL_ONE)))
+    assert out.overall_verdict == "comment", (
+        "the review asked for nothing and the pull request went red anyway"
+    )
+
+
+def test_a_trailing_hypothetical_does_not_revive_it():
+    """'If X is ever added, switch to Y' is advice for a change not requested."""
+    out = derive_verdict(_report("comment", _waived(
+        "major", "functional_bug",
+        "No action needed. If the schema grows a field, revisit this.")))
+    assert out.overall_verdict == "comment"
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Break the thing the guard guards
+#
+# A waiver rule that is too eager silently drops real findings, which is
+# strictly worse than the red gate it replaced: the gate was noisy, this
+# would be quiet.
+# ─────────────────────────────────────────────────────────────────────────
+
+def test_a_real_functional_bug_still_blocks():
+    out = derive_verdict(_report("comment", _waived(
+        "major", "functional_bug",
+        "Rewrite the assertion to use wait_for_row() instead of reading the list.")))
+    assert out.overall_verdict == "request_changes"
+
+
+@pytest.mark.parametrize("fix", [
+    "No change required to the selector, but the assertion must be rewritten.",
+    "No change is needed unless the schema changes.",
+    "No change required, however the fixture should still be renamed.",
+])
+def test_a_waiver_taken_back_in_the_same_sentence_still_blocks(fix):
+    """An adversative means something IS being asked for."""
+    out = derive_verdict(_report(
+        "comment", _waived("major", "functional_bug", fix)))
+    assert out.overall_verdict == "request_changes", (
+        f"{fix!r} asks for a change despite opening with a waiver"
+    )
+
+
+def test_a_security_finding_cannot_waive_itself():
+    """A security finding that shrugs is still worth one look."""
+    out = derive_verdict(_report("approve", _waived(
+        "minor", "security", "No change required; the token is a test fixture.")))
+    assert out.overall_verdict == "request_changes"
+
+
+def test_an_explicit_blocking_severity_cannot_be_waived():
+    """`blocking` is a deliberate call, not something a phrase overturns."""
+    out = derive_verdict(_report(
+        "comment", _waived("blocking", "style", "No change needed.")))
+    assert out.overall_verdict == "request_changes"
+
+
+@pytest.mark.parametrize("fix", ["", "Nothing to do here.", "Looks fine."])
+def test_only_the_explicit_phrase_waives(fix):
+    """Near-misses must NOT waive - the rule is deliberately narrow."""
+    out = derive_verdict(_report(
+        "comment", _waived("major", "functional_bug", fix)))
+    assert out.overall_verdict == "request_changes"

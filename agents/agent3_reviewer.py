@@ -184,6 +184,56 @@ _ALWAYS_BLOCKING_TYPES = frozenset({"security"})
 _BLOCKING_ISSUE_TYPES = frozenset({"functional_bug"})
 _TYPE_BLOCKS_AT = frozenset({"blocking", "major"})
 
+# THE SAME CONTRADICTION, ONE SEVERITY UP.
+#
+# Raising the threshold from TYPE-alone to major-or-above did not stop the
+# recurrence, it moved it. A review then filed a `major` / `functional_bug`
+# whose description ended "the pattern is acceptable given actual scenario
+# data" and whose suggested fix opened "No change required for current
+# scenarios". The pull request went red over a finding that said, twice, in
+# its own words, that nothing needed doing.
+#
+# Chasing this with the threshold cannot converge. The only step left is to
+# block on `blocking` alone, which throws functional_bug detection away.
+# The signal was never the severity - it is that the finding CONTRADICTS
+# ITSELF, the same shape as the verdict/severity disagreement this whole
+# module exists to resolve, so it is read the same way: the more specific
+# statement wins, and "no change required" is more specific than a label.
+#
+# Deliberately narrow. The phrase must OPEN the suggested fix - the field
+# whose entire job is to say what to do. "No change required to the selector,
+# but the assertion must be rewritten" still blocks, because something IS
+# being asked for.
+_NO_CHANGE_REQUIRED = re.compile(
+    r"^\W*(?:no|there\s+is\s+no)\s+"
+    r"(?:change|changes|action|fix|edit|update|modification)s?\s+"
+    r"(?:is\s+|are\s+)?(?:required|needed|necessary)\b",
+    re.I,
+)
+
+# An adversative clause in the same sentence means something IS being asked
+# for after all, so the opening waiver does not stand.
+_RETRACTS_THE_WAIVER = re.compile(
+    r"\b(?:but|however|although|though|except|unless|still|instead)\b", re.I)
+
+
+def _waives_itself(issue) -> bool:
+    """True when the finding's own suggested fix opens by asking for nothing.
+
+    Only the FIRST sentence is read. A fix that begins by waiving the finding
+    and then describes a hypothetical - "...If empty search is ever added,
+    switch to parsers.re" - is still a waiver: the conditional is advice for
+    a change nobody has requested.
+    """
+    text = (getattr(issue, "suggested_fix", "") or "").strip()
+    first = re.split(r"(?<=[.!?])\s", text, maxsplit=1)[0] if text else ""
+    if not _NO_CHANGE_REQUIRED.match(first):
+        return False
+    # An adversative in the SAME sentence takes the waiver back: "No change
+    # required to the selector, BUT the assertion must be rewritten" asks for
+    # a change. Only an unqualified waiver counts.
+    return not _RETRACTS_THE_WAIVER.search(first)
+
 
 def derive_verdict(report: ReviewReport) -> ReviewReport:
     """Recompute overall_verdict from the issues the review actually found.
@@ -199,10 +249,17 @@ def derive_verdict(report: ReviewReport) -> ReviewReport:
     """
     blocking = [
         issue for issue in report.issues
-        if issue.severity in _BLOCKING_SEVERITIES
-        or issue.issue_type in _ALWAYS_BLOCKING_TYPES
-        or (issue.issue_type in _BLOCKING_ISSUE_TYPES
-            and issue.severity in _TYPE_BLOCKS_AT)
+        if (issue.severity in _BLOCKING_SEVERITIES
+            or issue.issue_type in _ALWAYS_BLOCKING_TYPES
+            or (issue.issue_type in _BLOCKING_ISSUE_TYPES
+                and issue.severity in _TYPE_BLOCKS_AT))
+        # A finding whose own fix opens with "no change required" has
+        # withdrawn itself. Two exemptions: a security finding that shrugs is
+        # still worth one look, and an explicit `blocking` severity is a
+        # deliberate call that a waiver phrase does not get to overturn.
+        and not (issue.issue_type not in _ALWAYS_BLOCKING_TYPES
+                 and issue.severity not in _BLOCKING_SEVERITIES
+                 and _waives_itself(issue))
     ]
     if not blocking or report.overall_verdict == "request_changes":
         return report

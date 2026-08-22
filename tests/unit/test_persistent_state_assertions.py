@@ -736,6 +736,13 @@ def test_a_neutral_phrase_keeps_the_blame_on_the_step_definition(project):
     scenarios that are perfectly well phrased. When the Gherkin asks for
     something relative and the step definition asserts a count anyway, the
     step definition is both at fault and able to fix itself.
+
+    UPDATED when routing stopped being a guess. Both files are now reported,
+    because a phrase list could not decide reliably which one was wrong. The
+    concern above is unchanged and still enforced, in two parts: the step
+    definition must be told (it is the file that can fix this one), and the
+    feature message must give the model explicit permission to leave a
+    well-phrased scenario alone.
     """
     errors = validate_persistent_state_assertions([_feature(), _bound_step('''
         @then("the added item is in the basket")
@@ -743,7 +750,17 @@ def test_a_neutral_phrase_keeps_the_blame_on_the_step_definition(project):
             assert len(basket_page.item_names()) == 1
     ''')], project)
 
-    assert _blamed(errors) == "tests/step_defs/test_f.py"
+    blamed = {e.split("'")[1] for e in errors}
+    assert "tests/step_defs/test_f.py" in blamed, (
+        "the step definition is at fault here and can fix itself - it must "
+        "be told, or this case deadlocks the way SCRUM-111 did"
+    )
+
+    feature_error = next(e for e in errors if "features/f.feature" in e)
+    assert "leave it unchanged" in feature_error, (
+        "a well-phrased scenario must not be rewritten just because the step "
+        "definition over-asserted - the message has to say so"
+    )
 
 
 def test_a_relative_assertion_is_still_clean(project):
@@ -767,3 +784,125 @@ def test_the_feature_must_be_in_the_batch_to_be_blamed(project):
         "no feature file in the batch - blaming one would route the repair at "
         "a file that is not there"
     )
+
+
+# =========================================================================
+# WHICH FILE gets told - the routing must not be a guess
+#
+# THE SAME DEADLOCK, TWICE
+#   The step definition must implement the Gherkin phrase it is given. When
+#   that phrase claims an exact state, no edit to the step-def file can make
+#   the assertion relative, so reporting against it asks a model to fix a
+#   file that cannot be fixed. One story spent four attempts and 3,170
+#   characters that way.
+#
+#   The remedy was a regex over the step text: if it "sounds absolute",
+#   report the FEATURE instead. It matched one exact phrasing and missed
+#   every paraphrase of it - see _PHRASES below, all of which mean the
+#   same thing and only the first of which routed. The next story to
+#   phrase it differently deadlocked the same way: three attempts,
+#   identical error each time.
+#
+#   A phrase list cannot be completed. So it stopped being load-bearing:
+#   when the feature is in the batch, BOTH files are reported and each
+#   message goes to the file that can answer it.
+# =========================================================================
+
+_FEATURE = SimpleNamespace(
+    file_path="features/flow.feature",
+    content="Feature: F\n  Scenario: S\n    Then the state is checked\n",
+)
+
+
+def _steps_with_phrase(phrase: str, body: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        file_path="tests/step_defs/test_flow.py",
+        content=textwrap.dedent(f'''
+            from pytest_bdd import scenarios, then
+            scenarios("../../features/flow.feature")
+
+            @then("{phrase}")
+            def assert_state(basket_page):
+            {body}
+        '''),
+    )
+
+
+_PHRASES = [
+    "the basket should be empty",          # the one the old regex matched
+    "I should see an empty basket",        # the ones it did not
+    "the basket should contain no items",
+    "no items should remain in the basket",
+    "I should see the empty basket message",
+    "the basket should have 0 items",
+]
+
+
+@pytest.mark.parametrize("phrase", _PHRASES)
+def test_the_feature_is_always_told_whatever_the_phrasing(project, phrase):
+    """The regression. Every one of these deadlocked except the first."""
+    errors = validate_persistent_state_assertions(
+        [_FEATURE, _steps_with_phrase(phrase, "    assert basket_page.is_empty()")],
+        project,
+    )
+    named = {"feature" if "features/flow.feature" in e else "step_def"
+             for e in errors}
+    assert "feature" in named, (
+        f"{phrase!r} routed only to the step definition, which cannot "
+        f"implement anything other than the phrase it was given - that is "
+        f"the deadlock this rule exists to prevent"
+    )
+
+
+@pytest.mark.parametrize("phrase", _PHRASES)
+def test_the_step_definition_is_told_as_well(project, phrase):
+    """Both, not one. If the scenario was fine and the step over-asserted,
+    only the step-def message can fix it - and the reverse for the feature.
+    Reporting one and stopping is what made the routing a guess that had to
+    be right first time."""
+    errors = validate_persistent_state_assertions(
+        [_FEATURE, _steps_with_phrase(phrase, "    assert basket_page.is_empty()")],
+        project,
+    )
+    named = {"feature" if "features/flow.feature" in e else "step_def"
+             for e in errors}
+    assert named == {"feature", "step_def"}, f"got {named}"
+
+
+def test_the_hint_says_which_file_is_the_likely_culprit(project):
+    """The regex still earns its keep - as a hint that nothing routes on."""
+    def feature_error(phrase):
+        errors = validate_persistent_state_assertions(
+            [_FEATURE, _steps_with_phrase(phrase, "    assert basket_page.is_empty()")],
+            project,
+        )
+        return next(e for e in errors if "features/flow.feature" in e)
+
+    assert "EXACT claim" in feature_error("the basket should be empty")
+    assert "over-asserted" in feature_error("I should see an empty basket")
+
+
+def test_a_relative_assertion_clears_both_errors(project):
+    """Convergence. Once the assertion is relative there is nothing to report,
+    so the loop terminates instead of cycling between the two files."""
+    errors = validate_persistent_state_assertions(
+        [_FEATURE, _steps_with_phrase(
+            "the removed item should be gone",
+            "    assert name not in basket_page.item_names()")],
+        project,
+    )
+    assert errors == []
+
+
+def test_without_a_feature_in_the_batch_only_the_step_def_is_told(project):
+    """An ai-update regenerates the step definitions against a feature file
+    that already exists. There is no feature to report against, and the
+    previous behaviour must be untouched."""
+    errors = validate_persistent_state_assertions(
+        [_steps_with_phrase("the basket should be empty",
+                            "    assert basket_page.is_empty()")],
+        project,
+    )
+    assert len(errors) == 1
+    assert "features/" not in errors[0]
+    assert "tests/step_defs/test_flow.py" in errors[0]

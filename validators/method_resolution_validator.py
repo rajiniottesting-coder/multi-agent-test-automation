@@ -2139,12 +2139,47 @@ def validate_persistent_state_assertions(
                 # file. The repair loop routes on the path in this message, so
                 # naming the feature file is what lets the scenario text be
                 # rewritten, after which the step definition follows.
+                # ROUTE TO BOTH FILES, NOT ONE.
+                #
+                # The first version reported only the step-def file and a
+                # story burned four attempts on a file that could not be
+                # fixed. The remedy was to detect an absolute-sounding step
+                # phrase and report the FEATURE instead - which worked for
+                # the phrases the pattern knew and deadlocked identically on
+                # the ones it did not. `<the collection> should be empty`
+                # routed; `I should see an empty <collection>`, `<the
+                # collection> should contain no entries` and `no entries
+                # should remain` did not, and the next story to phrase it a
+                # different way failed exactly as the incident before it.
+                #
+                # A phrase list cannot be completed - proven twice now - so it
+                # is no longer load-bearing. When the feature is in the batch,
+                # BOTH files are reported: the scenario may be the thing
+                # demanding an exact state, or the step definition may have
+                # over-asserted on a relative phrase, and each message goes to
+                # the file that can answer it. The repair loop regenerates the
+                # feature first and writes it back before repairing the step
+                # definition, so the step-def prompt sees the rewritten
+                # scenario within the same attempt.
+                #
+                # The pattern survives only to say WHICH is more likely.
+                # Nothing routes on it, so a phrase it misses costs a hint,
+                # not a story.
                 step_text = _enclosing_step_text(func)
-                feature_path = None
-                if _ABSOLUTE_STEP_TEXT.search(step_text):
-                    feature_path = _feature_in_batch(source, generated_files)
+                feature_path = _feature_in_batch(source, generated_files)
+                reads_absolute = bool(_ABSOLUTE_STEP_TEXT.search(step_text))
 
                 if feature_path:
+                    likely = (
+                        "This phrase reads as an EXACT claim, so the scenario "
+                        "is the likely culprit. "
+                        if reads_absolute else
+                        "This phrase does not obviously demand an exact state, "
+                        "so the step definition may simply have over-asserted. "
+                        "If this scenario is already true whatever the state "
+                        "started as, leave it unchanged - the step-definition "
+                        "error reported separately covers that case. "
+                    )
                     errors.append(
                         f"Persistent state error in '{feature_path}': the step "
                         f"`{step_text.strip()[:90]}` claims an EXACT state on "
@@ -2157,9 +2192,12 @@ def validate_persistent_state_assertions(
                         f"for something true whatever the state started as - "
                         f"that the item this scenario added is present, or is "
                         f"gone - or add a Given to this feature that clears "
-                        f"the state first."
+                        f"the state first. " + likely
                     )
-                    continue
+                    # NO `continue`. The step-definition error is emitted too,
+                    # so whichever of the two files is actually wrong has been
+                    # told. Stopping here is what made the routing a guess
+                    # that had to be right first time.
 
                 errors.append(
                     f"Persistent state error in '{path}' line {node.lineno}: "
