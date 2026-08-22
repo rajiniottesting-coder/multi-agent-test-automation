@@ -251,14 +251,12 @@
     }
   },
   "_starting_state": {
-    "note": "How a scenario can honestly own its starting state in THIS application. Read by validate_persistent_state_assertions: an absolute assertion on a persistent_state page is rejected unless the scenario does one of the things named here. Nothing is inferred from method names - a step called 'a newly registered account' once called a helper that does not register, and the check believed the name.",
-    "fresh_identity_fixtures": [
-      "unique_username"
-    ],
+    "note": "How a scenario can honestly own its starting state in THIS application. Read by validate_persistent_state_assertions, which builds its remedy advice from these lists - so anything named here must be something the generator can actually write with the elements this inventory describes.",
+    "fresh_identity_fixtures": [],
     "establishing_calls": [
       "remove_all_products",
       "empty_the_cart"
     ],
-    "registration_note": "Registration here is TWO forms. start_signup() submits the first and lands on a second asking for password, address and contact details; the account exists only after that is submitted. There is no single call that registers, so 'register a fresh account' is not on its own a way to own the starting state in this application - clear the cart in a Given, or assert relatively."
+    "registration_note": "fresh_identity_fixtures is EMPTY on purpose. Registration here is two forms: signup_button submits the first and lands on a second at /signup asking for password, address and contact details. That second form is not in this inventory - there is no password field, no create-account control - so a fresh account CANNOT be created by generated code. A run that tried invented a password, never submitted it, and the login failed with 'No session after logging in'. Add the second form's elements to this inventory and re-list unique_username here if registration is ever needed; until then, clear the cart in a Given, or assert relatively."
   }
 }

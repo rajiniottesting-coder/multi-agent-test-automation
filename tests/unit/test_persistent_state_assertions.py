@@ -104,18 +104,70 @@ def test_an_emptiness_assertion_is_absolute(project):
     assert len(errors) == 1
 
 
-def test_the_rejection_offers_both_remedies(project):
+def test_the_rejection_offers_only_remedies_this_application_can_do(project):
+    """The message is guidance, and guidance that cannot be followed gets
+    approximated.
+
+    It used to name "register a fresh account" first, always. In an
+    application whose inventory holds no password field and no
+    account-details form, that cannot be written - and a run that tried
+    invented a password, never submitted it, and failed at login with "No
+    session after logging in". A whole story, lost to an instruction that
+    could not be carried out.
+
+    The options are now assembled from `_starting_state`, so an application
+    that declares no way to establish a clean start is told to assert
+    relatively, which it can always do.
+    """
     errors = validate_persistent_state_assertions([_steps('''
         def assert_empty(basket_page):
             assert basket_page.is_empty()
     ''')], project)
     message = errors[0].lower()
 
-    assert "register" in message and "clear" in message, "how to own the state"
-    assert "relative" in message, "or how to avoid needing to"
+    assert "relative" in message, "always available, so always offered"
     assert "wait" in message, (
         "say that waiting will not help - the previous failure's remedy is "
         "the obvious wrong turn here"
+    )
+
+    # This fixture project declares no `_starting_state` at all, so the
+    # framework's own fresh-identity fixture is the only thing on offer -
+    # which is the right default for an application that has not thought
+    # about this yet.
+    assert "unique_username" in message
+    assert "clear the state" not in message, (
+        "nothing declares an establishing call here, so offering one would "
+        "send the model looking for a method that does not exist"
+    )
+
+
+def test_a_remedy_the_application_cannot_do_is_not_offered(project, tmp_path):
+    """Break the thing the guard guards.
+
+    An application declaring an EMPTY fresh_identity_fixtures list is saying
+    "there is no way to register here". The default used to be unioned in
+    regardless, overruling it.
+    """
+    import json
+
+    path = tmp_path / "app_inventory" / "app.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["_starting_state"] = {"fresh_identity_fixtures": [],
+                               "establishing_calls": ["remove_all_items"]}
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    errors = validate_persistent_state_assertions([_steps('''
+        def assert_empty(basket_page):
+            assert basket_page.is_empty()
+    ''')], tmp_path)
+
+    message = errors[0]
+    assert "remove_all_items" in message, "offer what the application CAN do"
+    assert "unique_username" not in message, (
+        "an explicit empty list means there is no way to register here; "
+        "offering it anyway is how a story ends up writing half a "
+        "registration flow"
     )
 
 

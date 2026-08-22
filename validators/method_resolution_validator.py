@@ -1642,6 +1642,52 @@ _STATE_OWNING_CALLS = re.compile(
 _DEFAULT_FRESH_FIXTURES = ("unique_username",)
 
 
+def _available_remedies(fresh_fixtures, establishing_calls) -> str:
+    """The ways to own a clean start that THIS application can express.
+
+    The remedy sentence used to be hardcoded, and it led with "register a
+    fresh account". In an application whose inventory holds no password field
+    and no account-details form, that is not a thing the generator can do. It
+    approximated: it invented a password, never submitted it, and the login
+    failed at run time - a whole story lost to an instruction that could not
+    be carried out.
+
+    "Unsatisfiable guidance gets approximated" is already a reading rule here.
+    This is the same rule applied to the error MESSAGE, which is guidance too,
+    and is read at the moment the model is most willing to do something odd.
+
+    So the options are assembled from the declaration. An application that
+    declares no way to establish a clean start is told to assert relatively,
+    which it can always do.
+    """
+    options = []
+    if fresh_fixtures:
+        options.append(
+            f"register a fresh identity using the "
+            f"{', '.join(sorted(fresh_fixtures))} fixture"
+        )
+    if establishing_calls:
+        options.append(
+            f"clear the state in a Given step, via "
+            f"{' or '.join(sorted(establishing_calls))}()"
+        )
+    if not options:
+        return (
+            "This application declares no way to establish a clean start "
+            "(`_starting_state` in the inventory is empty), so the assertion "
+            "must be RELATIVE - that what this scenario added is present, or "
+            "is gone - which holds whatever the state started as."
+        )
+    return (
+        "Either the scenario must OWN its starting state (" + "; or ".join(options)
+        + "), or the assertion must be relative - that what this scenario "
+        "added is present, or is gone - which holds whatever the state "
+        "started as. Do not invent a way to own the state that the inventory "
+        "cannot express: a registration flow the inventory does not describe "
+        "cannot be written, and half of one fails at run time."
+    )
+
+
 def _shared_account_names(project_root) -> frozenset:
     """Account keys the inventory declares under `test_users`.
 
@@ -1676,7 +1722,17 @@ def _starting_state_rules(project_root) -> tuple:
     try:
         inventory = _load_configured_inventory(Path(project_root)) or {}
         block = inventory.get("_starting_state") or {}
-        fixtures.update(block.get("fresh_identity_fixtures") or [])
+        # An EXPLICIT list replaces the default, including an explicit empty
+        # one. The default used to be unioned in unconditionally, so an
+        # application saying "there is no way to register here" was overruled
+        # and told to register anyway - which is how a story spent its repair
+        # budget writing half a registration flow that failed at run time.
+        #
+        # Absent key -> the framework fixture applies, which is the sensible
+        # default for an application that has not thought about this yet.
+        # Present key -> the application has thought about it; believe it.
+        if "fresh_identity_fixtures" in block:
+            fixtures = set(block.get("fresh_identity_fixtures") or [])
         calls.update(block.get("establishing_calls") or [])
     except Exception:                                     # noqa: BLE001
         pass
@@ -1947,11 +2003,8 @@ def validate_persistent_state_assertions(
                     f"declared persistent_state - the application keeps it against "
                     f"the signed-in user, so it survives logout and survives the "
                     f"run. A previous run's leftovers are counted too, and no wait "
-                    f"removes them. Either the scenario must OWN its starting "
-                    f"state (register a fresh account, or clear the state in a "
-                    f"Given step), or the assertion must be relative - that what "
-                    f"this scenario added is present, or is gone - which holds "
-                    f"whatever the state started as."
+                    f"removes them. "
+                    + _available_remedies(fresh_fixtures, establishing_calls)
                     + contradiction
                 )
     return errors
