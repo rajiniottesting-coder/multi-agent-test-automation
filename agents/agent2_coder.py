@@ -1014,11 +1014,54 @@ def _looks_like_useful_python(content: str) -> bool:
     return True
 
 
-def _is_degraded_regeneration(new_content: str, prior_content: str) -> bool:
+def _content_is_wellformed(content: str, file_path: str = "") -> bool:
+    """Is this content valid FOR ITS OWN FORMAT?
+
+    WHY THE PATH IS A PARAMETER NOW
+        This was `ast.parse(content)` for everything the repair loop touched,
+        which was correct for as long as everything it touched was Python.
+        The moment a validator started routing errors to a `.feature` file,
+        the loop regenerated Gherkin and asked Python's parser to approve it.
+        No feature file has ever parsed as Python or ever will, so a perfectly
+        good regeneration was declared degraded and the WHOLE repair loop
+        aborted - on the first attempt, before the step definition it was
+        supposed to fix downstream had a turn.
+
+        The check had simply never seen a non-Python file, because the routing
+        that produces one had itself never worked.
+
+    Unknown extensions get the length check only. Guessing a grammar for a
+    format this function does not know is how it went wrong the first time.
+    """
+    if not content or len(content) < _DEGRADED_OUTPUT_CHAR_THRESHOLD:
+        return False
+
+    suffix = (file_path or "").rsplit(".", 1)[-1].lower() if "." in (file_path or "") else ""
+
+    if suffix == "feature":
+        # Gherkin: a feature file that still declares a Feature and at least
+        # one Scenario is structurally intact. Anything finer belongs to the
+        # feature-structure validator, which runs on it anyway.
+        text = content.lstrip()
+        return "Feature:" in text and ("Scenario:" in text
+                                       or "Scenario Outline:" in text)
+
+    if suffix in {"py", ""}:
+        try:
+            ast.parse(content)
+        except SyntaxError:
+            return False
+        return True
+
+    return True
+
+
+def _is_degraded_regeneration(new_content: str, prior_content: str,
+                              file_path: str = "") -> bool:
     """Detect if a regeneration produced clearly worse output than before.
 
     Signals of degradation:
-      - New content fails to parse as Python (LLM gave up mid-output)
+      - New content is malformed FOR ITS OWN FORMAT (LLM gave up mid-output)
       - New content is dramatically smaller than prior (truncated stub)
 
     Used to abort the repair loop early instead of compounding garbage
@@ -1027,16 +1070,14 @@ def _is_degraded_regeneration(new_content: str, prior_content: str) -> bool:
     if not new_content or len(new_content) < _DEGRADED_OUTPUT_CHAR_THRESHOLD:
         return True
 
-    try:
-        ast.parse(new_content)
-    except SyntaxError:
+    if not _content_is_wellformed(new_content, file_path):
         return True
 
     # If new content is less than 30% the size of the prior real attempt,
     # that's a strong signal the LLM is producing fragments
     if (
         prior_content
-        and _looks_like_useful_python(prior_content)
+        and _content_is_wellformed(prior_content, file_path)
         and len(new_content) < 0.3 * len(prior_content)
     ):
         return True
@@ -1949,12 +1990,13 @@ def _attempt_step_coverage_repair(
                 # syntax errors, fraction of prior size), the prior attempt
                 # is actually our best bet. Keep it and abort the repair loop
                 # so we don't compound garbage on garbage.
-                if _is_degraded_regeneration(repaired_content, prior_content):
+                if _is_degraded_regeneration(
+                        repaired_content, prior_content, step_def_path):
                     logger.error(
                         f"  Repair produced degraded output for "
                         f"'{step_def_path}' ({len(repaired_content)} chars vs "
                         f"prior {len(prior_content)} chars, syntax-valid="
-                        f"{_looks_like_useful_python(repaired_content)}). "
+                        f"{_content_is_wellformed(repaired_content, step_def_path)}). "
                         f"Aborting repair to avoid wasting more LLM calls. "
                         f"Final validator will raise on the prior attempt."
                     )

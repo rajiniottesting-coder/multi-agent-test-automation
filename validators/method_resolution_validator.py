@@ -1877,13 +1877,20 @@ _ABSOLUTE_STEP_TEXT = re.compile(
 
 
 def _enclosing_step_text(func: ast.AST) -> str:
-    """The Gherkin phrase this step definition is bound to, from its decorator."""
+    """The Gherkin phrase this step definition is bound to, from its decorator.
+
+    De-duplicated. A step bound under more than one keyword - `@when` and
+    `@then` carrying the same phrase, which is legitimate - produced the
+    phrase twice, and the error message then truncated the doubled string
+    mid-word at its 90-character cap. The model reading that feedback was
+    shown a sentence that appears in no feature file.
+    """
     parts: list = []
     for dec in getattr(func, "decorator_list", []):
         for node in ast.walk(dec):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
                 parts.append(node.value)
-    return " ".join(parts)
+    return " ".join(dict.fromkeys(parts))
 
 
 def _feature_in_batch(step_source: str, generated_files: list) -> Optional[str]:

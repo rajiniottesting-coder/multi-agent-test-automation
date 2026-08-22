@@ -16,11 +16,16 @@ These behaviors are the v2 + v4 hotfixes that prevented broken code
 from reaching PRs in the past. The tests are hermetic — no LLM calls,
 no network, no quota use.
 """
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agents.agent2_coder import _attempt_step_coverage_repair
+from agents.agent2_coder import (
+    _attempt_step_coverage_repair,
+    _content_is_wellformed,
+    _is_degraded_regeneration,
+)
 from core.app_context import AppContext
 from core.schemas import CodePlan, FilePlan, GeneratedFile
 
@@ -631,3 +636,111 @@ def test_the_repairable_set_is_not_empty():
         "the repairable set has shrunk unexpectedly - check nothing was "
         "removed while making this test pass"
     )
+
+
+# =========================================================================
+# A regenerated file is judged by ITS OWN format
+#
+# WHAT HAPPENED
+#   _is_degraded_regeneration ran `ast.parse(content)` on whatever the repair
+#   loop had just regenerated, and aborted the entire loop when it failed.
+#   That was correct for exactly as long as everything the loop touched was
+#   Python.
+#
+#   Then a validator started routing errors to a `.feature` file so a
+#   scenario could be reworded. The loop regenerated Gherkin, handed it to
+#   Python's parser, and was told it was garbage - because no feature file
+#   has ever parsed as Python or ever will. A sound regeneration (2200 chars
+#   against a prior 2305) was declared degraded on the FIRST attempt, and the
+#   abort returned before the step-definition file it was meant to fix
+#   downstream had a turn. The story failed with six errors, three of them in
+#   a file nothing had tried to repair.
+#
+#   The check had never seen a non-Python file, because the routing that
+#   produces one had itself never worked. Two dormant bugs, and fixing the
+#   first was what woke the second.
+# =========================================================================
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _reference(kind: str) -> tuple:
+    """(path, source) for whatever THIS project declares as its reference.
+
+    Read from `reference_files` in config, never hardcoded. That setting is
+    how the framework is pointed at another application - naming one app's
+    files here would make these tests pass for that app and skip for every
+    other, which is the same dormancy they exist to prevent.
+    """
+    try:
+        ctx = AppContext.load()
+        rel = {"feature": ctx.reference_feature,
+               "step_def": ctx.reference_step_def,
+               "page_object": ctx.reference_page_object}[kind]
+    except Exception:                                     # noqa: BLE001
+        pytest.skip("no app context configured in this checkout")
+    path = _PROJECT_ROOT / rel
+    if not path.is_file():
+        pytest.skip(f"reference {kind} ({rel}) not in this checkout")
+    return rel.replace("\\", "/"), path.read_text(encoding="utf-8")
+
+
+def test_a_real_feature_file_is_not_degraded():
+    """The exact shape that aborted the run. Read from the repo rather than
+    written here, so it stays true for whatever feature files this project
+    actually ships."""
+    path, feature = _reference("feature")
+    assert not _is_degraded_regeneration(feature, feature + "  ", path), (
+        "a well-formed feature file was declared degraded, which aborts the "
+        "whole repair loop on its first attempt"
+    )
+
+
+def test_the_same_content_would_still_fail_the_python_check():
+    """Proves the fix is load-bearing rather than incidental: this content is
+    genuinely un-parseable as Python, so only the format-aware branch saves
+    it."""
+    path, feature = _reference("feature")
+    assert not _content_is_wellformed(feature, "anything.py")
+    assert _content_is_wellformed(feature, path)
+
+
+def test_a_truncated_feature_is_still_degraded():
+    """Break the thing the guard guards. Accepting any text at all would
+    let a genuinely broken regeneration through and compound garbage."""
+    assert _is_degraded_regeneration(
+        "Feature: F\n  # the model stopped here and wrote nothing further\n",
+        "x" * 2000, "features/flow.feature")
+
+
+def test_python_files_are_judged_exactly_as_before():
+    """The branch that already worked must not move."""
+    path, good = _reference("step_def")
+    assert not _is_degraded_regeneration(good, good, path)
+    assert _is_degraded_regeneration("def (:\n" * 40, good, path)
+    assert _is_degraded_regeneration("import os\n" * 3, good, path)
+
+
+def test_an_unknown_extension_is_not_guessed_at():
+    """Inventing a grammar for a format this function does not know is how it
+    went wrong the first time. Length only."""
+    assert _content_is_wellformed("anything at all, " * 30, "notes/whatever.md")
+    assert not _content_is_wellformed("tiny", "notes/whatever.md")
+
+
+def test_every_repairable_file_type_has_a_verdict():
+    """The guard against the NEXT dormant version of this.
+
+    The repair loop regenerates whatever a validator names. If a new file
+    type becomes routable and this check cannot judge it, the loop aborts on
+    it silently - which is precisely what happened with .feature. Any type
+    listed here must have a well-formed example that passes.
+    """
+    samples = dict(
+        _reference(kind) for kind in ("feature", "step_def", "page_object"))
+    for path, content in samples.items():
+        assert _content_is_wellformed(content, path), (
+            f"the repair loop can regenerate {path}, but the degradation "
+            f"check cannot recognise a valid one - it will abort the loop "
+            f"every time that file is repaired"
+        )
