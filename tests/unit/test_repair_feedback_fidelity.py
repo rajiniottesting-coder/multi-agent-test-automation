@@ -97,14 +97,52 @@ def test_a_short_error_is_passed_through_whole():
     assert _trim_error(short) == short
 
 
-def test_step_coverage_errors_still_extract_just_the_phrase():
-    """The one shape the old heuristic was written for must keep working -
-    a step-coverage run can carry dozens of these and the phrase is all that
-    matters."""
-    err = "Step coverage error: no definition for feature step `I do a thing`"
+def test_a_lone_coverage_error_is_sent_whole():
+    """The phrase alone is not enough when there is only one of them.
+
+    This test used to assert the opposite, on the rationale that "a
+    step-coverage run can carry dozens of these and the phrase is all that
+    matters". True of dozens. False of one - and one is what a story died on.
+
+    A single coverage error became thirty-four characters:
+
+        - When I am on the listing page
+
+    The model had already written a decorator carrying that exact text, under
+    the wrong KEYWORD. Shown only the phrase, it found the phrase in its own
+    file and correctly changed nothing; the repair loop then abandoned the
+    story for changing nothing. The fix was in the sentence it never saw:
+    `has no matching @when() decorator`.
+    """
+    err = ("Step coverage error in 'tests/step_defs/test_x.py': feature step "
+           "`When I do a thing` has no matching @when() decorator. pytest-bdd "
+           "would fail with StepDefinitionNotFoundError at collection time.")
     out = _summarize_validator_feedback([err])
 
-    assert out.strip() == "- I do a thing"
+    assert "@when" in out, "the keyword is the fix and must survive"
+    assert "no matching" in out, "say what is wrong, not just which step"
+    assert "test_x.py" in out, "say which file"
+
+
+def test_many_coverage_errors_are_still_compacted_to_the_pattern():
+    """Break the thing the guard guards.
+
+    Sending fifty verbose errors whole would bury the model as surely as
+    truncation starved it. Above the threshold the phrase IS the message,
+    because every line is another instance of one mistake.
+    """
+    errors = [
+        f"Step coverage error in 'tests/step_defs/test_x.py': feature step "
+        f"`Then thing number {n}` has no matching @then() decorator."
+        for n in range(20)
+    ]
+    out = _summarize_validator_feedback(errors)
+
+    assert "Then thing number 0" in out
+    assert "more similar error(s)" in out, "say how many were elided"
+    assert out.count("Step coverage error in") == 0, (
+        "at this count the phrases alone are the point"
+    )
 
 
 def test_the_summary_is_bounded():

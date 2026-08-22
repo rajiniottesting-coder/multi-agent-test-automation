@@ -940,29 +940,44 @@ def _trim_error(error: str) -> str:
 def _summarize_validator_feedback(errors: list[str]) -> str:
     """Compact validator errors into a prompt-friendly summary.
 
-    For small error counts (<= _MAX_FEEDBACK_ERRORS_VERBATIM) we just
-    extract the salient bit — the Gherkin step phrase that needs a
-    decorator — and bullet-list them. For large counts we show the
-    first N verbatim plus a count of the remaining, so the LLM sees
-    the *pattern* rather than getting buried in repetition.
+    Two regimes, and which one applies depends on how MANY errors there are.
+
+    With a handful, the model gets each error WHOLE. With dozens - a step-def
+    file that missed a whole feature - it gets the first few plus a count, so
+    it sees the pattern instead of drowning in repetition.
+
+    The phrase-only extraction used to apply to every count, and that lost a
+    story. One coverage error became thirty-four characters:
+
+        - When I am on the listing page
+
+    No statement of what was wrong with it. The model had already written a
+    decorator carrying that exact text - under the wrong KEYWORD - so it read
+    the feedback, found the phrase in its own file, and correctly changed
+    nothing. The repair loop then abandoned the story for "changing nothing".
+
+    Everything the model needed was in the error it never saw: `has no
+    matching @when() decorator`. Brevity is only worth buying when there is
+    repetition to cut; with one error there is nothing to save and everything
+    to lose.
 
     This is app-agnostic — operates only on the validator's own
     error strings, no project-specific knowledge.
     """
-    # Try to extract just the actionable phrase from each error string
-    # (the part after "feature step `..." up to the closing backtick)
+    # The phrase alone, for the many-errors regime where the pattern is the
+    # message and each line is one more instance of it.
     step_phrase_pattern = re.compile(r"feature step `([^`]+)`")
 
-    extracted: list[str] = []
-    for err in errors:
+    def _phrase_only(err: str) -> str:
         match = step_phrase_pattern.search(err)
-        if match:
-            extracted.append(match.group(1))
-        else:
-            extracted.append(_trim_error(err))
+        return match.group(1) if match else _trim_error(err)
 
-    if len(extracted) <= _MAX_FEEDBACK_ERRORS_VERBATIM:
-        return "\n".join(f"  - {phrase}" for phrase in extracted)
+    if len(errors) <= _MAX_FEEDBACK_ERRORS_VERBATIM:
+        # Few enough to read. Send them whole - the keyword, the file and the
+        # consequence are all in there, and any of them may be the fix.
+        return "\n".join(f"  - {_trim_error(err)}" for err in errors)
+
+    extracted: list[str] = [_phrase_only(err) for err in errors]
 
     head = "\n".join(
         f"  - {phrase}" for phrase in extracted[:_MAX_FEEDBACK_ERRORS_VERBATIM]
