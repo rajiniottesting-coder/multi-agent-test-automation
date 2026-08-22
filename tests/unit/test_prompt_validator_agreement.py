@@ -429,3 +429,97 @@ def test_every_committed_page_object_passes_the_predicate_rule():
         "a committed page object fails the rule generated code is held to:\n  "
         + "\n  ".join(errors)
     )
+
+
+# =========================================================================
+# THE PROMPT MUST NOT FORBID WHAT THE REFERENCE DOES
+#
+# The generation prompt said "Absence is its own call, NEVER a negated
+# presence check", and the reference step definitions assert
+#
+#     assert not nav_page.is_logged_in(), "Unexpectedly logged in"
+#
+# which is a negated presence check. Agent 2 is shown both. It obeyed the
+# prompt, invented a WAITING logged-out probe to assert absence with, and the
+# review flagged it for contradicting the reference - correctly.
+#
+# The rule's reasoning was sound and its scope was not: a presence probe can
+# only answer "no" by timing out IF IT WAITS. The reference's probe does not
+# wait, so negating it is free.
+#
+# Four sources carried this rule and only one of them was right. That is the
+# first entry in the failure history, and it keeps happening because prose
+# rules are checked by reading and reading is where it slips.
+#
+# This check is textual and narrow on purpose: it looks for a pattern the
+# reference actually uses and asserts the prompt does not call that pattern
+# rejected. It cannot judge prose in general - but it can notice when the
+# example under a "rejected" heading is something the reference ships.
+# =========================================================================
+
+def _reference_step_def_path():
+    import yaml
+
+    config = yaml.safe_load(
+        (_PROJECT / "config" / "config.yaml").read_text(encoding="utf-8"))
+    rel = ((config.get("app_under_test") or {}).get("reference_files") or {}
+           ).get("step_def")
+    return (_PROJECT / rel) if rel else None
+
+
+def test_the_prompt_does_not_reject_a_pattern_the_reference_uses():
+    """Shapes the reference relies on must not appear under a rejected heading."""
+    import re
+
+    path = _reference_step_def_path()
+    if not path or not path.is_file():
+        pytest.skip("no reference step definitions in this checkout")
+
+    # Normalise line endings before any regex. The first version of this
+    # check used `\n` terminators against a CRLF file, matched nothing, and
+    # passed while the contradiction it was written for was present.
+    reference = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+    prompt = _PROMPT.read_text(encoding="utf-8").replace("\r\n", "\n")
+
+    # The shapes worth checking are assertion forms - that is where the
+    # reference teaches a convention and the prompt can contradict it.
+    shapes = {
+        "negated non-waiting probe": (
+            re.compile(r"assert\s+not\s+\w+\.is_\w+\("),
+            # The prompt writes examples with PLACEHOLDERS - `is_<state>()`,
+            # not a literal method name - so the pattern has to tolerate
+            # angle brackets. Without that it matched nothing and the guard
+            # could not fail, which is the same as not having it.
+            re.compile(r"assert\s+not\s+<?\w+>?\.is_[\w<>]+\("),
+        ),
+    }
+
+    for name, (in_reference, in_prompt) in shapes.items():
+        if not in_reference.search(reference):
+            continue                       # the reference does not use it
+
+        # Find every "rejected" example block in the prompt and check the
+        # shape is not one of them.
+        for block in re.findall(r"#\s*rejected[^\n]*\n((?:[^\n]*\n)+?)\n", prompt):
+            assert not in_prompt.search(block), (
+                f"the generation prompt marks the {name!r} shape as rejected, "
+                f"but {path.name} uses it. Agent 2 is shown both and will obey "
+                f"one of them; the review then flags whichever it chose. "
+                f"Rejected block:\n    " + block.strip().replace("\n", "\n    ")
+            )
+
+
+def test_the_check_can_tell_the_two_probe_kinds_apart():
+    """Break the thing the guard guards.
+
+    The whole rule turns on waiting versus non-waiting. If the prompt stopped
+    drawing that distinction, this would be worth failing over.
+    """
+    prompt = _PROMPT.read_text(encoding="utf-8")
+    lowered = " ".join(prompt.split()).lower()
+
+    assert "non-waiting" in lowered, (
+        "the prompt no longer distinguishes waiting from non-waiting probes - "
+        "that distinction is the entire content of the absence rule"
+    )
+    assert "wait_for_row" in prompt, "the waiting form for absence must be named"

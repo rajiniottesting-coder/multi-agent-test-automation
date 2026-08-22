@@ -150,20 +150,47 @@ the docstring is what lets the next reader tell an assertion helper from a
 branching one, which is the same distinction the reference page object draws
 between its waiting and non-waiting readers.
 
-## Absence is its own call, never a negated presence check
+## Never negate a WAITING probe. Negating a non-waiting one is correct.
 
     # rejected - waits the full timeout on every run
-    assert not <page>.has_<thing>(name)
+    assert not <page>.has_<thing>(name)          # has_* WAITS for presence
 
-    # correct
+    # correct - the waiting call for absence
     <page>.wait_for_row(<the row family>, name, present=False)
 
-A presence probe can only answer "no" by exhausting its timeout, because that
-is what waiting means. Negating it turns every passing absence assertion into
-a thirty-second pause, and a suite that is correct but three minutes slower
-for no reason.
+    # also correct - a NON-waiting probe is exactly the thing to negate
+    assert not <page>.is_<state>()               # is_* returns at once
 
-`present=False` waits for the row to GO, and returns the moment it does.
+The distinction is whether the probe waits, and only that.
+
+A WAITING probe can answer "no" only by exhausting its timeout, because that
+is what waiting means. Negating one turns every passing absence assertion into
+a full timeout, and a correct suite that is minutes slower for nothing.
+
+A NON-WAITING probe returns immediately either way. Negating it costs nothing
+and reads plainly, which is why the reference step definitions do exactly
+that. An earlier version of this rule said "never a negated presence check"
+without the distinction, and the generator obeyed by inventing a WAITING
+logged-out probe to assert absence with - the precise opposite of what the
+rule was trying to buy.
+
+Page objects offer both forms as a pair - `is_<state>()` beside
+`wait_until_<state>()`. Pick by what the step is doing: waiting for something
+to arrive, or checking what is true now.
+
+## Assert the signal the step names
+
+    # weak - proves the OTHER state is absent
+    Then I should see the login and signup link
+        assert not <page>.is_logged_in()
+
+    # direct - proves what the step says
+    Then I should see the login and signup link
+        assert <page>.wait_until_logged_out()
+
+Asserting the absence of one thing to imply the presence of another passes for
+reasons the step never claimed: an error page has no Logout link either. Where
+a page object exposes a probe for the state the step actually names, use it.
 
 ## Asserting a named row is there, or gone
 
