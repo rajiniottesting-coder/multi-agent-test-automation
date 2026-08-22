@@ -1844,6 +1844,63 @@ def _names_derived_from(func: ast.AST, fixtures: dict) -> set:
     return derived
 
 
+def _absolute_assertion_helpers(generated_files: list, project_root) -> set:
+    """Page-object methods whose whole job is an ABSOLUTE assertion.
+
+    The check below reads `assert` statements. A step definition can make the
+    same claim without one:
+
+        @then(parsers.parse("the list should contain exactly {count:d} rows"))
+        def assert_row_count(some_page, count):
+            some_page.wait_for_row_count(count)      # no `assert` anywhere
+
+    The assertion moved into the page object, which is good style and made it
+    invisible to a check that looks for the keyword. A run shipped an absolute
+    count on persistent state that way, and the reviewer caught what the gate
+    had been written to catch.
+
+    A method counts as one of these when its body waits for or compares an
+    exact number - `wait_for_count`, or an equality against `get_count`. That
+    is behaviour, not a name: `wait_for_row_count` and `expect_two` are both
+    caught, and a method merely called `check_something` is not.
+    """
+    sources: dict = {}
+    try:
+        for path in sorted(Path(project_root).glob("pages/*.py")):
+            if path.name == "base_page.py":
+                continue
+            sources[path.name] = path.read_text(encoding="utf-8")
+    except Exception:                                     # noqa: BLE001
+        pass
+    for f in generated_files or []:
+        fp = getattr(f, "file_path", "") or ""
+        if fp.startswith("pages/") and fp.endswith(".py") and not fp.endswith("base_page.py"):
+            sources[fp.rsplit("/", 1)[-1]] = getattr(f, "content", "") or ""
+
+    helpers: set = set()
+    for source in sources.values():
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            continue
+        for cls in tree.body:
+            if not isinstance(cls, ast.ClassDef):
+                continue
+            for node in cls.body:
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                for inner in ast.walk(node):
+                    if (isinstance(inner, ast.Call)
+                            and isinstance(inner.func, ast.Attribute)
+                            and inner.func.attr == "wait_for_count"):
+                        helpers.add(node.name)
+                    elif (isinstance(inner, ast.Compare)
+                          and any(isinstance(op, ast.Eq) for op in inner.ops)
+                          and "get_count" in ast.dump(inner)):
+                        helpers.add(node.name)
+    return helpers
+
+
 def _absolute_assertion_target(test: ast.AST, derived: set, fixtures: dict):
     """The persistent fixture this assertion makes an ABSOLUTE claim about.
 
@@ -1896,6 +1953,7 @@ def validate_persistent_state_assertions(
     if not fixtures:
         return []
     fresh_fixtures, establishing_calls = _starting_state_rules(project_root)
+    assertion_helpers = _absolute_assertion_helpers(generated_files, project_root)
     shared_accounts = _shared_account_names(project_root)
 
     errors: list[str] = []
@@ -1989,12 +2047,20 @@ def validate_persistent_state_assertions(
                 continue                 # this step does not touch such a page
             derived = _names_derived_from(func, {
                 k: v for k, v in fixtures.items() if k in args})
+            live = {k: v for k, v in fixtures.items() if k in args}
             for node in ast.walk(func):
-                if not isinstance(node, ast.Assert):
-                    continue
-                fixture = _absolute_assertion_target(
-                    node.test, derived,
-                    {k: v for k, v in fixtures.items() if k in args})
+                fixture = None
+                if isinstance(node, ast.Assert):
+                    fixture = _absolute_assertion_target(node.test, derived, live)
+                elif (isinstance(node, ast.Expr)
+                      and isinstance(node.value, ast.Call)
+                      and isinstance(node.value.func, ast.Attribute)
+                      and node.value.func.attr in assertion_helpers):
+                    # An absolute claim delegated to the page object. No
+                    # `assert` keyword, same assertion.
+                    owner = node.value.func.value
+                    if isinstance(owner, ast.Name) and owner.id in live:
+                        fixture = owner.id
                 if not fixture:
                     continue
                 errors.append(

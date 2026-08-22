@@ -497,3 +497,113 @@ def test_an_application_declaring_no_shared_accounts_is_untouched(project):
         def assert_empty(basket_page):
             assert basket_page.is_empty()
     ''')], project) == []
+
+
+# =========================================================================
+# AN ABSOLUTE ASSERTION DOES NOT NEED THE WORD `assert`
+#
+# The check read `assert` statements. A step definition can make the same
+# claim without one:
+#
+#     @then(parsers.parse("... should contain exactly {count:d} rows"))
+#     def assert_row_count(some_page, count):
+#         some_page.wait_for_row_count(count)          # no `assert` anywhere
+#
+# The assertion moved into the page object - which is BETTER style, and made
+# it invisible to a check looking for the keyword. A run shipped an absolute
+# count on persistent state that way, and the reviewer caught what the gate
+# existed to catch.
+#
+# A method counts as an assertion helper by BEHAVIOUR, not by name: its body
+# waits for or compares an exact count. `wait_for_row_count` and `expect_two`
+# both qualify; a method merely called `check_something` does not. Names are
+# claims - that lesson is three entries up this file.
+# =========================================================================
+
+def _counting_page_object():
+    import textwrap
+    from types import SimpleNamespace
+    return SimpleNamespace(file_path="pages/basket_page.py",
+                           content=textwrap.dedent('''
+        from pages.base_page import BasePage
+
+
+        class BasketPage(BasePage):
+            INVENTORY_PAGE = "basket"
+
+            def wait_for_row_count(self, expected: int) -> None:
+                self.wait_for_count(self.sel("rows"), expected)
+
+            def item_names(self):
+                return self.get_all_texts(self.sel("names"))
+    '''))
+
+
+def test_an_absolute_count_delegated_to_the_page_object_is_caught(project):
+    """The shape that shipped."""
+    errors = validate_persistent_state_assertions([
+        _counting_page_object(),
+        _flow('''
+            @then(parsers.parse("the basket should hold exactly {count:d} rows"))
+            def assert_count(basket_page, count):
+                basket_page.wait_for_row_count(count)
+        '''),
+    ], project)
+
+    assert errors, (
+        "the claim is absolute whether or not the word `assert` appears - "
+        "moving it into the page object is better style, not an exemption"
+    )
+
+
+def test_a_plain_call_on_the_same_page_is_not_an_assertion(project):
+    """Break the thing the guard guards.
+
+    Treating every call on a persistent-state fixture as an assertion would
+    reject opening the page, reading it, or clearing it - which is most of
+    what a step definition does.
+    """
+    assert validate_persistent_state_assertions([
+        _counting_page_object(),
+        _flow('''
+            @given("I open the basket")
+            def open_basket(basket_page):
+                basket_page.item_names()
+        '''),
+    ], project) == []
+
+
+def test_the_helper_is_recognised_by_behaviour_not_by_name(project):
+    """A method that counts is caught whatever it is called; a method with a
+    checking-sounding name that does not count is not."""
+    import textwrap
+    from types import SimpleNamespace
+
+    oddly_named = SimpleNamespace(file_path="pages/basket_page.py",
+                                  content=textwrap.dedent('''
+        from pages.base_page import BasePage
+
+
+        class BasketPage(BasePage):
+            INVENTORY_PAGE = "basket"
+
+            def expect_two(self) -> None:
+                self.wait_for_count(self.sel("rows"), 2)
+
+            def check_something(self) -> None:
+                self.click(self.sel("refresh"))
+    '''))
+
+    caught = validate_persistent_state_assertions([oddly_named, _flow('''
+        @then("there should be two")
+        def assert_two(basket_page):
+            basket_page.expect_two()
+    ''')], project)
+    assert caught, "expect_two() counts, so it asserts, whatever it is named"
+
+    ignored = validate_persistent_state_assertions([oddly_named, _flow('''
+        @when("I refresh")
+        def refresh(basket_page):
+            basket_page.check_something()
+    ''')], project)
+    assert ignored == [], "a checking-sounding name that does not count is not an assertion"

@@ -150,6 +150,33 @@ the docstring is what lets the next reader tell an assertion helper from a
 branching one, which is the same distinction the reference page object draws
 between its waiting and non-waiting readers.
 
+## A step definition must not hardcode one scenario's data
+
+    # rejected - the step says "empty", the body checks two specific records
+    @then("the collection should be empty")
+    def assert_empty(<a>_page):
+        names = <a>_page.item_names()
+        assert "First Item" not in names
+        assert "Second Item" not in names
+
+    # correct
+    @then("the collection should be empty")
+    def assert_empty(<a>_page):
+        assert <a>_page.is_empty()
+
+A Gherkin phrase is shared by every scenario that uses it. Writing one
+scenario's values into the body couples the step to that scenario and makes it
+pass silently for every other one - a second scenario reaching "the collection
+should be empty" with three different records left in it is told everything is
+fine.
+
+If the check genuinely only applies to one scenario, the step text has to say
+so, so a later scenario cannot reuse it by accident. If it is generic, assert
+the generic thing.
+
+Values that vary belong in the Gherkin as parameters, not in the Python as
+literals. A literal in a step body is a value the feature file cannot see.
+
 ## Never negate a WAITING probe. Negating a non-waiting one is correct.
 
     # rejected - waits the full timeout on every run

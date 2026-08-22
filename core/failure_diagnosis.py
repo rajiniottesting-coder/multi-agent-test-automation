@@ -269,6 +269,32 @@ _SIGNATURES: list[tuple[re.Pattern, Diagnosis]] = [
         ),
     ),
     (
+        # BasePage.click_in_row() when the row family matched nothing with
+        # that text. Its own message names the two selector-shaped causes;
+        # this adds the one that is not about selectors at all and is the
+        # commonest in a multi-step scenario.
+        re.compile(r"No row matching .{1,80}? contains ", re.S),
+        Diagnosis(
+            "row not present in the list",
+            "The row family resolved, but no member of it carries that text. "
+            "Three causes, in the order worth checking. The list may be "
+            "FILTERED: a search earlier in the scenario narrows the listing to "
+            "its matches, so a second item the scenario never searched for is "
+            "genuinely not on the page - this is the usual cause when the "
+            "scenario touches more than one record. The text may differ from "
+            "what is rendered - casing, punctuation, a trailing space. Or the "
+            "row locator may match the text element rather than the repeating "
+            "CONTAINER, in which case no row ever contains anything.",
+            "Read the step BEFORE this one. If it searched, filtered or "
+            "paginated, the listing no longer holds every record and the "
+            "scenario has to reset it - search again for the second item, or "
+            "navigate back to the unfiltered listing - before asking for a row "
+            "that was never displayed. If nothing narrowed the list, compare "
+            "the expected text against the page character for character, then "
+            "check the row locator is the container.",
+        ),
+    ),
+    (
         # `assert 2 == 1` - two integers, no quotes. Almost always a COUNT.
         #
         # Reported "unclassified" until a run removed one of two rows, counted

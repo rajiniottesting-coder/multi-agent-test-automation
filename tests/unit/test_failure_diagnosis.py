@@ -268,3 +268,46 @@ def test_the_guard_fails_against_the_version_that_had_the_bug(tmp_path):
         "does, this probe no longer reproduces the bug and proves nothing:\n"
         + output
     )
+
+
+# =========================================================================
+# A ROW THAT IS NOT IN THE LIST
+#
+# click_in_row() raises a careful message naming two selector-shaped causes -
+# the text is not exact, or the row locator matches the text element rather
+# than the container. It came back `unclassified`, so the reader got the
+# generic "open the trace" advice instead.
+#
+# And the commonest cause in a multi-step scenario is neither of the two the
+# message names: the list was FILTERED. A scenario searches for one record,
+# adds it, then asks for a second record that the search has hidden. Nothing
+# is wrong with the selector or the text; the row is genuinely not displayed.
+# =========================================================================
+
+_ROW_NOT_FOUND = """pages/base_page.py:590: in click_in_row
+    raise AssertionError(
+E   AssertionError: No row matching `.card-wrapper` contains 'Second Item'. Check
+    the text is exact and that the row locator matches the repeating CONTAINER
+    rather than the text element inside it."""
+
+
+def test_a_missing_row_is_classified():
+    d = diagnose(_ROW_NOT_FOUND)
+    assert d.label == "row not present in the list", (
+        f"got {d.label!r} - this arrived as 'unclassified' from CI"
+    )
+
+
+def test_the_reading_names_the_filtered_list_first():
+    """The two causes click_in_row already names are in its own message. The
+    value this adds is the one it does not: the previous step narrowed the
+    list. Naming it third would bury it."""
+    d = diagnose(_ROW_NOT_FOUND)
+    body = (d.cause + " " + d.remedy).lower()
+
+    assert "filter" in body, "the list may be filtered - the usual cause"
+    assert "step before" in body or "previous" in body, (
+        "point at the step that narrowed the list, which is where the fix is"
+    )
+    assert "casing" in body or "exact" in body, "keep the text-mismatch cause"
+    assert "container" in body, "keep the row-locator cause"
