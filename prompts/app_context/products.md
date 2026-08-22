@@ -37,6 +37,11 @@ Read them with `get_all_texts()` / `get_count()`. To act on ONE product, scope
 by the product's own container or use the `View Product` link, which is unique
 per card and carries the product id in its href.
 
+The card's price is deliberately NOT in the inventory. `product_names` is the
+only text this page exposes, so a price shown on a card cannot be read here
+and must not be asserted here. `product_detail.product_price` is unique, and
+is where a price assertion belongs.
+
 ## Search
 
 Search lives on `/products`, submits to the same page, and matches on product

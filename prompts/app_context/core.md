@@ -22,47 +22,6 @@ expected to hold one product holds two, and a cart expected to be empty after a
 removal still shows the leftover. The test is correct; its starting assumption
 is not.
 
-So a scenario asserting an ABSOLUTE end state — "the cart is empty", "there are
-two items" — must own its starting state. In order of preference:
-
-| | |
-|---|---|
-| **Register a fresh account** | Use the `unique_username` fixture. A brand-new account starts genuinely empty, every time. The only option a previous run cannot defeat. |
-| **Empty it first** | Clear everything before the scenario's own actions. A run killed mid-way still leaves state behind. |
-
-If neither is practical, assert RELATIVELY: that the cart contains the product
-this test added. A relative assertion is true whatever the account started with.
-
-Scenarios that only READ — searching, browsing, viewing — need none of this.
-
-**PRIVATE IS NOT THE SAME AS EMPTY.** That account's state SURVIVES logout, and
-survives the end of the run. A scenario that added something and then failed
-before removing it leaves that item behind, and the next run finds it: a cart
-expected to hold one product holds two, and a cart expected to be empty after a
-removal still shows the leftover. The test is correct; its starting assumption
-is not.
-
-So a scenario asserting an ABSOLUTE end state — "the cart is empty", "there are
-two items" — must own its starting state. In order of preference:
-
-| | |
-|---|---|
-| **Register a fresh account** | Use the `unique_username` fixture. A brand-new account starts genuinely empty, every time, with nothing to clean up. The only option a previous run cannot defeat. |
-| **Empty it first** | Sign in as the shared role and clear everything before the scenario's own actions. A run killed mid-way still leaves state behind. |
-
-If neither is practical, assert RELATIVELY: that the cart contains the product
-this test added, or that the count rose by one. A relative assertion is true
-whatever the account started with.
-
-Scenarios that only READ — searching, browsing, viewing — need none of this.
-
-**PRIVATE IS NOT THE SAME AS EMPTY.** That account's state SURVIVES logout, and
-survives the end of the run. A scenario that added something and then failed
-before removing it leaves that item behind, and the next run finds it: a cart
-expected to hold one product holds two, and a cart expected to be empty after a
-removal still shows the leftover. The test is correct; its starting assumption
-is not.
-
 So a scenario that asserts an ABSOLUTE end state — "the cart is empty", "there
 are two items" — must own its starting state. Two ways, in order of preference:
 
@@ -80,9 +39,15 @@ of this. It applies to anything that adds, removes or changes account state.
 
 The PRODUCT CATALOGUE is the exception. It is shared, read-only and fixed by
 the site owner: 34 products across Women / Men / Kids categories and eight
-brands. Products cannot be added or deleted through the UI, so their names and
-prices are stable enough to assert on. Prefer asserting that a KNOWN product
+brands. Products cannot be added or deleted through the UI, so a product's
+name is stable enough to assert on. Prefer asserting that a KNOWN product
 appears over asserting that N products do.
+
+A product's PRICE is equally stable, but it is only READABLE on that
+product's own detail page. The listing and the search results expose the
+product NAME and nothing else, so a test case that asks for a price to be
+verified must first open the product. A test case whose expected result
+names a price on the listing cannot be automated as written.
 
 ## Known test identities
 
@@ -107,11 +72,16 @@ write them literally in the test case.
 The catalogue is read-only: nothing in the UI adds or removes a product, so a
 named product is safe to assert on and safe to reuse across scenarios.
 
-| Product | Price | Notes |
+| Product | Price (detail page only) | Notes |
 |---|---|---|
 | `Blue Top` | Rs. 500 | First on the all-products page. The default choice. |
 | `Men Tshirt` | Rs. 400 | Second. Use when a scenario needs TWO different products. |
 | `Sleeveless Dress` | Rs. 1000 | A third, for a three-item cart. |
+
+The price column is here so a detail-page scenario has a value to expect.
+It is not available on the listing: pairing one of these prices with a
+search or a browse step produces a test case nothing on that page can
+satisfy.
 
 **A scenario must name the product it acts on.** "Search for a product" is not
 a test case; "search for `Blue Top`" is. An invented name — `Red Shirt`, `Test

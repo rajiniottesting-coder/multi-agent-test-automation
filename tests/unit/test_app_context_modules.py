@@ -345,3 +345,103 @@ def test_the_paragraph_check_catches_a_real_splice():
         block for block in _prose_paragraphs(clean)
         if not block[-1].rstrip().endswith(_TERMINAL)
     ], "well-formed prose must not be flagged"
+
+
+# =========================================================================
+# A context module must not ship the same paragraph twice
+#
+# WHAT HAPPENED
+#   core.md carried the "PRIVATE IS NOT THE SAME AS EMPTY" section THREE
+#   times - three rewrites of one instruction, each appended instead of
+#   replacing the last. Two commits built it up: one left two copies, the
+#   next left three. 45 of 148 lines were duplication.
+#
+#   It is not free. Every copy is paid for in every Agent 1, 2 and 3 call,
+#   and three near-identical passages that differ slightly read to a model
+#   as three instructions rather than one emphasised instruction - the
+#   preference tables in those three copies did not say the same thing.
+#
+#   Nothing caught it because nothing was looking. A duplicated paragraph
+#   is not malformed: it parses, it ends in a full stop, and it says
+#   something true.
+#
+# This checks STRUCTURE, not vocabulary - the same rule the splice check
+# above follows. Repetition is detectable without knowing anything about
+# the application.
+# =========================================================================
+
+
+def _normalised(block) -> str:
+    """One paragraph as comparable text: whitespace and case flattened.
+
+    Reflowing a paragraph to a different line width, or fixing its casing,
+    does not make it a different paragraph.
+    """
+    return " ".join(" ".join(block).split()).lower()
+
+
+def _duplicate_paragraphs(text: str, min_words: int = 25):
+    """Prose paragraphs appearing more than once, longest first.
+
+    Short blocks are ignored: a one-line lead-in such as "In order of
+    preference:" is legitimately repeated, and flagging it would train the
+    reader to ignore this check.
+    """
+    seen: dict = {}
+    for block in _prose_paragraphs(text):
+        norm = _normalised(block)
+        if len(norm.split()) < min_words:
+            continue
+        seen.setdefault(norm, 0)
+        seen[norm] += 1
+    return sorted(
+        (norm for norm, n in seen.items() if n > 1),
+        key=len,
+        reverse=True,
+    )
+
+
+def test_no_context_module_repeats_a_paragraph():
+    from pathlib import Path
+
+    folder = Path(__file__).resolve().parents[2] / "prompts" / "app_context"
+    if not folder.is_dir():
+        pytest.skip("no app_context modules in this checkout")
+
+    for module in sorted(folder.glob("*.md")):
+        dupes = _duplicate_paragraphs(module.read_text(encoding="utf-8"))
+        assert not dupes, (
+            f"{module.name}: a paragraph appears more than once:\n"
+            f"    {dupes[0][:110]!r}...\n"
+            f"An edit has been APPENDED where it should have REPLACED. Every "
+            f"copy is re-sent in every agent call, and near-identical copies "
+            f"that differ slightly read as separate instructions rather than "
+            f"one. Delete the older copies."
+        )
+
+
+def test_the_duplicate_check_catches_the_shape_that_shipped():
+    """Break the thing the guard guards.
+
+    The exact shape from core.md: one instruction, rewritten and appended,
+    so the copies are near-identical rather than byte-identical.
+    """
+    para = (
+        "That account's state survives logout and survives the end of the "
+        "run, so a scenario that added something and then failed before "
+        "removing it leaves that item behind for the next run to find.\n"
+    )
+    doubled = para + "\n" + para
+    assert _duplicate_paragraphs(doubled), "an exact repeat must be detected"
+
+    reflowed = " ".join(para.split())
+    assert _duplicate_paragraphs(para + "\n" + reflowed + "\n"), (
+        "a repeat that has only been re-wrapped is still a repeat"
+    )
+
+    assert not _duplicate_paragraphs(para), "a single copy must not be flagged"
+
+    short = "In order of preference:\n"
+    assert not _duplicate_paragraphs(short + "\n" + short), (
+        "a short repeated lead-in is legitimate and must not be flagged"
+    )

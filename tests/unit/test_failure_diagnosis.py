@@ -311,3 +311,94 @@ def test_the_reading_names_the_filtered_list_first():
     )
     assert "casing" in body or "exact" in body, "keep the text-mismatch cause"
     assert "container" in body, "keep the row-locator cause"
+
+
+# =========================================================================
+# A value expected among texts the step read
+#
+# The literal `assert 'X' in [...]` form was matched. Two other spellings of
+# the SAME failure were not, and both arrived from CI as "unclassified":
+#
+#   any(v in t for t in texts)          a comprehension over a family
+#   "Expected ..., got ['a', 'b']"      a custom assertion message
+#
+# The real one was a step asserting one KIND of value against a family that
+# only ever yields another. That is a third cause the old reading did not
+# carry: not a snapshot, not starting state, but an assertion that could
+# not have passed on any data in any run. Sending that reader to
+# wait_for_row() or to a fresh-account fixture wastes the investigation.
+# =========================================================================
+
+# App-agnostic by construction: this file is a framework file, so the shape
+# of the failure is reproduced and the application's own nouns are not.
+_WRONG_KIND = """tests/step_defs/test_thing.py:180: in assert_attribute_among_results
+    assert any(attribute in label for label in labels), (
+E   AssertionError: Expected a result showing attribute 'ATTR-1', got ['First Label', 'Second Label', 'Third Label']
+E   assert False
+E    +  where False = any(<generator object assert_attribute_among_results.<locals>.<genexpr> at 0x7f>)"""
+
+_LITERAL_LIST = "E   assert 'Second Item' not in ['First Item', 'Second Item']"
+
+_ALL_FORM = "E   assert all(wanted in text for text in texts)"
+
+
+def test_a_comprehension_membership_test_is_classified():
+    d = diagnose(_WRONG_KIND)
+    assert d.label == "membership assertion", (
+        f"got {d.label!r} - this arrived as 'unclassified' from CI"
+    )
+
+
+def test_the_all_spelling_is_classified_too():
+    assert diagnose(_ALL_FORM).label == "membership assertion"
+
+
+def test_the_literal_list_form_still_reads_the_same():
+    """The branch that already worked must not change."""
+    assert diagnose(_LITERAL_LIST).label == "membership assertion"
+
+
+def test_the_reading_names_the_wrong_kind_cause():
+    """The cause the old text did not carry, and the reason it matters."""
+    d = diagnose(_WRONG_KIND)
+    body = (d.cause + " " + d.remedy).lower()
+
+    assert "kind" in body, "the expected value may not be that kind of thing"
+    assert "could never have passed" in body or "never" in body, (
+        "say that no run would have passed it - that is what rules out "
+        "waiting and starting state in one step"
+    )
+    assert "inventory key" in body, (
+        "point at the fix: find the key that carries the value, or accept "
+        "the value is not readable on that page"
+    )
+
+
+def test_the_snapshot_and_starting_state_causes_are_kept():
+    """Widening must not drop the two readings that were already right."""
+    body = (diagnose(_LITERAL_LIST).cause + " " + diagnose(_LITERAL_LIST).remedy).lower()
+    assert "snapshot" in body, "keep the snapshot cause"
+    assert "survives the run" in body, "keep the starting-state cause"
+    assert "wait_for_row" in body, "keep the remedy that fixes the timing case"
+
+
+def test_the_widened_pattern_steals_nothing():
+    """Each of these has its own reading and must keep it.
+
+    The ordering hazard is already documented in this module: a pattern that
+    matches more than it should takes a case away from a signature whose
+    remedy is the opposite one.
+    """
+    others = {
+        "element present but hidden": _HIDDEN_LOG,
+        "element found but empty": "E   AssertionError: Expected 'qa_user', got ''",
+        "row not present in the list": _ROW_NOT_FOUND,
+        "multi-match selector":
+            "E   Error: strict mode violation: locator('.x') resolved to 3 elements",
+        "result-count assertion":
+            "E   AssertionError: assert '12 results found' == '3 results found'",
+    }
+    for expected_label, text in others.items():
+        assert diagnose(text).label == expected_label, (
+            f"the widened membership pattern stole {expected_label!r}"
+        )

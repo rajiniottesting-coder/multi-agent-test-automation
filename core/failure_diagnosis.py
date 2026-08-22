@@ -247,25 +247,52 @@ _SIGNATURES: list[tuple[re.Pattern, Diagnosis]] = [
         ),
     ),
     (
-        # `assert 'X' not in ['X']` / `assert 'X' in []` - a membership test
-        # against a list the step read a moment earlier.
-        re.compile(r"assert\s+.{1,80}?\s+(?:not\s+)?in\s+\[", re.S),
+        # A value was expected among texts the step had already read. THREE
+        # spellings, all the same failure:
+        #
+        #     assert 'X' not in ['X']            a literal list repr
+        #     any(v in t for t in texts)         a comprehension over a family
+        #     "Expected ... , got ['a', 'b']"    a custom assertion message
+        #
+        # Only the first was matched, so the other two arrived unclassified -
+        # the comprehension form from a real run, where a step asserted a
+        # PRICE against a family that only ever yields NAMES. The literal
+        # alternative stays case-sensitive: widening the whole pattern with
+        # re.I would change the reading of a branch that was already correct,
+        # so the two new ones carry their own inline (?i:...) instead.
+        re.compile(
+            r"assert\s+.{1,80}?\s+(?:not\s+)?in\s+\["
+            r"|(?i:\b(?:any|all)\(\s*[\w.\[\]'\"()]+\s+(?:not\s+)?in\s+\w+\s+for\s+)"
+            r"|(?i:\bexpected\b.{0,160}?\bgot\s+\[)",
+            re.S,
+        ),
         Diagnosis(
             "membership assertion",
-            "A named thing was expected in, or expected gone from, a list the "
-            "step had already read. The list is a SNAPSHOT: reading it "
-            "straight after the action that adds or removes the entry returns "
-            "what was there before the action finished. That is the usual "
-            "cause when the assertion is about something this scenario just "
-            "did. The other cause is starting state - anything the "
-            "application stores against the signed-in user survives the run, "
-            "so an entry a previous run left behind is in the list too.",
-            "Wait for the row rather than reading the list: "
-            "BasePage.wait_for_row(<row family>, text, present=False) after a "
-            "removal, present=True after an addition. It re-checks until the "
-            "timeout instead of looking once. If the entry is still wrong "
-            "after waiting, it is starting state and no wait will help - the "
-            "scenario has to own what it asserts on.",
+            "A value was expected in, or expected gone from, a list of texts "
+            "the step had already read. Three causes, in the order worth "
+            "checking. The list is a SNAPSHOT: reading it straight after the "
+            "action that adds or removes the entry returns what was there "
+            "before the action finished, which is the usual cause when the "
+            "assertion is about something this scenario just did. The second "
+            "is starting state - anything the application stores against the "
+            "signed-in user survives the run, so an entry a previous run left "
+            "behind is in the list too. The third is not a timing or state "
+            "problem at all: the expected value may be a DIFFERENT KIND of "
+            "thing from what that family holds. Compare the expected value "
+            "against the list in the message - if it could not have appeared "
+            "there on any data, the step is reading the wrong element and the "
+            "assertion could never have passed.",
+            "Read the expected value and the list side by side first. If they "
+            "are the same kind of thing, wait for the row rather than reading "
+            "the list: BasePage.wait_for_row(<row family>, text, "
+            "present=False) after a removal, present=True after an addition. "
+            "It re-checks until the timeout instead of looking once. If the "
+            "entry is still wrong after waiting, it is starting state and no "
+            "wait will help - the scenario has to own what it asserts on. If "
+            "they are NOT the same kind of thing, no wait and no fixture "
+            "helps: find the inventory key on that page whose text carries "
+            "the expected value, and if there is none, that value cannot be "
+            "asserted on that page.",
         ),
     ),
     (

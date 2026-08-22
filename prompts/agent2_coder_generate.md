@@ -242,6 +242,39 @@ Asserting the absence of one thing to imply the presence of another passes for
 reasons the step never claimed: an error page has no Logout link either. Where
 a page object exposes a probe for the state the step actually names, use it.
 
+## Assert only a value some element on that page can yield
+
+A test case names an expected value. Before writing the assertion, find the
+inventory key ON THE PAGE THE SCENARIO IS ON whose text carries that value.
+Name it to yourself. If you cannot name one, you cannot assert that value
+there.
+
+    # rejected - the family holds names, the expected value is a price
+    names = <page>.<a name reader>()
+    assert any(expected_price in n for n in names)
+
+    # correct - assert the part this page can actually show
+    <page>.wait_for_row(<the row family>, record_name, present=True)
+
+    # also correct - go to the page whose inventory carries the value
+    <page>.open_detail_for(record_name)
+    assert <detail page>.<the value reader>() == expected_value
+
+Mapping the value onto whatever family is nearest is the trap, because
+nothing stops it. The selector is real, the family is read through a
+sanctioned reader, the method resolves, and every static gate passes. It
+fails only in the browser, with an assertion that could not have passed on
+any data, in any run - a shape no repair attempt recognises, because the code
+looks correct.
+
+Two values are especially easy to confuse this way: a value the APPLICATION
+displays somewhere else (a price, a total, a status shown on a detail page but
+not in the list), and a value the story mentions as background rather than as
+something to check. If the test case asks for a value this page does not
+expose, assert the part it does expose and leave the rest to a step that is on
+the right page. Weakening one assertion is recoverable; an assertion that can
+never pass costs a whole run.
+
 ## Asserting a named row is there, or gone
 
 Do not read the whole list and assert membership:
