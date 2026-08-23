@@ -393,6 +393,25 @@ one of two rows, counted immediately, and reported finding two.
 never settles. Use `get_count()` only to READ a number you are not asserting
 on.
 
+### "Are there ANY?" is a different question, with a different helper
+
+    # rejected - get_count() and exists() both read once and race
+    def has_<things>(self) -> bool:
+        return self.get_count(self.sel("<the row family>")) > 0
+
+    # correct - no exact number to give, so do not pretend to have one
+    def has_<things>(self) -> bool:
+        self.wait_for_any(self.sel("<the row family>"))
+        return True
+
+`wait_for_any(<family>)` waits for AT LEAST ONE, and `present=False` waits for
+the family to empty. Reach for it whenever the question is existence rather
+than an exact count - `wait_for_count` needs a number, and forcing one where
+the question has none is what sends a page object back to `get_count()`.
+
+`exists()` is `count() > 0`: one glance, same race, and it is rejected for the
+same reason.
+
 ## A method that clicks its way to another page must confirm it arrived
 
 If a page-object method clicks a control expected to land on ANOTHER page,

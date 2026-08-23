@@ -244,8 +244,23 @@ def derive_verdict(report: ReviewReport) -> ReviewReport:
     calls itself advisory has contradicted itself, and the issue is the more
     specific of the two statements.
 
-    Only ever raises. A model that returned request_changes keeps it, whatever
-    the severities look like.
+    Derives in BOTH directions.
+
+    It used to only raise, on the reasoning that a model wanting to block
+    should be trusted to. But that makes the severity field meaningless in one
+    direction: a review filed two `minor` / `best_practice` findings - both
+    wording suggestions, its own summary calling the code "acceptable" - and
+    still returned request_changes. The pull request went red on readability
+    notes while Agent 4 was green.
+
+    A gate that blocks on advisory findings is a gate people learn to
+    override, and then it is not a gate. If a review wants to stop a pull
+    request it has to file something that says so; that is what the severity
+    and type fields are for.
+
+    The lowering is logged loudly, because a verdict that disagrees with its
+    own findings usually means the summary saw something the issue list did
+    not capture - worth a human glance even though it no longer blocks.
     """
     blocking = [
         issue for issue in report.issues
@@ -261,7 +276,24 @@ def derive_verdict(report: ReviewReport) -> ReviewReport:
                  and issue.severity not in _BLOCKING_SEVERITIES
                  and _waives_itself(issue))
     ]
-    if not blocking or report.overall_verdict == "request_changes":
+    if not blocking:
+        if report.overall_verdict == "request_changes":
+            logger.warning(
+                "Verdict LOWERED from 'request_changes' to 'comment': none of "
+                "the %d finding(s) is blocking (%s). A review that wants to "
+                "stop a pull request must file a finding that says so - "
+                "blocking on advisory notes is how a gate gets overridden by "
+                "habit. If the summary saw something the issue list did not, "
+                "that is worth a human glance: %s",
+                len(report.issues),
+                ", ".join(sorted({f"{i.severity}/{i.issue_type}"
+                                  for i in report.issues})) or "no findings",
+                (report.summary or "")[:200],
+            )
+            return report.model_copy(update={"overall_verdict": "comment"})
+        return report
+
+    if report.overall_verdict == "request_changes":
         return report
 
     logger.warning(

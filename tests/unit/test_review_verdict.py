@@ -105,10 +105,21 @@ def test_a_clean_review_still_approves():
     assert out.overall_verdict == "approve"
 
 
-def test_the_rule_only_ever_raises():
-    """A model that asked for changes keeps them, whatever the severities."""
+def test_an_advisory_finding_alone_does_not_keep_a_blocking_verdict():
+    """This test used to assert the opposite - that the rule only ever RAISED,
+    and a model asking for changes kept them whatever the severities.
+
+    That reasoning held until a review filed two `minor` / `best_practice`
+    wording notes, called the code acceptable in its own summary, and
+    returned request_changes. The pull request went red on readability while
+    the runner was green.
+
+    Blocking is a budget. A gate that spends it on advisory findings is a gate
+    people learn to override, and the severity field exists precisely so the
+    review can say which findings are worth stopping for.
+    """
     out = derive_verdict(_report("request_changes", _issue("info", "style")))
-    assert out.overall_verdict == "request_changes"
+    assert out.overall_verdict == "comment"
 
 
 def test_the_issues_themselves_are_untouched():
@@ -248,3 +259,62 @@ def test_only_the_explicit_phrase_waives(fix):
     out = derive_verdict(_report(
         "comment", _waived("major", "functional_bug", fix)))
     assert out.overall_verdict == "request_changes"
+
+
+# =========================================================================
+# THE VERDICT DERIVES IN BOTH DIRECTIONS
+#
+# derive_verdict only ever RAISED, on the reasoning that a model wanting to
+# block should be trusted to. That left the severity field meaningless in one
+# direction.
+#
+# A review filed two `minor` / `best_practice` findings - both wording
+# suggestions, its own summary calling the code "acceptable" - and returned
+# request_changes. The pull request went red on readability notes while
+# Agent 4 was green.
+#
+# A gate that blocks on advisory findings is a gate people learn to override,
+# and then it is not a gate. If a review wants to stop a pull request it has
+# to file something that says so.
+# =========================================================================
+
+def test_minor_findings_alone_do_not_block(project=None):
+    """The run that prompted this."""
+    out = derive_verdict(_report("request_changes",
+                                 _issue("minor", "best_practice"),
+                                 _issue("minor", "best_practice")))
+    assert out.overall_verdict == "comment", (
+        "two wording suggestions blocked a pull request that the runner had "
+        "already passed"
+    )
+
+
+def test_a_blocking_finding_still_blocks_when_the_model_says_block():
+    """Break the thing the guard guards, part one. Lowering must not lower
+    everything - a review with a real finding keeps its verdict."""
+    out = derive_verdict(_report("request_changes",
+                                 _issue("major", "functional_bug")))
+    assert out.overall_verdict == "request_changes"
+
+
+def test_a_blocking_finding_still_raises_an_advisory_verdict():
+    """Break the thing the guard guards, part two. The raising half must
+    survive the lowering half - they are the same rule read two ways."""
+    out = derive_verdict(_report("comment", _issue("major", "functional_bug")))
+    assert out.overall_verdict == "request_changes"
+
+    out = derive_verdict(_report("approve", _issue("minor", "security")))
+    assert out.overall_verdict == "request_changes"
+
+
+def test_a_review_with_no_findings_cannot_block():
+    """A verdict with nothing behind it is an opinion, not a gate."""
+    out = derive_verdict(_report("request_changes"))
+    assert out.overall_verdict == "comment"
+
+
+def test_an_approve_with_no_findings_is_left_alone():
+    """Lowering applies to request_changes only. Nothing should turn an
+    approve into a comment."""
+    out = derive_verdict(_report("approve"))
+    assert out.overall_verdict == "approve"

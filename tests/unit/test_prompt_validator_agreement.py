@@ -797,3 +797,43 @@ def test_a_genuinely_misnamed_reader_is_still_caught():
         "a reader named for one field that returns the whole row must still "
         "be rejected"
     )
+
+
+# =========================================================================
+# A RULE THE GATE ENFORCES MUST BE TAUGHT BEFORE THE GATE RUNS
+#
+# `wait_for_any` was added to BasePage, sanctioned as a family reader, and
+# named in the rejection message - and never mentioned in the generation
+# prompt. So the model could only satisfy the waiting-predicate rule by
+# FAILING first and reading the repair feedback.
+#
+# That is a whole extra LLM call, every run, for a rule the prompt could have
+# stated in five lines. Repairs are for mistakes, not for delivering
+# instructions that could have arrived with the brief.
+#
+# The signal is a repair that succeeds on the first attempt: the model knew
+# what to do the moment it was told, which means telling it earlier costs
+# nothing and saves a call.
+# =========================================================================
+
+def test_the_prompt_teaches_every_probe_the_gate_will_reject():
+    """Each non-waiting probe, and the helper offered in its place, must
+    appear in the generation prompt - not only in the rejection message."""
+    from validators.method_resolution_validator import _NON_WAITING_PROBES
+
+    prompt = _PROMPT.read_text(encoding="utf-8")
+
+    for probe, remedy in _NON_WAITING_PROBES.items():
+        assert probe in prompt, (
+            f"the gate rejects {probe}() and the prompt never mentions it - "
+            f"the model can only learn this by failing first"
+        )
+        # The remedy string may name several helpers; every identifier in it
+        # that looks like a helper has to be teachable.
+        import re
+        for helper in set(re.findall(r"\b(wait_[a-z_]+|is_showing)\b", remedy)):
+            assert helper in prompt, (
+                f"{probe}() is rejected in favour of {helper}(), which the "
+                f"prompt never names. Every run pays a repair call to be told "
+                f"something the brief could have carried."
+            )
