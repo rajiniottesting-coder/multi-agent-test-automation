@@ -1762,7 +1762,12 @@ def _available_remedies(fresh_fixtures, establishing_calls,
     if establishing_calls:
         options.append(
             f"clear the state in a Given step, via "
-            f"{' or '.join(sorted(establishing_calls))}()"
+            f"{' or '.join(sorted(establishing_calls))}() - and place that "
+            f"step AFTER the one that signs in. The application keeps this "
+            f"state against the signed-in user, so clearing it while signed "
+            f"out clears a different user's, and the clearing step navigates "
+            f"away from wherever the scenario was, which is a second way to "
+            f"break the sign-in that follows"
         )
     if not options:
         # WHY there is nothing to offer changes what the reader should do,

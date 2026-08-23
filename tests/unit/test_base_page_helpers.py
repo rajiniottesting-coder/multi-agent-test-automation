@@ -827,3 +827,72 @@ def test_the_reference_precondition_names_the_page_it_expected():
         "say why this matters - without it the next reader deletes the check "
         "as redundant"
     )
+
+
+# =========================================================================
+# THE SIGN-IN PAGE OBJECT REACHES ITS OWN PAGE
+#
+# It used to RAISE when the browser was elsewhere, so that a scenario could
+# not pass for a reason it never stated. That reversed here.
+#
+# The scenario that hit it was doing something reasonable: clearing an
+# account-scoped collection in a Given, which navigates to that collection's
+# page. Every route to the login form was legitimate; refusing to take one
+# turned a recoverable situation into two failed tests and a regeneration.
+#
+# The method needs the login page, being elsewhere has exactly one sensible
+# recovery, and taking it is what confirm_arrival() does everywhere else. The
+# scenario-level mistake - a precondition placed before the sign-in it
+# depends on - is caught by the persistent-state rule and by review.
+# =========================================================================
+
+def test_the_reference_sign_in_navigates_when_the_browser_is_elsewhere():
+    """The shape that failed two tests."""
+    from core.app_context import AppContext
+
+    from pages.login_page import LoginPage
+
+    class _Page:
+        def __init__(self, url):
+            self.url = url
+            self.gotos = []
+
+        def goto(self, url, **_):
+            self.gotos.append(url)
+            self.url = url
+
+        def wait_for_timeout(self, _ms):
+            pass
+
+        def locator(self, selector, **_):
+            return selector
+
+    # BEHAVIOUR, not source text. A guard that greps for `self.navigate(`
+    # passes a file where the call was gutted to `pass` - which is exactly
+    # what the first version of this test did.
+    elsewhere = _Page("https://app.example/somewhere-else")
+    LoginPage(elsewhere)._require_login_page()
+    assert elsewhere.gotos, (
+        "the browser was on another page and nothing navigated - the fill "
+        "that follows would wait the full timeout and blame the field"
+    )
+    assert elsewhere.url.endswith(LoginPage(elsewhere).page_url()), (
+        f"navigated to {elsewhere.url!r}, which is not the login page"
+    )
+
+    already = _Page(f"https://app.example{LoginPage(_Page('x')).page_url()}")
+    LoginPage(already)._require_login_page()
+    assert not already.gotos, "already there - navigating again wastes a load"
+
+
+def test_the_recovery_still_refuses_when_there_is_nowhere_to_navigate_from():
+    """Break the thing the guard guards. A blank page has no origin, and
+    guessing one would navigate somewhere nobody asked for."""
+    from core.app_context import AppContext
+
+    body = AppContext.load().load_reference_files()["page_object"]
+    assert "raise AssertionError" in body, (
+        "with no scheme or host there is nothing to build a URL from, and the "
+        "failure has to say so rather than inventing an address"
+    )
+

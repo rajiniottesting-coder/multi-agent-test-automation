@@ -203,6 +203,33 @@ the docstring is what lets the next reader tell an assertion helper from a
 branching one, which is the same distinction the reference page object draws
 between its waiting and non-waiting readers.
 
+## A precondition on account-scoped state runs AFTER the sign-in
+
+    # rejected - clears the signed-OUT user's collection, and lands the
+    # browser on that collection's page, so the sign-in below starts from
+    # the wrong place
+    Given I am on the login page
+    And the collection is empty
+    When I sign in as a "<role>" user
+
+    # correct
+    Given I am on the login page
+    When I sign in as a "<role>" user
+    And the collection is empty
+
+A `Given` normally comes first, and for most preconditions that is right. Not
+for state the application keeps against the signed-in user: before the
+sign-in, there is no user whose state it could be.
+
+Two things go wrong at once. The wrong account is cleared, so the assertion
+later still sees leftovers. And the clearing step navigates to that
+collection's page, so the sign-in that follows begins somewhere the login form
+is not.
+
+Read the inventory's `persistent_state_note` for the page. If it says the
+state is kept against the signed-in user, the clearing step is a `When`/`And`
+after authentication, not an opening `Given`.
+
 ## Owning the starting state is a THREE-FILE decision, so decide it now
 
 If a scenario will assert an ABSOLUTE state - "exactly 2 rows", "is empty" -

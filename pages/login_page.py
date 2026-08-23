@@ -15,9 +15,13 @@ App: https://automationexercise.com
 """
 from typing import Optional
 
+import logging
 from urllib.parse import urlsplit
 
 from pages.base_page import BasePage
+
+
+logger = logging.getLogger(__name__)
 
 
 class LoginPage(BasePage):
@@ -67,7 +71,7 @@ class LoginPage(BasePage):
         self.click(self.sel("login_button"))
 
     def _require_login_page(self) -> None:
-        """Fail NOW, and clearly, if the browser is not on the login page.
+        """Make sure the browser is on the login page, navigating if it is not.
 
         Filling a field that is not on screen does not fail fast: Playwright
         waits the full timeout and then reports the LOCATOR as having timed
@@ -75,24 +79,50 @@ class LoginPage(BasePage):
         page is wrong. Thirty seconds spent, and the reader sent to the one
         place the fault is not.
 
-        Cheap: one string comparison against the URL already in memory.
+        It NAVIGATES rather than raising, which reverses an earlier decision.
 
-        No try/except. If reading the URL fails the browser is gone, and the
-        fill below would fail anyway with its own reason - catching it here
-        would swallow that reason, which is the regression this file's guard
-        exists to prevent.
+        Raising was meant to stop a scenario passing for a reason it never
+        stated. In practice the scenario that hit it was doing something
+        reasonable - clearing an account-scoped collection in a Given, which
+        left the browser on that collection's page - and every route to the
+        login form was legitimate. Refusing to go there turned a recoverable
+        situation into two failed tests and a regeneration.
+
+        This method needs the login page; being elsewhere has exactly one
+        sensible recovery, and taking it is what confirm_arrival() does
+        everywhere else in this framework. The scenario-level mistake - a
+        precondition placed before the login it depends on - is caught by the
+        persistent-state rule and by review, which is where it belongs.
+
+        The warning stays loud, because arriving here from somewhere else is
+        still worth knowing about.
         """
-        here = urlsplit(self.page.url).path
         expected = self.page_url()
-        if here.rstrip("/") == expected.rstrip("/"):
+        current = urlsplit(self.page.url)
+        if current.path.rstrip("/") == expected.rstrip("/"):
             return
-        raise AssertionError(
-            f"login_as() was called while the browser is at {self.page.url}, "
-            f"not on {expected}. The credential fields are not on this page, "
-            f"so the fill below would wait the full timeout and then blame the "
-            f"field. Open the login page first - the scenario needs a Given "
-            f"that navigates here before the step that signs in."
+
+        if not current.scheme or not current.netloc:
+            raise AssertionError(
+                f"login_as() was called with the browser at "
+                f"{self.page.url!r}, which is not an address this page object "
+                f"can navigate from. Open the login page first - the scenario "
+                f"needs a Given that navigates here before the step that "
+                f"signs in."
+            )
+
+        target = f"{current.scheme}://{current.netloc}{expected}"
+        logger.warning(
+            "LoginPage.login_as() was called from %s, not %s. Navigating to "
+            "the login page so the credential fields are actually present - "
+            "filling them from another page would wait the full timeout and "
+            "then blame the field. If the scenario meant to be here already, "
+            "it is missing a step that opens the login page; if a preceding "
+            "Given navigated away, note that an account-scoped precondition "
+            "has to run AFTER signing in, not before.",
+            self.page.url, expected,
         )
+        self.navigate(target)
 
     def start_signup(self, name: str, email: str) -> None:
         """Submit the SIGNUP form — the first of registration's two steps.

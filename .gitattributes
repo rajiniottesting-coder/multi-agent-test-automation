@@ -1,0 +1,31 @@
+# Normalise line endings so `git status` reflects real changes.
+#
+# Without this, 97 files showed as modified on a clean checkout: the working
+# tree held CRLF, the index held LF, and git reported every one of them as
+# changed. Every review of "which files did this batch touch?" started by
+# filtering that noise out, and twice it hid a real change inside it.
+#
+# `text=auto` lets git decide per file and store LF in the repository.
+# Checkout still gets the platform's native endings, so nothing changes for
+# an editor on Windows.
+* text=auto
+
+# Explicitly text, whatever heuristics would say.
+*.py     text
+*.md     text
+*.yml    text
+*.yaml   text
+*.json   text
+*.feature text
+*.ini    text
+*.txt    text
+*.cfg    text
+
+# Binary: never touched, never diffed as text.
+*.png    binary
+*.jpg    binary
+*.zip    binary
+*.pptx   binary
+*.docx   binary
+*.pdf    binary
+*.trace.zip binary

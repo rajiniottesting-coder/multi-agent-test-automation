@@ -371,6 +371,33 @@ _SIGNATURES: list[tuple[re.Pattern, Diagnosis]] = [
         ),
     ),
     (
+        # A page object refusing to act because the browser is elsewhere.
+        # Its own message is already specific; what the classifier adds is
+        # the CAUSE, which is almost never the step that raised.
+        # `.{1,200}?` with DOTALL, because a long URL wraps in the captured
+        # output and the two halves of this sentence routinely land on
+        # different lines. A pattern that only matched the unwrapped form
+        # would classify some runs and not others, which is worse than
+        # classifying none.
+        re.compile(r"was called while the browser is at\s.{1,200}?,?\s*not on\s",
+                   re.S),
+        Diagnosis(
+            "acted on the wrong page",
+            "A page object was asked to act on a page the browser is not "
+            "showing. The step that raised is rarely at fault: something "
+            "BEFORE it navigated away and nothing brought the browser back. "
+            "The commonest cause is a precondition step placed too early - "
+            "one that clears or sets up state, navigates to that state's own "
+            "page, and leaves the browser there for the step that follows.",
+            "Read the scenario's steps in order and find the last one that "
+            "navigates. If a precondition step moved the browser, either put "
+            "it after the step that needed the original page, or add a step "
+            "that returns there. Where the state belongs to a signed-in user, "
+            "the precondition has to run AFTER the sign-in anyway - before "
+            "it, there is no user whose state it could be.",
+        ),
+    ),
+    (
         # `assert 2 == 1` - two integers, no quotes. Almost always a COUNT.
         #
         # Reported "unclassified" until a run removed one of two rows, counted

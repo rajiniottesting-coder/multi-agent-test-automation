@@ -453,3 +453,36 @@ def test_a_plain_locator_that_DID_resolve_is_still_the_hidden_reading():
         "E   - unexpected value \"hidden\""
     )
     assert diagnose(resolved).label != "element never appeared - probably the wrong page"
+
+
+# =========================================================================
+# ACTED ON THE WRONG PAGE
+#
+# A page object raised a clear, specific message - and the classifier said
+# "unclassified", so the reader got the generic "open the trace" advice
+# instead of the one thing worth knowing: the step that raised is rarely at
+# fault. Something BEFORE it navigated away.
+# =========================================================================
+
+_WRONG_PAGE = """E   AssertionError: sign_in() was called while the browser is at
+    https://app.example/collection, not on /signin. The credential fields are
+    not on this page."""
+
+
+def test_acting_on_the_wrong_page_is_classified():
+    d = diagnose(_WRONG_PAGE)
+    assert d.label == "acted on the wrong page", (
+        f"got {d.label!r} - this arrived as 'unclassified' from CI"
+    )
+
+
+def test_the_reading_points_at_the_step_that_navigated():
+    """The value is not restating the message - it is naming the cause, which
+    is a step earlier in the scenario."""
+    body = (diagnose(_WRONG_PAGE).cause + " " + diagnose(_WRONG_PAGE).remedy).lower()
+    assert "before" in body, "the fault is upstream of the step that raised"
+    assert "precondition" in body, "name the commonest culprit"
+    assert "after the sign-in" in body or "signed-in" in body, (
+        "account-scoped state has an ordering requirement of its own"
+    )
+
