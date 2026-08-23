@@ -128,8 +128,20 @@ _SIGNATURES: list[tuple[re.Pattern, Diagnosis]] = [
         # it, which is the same mistake in reverse.
         re.compile(
             r"(?s)\A(?!.*locator resolved to).*"
-            r"waiting for (?:get_by_placeholder|get_by_label|get_by_alt_text"
-            r"|get_by_title|get_by_role)",
+            # `locator(` belongs here too, and its absence cost a session.
+            #
+            # self.sel() yields a CSS or attribute selector for most elements,
+            # so the log reads `waiting for locator("[data-qa='...']")` rather
+            # than any get_by_* form. Those fell through to the generic
+            # "timed out" reading, whose advice is the OPPOSITE of the truth:
+            # it says the element is present but not actionable, when a wait
+            # that never resolved means there were ZERO matches.
+            #
+            # Safe to add because the discriminator is the negative lookahead
+            # above, not the engine name: a log carrying "locator resolved to"
+            # is the hidden case and is excluded before this ever runs.
+            r"waiting for (?:locator|get_by_placeholder|get_by_label"
+            r"|get_by_alt_text|get_by_title|get_by_role|get_by_text)",
             re.I),
         Diagnosis(
             "element never appeared - probably the wrong page",

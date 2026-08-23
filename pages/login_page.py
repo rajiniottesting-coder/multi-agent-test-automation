@@ -15,6 +15,8 @@ App: https://automationexercise.com
 """
 from typing import Optional
 
+from urllib.parse import urlsplit
+
 from pages.base_page import BasePage
 
 
@@ -46,10 +48,51 @@ class LoginPage(BasePage):
         Takes the values rather than a role name: resolving a role to real
         credentials is the `credentials` fixture's job, so this page object
         stays usable with any user, including deliberately invalid ones.
+
+        Confirms it is ON this page first. Filling a field that is not there
+        does not fail fast - Playwright waits the full timeout and then
+        reports a locator that "timed out", which reads like a selector
+        problem and is not one. A scenario that reached this method from
+        somewhere else lost thirty seconds and then blamed the field.
+
+        It RAISES rather than navigating. Being on the wrong page here is a
+        scenario that forgot its opening step, and silently correcting that
+        would hide the mistake and make the scenario pass for a reason it
+        never stated. confirm_arrival() is the tool for a click that should
+        have landed; this is a precondition.
         """
+        self._require_login_page()
         self.fill(self.sel("login_email_input"), email)
         self.fill(self.sel("login_password_input"), password)
         self.click(self.sel("login_button"))
+
+    def _require_login_page(self) -> None:
+        """Fail NOW, and clearly, if the browser is not on the login page.
+
+        Filling a field that is not on screen does not fail fast: Playwright
+        waits the full timeout and then reports the LOCATOR as having timed
+        out. That reads like a broken selector, and the selector is fine - the
+        page is wrong. Thirty seconds spent, and the reader sent to the one
+        place the fault is not.
+
+        Cheap: one string comparison against the URL already in memory.
+
+        No try/except. If reading the URL fails the browser is gone, and the
+        fill below would fail anyway with its own reason - catching it here
+        would swallow that reason, which is the regression this file's guard
+        exists to prevent.
+        """
+        here = urlsplit(self.page.url).path
+        expected = self.page_url()
+        if here.rstrip("/") == expected.rstrip("/"):
+            return
+        raise AssertionError(
+            f"login_as() was called while the browser is at {self.page.url}, "
+            f"not on {expected}. The credential fields are not on this page, "
+            f"so the fill below would wait the full timeout and then blame the "
+            f"field. Open the login page first - the scenario needs a Given "
+            f"that navigates here before the step that signs in."
+        )
 
     def start_signup(self, name: str, email: str) -> None:
         """Submit the SIGNUP form — the first of registration's two steps.
@@ -58,7 +101,11 @@ class LoginPage(BasePage):
         for password, address and contact details; the account exists only
         after that second form is submitted. Do not assert a logged-in state
         straight after calling this.
+
+        Same precondition as login_as(): the signup fields share this page, so
+        being elsewhere costs the full timeout and then blames the field.
         """
+        self._require_login_page()
         self.fill(self.sel("signup_name_input"), name)
         self.fill(self.sel("signup_email_input"), email)
         self.click(self.sel("signup_button"))

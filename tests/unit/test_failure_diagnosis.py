@@ -402,3 +402,54 @@ def test_the_widened_pattern_steals_nothing():
         assert diagnose(text).label == expected_label, (
             f"the widened membership pattern stole {expected_label!r}"
         )
+
+
+# =========================================================================
+# A PLAIN locator() THAT NEVER RESOLVED
+#
+# The never-resolved signature listed the get_by_* engines and not `locator`.
+# But self.sel() yields a CSS or attribute selector for most elements, so the
+# log reads
+#
+#     waiting for locator("[data-qa='...']")
+#
+# which fell through to the generic "timed out" reading. That reading says the
+# element is present but not actionable - covered, disabled, animating - and
+# the truth is the opposite: a wait that never resolved means ZERO matches.
+#
+# Thirty seconds lost, and the reader sent to inspect an overlay that was
+# never there, on a page the browser had never reached.
+#
+# Safe to add because the discriminator is the negative lookahead on "locator
+# resolved to", not the engine name.
+# =========================================================================
+
+_PLAIN_LOCATOR_NEVER_RESOLVED = """E   playwright._impl._errors.TimeoutError: Locator.fill: Timeout 30000ms exceeded.
+E   Call log:
+E   waiting for locator("[data-qa='some-field']")"""
+
+
+def test_a_plain_locator_that_never_resolved_is_read_as_the_wrong_page():
+    d = diagnose(_PLAIN_LOCATOR_NEVER_RESOLVED)
+    assert d.label == "element never appeared - probably the wrong page", (
+        f"got {d.label!r} - the generic 'timed out' reading claims the element "
+        f"is present but not actionable, which is the opposite of what a wait "
+        f"with zero matches means"
+    )
+
+
+def test_a_plain_locator_that_DID_resolve_is_still_the_hidden_reading():
+    """Break the thing the guard guards.
+
+    Widening the engine list must not steal the hidden case, whose remedy is
+    the opposite. The lookahead on "locator resolved to" is what separates
+    them, and it has to keep doing so.
+    """
+    resolved = (
+        "E   TimeoutError: Locator.click: Timeout 30000ms exceeded.\n"
+        "E   Call log:\n"
+        "E   waiting for locator(\"#thing\")\n"
+        "E     locator resolved to <div id=thing></div>\n"
+        "E   - unexpected value \"hidden\""
+    )
+    assert diagnose(resolved).label != "element never appeared - probably the wrong page"

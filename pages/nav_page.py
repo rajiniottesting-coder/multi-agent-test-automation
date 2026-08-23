@@ -55,6 +55,21 @@ class NavPage(BasePage):
         """
         return self.is_visible(self.sel("logout_link"))
 
+    def is_signup_login_shown(self) -> bool:
+        """True if the Signup / Login link is on screen right now.
+
+        The POSITIVE proof that no session is active. `not is_logged_in()`
+        proves only that the Logout link is absent, which an error page or a
+        half-loaded page satisfies just as well - it is the absence of one
+        thing standing in for the presence of another.
+
+        Non-waiting on purpose. `signup_login_link` is declared `conditional`
+        in the inventory: it is legitimately absent whenever a session IS
+        active, so waiting for it would cost the full timeout on every
+        signed-in check.
+        """
+        return self.is_visible(self.sel("signup_login_link"))
+
     def wait_until_logged_in(self, timeout_ms: Optional[int] = None) -> bool:
         """True once a session is active, WAITING for it.
 

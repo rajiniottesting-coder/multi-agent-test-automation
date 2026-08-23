@@ -760,3 +760,70 @@ def test_a_missing_row_says_what_to_check():
 def test_row_containing_returns_the_row_for_reading():
     row = _page_with_rows(["Row A", "Row B"], []).row_containing(".row", "Row B")
     assert row.label == "Row B"
+
+
+# =========================================================================
+# ACTING ON A PAGE WITHOUT CONFIRMING YOU ARE ON IT
+#
+# The reference sign-in method filled its fields with no check that the page
+# was showing. A scenario that reached it from elsewhere spent the full
+# timeout and then reported the LOCATOR as having timed out - which reads as a
+# broken selector, and the selector was fine. The page was wrong.
+#
+# It RAISES rather than navigating. Being on the wrong page here means a
+# scenario forgot its opening step; correcting that silently would hide the
+# mistake and let the scenario pass for a reason it never stated.
+# =========================================================================
+
+def test_the_reference_sign_in_refuses_to_act_on_the_wrong_page():
+    from core.app_context import AppContext
+
+    import ast
+
+    body = AppContext.load().load_reference_files()["page_object"]
+    tree = ast.parse(body)
+
+    # The method must be CALLED, not merely defined. A guard that only checks
+    # for a definition passes a file where the call was deleted - which is how
+    # dismiss_interstitial() sat in this codebase for months with no caller.
+    guarded = []
+    for cls in tree.body:
+        if not isinstance(cls, ast.ClassDef):
+            continue
+        for node in cls.body:
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            fills = any(isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                        and n.func.attr == "fill" for n in ast.walk(node))
+            if not fills:
+                continue
+            checks = any(
+                isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                and (n.func.attr.startswith("_require") or n.func.attr == "confirm_arrival")
+                for n in ast.walk(node))
+            guarded.append((node.name, checks))
+
+    assert guarded, "the reference page object fills nothing - check the fixture"
+    unguarded = [name for name, checks in guarded if not checks]
+    assert not unguarded, (
+        f"{unguarded} fill credentials without confirming the page is showing. "
+        f"Filling a field that is not there waits the FULL timeout and then "
+        f"blames the locator. This is the shape Agent 2 copies into every page "
+        f"object it writes."
+    )
+
+
+def test_the_reference_precondition_names_the_page_it_expected():
+    """A precondition that says only "wrong page" sends the reader looking.
+    It has to name where the browser is and where it should be."""
+    from core.app_context import AppContext
+
+    body = AppContext.load().load_reference_files()["page_object"]
+    if "_require_" not in body:
+        pytest.skip("no precondition in this reference")
+
+    assert "not on {expected}" in body or "not on " in body
+    assert "full timeout" in body, (
+        "say why this matters - without it the next reader deletes the check "
+        "as redundant"
+    )
