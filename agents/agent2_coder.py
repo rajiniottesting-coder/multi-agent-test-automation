@@ -1438,13 +1438,31 @@ def _build_authoritative_steps_block(file_plan, already_generated) -> str:
     steps = _extract_feature_steps(feature.content)
     if not steps:
         return ""
+    # De-duplicate on (KEYWORD, phrase), not phrase alone.
+    #
+    # Keying on the phrase dropped the second keyword silently. A feature
+    # using one phrase as both a Given and a When produced a list containing
+    # only the first, and this block tells the model the list is EXACTLY the
+    # steps and that it must not write decorators for anything absent from
+    # it. So the model was forbidden from writing the very step the coverage
+    # validator then demanded, and four repair attempts could not resolve a
+    # contradiction between the instruction and the gate.
+    #
+    # The comment it replaces - "one decorator serves every occurrence" - is
+    # true of repeated occurrences under the SAME keyword and false across
+    # keywords: pytest-bdd matches on keyword and text together, so a @given
+    # does not satisfy a When step.
+    #
+    # The same mistake was fixed in the generation prompt's own final
+    # checklist. This block is the stronger of the two, because it forbids
+    # adding what it omits.
     seen: set = set()
     lines: list = []
     for keyword, phrase in steps:
         key = phrase.strip()
-        if not key or key in seen:
-            continue                # one decorator serves every occurrence
-        seen.add(key)
+        if not key or (keyword, key) in seen:
+            continue                # same keyword AND text: one decorator serves both
+        seen.add((keyword, key))
         lines.append(f"  {len(seen)}. [{keyword}] {phrase}")
     if not lines:
         return ""
@@ -1457,7 +1475,15 @@ def _build_authoritative_steps_block(file_plan, already_generated) -> str:
         *lines,
         "",
         "HARD REQUIREMENTS for this step-definitions file:",
-        "1. Write EXACTLY ONE decorator for each listed phrase. Copy the",
+        "1. Write EXACTLY ONE decorator for each listed [KEYWORD] + phrase",
+        "   PAIR. A phrase listed under two keywords needs BOTH decorators -",
+        "   stack them on one function:",
+        "",
+        "       @given(\"...\")",
+        "       @when(\"...\")",
+        "       def step(...):",
+        "",
+        "   That is correct pytest-bdd and both scenarios pass. Copy the",
         "   phrase VERBATIM, or use a parsers.parse/parsers.re pattern that",
         "   matches it exactly (for steps containing quoted values).",
         "2. Do NOT invent decorators for phrases that are not in this list.",

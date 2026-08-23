@@ -166,3 +166,135 @@ def test_placeholder_sits_above_the_cache_marker():
     template = (PROMPTS_DIR / "agent2_coder_generate.md").read_text(encoding="utf-8")
     marker = "<!-- ===== CACHE BREAKPOINT"
     assert template.index("{authoritative_steps_block}") < template.index(marker)
+
+# =========================================================================
+# THE AUTHORITATIVE STEP LIST MUST DEMAND WHAT THE VALIDATOR DEMANDS
+#
+# _build_authoritative_steps_block tells the model the feature "contains
+# EXACTLY these unique steps" and that it must NOT write decorators for
+# anything absent from the list. That makes the list stronger than any
+# guidance: whatever it omits, the model is forbidden to add.
+#
+# It de-duplicated on the PHRASE. A feature using one phrase as both a Given
+# and a When listed only the first, so the model was forbidden from writing
+# the very step the coverage validator then demanded. Four repair attempts
+# could not resolve it - there was no output satisfying both.
+#
+# Its own docstring claimed the guarantee this test now enforces:
+#
+#     "What the model is told to implement and what the validator will
+#      demand are therefore the same set by construction, not by hope."
+#
+# It was hope. The extraction was shared; the de-duplication was not.
+# =========================================================================
+
+def _steps_listed_for_the_model(block: str) -> set:
+    """The (keyword, phrase) pairs the injected block actually offers."""
+    listed = set()
+    for line in block.splitlines():
+        text = line.strip()
+        if not text or not text[0].isdigit() or "] " not in text:
+            continue
+        if "[" not in text or text.count("[") != 1:
+            continue
+        keyword = text.split("[", 1)[1].split("]", 1)[0]
+        if keyword not in ("given", "when", "then"):
+            continue
+        listed.add((keyword, text.split("] ", 1)[1].strip()))
+    return listed
+
+
+def test_the_injected_step_list_offers_every_pair_the_validator_demands():
+    """One phrase under two keywords is TWO steps, and both must be listed."""
+    import textwrap
+    from types import SimpleNamespace
+
+    from agents.agent2_coder import _build_authoritative_steps_block
+    from validators.gherkin_analyzer import _extract_feature_steps
+
+    feature = SimpleNamespace(
+        file_path="features/thing.feature",
+        content=textwrap.dedent('''
+            Feature: Thing
+
+              Scenario: One
+                Given I open the listing
+                When I do something
+
+              Scenario: Two
+                When I open the listing
+                Then something happened
+        '''))
+    plan = SimpleNamespace(file_type="step_definitions",
+                           file_path="tests/step_defs/test_thing.py")
+
+    demanded = {(k, p.strip()) for k, p in _extract_feature_steps(feature.content)}
+    listed = _steps_listed_for_the_model(
+        _build_authoritative_steps_block(plan, [feature]))
+
+    missing = demanded - listed
+    assert not missing, (
+        f"the validator demands {sorted(missing)} and the injected list does "
+        f"not offer it. The block tells the model not to write decorators for "
+        f"anything absent from the list, so this is not an omission - it is a "
+        f"prohibition on satisfying the gate."
+    )
+
+
+def test_a_repeated_step_under_ONE_keyword_is_still_listed_once():
+    """Break the thing the guard guards.
+
+    Keying on (keyword, phrase) must not stop collapsing genuine repeats. The
+    same Given in three scenarios is one decorator, and listing it three times
+    would invite three.
+    """
+    import textwrap
+    from types import SimpleNamespace
+
+    from agents.agent2_coder import _build_authoritative_steps_block
+
+    feature = SimpleNamespace(
+        file_path="features/thing.feature",
+        content=textwrap.dedent('''
+            Feature: Thing
+
+              Scenario: One
+                Given I am signed in
+                Then something happened
+
+              Scenario: Two
+                Given I am signed in
+                Then something else happened
+        '''))
+    plan = SimpleNamespace(file_type="step_definitions",
+                           file_path="tests/step_defs/test_thing.py")
+
+    listed = _steps_listed_for_the_model(
+        _build_authoritative_steps_block(plan, [feature]))
+    signed_in = [pair for pair in listed if pair[1] == "I am signed in"]
+    assert len(signed_in) == 1, f"listed {len(signed_in)} times, expected once"
+
+
+def test_the_list_tells_the_model_how_to_serve_two_keywords():
+    """Listing both pairs is not enough - the answer looks like a duplicate,
+    and a model avoiding duplicates will not reach for it unaided."""
+    import textwrap
+    from types import SimpleNamespace
+
+    from agents.agent2_coder import _build_authoritative_steps_block
+
+    feature = SimpleNamespace(
+        file_path="features/thing.feature",
+        content=textwrap.dedent('''
+            Feature: Thing
+
+              Scenario: One
+                Given I open the listing
+                Then something happened
+        '''))
+    plan = SimpleNamespace(file_type="step_definitions",
+                           file_path="tests/step_defs/test_thing.py")
+    block = _build_authoritative_steps_block(plan, [feature])
+
+    assert "BOTH decorators" in block, "say that two keywords need two decorators"
+    assert "@given(" in block and "@when(" in block, "show the stacked form"
