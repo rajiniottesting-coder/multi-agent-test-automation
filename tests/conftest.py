@@ -252,6 +252,38 @@ def page(browser, config, request) -> Page:
 # fixtures (via request.node.rep_call) so the `page` fixture can
 # capture evidence only when a test fails.
 # ─────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Gherkin steps in the Allure report
+#
+# allure-pytest reports PYTEST, and this suite is written in Gherkin - so a
+# scenario arrives as one row and which of its five steps failed is nowhere.
+# For anyone who did not write the test, that is the only thing worth knowing.
+#
+# pytest-bdd already announces every step it runs; nothing was listening.
+# ---------------------------------------------------------------------------
+def pytest_bdd_before_step_call(request, feature, scenario, step, step_func,
+                                step_func_args):
+    from core.allure_steps import start_step
+    start_step(request, step)
+
+
+def pytest_bdd_after_step(request, feature, scenario, step, step_func,
+                          step_func_args):
+    from core.allure_steps import end_step
+    end_step(request)
+
+
+def pytest_bdd_step_error(request, feature, scenario, step, step_func,
+                          step_func_args, exception):
+    """Mark THIS step failed, leaving the ones before it green.
+
+    That is the difference between "the cart test failed" and "it logged in,
+    searched and added the product, then failed removing it".
+    """
+    from core.allure_steps import fail_step
+    fail_step(request, exception)
+
+
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item, call):
     outcome = yield
@@ -287,6 +319,18 @@ def pytest_runtest_makereport(item, call):
         try:
             from core.failure_diagnosis import attach_diagnosis
             attach_diagnosis(report)
+
+            # ...and put the reading, plus the screenshot, video and
+            # trace, INTO the report.
+            #
+            # attach_diagnosis writes to report.sections, which pytest
+            # prints and junit.xml carries and allure-pytest never
+            # reads. The evidence files sit on disk under names nobody
+            # following a report will guess. Everything attached here
+            # already existed; none of it was reachable from the report
+            # somebody is actually handed.
+            from core.allure_steps import attach_failure_evidence
+            attach_failure_evidence(report, Path("reports/failure-evidence"))
         except Exception:                                 # noqa: BLE001
             # Diagnosis is a convenience. It must never be able to turn a
             # test failure into a collection error or mask the real result.
