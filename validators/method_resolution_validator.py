@@ -2809,9 +2809,36 @@ _TEXT_READERS = frozenset({
 
 
 def _rows_families(inventory: dict, page_name: str) -> set:
-    """Selector keys the inventory itself calls a family on this page."""
+    """The ROW CONTAINER on this page, if the inventory declares one.
+
+    Not every family is a row. `multi_match` means "matches several
+    elements", which covers two different things:
+
+        a row container   - one element per record, holding several cells
+        a column of fields - one element per record, holding ONE value
+
+    The reader-naming rule exists for the first: reading a container's text
+    returns every cell concatenated, so a method named after one field can
+    never match. Reading a COLUMN's text with get_all_texts() returns exactly
+    that field, once per record, which is correct and common.
+
+    This returned every multi_match key, so it flagged both. A page object
+    reading a column of names was rejected on every run - "promises result
+    but reads TEXT from <the names column>" - and the only way past it was to
+    stop reading the column, which is the one legal thing to do with it.
+
+    So the container is DECLARED, per page, under `row_family`. A page that
+    declares none has no rows and the rule does not apply there: silence is
+    the safe answer, because a false rejection here has no legal escape.
+    """
     page = ((inventory or {}).get("pages") or {}).get(page_name) or {}
-    return {k for k in (page.get("multi_match") or []) if k}
+    declared = page.get("row_family")
+    if not declared:
+        return set()
+    families = {k for k in (page.get("multi_match") or []) if k}
+    if isinstance(declared, str):
+        return {declared} & families if families else {declared}
+    return {k for k in declared if k}
 
 
 def _returns_a_value(func: ast.AST) -> bool:

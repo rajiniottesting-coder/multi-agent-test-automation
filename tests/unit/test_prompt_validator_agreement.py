@@ -786,9 +786,24 @@ def test_a_genuinely_misnamed_reader_is_still_caught():
     from validators.method_resolution_validator import (
         validate_readers_return_what_they_name)
 
-    page, key = _a_family_key()
+    # The ROW CONTAINER specifically. Any other family is a column of single
+    # fields, and reading its text is correct - flagging that was a false
+    # positive that fired on every run with no legal way past it.
+    import json
+
+    import yaml
+
+    config = yaml.safe_load((_PROJECT / "config" / "config.yaml").read_text(encoding="utf-8"))
+    rel = (config.get("app_under_test") or {}).get("inventory_file")
+    inventory = json.loads((_PROJECT / rel).read_text(encoding="utf-8"))
+
+    page = key = None
+    for name, entry in (inventory.get("pages") or {}).items():
+        if isinstance(entry, dict) and entry.get("row_family"):
+            page, key = name, entry["row_family"]
+            break
     if not key:
-        pytest.skip("this inventory declares no multi_match family")
+        pytest.skip("this inventory declares no row container")
 
     obj = _page_object(
         f'def get_item_price(self) -> str:\n'

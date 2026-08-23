@@ -653,6 +653,66 @@ def _build_starting_state_block(project_root=None) -> str:
     return "\n".join(lines).rstrip()
 
 
+def _build_readable_values_block() -> str:
+    """What this application can actually SHOW, for the feature-file stage.
+
+    A Gherkin sentence naming a value is a promise that something can read it.
+    The feature file is written FIRST, so it is the only stage that can
+    decide not to promise something - and until now it was never told what
+    the inventory holds.
+
+    A run promised "with quantity N" for a page whose inventory had no
+    quantity element. Nothing downstream could satisfy it: the page object
+    had no legal reader, so it invented a selector and was rejected, dropped
+    the method, and the step definition calling it broke. Four repair
+    attempts oscillated between the two files and the story was abandoned.
+
+    Every later stage inherits the feature's promises and none of them can
+    withdraw one. This is where a promise has to be affordable.
+    """
+    try:
+        # Imported here, as elsewhere in this module: the validator owns
+        # inventory loading, and a module-level import would make the
+        # agent depend on it at import time for one optional block.
+        from validators.method_resolution_validator import (
+            _load_configured_inventory,
+        )
+        inventory = _load_configured_inventory(PROJECT_ROOT) or {}
+    except Exception:                                     # noqa: BLE001
+        return ""
+
+    pages = inventory.get("pages") or {}
+    if not pages:
+        return ""
+
+    lines = [
+        "",
+        "## What this application can be asked to SHOW",
+        "",
+        "Every value a scenario names has to be readable from one of these",
+        "elements. Nothing downstream can add one: the page objects may only",
+        "use these keys, and the step definitions may only call what the page",
+        "objects provide. A sentence naming something absent from this list",
+        "cannot be satisfied by anyone, and the story fails.",
+        "",
+    ]
+    for name, entry in sorted(pages.items()):
+        if not isinstance(entry, dict):
+            continue
+        keys = sorted((entry.get("elements") or {}).keys())
+        if not keys:
+            continue
+        lines.append(f"  {name}: {', '.join(keys)}")
+    lines += [
+        "",
+        "If a scenario needs something not listed, say so in `notes` and write",
+        "the scenario around what IS listed. Do not promise it and leave the",
+        "rest of the pipeline to discover there is no way to keep the promise.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def _build_promised_values_block(file_plan, already_generated) -> str:
     """The values this batch's feature sentences NAME, for the page objects.
 
@@ -1664,6 +1724,15 @@ def generate_file_content(
     # METHODS (the POM boundary), so sending them this list would be both
     # wasted tokens and a nudge toward breaking that rule.
     base_helpers_block = ""
+    if file_plan.file_type == "feature":
+        # The only stage that can decline to promise something.
+        base_helpers_block = _build_readable_values_block()
+        if base_helpers_block:
+            logger.info(
+                "Stage 2: injecting the inventory's readable elements "
+                "into the feature prompt so a scenario cannot promise "
+                "a value nothing can show."
+            )
     if file_plan.file_type == "page_object":
         base_helpers_block = _build_base_page_helpers_block()
         # The feature file is generated BEFORE page objects, and step
@@ -2581,6 +2650,30 @@ def _inject_markers_into_feature(content: str, test_cases: list[dict]) -> str:
     # Inserts shift everything after — go in reverse so earlier indices stay valid.
     for insert_pos, marker_line in sorted(inserts, key=lambda p: -p[0]):
         out_lines.insert(insert_pos, marker_line)
+
+    # Name the test cases that ended up with no scenario.
+    #
+    # The count mismatch was warned about earlier - "3 scenarios but 4 test
+    # case(s)" - and that told nobody WHICH one was left out. The story then
+    # opened a pull request claiming four test cases and delivering three,
+    # and the gap was invisible until somebody counted.
+    #
+    # Fewer scenarios than cases is sometimes deliberate: two cases can share
+    # one scenario. So this is a warning, not a gate - but it now names the
+    # case, so the decision is a decision rather than an oversight.
+    _unpaired = [tc for _i, tc in enumerate(test_cases) if _i not in _claimed]
+    if _unpaired:
+        logger.warning(
+            "%d test case(s) got no scenario of their own: %s. If that is "
+            "deliberate - one scenario covering several cases - say so in the "
+            "pull request body. If it is not, the story is shipping less "
+            "coverage than it claims.",
+            len(_unpaired),
+            ", ".join(
+                str((tc or {}).get("key") or (tc or {}).get("summary") or tc)[:60]
+                for tc in _unpaired
+            ),
+        )
 
     return "".join(out_lines)
 

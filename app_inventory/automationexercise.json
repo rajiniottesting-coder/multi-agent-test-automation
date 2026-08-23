@@ -177,12 +177,14 @@
         "cart_product_names": "#cart_info .cart_description a",
         "cart_delete_buttons": ".cart_quantity_delete",
         "proceed_to_checkout_button": "text=Proceed To Checkout",
-        "empty_cart_message": "text=Cart is empty!"
+        "empty_cart_message": "text=Cart is empty!",
+        "cart_quantities": "#cart_info .cart_quantity"
       },
       "multi_match": [
         "cart_rows",
         "cart_product_names",
-        "cart_delete_buttons"
+        "cart_delete_buttons",
+        "cart_quantities"
       ],
       "multi_match_note": "Keys whose selector matches SEVERAL elements. Read them with get_all_texts / get_count / get_nth_text; to act on ONE member, scope to the row containing its text with click_in_row(); never click, fill or assert on the family as a whole.",
       "elements_notes": {
@@ -199,7 +201,12 @@
       ],
       "conditional_note": "Only rendered when the cart is empty, so it reads STALE whenever the sweep runs against a cart with items in it.",
       "persistent_state": true,
-      "persistent_state_note": "The cart is stored against the signed-in account. It survives logout and survives the run, so a scenario reusing a shared account inherits whatever a previous run left behind. A scenario asserting an ABSOLUTE count or emptiness here must first own its starting state: register a fresh account, or clear the state explicitly."
+      "persistent_state_note": "The cart is stored against the signed-in account. It survives logout and survives the run, so a scenario reusing a shared account inherits whatever a previous run left behind. A scenario asserting an ABSOLUTE count or emptiness here must first own its starting state: register a fresh account, or clear the state explicitly.",
+      "notes": {
+        "cart_quantities": "The quantity cell, one per row. Read a single row's value with get_column_values(cart_rows, cart_quantities, 0) plus find_row_index_by_text(cart_rows, <product name>). Absent from this inventory until a feature asked for 'with quantity N' and nothing could read it: the page object had no legal reader, so it invented a selector, was rejected, dropped the method, and the step definition calling it broke - four repair attempts oscillating between two files.",
+        "row_family": "The repeating CONTAINER. Reading its text gives every cell of a row concatenated, which is what the reader-naming rule exists to catch. The other families here are columns of single fields - reading their text with get_all_texts() is correct and must not be flagged."
+      },
+      "row_family": "cart_rows"
     },
     "product_detail": {
       "url": "/product_details/{product_id}",

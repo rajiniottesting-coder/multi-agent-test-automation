@@ -1380,6 +1380,12 @@ def _rows_project(tmp_path):
         "pages": {"loans": {
             "url": "/loans", "page_object_class": "LoansPage",
             "multi_match": ["loan_rows", "loan_titles"],
+            # loan_rows is the repeating CONTAINER; loan_titles is a column of
+            # single fields. Both are multi_match, and only the container
+            # concatenates cells - which is what the reader-naming rule is
+            # about. Declaring it stopped the rule firing on every column
+            # read, which had no legal escape.
+            "row_family": "loan_rows",
             "elements": {"loan_rows": ".row", "loan_titles": ".title",
                          "due_notice": "#due"}}}}), encoding="utf-8")
     (tmp_path / "config" / "config.yaml").write_text(
@@ -1476,3 +1482,95 @@ def test_a_page_with_no_family_is_untouched(tmp_path):
         def get_due_date_for(self, title):
             return self.get_text(self.sel("banner"))
     ''')], root) == []
+
+
+# =========================================================================
+# A COLUMN OF FIELDS IS NOT A ROW
+#
+# `multi_match` means "matches several elements", which covers two different
+# things:
+#
+#     a row CONTAINER    - one element per record, holding several cells
+#     a column of FIELDS - one element per record, holding ONE value
+#
+# The reader-naming rule exists for the first: reading a container's text
+# returns every cell concatenated, so a method named after one field can
+# never match. Reading a COLUMN's text returns exactly that field, once per
+# record - correct, and the only sensible thing to do with it.
+#
+# The rule treated every multi_match key as a row, so a page object reading a
+# column of names was rejected on EVERY run: "promises result but reads TEXT
+# from <the names column>". There was no legal way past it, and the repair
+# attempts spent on it were what pushed a story into the two-file oscillation
+# that finally killed it.
+#
+# The container is now DECLARED per page. A page that declares none has no
+# rows and the rule stays silent there, because a false rejection with no
+# escape is worse than a missed one.
+# =========================================================================
+
+def _inventory_with(tmp_path, *, row_family=None):
+    import json
+
+    (tmp_path / "app_inventory").mkdir(exist_ok=True)
+    (tmp_path / "config").mkdir(exist_ok=True)
+    page = {
+        "url": "/things", "page_object_class": "ThingPage",
+        "multi_match": ["thing_rows", "thing_titles"],
+        "elements": {"thing_rows": ".row", "thing_titles": ".title"},
+    }
+    if row_family:
+        page["row_family"] = row_family
+    (tmp_path / "app_inventory" / "a.json").write_text(
+        json.dumps({"app_name": "T", "pages": {"things": page}}), encoding="utf-8")
+    (tmp_path / "config" / "config.yaml").write_text(
+        "app_under_test:\n  name: T\n  inventory_file: app_inventory/a.json\n",
+        encoding="utf-8")
+    return tmp_path
+
+
+def _reader(key, name="get_thing_price"):
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        file_path="pages/thing_page.py",
+        content=("from pages.base_page import BasePage\n\n\n"
+                 "class ThingPage(BasePage):\n"
+                 '    INVENTORY_PAGE = "things"\n\n'
+                 f"    def {name}(self) -> str:\n"
+                 f'        return self.get_text(self.sel("{key}"))\n'))
+
+
+def test_reading_a_column_of_fields_is_not_flagged(tmp_path):
+    """The false positive that fired every run."""
+    from validators.method_resolution_validator import (
+        validate_readers_return_what_they_name)
+
+    root = _inventory_with(tmp_path, row_family="thing_rows")
+    assert validate_readers_return_what_they_name(
+        [_reader("thing_titles", "get_result_names")], root) == [], (
+        "a column holds ONE value per record - reading its text is exactly "
+        "what it is for"
+    )
+
+
+def test_reading_the_row_container_under_a_field_name_is_flagged(tmp_path):
+    """Break the thing the guard guards. Narrowing the rule must not switch
+    it off - the container case is the whole reason it exists."""
+    from validators.method_resolution_validator import (
+        validate_readers_return_what_they_name)
+
+    root = _inventory_with(tmp_path, row_family="thing_rows")
+    assert validate_readers_return_what_they_name([_reader("thing_rows")], root), (
+        "reading the container returns every cell concatenated - a method "
+        "named for one field can never match it"
+    )
+
+
+def test_a_page_declaring_no_row_container_is_left_alone(tmp_path):
+    """Silence is the safe answer where the inventory has not said which
+    family is the container: a false rejection here has no legal escape."""
+    from validators.method_resolution_validator import (
+        validate_readers_return_what_they_name)
+
+    root = _inventory_with(tmp_path)          # no row_family declared
+    assert validate_readers_return_what_they_name([_reader("thing_rows")], root) == []

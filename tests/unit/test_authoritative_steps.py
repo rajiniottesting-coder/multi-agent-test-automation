@@ -374,3 +374,74 @@ def test_no_feature_in_the_batch_means_no_block():
 
     plan = SimpleNamespace(file_type="page_object", file_path="pages/thing_page.py")
     assert _build_promised_values_block(plan, []) == ""
+
+
+# =========================================================================
+# THE FEATURE STAGE MUST KNOW WHAT THE APPLICATION CAN SHOW
+#
+# A run promised `with quantity N` for a page whose inventory had no
+# quantity element. Nothing downstream could satisfy it:
+#
+#   the page object had no legal reader, so it invented a selector  -> rejected
+#   it dropped the method                                           -> the step
+#                                                        definition calling it broke
+#   the step definition invented another name                       -> did not exist
+#
+# Four repair attempts oscillating between two files, then the story was
+# abandoned. Each repair fixed one file and broke the other, because each is
+# validated against the other's current state and only one is regenerated at
+# a time.
+#
+# No validator was missing. The promise was unaffordable, and the feature
+# file - written FIRST, and the only stage that can decline to make one - was
+# never told what the inventory holds.
+# =========================================================================
+
+def test_the_feature_stage_is_told_what_the_inventory_can_show():
+    from agents.agent2_coder import _build_readable_values_block
+
+    block = _build_readable_values_block()
+    assert block, "the feature prompt gets nothing about what is readable"
+    assert "cannot be satisfied by anyone" in block, (
+        "listing the elements is not enough - say what happens when a "
+        "scenario promises something absent"
+    )
+    assert "notes" in block, (
+        "give the model somewhere to put the request, or it will invent "
+        "the element instead"
+    )
+
+
+def test_every_inventory_page_with_elements_is_listed():
+    """A page missing from the block is a page whose values look unavailable,
+    and scenarios will route around it for no reason."""
+    import json
+
+    import yaml
+
+    from agents.agent2_coder import _build_readable_values_block
+
+    config = yaml.safe_load((_PROJECT / "config" / "config.yaml").read_text(encoding="utf-8"))
+    rel = (config.get("app_under_test") or {}).get("inventory_file")
+    inventory = json.loads((_PROJECT / rel).read_text(encoding="utf-8"))
+    block = _build_readable_values_block()
+
+    for name, entry in (inventory.get("pages") or {}).items():
+        if not isinstance(entry, dict) or not (entry.get("elements") or {}):
+            continue
+        assert f"  {name}:" in block, f"page {name!r} is missing from the block"
+        for key in entry["elements"]:
+            assert key in block, f"{name}.{key} is not offered to the feature stage"
+
+
+def test_the_block_is_wired_into_the_feature_branch():
+    """A builder nothing calls has been this project's recurring shape."""
+    source = (_PROJECT / "agents" / "agent2_coder.py").read_text(encoding="utf-8")
+    body = " ".join(source.split())
+
+    assert 'if file_plan.file_type == "feature":' in body, (
+        "nothing branches on the feature file type"
+    )
+    assert "base_helpers_block = _build_readable_values_block()" in body, (
+        "the block is built but never reaches the prompt"
+    )
