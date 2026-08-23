@@ -653,6 +653,68 @@ def _build_starting_state_block(project_root=None) -> str:
     return "\n".join(lines).rstrip()
 
 
+def _build_promised_values_block(file_plan, already_generated) -> str:
+    """The values this batch's feature sentences NAME, for the page objects.
+
+    A Gherkin sentence like `... with quantity {n}` is a promise that the test
+    checks a quantity. Something has to be able to READ one, and the only file
+    that can offer it is a page object - written after the feature and before
+    the step definitions that will need it.
+
+    Returns "" when there is no feature file in the batch, which is the normal
+    case for a story extending existing coverage.
+    """
+    feature = next(
+        (f for f in (already_generated or [])
+         if (getattr(f, "file_path", "") or "").endswith(".feature")),
+        None,
+    )
+    if feature is None:
+        return ""
+
+    try:
+        from validators.gherkin_analyzer import _extract_feature_steps
+        steps = _extract_feature_steps(getattr(feature, "content", "") or "")
+    except Exception:                                     # noqa: BLE001
+        return ""
+
+    named: list = []
+    for _keyword, phrase in steps:
+        for placeholder in re.findall(r"[<{]([\w ]+)[>}]", phrase):
+            if placeholder not in named:
+                named.append(placeholder)
+        for quoted in re.findall(r'"([^"]{1,40})"', phrase):
+            label = quoted.strip()
+            if label and label not in named:
+                named.append(label)
+
+    lines = [
+        "",
+        "## What the feature file in this batch promises",
+        "",
+        "These scenarios are already written and are AUTHORITATIVE. The step",
+        "definitions come after you and can only call methods you provide -",
+        "they cannot add one, and they cannot reword a sentence.",
+        "",
+    ]
+    for _keyword, phrase in steps:
+        lines.append(f"  - {phrase}")
+    if named:
+        lines += [
+            "",
+            "Values these sentences name: " + ", ".join(repr(n) for n in named[:20]),
+        ]
+    lines += [
+        "",
+        "For every value a sentence names, one of this batch's page objects",
+        "must expose a way to READ it. A sentence promising a quantity needs a",
+        "quantity reader; a sentence promising a count needs a count reader.",
+        "Leave one out and the step definition has nothing legal to call.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def _build_base_page_helpers_block(project_root=None) -> str:
     """List BasePage's public method signatures for the Stage-2 prompt.
 
@@ -1604,6 +1666,24 @@ def generate_file_content(
     base_helpers_block = ""
     if file_plan.file_type == "page_object":
         base_helpers_block = _build_base_page_helpers_block()
+        # The feature file is generated BEFORE page objects, and step
+        # definitions AFTER them. So this is the only stage that can
+        # see what the sentences promise and still decide what the
+        # page will be able to show.
+        #
+        # Without it, a sentence naming a value no page object exposes
+        # leaves the step-def stage with no legal move: it cannot add a
+        # method (page objects are already written) and it cannot
+        # reword the sentence (the feature is authoritative). A run
+        # invented the reader it needed, was told it did not exist, and
+        # then wrapped the call in a tautology to get past the gate.
+        promised_block = _build_promised_values_block(file_plan, already_generated)
+        if promised_block:
+            base_helpers_block = base_helpers_block + promised_block
+            logger.info(
+                "Stage 2: injecting the feature's promised values into "
+                "the page-object prompt so a reader exists for each."
+            )
         if base_helpers_block:
             logger.info(
                 "Stage 2: injecting %d BasePage helper signatures into "

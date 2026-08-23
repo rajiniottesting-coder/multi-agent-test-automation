@@ -556,3 +556,47 @@ def test_the_prompt_teaches_this_before_the_gate_enforces_it():
         "the generation prompt never states this rule"
     )
     assert ">= 0" in prompt, "show the assertion that cannot fail"
+
+
+def test_an_assertion_wrapped_in_a_tautology_is_rejected():
+    """`assert <real call> is None or True, ""` - a run wrote exactly this.
+
+    The call does the work; the assert around it reports success whatever
+    happened, and the empty message leaves nothing to read when it does. It
+    was written to get past a gate, which is the shape worth catching: code
+    that satisfies a rule without meeting it.
+    """
+    from validators.method_resolution_validator import validate_step_parameter_types
+
+    errors = validate_step_parameter_types([_page_with_readers(), _step('''
+        @then(parsers.parse("the collection holds {n:d}"))
+        def assert_holds(widget_page, n):
+            assert widget_page.get_result_count() == n or True
+    ''')], _PROJECT)
+
+    assert errors, "an `or True` makes the whole expression true regardless"
+    assert any("cannot fail" in e for e in errors), errors
+
+
+def test_asserting_a_call_is_None_is_rejected():
+    """A method returning None passes `is None` every time - that asserts the
+    signature, not the behaviour."""
+    from validators.method_resolution_validator import validate_step_parameter_types
+
+    assert validate_step_parameter_types([_page_with_readers(), _step('''
+        @then(parsers.parse("the collection holds {n:d}"))
+        def assert_holds(widget_page, n):
+            assert widget_page.assert_row_count(n) is None
+    ''')], _PROJECT)
+
+
+def test_a_real_assertion_with_an_or_is_still_allowed():
+    """Break the thing the guard guards. `or` is not the problem - a constant
+    operand is. Rejecting every disjunction would block legitimate checks."""
+    from validators.method_resolution_validator import validate_step_parameter_types
+
+    assert validate_step_parameter_types([_page_with_readers(), _step('''
+        @then(parsers.parse("the collection holds {n:d}"))
+        def assert_holds(widget_page, n):
+            assert widget_page.has_item("a") or widget_page.get_result_count() == n
+    ''')], _PROJECT) == []

@@ -3193,6 +3193,27 @@ def _assertion_cannot_fail(test: ast.AST) -> Optional[str]:
     if isinstance(test, ast.Constant) and test.value:
         return f"`assert {test.value!r}` is a constant"
 
+    # `assert <anything> or True` - the second operand decides, always.
+    # A run produced `assert page.assert_row_count(n) is None or True, ""`,
+    # which is a real call wrapped in a tautology. The call does the work; the
+    # assert around it reports success whatever happened, and an empty message
+    # leaves nothing to read when it does.
+    if isinstance(test, ast.BoolOp) and isinstance(test.op, ast.Or):
+        for operand in test.values:
+            if isinstance(operand, ast.Constant) and operand.value:
+                return (f"`or {operand.value!r}` makes the whole expression "
+                        f"true regardless of the rest")
+
+    # `assert <call that returns None> is None` - true by the callee's
+    # signature, not by anything the page did.
+    if (isinstance(test, ast.Compare) and len(test.ops) == 1
+            and isinstance(test.ops[0], ast.Is)
+            and isinstance(test.comparators[0], ast.Constant)
+            and test.comparators[0].value is None
+            and isinstance(test.left, ast.Call)):
+        return ("comparing a call against None asserts the signature, not the "
+                "behaviour - a method returning None passes this every time")
+
     if isinstance(test, ast.Compare) and len(test.ops) == 1:
         left, op, right = test.left, test.ops[0], test.comparators[0]
 

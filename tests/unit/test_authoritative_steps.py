@@ -18,6 +18,10 @@ from agents.agent2_coder import (
 )
 from config.paths import PROMPTS_DIR
 
+from pathlib import Path as _Path
+
+_PROJECT = _Path(__file__).resolve().parents[2]
+
 
 class _FP:
     def __init__(self, file_path: str, file_type: str):
@@ -298,3 +302,75 @@ def test_the_list_tells_the_model_how_to_serve_two_keywords():
 
     assert "BOTH decorators" in block, "say that two keywords need two decorators"
     assert "@given(" in block and "@when(" in block, "show the stacked form"
+
+
+# =========================================================================
+# PAGE OBJECTS MUST SEE WHAT THE FEATURE PROMISES
+#
+# Generation order is feature -> page objects -> step definitions. The step
+# definitions come last and have the least freedom: they cannot add a method
+# (page objects are already written) and cannot reword a sentence (the
+# feature is authoritative).
+#
+# So a sentence naming a value no page object exposes leaves that stage with
+# no legal move. A run invented the reader it needed, was told it did not
+# exist, and then wrapped the call in a tautology to get past the gate.
+#
+# The page-object stage is the only one that can see both the promise and its
+# own contents. It now does.
+# =========================================================================
+
+def test_the_page_object_prompt_carries_the_feature_promises():
+    import textwrap
+    from types import SimpleNamespace
+
+    from agents.agent2_coder import _build_promised_values_block
+
+    feature = SimpleNamespace(
+        file_path="features/thing.feature",
+        content=textwrap.dedent('''
+            Feature: Thing
+
+              Scenario: One
+                Then the collection holds "An Item" with quantity 1
+        '''))
+    plan = SimpleNamespace(file_type="page_object", file_path="pages/thing_page.py")
+    block = _build_promised_values_block(plan, [feature])
+
+    assert block, "the page-object prompt gets nothing about the feature"
+    assert "with quantity 1" in block, "the sentences themselves must be shown"
+    assert "must expose a way to READ it" in block, (
+        "showing the sentences is not enough - say what the page object owes"
+    )
+    assert "cannot add one" in block, (
+        "say WHY it matters here: the stage that follows has no other option"
+    )
+
+
+def test_the_block_is_actually_wired_into_the_page_object_prompt():
+    """A builder nothing calls is the shape this project has been bitten by
+    repeatedly - dismiss_interstitial sat here for months with no caller."""
+    import re
+
+    source = (_PROJECT / "agents" / "agent2_coder.py").read_text(encoding="utf-8")
+    body = " ".join(source.split())
+
+    assert "_build_promised_values_block(file_plan, already_generated)" in body, (
+        "the builder exists but nothing calls it - the page-object prompt "
+        "still never sees what the feature promises"
+    )
+    assert re.search(r"base_helpers_block\s*=\s*base_helpers_block\s*\+\s*promised_block",
+                     body), (
+        "the block is built and then dropped - it has to reach the prompt"
+    )
+
+
+def test_no_feature_in_the_batch_means_no_block():
+    """Break the thing the guard guards. A story extending existing coverage
+    has no feature file, and inventing promises for it would be noise."""
+    from types import SimpleNamespace
+
+    from agents.agent2_coder import _build_promised_values_block
+
+    plan = SimpleNamespace(file_type="page_object", file_path="pages/thing_page.py")
+    assert _build_promised_values_block(plan, []) == ""
