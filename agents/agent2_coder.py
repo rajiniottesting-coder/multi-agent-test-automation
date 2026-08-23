@@ -63,6 +63,7 @@ from validators.method_resolution_validator import (
     validate_persistent_pages_can_be_cleared,
     validate_confirm_arrival_targets_this_page,
     validate_readers_return_what_they_name,
+    validate_row_scoped_selectors,
     validate_step_parameter_types,
     validate_step_claims_are_verified,
     validate_readiness_probe,
@@ -2174,6 +2175,7 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     # attempts at whatever else was wrong and ZERO at the page object, then
     # the run died on feedback it had never been shown (SCRUM-103).
     errors.extend(validate_page_object_selectors(generated_files, PROJECT_ROOT))
+    errors.extend(validate_row_scoped_selectors(generated_files, PROJECT_ROOT))
     # Two stories editing one page object branch from main independently, so
     # neither sees the other's work and both may add their own name for one
     # behaviour. Git merges the additions cleanly when they land apart, and

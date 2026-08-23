@@ -756,3 +756,19 @@ def test_a_clean_batch_still_passes_the_gate():
         "the sample is not clean; adjust it rather than weakening the gate"
     )
     _validate_generated_files(batch, "STORY-2")   # must not raise
+
+
+def test_the_row_scope_check_is_wired_into_the_gate():
+    """A validator nothing calls is this project's recurring shape.
+
+    The check itself passed its own tests while being unreachable from the
+    pipeline - removing the call site changed nothing, which is exactly the
+    failure mode `dismiss_interstitial` had for months.
+    """
+    source = (_ROOT / "agents" / "agent2_coder.py").read_text(encoding="utf-8")
+    body = " ".join(source.split())
+
+    assert "validate_row_scoped_selectors(generated_files, PROJECT_ROOT)" in body, (
+        "the row-scope validator is defined but never called - a cell "
+        "selector anchored above its row would ship again"
+    )

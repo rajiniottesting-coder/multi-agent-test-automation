@@ -1574,3 +1574,91 @@ def test_a_page_declaring_no_row_container_is_left_alone(tmp_path):
 
     root = _inventory_with(tmp_path)          # no row_family declared
     assert validate_readers_return_what_they_name([_reader("thing_rows")], root) == []
+
+
+# =========================================================================
+# A CELL SELECTOR IS EVALUATED INSIDE THE ROW
+#
+#     cell = rows.nth(i).locator(cell_locator).nth(cell_index)
+#
+# So a cell selector anchored ABOVE the row - on the table's id, say -
+# matches nothing when scoped to one row. The inventory is a flat map with no
+# notion of "from the page root" versus "from inside a row", so both forms
+# look equally correct sitting in it.
+#
+# An entry added as `#container .cell` shipped, three E2E tests failed thirty
+# seconds each with `Locator.inner_text: Timeout exceeded`, and the locator
+# named in the failure reads perfectly well on its own.
+# =========================================================================
+
+def _row_scope_project(tmp_path, cell_selector):
+    import json
+
+    (tmp_path / "app_inventory").mkdir(exist_ok=True)
+    (tmp_path / "config").mkdir(exist_ok=True)
+    (tmp_path / "app_inventory" / "a.json").write_text(json.dumps({
+        "app_name": "T",
+        "pages": {"things": {
+            "url": "/things", "page_object_class": "ThingPage",
+            "multi_match": ["thing_rows", "thing_cells"],
+            "row_family": "thing_rows",
+            "elements": {"thing_rows": "#table tbody tr",
+                         "thing_cells": cell_selector}}}}), encoding="utf-8")
+    (tmp_path / "config" / "config.yaml").write_text(
+        "app_under_test:\n  name: T\n  inventory_file: app_inventory/a.json\n",
+        encoding="utf-8")
+    return tmp_path
+
+
+def _row_reader():
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        file_path="pages/thing_page.py",
+        content=("from pages.base_page import BasePage\n\n\n"
+                 "class ThingPage(BasePage):\n"
+                 '    INVENTORY_PAGE = "things"\n\n'
+                 "    def get_cell_for(self, name: str) -> str:\n"
+                 '        i = self.find_row_index_by_text(self.sel("thing_rows"), name)\n'
+                 '        return self.get_column_values(self.sel("thing_rows"),\n'
+                 '                                      self.sel("thing_cells"), 0)[i]\n'))
+
+
+def test_a_cell_selector_anchored_above_the_row_is_rejected(tmp_path):
+    """The shape that cost three E2E tests thirty seconds each."""
+    from validators.method_resolution_validator import validate_row_scoped_selectors
+
+    root = _row_scope_project(tmp_path, "#table .cell")
+    errors = validate_row_scoped_selectors([_row_reader()], root)
+
+    assert errors, (
+        "scoped inside a row, a selector anchored on the table's id matches "
+        "nothing - and the failure names a locator that looks correct"
+    )
+    assert "RELATIVE to the row" in errors[0], "say what the fix is"
+    assert "#table" in errors[0], "name the anchor that is above the row"
+
+
+def test_a_row_relative_cell_selector_is_accepted(tmp_path):
+    """Break the thing the guard guards. Rejecting the correct form would
+    leave no way to read a cell at all."""
+    from validators.method_resolution_validator import validate_row_scoped_selectors
+
+    root = _row_scope_project(tmp_path, ".cell")
+    assert validate_row_scoped_selectors([_row_reader()], root) == []
+
+
+def test_a_page_object_not_reading_cells_is_untouched(tmp_path):
+    """Only the two helpers that scope inside a row are judged."""
+    from types import SimpleNamespace
+
+    from validators.method_resolution_validator import validate_row_scoped_selectors
+
+    root = _row_scope_project(tmp_path, "#table .cell")
+    other = SimpleNamespace(
+        file_path="pages/thing_page.py",
+        content=("from pages.base_page import BasePage\n\n\n"
+                 "class ThingPage(BasePage):\n"
+                 '    INVENTORY_PAGE = "things"\n\n'
+                 "    def all_cells(self):\n"
+                 '        return self.get_all_texts(self.sel("thing_cells"))\n'))
+    assert validate_row_scoped_selectors([other], root) == []

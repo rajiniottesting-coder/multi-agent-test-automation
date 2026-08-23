@@ -2808,6 +2808,120 @@ _TEXT_READERS = frozenset({
 })
 
 
+# Helpers that scope their second selector INSIDE a row, one row at a time.
+#
+#     cell = rows.nth(i).locator(cell_locator).nth(cell_index)
+#
+# So the cell selector is evaluated with a single row as its root. An
+# absolute one - anything anchored on an id or a class that sits ABOVE the
+# row - matches nothing there, and the failure arrives thirty seconds later
+# as `Locator.inner_text: Timeout exceeded`, naming a locator that reads
+# perfectly well in isolation.
+_ROW_SCOPED_HELPERS = {"get_column_values", "get_cell_text"}
+
+
+def validate_row_scoped_selectors(generated_files: list, project_root=None) -> list[str]:
+    """Fail a cell selector that cannot resolve inside the row it is scoped to.
+
+    The inventory is one flat map of selectors, so nothing in it says whether
+    a key is meant to be used from the page root or from inside a row. A key
+    written as `#container .cell` is correct from the page and empty from a
+    row, and both readings look identical in the file.
+
+    Caught here by comparing the two keys the call actually pairs: if the cell
+    selector repeats the row selector's own leading id or class, it is
+    anchored above the row and cannot match beneath it.
+    """
+    project_root = Path(project_root or ".")
+    try:
+        inventory = _load_configured_inventory(project_root) or {}
+    except Exception:                                     # noqa: BLE001
+        return []
+    if not inventory:
+        return []
+
+    errors: list[str] = []
+    for gen in generated_files or []:
+        path = getattr(gen, "file_path", "") or ""
+        if not (path.startswith("pages/") and path.endswith(".py")):
+            continue
+        if path.endswith("base_page.py"):
+            continue
+        try:
+            tree = ast.parse(getattr(gen, "content", "") or "")
+        except SyntaxError:
+            continue
+
+        page_name = _inventory_page_of(tree)
+        elements = (((inventory.get("pages") or {}).get(page_name) or {})
+                    .get("elements") or {})
+        if not elements:
+            continue
+
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr in _ROW_SCOPED_HELPERS):
+                continue
+            keys = [_sel_key_of(arg) for arg in node.args[:2]]
+            if len(keys) < 2 or not all(keys):
+                continue
+            row_key, cell_key = keys
+            row_sel = str(elements.get(row_key, ""))
+            cell_sel = str(elements.get(cell_key, ""))
+            if not row_sel or not cell_sel:
+                continue
+
+            # The row selector's own anchor - its first id or class token.
+            anchor_match = re.match(r"\s*([#.][\w-]+)", row_sel)
+            if not anchor_match:
+                continue
+            anchor_token = anchor_match.group(1)
+            if anchor_token not in cell_sel:
+                continue
+
+            errors.append(
+                f"Row-scoped selector error in '{path}' line {node.lineno}: "
+                f"`{node.func.attr}()` evaluates `{cell_key}` INSIDE one row "
+                f"of `{row_key}`, but `{cell_key}` is `{cell_sel!r}` - anchored "
+                f"on `{anchor_token}`, which `{row_key}` (`{row_sel!r}`) sits "
+                f"UNDER. Scoped to a row, that matches nothing, and the run "
+                f"fails thirty seconds later with a timeout naming a locator "
+                f"that reads perfectly well on its own. The cell selector must "
+                f"be RELATIVE to the row: drop the `{anchor_token}` prefix in "
+                f"the inventory so `{cell_key}` describes the cell, not the "
+                f"path to it from the page root."
+            )
+    return errors
+
+
+def _sel_key_of(node) -> Optional[str]:
+    """The literal key inside a `self.sel("key")` argument, if that is what it is."""
+    if (isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "sel"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)):
+        return node.args[0].value
+    return None
+
+
+def _inventory_page_of(tree) -> Optional[str]:
+    """The INVENTORY_PAGE a generated page object declares."""
+    for cls in tree.body:
+        if not isinstance(cls, ast.ClassDef):
+            continue
+        for stmt in cls.body:
+            if not isinstance(stmt, ast.Assign):
+                continue
+            for target in stmt.targets:
+                if (isinstance(target, ast.Name)
+                        and target.id == "INVENTORY_PAGE"
+                        and isinstance(stmt.value, ast.Constant)):
+                    return stmt.value.value
+    return None
+
+
 def _rows_families(inventory: dict, page_name: str) -> set:
     """The ROW CONTAINER on this page, if the inventory declares one.
 
