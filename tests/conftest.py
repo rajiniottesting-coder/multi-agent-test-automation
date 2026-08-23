@@ -74,6 +74,43 @@ def should_block_request(url: str, blocked_hosts) -> bool:
     return False
 
 
+def pytest_configure(config):
+    """Fill the Allure report's metadata panels before any test runs.
+
+    ENVIRONMENT, CATEGORIES, EXECUTORS and TREND are all blank unless
+    something writes them, and none is a by-product of running tests. A
+    report with four empty boxes reads as a report that does not work.
+
+    Done here rather than in a fixture because the files must exist before
+    the first result is written, and `pytest_configure` is the earliest hook
+    that knows where --alluredir points.
+
+    Everything written is DERIVED - from config.yaml, from the environment,
+    and from the framework's own diagnosis signatures - so pointing at a
+    different application changes every value without changing this code.
+    """
+    results_dir = config.getoption("--alluredir", default=None)
+    if not results_dir:
+        return                                    # not an Allure run
+
+    try:
+        from core.allure_meta import write_allure_metadata
+
+        written = write_allure_metadata(results_dir,
+                                        project_root=Path(__file__).resolve().parents[1])
+        if written:
+            logger.info(
+                "Allure metadata: %s environment value(s), %s categor(ies), "
+                "executor recorded, trend history %s",
+                written.get("environment", 0), written.get("categories", 0),
+                "carried forward" if written.get("history") else
+                "not available (first run, or no previous report)",
+            )
+    except Exception:                                     # noqa: BLE001
+        # Never fail a session over report decoration.
+        logger.debug("Allure metadata not written", exc_info=True)
+
+
 @pytest.fixture(scope="session")
 def config():
     """Provide test config to any test that needs it."""
