@@ -424,7 +424,7 @@ def test_the_same_bug_written_inline_is_rejected():
     ('''
         @then(parsers.parse("row {n:d} is present"))
         def assert_present(widget_page, n, name):
-            assert name in widget_page.get_names()
+            assert name in widget_page.get_names(), f"row {n} missing"
     ''', "membership is not an equality comparison"),
 ])
 def test_correct_comparisons_are_left_alone(body, why):
@@ -444,3 +444,115 @@ def test_an_unannotated_reader_is_not_guessed_at():
         def assert_quantity(widget_page, name, quantity):
             assert widget_page.get_quantity(name) == quantity
     ''')], _PROJECT) == []
+
+
+# =========================================================================
+# A STEP MUST CHECK EVERYTHING ITS SENTENCE PROMISES
+#
+# Two shapes the reviewer kept finding, neither caught by any gate:
+#
+#     @then(parsers.parse('... with quantity {quantity:d}'))
+#     def assert_holds(page, name, quantity):
+#         assert page.has_item(name)          # quantity never read
+#
+#     assert page.get_result_count() >= 0     # a count is never negative
+#
+# Both produce a scenario that PASSES when it should not. That is the worse
+# direction: a test that fails wrongly gets fixed, and a test that passes
+# wrongly is trusted and stays in the suite reporting coverage the run never
+# had.
+#
+# The step text is what the feature file claims is verified, so the sentence
+# is the specification and the body has to meet it.
+# =========================================================================
+
+def _page_with_readers():
+    import textwrap
+    from types import SimpleNamespace
+    return SimpleNamespace(file_path="pages/widget_page.py",
+                           content=textwrap.dedent('''
+        from pages.base_page import BasePage
+
+
+        class WidgetPage(BasePage):
+            INVENTORY_PAGE = "widget"
+
+            def has_item(self, name: str) -> bool:
+                return True
+
+            def get_result_count(self) -> int:
+                return 0
+    '''))
+
+
+def _step(body: str):
+    import textwrap
+    from types import SimpleNamespace
+    return SimpleNamespace(file_path="tests/step_defs/test_widget.py",
+                           content=textwrap.dedent(body))
+
+
+def test_a_captured_value_the_body_ignores_is_rejected():
+    from validators.method_resolution_validator import validate_step_parameter_types
+
+    errors = validate_step_parameter_types([_page_with_readers(), _step('''
+        @then(parsers.parse('the collection holds "{name}" with quantity {quantity:d}'))
+        def assert_holds(widget_page, name, quantity):
+            assert widget_page.has_item(name)
+    ''')], _PROJECT)
+
+    assert errors, "the sentence promises a quantity the body never reads"
+    assert "quantity" in errors[0]
+    assert "passes for every value" in errors[0], (
+        "say what goes wrong - 'unused parameter' sounds like tidiness"
+    )
+
+
+def test_an_assertion_that_cannot_fail_is_rejected():
+    from validators.method_resolution_validator import validate_step_parameter_types
+
+    errors = validate_step_parameter_types([_page_with_readers(), _step('''
+        @then("the search should not falsely match anything")
+        def assert_no_match(widget_page):
+            assert widget_page.get_result_count() >= 0
+    ''')], _PROJECT)
+
+    assert errors, "a count is never negative - this cannot fail"
+    assert "cannot fail" in errors[0]
+
+
+def test_the_correct_forms_are_left_alone():
+    """Break the thing the guard guards.
+
+    Rejecting every use of a count, or every parameter, would block the
+    working forms and the check would be switched off within a day.
+    """
+    from validators.method_resolution_validator import validate_step_parameter_types
+
+    for body in ('''
+        @then(parsers.parse('the collection holds "{name}" with quantity {quantity:d}'))
+        def assert_holds(widget_page, name, quantity):
+            assert widget_page.get_quantity(name) == quantity
+    ''', '''
+        @then("the search should not falsely match anything")
+        def assert_no_match(widget_page):
+            assert widget_page.get_result_count() == 0
+    ''', '''
+        @then(parsers.parse('the collection holds "{name}"'))
+        def assert_holds(widget_page, name):
+            assert widget_page.has_item(name), f"missing {name}"
+    '''):
+        assert validate_step_parameter_types(
+            [_page_with_readers(), _step(body)], _PROJECT) == [], body
+
+
+def test_the_prompt_teaches_this_before_the_gate_enforces_it():
+    """A rule the model can only learn by failing costs an LLM call a run."""
+    prompt = (_PROJECT / "prompts" / "agent2_coder_generate.md").read_text(
+        encoding="utf-8")
+    plain = " ".join(prompt.split()).lower()
+
+    assert "everything its sentence promises" in plain, (
+        "the generation prompt never states this rule"
+    )
+    assert ">= 0" in prompt, "show the assertion that cannot fail"

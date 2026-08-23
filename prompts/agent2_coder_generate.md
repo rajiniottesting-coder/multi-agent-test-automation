@@ -253,6 +253,38 @@ The cheap default is the relative assertion: that what this scenario added is
 present, or is gone. It holds whatever the state started as, it needs one
 file, and it is what the test case usually means.
 
+## A step must check everything its sentence promises
+
+    # rejected - the sentence names a quantity the body never reads
+    @then(parsers.parse('the collection holds "{name}" with quantity {quantity:d}'))
+    def assert_holds(<a>_page, name, quantity):
+        assert <a>_page.has_item(name)
+
+    # rejected - a count is never negative, so this passes whatever happened
+    @then("the search should not falsely match anything")
+    def assert_no_match(<a>_page):
+        assert <a>_page.get_result_count() >= 0
+
+    # correct
+    @then(parsers.parse('the collection holds "{name}" with quantity {quantity:d}'))
+    def assert_holds(<a>_page, name, quantity):
+        assert <a>_page.get_quantity(name) == quantity
+
+    @then("the search should not falsely match anything")
+    def assert_no_match(<a>_page):
+        assert <a>_page.get_result_count() == 0
+
+The step text is what the feature file claims the test verifies. Capturing a
+value and ignoring it, or asserting something that cannot fail, produces a
+scenario that passes for every value and reports coverage the run never had.
+
+That is worse than no assertion. A test that fails wrongly gets fixed; a test
+that passes wrongly is trusted and stays.
+
+If the page offers no way to read what the sentence promises, do not write a
+weaker check in its place - change the sentence to something this page can
+actually show, and say why in `notes`.
+
 ## A step definition must not hardcode one scenario's data
 
     # rejected - the step says "empty", the body checks two specific records

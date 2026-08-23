@@ -3156,6 +3156,60 @@ def validate_page_object_methods(generated_files: list) -> list[str]:
 _PARSER_TYPES = {"d": "int", "n": "int", "f": "float", "e": "float", "g": "float"}
 
 
+def _all_parsed_params(func: ast.AST) -> set:
+    """Every placeholder name in the step decorator, typed or not.
+
+    `{name}` and `{name:d}` both appear in the step SENTENCE, which is what
+    the feature file reads. A sentence that names a value promises the body
+    checks it.
+    """
+    names: set = set()
+    for dec in getattr(func, "decorator_list", []):
+        for node in ast.walk(dec):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                names.update(re.findall(r"\{(\w+)(?::\w+)?\}", node.value))
+    return names
+
+
+def _names_used_in_body(func: ast.AST) -> set:
+    """Identifiers the body actually reads, ignoring the signature itself."""
+    used: set = set()
+    for node in ast.walk(func):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            used.add(node.id)
+        elif isinstance(node, ast.JoinedStr):
+            for value in node.values:
+                if isinstance(value, ast.FormattedValue):
+                    for inner in ast.walk(value):
+                        if isinstance(inner, ast.Name):
+                            used.add(inner.id)
+    return used
+
+
+# Comparisons that cannot fail. A count is non-negative by construction, so
+# `>= 0` is a sentence-shaped nothing: it passes whatever the page did.
+def _assertion_cannot_fail(test: ast.AST) -> Optional[str]:
+    """Why this assertion can never fail, or None if it can."""
+    if isinstance(test, ast.Constant) and test.value:
+        return f"`assert {test.value!r}` is a constant"
+
+    if isinstance(test, ast.Compare) and len(test.ops) == 1:
+        left, op, right = test.left, test.ops[0], test.comparators[0]
+
+        zero = (isinstance(right, ast.Constant) and right.value == 0)
+        counts = (isinstance(left, ast.Call)
+                  and isinstance(left.func, ast.Attribute)
+                  and ("count" in left.func.attr.lower()
+                       or left.func.attr in ("get_row_count", "get_count")))
+        if zero and counts and isinstance(op, ast.GtE):
+            return ("a count is never negative, so `>= 0` holds however the "
+                    "page behaved")
+        if (isinstance(op, ast.Eq)
+                and ast.dump(left) == ast.dump(right)):
+            return "both sides are the same expression"
+    return None
+
+
 def _parsed_param_types(func: ast.AST) -> dict:
     """{param_name: python_type} for typed placeholders in the step decorator."""
     types: dict = {}
@@ -3201,7 +3255,24 @@ def _page_method_return_types(generated_files: list, project_root) -> dict:
 
 
 def validate_step_parameter_types(generated_files: list, project_root=None) -> list[str]:
-    """Fail a comparison between a parsed step parameter and a mistyped reader."""
+    """Fail a step definition that promises more than its body checks.
+
+    Three shapes, all of which produce a test that passes when it should not:
+
+    1. A parsed parameter compared against a mistyped reader - `"2" == 2` is
+       always False, so the test fails even when the application is correct.
+
+    2. A parameter the SENTENCE names and the body never reads. The step text
+       is what the feature file says the test verifies; capturing a value and
+       ignoring it means the scenario passes for every value of it.
+
+    3. An assertion that cannot fail - `assert <count>() >= 0` is true however
+       the page behaved.
+
+    Two and three are the worse pair. A test that fails wrongly gets fixed; a
+    test that passes wrongly is trusted, and stays in the suite reporting
+    coverage it does not have.
+    """
     project_root = project_root or Path(".")
     returns = _page_method_return_types(generated_files, project_root)
     if not returns:
@@ -3223,6 +3294,40 @@ def validate_step_parameter_types(generated_files: list, project_root=None) -> l
         for func in ast.walk(tree):
             if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
+            # (2) a value the sentence names and the body ignores
+            promised = _all_parsed_params(func)
+            if promised:
+                used = _names_used_in_body(func)
+                ignored = sorted(promised - used)
+                if ignored:
+                    errors.append(
+                        f"Step promise error in '{path}' line {func.lineno}: "
+                        f"the step text captures {', '.join(repr(n) for n in ignored)} "
+                        f"and `{func.name}` never reads "
+                        f"{'them' if len(ignored) > 1 else 'it'}. The sentence "
+                        f"in the feature file says the test checks that value; "
+                        f"the body does not, so the scenario passes for every "
+                        f"value of it. Either assert on it, or take it out of "
+                        f"the step text so the feature stops claiming a check "
+                        f"that is not there."
+                    )
+
+            # (3) an assertion that cannot fail
+            for node in ast.walk(func):
+                if not isinstance(node, ast.Assert):
+                    continue
+                why = _assertion_cannot_fail(node.test)
+                if why:
+                    errors.append(
+                        f"Vacuous assertion error in '{path}' line "
+                        f"{node.lineno}: this assertion cannot fail - {why}. "
+                        f"It reports a passing check while verifying nothing, "
+                        f"which is worse than no assertion at all: the suite "
+                        f"claims coverage the run never had. Assert the thing "
+                        f"the step's sentence promises - if the page cannot "
+                        f"show it, say so and change the sentence."
+                    )
+
             parsed = _parsed_param_types(func)
             if not parsed:
                 continue
