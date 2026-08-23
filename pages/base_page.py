@@ -82,6 +82,7 @@ FAMILY_READERS = frozenset({
     "get_nth_text",
     "get_row_count",
     "wait_for_count",
+    "wait_for_any",
 })
 
 # Helpers BUILT to take a family and resolve it to one member internally -
@@ -676,6 +677,31 @@ class BasePage:
         wait_for_count when the NUMBER of rows is the point.
         """
         target = self._locator(row_locator).filter(has_text=text)
+        if present:
+            expect(target).not_to_have_count(0, timeout=self._timeout(timeout_ms))
+        else:
+            expect(target).to_have_count(0, timeout=self._timeout(timeout_ms))
+
+    def wait_for_any(self, locator: str,
+                     present: bool = True,
+                     timeout_ms: Optional[int] = None) -> None:
+        """Wait until AT LEAST ONE element matches, or until none do.
+
+        The waiting form of "are there any?". wait_for_count() needs an exact
+        number, and a question like "does the list have anything in it" has no
+        exact number to give - so a page object asking it had nothing legal to
+        reach for. get_count() and exists() both read once and race; the
+        family key cannot go to is_showing(); and inventing a singular key is
+        rejected as a literal.
+
+        Three rejections and no accepted alternative is not a rule, it is a
+        trap: one run spent every repair attempt cycling between the three
+        before the story was abandoned.
+
+        `present=False` waits for the family to empty, which is what a
+        cleared-out list looks like.
+        """
+        target = self._locator(locator)
         if present:
             expect(target).not_to_have_count(0, timeout=self._timeout(timeout_ms))
         else:

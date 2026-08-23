@@ -1448,7 +1448,19 @@ def validate_no_duplicate_page_object_methods(
 # yes/no answer a test will assert on.
 # ─────────────────────────────────────────────────────────────────────────
 
-_NON_WAITING_PROBES = {"is_visible": "is_showing", "get_count": "wait_for_count"}
+# Probes that read the page ONCE. Each maps to the waiting helper that asks
+# the same question properly.
+#
+# `exists` was missing, and it is `count() > 0` - exactly as racy as
+# get_count(). A predicate returning it was waved through by the check that
+# had just rejected the identical predicate written with get_count, which is
+# how a page object ended up shipping the same defect under a different name.
+_NON_WAITING_PROBES = {
+    "is_visible": "is_showing",
+    "get_count": "wait_for_count(<family>, <n>) for an exact number, or "
+                 "wait_for_any(<family>) for \"are there any\"",
+    "exists": "wait_for_any",
+}
 _PREDICATE_PREFIXES = ("is_", "has_", "was_", "can_", "does_", "did_")
 
 
@@ -2797,6 +2809,24 @@ def _rows_families(inventory: dict, page_name: str) -> set:
     return {k for k in (page.get("multi_match") or []) if k}
 
 
+def _returns_a_value(func: ast.AST) -> bool:
+    """True if this function returns something - i.e. it is a READER.
+
+    Judged by behaviour and by annotation, either being enough. `-> None` is
+    a declaration that nothing comes back; a body with no `return <value>`
+    says the same thing without saying it.
+    """
+    annotation = getattr(func, "returns", None)
+    if isinstance(annotation, ast.Constant) and annotation.value is None:
+        return False
+    if isinstance(annotation, ast.Name) and annotation.id == "None":
+        return False
+    for node in ast.walk(func):
+        if isinstance(node, ast.Return) and node.value is not None:
+            return True
+    return False
+
+
 def _promised_nouns(method_name: str) -> set:
     """The words a reader's name promises to return."""
     parts = [w for w in method_name.strip("_").split("_") if w]
@@ -2862,6 +2892,21 @@ def validate_readers_return_what_they_name(
                 )
                 touched = keys & families
                 if not touched or not read_as_text:
+                    continue
+
+                # An ACTION is not a reader.
+                #
+                # This check asks whether a reader's NAME matches what it
+                # RETURNS. A method that returns nothing promises nothing, and
+                # judging it by the same rule turns every verb in its name
+                # into a field it failed to produce: `clear_the_basket()` was
+                # read as promising "empty" and "cart".
+                #
+                # Both names in `_starting_state.establishing_calls` -
+                # the clearing methods the framework itself asks for - are
+                # verb phrases, so the framework was rejecting the names it
+                # mandates. A run spent all four repair attempts on it.
+                if not _returns_a_value(fn):
                     continue
 
                 promised = _promised_nouns(fn.name)

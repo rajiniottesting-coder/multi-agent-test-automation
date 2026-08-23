@@ -632,3 +632,168 @@ def test_the_validator_accepts_the_form_the_prompt_teaches():
         "duplicate rule is about the same keyword, where the second "
         "declaration silently shadows the first"
     )
+
+
+# =========================================================================
+# EVERY REJECTION MUST LEAVE A LEGAL MOVE
+#
+# A page object was asked "does this list have anything in it?" and had
+# nothing it was allowed to write:
+#
+#     get_count(family) > 0   -> waiting-predicate error
+#     exists(family)          -> the same defect, waved through by name
+#     is_showing(family)      -> selector error, family key
+#     wait_for_count(fam, n)  -> needs an exact number the question has none of
+#
+# Three rejections and no accepted alternative is not a rule, it is a trap.
+# One run spent every repair attempt cycling between them - 34% of its cost -
+# and the story was abandoned.
+#
+# And the framework was rejecting names it MANDATES: both clearing methods in
+# `_starting_state.establishing_calls` are verb phrases, and the reader-naming
+# check read their verbs as fields they had failed to return.
+# =========================================================================
+
+def _page_object(body: str, inventory_page: str):
+    import textwrap
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        file_path="pages/widget_page.py",
+        content=("from pages.base_page import BasePage\n\n\n"
+                 "class WidgetPage(BasePage):\n"
+                 f'    INVENTORY_PAGE = "{inventory_page}"\n\n')
+                + textwrap.indent(textwrap.dedent(body).strip("\n"), "    ") + "\n")
+
+
+def _a_family_key():
+    """(page name, a multi_match key on it) discovered from the inventory."""
+    import json
+
+    import yaml
+
+    config = yaml.safe_load((_PROJECT / "config" / "config.yaml").read_text(encoding="utf-8"))
+    rel = (config.get("app_under_test") or {}).get("inventory_file")
+    inventory = json.loads((_PROJECT / rel).read_text(encoding="utf-8"))
+    for name, entry in (inventory.get("pages") or {}).items():
+        for key in (entry.get("multi_match") or []):
+            return name, key
+    return None, None
+
+
+def test_asking_whether_a_family_has_any_members_has_a_legal_answer():
+    """The question that had none."""
+    from validators.method_resolution_validator import (
+        validate_page_object_methods,
+        validate_page_object_selectors,
+    )
+
+    page, key = _a_family_key()
+    if not key:
+        pytest.skip("this inventory declares no multi_match family")
+
+    racy = [f'self.get_count(self.sel("{key}")) > 0',
+            f'self.exists(self.sel("{key}"))',
+            f'self.is_showing(self.sel("{key}"))']
+    for expression in racy:
+        obj = _page_object(f"def has_items(self) -> bool:\n    return {expression}\n", page)
+        assert (validate_page_object_methods([obj])
+                + validate_page_object_selectors([obj], _PROJECT)), (
+            f"{expression} reads the page once or uses a family key - it must "
+            f"be rejected, or the racy form ships"
+        )
+
+    legal = _page_object(
+        f'def has_items(self) -> bool:\n'
+        f'    self.wait_for_any(self.sel("{key}"))\n'
+        f'    return True\n', page)
+    errors = (validate_page_object_methods([legal])
+              + validate_page_object_selectors([legal], _PROJECT))
+    assert not errors, (
+        "every way of asking 'are there any' is rejected. Three rejections and "
+        "no accepted alternative is a trap, not a rule - the repair loop can "
+        "only cycle:\n  " + "\n  ".join(errors)
+    )
+
+
+def test_the_clearing_calls_the_inventory_mandates_pass_the_validators():
+    """The framework must not reject the names it asks for.
+
+    `_starting_state.establishing_calls` is what the persistent-state error
+    tells a scenario to use. Those names are verb phrases, and the
+    reader-naming check read their verbs as fields they had failed to return:
+    `clear_the_basket()` was reported as promising "empty" and "cart". A run
+    spent all four repair attempts on it.
+
+    Built to touch a family on the PERSISTENT page - the one those calls
+    clear - because a family whose words happen to overlap the method name
+    never triggers the rule, and a guard that misses is worse than none.
+    """
+    import json
+
+    import yaml
+
+    from validators.method_resolution_validator import (
+        _promised_nouns,
+        validate_readers_return_what_they_name,
+    )
+
+    config = yaml.safe_load((_PROJECT / "config" / "config.yaml").read_text(encoding="utf-8"))
+    rel = (config.get("app_under_test") or {}).get("inventory_file")
+    inventory = json.loads((_PROJECT / rel).read_text(encoding="utf-8"))
+    calls = ((inventory.get("_starting_state") or {}).get("establishing_calls") or [])
+    if not calls:
+        pytest.skip("this inventory mandates no clearing calls")
+
+    for name in calls:
+        promised = _promised_nouns(name)
+
+        # Find a family on a persistent page whose key words do NOT cover the
+        # promised words - otherwise the rule cannot fire and this proves
+        # nothing.
+        page = key = None
+        for candidate, entry in (inventory.get("pages") or {}).items():
+            if not entry.get("persistent_state"):
+                continue
+            for family in (entry.get("multi_match") or []):
+                if not promised <= set(family.split("_")):
+                    page, key = candidate, family
+                    break
+            if key:
+                break
+        if not key:
+            continue
+
+        obj = _page_object(
+            f'def {name}(self) -> None:\n'
+            f'    labels = self.get_all_texts(self.sel("{key}"))\n'
+            f'    for _ in labels:\n'
+            f'        self.click_nth(self.sel("{key}"), 0)\n', page)
+
+        errors = validate_readers_return_what_they_name([obj], _PROJECT)
+        assert not errors, (
+            f"the inventory mandates {name}() and the validators reject it - "
+            f"following the persistent-state advice fails a different gate:\n  "
+            + "\n  ".join(errors)
+        )
+
+
+def test_a_genuinely_misnamed_reader_is_still_caught():
+    """Break the thing the guard guards.
+
+    Exempting actions must not exempt readers. A method that RETURNS whole-row
+    text under a field's name is the defect this check exists for.
+    """
+    from validators.method_resolution_validator import (
+        validate_readers_return_what_they_name)
+
+    page, key = _a_family_key()
+    if not key:
+        pytest.skip("this inventory declares no multi_match family")
+
+    obj = _page_object(
+        f'def get_item_price(self) -> str:\n'
+        f'    return self.get_text(self.sel("{key}"))\n', page)
+    assert validate_readers_return_what_they_name([obj], _PROJECT), (
+        "a reader named for one field that returns the whole row must still "
+        "be rejected"
+    )
