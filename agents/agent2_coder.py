@@ -2153,6 +2153,48 @@ def _group_validator_errors_by_file(
 _group_coverage_errors_by_step_def = _group_validator_errors_by_file
 
 
+def _rules_persisting(before, after) -> list:
+    """Rule names that fired both before and after a repair attempt.
+
+    Keyed on the RULE, not the message, because the message carries the step
+    text and the step text is exactly what a stuck model changes. Every error
+    this project raises opens with `<Rule name> error in '<path>'`, so the
+    rule is the text before " error in ".
+    """
+    def rules(errors):
+        found = set()
+        for error in errors or ():
+            head = str(error).split(" error in ", 1)[0].strip()
+            if head and len(head) < 60:
+                found.add(head)
+        return found
+
+    return sorted(rules(before) & rules(after))
+
+
+def _not_converging_hint(persisting: list) -> str:
+    """Say what a rule surviving several attempts usually means.
+
+    A list of symptoms is what the gate already prints. What a reader needs
+    is the reading: a rule that survives repeated rewording is one the
+    generated code cannot satisfy, and that is nearly always because the TEST
+    CASE asks for something this application cannot show. No amount of
+    regeneration fixes that.
+    """
+    if not persisting:
+        return ""
+    return (
+        f" {', '.join(persisting)} survived every attempt. A rule that "
+        f"outlives repeated rewording is one the code cannot satisfy: usually "
+        f"the test case asks for something this application cannot show - an "
+        f"exact count on state the app keeps between runs, or a flow the "
+        f"inventory does not describe. Regenerating will not fix it. Check the "
+        f"test case against the inventory, and if it cannot be automated as "
+        f"written, say so on the Jira issue rather than relabelling the step "
+        f"until the gate stops noticing."
+    )
+
+
 def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str]:
     """Aggregate errors from all validators that the repair loop can act on.
 
@@ -2252,6 +2294,7 @@ def _attempt_step_coverage_repair(
     iterations. Worst case for a typical 1-broken-file run is 2 extra calls.
     """
     previous_errors: set[str] | None = None
+    previous_count: int | None = None
     for attempt in range(1, max_retries + 1):
         all_errors = _collect_repairable_errors(generated_files)
 
@@ -2268,7 +2311,37 @@ def _attempt_step_coverage_repair(
                 "gate will report them.", attempt - 1, len(current),
             )
             return generated_files
+        # NOT-CONVERGING ABORT.
+        #
+        # The check above compares error STRINGS, so it only fires when the
+        # model changes nothing at all. A run went 15 -> 8 -> 6 -> 7 errors
+        # across four attempts and never tripped it, because each attempt
+        # REWORDED the offending step:
+        #
+        #     there should be exactly one row for "<x>"
+        #     the collection should contain exactly one row for "<x>"
+        #     the collection should have exactly one row for "<x>"
+        #
+        # Six variations of one sentence, each a fresh string, each failing
+        # the same rule. That is what a model does when it can neither
+        # satisfy a rule nor decline: it renames the thing and hopes.
+        #
+        # A count that stops falling is the better signal - it does not care
+        # how the wording moved.
+        if previous_count is not None and len(current) >= previous_count:
+            persisting = _rules_persisting(previous_errors, current)
+            logger.warning(
+                "Repair attempt %d did not reduce the error count (%d -> %d). "
+                "The model is not converging: further attempts buy tokens, "
+                "not fixes.%s Abandoning repair; the final validation gate "
+                "will report what remains.",
+                attempt - 1, previous_count, len(current),
+                _not_converging_hint(persisting),
+            )
+            return generated_files
+
         previous_errors = current
+        previous_count = len(current)
 
         if not all_errors:
             if attempt > 1:

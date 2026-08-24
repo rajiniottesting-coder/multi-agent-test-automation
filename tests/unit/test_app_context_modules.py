@@ -468,6 +468,8 @@ def test_no_context_module_offers_an_establishing_call_the_inventory_denies():
 
     from pathlib import Path
 
+    from pathlib import Path
+
     root = Path(__file__).resolve().parents[2]
     config = yaml.safe_load((root / "config" / "config.yaml").read_text(encoding="utf-8"))
     rel = (config.get("app_under_test") or {}).get("inventory_file")
@@ -492,3 +494,79 @@ def test_no_context_module_offers_an_establishing_call_the_inventory_denies():
                     f"module fails the gate; following the gate contradicts "
                     f"the context module."
                 )
+
+
+# =========================================================================
+# NO MODULE MAY RECOMMEND A ROUTE THE INVENTORY HAS CLOSED
+#
+# `_starting_state` had both lists emptied - no fresh identity, no clearing
+# call - and the context modules went on describing both as the preferred
+# way to own a starting state. One called a fresh identity "the only option
+# that cannot be defeated by a previous run".
+#
+# Agent 1 reads these modules when it writes test cases. So it kept writing
+# test cases that register an account and assert exact counts, and Agent 2
+# then spent four repair attempts discovering neither is possible.
+#
+# The modules are where a test case is prevented. A validator can only reject
+# one after it has been written, and by then the tokens are spent.
+# =========================================================================
+
+def _starting_state():
+    import json
+
+    import yaml
+
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    config = yaml.safe_load((root / "config" / "config.yaml").read_text(encoding="utf-8"))
+    rel = (config.get("app_under_test") or {}).get("inventory_file")
+    inventory = json.loads((root / rel).read_text(encoding="utf-8"))
+    return inventory.get("_starting_state") or {}
+
+
+def test_no_module_recommends_a_fresh_identity_when_none_is_declared():
+    """If `fresh_identity_fixtures` is empty, registration is not a route and
+    no module may offer it as one."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    if (_starting_state().get("fresh_identity_fixtures") or []):
+        pytest.skip("this application declares a fresh-identity fixture")
+
+    for module in sorted((root / "prompts" / "app_context").glob("*.md")):
+        text = module.read_text(encoding="utf-8")
+        lowered = text.lower()
+        if "regist" not in lowered and "signup" not in lowered:
+            continue
+        assert ("not automatable" in lowered
+                or "not available" in lowered
+                or "cannot register" in lowered
+                or "do not write a test case that registers" in lowered), (
+            f"{module.name} discusses registration, and the inventory declares "
+            f"no fresh-identity fixture. Agent 1 reads this module when it "
+            f"writes test cases - so it must say plainly that registration is "
+            f"not automatable here, or it will keep asking for it."
+        )
+
+
+def test_no_module_recommends_a_clearing_step_when_none_is_declared():
+    """Same for `establishing_calls`. Emptied because the state is cleared by
+    hand before a run, not by a generated step."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    if (_starting_state().get("establishing_calls") or []):
+        pytest.skip("this application declares an establishing call")
+
+    for module in sorted((root / "prompts" / "app_context").glob("*.md")):
+        lowered = module.read_text(encoding="utf-8").lower()
+        if "empty it first" not in lowered:
+            continue
+        window = lowered[max(0, lowered.index("empty it first") - 120):
+                         lowered.index("empty it first") + 400]
+        assert ("not available" in window or "~~" in window), (
+            f"{module.name} offers clearing the state in a Given as a route, "
+            f"and the inventory sanctions no such call."
+        )

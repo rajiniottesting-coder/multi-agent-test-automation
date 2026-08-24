@@ -17,8 +17,14 @@ fuller form (`/signup`) asking for title, password, date of birth, address and
 contact details. The account exists only after that second form is submitted,
 and the app then shows an "ACCOUNT CREATED!" page.
 
-A scenario that says "register a new user" therefore spans two pages. Do not
-assert on the logged-in state straight after the first submit.
+A scenario that says "register a new user" therefore spans two pages — and the
+second one is NOT in the inventory, so generated code cannot reach any of its
+fields and the account is never created.
+
+**Do not write a test case that registers.** Nothing downstream of it can be
+implemented: not creating the account, not confirming it, not signing in as it,
+not deleting it. Use the shared `registered` role and assert relatively. See
+`account.md` for what to do when a test case seems to need a fresh identity.
 
 ## Failure messages
 

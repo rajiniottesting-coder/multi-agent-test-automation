@@ -222,9 +222,54 @@ class TestRepairExhaustsRetries:
         # One repair attempt, then the identical error set aborts the loop.
         assert mock_gen.call_count == 1
 
+    def test_a_reworded_error_does_not_earn_another_attempt(self, ctx, plan):
+        """The shape that burned four attempts.
+
+        One error per round, reworded each time. The string check sees
+        something new every round and lets the loop run; the count check sees
+        a plateau and stops. That is the difference between paying for four
+        attempts and paying for two - and between a log full of symptoms and
+        one that names the cause.
+        """
+        files = [
+            GeneratedFile(
+                file_path="tests/step_defs/test_logout.py",
+                content=realistic_step_def(),
+                is_new_file=True, purpose="...",
+            ),
+        ]
+        counter = {"n": 0}
+
+        def _reworded(*_a, **_k):
+            counter["n"] += 1
+            return [f"Persistent state error in 'features/x.feature': the "
+                    f"step `wording variant {counter['n']}` claims an EXACT "
+                    f"state"]
+
+        with patch("agents.agent2_coder._collect_repairable_errors",
+                   side_effect=_reworded), \
+             patch("agents.agent2_coder.generate_file_content",
+                   return_value=realistic_step_def()) as mock_gen:
+            llm = MagicMock()
+            _attempt_step_coverage_repair(
+                files, llm, plan, [], {}, "{}", ctx, max_retries=4
+            )
+
+        assert mock_gen.call_count <= 2, (
+            f"the loop regenerated {mock_gen.call_count} times on a plateau - "
+            f"a reworded error is not progress and must not buy another attempt"
+        )
+
     def test_changing_errors_still_use_every_retry(self, ctx, plan):
-        """Partial progress must never be mistaken for a stuck loop: as long
-        as each attempt changes something, the model keeps its full budget."""
+        """Partial progress must never be mistaken for a stuck loop: while
+        each attempt FIXES something, the model keeps its full budget.
+
+        The fixture used to return one error per round with different text,
+        and called that progress. It is not: a single error reworded each
+        round is a model renaming the thing it cannot fix, which is exactly
+        the shape that spent four attempts going 15 -> 8 -> 6 -> 7. Real
+        progress is a falling count, and that is what this now supplies.
+        """
         files = [
             GeneratedFile(
                 file_path="tests/step_defs/test_logout.py",
@@ -235,9 +280,11 @@ class TestRepairExhaustsRetries:
         counter = {"n": 0}
 
         def _always_different(*_a, **_k):
+            # A FALLING count: 3 -> 2 -> 1. Each attempt fixes one.
             counter["n"] += 1
+            remaining = max(1, 4 - counter["n"])
             return [f"Step coverage error in 'tests/step_defs/test_logout.py': "
-                    f"round {counter['n']}"]
+                    f"round {counter['n']} item {i}" for i in range(remaining)]
 
         with patch("agents.agent2_coder._collect_repairable_errors",
                    side_effect=_always_different), \
@@ -744,3 +791,89 @@ def test_every_repairable_file_type_has_a_verdict():
             f"check cannot recognise a valid one - it will abort the loop "
             f"every time that file is repaired"
         )
+
+
+# =========================================================================
+# A REWORDED SENTENCE IS NOT PROGRESS
+#
+# The no-progress abort compares error STRINGS, so it only fires when the
+# model changes nothing at all. A run went 15 -> 8 -> 6 -> 7 errors across
+# four attempts and never tripped it, because each attempt REWORDED the
+# offending step:
+#
+#     there should be exactly one cart row for "<x>"
+#     the cart should contain exactly one row for "<x>"
+#     the cart should have exactly one row for "<x>"
+#
+# Six variations of one sentence, each a fresh string, each failing the same
+# rule. That is what a model does when it can neither satisfy a rule nor
+# decline: it renames the thing until the wording changes and hopes.
+#
+# A count that stops falling is the better signal - it does not care how the
+# wording moved.
+# =========================================================================
+
+def test_the_rule_survives_a_rewording():
+    """Keyed on the rule, not the message, because the message carries the
+    step text and the step text is what a stuck model changes."""
+    from agents.agent2_coder import _rules_persisting
+
+    before = {
+        "Persistent state error in 'features/x.feature': the step "
+        "`there should be exactly one row for \"a\"` claims an EXACT state",
+        "Method resolution error in 'tests/step_defs/x.py': line 9 calls foo()",
+    }
+    after = {
+        "Persistent state error in 'features/x.feature': the step "
+        "`the cart should have exactly one row for \"a\"` claims an EXACT state",
+        "Step claim error in 'features/x.feature': something else",
+    }
+
+    assert _rules_persisting(before, after) == ["Persistent state"], (
+        "string comparison sees two different errors; the rule is the same "
+        "one, and the rule is what has not been fixed"
+    )
+
+
+def test_a_rule_that_was_actually_fixed_is_not_reported():
+    """Break the thing the guard guards. Reporting a rule that is gone would
+    send the reader after a problem they already solved."""
+    from agents.agent2_coder import _rules_persisting
+
+    before = {"Method resolution error in 'a.py': line 1 calls foo()"}
+    after = {"Persistent state error in 'b.feature': the step `x` claims"}
+    assert _rules_persisting(before, after) == []
+
+
+def test_the_hint_names_the_likely_cause_not_just_the_rule():
+    """The gate already prints the symptoms. What a reader needs is the
+    reading: a rule outliving repeated rewording is one the code cannot
+    satisfy, which nearly always means the TEST CASE is the problem."""
+    from agents.agent2_coder import _not_converging_hint
+
+    hint = _not_converging_hint(["Persistent state"]).lower()
+    assert "test case" in hint, "point at the test case, not the code"
+    assert "regenerating will not fix it" in hint, (
+        "say the thing that stops somebody adding the ai-regenerate label "
+        "and paying for the same four attempts again"
+    )
+    assert _not_converging_hint([]) == "", "no persisting rule, nothing to say"
+
+
+def test_the_loop_aborts_when_the_count_stops_falling():
+    """Structural: the condition has to be in the loop, and it has to compare
+    counts rather than strings."""
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[2] / "agents" /
+              "agent2_coder.py").read_text(encoding="utf-8")
+    body = " ".join(source.split())
+
+    assert "previous_count is not None and len(current) >= previous_count" in body, (
+        "nothing aborts on a plateau - four attempts get paid for whatever "
+        "the model does"
+    )
+    assert "_not_converging_hint(persisting)" in body, (
+        "the abort fires without saying what it means, which leaves the "
+        "reader the same list of symptoms as before"
+    )

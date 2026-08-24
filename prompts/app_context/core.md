@@ -23,16 +23,24 @@ removal still shows the leftover. The test is correct; its starting assumption
 is not.
 
 So a scenario that asserts an ABSOLUTE end state — "the cart is empty", "there
-are two items" — must own its starting state. Two ways, in order of preference:
+are two items" — must own its starting state, and on THIS application it
+cannot. Both routes are closed:
 
 | | |
 |---|---|
-| **Register a fresh account** | Use the `unique_username` fixture. A brand-new account starts with a genuinely empty cart, every time, with nothing to clean up. This is the only option that cannot be defeated by a previous run. |
-| **Empty it first** | Sign in as the shared role, then remove everything before the scenario's own actions. Works, but a run killed mid-way still leaves state behind for the next one. |
+| ~~Register a fresh account~~ | NOT available. The inventory describes only the first signup form, so generated code cannot complete registration. `_starting_state.fresh_identity_fixtures` is empty. See `account.md`. |
+| ~~Empty it first, in a Given~~ | NOT available. The collection is cleared BY HAND before a run, not by a generated step. `_starting_state.establishing_calls` is empty. |
 
-If neither is practical, assert RELATIVELY instead: that the cart contains the
-product this test added, or that its count went up by one. A relative assertion
-is true whatever the account started with.
+So assert RELATIVELY, always: that the collection contains the item this test
+added, or that the item it removed is gone. A relative assertion is true
+whatever the account started with, needs no other file, and is what a test
+case usually means.
+
+**A test case whose expected result names an exact count, or an empty
+collection, cannot be automated against this application as written.** Do not
+write one, and do not reword one until the gate stops noticing — a run that
+tried produced six phrasings of the same claim across four repair attempts and
+was abandoned. Say so in `notes` instead.
 
 Scenarios that only READ — searching, browsing, viewing a product — need none
 of this. It applies to anything that adds, removes or changes account state.
