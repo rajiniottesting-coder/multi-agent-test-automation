@@ -1662,3 +1662,120 @@ def test_a_page_object_not_reading_cells_is_untouched(tmp_path):
                  "    def all_cells(self):\n"
                  '        return self.get_all_texts(self.sel("thing_cells"))\n'))
     assert validate_row_scoped_selectors([other], root) == []
+
+
+# =========================================================================
+# AN EXAMPLES TABLE HOLDS DATA, NEVER THE NAME OF DATA
+#
+# A Scenario Outline shipped with this row:
+#
+#     | email            |
+#     | REGISTERED_EMAIL |
+#
+# which reaches the step as the literal string. The scenario reads as "log in
+# with a real registered address and a wrong password" and actually tests
+# "log in with the words REGISTERED_EMAIL". It PASSES, for the wrong reason,
+# and reports coverage of a case never exercised - the worse direction.
+#
+# Nothing resolves an Examples cell: Gherkin substitutes it verbatim. A ROLE
+# is resolved by a step definition asking the `credentials` fixture, which is
+# a different mechanism. A cell shaped like a constant is the author reaching
+# for the second while writing the first.
+#
+# Caught by SHAPE, so it catches the next one too - not by a list of names.
+# =========================================================================
+
+def _feature(body: str):
+    import textwrap
+    from types import SimpleNamespace
+    return SimpleNamespace(file_path="features/x.feature",
+                           content=textwrap.dedent(body))
+
+
+def test_a_placeholder_token_in_an_examples_table_is_rejected():
+    from validators.gherkin_analyzer import (
+        validate_examples_hold_data_not_placeholders)
+
+    errors = validate_examples_hold_data_not_placeholders([_feature('''
+        Feature: F
+
+          Scenario Outline: Sign-in is rejected
+            When I sign in with email "<email>"
+            Examples:
+              | email            |
+              | REGISTERED_EMAIL |
+    ''')])
+
+    assert errors, "the cell names a credential instead of being one"
+    assert "verbatim" in errors[0], "say why nothing resolves it"
+    assert "credentials` fixture" in errors[0], "name the mechanism that does"
+
+
+def test_concrete_data_is_accepted():
+    """Break the thing the guard guards - real data must pass."""
+    from validators.gherkin_analyzer import (
+        validate_examples_hold_data_not_placeholders)
+
+    assert validate_examples_hold_data_not_placeholders([_feature('''
+        Feature: F
+
+          Scenario Outline: Sign-in is rejected
+            When I sign in with email "<email>"
+            Examples:
+              | email             |
+              | wrong@example.com |
+    ''')]) == []
+
+
+def test_legitimate_all_caps_data_is_not_flagged():
+    """TRUE, POST, USD are data. Flagging them would make the rule wrong more
+    often than right, and a rule that fires on good input gets switched off."""
+    from validators.gherkin_analyzer import (
+        validate_examples_hold_data_not_placeholders)
+
+    assert validate_examples_hold_data_not_placeholders([_feature('''
+        Feature: F
+
+          Scenario Outline: Flags
+            When I set "<value>" via "<method>"
+            Examples:
+              | value | method |
+              | TRUE  | POST   |
+              | FALSE | GET    |
+    ''')]) == []
+
+
+def test_a_table_outside_examples_is_left_alone():
+    """A step's own data table is not an Examples table and is not
+    substituted the same way."""
+    from validators.gherkin_analyzer import (
+        validate_examples_hold_data_not_placeholders)
+
+    assert validate_examples_hold_data_not_placeholders([_feature('''
+        Feature: F
+
+          Scenario: Plain
+            Given a table
+              | SOME_CONSTANT |
+    ''')]) == []
+
+
+def test_the_check_is_wired_into_the_gate():
+    """A validator nothing calls is this project's recurring shape."""
+    from pathlib import Path
+
+    body = " ".join((Path(__file__).resolve().parents[2] / "agents" /
+                     "agent2_coder.py").read_text(encoding="utf-8").split())
+    assert "validate_examples_hold_data_not_placeholders(generated_files)" in body, (
+        "the check is defined but never called"
+    )
+
+
+def test_the_prompt_teaches_it_before_the_gate_enforces_it():
+    from pathlib import Path
+
+    prompt = (Path(__file__).resolve().parents[2] / "prompts" /
+              "agent2_coder_generate.md").read_text(encoding="utf-8")
+    assert "Examples table holds DATA" in prompt, (
+        "a rule the model can only learn by failing costs an LLM call a run"
+    )

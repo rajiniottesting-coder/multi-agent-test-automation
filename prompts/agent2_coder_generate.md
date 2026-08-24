@@ -614,7 +614,30 @@ Use `self.page_url()` for the page path — it comes from the same entry.
 {test_cases_text}
 
 <!-- ===== CACHE BREAKPOINT: everything below is static ===== -->
-<## A method that FILLS must first reach its own page
+<## An Examples table holds DATA, never the name of data
+
+    # rejected - reaches the step as the literal string "REGISTERED_EMAIL"
+    Examples:
+      | email            |
+      | REGISTERED_EMAIL |
+
+    # correct - concrete data
+    Examples:
+      | email             |
+      | wrong@example.com |
+
+    # also correct - a step that resolves a ROLE
+    When I log in as a "<role>" user with an incorrect password
+
+Gherkin substitutes an Examples cell verbatim. Nothing resolves it: a cell
+shaped like the name of a value arrives at the step as that name, and the
+scenario passes while testing something it never claimed.
+
+Resolving a role is a different mechanism entirely — a step definition asks
+the `credentials` fixture for it. If a scenario needs a real account, write a
+step that names the ROLE, not a table cell that names the credential.
+
+## A method that FILLS must first reach its own page
 
     # rejected - fills as its opening move, from wherever the browser is
     def search_for(self, term: str) -> None:

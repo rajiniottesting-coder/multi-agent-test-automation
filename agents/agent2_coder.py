@@ -82,6 +82,7 @@ from validators.gherkin_analyzer import (
     filter_duplicate_test_cases,
     validate_filename_consistency,
     validate_feature_file_structure,
+    validate_examples_hold_data_not_placeholders,
     validate_step_definitions_complete,
     validate_no_unused_step_definitions,
     detect_drifted_steps,
@@ -2219,6 +2220,7 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     # the run died on feedback it had never been shown (SCRUM-103).
     errors.extend(validate_page_object_selectors(generated_files, PROJECT_ROOT))
     errors.extend(validate_row_scoped_selectors(generated_files, PROJECT_ROOT))
+    errors.extend(validate_examples_hold_data_not_placeholders(generated_files))
     errors.extend(validate_fills_confirm_their_page(generated_files, PROJECT_ROOT))
     # Two stories editing one page object branch from main independently, so
     # neither sees the other's work and both may add their own name for one

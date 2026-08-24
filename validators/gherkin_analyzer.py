@@ -930,6 +930,82 @@ def _gf_content(f) -> str:
     return f.get("content", "") if isinstance(f, dict) else ""
 
 
+# Values that LOOK like a name for a credential rather than a credential.
+#
+# An Examples table holds test DATA. A cell shaped like a constant is almost
+# always a placeholder the author meant something else to resolve - and
+# nothing does: it reaches the step as the literal string.
+_PLACEHOLDER_CELL = re.compile(r"^[A-Z][A-Z0-9_]{3,}$")
+
+# Words that genuinely appear as data in caps and must not be flagged.
+_LEGITIMATE_CAPS = frozenset({
+    "TRUE", "FALSE", "NULL", "NONE", "NA", "N/A", "YES", "NO",
+    "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS",
+    "USD", "EUR", "GBP", "INR", "OK", "ERROR", "WARN", "INFO", "DEBUG",
+})
+
+
+def validate_examples_hold_data_not_placeholders(generated_files: list) -> list:
+    """Fail an Examples cell that names a credential instead of being one.
+
+    A Scenario Outline shipped with this row:
+
+        | email            |
+        | REGISTERED_EMAIL |
+
+    which flows through the step and reaches `login_as()` as the literal
+    string "REGISTERED_EMAIL". The scenario reads as "log in with a real
+    registered address and a wrong password" and actually tests "log in with
+    the words REGISTERED_EMAIL". It passes, for the wrong reason, and reports
+    coverage of a case never exercised.
+
+    Nothing resolves an Examples cell. Gherkin substitutes it verbatim; a
+    ROLE is resolved by a step definition asking the `credentials` fixture,
+    which is a different mechanism entirely. A cell shaped like a constant is
+    the author reaching for the second while writing the first.
+
+    Shape, not a list of names, so it catches the next one too. Genuine
+    all-caps data - TRUE, GET, USD - is exempt, and so is anything with a
+    lowercase letter, a space, an @ or a digit-only value.
+    """
+    errors: list = []
+    for gen in generated_files or []:
+        path = getattr(gen, "file_path", "") or ""
+        if not path.endswith(".feature"):
+            continue
+
+        in_examples = False
+        for number, line in enumerate((getattr(gen, "content", "") or "").splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith("Examples:"):
+                in_examples = True
+                continue
+            if stripped.startswith(("Scenario", "Feature", "Background", "@")):
+                in_examples = False
+                continue
+            if not in_examples or not stripped.startswith("|"):
+                continue
+
+            for cell in (c.strip() for c in stripped.strip("|").split("|")):
+                if not cell or cell in _LEGITIMATE_CAPS:
+                    continue
+                if not _PLACEHOLDER_CELL.match(cell):
+                    continue
+                errors.append(
+                    f"Placeholder data error in '{path}' line {number}: the "
+                    f"Examples cell `{cell}` is shaped like the NAME of a "
+                    f"value, not a value. Gherkin substitutes an Examples cell "
+                    f"verbatim - nothing resolves it - so the step receives the "
+                    f"literal string {cell!r}. The scenario then passes while "
+                    f"testing something it never claimed. Either put real data "
+                    f"in the table (a concrete address, a concrete product "
+                    f"name), or use a step that resolves a ROLE through the "
+                    f"`credentials` fixture, which is how a real credential "
+                    f"reaches a step."
+                )
+    return errors
+
+
 def validate_feature_file_structure(generated_files: list) -> list:
     """Catch malformed Gherkin: steps outside any Scenario/Background/Examples block.
 
