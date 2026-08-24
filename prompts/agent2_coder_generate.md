@@ -614,7 +614,29 @@ Use `self.page_url()` for the page path — it comes from the same entry.
 {test_cases_text}
 
 <!-- ===== CACHE BREAKPOINT: everything below is static ===== -->
-<!--
+<## A method that FILLS must first reach its own page
+
+    # rejected - fills as its opening move, from wherever the browser is
+    def search_for(self, term: str) -> None:
+        self.fill(self.sel("<search field>"), term)
+
+    # correct
+    def search_for(self, term: str) -> None:
+        self.require_own_page()
+        self.fill(self.sel("<search field>"), term)
+
+Filling a field that is not on screen does not fail fast. Playwright waits the
+FULL timeout and then reports the LOCATOR as having timed out - which reads
+like a broken selector when the selector is fine and the page is wrong. Thirty
+seconds spent, and the reader sent to the one place the fault is not.
+
+`require_own_page()` costs a string comparison when the browser is already
+there, and navigates when it is not.
+
+Only when the fill is the FIRST action. A method that clicks its way somewhere
+and then fills has already established where it is.
+
+!--
 Everything ABOVE this marker is per-call context and goes in the USER
 message. Everything BELOW is invariant instruction text and is sent as the
 SYSTEM message with a cache breakpoint, so repeat calls within the cache

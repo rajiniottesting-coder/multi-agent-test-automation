@@ -65,64 +65,10 @@ class LoginPage(BasePage):
         never stated. confirm_arrival() is the tool for a click that should
         have landed; this is a precondition.
         """
-        self._require_login_page()
+        self.require_own_page()
         self.fill(self.sel("login_email_input"), email)
         self.fill(self.sel("login_password_input"), password)
         self.click(self.sel("login_button"))
-
-    def _require_login_page(self) -> None:
-        """Make sure the browser is on the login page, navigating if it is not.
-
-        Filling a field that is not on screen does not fail fast: Playwright
-        waits the full timeout and then reports the LOCATOR as having timed
-        out. That reads like a broken selector, and the selector is fine - the
-        page is wrong. Thirty seconds spent, and the reader sent to the one
-        place the fault is not.
-
-        It NAVIGATES rather than raising, which reverses an earlier decision.
-
-        Raising was meant to stop a scenario passing for a reason it never
-        stated. In practice the scenario that hit it was doing something
-        reasonable - clearing an account-scoped collection in a Given, which
-        left the browser on that collection's page - and every route to the
-        login form was legitimate. Refusing to go there turned a recoverable
-        situation into two failed tests and a regeneration.
-
-        This method needs the login page; being elsewhere has exactly one
-        sensible recovery, and taking it is what confirm_arrival() does
-        everywhere else in this framework. The scenario-level mistake - a
-        precondition placed before the login it depends on - is caught by the
-        persistent-state rule and by review, which is where it belongs.
-
-        The warning stays loud, because arriving here from somewhere else is
-        still worth knowing about.
-        """
-        expected = self.page_url()
-        current = urlsplit(self.page.url)
-        if current.path.rstrip("/") == expected.rstrip("/"):
-            return
-
-        if not current.scheme or not current.netloc:
-            raise AssertionError(
-                f"login_as() was called with the browser at "
-                f"{self.page.url!r}, which is not an address this page object "
-                f"can navigate from. Open the login page first - the scenario "
-                f"needs a Given that navigates here before the step that "
-                f"signs in."
-            )
-
-        target = f"{current.scheme}://{current.netloc}{expected}"
-        logger.warning(
-            "LoginPage.login_as() was called from %s, not %s. Navigating to "
-            "the login page so the credential fields are actually present - "
-            "filling them from another page would wait the full timeout and "
-            "then blame the field. If the scenario meant to be here already, "
-            "it is missing a step that opens the login page; if a preceding "
-            "Given navigated away, note that an account-scoped precondition "
-            "has to run AFTER signing in, not before.",
-            self.page.url, expected,
-        )
-        self.navigate(target)
 
     def start_signup(self, name: str, email: str) -> None:
         """Submit the SIGNUP form — the first of registration's two steps.
@@ -135,7 +81,7 @@ class LoginPage(BasePage):
         Same precondition as login_as(): the signup fields share this page, so
         being elsewhere costs the full timeout and then blames the field.
         """
-        self._require_login_page()
+        self.require_own_page()
         self.fill(self.sel("signup_name_input"), name)
         self.fill(self.sel("signup_email_input"), email)
         self.click(self.sel("signup_button"))

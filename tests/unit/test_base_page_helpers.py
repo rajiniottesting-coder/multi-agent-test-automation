@@ -799,7 +799,8 @@ def test_the_reference_sign_in_refuses_to_act_on_the_wrong_page():
                 continue
             checks = any(
                 isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
-                and (n.func.attr.startswith("_require") or n.func.attr == "confirm_arrival")
+                and (n.func.attr.startswith("_require")
+                     or n.func.attr in ("require_own_page", "confirm_arrival"))
                 for n in ast.walk(node))
             guarded.append((node.name, checks))
 
@@ -818,11 +819,16 @@ def test_the_reference_precondition_names_the_page_it_expected():
     It has to name where the browser is and where it should be."""
     from core.app_context import AppContext
 
-    body = AppContext.load().load_reference_files()["page_object"]
-    if "_require_" not in body:
-        pytest.skip("no precondition in this reference")
+    # Reads BasePage, where the precondition now lives. It used to read the
+    # reference page object and skip when a private `_require_*` was absent -
+    # so moving the method to BasePage turned this guard off silently, which
+    # is the failure mode it exists to prevent in the code it guards.
+    body = _base_page_source()
 
-    assert "not on {expected}" in body or "not on " in body
+    assert "require_own_page" in body, "the precondition is gone"
+    assert "not %s" in body or "not on " in body, (
+        "the message must name where the browser is and where it should be"
+    )
     assert "full timeout" in body, (
         "say why this matters - without it the next reader deletes the check "
         "as redundant"
@@ -846,6 +852,18 @@ def test_the_reference_precondition_names_the_page_it_expected():
 # depends on - is caught by the persistent-state rule and by review.
 # =========================================================================
 
+def _base_page_source() -> str:
+    """The precondition now lives on BasePage, not in one page object.
+
+    A private guard on the sign-in class taught the next generated page
+    object nothing, so a search method repeated the failure. These tests
+    follow the method to where it belongs.
+    """
+    from pathlib import Path as _P
+    return (_P(__file__).resolve().parents[2] / "pages" / "base_page.py").read_text(
+        encoding="utf-8")
+
+
 def test_the_reference_sign_in_navigates_when_the_browser_is_elsewhere():
     """The shape that failed two tests."""
     from core.app_context import AppContext
@@ -864,6 +882,9 @@ def test_the_reference_sign_in_navigates_when_the_browser_is_elsewhere():
         def wait_for_timeout(self, _ms):
             pass
 
+        def wait_for_load_state(self, *_a, **_k):
+            pass
+
         def locator(self, selector, **_):
             return selector
 
@@ -871,7 +892,7 @@ def test_the_reference_sign_in_navigates_when_the_browser_is_elsewhere():
     # passes a file where the call was gutted to `pass` - which is exactly
     # what the first version of this test did.
     elsewhere = _Page("https://app.example/somewhere-else")
-    LoginPage(elsewhere)._require_login_page()
+    LoginPage(elsewhere).require_own_page()
     assert elsewhere.gotos, (
         "the browser was on another page and nothing navigated - the fill "
         "that follows would wait the full timeout and blame the field"
@@ -881,7 +902,7 @@ def test_the_reference_sign_in_navigates_when_the_browser_is_elsewhere():
     )
 
     already = _Page(f"https://app.example{LoginPage(_Page('x')).page_url()}")
-    LoginPage(already)._require_login_page()
+    LoginPage(already).require_own_page()
     assert not already.gotos, "already there - navigating again wastes a load"
 
 
@@ -891,8 +912,7 @@ def test_the_recovery_still_refuses_when_there_is_nowhere_to_navigate_from():
     from core.app_context import AppContext
 
     body = AppContext.load().load_reference_files()["page_object"]
-    assert "raise AssertionError" in body, (
+    assert "raise AssertionError" in _base_page_source(), (
         "with no scheme or host there is nothing to build a URL from, and the "
         "failure has to say so rather than inventing an address"
     )
-

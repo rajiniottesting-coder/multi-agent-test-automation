@@ -2820,6 +2820,100 @@ _TEXT_READERS = frozenset({
 _ROW_SCOPED_HELPERS = {"get_column_values", "get_cell_text"}
 
 
+# Ways a page object can establish that it is on its own page before acting.
+_PAGE_PRECONDITIONS = {"require_own_page", "confirm_arrival", "navigate", "open"}
+
+
+def validate_fills_confirm_their_page(generated_files: list,
+                                      project_root=None) -> list[str]:
+    """Fail a page-object method that fills a field without reaching its page.
+
+    Filling a field that is not on screen does not fail fast. Playwright waits
+    the full timeout and then reports the LOCATOR as having timed out, which
+    reads like a broken selector when the selector is fine and the page is
+    wrong. Thirty seconds spent, and the reader sent to the one place the
+    fault is not.
+
+    It has cost two stories. The first was a sign-in method, fixed by adding a
+    private guard to that one class - which taught the next generated page
+    object nothing, so a search method did it again. The guard belongs on
+    BasePage and the requirement belongs here, or the same failure arrives
+    once per page object that fills anything.
+
+    FILLING specifically, and only when it is the FIRST action. A method that
+    clicks its way somewhere and then fills has already established where it
+    is; a method that fills as its opening move is asserting a page it has not
+    checked. Clicks are excluded on purpose: a click from the wrong page fails
+    in a second with a clear message, and requiring a precondition on every
+    click would make the rule wrong more often than right.
+    """
+    errors: list[str] = []
+    for gen in generated_files or []:
+        path = getattr(gen, "file_path", "") or ""
+        if not (path.startswith("pages/") and path.endswith(".py")):
+            continue
+        if path.endswith("base_page.py"):
+            continue
+        try:
+            tree = ast.parse(getattr(gen, "content", "") or "")
+        except SyntaxError:
+            continue
+
+        for cls in tree.body:
+            if not isinstance(cls, ast.ClassDef):
+                continue
+            for node in cls.body:
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                if node.name.startswith("_"):
+                    continue
+
+                first = _first_page_action(node)
+                if first != "fill":
+                    continue
+                if _calls_any(node, _PAGE_PRECONDITIONS):
+                    continue
+
+                errors.append(
+                    f"Unconfirmed page error in '{path}' line {node.lineno}: "
+                    f"`{node.name}()` fills a field as its first action "
+                    f"without establishing that the browser is on this page. "
+                    f"If it is not, Playwright waits the FULL timeout and then "
+                    f"reports the locator as having timed out - which reads as "
+                    f"a broken selector when the selector is fine and the page "
+                    f"is wrong. Call `self.require_own_page()` first: it costs "
+                    f"a string comparison when already there, and navigates "
+                    f"when not."
+                )
+    return errors
+
+
+def _first_page_action(func: ast.AST):
+    """The name of the first self.<action>() this function performs, or None.
+
+    In source order, which is execution order for the straight-line opening of
+    a method - and the opening is the question: what does this method do
+    before it has established anything?
+    """
+    for node in ast.walk(func):
+        if (isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "self"
+                and node.func.attr not in ("sel", "page_url")):
+            return node.func.attr
+    return None
+
+
+def _calls_any(func: ast.AST, names: set) -> bool:
+    for node in ast.walk(func):
+        if (isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr in names):
+            return True
+    return False
+
+
 def validate_row_scoped_selectors(generated_files: list, project_root=None) -> list[str]:
     """Fail a cell selector that cannot resolve inside the row it is scoped to.
 

@@ -521,6 +521,72 @@ class BasePage:
             return path.startswith(prefix) and prefix.strip("/") != ""
         return path.rstrip("/") == declared.rstrip("/")
 
+    def require_own_page(self, timeout_ms: Optional[int] = None) -> None:
+        """Make sure the browser is on THIS page object's page, going there if not.
+
+        Call it first in any method that acts on an element only this page
+        has - filling a field, above all.
+
+        Filling a field that is not on screen does not fail fast. Playwright
+        waits the full timeout and then reports the LOCATOR as having timed
+        out, which reads like a broken selector when the selector is fine and
+        the page is wrong. Thirty seconds spent, and the reader sent to the
+        one place the fault is not. It has cost two separate stories that way
+        - a sign-in method and a search method, the second after the first was
+        fixed in isolation.
+
+        Different from confirm_arrival(), deliberately. That answers "did my
+        click land?" and REFUSES to navigate when the browser is on another
+        page the inventory knows, because re-issuing would leave a page the
+        run had correctly reached. This answers "am I where I need to be?",
+        where being elsewhere has exactly one sensible recovery.
+
+        Silent when already here, so it costs a string comparison. Loud when
+        it moves, because arriving from somewhere else is worth knowing even
+        once it works.
+
+        A page object with no declared URL, or a templated one, cannot be
+        navigated to blind - one page exists per record and the record is not
+        known here. Those return without acting: a wrong guess is worse than
+        no guess.
+        """
+        declared = self._declared_url()
+        if not declared or "{" in declared:
+            return
+
+        # Imported here, as the other URL-reading method in this class does.
+        # A module-level import would be tidier, but the first version of this
+        # relied on one that does not exist and the broad `except` below
+        # swallowed the NameError - so the guard silently did nothing on every
+        # call. A bare `except Exception` around the only line that can fail
+        # is how a fix looks exactly like a working fix.
+        from urllib.parse import urlsplit
+
+        current = urlsplit(self.page.url)
+
+        if self._is_here(current.path):
+            return
+
+        if not current.scheme or not current.netloc:
+            raise AssertionError(
+                f"{type(self).__name__}: the browser is at "
+                f"{self.page.url!r}, which is not an address this page object "
+                f"can navigate from. Open {declared} first - the scenario "
+                f"needs a step that goes there before the one that acts on it."
+            )
+
+        target = f"{current.scheme}://{current.netloc}{declared}"
+        logger.warning(
+            "%s.require_own_page(): the browser is at %s, not %s. Navigating "
+            "there so the elements this method needs are actually present - "
+            "acting from another page would wait the full timeout and then "
+            "blame the element. If the scenario meant to be here already, it "
+            "is missing a step that opens this page.",
+            type(self).__name__, self.page.url, declared,
+        )
+        self.navigate(target)
+        self.wait_for_page_load(timeout_ms)
+
     def confirm_arrival(self, **params: object) -> None:
         """Confirm the browser reached THIS page object's page; recover if not.
 

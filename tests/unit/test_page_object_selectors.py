@@ -600,3 +600,109 @@ def test_a_real_assertion_with_an_or_is_still_allowed():
         def assert_holds(widget_page, n):
             assert widget_page.has_item("a") or widget_page.get_result_count() == n
     ''')], _PROJECT) == []
+
+
+# =========================================================================
+# A METHOD THAT FILLS MUST FIRST REACH ITS OWN PAGE
+#
+# Filling a field that is not on screen does not fail fast. Playwright waits
+# the FULL timeout and then reports the LOCATOR as having timed out - which
+# reads like a broken selector when the selector is fine and the page is
+# wrong. Thirty seconds spent, and the reader sent to the one place the fault
+# is not.
+#
+# It has cost two stories. The first was a sign-in method, fixed by adding a
+# private guard to that one class - which taught the next generated page
+# object nothing, so a search method did it again a week later. A fix applied
+# to one page object is not a fix; it is a coincidence that page happens to
+# be correct.
+#
+# The primitive now lives on BasePage and the requirement lives at the gate.
+# =========================================================================
+
+def _page_object_with(body: str):
+    import textwrap
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        file_path="pages/widget_page.py",
+        content=("from pages.base_page import BasePage\n\n\n"
+                 "class WidgetPage(BasePage):\n"
+                 '    INVENTORY_PAGE = "widget"\n\n')
+                + textwrap.indent(textwrap.dedent(body).strip("\n"), "    ") + "\n")
+
+
+def test_filling_without_reaching_the_page_is_rejected():
+    """The shape that failed two E2E tests."""
+    from validators.method_resolution_validator import (
+        validate_fills_confirm_their_page)
+
+    errors = validate_fills_confirm_their_page([_page_object_with('''
+        def search_for(self, term: str) -> None:
+            self.fill(self.sel("query_field"), term)
+            self.click(self.sel("submit_control"))
+    ''')], _PROJECT)
+
+    assert errors, "a fill as the opening move asserts a page it never checked"
+    assert "require_own_page" in errors[0], "name the fix"
+    assert "FULL timeout" in errors[0], (
+        "say why it matters - a 30s timeout blaming the locator is what makes "
+        "this expensive to diagnose"
+    )
+
+
+def test_reaching_the_page_first_is_accepted():
+    """Break the thing the guard guards - the correct form must pass."""
+    from validators.method_resolution_validator import (
+        validate_fills_confirm_their_page)
+
+    assert validate_fills_confirm_their_page([_page_object_with('''
+        def search_for(self, term: str) -> None:
+            self.require_own_page()
+            self.fill(self.sel("query_field"), term)
+    ''')], _PROJECT) == []
+
+
+def test_a_method_that_clicks_first_is_left_alone():
+    """A method that clicks its way somewhere has already established where it
+    is. Requiring a precondition on every click would make the rule wrong more
+    often than right."""
+    from validators.method_resolution_validator import (
+        validate_fills_confirm_their_page)
+
+    assert validate_fills_confirm_their_page([_page_object_with('''
+        def edit_first_result(self, text: str) -> None:
+            self.click(self.sel("first_row"))
+            self.fill(self.sel("notes_field"), text)
+    ''')], _PROJECT) == []
+
+
+def test_a_method_that_navigates_itself_is_left_alone():
+    from validators.method_resolution_validator import (
+        validate_fills_confirm_their_page)
+
+    assert validate_fills_confirm_their_page([_page_object_with('''
+        def open_and_search(self, base_url: str, term: str) -> None:
+            self.navigate(f"{base_url}/widgets")
+            self.fill(self.sel("query_field"), term)
+    ''')], _PROJECT) == []
+
+
+def test_the_check_is_wired_into_the_gate():
+    """A validator nothing calls is this project's recurring shape."""
+    body = " ".join((_PROJECT / "agents" / "agent2_coder.py").read_text(
+        encoding="utf-8").split())
+
+    assert "validate_fills_confirm_their_page(generated_files, PROJECT_ROOT)" in body, (
+        "the check is defined but never called - the next page object that "
+        "fills would repeat the failure"
+    )
+
+
+def test_the_prompt_teaches_it_before_the_gate_enforces_it():
+    """A rule the model can only learn by failing costs an LLM call a run."""
+    prompt = (_PROJECT / "prompts" / "agent2_coder_generate.md").read_text(
+        encoding="utf-8")
+
+    assert "require_own_page()" in prompt, (
+        "the gate requires a helper the prompt never names"
+    )
