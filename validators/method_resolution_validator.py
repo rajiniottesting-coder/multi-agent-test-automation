@@ -3124,6 +3124,153 @@ def validate_row_index_is_not_a_cell_index(generated_files: list,
     return errors
 
 
+# Methods that are on `str` and not on `list`, and vice versa. Calling one on
+# the wrong kind raises AttributeError the moment the line runs.
+_STR_ONLY_METHODS = frozenset({
+    "strip", "lstrip", "rstrip", "lower", "upper", "title", "capitalize",
+    "split", "rsplit", "splitlines", "replace", "startswith", "endswith",
+    "format", "encode", "casefold", "zfill", "removeprefix", "removesuffix",
+    "isdigit", "isnumeric", "isalpha", "isspace",
+})
+_LIST_ONLY_METHODS = frozenset({"append", "extend", "sort", "reverse"})
+
+
+def _base_page_return_kinds(project_root) -> dict:
+    """{helper name: 'list' | 'str'} read from BasePage's own annotations.
+
+    The signatures are already extracted for the generation prompt, so the
+    model is TOLD `get_column_values(...) -> List[str]`. Reading the same
+    annotations here means the gate and the prompt agree by construction,
+    with nothing to keep in step.
+    """
+    kinds: dict = {}
+    try:
+        source = (Path(project_root) / "pages" / "base_page.py").read_text(
+            encoding="utf-8")
+        tree = ast.parse(source)
+    except Exception:                                     # noqa: BLE001
+        return kinds
+
+    for cls in tree.body:
+        if not isinstance(cls, ast.ClassDef):
+            continue
+        for node in cls.body:
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if node.returns is None:
+                continue
+            try:
+                annotation = ast.unparse(node.returns)
+            except Exception:                             # noqa: BLE001
+                continue
+            if annotation.startswith(("List[", "list[")):
+                kinds[node.name] = "list"
+            elif annotation == "str":
+                kinds[node.name] = "str"
+    return kinds
+
+
+def validate_helper_return_types_are_respected(generated_files: list,
+                                               project_root=None) -> list[str]:
+    """Fail a string method called on a helper that returns a list.
+
+        text = self.get_column_values(rows, cells, 0)   # -> List[str]
+        return int(text.strip())                        # AttributeError
+
+    The annotation is not a hint: `.strip()` does not exist on a list, and
+    the line raises the moment it runs. A page object shipped exactly this
+    and the runner failed with `'list' object has no attribute 'strip'` -
+    after a successful login, a search and an add-to-cart, so the failure
+    arrived several minutes in and pointed at the reader rather than at
+    anything the application did.
+
+    The return types come from BasePage's own annotations, which are already
+    injected into the generation prompt. The model is told the type and then
+    uses it as the other kind; this is the gate noticing.
+
+    Only the unambiguous direction is flagged: a variable assigned DIRECTLY
+    from a helper, then used with a method that cannot exist on that type.
+    Anything reassigned, indexed, or passed through another call is left
+    alone - inferring further would produce the false positives that get a
+    check switched off.
+    """
+    project_root = Path(project_root or ".")
+    kinds = _base_page_return_kinds(project_root)
+    if not kinds:
+        return []
+
+    errors: list[str] = []
+    for gen in generated_files or []:
+        path = getattr(gen, "file_path", "") or ""
+        if not path.endswith(".py") or path.endswith("base_page.py"):
+            continue
+        if not (path.startswith("pages/") or path.startswith("tests/step_defs/")):
+            continue
+        try:
+            tree = ast.parse(getattr(gen, "content", "") or "")
+        except SyntaxError:
+            continue
+
+        for func in ast.walk(tree):
+            if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+
+            # {variable: kind} for names assigned straight from a helper.
+            kind_of: dict = {}
+            reassigned: set = set()
+            for node in ast.walk(func):
+                if not (isinstance(node, ast.Assign)
+                        and len(node.targets) == 1
+                        and isinstance(node.targets[0], ast.Name)):
+                    continue
+                name = node.targets[0].id
+                if (isinstance(node.value, ast.Call)
+                        and isinstance(node.value.func, ast.Attribute)
+                        and node.value.func.attr in kinds):
+                    if name in kind_of:
+                        reassigned.add(name)
+                    kind_of[name] = (kinds[node.value.func.attr],
+                                     node.value.func.attr)
+                elif name in kind_of:
+                    reassigned.add(name)
+
+            for node in ast.walk(func):
+                if not (isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Attribute)
+                        and isinstance(node.func.value, ast.Name)):
+                    continue
+                entry = kind_of.get(node.func.value.id)
+                if entry is None or node.func.value.id in reassigned:
+                    continue
+                kind, helper = entry
+                method = node.func.attr
+
+                wrong = ((kind == "list" and method in _STR_ONLY_METHODS)
+                         or (kind == "str" and method in _LIST_ONLY_METHODS))
+                if not wrong:
+                    continue
+
+                other = "str" if kind == "list" else "list"
+                hint = (
+                    f"Pick the entry you want first - "
+                    f"`{node.func.value.id}[0]` for the first row, or index it "
+                    f"by the row you located - then call `.{method}()` on that."
+                    if kind == "list" else
+                    f"`{helper}()` returns a single value; there is nothing to "
+                    f"`.{method}()` onto."
+                )
+                errors.append(
+                    f"Helper return type error in '{path}' line {node.lineno}: "
+                    f"`{node.func.value.id}` comes from `{helper}()`, which "
+                    f"returns a {kind}, and `.{method}()` is a {other} method. "
+                    f"Python raises AttributeError the moment this line runs - "
+                    f"not a timing problem and not an application problem, so "
+                    f"no wait and no screenshot helps. BasePage declares the "
+                    f"return type and the generation prompt shows it. {hint}"
+                )
+    return errors
+
+
 def validate_row_scoped_selectors(generated_files: list, project_root=None) -> list[str]:
     """Fail a cell selector that cannot resolve inside the row it is scoped to.
 

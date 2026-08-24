@@ -49,6 +49,26 @@ NAME. A search returning nothing renders no result cards rather than an
 explicit "no results" message, so assert absence by counting result cards, not
 by looking for empty-state text.
 
+### An EMPTY query returns the WHOLE catalogue, not zero results
+
+Submitting the search box with nothing in it matches everything — the page
+comes back with every product on it. A scenario asserting no result cards for
+an empty query is asserting something untrue about this application, and it
+fails with the full catalogue in the message.
+
+```
+Expected zero result cards, got ['<product>', '<product>', ... 34 items]
+```
+
+So do NOT write a test case like "an empty search returns no results". If a
+scenario needs a search with no matches, use a term that genuinely matches
+nothing — a made-up string. If it needs to describe the empty-query
+behaviour, the honest expectation is that the full listing is shown.
+
+The two cases are different behaviours and belong in different scenarios;
+combining them into one ("a nonexistent product AND an empty query return no
+cards") makes a scenario that cannot pass, because half of it is false.
+
 Category and brand links navigate to `/category_products/<id>` and
 `/brand_products/<name>` respectively — both are ordinary links, not filters
 applied in place.

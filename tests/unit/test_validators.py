@@ -1988,3 +1988,95 @@ def test_the_row_index_check_is_wired_into_the_gate():
     body = " ".join((_ROOT_DIR / "agents" / "agent2_coder.py").read_text(
         encoding="utf-8").split())
     assert "validate_row_index_is_not_a_cell_index(generated_files, PROJECT_ROOT)" in body
+
+
+# =========================================================================
+# A HELPER'S RETURN TYPE IS NOT A HINT
+#
+#     text = self.get_column_values(rows, cells, 0)   # -> List[str]
+#     return int(text.strip())                        # AttributeError
+#
+# `.strip()` does not exist on a list. The line raises the moment it runs -
+# so the failure arrived several minutes into a scenario, after a successful
+# sign-in, a search and an add-to-cart, and pointed at the reader rather than
+# at anything the application did.
+#
+# BasePage annotates every reader, and those annotations are already injected
+# into the generation prompt: the model is TOLD the type and then uses it as
+# the other kind. Reading the same annotations here means the gate and the
+# prompt agree by construction, with nothing to keep in step.
+# =========================================================================
+
+def _typed_reader(body: str):
+    import textwrap
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        file_path="pages/widget_page.py",
+        content=("from pages.base_page import BasePage\n\n\n"
+                 "class WidgetPage(BasePage):\n"
+                 '    INVENTORY_PAGE = "widget"\n\n')
+                + textwrap.indent(textwrap.dedent(body).strip("\n"), "    ") + "\n")
+
+
+def test_a_string_method_on_a_list_returning_helper_is_rejected():
+    """The shape that failed the runner."""
+    from validators.method_resolution_validator import (
+        validate_helper_return_types_are_respected)
+
+    errors = validate_helper_return_types_are_respected([_typed_reader('''
+        def value_for(self, name: str) -> int:
+            text = self.get_column_values(self.sel("rows"), self.sel("cells"), 0)
+            return int(text.strip())
+    ''')], _ROOT_DIR)
+
+    assert errors, "`.strip()` does not exist on a list"
+    assert "AttributeError" in errors[0], "say what happens at run time"
+    assert "no wait and no screenshot helps" in errors[0].lower(), (
+        "say that this is neither timing nor the application, or the reader "
+        "goes looking at the trace"
+    )
+
+
+def test_indexing_first_is_accepted():
+    """Break the thing the guard guards - the correct form must pass."""
+    from validators.method_resolution_validator import (
+        validate_helper_return_types_are_respected)
+
+    assert validate_helper_return_types_are_respected([_typed_reader('''
+        def value_for(self, name: str) -> int:
+            i = self.find_row_index_by_text(self.sel("rows"), name)
+            values = self.get_column_values(self.sel("rows"), self.sel("cells"), 0)
+            return int(values[i].strip())
+    ''')], _ROOT_DIR) == []
+
+
+def test_a_string_method_on_a_string_helper_is_accepted():
+    from validators.method_resolution_validator import (
+        validate_helper_return_types_are_respected)
+
+    assert validate_helper_return_types_are_respected([_typed_reader('''
+        def title(self) -> str:
+            text = self.get_text(self.sel("heading"))
+            return text.strip()
+    ''')], _ROOT_DIR) == []
+
+
+def test_a_reassigned_variable_is_left_alone():
+    """Inferring past a reassignment would produce the false positives that
+    get a check switched off."""
+    from validators.method_resolution_validator import (
+        validate_helper_return_types_are_respected)
+
+    assert validate_helper_return_types_are_respected([_typed_reader('''
+        def messy(self, name: str) -> str:
+            text = self.get_column_values(self.sel("rows"), self.sel("cells"), 0)
+            text = text[0]
+            return text.strip()
+    ''')], _ROOT_DIR) == []
+
+
+def test_the_return_type_check_is_wired_into_the_gate():
+    body = " ".join((_ROOT_DIR / "agents" / "agent2_coder.py").read_text(
+        encoding="utf-8").split())
+    assert ("validate_helper_return_types_are_respected(generated_files, "
+            "PROJECT_ROOT)") in body

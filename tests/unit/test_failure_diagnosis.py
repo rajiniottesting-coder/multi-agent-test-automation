@@ -527,3 +527,38 @@ def test_too_many_arguments_is_classified_too():
     d = diagnose("E   TypeError: search_for() takes 2 positional arguments "
                  "but 3 were given")
     assert d.label == "call does not match the method signature"
+
+
+# =========================================================================
+# A VALUE USED AS THE WRONG TYPE
+#
+# `AttributeError: 'list' object has no attribute 'strip'` came back
+# "unclassified", so the reader was sent to a screenshot and a trace - for a
+# failure where Python raised as soon as the line ran and nothing was
+# waiting.
+# =========================================================================
+
+_WRONG_TYPE = "E   AttributeError: 'list' object has no attribute 'strip'"
+
+
+def test_a_wrong_type_use_is_classified():
+    d = diagnose(_WRONG_TYPE)
+    assert d.label == "value used as the wrong type", (
+        f"got {d.label!r} - this arrived as 'unclassified' from CI"
+    )
+
+
+def test_the_reading_points_at_the_helper_that_produced_the_value():
+    """The message names the type; what the reader needs is where it came
+    from and why the annotation already said so."""
+    d = diagnose(_WRONG_TYPE)
+    body = (d.cause + " " + d.remedy).lower()
+
+    assert "list" in body, "name the shape the reader actually returned"
+    assert "annotat" in body, (
+        "point at the return annotation - it is in the prompt, so this was "
+        "knowable before the run"
+    )
+    assert "no wait" in body, (
+        "say that waiting cannot help, or the next reader adds one"
+    )

@@ -420,6 +420,28 @@ _SIGNATURES: list[tuple[re.Pattern, Diagnosis]] = [
         ),
     ),
     (
+        # A value used as the wrong KIND of thing. Python raises the moment
+        # the line runs, so nothing was waiting and nothing timed out.
+        re.compile(r"AttributeError: '(\w+)' object has no attribute '(\w+)'",
+                   re.S),
+        Diagnosis(
+            "value used as the wrong type",
+            "A method was called on a value that does not have it. Not a "
+            "timing problem, not a selector problem and not the application: "
+            "Python raised as soon as the line ran, so no wait was in "
+            "progress and the screenshot shows whatever was on screen "
+            "beforehand. The usual cause is a reader that returns a LIST of "
+            "values - one per row - being used as if it returned a single "
+            "one.",
+            "Read the type in the message against the helper that produced "
+            "the value. BasePage annotates every reader's return type and the "
+            "generation prompt shows it: a `-> List[str]` helper needs an "
+            "entry picked out of it before a string method will work, and a "
+            "`-> str` helper has nothing to index. No wait and no fixture "
+            "changes this.",
+        ),
+    ),
+    (
         # `assert 2 == 1` - two integers, no quotes. Almost always a COUNT.
         #
         # Reported "unclassified" until a run removed one of two rows, counted

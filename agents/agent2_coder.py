@@ -64,6 +64,7 @@ from validators.method_resolution_validator import (
     validate_confirm_arrival_targets_this_page,
     validate_readers_return_what_they_name,
     validate_row_scoped_selectors,
+    validate_helper_return_types_are_respected,
     validate_row_index_is_not_a_cell_index,
     validate_fills_confirm_their_page,
     validate_step_parameter_types,
@@ -2221,6 +2222,7 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     # the run died on feedback it had never been shown (SCRUM-103).
     errors.extend(validate_page_object_selectors(generated_files, PROJECT_ROOT))
     errors.extend(validate_row_scoped_selectors(generated_files, PROJECT_ROOT))
+    errors.extend(validate_helper_return_types_are_respected(generated_files, PROJECT_ROOT))
     errors.extend(validate_row_index_is_not_a_cell_index(generated_files, PROJECT_ROOT))
     errors.extend(validate_examples_hold_data_not_placeholders(generated_files))
     errors.extend(validate_fills_confirm_their_page(generated_files, PROJECT_ROOT))
