@@ -1779,3 +1779,212 @@ def test_the_prompt_teaches_it_before_the_gate_enforces_it():
     assert "Examples table holds DATA" in prompt, (
         "a rule the model can only learn by failing costs an LLM call a run"
     )
+
+
+# =========================================================================
+# EXISTENCE IS HALF THE QUESTION
+#
+# Method resolution asked "does this method exist" and stopped there. A call
+# with the wrong number of arguments raises TypeError at run time just as
+# surely as a call to a method that is not there - and the gate passed one
+# straight through:
+#
+#     def open_listing(self, base_url: str) -> None: ...
+#     widget_page.open_listing()           # <- through 20 validators
+#
+# Two scenarios failed in the runner before a single browser action ran, and
+# the traceback pointed at the step definition rather than at anything the
+# application did.
+#
+# This is not a new rule. It is the same rule finished.
+# =========================================================================
+
+def _arity_pair(page_body: str, step_body: str):
+    import textwrap
+    from types import SimpleNamespace
+    page = SimpleNamespace(
+        file_path="pages/widget_page.py", is_new_file=True,
+        content=("from pages.base_page import BasePage\n\n\n"
+                 "class WidgetPage(BasePage):\n"
+                 '    INVENTORY_PAGE = "widget"\n\n')
+                + textwrap.indent(textwrap.dedent(page_body).strip("\n"), "    ") + "\n")
+    steps = SimpleNamespace(
+        file_path="tests/step_defs/test_widget.py", is_new_file=True,
+        content="from pytest_bdd import given\n\n" + textwrap.dedent(step_body))
+    return [page, steps]
+
+
+def _signature_errors(files):
+    from agents.agent2_coder import _collect_repairable_errors
+    return [e for e in _collect_repairable_errors(files) if "Call signature" in e]
+
+
+def test_a_call_missing_a_required_argument_is_rejected():
+    """The shape that reached the runner."""
+    errors = _signature_errors(_arity_pair(
+        'def open_listing(self, base_url: str) -> None:\n    self.navigate(base_url)\n',
+        '@given("x")\ndef s(widget_page):\n    widget_page.open_listing()\n'))
+
+    assert errors, "a guaranteed TypeError passed every check"
+    assert "TypeError" in errors[0], "name what happens at run time"
+    assert "request the fixture" in errors[0].lower() or "REQUEST" in errors[0], (
+        "say how a step definition gets the value it is missing"
+    )
+
+
+def test_the_call_that_fits_is_accepted():
+    """Break the thing the guard guards - the correct form must pass, by
+    position and by keyword."""
+    assert _signature_errors(_arity_pair(
+        'def open_listing(self, base_url: str) -> None:\n    self.navigate(base_url)\n',
+        '@given("x")\ndef s(widget_page, base_url):\n    widget_page.open_listing(base_url)\n')) == []
+
+    assert _signature_errors(_arity_pair(
+        'def open_listing(self, base_url: str) -> None:\n    self.navigate(base_url)\n',
+        '@given("x")\ndef s(widget_page, base_url):\n'
+        '    widget_page.open_listing(base_url=base_url)\n')) == []
+
+
+def test_an_optional_argument_may_be_omitted():
+    """A parameter with a default is not required, and treating it as one
+    would reject most well-written page objects."""
+    assert _signature_errors(_arity_pair(
+        'def search_for(self, term: str, exact: bool = False) -> None:\n'
+        '    self.fill(self.sel("query_field"), term)\n',
+        '@given("x")\ndef s(widget_page):\n    widget_page.search_for("a")\n')) == []
+
+
+def test_too_many_arguments_is_rejected():
+    assert _signature_errors(_arity_pair(
+        'def search_for(self, term: str) -> None:\n'
+        '    self.fill(self.sel("query_field"), term)\n',
+        '@given("x")\ndef s(widget_page):\n    widget_page.search_for("a", "b")\n'))
+
+
+def test_a_flexible_signature_is_never_flagged():
+    """*args or **kwargs accepts anything. Guessing at those would produce
+    the false positives that get a check switched off."""
+    assert _signature_errors(_arity_pair(
+        'def flexible(self, **kwargs) -> None:\n    pass\n',
+        '@given("x")\ndef s(widget_page):\n    widget_page.flexible(a=1, b=2)\n')) == []
+
+
+def test_the_committed_tree_still_passes():
+    """The check that matters most: a false positive here blocks every story,
+    not just a bad one."""
+    import pathlib
+    from types import SimpleNamespace
+
+    from agents.agent2_coder import _collect_repairable_errors
+
+    root = pathlib.Path(__file__).resolve().parents[2]
+    files = []
+    for folder in ("pages", "tests/step_defs", "features"):
+        for path in sorted((root / folder).glob("*")):
+            if path.suffix in (".py", ".feature") and path.name != "__init__.py":
+                files.append(SimpleNamespace(
+                    file_path=f"{folder}/{path.name}", is_new_file=False,
+                    content=path.read_text(encoding="utf-8")))
+
+    assert _collect_repairable_errors(files) == [], (
+        "the code already on main no longer passes its own gate"
+    )
+
+
+_ROOT_DIR = Path(__file__).resolve().parents[2]
+
+
+# =========================================================================
+# A ROW INDEX IS NOT A CELL INDEX
+#
+# get_column_values(rows, cells, cell_index) selects a cell WITHIN each row
+# and returns one value PER ROW. The two indices count different things, and
+# a page object used one name for both:
+#
+#     values = self.get_column_values(rows, quantities, index)
+#     return values[index]
+#
+# For the FIRST row that is accidentally correct - nth(0) is the only cell,
+# values[0] the only row. For any other row the cell lookup finds nothing,
+# every entry comes back empty, and the method returns "".
+#
+# So it passes on the first row and silently returns the wrong answer on the
+# rest: it survives a demo and breaks when the data happens to put the item
+# somewhere other than first. The failure then points at the assertion
+# rather than at the reader that produced the empty string.
+#
+# I read this as a judgement call when review raised it and said so. It is
+# not - it is a defect that passes for the wrong reason, which is the class
+# this project has spent the most time on.
+# =========================================================================
+
+def _index_reader(body: str):
+    import textwrap
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        file_path="pages/widget_page.py",
+        content=("from pages.base_page import BasePage\n\n\n"
+                 "class WidgetPage(BasePage):\n"
+                 '    INVENTORY_PAGE = "widget"\n\n')
+                + textwrap.indent(textwrap.dedent(body).strip("\n"), "    ") + "\n")
+
+
+def test_the_same_name_used_for_both_indices_is_rejected():
+    from validators.method_resolution_validator import (
+        validate_row_index_is_not_a_cell_index)
+
+    errors = validate_row_index_is_not_a_cell_index([_index_reader('''
+        def get_value_for(self, name: str) -> str:
+            index = self.find_row_index_by_text(self.sel("rows"), name)
+            values = self.get_column_values(self.sel("rows"), self.sel("cells"), index)
+            return values[index]
+    ''')], _ROOT_DIR)
+
+    assert errors, "the row index is being passed as a cell index"
+    assert "first row" in errors[0], (
+        "say that it works for the first row - that is why it survives a "
+        "demo and breaks later"
+    )
+    assert ", 0)[" in errors[0], "show the corrected call"
+
+
+def test_the_correct_form_is_accepted():
+    """Break the thing the guard guards."""
+    from validators.method_resolution_validator import (
+        validate_row_index_is_not_a_cell_index)
+
+    assert validate_row_index_is_not_a_cell_index([_index_reader('''
+        def get_value_for(self, name: str) -> str:
+            index = self.find_row_index_by_text(self.sel("rows"), name)
+            values = self.get_column_values(self.sel("rows"), self.sel("cells"), 0)
+            return values[index]
+    ''')], _ROOT_DIR) == []
+
+
+def test_two_different_indices_are_left_alone():
+    """A method genuinely taking a row AND a column is not this mistake.
+    Flagging it would reject the one API that needs both."""
+    from validators.method_resolution_validator import (
+        validate_row_index_is_not_a_cell_index)
+
+    assert validate_row_index_is_not_a_cell_index([_index_reader('''
+        def get_cell(self, row: int, col: int) -> str:
+            values = self.get_column_values(self.sel("rows"), self.sel("cells"), col)
+            return values[row]
+    ''')], _ROOT_DIR) == []
+
+
+def test_returning_the_whole_column_is_left_alone():
+    from validators.method_resolution_validator import (
+        validate_row_index_is_not_a_cell_index)
+
+    assert validate_row_index_is_not_a_cell_index([_index_reader('''
+        def all_values(self):
+            return self.get_column_values(self.sel("rows"), self.sel("cells"), 0)
+    ''')], _ROOT_DIR) == []
+
+
+def test_the_row_index_check_is_wired_into_the_gate():
+    body = " ".join((_ROOT_DIR / "agents" / "agent2_coder.py").read_text(
+        encoding="utf-8").split())
+    assert "validate_row_index_is_not_a_cell_index(generated_files, PROJECT_ROOT)" in body

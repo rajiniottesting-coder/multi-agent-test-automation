@@ -330,6 +330,95 @@ def _collect_step_def_function_args(source: str) -> set[str]:
     return params
 
 
+def _resolve_class_signatures(class_name: str, class_sources: dict,
+                              project_root: Path,
+                              visited: set = None) -> dict:
+    """{method name: (required positional count, accepts extra)} for a class.
+
+    The companion to _resolve_class_methods_with_inheritance, which answers
+    "does this method exist" and stops there. Existence is half the question:
+    a call with the wrong number of arguments raises TypeError at run time
+    just as surely as a call to a method that is not there, and the gate
+    passed one straight through to Agent 4.
+
+    `self` is excluded. A parameter with a default is not required. A method
+    taking *args or **kwargs accepts anything, so it is never flagged.
+    """
+    visited = visited if visited is not None else set()
+    if class_name in visited:
+        return {}
+    visited.add(class_name)
+
+    source = class_sources.get(class_name)
+    if source is None:
+        for folder in ("pages", "tests/step_defs"):
+            for path in sorted((Path(project_root) / folder).glob("*.py")):
+                try:
+                    text = path.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                if f"class {class_name}" in text:
+                    source = text
+                    break
+            if source:
+                break
+    if not source:
+        return {}
+
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return {}
+
+    signatures: dict = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef) or node.name != class_name:
+            continue
+
+        # Bases first, so an override on this class wins.
+        for base in node.bases:
+            base_name = getattr(base, "id", None) or getattr(base, "attr", None)
+            if base_name and base_name != "object":
+                signatures.update(_resolve_class_signatures(
+                    base_name, class_sources, project_root, visited))
+
+        for item in node.body:
+            if not isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            args = item.args
+            positional = [a.arg for a in (args.posonlyargs + args.args)
+                          if a.arg != "self"]
+            defaulted = len(args.defaults)
+            required = max(0, len(positional) - defaulted)
+            flexible = bool(args.vararg or args.kwarg)
+            signatures[item.name] = (required, len(positional), flexible)
+    return signatures
+
+
+def _call_arity(content: str, fixture_names: set) -> dict:
+    """{(var, method, line): (positional args, keyword arg names)} for each call."""
+    found: dict = {}
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return found
+
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id in fixture_names):
+            continue
+        # A splat means the count is not knowable here; say nothing.
+        if any(isinstance(a, ast.Starred) for a in node.args):
+            continue
+        if any(k.arg is None for k in node.keywords):
+            continue
+        found[(node.func.value.id, node.func.attr, node.lineno)] = (
+            len(node.args), {k.arg for k in node.keywords})
+    return found
+
+
 def _resolve_class_methods_with_inheritance(
     class_name: str,
     class_sources: dict[str, str],
@@ -520,6 +609,7 @@ def validate_method_resolution(
 
         # Find every method call on a fixture variable
         calls = _extract_method_calls_on_fixtures(content, fixture_names)
+        arities = _call_arity(content, fixture_names)
 
         # Validate each call
         for var_name, method_name, line_no in calls:
@@ -550,6 +640,46 @@ def validate_method_resolution(
                     err += f"Did you mean one of: {', '.join(similar)}? "
                 err += f"Available methods on `{class_name}`: [{methods_list}]."
                 errors.append(err)
+                continue
+
+            # The method EXISTS. Does the call actually fit it?
+            #
+            # A call with the wrong number of arguments raises TypeError at
+            # run time just as surely as a call to a method that is not there
+            # - and this check stopped at the name, so `open_listing()` on a
+            # method declaring `open_listing(self, base_url)` passed the gate,
+            # passed review's structural checks, and failed two scenarios in
+            # Agent 4 with a TypeError before a single browser action ran.
+            #
+            # Silent wherever the answer is not knowable: a splat argument, a
+            # method taking *args or **kwargs, or a class we could not read.
+            signature = _resolve_class_signatures(
+                class_name, class_sources, project_root).get(method_name)
+            arity = arities.get((var_name, method_name, line_no))
+            if not signature or arity is None:
+                continue
+
+            required, accepted, flexible = signature
+            if flexible:
+                continue
+            given_positional, given_keywords = arity
+            supplied = given_positional + len(given_keywords)
+
+            if supplied < required or given_positional > accepted:
+                errors.append(
+                    f"Call signature error in '{path}': line {line_no} calls "
+                    f"`{var_name}.{method_name}()` with {supplied} argument"
+                    f"{'' if supplied == 1 else 's'}, but `{class_name}."
+                    f"{method_name}` requires {required}"
+                    f"{f' and accepts up to {accepted}' if accepted != required else ''}. "
+                    f"Python raises TypeError before the method body runs, so "
+                    f"the test fails without touching the browser and the "
+                    f"traceback points at the step definition rather than at "
+                    f"anything the application did. Pass what the signature "
+                    f"asks for - a step definition can request the fixture it "
+                    f"needs, `base_url` included - or change the signature if "
+                    f"the argument is not really needed."
+                )
 
     errors.extend(_methods_removed_by_regeneration(generated_files, project_root))
 
@@ -2912,6 +3042,86 @@ def _calls_any(func: ast.AST, names: set) -> bool:
                 and node.func.attr in names):
             return True
     return False
+
+
+def validate_row_index_is_not_a_cell_index(generated_files: list,
+                                           project_root=None) -> list[str]:
+    """Fail a row index passed where a CELL index belongs.
+
+    `get_column_values(row_family, cell_selector, cell_index)` selects a cell
+    WITHIN each row and returns one value PER ROW. The two indices count
+    different things, and a page object used one for both:
+
+        values = self.get_column_values(rows, quantities, index)
+        return values[index]
+
+    For the FIRST row that is accidentally correct - `nth(0)` is the only
+    cell, and `values[0]` is the only row. For any other row the cell lookup
+    finds nothing, every entry comes back empty, and the method returns "".
+
+    So it passes on the first row and silently returns the wrong answer on
+    the rest. A test asserting on it fails with a comparison against an empty
+    string, pointing at the assertion rather than at the reader that produced
+    it - and only when the data happens to put the item somewhere other than
+    first, which is why it survives a demo and breaks later.
+
+    Detected by the one shape that cannot be anything else: the SAME name
+    passed as the cell index and used to subscript the result.
+    """
+    errors: list[str] = []
+    for gen in generated_files or []:
+        path = getattr(gen, "file_path", "") or ""
+        if not (path.startswith("pages/") and path.endswith(".py")):
+            continue
+        if path.endswith("base_page.py"):
+            continue
+        try:
+            tree = ast.parse(getattr(gen, "content", "") or "")
+        except SyntaxError:
+            continue
+
+        for func in ast.walk(tree):
+            if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+
+            # {variable holding the result: the name used as its cell index}
+            cell_index_of: dict = {}
+            for node in ast.walk(func):
+                if not (isinstance(node, ast.Assign)
+                        and len(node.targets) == 1
+                        and isinstance(node.targets[0], ast.Name)
+                        and isinstance(node.value, ast.Call)
+                        and isinstance(node.value.func, ast.Attribute)
+                        and node.value.func.attr == "get_column_values"
+                        and len(node.value.args) >= 3
+                        and isinstance(node.value.args[2], ast.Name)):
+                    continue
+                cell_index_of[node.targets[0].id] = node.value.args[2].id
+
+            for node in ast.walk(func):
+                if not (isinstance(node, ast.Subscript)
+                        and isinstance(node.value, ast.Name)
+                        and isinstance(node.slice, ast.Name)):
+                    continue
+                used = cell_index_of.get(node.value.id)
+                if used is None or used != node.slice.id:
+                    continue
+
+                errors.append(
+                    f"Row index used as a cell index in '{path}' line "
+                    f"{node.lineno}: `{used}` is passed to "
+                    f"`get_column_values()` as the CELL index and then used to "
+                    f"subscript its result as a ROW index. Those count "
+                    f"different things - the third argument picks a cell "
+                    f"WITHIN each row, and the result holds one value PER ROW. "
+                    f"It is accidentally correct for the first row and returns "
+                    f"an empty string for every other, silently. Pass the cell "
+                    f"position the column actually occupies (0 where the "
+                    f"family already names one cell per row) and keep "
+                    f"`{used}` for the subscript: "
+                    f"`get_column_values(<rows>, <cells>, 0)[{used}]`."
+                )
+    return errors
 
 
 def validate_row_scoped_selectors(generated_files: list, project_root=None) -> list[str]:

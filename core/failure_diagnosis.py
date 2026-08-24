@@ -398,6 +398,28 @@ _SIGNATURES: list[tuple[re.Pattern, Diagnosis]] = [
         ),
     ),
     (
+        # A call that does not fit the method it names. Python raises before
+        # the body runs, so nothing touched the browser and the traceback
+        # points at the caller rather than at the application.
+        re.compile(r"TypeError:.{0,120}?(missing \d+ required positional argument"
+                   r"|takes \d+ positional arguments? but \d+ (?:was|were) given)",
+                   re.S),
+        Diagnosis(
+            "call does not match the method signature",
+            "A method was called with the wrong number of arguments. This is "
+            "not a timing problem, a selector problem or an application "
+            "problem: Python refused the call before the method body ran, so "
+            "no browser action was attempted and the screenshot shows "
+            "whatever was on screen beforehand.",
+            "Read the signature named in the traceback and the call above it. "
+            "A step definition that needs a value must REQUEST it - pytest "
+            "injects any fixture named in the step function's parameters, "
+            "`base_url` included - rather than calling without it. If the "
+            "argument is not really needed, change the signature instead; a "
+            "parameter nothing passes is one nothing should declare.",
+        ),
+    ),
+    (
         # `assert 2 == 1` - two integers, no quotes. Almost always a COUNT.
         #
         # Reported "unclassified" until a run removed one of two rows, counted

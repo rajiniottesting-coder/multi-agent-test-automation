@@ -486,3 +486,44 @@ def test_the_reading_points_at_the_step_that_navigated():
         "account-scoped state has an ordering requirement of its own"
     )
 
+
+# =========================================================================
+# A CALL THAT DOES NOT FIT ITS METHOD
+#
+# `TypeError: open_listing() missing 1 required positional argument` came
+# back "unclassified", so the reader got the generic "open the trace"
+# advice - for a failure where the trace shows nothing, because Python
+# refused the call before any browser action ran.
+# =========================================================================
+
+_SIGNATURE_MISMATCH = (
+    "E   TypeError: WidgetPage.open_listing() missing 1 required "
+    "positional argument: 'base_url'")
+
+
+def test_a_signature_mismatch_is_classified():
+    d = diagnose(_SIGNATURE_MISMATCH)
+    assert d.label == "call does not match the method signature", (
+        f"got {d.label!r} - this arrived as 'unclassified' from CI"
+    )
+
+
+def test_the_reading_says_the_browser_was_never_touched():
+    """The generic advice sends the reader to a screenshot and a trace. For
+    this failure both are worthless: nothing was attempted."""
+    d = diagnose(_SIGNATURE_MISMATCH)
+    body = (d.cause + " " + d.remedy).lower()
+
+    assert "before the method body ran" in body or "no browser action" in body, (
+        "say that nothing was attempted, or the reader studies a screenshot "
+        "of whatever happened to be on screen"
+    )
+    assert "fixture" in body, (
+        "name how a step definition gets the value it is missing"
+    )
+
+
+def test_too_many_arguments_is_classified_too():
+    d = diagnose("E   TypeError: search_for() takes 2 positional arguments "
+                 "but 3 were given")
+    assert d.label == "call does not match the method signature"
