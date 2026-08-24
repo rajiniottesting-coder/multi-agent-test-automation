@@ -877,3 +877,65 @@ def test_the_loop_aborts_when_the_count_stops_falling():
         "the abort fires without saying what it means, which leaves the "
         "reader the same list of symptoms as before"
     )
+
+
+# =========================================================================
+# A DIFFERENT ERROR AT THE SAME COUNT IS PROGRESS
+#
+# The not-converging abort compared COUNTS alone, and that was too crude.
+#
+# A run fixed a selector error and exposed a consequential one: the
+# regenerated page object no longer had a method the step definitions call.
+# The count went 1 -> 1 while the RULE changed from "Selector inventory" to
+# "Method resolution" - the first error gone, the second the next layer down,
+# which attempt 2 would have repaired.
+#
+# The abort fired anyway and the story failed with an error the loop was
+# about to fix. Aborting on a moving problem is worse than the four wasted
+# attempts it was written to prevent: it turns a fixable run into a failed
+# one.
+#
+# Thrash is a plateau AND the same rule still firing.
+# =========================================================================
+
+def test_a_changed_rule_at_the_same_count_is_not_thrash():
+    """The run this broke."""
+    from agents.agent2_coder import _rules_persisting
+
+    before = {"Selector inventory error in 'pages/x.py': class X calls "
+              "self.sel('a_key_from_another_page')"}
+    after = {"Method resolution error in 'tests/step_defs/x.py': line 65 "
+             "calls open_the_listing()"}
+
+    assert _rules_persisting(before, after) == [], (
+        "these are different rules - the first was fixed and the second is "
+        "the consequence, which the next attempt would repair"
+    )
+
+
+def test_the_same_rule_at_the_same_count_is_thrash():
+    """Break the thing the guard guards. Requiring a persisting rule must not
+    switch the abort off - the rewording case is why it exists."""
+    from agents.agent2_coder import _rules_persisting
+
+    before = {"Persistent state error in 'features/x.feature': the step "
+              "`there should be exactly one row` claims an EXACT state"}
+    after = {"Persistent state error in 'features/x.feature': the step "
+             "`the collection should have exactly one row` claims an EXACT state"}
+
+    assert _rules_persisting(before, after) == ["Persistent state"]
+
+
+def test_the_abort_requires_both_a_plateau_and_a_persisting_rule():
+    """Structural: the condition must read both, or the count alone decides
+    again and a moving problem is mistaken for a stuck one."""
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[2] / "agents" /
+              "agent2_coder.py").read_text(encoding="utf-8")
+    body = " ".join(source.split())
+
+    assert "len(current) >= previous_count and persisting" in body, (
+        "the abort fires on the count alone - a repair that moves the problem "
+        "forward would be cut off mid-way"
+    )

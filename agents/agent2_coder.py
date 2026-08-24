@@ -2332,8 +2332,24 @@ def _attempt_step_coverage_repair(
         #
         # A count that stops falling is the better signal - it does not care
         # how the wording moved.
-        if previous_count is not None and len(current) >= previous_count:
-            persisting = _rules_persisting(previous_errors, current)
+        # BOTH conditions, not just the count.
+        #
+        # The count alone was too crude. A run fixed a selector error and
+        # exposed a consequential one - the regenerated page object no longer
+        # had a method the step definitions call - so the count went 1 -> 1
+        # while the RULE changed from "Selector inventory" to "Method
+        # resolution". That is progress: the first error is gone and the
+        # second is the next layer, which attempt 2 would have fixed. The
+        # abort fired anyway and the story failed with an error the loop was
+        # about to repair.
+        #
+        # Thrash is a plateau AND the same rule still firing. A different rule
+        # at the same count means the model moved the problem forward, which
+        # is what a repair loop is for.
+        persisting = _rules_persisting(previous_errors, current)
+        if (previous_count is not None
+                and len(current) >= previous_count
+                and persisting):
             logger.warning(
                 "Repair attempt %d did not reduce the error count (%d -> %d). "
                 "The model is not converging: further attempts buy tokens, "
