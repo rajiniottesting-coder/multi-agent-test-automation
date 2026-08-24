@@ -168,9 +168,25 @@ def test_there_is_no_catch_all_category(written):
     )
 
 
-def test_the_executor_says_where_the_run_happened(written, monkeypatch, tmp_path):
-    results, _ = written
-    local = json.loads((results / "executor.json").read_text(encoding="utf-8"))
+def test_the_executor_says_where_the_run_happened(monkeypatch, tmp_path):
+    """Both branches, with the environment CONTROLLED rather than inherited.
+
+    The first version read the ambient environment for the local case, so it
+    passed on a laptop and failed on a runner - where GITHUB_REPOSITORY is
+    set and the executor is correctly 'github'. It was asserting which
+    machine the suite happened to be on.
+
+    A test that reads the environment it is meant to be testing is testing
+    the machine.
+    """
+    for name in ("GITHUB_REPOSITORY", "GITHUB_RUN_ID", "GITHUB_RUN_NUMBER",
+                 "GITHUB_WORKFLOW", "GITHUB_REF_NAME", "GITHUB_SERVER_URL"):
+        monkeypatch.delenv(name, raising=False)
+
+    local_results = tmp_path / "local"
+    write_allure_metadata(local_results, project_root=_PROJECT)
+    local = json.loads((local_results / "executor.json").read_text(encoding="utf-8"))
+
     assert local["type"] == "local"
     assert local.get("name"), "an empty executor panel looks like a failure"
 
@@ -229,4 +245,74 @@ def test_the_hook_is_wired_into_conftest():
     )
     assert 'config.getoption("--alluredir"' in body, (
         "the metadata must go where --alluredir points, not a hardcoded path"
+    )
+
+
+# =========================================================================
+# THE CI ARTIFACT MUST BE VIEWABLE
+#
+# pytest writes raw JSON. Rendering it needs the Allure CLI, which is not on
+# the runner - so the artifact contained results nobody could open without
+# installing a tool first, and a report nobody opens may as well not exist.
+#
+# And the rendered DIRECTORY is not enough on its own: it fetches its data
+# over XHR, which browsers block on file://, so a downloaded folder shows
+# "Loading..." for ever and reads as broken. That is exactly what happened
+# the first time this report was opened locally.
+# =========================================================================
+
+def _runner_workflow() -> str:
+    return (_PROJECT / ".github" / "workflows" / "agent4_runner.yml").read_text(
+        encoding="utf-8")
+
+
+def test_ci_renders_the_report_rather_than_shipping_raw_results():
+    workflow = _runner_workflow()
+
+    assert "allure generate" in workflow or "bin/allure" in workflow, (
+        "CI uploads reports/ with raw allure-results and never renders them - "
+        "the artifact needs a tool installed before anyone can read it"
+    )
+    assert "--single-file" in workflow, (
+        "a directory report fetches its data over XHR, which browsers block "
+        "on file:// - a downloaded folder shows 'Loading...' for ever"
+    )
+
+
+def test_the_report_is_generated_before_it_is_uploaded():
+    """Ordering, because a report generated after the upload ships nothing."""
+    workflow = _runner_workflow()
+
+    generate_at = workflow.index("Generate the Allure report")
+    upload_at = workflow.index("Upload test report")
+    assert generate_at < upload_at, (
+        "the report is generated after the artifact is uploaded, so the "
+        "artifact contains raw results only"
+    )
+
+
+def test_ci_carries_the_trend_between_runs():
+    """TREND plots a series, and the series lives in the PREVIOUS report.
+    Nothing carries it between runs, which is why the panel says 'there is
+    nothing to show' on the tenth run as loudly as the first."""
+    workflow = _runner_workflow()
+
+    assert "allure-report/history" in workflow, (
+        "no history is carried between CI runs, so the trend is permanently "
+        "a single point"
+    )
+
+
+def test_report_generation_runs_even_when_tests_failed():
+    """A report is most wanted on the run that failed. A step that only runs
+    on success produces one exactly when nobody needs it."""
+    import re
+
+    workflow = _runner_workflow()
+    block = workflow[workflow.index("Generate the Allure report"):]
+    block = block[:block.index("Upload test report")]
+
+    assert re.search(r"if:\s*always\(\)", block), (
+        "the report is skipped when tests fail - which is the run somebody "
+        "will actually want to look at"
     )

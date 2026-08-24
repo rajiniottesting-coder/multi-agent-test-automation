@@ -303,6 +303,63 @@ jobs:
             --junit-xml=reports/junit.xml \
             -v
 
+      # ── Allure ────────────────────────────────────────────────────────
+      #
+      # pytest writes reports/allure-results (raw JSON). Rendering it needs
+      # the Allure CLI, which is not on the runner - so without these steps
+      # the artifact contains results nobody can open without installing a
+      # tool first, and the report may as well not exist.
+      #
+      # Generated as a SINGLE FILE. A directory report fetches its data over
+      # XHR, which browsers block on file:// - so a downloaded folder shows
+      # "Loading..." for ever and reads as broken. One self-contained HTML
+      # opens by double-clicking, which is what somebody sent an artifact
+      # will actually do.
+      - name: Restore Allure history
+        # TREND plots a series, and the series lives in the PREVIOUS report.
+        # Nothing carries it between CI runs, which is why the panel says
+        # "there is nothing to show" on the tenth run as loudly as the first.
+        # A cache is enough: losing it costs one flat trend, not a failure.
+        if: always()
+        uses: actions/cache@v4
+        with:
+          path: reports/allure-report/history
+          key: allure-history-${{ github.run_id }}
+          restore-keys: |
+            allure-history-
+
+      - name: Generate the Allure report
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ ! -d reports/allure-results ]; then
+            echo "No allure-results; skipping."
+            exit 0
+          fi
+
+          ALLURE_VERSION=2.30.0
+          curl -sSL -o /tmp/allure.tgz \
+            "https://github.com/allure-framework/allure2/releases/download/${ALLURE_VERSION}/allure-${ALLURE_VERSION}.tgz"
+          tar -xzf /tmp/allure.tgz -C /tmp
+
+          # conftest copies history into allure-results before the run, but on
+          # a cache restore the folder appears afterwards - so carry it here
+          # too. Copying twice is harmless; missing it flattens the trend.
+          if [ -d reports/allure-report/history ]; then
+            cp -r reports/allure-report/history reports/allure-results/ || true
+          fi
+
+          "/tmp/allure-${ALLURE_VERSION}/bin/allure" generate \
+            reports/allure-results -o reports/allure-report --clean
+
+          "/tmp/allure-${ALLURE_VERSION}/bin/allure" generate \
+            reports/allure-results -o reports/allure-single --clean --single-file
+
+          echo "### Allure report" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Download the **pytest-report-${{ github.run_id }}** artifact below and open" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`allure-single/index.html\` - it is self-contained and needs no server." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload test report
         # Required because the `report` job runs on a separate runner and
         # needs to download junit.xml to feed into Agent 5.

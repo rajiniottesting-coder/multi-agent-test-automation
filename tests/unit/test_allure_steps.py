@@ -137,3 +137,26 @@ def test_attaching_never_raises_on_a_missing_directory(tmp_path):
 
     report = SimpleNamespace(sections=[], nodeid="tests/x.py::test_y")
     assert attach_failure_evidence(report, tmp_path / "nope") == 0
+
+
+def test_the_reading_is_attached_even_with_no_evidence_directory(tmp_path):
+    """Break the thing the guard guards.
+
+    The reading comes from report.sections and has nothing to do with whether
+    screenshots exist. It used to sit below a directory check, so any failure
+    in a test that never opened a browser - and every run before the first
+    browser test creates that directory - lost the one attachment worth
+    reading, silently.
+    """
+    from core import allure_steps
+
+    if not allure_steps._ALLURE:
+        pytest.skip("allure-pytest not installed")
+
+    report = SimpleNamespace(
+        sections=[("Why this failed", "CAUSE (something): because\n\nFIX: do this")],
+        nodeid="tests/x.py::test_y")
+
+    assert allure_steps.attach_failure_evidence(report, tmp_path / "nope") == 1, (
+        "the diagnosis was dropped because an unrelated directory was absent"
+    )

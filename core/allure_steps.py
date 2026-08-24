@@ -120,17 +120,26 @@ def attach_failure_evidence(report, evidence_dir) -> int:
 
     attached = 0
     try:
-        directory = Path(evidence_dir)
-        if not directory.is_dir():
-            return 0
-
-        # The reading first: it is the thing worth acting on, and an
-        # attachment list is read top-down.
+        # The reading FIRST, and unconditionally.
+        #
+        # It used to sit below a `directory.is_dir()` guard, so a failure with
+        # no evidence directory - any test that never opened a browser, and
+        # every run before the first browser test creates it - lost the one
+        # attachment worth reading. The reading comes from report.sections and
+        # has nothing to do with whether screenshots exist.
+        #
+        # First in the list as well as first in the code: an attachment list
+        # is read top-down, and a screenshot above the explanation invites
+        # scrolling past the answer.
         for name, body in getattr(report, "sections", []):
             if "why this failed" in str(name).lower():
                 allure.attach(str(body), name="Why this failed",
                               attachment_type=allure.attachment_type.TEXT)
                 attached += 1
+
+        directory = Path(evidence_dir)
+        if not directory.is_dir():
+            return attached
 
         stem = str(getattr(report, "nodeid", "")).split("::")[-1]
         for suffix, title, kind in _ATTACHMENTS:
