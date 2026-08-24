@@ -1139,3 +1139,65 @@ def test_an_element_outside_any_frame_is_never_flagged_by_frame_rules():
               "frame": "iframe#aswift_2"}]
     e = build_page_entry("https://x.test/p", "P", descs, "https://x.test")
     assert "signin_email_input" not in e["_third_party_elements"]["elements"]
+
+
+# =========================================================================
+# A PAGE WITH TWO STATES MUST DECLARE BOTH
+#
+# The cart page has an empty state and a non-empty one, and each hides the
+# other's elements. An empty-state message exists ONLY while the collection
+# is empty; the rows, their delete buttons, their quantities and the
+# checkout button exist ONLY while it is not.
+#
+# Only the first was declared conditional. So the scheduled health check -
+# which navigates and measures without clicking - found an empty cart and
+# reported five selectors as DRIFT. Nothing had drifted. The tests had passed
+# hours earlier because they ADD a product before looking at the cart; the
+# verifier does not.
+#
+# A health check that cries wolf gets ignored, and then it is not a health
+# check.
+# =========================================================================
+
+def _inventory():
+    import json
+
+    import yaml
+
+    root = _PROJECT if "_PROJECT" in globals() else Path(__file__).resolve().parents[2]
+    config = yaml.safe_load((root / "config" / "config.yaml").read_text(encoding="utf-8"))
+    rel = (config.get("app_under_test") or {}).get("inventory_file")
+    return json.loads((root / rel).read_text(encoding="utf-8"))
+
+
+def test_an_emptiness_message_and_its_rows_are_both_conditional():
+    """Where a page declares an empty-state element, the elements that exist
+    only in the OPPOSITE state must be declared too.
+
+    Detected by shape, not by name: an emptiness element is one whose key or
+    selector says empty, and its counterparts are the families on that page -
+    a family is per-record, so it is absent exactly when the empty state is
+    present.
+    """
+    inventory = _inventory()
+
+    for page_name, entry in (inventory.get("pages") or {}).items():
+        if not isinstance(entry, dict):
+            continue
+        elements = entry.get("elements") or {}
+        conditional = set(entry.get("conditional") or [])
+        families = [k for k in (entry.get("multi_match") or []) if k in elements]
+
+        empty_state = [k for k in elements
+                       if "empty" in k.lower() or "empty" in str(elements[k]).lower()]
+        if not empty_state or not families:
+            continue
+
+        missing = [k for k in families if k not in conditional]
+        assert not missing, (
+            f"page {page_name!r} declares {empty_state} as an empty-state "
+            f"element, so {missing} exist only in the opposite state and read "
+            f"as zero matches whenever the page is empty. Undeclared, the "
+            f"health check reports them as drift on any run where they happen "
+            f"to be absent."
+        )

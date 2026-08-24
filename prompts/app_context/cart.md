@@ -51,28 +51,31 @@ previous run left. A step named "a newly registered account" that does this is
 describing an intention, not a fact, and the cart assertion after it is a
 coin toss.
 
-Two things work here:
-
-- clear the cart in a Given, using the method the inventory names under
-  `_starting_state.establishing_calls`
-- assert relatively - that what this scenario added is present, or is gone
+One thing works here: assert RELATIVELY - that what this scenario added is
+present, or is gone.
 
 ## The cart is test-owned, and test-owned is not the same as empty
 
 Unlike the catalogue, the cart holds only what a test put there. What it does
 NOT do is start at zero.
 
-So a row count is NOT something a scenario may assert on by default. This
-application cannot register a fresh account from generated code (see above),
-which leaves exactly one way to earn an absolute assertion: clear the cart
-first, in a Given, with `CartPage.empty_the_cart()` - the call named under
-`_starting_state.establishing_calls`. Own the state and "exactly two rows" or
-"the cart is empty" are honest.
+So a row count is NOT something a scenario may assert on. Two routes are
+closed here, deliberately:
 
-Without that Given, assert MEMBERSHIP instead: the product this test added is
-present, or is gone. A test case whose expected result names a count or an
-empty cart, in a scenario that never clears it, cannot be automated as
-written.
+- this application cannot register a fresh account from generated code (see
+  above), and
+- generated code does NOT clear the cart. It is emptied by hand BEFORE a run,
+  not by a step during one. `_starting_state.establishing_calls` is empty and
+  that is the whole statement: no scenario should write a clearing Given, and
+  none should assume another scenario left the cart in any particular state.
+
+Assert MEMBERSHIP instead: the product this test added is present, or is gone.
+That holds whatever the cart started with, and it is what the test case
+usually means.
+
+A test case whose expected result names an exact count or an empty cart cannot
+be automated as written. Say so in `notes` and assert what this page can
+honestly show.
 
 Private is not the same as empty. The cart survives logout and survives the
 run, so a scenario reusing the shared account inherits whatever a previous run

@@ -197,14 +197,20 @@
       },
       "key_methods": [],
       "conditional": [
-        "empty_cart_message"
+        "empty_cart_message",
+        "cart_rows",
+        "cart_product_names",
+        "cart_delete_buttons",
+        "cart_quantities",
+        "proceed_to_checkout_button"
       ],
       "conditional_note": "Only rendered when the cart is empty, so it reads STALE whenever the sweep runs against a cart with items in it.",
       "persistent_state": true,
       "persistent_state_note": "The cart is stored against the signed-in account. It survives logout and survives the run, so a scenario reusing a shared account inherits whatever a previous run left behind. A scenario asserting an ABSOLUTE count or emptiness here must first own its starting state: register a fresh account, or clear the state explicitly.",
       "notes": {
         "cart_quantities": "The quantity cell, RELATIVE to a cart row. get_column_values() and get_cell_text() scope this selector INSIDE the row, so an absolute form like '#cart_info .cart_quantity' matches nothing - the id is an ancestor of the row, not a descendant. Read one row's value with get_column_values(cart_rows, cart_quantities, 0) plus find_row_index_by_text(cart_rows, <product name>).",
-        "row_family": "The repeating CONTAINER. Reading its text gives every cell of a row concatenated, which is what the reader-naming rule exists to catch. The other families here are columns of single fields - reading their text with get_all_texts() is correct and must not be flagged."
+        "row_family": "The repeating CONTAINER. Reading its text gives every cell of a row concatenated, which is what the reader-naming rule exists to catch. The other families here are columns of single fields - reading their text with get_all_texts() is correct and must not be flagged.",
+        "conditional": "Two opposite states, both legitimate. `empty_cart_message` exists ONLY while the cart is empty; the row-dependent keys exist ONLY while it is not. Whichever state the browser is in, the other list reads as zero matches - so both are declared conditional and the verifier reports COND rather than STALE. Declaring only one side is what turned an empty cart into five drift findings."
       },
       "row_family": "cart_rows"
     },

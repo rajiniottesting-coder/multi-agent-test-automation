@@ -445,3 +445,50 @@ def test_the_duplicate_check_catches_the_shape_that_shipped():
     assert not _duplicate_paragraphs(short + "\n" + short), (
         "a short repeated lead-in is legitimate and must not be flagged"
     )
+
+
+# =========================================================================
+# THE CONTEXT MUST NOT OFFER A ROUTE THE INVENTORY HAS CLOSED
+#
+# `_starting_state.establishing_calls` was emptied - the collection is
+# cleared by hand BEFORE a run, not by a generated step during one - and a
+# context module went on telling the model to write that step, naming a
+# method the inventory no longer sanctions.
+#
+# The validator's remedy and the context module then said different things,
+# and the model follows whichever it read last. Four sources, one right, is
+# the first entry in this project's failure history.
+# =========================================================================
+
+def test_no_context_module_offers_an_establishing_call_the_inventory_denies():
+    import json
+    import re
+
+    import yaml
+
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    config = yaml.safe_load((root / "config" / "config.yaml").read_text(encoding="utf-8"))
+    rel = (config.get("app_under_test") or {}).get("inventory_file")
+    inventory = json.loads((root / rel).read_text(encoding="utf-8"))
+
+    sanctioned = set(((inventory.get("_starting_state") or {})
+                      .get("establishing_calls") or []))
+
+    for module in sorted((root / "prompts" / "app_context").glob("*.md")):
+        text = module.read_text(encoding="utf-8")
+        # Any method the prose tells the model to CALL for a clean start.
+        for named in re.findall(r"`(\w+)\(\)`", text):
+            if named in sanctioned:
+                continue
+            window = text[max(0, text.index(f"`{named}()`") - 200):
+                          text.index(f"`{named}()`") + 200].lower()
+            if "clear" in window or "empty the" in window or "establishing_calls" in window:
+                raise AssertionError(
+                    f"{module.name} tells the model to call {named}() to "
+                    f"establish a clean start, but the inventory sanctions "
+                    f"{sorted(sanctioned) or 'nothing'}. Following the context "
+                    f"module fails the gate; following the gate contradicts "
+                    f"the context module."
+                )
