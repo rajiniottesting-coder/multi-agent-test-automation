@@ -241,10 +241,15 @@ class TestRepairExhaustsRetries:
         counter = {"n": 0}
 
         def _reworded(*_a, **_k):
+            # The error must name a file that IS in the batch, or the loop
+            # logs "cannot repair" and regenerates nothing - which is how the
+            # first version of this test passed with a call count of ZERO,
+            # asserting an upper bound that a mock never called satisfies
+            # trivially.
             counter["n"] += 1
-            return [f"Persistent state error in 'features/x.feature': the "
-                    f"step `wording variant {counter['n']}` claims an EXACT "
-                    f"state"]
+            return [f"Persistent state error in "
+                    f"'tests/step_defs/test_logout.py' line 3: wording "
+                    f"variant {counter['n']} asserts an ABSOLUTE state"]
 
         with patch("agents.agent2_coder._collect_repairable_errors",
                    side_effect=_reworded), \
@@ -255,9 +260,22 @@ class TestRepairExhaustsRetries:
                 files, llm, plan, [], {}, "{}", ctx, max_retries=4
             )
 
-        assert mock_gen.call_count <= 2, (
+        # Three, not four. The abort needs TWO consecutive plateaus, because
+        # one is not evidence: the first pass often reshapes a problem rather
+        # than shrinking it, and where one defect is reported against two
+        # files the count cannot fall below two while it exists. A run
+        # abandoned at attempt 1 on exactly that and left three attempts
+        # unspent.
+        #
+        # Still bounded, which is the point: a reworded error buys one more
+        # attempt, not the whole budget.
+        assert mock_gen.call_count <= 3, (
             f"the loop regenerated {mock_gen.call_count} times on a plateau - "
-            f"a reworded error is not progress and must not buy another attempt"
+            f"a reworded error must not buy the full retry budget"
+        )
+        assert mock_gen.call_count >= 2, (
+            f"the loop gave up after {mock_gen.call_count} - one plateau is a "
+            f"starting point, not a pattern"
         )
 
     def test_changing_errors_still_use_every_retry(self, ctx, plan):

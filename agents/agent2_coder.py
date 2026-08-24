@@ -2187,7 +2187,7 @@ def _not_converging_hint(persisting: list) -> str:
     if not persisting:
         return ""
     return (
-        f" {', '.join(persisting)} survived every attempt. A rule that "
+        f" {', '.join(persisting)} survived both. A rule that "
         f"outlives repeated rewording is one the code cannot satisfy: usually "
         f"the test case asks for something this application cannot show - an "
         f"exact count on state the app keeps between runs, or a flow the "
@@ -2349,15 +2349,28 @@ def _attempt_step_coverage_repair(
         # at the same count means the model moved the problem forward, which
         # is what a repair loop is for.
         persisting = _rules_persisting(previous_errors, current)
-        if (previous_count is not None
+        # ...and not on the FIRST attempt.
+        #
+        # One attempt is not evidence of thrash. The first pass often reshapes
+        # a problem rather than shrinking it - and where a single defect is
+        # reported against two files, as the persistent-state rule does when
+        # the feature is in the batch, the count CANNOT fall below two while
+        # the defect exists. A run aborted at attempt 1 on exactly that,
+        # announcing that a rule had "survived every attempt" when it had seen
+        # one, and spent none of the three attempts it had left.
+        #
+        # Two consecutive plateaus is a pattern. One is a starting point.
+        if (attempt >= 3
+                and previous_count is not None
                 and len(current) >= previous_count
                 and persisting):
             logger.warning(
-                "Repair attempt %d did not reduce the error count (%d -> %d). "
+                "Repair attempts %d and %d did not reduce the error count "
+                "(%d -> %d). "
                 "The model is not converging: further attempts buy tokens, "
                 "not fixes.%s Abandoning repair; the final validation gate "
                 "will report what remains.",
-                attempt - 1, previous_count, len(current),
+                attempt - 2, attempt - 1, previous_count, len(current),
                 _not_converging_hint(persisting),
             )
             return generated_files
