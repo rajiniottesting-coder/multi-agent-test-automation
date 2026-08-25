@@ -75,7 +75,7 @@ from validators.method_resolution_validator import (
     validate_persistent_state_assertions,
     validate_page_method_names_are_specific,
 )
-from core.llm_client import LLMClient, OutputTruncatedError
+from core.llm_client import QuotaExhaustedError, LLMClient, OutputTruncatedError
 from core.schemas import CodePlan, GeneratedFile, CodeGenerationOutput
 from validators.gherkin_analyzer import (
     validate_step_coverage,
@@ -2485,6 +2485,22 @@ def _attempt_step_coverage_repair(
                 # attempt would truncate at the identical cap, so swallowing
                 # this would burn the remaining retries and then report a
                 # validator error that never mentions the real cause.
+                raise
+            except QuotaExhaustedError:
+                # The repair never RAN. Letting this fall through to the broad
+                # handler leaves the errors unchanged, and the no-progress
+                # guard then reports "the model is not converging" - blaming
+                # the model for a call that was refused before it reached one.
+                # A real run was abandoned after a single attempt that way, and
+                # the log said the story could not be automated when nothing
+                # about it had been tried.
+                logger.error(
+                    f"  Repair for '{step_def_path}' could not run: the LLM "
+                    f"quota or rate limit is exhausted. This is an "
+                    f"INFRASTRUCTURE failure, not a validator one - the "
+                    f"generated code has not been judged. Re-run the story "
+                    f"once the limit resets; nothing about it needs changing."
+                )
                 raise
             except Exception as e:
                 logger.error(

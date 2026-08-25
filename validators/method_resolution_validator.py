@@ -1501,7 +1501,13 @@ def find_redundant_methods(source: str, page_noun: str = "") -> list[tuple[str, 
     except (SyntaxError, ValueError):
         return []
 
-    noun = {page_noun.lower().rstrip("s"), page_noun.lower()} if page_noun else set()
+    # Strip the page's own noun in its EXACT form only. Stripping the singular
+    # as well removed the very word that distinguishes a CONTAINER from an
+    # ITEM: on a plural-named page, `open_<plural>_page` opens the listing and
+    # `open_<singular>` opens one record, and both collapsed to {open}. The
+    # plural is a redundant restatement of the class name; the singular names
+    # the thing being acted on, and is meaning-bearing.
+    noun = {page_noun.lower()} if page_noun else set()
     pairs: list[tuple[str, str]] = []
 
     for node in _ast.walk(tree):
