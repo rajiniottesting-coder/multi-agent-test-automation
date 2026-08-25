@@ -551,6 +551,49 @@ def _build_class_source_map(
     return sources
 
 
+def _page_file_for_class(class_name: str) -> str:
+    """`NavPage` -> `pages/nav_page.py`. The project's fixed convention."""
+    snake = re.sub(r"(?<!^)(?=[A-Z])", "_", class_name).lower()
+    return f"pages/{snake}.py"
+
+
+def _reserved_page_files() -> set:
+    """Page-object files Agent 2 is forbidden to modify.
+
+    Read once, defensively: a validator must not fail because config is
+    unreadable in a unit test.
+    """
+    try:
+        from core.app_context import AppContext
+        return {p.replace("\\", "/")
+                for p in AppContext.load().reserved_paths_normalized()}
+    except Exception:                                          # noqa: BLE001
+        return set()
+
+
+# Polarity pairs. A missing method that is an existing one with the polarity
+# flipped is a MISSING CAPABILITY, not a misspelling - and suggesting the
+# existing one sends a model to the method that asserts the contrary state.
+_POLARITY = [
+    ("_in", "_out"), ("_on", "_off"), ("logged_in", "logged_out"),
+    ("enabled", "disabled"), ("shown", "hidden"), ("visible", "hidden"),
+    ("present", "absent"), ("empty", "filled"), ("open", "closed"),
+    ("valid", "invalid"), ("success", "failure"),
+]
+
+
+def _opposite_of(missing: str, known) -> str | None:
+    """An existing method that is `missing` with its polarity flipped."""
+    known = set(known or ())
+    for a, b in _POLARITY:
+        for x, y in ((a, b), (b, a)):
+            if missing.endswith(x) or f"{x}_" in missing or missing.endswith(x + "()"):
+                candidate = missing.replace(x, y)
+                if candidate != missing and candidate in known:
+                    return candidate
+    return None
+
+
 def validate_method_resolution(
     generated_files: list, project_root: Path
 ) -> list[str]:
@@ -631,12 +674,51 @@ def validate_method_resolution(
                 # Build a helpful error with suggestions
                 similar = _find_similar_methods(method_name, available_methods)
                 methods_list = ", ".join(sorted(available_methods))
+                # A missing name that is the OPPOSITE of an existing one is a
+                # different problem from a typo, and the "did you mean"
+                # suggestion actively misleads: it offers the method that
+                # asserts the contrary state. A model told "you meant
+                # wait_until_logged_in" cannot use it to prove a logout, so it
+                # invents another name, and the repair loop oscillates between
+                # two spellings of a capability the page object simply does
+                # not have. That happened for three attempts before the
+                # no-progress guard stopped it.
+                counterpart = _opposite_of(method_name, available_methods)
+
                 err = (
                     f"Method resolution error in '{path}': "
                     f"line {line_no} calls `{var_name}.{method_name}()`, "
                     f"but `{class_name}` does not define `{method_name}`. "
                 )
-                if similar:
+                # A method missing from a RESERVED page object is not
+                # something the repair loop can ever fix: Agent 2 is forbidden
+                # to edit that file, so no rewording of the CALL can help, and
+                # four attempts are spent discovering that. Say it once, in the
+                # first error, so a human reads the real instruction instead of
+                # a convergence warning.
+                owner = _page_file_for_class(class_name)
+                if owner in _reserved_page_files():
+                    err += (
+                        f"`{owner}` is a RESERVED file - Agent 2 must not "
+                        f"modify it, so this cannot be fixed by regenerating: "
+                        f"no name for the call exists, because the capability "
+                        f"is not there. A human has to add `{method_name}` to "
+                        f"`{class_name}`, or the story has to be written "
+                        f"against a capability the page already has. Do not "
+                        f"keep renaming the call. "
+                    )
+                elif counterpart:
+                    err += (
+                        f"`{class_name}` defines `{counterpart}`, which is the "
+                        f"OPPOSITE state - do not substitute it, it asserts the "
+                        f"contrary of what this step needs. The page object has "
+                        f"no method for this state at all. Add one (the waiting "
+                        f"form of whatever positively PROVES the state, not the "
+                        f"absence of its opposite), or if the state cannot be "
+                        f"observed on this page, say so on the Jira issue "
+                        f"rather than renaming the call. "
+                    )
+                elif similar:
                     err += f"Did you mean one of: {', '.join(similar)}? "
                 err += f"Available methods on `{class_name}`: [{methods_list}]."
                 errors.append(err)

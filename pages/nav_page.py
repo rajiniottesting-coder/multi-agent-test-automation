@@ -78,6 +78,23 @@ class NavPage(BasePage):
         """
         return self.is_showing(self.sel("logout_link"), timeout_ms=timeout_ms)
 
+    def wait_until_logged_out(self, timeout_ms: Optional[int] = None) -> bool:
+        """True once no session is active, WAITING for it.
+
+        The waiting counterpart to is_signup_login_shown(), and the missing
+        half of an otherwise symmetric pair: is_logged_in() had
+        wait_until_logged_in(), and the negative side had no waiting form at
+        all. A scenario that clicks Logout and then asserts the result needs
+        one, because the page is still transitioning when the assertion runs.
+
+        Waits for the Signup / Login link rather than for the Logout link to
+        vanish, for the reason is_signup_login_shown() gives: an absence is
+        satisfied by an error page or a half-loaded one just as well as by a
+        genuine sign-out.
+        """
+        return self.is_showing(self.sel("signup_login_link"),
+                               timeout_ms=timeout_ms)
+
     def logged_in_name(self) -> str:
         """The text of the 'Logged in as <name>' banner. WAITS for it."""
         self.wait_visible(self.sel("logged_in_as"))
