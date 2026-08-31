@@ -563,6 +563,227 @@ _INDEX_SUFFIX = _re.compile(r"(_alt|_\d+)$")
 _NTH_SUFFIX = _re.compile(r"\s*>>\s*nth=\d+\s*$")
 
 
+
+# Selectors that differ ONLY in an integer are one repeated widget.
+_DIGITS = _re.compile(r"\d+")
+_NTH_OF_TYPE = _re.compile(r":nth-of-type\(\d+\)")
+
+
+def _structural_signature(selector: str) -> str:
+    """A selector with every integer blanked. Siblings of one widget share it."""
+    return _DIGITS.sub("#", selector)
+
+
+def _family_handle(selectors: list) -> str:
+    """A selector matching EVERY member, widened ONLY where they differ.
+
+    Stripping every `:nth-of-type(N)` was far too blunt: a ten-deep path
+    became `#app > div > div > ... > div`, which matches most of the page
+    rather than the seven rows it came from. Every ancestor the members SHARE
+    must stay pinned - they are what makes the handle mean "these rows" and
+    not "any div".
+
+    Only the segment that actually varies is widened, so
+    `... > div:nth-of-type(3) > div:nth-of-type(6) > span` and
+    `... > div:nth-of-type(3) > div:nth-of-type(7) > span` yield
+    `... > div:nth-of-type(3) > div > span`.
+    """
+    if not selectors:
+        return ""
+    parts = [[seg.strip() for seg in sel.split(">")] for sel in selectors]
+    if len({len(p) for p in parts}) != 1:
+        return ""                       # different depths: not one widget
+    out = []
+    for segs in zip(*parts):
+        if len(set(segs)) == 1:
+            out.append(segs[0])         # shared - keep it pinned
+        else:
+            widened = _NTH_OF_TYPE.sub("", segs[0]).strip()
+            if not widened:
+                return ""               # nothing left to match on
+            out.append(widened)
+    return " > ".join(out)
+
+
+def _common_suffix_name(names: list) -> str:
+    """The trailing words every member shares.
+
+    Members named after DATA - `0455_first_person_row`, `0387_second_person_row` -
+    have nothing in common at the front and the meaningful noun at the back.
+    """
+    parts = [n.split("_") for n in names]
+    tail = []
+    for i in range(1, min(len(p) for p in parts) + 1):
+        token = parts[0][-i]
+        if all(p[-i] == token for p in parts):
+            tail.insert(0, token)
+        else:
+            break
+    return "_".join(tail)
+
+
+
+# A name that is only the element's TAG, or a framework-generated id, carries
+# no purpose. Numeric and index suffixes are stripped before the comparison so
+# `element_alt`, `input_2` and `button_button` are judged as `element`,
+# `input`, `button`.
+_MEANINGLESS_NAMES = frozenset({
+    "element", "elements", "input", "inputs", "button", "buttons", "link",
+    "links", "div", "span", "checkbox", "checkboxs", "checkboxes", "select",
+    "selects", "svg", "svgg", "path", "paths", "icon", "icons", "image",
+    "images", "label", "labels", "text", "item", "items", "row", "rows",
+    "cell", "cells", "container", "wrapper", "app",
+})
+_GENERATED_NAME = _re.compile(
+    r"^(path|svgg?|g|rect|circle|use|clip)[-_]?\d*(_element)?s?$", _re.I)
+
+
+def _is_meaningless_name(name: str) -> bool:
+    """True when the key tells a reader nothing about the element's purpose.
+
+    `element_alt`, `button_button`, `path4_elements` all resolve perfectly
+    well. That is the trap: they pass every check, cost prompt tokens on every
+    generated file, and give a generator no way to know what they are for - so
+    it either ignores them or uses one wrongly. `5_button` was the same shape,
+    and it was a page number.
+
+    A name earns its place by saying what the thing IS. Nothing here does.
+    """
+    stem = _re.sub(r"(_alt|_\d+)$", "", (name or "").strip().lower())
+    stem = _re.sub(r"^(\d+)_", "", stem)
+    if not stem:
+        return True
+    if stem in _MEANINGLESS_NAMES or _GENERATED_NAME.match(stem):
+        return True
+    # `button_button`, `checkbox_checkbox`: the tag repeated, still no purpose.
+    parts = stem.split("_")
+    return len(set(parts)) == 1 and parts[0] in _MEANINGLESS_NAMES
+
+
+def split_unnameable(elements: dict, keep: set = frozenset()) -> tuple:
+    """Move elements whose KEY carries no purpose into a review block.
+
+    Flag, do not invent and do not silently drop - the same contract as
+    `_selectors_to_improve`. The selector is preserved verbatim, so anything a
+    test actually needs can be named and moved back in one edit.
+
+    `keep` protects names the page depends on elsewhere - a declared family, a
+    readiness anchor - which must never be moved out from under a reference.
+    """
+    named, unnameable = {}, {}
+    for name, entry in (elements or {}).items():
+        if name in keep or not _is_meaningless_name(name):
+            named[name] = entry
+        else:
+            unnameable[name] = entry
+    return named, unnameable
+
+
+def collapse_structural_siblings(elements: dict, min_family: int = _MIN_COLLAPSE
+                                 ) -> tuple:
+    """Collapse N siblings of one repeated widget into a single family key.
+
+    `collapse_indexed_families` groups by NAME STEM - `row`, `row_2`, `row_3`.
+    That catches a widget whose members the ranker could not tell apart, and
+    misses the commoner case entirely: when each member HAS distinguishing
+    text, every one gets its own name. A table of 50 employees produced 50
+    keys called `0455_first_person_row`, `0387_second_person_row` and so on - fifty
+    different stems, so the name-based collapse never saw a family at all.
+
+    Those keys are worse than useless. Each is named after a record that will
+    be edited or deleted by someone else, so it goes stale on its own; and
+    fifty of them cannot answer "how many rows are there", which one family
+    key answers with get_count(). On a shared demo the record count changed
+    twice in the few minutes it took to look at one page.
+
+    The signal is REPETITION, not uniqueness. Selectors that are identical
+    except for one integer are siblings of one widget, whatever their members
+    are called - and blanking the positional part of any member's path yields
+    a handle that matches them all.
+
+    Returns (elements, families, collapsed_report, needs_handle).
+    """
+    by_sig: dict = {}
+    for name, entry in elements.items():
+        sel = entry.get("selector") or ""
+        if not sel or not _DIGITS.search(sel):
+            continue
+        by_sig.setdefault(_structural_signature(sel), []).append(name)
+
+    out = dict(elements)
+    families: list = []
+    report: dict = {}
+    unhandled: dict = {}
+
+    for sig, members in by_sig.items():
+        if len(members) < min_family:
+            continue
+        members = sorted(members)
+        base = _common_suffix_name(members)
+        if not base:
+            # Nothing in the names agrees. Collapsing would produce a key
+            # nobody can read, and a bad name is worse than several honest
+            # ones - leave them and let a human look.
+            continue
+
+        first = elements[members[0]]
+        member_sel = first.get("selector") or ""
+        handle = _family_handle([elements[m].get("selector") or ""
+                                 for m in members])
+        if not handle or handle == member_sel:
+            # Widening changed nothing, so there is no selector that matches
+            # the family - only the first member's. `role=button[name='1']`
+            # is the shape: the integer IS the accessible name, and no amount
+            # of blanking makes it match name='2'.
+            #
+            # Emitting it anyway would be the worst outcome available: a key
+            # called `buttons` that silently resolves to ONE element, passing
+            # every check while meaning something false. Report it and leave
+            # the members alone - a human can supply the real handle, usually
+            # a shared class the ranker never looked at.
+            unhandled[base or "family"] = {
+                "count": len(members),
+                "members": members[:3] + ([f"...{len(members) - 3} more"]
+                                          if len(members) > 3 else []),
+                "reason": (
+                    "These are one repeated widget - their selectors differ "
+                    "only by an integer - but no selector matches them all: "
+                    "the varying part is the element's NAME, not its "
+                    "position. Find the class or attribute the members share "
+                    "(devtools: inspect two of them and compare), add it as "
+                    "ONE key declared multi_match, and delete these. Check it "
+                    "first with: verify_locators --selector \"<handle>\" "
+                    "--url <this page>"),
+            }
+            continue
+
+        key = base if base.endswith("s") else base + "s"
+        while key in out and key not in members:
+            key = "_" + key
+
+        for m in members:
+            out.pop(m, None)
+        out[key] = {"selector": handle, "strategy": "structural-family",
+                    "framed": first.get("framed", False),
+                    "reveals": first.get("reveals")}
+        families.append(key)
+        report[key] = {
+            "count": len(members),
+            "handle": handle,
+            "was": members[:3] + ([f"...{len(members) - 3} more"]
+                                  if len(members) > 3 else []),
+            "note": (
+                "One repeated widget, not several elements: these selectors "
+                "differed only by position. The members were named after the "
+                "DATA they happened to contain, so each would go stale on its "
+                "own as records change. Read the set with get_count() or "
+                "get_all_texts(); reach ONE member by the text it contains "
+                "with click_in_row(), never by index. If this collapse is "
+                "wrong, the members are listed above."),
+        }
+    return out, families, report, unhandled
+
+
 def collapse_indexed_families(elements: dict[str, dict],
                               min_family: int = _MIN_COLLAPSE
                               ) -> tuple[dict[str, dict], list[str], list[str]]:
@@ -826,6 +1047,15 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
     # row_link, row_link_2 ... which no test can use and which cost
     # prompt tokens on every generated file.
     elements, _measured_families, _needs_handle = collapse_indexed_families(elements)
+
+    # Then the members the NAME-based collapse cannot see. It groups by stem,
+    # so it only catches a widget whose members the ranker could not tell
+    # apart; when each member has distinguishing text they get distinct names
+    # and distinct stems, and fifty table rows arrive as fifty unrelated keys.
+    elements, _struct_families, _collapsed, _unhandled = \
+        collapse_structural_siblings(elements)
+    _measured_families = list(_measured_families) + _struct_families
+
     # NOTE: built AFTER disambiguation below so the nth= suffixes are included.
 
     strategies = {n: e.get("strategy", "css") for n, e in elements.items()}
@@ -949,6 +1179,25 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
                          "the plural helpers; to act on ONE member use click_in_row(). Never click, fill or assert on "
                          "one directly. Collapsed from per-instance keys at crawl "
                          "time.")
+    if _collapsed:
+        entry["_collapsed_families"] = {
+            "_why": (
+                "Each of these was several keys named after the DATA a "
+                "repeated widget happened to contain. They are listed so you "
+                "can check the collapse was right - if it was not, restore "
+                "them from this block."),
+            **_collapsed,
+        }
+    if _unhandled:
+        entry["_repeated_widgets_needing_a_handle"] = {
+            "_why": (
+                "One repeated widget each, with NO selector that matches all "
+                "its members. Nothing was collapsed and nothing was deleted: "
+                "inventing a handle here would produce a key that silently "
+                "matches one element. Supply the shared class or attribute, "
+                "declare it multi_match, then delete the members."),
+            **_unhandled,
+        }
     if _needs_handle:
         entry["_families_without_a_shared_handle"] = {
             "elements": sorted(_needs_handle),
@@ -991,6 +1240,37 @@ def build_page_entry(url: str, title: str, descriptors: list[dict],
                         "fallback. Add a data-test attribute in the app, or replace "
                         "with a role/label/text locator, before relying on them."),
         }
+    # Set aside the keys that carry no PURPOSE - LAST, once every analysis
+    # block above has been built from the full set. Running it earlier hid
+    # these elements from the ambiguity and instability reports, which is
+    # exactly where an unnamed duplicate input most needs to be seen.
+    #
+    # They resolve, which is what makes them dangerous: `element_alt` and
+    # `path4_elements` pass every check, cost prompt tokens on every generated
+    # file, and give a generator no way to know what they are for. Declared
+    # families are protected - a collapsed key may be named `rows`, generic in
+    # isolation and exactly what the page needs.
+    _kept, _unnameable = split_unnameable(
+        entry["elements"], keep=set(entry.get("multi_match") or []))
+    entry["elements"] = _kept
+
+    if _unnameable:
+        entry["_unnameable_elements"] = {
+            "_why": (
+                "Nothing on these gave them a purpose - no test hook, id, "
+                "role, label or text - so the crawler could only name them "
+                "after their tag. They RESOLVE, which is what makes them a "
+                "trap: they pass every check, cost prompt tokens on every "
+                "generated file, and a key called `element_alt` gives a "
+                "generator no way to know what it is for. Name the ones a "
+                "test needs and move them back into `elements`; delete the "
+                "rest. Nothing has been lost - the selectors are below."),
+            # By this point an element's value is the selector STRING, not the
+            # {selector, strategy, ...} dict it was earlier in the pipeline.
+            **{k: (v.get("selector") if isinstance(v, dict) else v)
+               for k, v in _unnameable.items()},
+        }
+
     return entry
 
 

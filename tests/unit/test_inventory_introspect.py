@@ -141,6 +141,20 @@ def test_element_kind_from_role():
     assert element_kind("div", {"role": "slider"}) == "slider"
 
 
+
+def _all_elements(page: dict) -> dict:
+    """Every element the crawl found, wherever it ended up.
+
+    An element whose key carries no purpose - `element`, `input_2` - is set
+    aside into `_unnameable_elements` rather than deleted. Tests about what the
+    crawl CAPTURES must look at both, or they measure the curation split
+    instead of the capture.
+    """
+    aside = {k: v for k, v in (page.get("_unnameable_elements") or {}).items()
+             if k != "_why"}
+    return {**page["elements"], **aside}
+
+
 def test_build_captures_custom_widgets():
     descriptors = [
         {"tag": "div", "attrs": {"role": "combobox", "aria-label": "Country"}, "text": ""},
@@ -151,7 +165,10 @@ def test_build_captures_custom_widgets():
     ]
     page = build_page_entry("https://x.com/", "X", descriptors, "https://x.com")
     assert page["elements"]["country_dropdown"] == "role=combobox[name='Country']"
-    assert len(page["elements"]) == 4          # noise div skipped, 4 widgets kept
+    # The contenteditable span has no label, text or id, so it is named
+    # `element` and set aside for curation - captured, not lost.
+    assert len(_all_elements(page)) == 4       # noise div skipped, 4 widgets kept
+    assert "element" in (page.get("_unnameable_elements") or {})
     assert "_unstable_selectors" in page       # tabindex/contenteditable had weak hooks
 
 
@@ -554,7 +571,10 @@ def test_css_path_prevents_duplicate_selectors():
          "cssPath": "body > input:nth-of-type(2)"},
     ]
     page = build_page_entry("https://x.com/f", "F", descriptors, "https://x.com")
-    assert len(set(page["elements"].values())) == 2
+    # Both inputs are unnamed by construction - that is what forces the css
+    # path - so they are set aside for curation. The property under test is
+    # that they got DISTINCT selectors, which holds wherever they live.
+    assert len(set(_all_elements(page).values())) == 2
     assert "_ambiguous_selectors" not in page
 
 

@@ -130,8 +130,12 @@ from inventory_tools.browser import (
 # Playwright's own .highlight() is not visible in screenshots and vanishes on
 # navigation, so we draw our own that survives long enough to be read.
 _MARK_JS = """
-([x, y, w, h, label, colour]) => {
-  document.querySelectorAll('.__inv_mark').forEach(n => n.remove());
+([x, y, w, h, label, colour, clear]) => {
+  // Clearing is now the CALLER's decision, made once before a batch. Doing it
+  // here meant each box removed the one before it, so a 50-match family drew
+  // fifty boxes and left one - the picture said "unique" while the terminal
+  // said fifty.
+  if (clear) document.querySelectorAll('.__inv_mark').forEach(n => n.remove());
   const box = document.createElement('div');
   box.className = '__inv_mark';
   Object.assign(box.style, {
@@ -168,18 +172,49 @@ def _suggest_page(wanted: str, available) -> str:
     return close[0] if close else ""
 
 
+# Boxing more than this locks the browser for seconds and tells you nothing
+# the count did not. Enough to SEE a family - to notice it caught the header
+# row too, or stopped at the fold - without waiting for it.
+_MAX_HIGHLIGHTS = 25
+
+
 def _highlight(page, locator, label: str, colour: str) -> bool:
-    """Draw a labelled box over the first match. False if it is not on screen."""
+    """Box EVERY match, up to a cap. False if none could be drawn.
+
+    This drew only `locator.first`, which made a 50-match family and a
+    1-match input look identical on screen: one box either way, and the count
+    reported only in the terminal. Seeing all fifty is the point - it is how
+    you notice that a row family also caught the header, or that a "unique"
+    selector matches something further down the page you never scrolled to.
+
+    Each box is labelled with its index so the picture matches the number.
+    """
     try:
-        locator.first.scroll_into_view_if_needed(timeout=2000)
-        box = locator.first.bounding_box()
-        if not box:
-            return False
-        page.evaluate(_MARK_JS, [box["x"], box["y"], box["width"], box["height"],
-                                 label, colour])
-        return True
-    except Exception:
+        total = locator.count()
+    except Exception:                                      # noqa: BLE001
         return False
+    if total == 0:
+        return False
+
+    drawn = 0
+    for i in range(min(total, _MAX_HIGHLIGHTS)):
+        try:
+            nth = locator.nth(i)
+            if i == 0:
+                nth.scroll_into_view_if_needed(timeout=2000)
+            box = nth.bounding_box()
+            if not box:
+                continue                    # off-screen or display:none
+            tag = label if total == 1 else f"{label} {i + 1}/{total}"
+            page.evaluate(_MARK_JS, [box["x"], box["y"], box["width"],
+                                     box["height"], tag, colour, drawn == 0])
+            drawn += 1
+        except Exception:                                  # noqa: BLE001
+            continue
+
+    if total > _MAX_HIGHLIGHTS:
+        print(f"    (boxed the first {_MAX_HIGHLIGHTS} of {total})")
+    return drawn > 0
 
 
 def _wait_for_render(page, selectors: dict, timeout_ms: int = 15000) -> bool:
@@ -245,30 +280,8 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
         print(f"  [{page_name}] UNREACHABLE {url}: {type(e).__name__}")
         return 0, 0
 
-    # ── DID WE LAND WHERE WE ASKED? ────────────────────────────────────
-    # A page can redirect: /login sends an authenticated visitor to /. The
-    # render gate below does not catch that, because the site chrome DOES
-    # render at the destination - so every selector unique to the requested
-    # page is then measured against the WRONG page and reported STALE. That
-    # produced eleven false findings on every single run.
-    #
-    # Compare paths only: a query string or trailing slash is not a redirect.
-    def _path_of(u: str) -> str:
-        from urllib.parse import urlparse
-        return (urlparse(u).path or "/").rstrip("/") or "/"
-
-    if _path_of(page.url) != _path_of(url):
-        print(f"  [{page_name}] REDIRECTED {url}\n"
-              f"    landed on {page.url}\n"
-              f"    Nothing measured. Every selector unique to the requested\n"
-              f"    page would read STALE against the destination, which is a\n"
-              f"    false report, not drift. A page that only exists in the\n"
-              f"    OTHER auth state needs the opposite flag: use --no-login\n"
-              f"    for sign-in and sign-up pages, and a session for the rest.")
-        return 0, 0
-
     _pre = {n: s for n, s in (entry.get("elements") or {}).items()
-            if isinstance(s, str) and not n.startswith("_")}
+            if isinstance(s, str) and n != "_selector_strategies"}
     if _pre and not _wait_for_render(page, _pre):
         print(f"  [{page_name}] {url}\n"
               f"    PAGE DID NOT RENDER - not one of its {len(_pre)} selectors "
@@ -280,7 +293,7 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
         return 0, 0
 
     selectors = {n: s for n, s in (entry.get("elements") or {}).items()
-                 if isinstance(s, str) and not n.startswith("_")}
+                 if isinstance(s, str) and n != "_selector_strategies"}
     print(f"\n  [{page_name}] {url}  -  {len(selectors)} element(s)")
     ok = bad = 0
     declared_family = set(entry.get("multi_match") or [])
@@ -533,12 +546,36 @@ def main() -> int:
             except Exception as e:
                 print(f"  INVALID selector: {type(e).__name__}: {e}")
                 return 1
+            # Colour by COUNT, exactly as --page mode does. This block used to
+            # paint green whatever it found, on the reasoning that a single
+            # selector check is showing you what matched rather than judging
+            # it. In practice the colour is the first thing a reader takes in,
+            # so a 50-match family and a 1-match input looked identical - and
+            # green on a page where the same tool had just reported dozens of
+            # STALE entries read as a contradiction rather than an answer.
+            #
+            # The count still decides whether the result is right: 50 is
+            # correct for a row family and wrong for a search box. The colour
+            # only says which of the three cases you are in, and it now says
+            # the same thing in both modes.
+            if count == 0:
+                verdict, colour = "STALE - nothing matched", "#ef4444"
+            elif count == 1:
+                verdict, colour = "OK - exactly one", "#22c55e"
+            else:
+                verdict, colour = (
+                    f"{count} matches - a FAMILY if you meant one, AMBIGUOUS "
+                    f"if you did not. Playwright is strict by default, so a "
+                    f"single-element helper on this raises at run time; read "
+                    f"it with the plural helpers, or scope to one row.",
+                    "#f59e0b")
+
             print(f"\n  {args.selector}")
             print(f"    on {url}")
-            print(f"    matches: {count}")
+            print(f"    matches: {count}   {verdict}")
             if count >= 1:
                 print(f"    text   : {(loc.first.inner_text() or '').strip()[:70]!r}")
-                _highlight(page, loc, "selector", "#22c55e")
+                _highlight(page, loc, "selector", colour)
                 if not args.headless:
                     print("\n    highlighted - press Enter to close")
                     input()
