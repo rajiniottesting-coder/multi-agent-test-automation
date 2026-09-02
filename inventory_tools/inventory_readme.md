@@ -165,36 +165,42 @@ them, rather than discovering later that they were silently dropped.
 
 ## A curated page
 
+`<KEY-A>` and the rest are PLACEHOLDERS - substitute your application's own
+words. They are deliberately meaningless: an example that used plausible names
+would be indistinguishable from a real key, and a reader could not tell which
+parts of the shape are required and which were invented for illustration.
+
+
 ```json
 {
   "pages": {
-    "employee_list": {
-      "url": "/employees",
-      "components": ["HR"],
-      "readiness": "search_input",
-      "page_object_file": "pages/employee_list_page.py",
-      "page_object_class": "EmployeeListPage",
+    "<PAGE>": {
+      "url": "/<path>",
+      "components": ["<COMPONENT>"],
+      "readiness": "<KEY-A>",
+      "page_object_file": "pages/<name>_page.py",
+      "page_object_class": "<Name>Page",
       "elements": {
-        "search_input": "input[placeholder='Search']",
-        "employee_rows": ".oxd-table-card",
-        "employee_names": ".oxd-table-card .cell:nth-child(3)",
-        "delete_buttons": "role=button[name='Delete']",
-        "record_count": "text=Records Found",
-        "empty_message": "text=No Records Found"
+        "<KEY-A>": "input[placeholder='...']",
+        "<KEY-B>": ".<repeating-class>",
+        "<KEY-C>": ".<repeating-class> .<cell-class>:nth-child(3)",
+        "<KEY-D>": "role=button[name='...']",
+        "<KEY-E>": "text=...",
+        "<KEY-F>": "text=..."
       },
-      "multi_match": ["employee_rows", "employee_names", "delete_buttons"],
-      "conditional": ["empty_message"],
+      "multi_match": ["<KEY-B>", "<KEY-C>", "<KEY-D>"],
+      "conditional": ["<KEY-F>"],
       "elements_notes": {
-        "employee_rows": "One per row. Read with get_count() or
+        "<KEY-B>": "One per row. Read with get_count() or
           get_all_texts(); reach ONE with click_in_row(), never by index.",
-        "empty_message": "Rendered ONLY when the search matches nothing - the
-          mirror of employee_rows. Exactly one of the two is present.",
+        "<KEY-F>": "Rendered ONLY when the search matches nothing -
+          the mirror of <KEY-B>. Exactly one of the two is present.",
         "_starting_state": "This table is shared: other users add and delete
           records while a run is in progress. Assert relatively - that the
           record this test created is present - never an absolute count."
       },
       "errors": {
-        "required_field": "Required"
+        "<KEY-G>": "the exact text the app shows"
       }
     }
   }
@@ -289,7 +295,7 @@ The fastest loop when a selector is wrong — nothing is read from or written to
 the inventory:
 
 ```powershell
-python -m scripts.verify_locators --selector ".oxd-table-card" `
+python -m scripts.verify_locators --selector "<a class you found in devtools>" `
   --url /employees --login-url /login `
   --username-selector "input[name='username']" `
   --password-selector "input[name='password']" `
@@ -359,12 +365,12 @@ have `rows` plus a cell family, a page object reaches one member by what it
 SAYS, never by index:
 
 ```python
-def remove(self, name: str) -> None:
-    self.click_in_row(self.sel("employee_rows"), name,
-                      self.sel("delete_buttons"))
+def remove_by_name(self, name: str) -> None:
+    self.click_in_row(self.sel("<KEY-B>"), name,
+                      self.sel("<KEY-D>"))
 
 def count(self) -> int:
-    return self.get_count(self.sel("employee_rows"))
+    return self.get_count(self.sel("<KEY-B>"))
 ```
 
 Indexing across two families only works if they run in true lockstep, one
