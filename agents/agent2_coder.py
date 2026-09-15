@@ -63,6 +63,7 @@ from validators.method_resolution_validator import (
     validate_persistent_pages_can_be_cleared,
     validate_confirm_arrival_targets_this_page,
     validate_readers_return_what_they_name,
+    validate_annotated_returns_are_reachable,
     validate_row_scoped_selectors,
     validate_helper_return_types_are_respected,
     validate_row_index_is_not_a_cell_index,
@@ -2245,6 +2246,12 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     errors.extend(validate_persistent_pages_can_be_cleared(
         generated_files, PROJECT_ROOT))
     errors.extend(validate_readers_return_what_they_name(
+        generated_files, PROJECT_ROOT))
+    # A method annotated -> bool with no return is valid Python that returns
+    # None. Nothing else here checks whether an annotation is REACHABLE, and a
+    # predicate returning None fails an assertion exactly as a genuine absence
+    # would - so the reader goes looking at the application instead.
+    errors.extend(validate_annotated_returns_are_reachable(
         generated_files, PROJECT_ROOT))
     errors.extend(validate_confirm_arrival_targets_this_page(
         generated_files, PROJECT_ROOT))

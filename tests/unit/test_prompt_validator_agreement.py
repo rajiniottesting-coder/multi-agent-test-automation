@@ -741,10 +741,33 @@ def test_the_clearing_calls_the_inventory_mandates_pass_the_validators():
     rel = (config.get("app_under_test") or {}).get("inventory_file")
     inventory = json.loads((_PROJECT / rel).read_text(encoding="utf-8"))
     calls = ((inventory.get("_starting_state") or {}).get("establishing_calls") or [])
-    if not calls:
-        pytest.skip("this inventory mandates no clearing calls")
 
-    for name in calls:
+    # ALWAYS exercise the rule, on names of the shape the error message asks
+    # for, whether or not this application happens to mandate any.
+    #
+    # It used to skip when the inventory declared none - so on an app with no
+    # persistent state it proved nothing, and the regression it guards
+    # (`clear_the_basket()` read as promising "empty" and "cart", burning all
+    # four repair attempts) could return unnoticed. A guard that only runs for
+    # some inventories is not guarding the RULE, and the rule belongs to the
+    # framework.
+    #
+    # The real inventory's calls are checked too, where it has any, because
+    # those are the exact names this project will hand a model.
+    synthetic = ["clear_the_basket", "empty_the_saved_list", "remove_all_records"]
+    inventory = {
+        **inventory,
+        "pages": {
+            **(inventory.get("pages") or {}),
+            "_synthetic_persistent": {
+                "persistent_state": True,
+                "multi_match": ["stored_lines"],
+                "elements": {"stored_lines": ".line"},
+            },
+        },
+    }
+
+    for name in list(calls) + synthetic:
         promised = _promised_nouns(name)
 
         # Find a family on a persistent page whose key words do NOT cover the

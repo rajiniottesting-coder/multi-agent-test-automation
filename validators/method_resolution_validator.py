@@ -1608,6 +1608,75 @@ def validate_readiness_probe(generated_files: list, project_root=None,
     return errors
 
 
+
+def validate_annotated_returns_are_reachable(generated_files: list,
+                                             project_root=None) -> list:
+    """A method annotated to return a value must be able to return one.
+
+    `def has_item(self, name) -> bool:` with no `return` in its body is
+    valid Python: it returns None. Every static check passed it, and the
+    failure it produced said
+
+        AssertionError: Expected a row for '<a record>'
+        assert None
+
+    with the row plainly present in the video attached to the report. The
+    method was right about the page and wrong about itself, so the reader went
+    looking at the application and at leftover data - neither of which had
+    anything to do with it.
+
+    A predicate is the worst case, because None is falsey: the assertion fails
+    exactly as a genuine absence would, and nothing distinguishes the two. But
+    the rule is not about predicates. Any annotation other than None that no
+    path can satisfy is the same defect.
+    """
+    errors: list = []
+    for f in generated_files or []:
+        path = (getattr(f, "file_path", "") or "").replace("\\", "/")
+        if not _is_page_object_path(path):
+            continue
+        source = getattr(f, "content", "") or ""
+        if not isinstance(source, str) or not source.strip():
+            continue
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            continue
+
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            annotation = node.returns
+            if annotation is None:
+                continue
+            rendered = ast.unparse(annotation) if hasattr(ast, "unparse") else ""
+            if rendered.strip() in ("None", "NoReturn"):
+                continue
+
+            returns_a_value = any(
+                isinstance(n, ast.Return) and n.value is not None
+                for n in ast.walk(node))
+            # A generator satisfies its annotation by yielding.
+            if returns_a_value or any(isinstance(n, (ast.Yield, ast.YieldFrom))
+                                      for n in ast.walk(node)):
+                continue
+            # An abstract stub or a deliberate placeholder is not this.
+            body = [b for b in node.body
+                    if not (isinstance(b, ast.Expr)
+                            and isinstance(b.value, ast.Constant))]
+            if len(body) == 1 and isinstance(body[0], (ast.Pass, ast.Raise)):
+                continue
+
+            errors.append(
+                f"{_ERROR_PREFIX} in '{path}': {node.name}() is annotated "
+                f"`-> {rendered}` but no path returns a value, so it returns "
+                f"None. A predicate is the worst case - None is falsey, so the "
+                f"assertion fails exactly as a genuine absence would and "
+                f"nothing tells the two apart. Return the expression the "
+                f"method computes."
+            )
+    return errors
+
 def validate_no_duplicate_page_object_methods(
     generated_files: list, page_inventory: str = "") -> list[str]:
     """Fail when one page object gains two methods meaning the same thing.
