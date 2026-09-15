@@ -105,7 +105,7 @@ _ATTACHMENTS = (
 )
 
 
-def attach_failure_evidence(report, evidence_dir) -> int:
+def attach_failure_evidence(report, evidence_dir, files_only: bool = False) -> int:
     """Attach whatever the run captured for this failed test.
 
     Called from the makereport hook, where the framework already decides what
@@ -131,7 +131,10 @@ def attach_failure_evidence(report, evidence_dir) -> int:
         # First in the list as well as first in the code: an attachment list
         # is read top-down, and a screenshot above the explanation invites
         # scrolling past the answer.
-        for name, body in getattr(report, "sections", []):
+        # files_only is set on the SECOND call, at teardown. The reading was
+        # already attached from the call-phase report; attaching it again puts
+        # the same text on the test twice, which reads as a bug in the report.
+        for name, body in ([] if files_only else getattr(report, "sections", [])):
             if "why this failed" in str(name).lower():
                 allure.attach(str(body), name="Why this failed",
                               attachment_type=allure.attachment_type.TEXT)

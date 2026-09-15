@@ -316,3 +316,62 @@ def test_report_generation_runs_even_when_tests_failed():
         "the report is skipped when tests fail - which is the run somebody "
         "will actually want to look at"
     )
+
+# ─────────────────────────────────────────────────────────────────────────
+# Evidence is attached at TEARDOWN, not at the call-phase report
+#
+# The page fixture writes the screenshot, video and trace in its teardown,
+# which pytest runs AFTER the call-phase makereport. Attaching from there
+# globbed a directory that did not yet contain them, so a failed test arrived
+# in Allure with the "Why this failed" explanation and nothing to look at -
+# the one place a screenshot earns its keep.
+#
+# The files existed on disk the whole time. Nothing in the report pointed at
+# them, and their names are not ones a reader would guess.
+# ─────────────────────────────────────────────────────────────────────────
+
+def test_the_hook_attaches_evidence_on_the_teardown_report():
+    """Ordering is the whole fix, so assert on the ordering."""
+    from pathlib import Path
+    source = (Path(__file__).resolve().parents[2]
+              / "tests" / "conftest.py").read_text(encoding="utf-8")
+    assert 'report.when == "teardown"' in source, (
+        "evidence must be attached after the fixture teardown that WRITES it; "
+        "attaching at call time finds nothing on disk"
+    )
+    teardown_at = source.index('report.when == "teardown"')
+    assert "files_only=True" in source[teardown_at:teardown_at + 700], (
+        "the teardown pass must not re-attach the explanation - the same text "
+        "twice on one test reads as a bug in the report"
+    )
+
+
+def test_files_only_suppresses_the_reading_but_not_the_files(tmp_path):
+    from types import SimpleNamespace
+    from core.allure_steps import attach_failure_evidence
+
+    stem = "test_some_case"
+    for suffix in (".png", ".webm", ".trace.zip"):
+        (tmp_path / f"{stem}{suffix}").write_bytes(b"x")
+    report = SimpleNamespace(
+        nodeid=f"tests/step_defs/test_x.py::{stem}",
+        sections=[("Why this failed", "CAUSE: ...")])
+
+    both = attach_failure_evidence(report, tmp_path)
+    files = attach_failure_evidence(report, tmp_path, files_only=True)
+
+    assert both == files + 1, \
+        "files_only should drop exactly the one explanation attachment"
+    assert files == 3, "screenshot, video and trace"
+
+
+def test_a_test_with_no_evidence_still_gets_its_explanation(tmp_path):
+    """A failure that never opened a browser has no files. The reading is the
+    only attachment worth having there, and it must not be lost."""
+    from types import SimpleNamespace
+    from core.allure_steps import attach_failure_evidence
+
+    report = SimpleNamespace(
+        nodeid="tests/unit/test_x.py::test_no_browser",
+        sections=[("Why this failed", "CAUSE: ...")])
+    assert attach_failure_evidence(report, tmp_path / "does-not-exist") == 1

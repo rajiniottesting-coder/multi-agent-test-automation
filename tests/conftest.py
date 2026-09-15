@@ -332,6 +332,27 @@ def pytest_runtest_makereport(item, call):
             from core.allure_steps import attach_failure_evidence
             attach_failure_evidence(report, Path("reports/failure-evidence"))
         except Exception:                                 # noqa: BLE001
+            pass
+
+    # The FILES are attached at TEARDOWN, not here.
+    #
+    # The page fixture writes the screenshot, video and trace in its teardown,
+    # which pytest runs AFTER this hook has already produced the call-phase
+    # report. Attaching them above therefore globbed a directory that did not
+    # yet contain them: the "Why this failed" text arrived in Allure and the
+    # evidence never did, so a failed test showed an explanation with nothing
+    # to look at - the one place a screenshot is worth having.
+    #
+    # By the teardown report the files exist. Allure attaches to whichever
+    # test is current, so they land on the right test either way.
+    if report.when == "teardown" and getattr(item, "rep_call", None) is not None \
+            and item.rep_call.failed:
+        try:
+            from core.allure_steps import attach_failure_evidence
+            attach_failure_evidence(item.rep_call,
+                                    Path("reports/failure-evidence"),
+                                    files_only=True)
+        except Exception:                                 # noqa: BLE001
             # Diagnosis is a convenience. It must never be able to turn a
             # test failure into a collection error or mask the real result.
             pass
