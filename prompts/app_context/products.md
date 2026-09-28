@@ -25,6 +25,41 @@ add-to-cart control is a FAMILY of 68 and clicking it is rejected at generation
 time; on the product detail page it is unique. So a scenario that adds a
 NAMED product should open its detail page first.
 
+## The product detail page
+
+Reached by clicking a product's `View Product` link, as above. It shows the
+product's name, its price, and three labelled facts: `Availability:`,
+`Condition:` and `Brand:`.
+
+- **Price** is rendered as `Rs. 500`. Expect the NUMBER from the product table
+  in `core.md` - `Blue Top` is 500, `Men Tshirt` is 400 - not the formatted
+  string.
+- **Availability, Condition and Brand** are shown as labels. A scenario can
+  check that each label is present. Do not assert a particular VALUE for them:
+  nothing here records those values, and an invented one fails in the browser.
+- **Quantity** has its own input. Set it BEFORE clicking Add to cart - changing
+  it afterwards does not update the cart. "Add 3 of a product" means: set the
+  quantity to 3, then add.
+- **Add to cart** here is a single control for this product, and it opens the
+  same confirmation modal as the listing - see `cart.md`.
+
+### Writing a review
+
+Every product detail page has a review form: a name, an email address, review
+text and a submit button. A successful submission shows
+**"Thank you for your review."** in place - there is no navigation.
+
+All three fields are required. Submitting with any of them empty is blocked by
+the browser's own validation, so nothing app-authored appears and the thank-you
+message never renders. That makes "an incomplete review is not accepted" a
+legitimate negative case: assert that the thank-you message does NOT appear.
+Do not expect an error message from the application - there is none.
+
+The reviewer's name and email are test data, not credentials: write them
+literally, for example `Demo Reviewer` and `reviewer@example.com`. Nothing here
+records whether a submitted review is displayed on the page afterwards, so do
+not write a test case asserting that it is.
+
 ## Every product card is a FAMILY
 
 Each card renders its price, its name and its "Add to cart" control TWICE —

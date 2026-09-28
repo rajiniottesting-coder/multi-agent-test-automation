@@ -70,7 +70,8 @@
       },
       "elements_notes": {
         "subscribe_button": "Icon-only button - an arrow glyph, no text - so it has NO accessible name and role=button[name='Subscribe'] matches nothing (verified 1 Aug 2026). The id is the only handle it offers. This is the case where css is genuinely correct.",
-        "subscribe_success": "Rendered in place after subscribing - there is no navigation and no toast."
+        "subscribe_success": "Rendered in place after subscribing - there is no navigation and no toast.",
+        "_naming": "No page object exists for this page yet. The subscribe control has no visible label, so name the method for what it does - subscribe_to_newsletter(email) - not a bare subscribe(): the generation gate rejects a bare verb because it does not say what it acts on, and a first attempt that uses one costs a repair call."
       },
       "key_methods": []
     },

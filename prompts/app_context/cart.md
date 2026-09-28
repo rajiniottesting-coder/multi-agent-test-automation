@@ -31,6 +31,25 @@ An anonymous cart survives on the session; a logged-in cart belongs to the
 account. Adding a product while logged out and then logging in carries the cart
 over, which makes "add then log in" a legitimate scenario rather than a trap.
 
+## A logged-out cart starts empty in every test
+
+Every test runs in a fresh browser context (the `page` fixture in
+`tests/conftest.py`), and an anonymous cart lives on the session. So a scenario
+that never signs in starts with an empty cart on every run, with nothing to
+clean up - the one way in this application to own the cart's starting state
+without a clearing step.
+
+Use it whenever a scenario depends on a quantity. As a logged-out shopper, add
+3 of `Men Tshirt` and the cart shows `Men Tshirt` with quantity 3. Signed in as
+the shared `registered` account, the same scenario can find a quantity left
+behind by an earlier run.
+
+Even so, phrase cart outcomes RELATIVELY - "the cart contains `Men Tshirt` with
+quantity 3" - never "the cart contains only...", "exactly...", or "the cart is
+empty". The generation gate rejects absolute claims about the cart because the
+inventory marks it persistent, and it cannot tell a logged-out scenario from a
+logged-in one.
+
 ## Cart rows are a family
 
 Each row shows product name, price, quantity and total, plus a delete control.
