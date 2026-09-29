@@ -101,6 +101,29 @@ If a scenario genuinely needs an arbitrary product rather than a specific one,
 say so explicitly ("the first product in the list") and reach it by position,
 not by a guessed name.
 
+## Turning a business-level story into concrete test data
+
+Stories state outcomes, not data: "a shopper can add a product to the cart",
+not "add Blue Top". Every test case still needs specific values. When the story
+does not name them, use these:
+
+| The story says | Use |
+|---|---|
+| a product, any product | `Blue Top` |
+| two different products | `Blue Top` and `Men Tshirt` |
+| three different products | add `Sleeveless Dress` |
+| the product's price | its price from the table above - detail page only |
+| several, or more than one, of a product | quantity `3` |
+| a registered or returning shopper | the `registered` role - never a literal email or password |
+| a shopper who has not signed in | no login step at all |
+| an email address for a form (review, newsletter) | a literal address such as `demo.user@example.com` |
+| a search that finds something | a product name from the table |
+| a search that finds nothing | a made-up string such as `Zznonexistentproduct999` |
+
+Where a story mentions something this context records no value for - a
+product's availability, condition or brand - the test case checks that it is
+SHOWN, not what it says.
+
 ## Page flow (end to end)
 
     /  →  /login  →  register  →  /account_created  →  logged in
