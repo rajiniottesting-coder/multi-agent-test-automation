@@ -60,7 +60,7 @@ For more diagrams — component view, Agent 2 sequence, and the labels-as-state-
 - **Each agent stops at a checkpoint.** A human reviews before the next agent runs. See [the human-approval gate](#the-human-approval-gate).
 - **Idempotency via Jira labels.** `ai-processed` (Agent 1 done), `ai-coded` (Agent 2 done), `tests-run` (Agent 5 done). Re-running an agent against an already-processed story is a no-op.
 - **Config-driven, not code-driven.** App-specific knowledge (URL, reference files, page inventory) lives in `config.yaml` and `app_inventory/`. Agent code is app-agnostic.
-- **Defensive validators.** Between Agent 2's LLM output and the PR, nine static validators run — filename consistency, Gherkin structure, step-def coverage, duplicate steps, imports, method resolution, page-object selectors, unused steps and fixtures. Repairable failures feed a repair loop that regenerates only the broken files; the rest abort before a branch exists.
+- **Defensive validators.** Between Agent 2's LLM output and the PR, 27 static checks run: an ordered first pass of nine - filename consistency, Gherkin structure, step-def coverage, duplicate steps, imports, method resolution, page-object selectors, unused steps and fixtures - then the 22 validator calls in `_collect_repairable_errors()`. Repairable failures feed a repair loop that regenerates only the broken files; the rest abort before a branch exists.
 
 ---
 
@@ -82,7 +82,7 @@ For more diagrams — component view, Agent 2 sequence, and the labels-as-state-
 **Why this design:**
 - Pydantic validation makes malformed LLM JSON fail loudly, not silently.
 - Dry-run mode (`--dry-run`) lets you preview without writing to Jira — essential while iterating on prompts.
-- The `prompts/app_context/` modules (or a single `prompts/app_context.md`) are the ONE place app-specific guidance lives. Agent 1 injects `core.md` plus the module(s) matching the story's Jira Component(s); a story with no components gets all modules. The main prompt template is app-agnostic.
+- The `prompts/app_context/` modules (or a single `prompts/app_context.md`) are the ONE place app-specific guidance lives. Agent 1 injects `core.md` plus the module(s) matching the story's Jira Component(s). A story with no components, or with only components that match no module, gets ALL modules - a longer prompt, but nothing lost. The risky case is partial: `Products` plus a misspelled `Cartt` loads `products.md` and silently drops `cart.md`. Agent 1 never reads the inventory, so everything it needs to draft correct test cases must be in these modules. Stories are written business-level - outcomes, not data - and `core.md` carries the table mapping phrases like "a product" or "several" to real values; Agent 1's prompt forbids inventing any. The main prompt template is app-agnostic.
 
 ### Agent 2: Coder (`agents/agent2_coder.py`)
 
@@ -93,7 +93,7 @@ For more diagrams — component view, Agent 2 sequence, and the labels-as-state-
 2. Optional dedup check: if any test cases are already covered by existing scenarios, skip them. (`ai-regenerate` label bypasses this.)
 3. **Stage 1 (Plan):** Calls the LLM with a Pydantic schema (`CodePlan`) — gets file paths, types, branch name, PR title. NO code yet.
 4. **Stage 2 (Generate):** For EACH file in the plan, calls the LLM in text mode to generate the file's content.
-5. **Validators:** Nine static checks run before a branch is created — see **The validator gate** below. Repairable failures go through the repair loop; anything still failing aborts the run.
+5. **Validators:** 27 static checks run before a branch is created — see **The validator gate** below. Repairable failures go through the repair loop; anything still failing aborts the run.
 6. Creates a branch (`auto/<JIRA-KEY>-<feature-name>`), commits files, opens a PR.
 7. Tags the parent story with `ai-coded`.
 
@@ -118,7 +118,20 @@ Two extractions, both in `agent2_coder.py`:
 | Extraction | What it produces |
 |---|---|
 | `_build_base_page_helpers_block()` | Parses `pages/base_page.py`, finds the `BasePage` class, and emits one line per public method: `self.<name>(<args>) -> <return>  # <first docstring line>`. `self` is stripped from the signature and `_`-prefixed helpers are skipped. |
-| `_build_sibling_page_object_context()` | The same for page objects generated EARLIER IN THE SAME RUN. Without it the model would write `click_logout()` in the page object and call `click_logout_link()` from the step definition minutes later — an AttributeError that only surfaces at test time. |
+| `_build_sibling_page_object_context()` | The same for page objects generated EARLIER IN THE SAME RUN, plus those already committed - `_existing_page_objects_on_main()` reads the story's own branch first, then main. Without it the model would write `click_logout()` in the page object and call `click_logout_link()` from the step definition minutes later — an AttributeError that only surfaces at test time. |
+
+**Who receives what.** One template, three prompts - the same placeholders are
+filled differently per file type, and `_sort_files_for_generation()` orders the
+batch feature → page objects → step definitions so each extraction has
+something real to read:
+
+| File being generated | Receives |
+|---|---|
+| feature file | `_build_readable_values_block()` - what the inventory can actually show |
+| page object | `_build_base_page_helpers_block()` + `_build_promised_values_block()` + sibling signatures |
+| step definitions | `_build_sibling_page_object_context()` + `_build_authoritative_steps_block()` - real method signatures and the feature's exact step text |
+
+All of these are substituted ABOVE the cache marker, into the user message.
 
 Why AST and not a regex over `def `: a regex cannot tell a method from a
 function nested in another class, gets multi-line signatures wrong, has no idea
@@ -139,31 +152,74 @@ string matching can do reliably.
 
 Validation failures are not immediately fatal. `_attempt_step_coverage_repair()`
 collects every repairable error, groups them BY FILE, and re-generates only the
-broken files with the validator's own message as feedback — up to
-`max_retries` (4) attempts, one LLM call per broken file per attempt.
+broken files - up to `max_retries` (4) attempts, one LLM call per broken file
+per attempt. Each regeneration goes through `generate_file_content()` with the
+errors as feedback; inside it, `_summarize_validator_feedback()` turns them into
+targeted instructions.
 
-Two guards matter:
+Five guards matter:
 
-- **Errors are routed to the file they belong to.** An error naming no file is
-  dropped rather than sent to every file, which would waste attempts rewriting
-  correct code.
-- **No-progress abort.** If an attempt leaves the error set byte-identical, the
-  model is not converging and the loop stops, letting the final gate report it.
-  Without this, a run once spent all four attempts on one unchanged error.
+- **Errors are routed to the file they belong to.**
+  `_group_validator_errors_by_file()` reads the path each error names. An error
+  naming no file gets no targeted retry - it is not sent to every file, which
+  would waste attempts rewriting correct code - but the final gate still
+  reports it. If no error can be routed at all, repair is skipped.
+- **No-progress stop.** If an attempt leaves the set of errors exactly as it
+  was, the model is not converging and the loop stops, letting the final gate
+  report it. Without this, a run once spent all four attempts on one unchanged
+  error.
+- **Non-convergence stop.** From the third attempt, if the error count has not
+  fallen and the same RULES are still firing (`_rules_persisting()`), the loop
+  stops and `_not_converging_hint()` says why. It compares rule names, not
+  messages, because a stuck model rewords the step text while breaking the same
+  rule. A rule that survives rewording nearly always means the test case asks
+  for something the application cannot do.
+- **Degraded-output stop.** A regeneration that comes back malformed for its
+  own format, or dramatically smaller than before
+  (`_is_degraded_regeneration()`), aborts the loop instead of compounding it;
+  the final gate reports the prior attempt.
+- **Infrastructure errors are never retried.** `QuotaExhaustedError` and
+  `OutputTruncatedError` are re-raised, and `run()` does not catch them: the run
+  stops and says why, rather than reporting non-convergence or committing half
+  a file.
 
 **Prompt caching:**
 
-`prompts/agent2_coder_generate.md` carries a `CACHE BREAKPOINT` marker. Content
-ABOVE it is per-story and changes every run; content below is static — the
-rules, the reference files, the BasePage helper list. The static portion is
-cached by the provider, so a multi-file story pays for it once rather than per
-file. Adding a rule below the marker is free; adding one above it is not.
+`prompts/agent2_coder_generate.md` carries a `CACHE BREAKPOINT` marker.
+`generate_file_content()` splits the template there. Everything ABOVE it -
+every substituted block: the BasePage helper list, sibling page-object
+signatures, the reference files, the inventory, the test cases, repair
+feedback - becomes the user message and is paid in full on every call.
+Everything BELOW it is rule text with no substitutions: it is appended to the
+system role, sent with `cache_control: ephemeral`, and read from cache on later
+calls at roughly a tenth of the price. The split refuses to run if a
+placeholder has leaked below the marker, since a variable value there would
+change the prefix on every call and the cache would never hit. In a logged run,
+14,872 of 39,655 input tokens came from cache: 37.5%. Adding a rule below the
+marker is cheap after the first call; adding one above it is not.
+
+Only one call site caches: `generate_file_content()` passes `cache_prefix=True`
+(`agent2_coder.py:1827`). Structured calls - Agents 1, 3 and 5, and
+`build_plan()` - are not cached. `LLM_PROMPT_CACHE=0` switches caching off.
+
+**Retries - all explicit:**
+
+There is no automatic retry on an LLM call; `tenacity` is in
+`requirements.txt` but nothing imports it. The retries that exist are
+deliberate: a structured call gets ONE repair retry with the validation error
+fed back (recorded as `structured-repair:<Schema>`), then raises `ValueError`;
+the repair loop gets up to four attempts with the two aborts above; and a
+scheduled agent whose run failed is picked up again on the next tick, because
+its trigger label was never consumed.
 
 **The validator gate:**
 
-Nine static checks run on the generated batch before any branch exists. They
-are ordered cheapest first, so an expensive AST walk only runs if the basic
-checks pass.
+Twenty-seven checks run on the generated batch before any branch exists. The
+nine below are the ordered first pass, cheapest first, so an expensive AST walk
+only runs if the basic checks pass. `_collect_repairable_errors()` then runs 22
+further validator calls - the same set the repair loop uses. With the overlap
+removed, and `validate_page_object_methods()` counted as the three checks it
+wraps, that is 27 distinct checks.
 
 | # | Validator | Catches |
 |---|---|---|
@@ -308,6 +364,15 @@ For the full lifecycle view (sticky vs one-shot semantics, who removes what),
 see the "Label semantics table" in the State management deep-dive below.
 
 ---
+
+### Only a merge marks the story Done
+
+Every other board move is made by an agent that just did work. Done is
+different: it means a person read the code and accepted it, which no agent can
+know. `.github/workflows/story_done_on_merge.yml` fires on `pull_request:
+closed` and is gated on `merged == true` - a PR closed without merging moves
+nothing - then runs `scripts/close_merged_story.py`, which moves the story to
+Done. A card in Done therefore always means a human merged the work.
 
 ## Making a change: which route to take
 
@@ -959,9 +1024,10 @@ Exit codes: `0` clean · `1` drift · `2` login failed.
 
 ### 4 · Curate — the part no tool can do
 
-The crawler leaves `components`, `elements_notes` and `key_methods` empty. They
-are what stop Agent 2 clicking a 68-match family or inventing a method that does
-not exist. See the table below.
+The crawler leaves `components` and `elements_notes` empty. They are what stop
+Agent 2 clicking a 68-match family or reaching for the wrong element. It also
+stubs `key_methods`; leave that empty - no agent reads it any more. See the table
+below.
 
 Trim hard while you are here: a crawl of a content-heavy page can yield 190
 elements, of which a story needs perhaps ten. Every element you keep is prompt
@@ -990,7 +1056,7 @@ reads as expected rather than as a fault.
 | `always` | `true` for shared chrome (navigation) | **set** on the nav page |
 | `elements` | key → selector. The inventory itself | **trim to what tests need** |
 | `elements_notes` | per-key traps — crawler leaves it EMPTY | **write this.** Highest-value field in the file |
-| `key_methods` | methods the page object should expose — EMPTY | **write this**, so Agent 2 does not invent them |
+| `key_methods` | legacy field — no agent reads it. Agent 2 reads the real page objects by AST (`_build_sibling_page_object_context()`) instead, so a hand-written list could only drift from the code | **leave empty** |
 | `multi_match` | keys matching several elements | **verify** — measured at crawl time, confirm it is right |
 | `conditional` | elements that exist only after an interaction | **verify** |
 | `async_family` | a family the app fills asynchronously | **add** where index 0 may be a loading row |
@@ -1053,7 +1119,7 @@ entirely with `--no-login`.
 
 Cron agents (1, 2) self-heal — a failed tick retries next tick. Event-driven
 agents (3 review, 4/5 run+report) do not: if a `pull_request` run is cancelled or
-never starts, the PR stalls silently. `.github/workflows/sweeper.yml` runs hourly
+never starts, the PR stalls silently. `.github/workflows/sweeper.yml` runs every weekday hour, 04:35-13:35 UTC,
 (`scripts/sweep_stalled_prs.py`), finds open `auto/*` PRs whose Agent-3 or Agent-4
 workflow has no settled run (success/failure/timed_out) for the current commit,
 and reopens them to re-fire the event chain. It reuses Agent 2's `GH_PAT` (the
@@ -1429,7 +1495,7 @@ sequenceDiagram
 | `validate_no_reserved_paths` | Aborts if the plan targets a reserved file, so the model cannot overwrite your gold-standard reference |
 | **Stage 2 — Per-file** | One text-mode call per file. Each prompt carries the filtered inventory, the reference trio, the AST-extracted BasePage helpers, and any page object generated earlier in this same run |
 | `extract from markdown fences` | Strips the ```` ```python ```` wrapper the model adds even when told not to |
-| **Hard validators** | The nine checks above. Repairable failures go to the repair loop; the rest abort |
+| **Hard validators** | The 27 checks above - nine in the ordered first pass, then `_collect_repairable_errors()`. Repairable failures go to the repair loop; the rest abort |
 | `create branch / commit / open PR` | `auto/<KEY>-<feature>`, then `ai-coded` on the parent story |
 
 Why two stages: asking for structure AND large code bodies in one call

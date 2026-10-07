@@ -875,3 +875,58 @@ def test_the_prompt_teaches_every_probe_the_gate_will_reject():
                 f"prompt never names. Every run pays a repair call to be told "
                 f"something the brief could have carried."
             )
+
+# ─────────────────────────────────────────────────────────────────────────
+# The prompt's own EXAMPLES must obey the rules the gate enforces.
+#
+# The generation prompt carried two instructions telling the model to write
+# a selector literal into a page object - a rule-3 remedy ("add a locator
+# constant to the page object class") and the page-object checklist ("Define
+# selectors as class constants at the top"). Rule 15 in the same prompt, and
+# validate_page_object_selectors(), reject exactly that. Every page-object
+# call was therefore told to do something that would cost a repair attempt.
+#
+# Nothing caught it because the agreement tests compared validators with
+# the helpers the prompt RECOMMENDS, never with the code it SHOWS. A selector
+# held in a class constant may still appear as an example of what is
+# forbidden - so the rule is: the sentence showing it must say so.
+# ─────────────────────────────────────────────────────────────────────────
+_CONSTANT_SELECTOR = re.compile(
+    r"""`[A-Z][A-Z0-9_]+\s*=\s*["'](?:\[|\.|#|//|role=|text=|css=|xpath=)""")
+_FORBIDDING = re.compile(
+    r"FORBIDDEN|REJECTED|rejected|\bNEVER\b|\bnever\b|forbid|not allowed", re.I)
+_SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[A-Z(*`\-])")
+
+
+def _selector_constants_taught(text: str) -> list:
+    """Sentences that show a selector class constant WITHOUT forbidding it."""
+    found = []
+    for n, line in enumerate(text.splitlines(), 1):
+        for sentence in _SENTENCE.split(line):
+            if _CONSTANT_SELECTOR.search(sentence) and not _FORBIDDING.search(sentence):
+                found.append(f"line {n}: {sentence.strip()[:120]}")
+    return found
+
+
+def test_the_generation_prompt_never_teaches_a_selector_constant():
+    text = (_PROJECT / "prompts" / "agent2_coder_generate.md").read_text(encoding="utf-8")
+    taught = _selector_constants_taught(text)
+    assert not taught, (
+        "the prompt shows a selector held in a class constant without forbidding "
+        "it - the gate rejects that shape, so the model is being taught to fail:\n  "
+        + "\n  ".join(taught))
+
+
+def test_the_guard_catches_the_shapes_that_slipped_through():
+    """Both real defects, verbatim in shape - so a loosened regex fails here."""
+    taught = _selector_constants_taught(
+        "If a step needs a new element, you MUST: (a) add a locator constant to the "
+        "page object class (e.g., `ERROR_BUTTON = \"[data-test='error']\"`). "
+        "The step def file should never import selector constants.\n"
+        "- Define selectors as class constants at the top: `BUTTON_X = \"[data-test='x']\"`")
+    assert len(taught) == 2, taught
+
+
+def test_a_constant_shown_as_forbidden_is_allowed():
+    assert _selector_constants_taught(
+        "A class constant like `ROW_ICON = \".row .icon\"` in `pages/` is REJECTED.") == []

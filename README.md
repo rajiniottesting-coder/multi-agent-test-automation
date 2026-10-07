@@ -91,6 +91,18 @@ For a deeper breakdown — including agent inputs/outputs, design rationale, and
 
 ---
 
+## 🛡️ What keeps it honest
+
+- **A 27-check validator gate before any branch exists.** A failure becomes targeted feedback naming the file and the rule; only the broken files are regenerated, at most four attempts, and the loop stops early when an attempt changes nothing, when the same rules keep failing from the third attempt, or when a regeneration comes back worse.
+- **Real signatures, not guesses.** BasePage's helpers and every sibling page object's methods are read from the source by AST and handed to the next file's prompt, so a step definition calls methods that exist.
+- **Prompt caching.** The static rule text of the generation prompt is sent as a cacheable system prefix and read at roughly a tenth of the price on later calls. Everything substituted per file - helper signatures, the reference trio, the inventory, the test cases - goes in the user message and is paid in full.
+- **Typed LLM boundaries.** Every structured reply is validated against a Pydantic schema, retried once with the error fed back, and otherwise rejected.
+- **Stalled-PR sweeper.** Bot-opened PRs sometimes never trigger CI; a weekday-hourly job finds them and re-fires the whole chain.
+- **Failure evidence in the report.** A failed test carries a plain-English cause and fix, plus its screenshot, video and Playwright trace, attached in Allure (`attach_failure_evidence()`, on the teardown report once the files exist).
+- **Cost on the story.** Every agent posts its token and cost ledger to the Jira story; Agent 5 totals it across the whole run.
+- **Only a merge marks Done.** `story_done_on_merge.yml` moves the story to Done when a human merges the PR - no agent can claim that.
+- **Business-level stories.** Acceptance criteria state outcomes; Agent 1 takes concrete test data from `core.md`, and its prompt forbids inventing any.
+
 ## 🛠️ Tech Stack
 
 **Everything is free.** No paid services required.
@@ -156,7 +168,7 @@ multi-agent-test-automation/
 │   ├── agent2_coder_generate.md
 │   ├── agent3_reviewer.md
 │   ├── agent5_reporter.md
-│   └── app_context.md               # App-specific context block (NEW)
+│   └── app_context/                 # App knowledge for Agent 1: core.md + one module per Jira Component
 │
 ├── app_inventory/                   # JSON descriptions of each AUT (pages, selectors, page-level errors, components)
 │   └── automationexercise.json
@@ -174,7 +186,7 @@ multi-agent-test-automation/
 │   ├── agent2_coder.yml
 │   ├── agent3-reviewer.yml
 │   ├── agent4_runner.yml            # Agent 4 + Agent 5 (combined workflow)
-│   └── sweeper.yml                  # Hourly backstop that re-fires stalled PRs
+│   └── sweeper.yml                  # Weekday-hourly backstop that re-fires stalled PRs
 │
 ├── docs/                            # GUIDE + ADRs + schema reference
 ├── .env.example                     # Secret placeholders (committed)
@@ -273,7 +285,7 @@ The whole point of the recent refactor: **no Python code changes** are needed to
 
 1. Edit `config/config.yaml` — update the `app_under_test` block (name, base URL, reference files, reserved paths)
 2. Drop a new `app_inventory/<your-app>.json` describing pages and selectors ([schema reference](./docs/REUSE_FOR_NEW_PROJECT.md#app-inventory-json-schema)). Build it with the tooling rather than by hand — crawl, merge, measure, then curate. The [full sequence with commands](./docs/GUIDE.md#inventory-tooling--the-full-sequence) is in the guide. Curation is the step that cannot be automated: a crawler records what a page contains, never what it means.
-3. Replace `prompts/app_context.md` with your app's known users, error messages, page flow
+3. Write `prompts/app_context/`: `core.md` (known users by role, known data, page flow, and a table mapping business phrases like "a product" to real values) plus one `<component>.md` per Jira Component. Agent 1 reads only these modules - never the inventory - so anything it needs to draft correct test cases must be here
 4. Replace the reference files (`features/login.feature`, `tests/step_defs/test_login.py`, `pages/login_page.py`) with one well-written human-authored test for your app — the LLM uses these as its style baseline
 
 Once you're running, `python -m scripts.check_inventory_staleness --fail-on-drift` keeps your inventory honest as the app evolves, and the nightly `Inventory Health` workflow runs the same check unattended. All four inventory CLIs are fully app-agnostic — they read whichever app `config.yaml` points at.
@@ -287,7 +299,7 @@ the unit suite proves the inventory is structurally sound, but a compiler-style
 check cannot know that a class name still exists on a site someone else deploys.
 
 It reports and never auto-fixes: a regenerated draft carries none of the curated
-`elements_notes`, `multi_match` or `key_methods`, so a bot that regenerated and
+`elements_notes`, `multi_match` or `conditional` markers, so a bot that regenerated and
 committed would delete the knowledge that prevents these failures.
 
 There is no page list in the workflow — add a page to the inventory and it is
