@@ -233,17 +233,31 @@ def gather_ci_context(report: RunReport, cli_pr: int | None = None) -> RunReport
 # nullable fields — it will follow the template even when told
 # to omit. Determinism belongs in code.
 # ─────────────────────────────────────────────────────────────
-def build_final_comment(prose_body: str, report: RunReport) -> str:
+def build_final_comment(prose_body: str, report: RunReport,
+                        outside: list = ()) -> str:
     """Assemble the final Jira comment from LLM prose + deterministic links.
 
     Args:
         prose_body: The LLM-generated summary (just the verdict + failures, no links)
         report: The RunReport (which knows whether PR/commit/workflow links exist)
+        outside: failures in tests the story does not own (see
+            _failures_outside_scope). Listed by code, after the prose, with a
+            one-line warning above it, so a reader cannot miss them.
 
     Returns:
         Final markdown string ready to post to Jira.
     """
-    parts: list[str] = [prose_body.rstrip()]
+    parts: list[str] = []
+    if outside:
+        parts.append(f"> ⚠ **Not green:** {len(outside)} test"
+                     f"{'' if len(outside) == 1 else 's'} outside this story "
+                     f"fail{'s' if len(outside) == 1 else ''} on this branch - see below.")
+        parts.append("")
+    parts.append(prose_body.rstrip())
+    section = _outside_failures_section(outside)
+    if section:
+        parts.append("")
+        parts.extend(section)
 
     # Build the "Run details" section ONLY with fields that are actually set.
     # Each line is conditional — no field, no line.
@@ -272,6 +286,64 @@ def build_final_comment(prose_body: str, report: RunReport) -> str:
     parts.append("_Posted automatically by Agent 5 (Reporter)._")
 
     return "\n".join(parts)
+
+
+# How many outside failures the comment lists by name before summarising.
+_OUTSIDE_LISTED = 15
+
+
+def _failures_outside_scope(full: "RunReport", scoped: "RunReport") -> list:
+    """Failed or errored tests in the whole session that the story does not own.
+
+    Scoping keeps another story's failure out of THIS story's counts - a login
+    failure listed under an unrelated key is noise. But scoping alone made the
+    failure invisible: the PR check is red because the whole suite runs, and
+    the Jira comment, computed from the scoped report, said "passed". A story
+    that broke twenty committed tests reported itself green.
+
+    So the story's own counts stay scoped, and what was dropped is kept here
+    to be shown separately. When scoping did not happen, `scoped` IS `full`
+    and this is empty - nothing is reported twice.
+    """
+    mine = {(r.classname, r.name) for r in scoped.results}
+    return [r for r in full.results
+            if r.status in ("failed", "error") and (r.classname, r.name) not in mine]
+
+
+def _overall_verdict(scoped: "RunReport", outside: list) -> str:
+    """'passed' only when the story's tests AND everything else on the branch pass.
+
+    Must agree with the PR check, which runs the whole suite: a Jira comment
+    saying "passed" next to a red check is the contradiction this exists to end.
+    """
+    if scoped.failed or scoped.errors or outside:
+        return "failed"
+    return "passed"
+
+
+def _outside_failures_section(outside: list) -> list:
+    """Markdown lines naming the failures outside the story. Built by code, not
+    by the model, so it cannot be softened, summarised away or omitted."""
+    if not outside:
+        return []
+    n = len(outside)
+    lines = [
+        f"**⚠ {n} other test{'' if n == 1 else 's'} failing on this branch**",
+        "",
+        "Not this story's tests, but they fail with this pull request's code, and "
+        "the PR check is red because of them. Either this change broke them, or "
+        "they already fail on `main` - this run cannot tell which. Compare with "
+        "the latest run on `main` before merging.",
+        "",
+    ]
+    for r in outside[:_OUTSIDE_LISTED]:
+        module = r.classname.rsplit(".", 1)[-1]
+        reason = (r.failure_message or "").strip().splitlines()
+        lines.append(f"- `{module}::{r.name}` ({r.status})"
+                     + (f" - {reason[0][:160]}" if reason else ""))
+    if n > _OUTSIDE_LISTED:
+        lines.append(f"- ...and {n - _OUTSIDE_LISTED} more - see the HTML report.")
+    return lines
 
 
 def _classname_of(path: str) -> str:
@@ -436,7 +508,15 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
     # three-scenario story was reported to Jira as "3 of 8 tests failed", with
     # a login failure it had nothing to do with listed under its own key. The
     # PR tells us which step-def files the story actually added or changed.
-    report = _scope_to_story(report, cli_pr=cli_pr)
+    full_report = report
+    report = _scope_to_story(full_report, cli_pr=cli_pr)
+    outside = _failures_outside_scope(full_report, report)
+    if outside:
+        logger.warning(
+            "%d test(s) outside this story fail on this branch - reported "
+            "separately, and the verdict is 'failed': %s",
+            len(outside), ", ".join(f"{r.classname}::{r.name}" for r in outside[:10]))
+    verdict = _overall_verdict(report, outside)
 
     # 2. CONTEXT: enrich with CI info
     report = gather_ci_context(report, cli_pr=cli_pr)
@@ -463,7 +543,7 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
 
     # 3b. ASSEMBLE: Python builds the final comment from LLM prose + deterministic links.
     # This avoids the LLM rendering "View PR (None)" when fields are unavailable.
-    final_body = build_final_comment(draft.body_markdown, report)
+    final_body = build_final_comment(draft.body_markdown, report, outside)
 
     # 3c. USAGE LEDGER: log this agent's own token/cost summary, then read
     # all [LLM-USAGE] comments posted by earlier agents (1, 2, 3) and append
@@ -507,7 +587,8 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
         return {
             "story_key": story_key,
             "title": draft.title,
-            "verdict": "passed" if report.failed == 0 and report.errors == 0 else "failed",
+            "verdict": verdict,
+            "failing_outside_story": len(outside),
             "total": report.total,
             "passed": report.passed,
             "failed": report.failed,
@@ -524,7 +605,8 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
     result = {
         "story_key": story_key,
         "title": draft.title,
-        "verdict": "passed" if report.failed == 0 and report.errors == 0 else "failed",
+        "verdict": verdict,
+        "failing_outside_story": len(outside),
         "total": report.total,
         "passed": report.passed,
         "failed": report.failed,
@@ -589,6 +671,9 @@ def main():
         print(f"[OK] Agent 5 finished -- {result['story_key']}")
         print(f"   Title: {result['title']}")
         print(f"   Verdict: {result['verdict']} ({result['passed']}/{result['total']} passed)")
+        if result.get("failing_outside_story"):
+            print(f"            plus {result['failing_outside_story']} failing test(s) "
+                  f"outside this story - listed in the comment")
         print(f"   Status: {result['status']}")
         if result.get("comment_url"):
             print(f"   Comment: {result['comment_url']}")

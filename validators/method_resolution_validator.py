@@ -764,6 +764,7 @@ def validate_method_resolution(
                 )
 
     errors.extend(_methods_removed_by_regeneration(generated_files, project_root))
+    errors.extend(_signatures_broken_by_regeneration(generated_files, project_root))
 
     return errors
 
@@ -905,6 +906,157 @@ def _methods_removed_by_regeneration(generated_files: list,
                     f"one is only safe when nothing else calls it."
                 )
     return errors
+
+def _bindable_signatures(source: str) -> dict:
+    """{class: {method: binding facts}} for methods defined directly on each class.
+
+    Enough of each signature to answer the question Python asks at call time -
+    "can these arguments bind?" - which a bare count cannot: a renamed
+    parameter breaks every caller that passes it by keyword, and a new
+    keyword-only parameter without a default breaks every caller at all, while
+    the positional count stays exactly the same.
+    """
+    try:
+        tree = ast.parse(source or "")
+    except SyntaxError:
+        return {}
+    out: dict = {}
+    for cls in tree.body:
+        if not isinstance(cls, ast.ClassDef):
+            continue
+        methods: dict = {}
+        for item in cls.body:
+            if not isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            a = item.args
+            positional = [x.arg for x in (a.posonlyargs + a.args) if x.arg != "self"]
+            kwonly = [x.arg for x in a.kwonlyargs]
+            methods[item.name] = {
+                "positional": positional,
+                "posonly": {x.arg for x in a.posonlyargs},
+                "required": max(0, len(positional) - len(a.defaults)),
+                "kwonly": kwonly,
+                "kwonly_required": {n for n, d in zip(kwonly, a.kw_defaults) if d is None},
+                "varargs": a.vararg is not None,
+                "varkw": a.kwarg is not None,
+            }
+        out[cls.name] = methods
+    return out
+
+
+def _call_binds(sig: dict, n_positional: int, keywords: set) -> bool:
+    """Would Python bind this call to this signature without a TypeError?"""
+    positional = sig["positional"]
+    if n_positional > len(positional) and not sig["varargs"]:
+        return False
+    filled = set(positional[:n_positional])
+    by_keyword = set(positional[n_positional:]) - sig["posonly"]
+    for kw in keywords:
+        if kw in filled:
+            return False                            # got multiple values
+        if kw in by_keyword or kw in sig["kwonly"]:
+            filled.add(kw)
+        elif not sig["varkw"]:
+            return False                            # unexpected keyword
+    if any(p not in filled for p in positional[:sig["required"]]):
+        return False                                # missing positional
+    return sig["kwonly_required"] <= filled         # missing keyword-only
+
+
+def _render_signature(sig: dict) -> str:
+    parts = list(sig["positional"])
+    if sig["varargs"]:
+        parts.append("*args")
+    elif sig["kwonly"]:
+        parts.append("*")
+    parts += sig["kwonly"]
+    if sig["varkw"]:
+        parts.append("**kwargs")
+    return ", ".join(parts)
+
+
+def _signatures_broken_by_regeneration(generated_files: list,
+                                       project_root: Path) -> list:
+    """Committed calls a regenerated page object no longer accepts.
+
+    The sibling of _methods_removed_by_regeneration. That check asks whether a
+    method a committed step definition calls still EXISTS; this one asks
+    whether the call still FITS. A regeneration that keeps `search_for` but
+    makes it `search_for(self, term, category)` passes the existence check,
+    and the batch's own step definitions are written against the new
+    signature - but every test already on main still calls
+    `search_for(term)`, and raises TypeError at run time before the browser
+    is touched.
+
+    Reports only what THIS batch broke: a committed call that binds to the
+    method as it is on disk and does not bind to the regenerated one. A call
+    that was already broken is not this story's doing and is not reported,
+    so an old defect can never block an unrelated story. Errors name the page
+    object, so the repair loop regenerates the file that changed the contract.
+    """
+    errors: list = []
+    try:
+        step_def_dir = Path(project_root) / "tests" / "step_defs"
+        committed: dict = {}
+        if step_def_dir.is_dir():
+            for path in sorted(step_def_dir.glob("*.py")):
+                if path.name in ("__init__.py", "conftest.py"):
+                    continue
+                committed[f"tests/step_defs/{path.name}"] = path.read_text(
+                    encoding="utf-8")
+    except Exception:                                     # noqa: BLE001
+        return errors
+    batch_paths = {getattr(f, "file_path", "") for f in generated_files or []}
+
+    for gen in generated_files or []:
+        path = getattr(gen, "file_path", "") or ""
+        if not (path.startswith("pages/") and path.endswith(".py")):
+            continue
+        if path.endswith("base_page.py"):
+            continue
+        on_disk = Path(project_root) / path
+        if not on_disk.is_file():
+            continue                                      # a new page object
+        try:
+            before = _bindable_signatures(on_disk.read_text(encoding="utf-8"))
+        except OSError:
+            continue
+        after = _bindable_signatures(getattr(gen, "content", "") or "")
+
+        for class_name, old_methods in before.items():
+            new_methods = after.get(class_name, {})
+            fixture = _camel_to_snake(class_name)
+            for method, old_sig in sorted(old_methods.items()):
+                new_sig = new_methods.get(method)
+                if new_sig is None or new_sig == old_sig:
+                    continue      # removal has its own check; unchanged is fine
+                for step_path, source in committed.items():
+                    if step_path in batch_paths:
+                        continue          # regenerated too; it speaks for itself
+                    for (var, called, line), (n_pos, kws) in sorted(
+                            _call_arity(source, {fixture}).items()):
+                        if called != method:
+                            continue
+                        if not _call_binds(old_sig, n_pos, kws):
+                            continue      # already broken before this batch
+                        if _call_binds(new_sig, n_pos, kws):
+                            continue
+                        errors.append(
+                            f"Call signature error in '{path}': the regenerated "
+                            f"`{class_name}.{method}` changed its signature from "
+                            f"({_render_signature(old_sig)}) to "
+                            f"({_render_signature(new_sig)}), but {step_path} "
+                            f"line {line} still calls `{var}.{method}()` the old "
+                            f"way - a committed test outside this batch, which "
+                            f"would raise TypeError at run time before the "
+                            f"browser is touched. Keep the existing signature "
+                            f"working: give any new parameter a default, and do "
+                            f"not rename or reorder parameters other tests "
+                            f"already pass. If the story needs a different "
+                            f"call, add a new method instead of changing this one."
+                        )
+    return errors
+
 
 def _find_similar_methods(target: str, available: set[str]) -> list[str]:
     """Find method names similar to `target` from `available`.

@@ -228,7 +228,7 @@ wraps, that is 27 distinct checks.
 | 3 | `validate_step_definitions_complete` | A Gherkin step with no matching `@given/@when/@then` |
 | 4 | `validate_no_duplicate_step_definitions` | The same step phrase defined twice, which pytest-bdd resolves unpredictably |
 | 5 | `validate_imports_resolvable` | An import of a module or symbol that does not exist |
-| 6 | `validate_method_resolution` | A step def calling `page.method()` that the page object never defines |
+| 6 | `validate_method_resolution` | A step def calling `page.method()` that the page object never defines, or with arguments that do not fit its signature. Also protects tests already on `main`: a regenerated page object may not drop a method a committed step definition calls, nor change a signature so a committed call no longer binds - only breakage this batch caused is reported |
 | 7 | `validate_page_object_selectors` | A literal selector in a page object, an invented inventory key, or a `multi_match` key used strictly |
 | 8 | `validate_no_unused_step_definitions` | A step definition no scenario uses — usually two phrasings of one step |
 | 9 | `validate_fixtures_exist` | A step def requesting a fixture no conftest provides |
@@ -290,10 +290,12 @@ Pydantic's `max_length=10` translates to JSON Schema `maxItems`, which some prov
 
 **What it does:**
 1. Parses `reports/junit.xml` (produced by Agent 4) into a `RunReport`.
-2. Enriches with CI context: PR URL, workflow run URL, commit SHA, link to artifact download.
-3. Calls the LLM with a structured schema (`JiraCommentDraft`) to produce ONLY the prose summary (Python adds the deterministic links/metadata after).
-4. Posts the comment to the parent Jira story (resolved from PR branch name).
-5. Tags the story with `tests-run`.
+2. Scopes it to the story: keeps only the step-def modules the PR added or changed, so another story's failure is not counted as this one's. If the scope cannot be established it reports everything - over-reporting is cosmetic, hiding a story's own failure is not.
+3. Keeps what scoping dropped. Agent 4 runs the whole suite, so a failure in a test the story does not own still turns the PR check red. Those failures are listed by Python in their own section, under a warning at the top of the comment, and the verdict is `failed` - it is `passed` only when the story's tests and everything else on the branch pass, so the comment always agrees with the PR check.
+4. Enriches with CI context: PR URL, workflow run URL, commit SHA, link to artifact download.
+5. Calls the LLM with a structured schema (`JiraCommentDraft`) to produce ONLY the prose summary of the story's own tests (Python adds the outside failures and the deterministic links after).
+6. Posts the comment to the parent Jira story (resolved from PR branch name).
+7. Tags the story with `tests-run`.
 
 **Why Python builds the deterministic parts:**
 LLMs are bad at conditional rendering (`if PR_URL exists, include link`). Even with explicit instructions, they include "View PR (None)" or similar when fields are unavailable. Splitting prose (LLM) from facts (Python) eliminates this entire class of bugs.
