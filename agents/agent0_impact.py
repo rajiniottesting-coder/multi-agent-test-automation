@@ -209,7 +209,7 @@ def _review_rows(report: dict, decided: dict | None = None) -> list:
 # ─────────────────────────────────────────────────────────────
 
 def analyse_requirement(tracker, story_key: str, llm, settings: dict, root: Path,
-                        host=None) -> dict:
+                        host=None, uncovered: dict | None = None) -> dict:
     from core.app_context import AppContext
     from core.schemas import ChangeSeeds, ImpactAssessment
     from config.paths import PROMPTS_DIR
@@ -227,6 +227,13 @@ def analyse_requirement(tracker, story_key: str, llm, settings: dict, root: Path
     change = llm.invoke_structured(system_prompt="You are a senior QA analyst.",
                                    user_prompt=prompt, output_schema=ChangeSeeds)
     seeds = ia.validate_requirement_seeds(change, graph, components)
+    # Uncovered-element hint: review-tier only, and only when switched on AND
+    # the live uncovered snapshot was supplied. Off by default.
+    if uncovered and settings.get("uncovered_hint", False):
+        seeds, hits = ia.with_uncovered_hint(seeds, text, uncovered)
+        if hits:
+            logger.info("uncovered-element hint for %s: %s", story_key,
+                        ", ".join(f"{p}.{e}" for p, e in hits))
 
     # Stages 3-4: candidates and the short list
     layer1 = ia.structural_candidates(graph, seeds)

@@ -333,6 +333,10 @@ agents:
   agent0_impact:
     enabled: false
     shadow_mode: true
+    # A story that names an element no selector covers (E1) adds its page as a
+    # review-tier candidate. Review only, never must-update. Off until the
+    # backtest with and without it has been compared.
+    uncovered_hint: false
     selection:
       issue_type: "Story"
       allowed_statuses: ["To Do", "In Progress", "In Review"]

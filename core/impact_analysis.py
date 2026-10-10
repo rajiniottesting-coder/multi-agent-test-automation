@@ -163,6 +163,48 @@ def validate_requirement_seeds(change, graph, story_components: Iterable[str]) -
 
 
 # ─────────────────────────────────────────────────────────────
+# Uncovered-element hint (E1 follow-up, gated by agent0_impact.uncovered_hint)
+# ─────────────────────────────────────────────────────────────
+
+def uncovered_hits(story_text: str, uncovered: dict) -> list:
+    """(page, element) pairs whose name the story names in full.
+
+    `uncovered` is {page: {element: selector}} - live elements no inventory
+    selector covers (--compare). A story naming one ("cancel button" for
+    cancel_button) means a page the suite visits may change.
+
+    Conservative by design: every word of the element name must appear in the
+    story, so "button" alone never matches cancel_button, and a name with no
+    word of four or more letters is never matched. Plurals do not match
+    ("buttons" is not "button"); a missed hint is safe, a false one costs review.
+    """
+    tokens = set(re.findall(r"[a-z0-9]+", (story_text or "").lower()))
+    hits = []
+    for page, elements in sorted((uncovered or {}).items()):
+        for element in sorted(elements or {}):
+            words = [w for w in element.lower().split("_") if w]
+            if not any(len(w) >= 4 for w in words):
+                continue
+            if all(w in tokens for w in words):
+                hits.append((page, element))
+    return hits
+
+
+def with_uncovered_hint(seeds: Seeds, story_text: str, uncovered: dict) -> tuple:
+    """(seeds with the hit pages added, hits). The input seeds are not modified.
+
+    Only a PAGE seed is added, so a candidate reached this way scores PAGE_ONLY
+    (0.4): it lands in the review tier and can never be must-update on this
+    evidence alone. The weights are the existing ones; nothing new is scored.
+    """
+    import copy
+    hits = uncovered_hits(story_text, uncovered)
+    out = copy.deepcopy(seeds)
+    out.pages.update(page for page, _element in hits)
+    return out, hits
+
+
+# ─────────────────────────────────────────────────────────────
 # Stage 3 - layer 1
 # ─────────────────────────────────────────────────────────────
 

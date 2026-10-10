@@ -54,8 +54,9 @@ def _only_in(graph, key, other):
 class FakeModel:
     """Answers ChangeSeeds and ImpactAssessment from the prompt it is given."""
 
-    def __init__(self, element_keys, must=(), no_evidence=(), invent=()):
+    def __init__(self, element_keys, must=(), no_evidence=(), invent=(), review=()):
         self.element_keys, self.must, self.no_evidence = list(element_keys), set(must), set(no_evidence)
+        self.review = set(review)
         self.invent = list(invent)
         self.calls = []
 
@@ -67,7 +68,8 @@ class FakeModel:
         items = []
         for cid, title in re.findall(r"^## (C\d+) - (.+?) \(", user_prompt, re.M):
             paths = re.findall(r"^(P\d+): ", user_prompt.split(f"## {cid} - ", 1)[1].split("## C")[0], re.M)
-            tier = "must-update" if title in self.must else "unaffected"
+            tier = ("must-update" if title in self.must
+                    else "review" if title in self.review else "unaffected")
             refs = [] if title in self.no_evidence else (paths[:1] or ["Given I am on the signup and login page"])
             items.append(CandidateAssessment(candidate_id=cid, tier=tier, reason="r", evidence_refs=refs))
         return ImpactAssessment(assessments=items)
@@ -677,3 +679,75 @@ def test_ranking_matches_the_design_example():
     rows = ia.rank([c], {"C1": ("must-update", "r", ["P1"])}, impact_settings({})["weights"],
                    impact_settings({})["thresholds"])
     assert rows[0]["score"] == 0.928 and rows[0]["tier"] == "must-update"
+
+
+# ─────────────────────────────────────────────────────────────────
+# E1 follow-up - uncovered-element hint (gated, review tier only)
+# ─────────────────────────────────────────────────────────────────
+class TestUncoveredHint:
+    """The model stays in charge. The hint only adds a PAGE seed, which raises a
+    candidate's structural signal; it never creates a verdict."""
+
+    @staticmethod
+    def _story_names_hint(fake):
+        fake.issues["SBX-5"]["description"] = (
+            "When the password is wrong, the error shows a reset hint for the user.")
+
+    @staticmethod
+    def _rows(report):
+        return {r["ref"]: r for r in report["ranked"] + report["unaffected"]}
+
+    def test_the_model_clearing_everything_still_clears_everything(self, world):
+        """The hint cannot manufacture an affected test: if the model says
+        unaffected, the tier stays unaffected however high the signal goes."""
+        fake, jira, root, g = world
+        page, _ = _only_in(g, "SBX-12", "SBX-11")
+        self._story_names_hint(fake)
+        on = a0.analyse_requirement(jira, "SBX-5", FakeModel([]), _settings(uncovered_hint=True),
+                                    root, uncovered={page: {"reset_hint": "text=Reset"}})
+        assert all(r["tier"] == "unaffected" for r in on["ranked"] + on["unaffected"])
+
+    def test_the_hint_raises_the_signal_on_the_hinted_page_only(self, world):
+        fake, jira, root, g = world
+        page, _ = _only_in(g, "SBX-12", "SBX-11")
+        self._story_names_hint(fake)
+        off = self._rows(a0.analyse_requirement(jira, "SBX-5", FakeModel([]), _settings(), root))
+        on = self._rows(a0.analyse_requirement(
+            jira, "SBX-5", FakeModel([]), _settings(uncovered_hint=True), root,
+            uncovered={page: {"reset_hint": "text=Reset"}}))
+        assert on["SBX-12"]["score"] > off["SBX-12"]["score"]
+        # SBX-11 also visits the hinted page, so it rises too: the page signal
+        # reaches every scenario that visits the page, by design.
+        assert on["SBX-11"]["score"] >= off["SBX-11"]["score"]
+
+    def test_the_hint_never_produces_a_must_update_by_itself(self, world):
+        fake, jira, root, g = world
+        page, _ = _only_in(g, "SBX-12", "SBX-11")
+        self._story_names_hint(fake)
+        model = FakeModel([], review={TITLE_12})          # model: review, not must-update
+        on = a0.analyse_requirement(jira, "SBX-5", model, _settings(uncovered_hint=True),
+                                    root, uncovered={page: {"reset_hint": "text=Reset"}})
+        assert all(r["tier"] != "must-update" for r in on["ranked"] + on["unaffected"])
+        assert self._rows(on)["SBX-12"]["tier"] == "review"
+
+    def test_a_name_the_story_does_not_say_changes_nothing(self, world):
+        fake, jira, root, g = world
+        page, _ = _only_in(g, "SBX-12", "SBX-11")
+        off = self._rows(a0.analyse_requirement(jira, "SBX-5", FakeModel([]), _settings(), root))
+        on = self._rows(a0.analyse_requirement(
+            jira, "SBX-5", FakeModel([]), _settings(uncovered_hint=True), root,
+            uncovered={page: {"invoice_total": "text=Total"}}))
+        assert {k: v["score"] for k, v in off.items()} == {k: v["score"] for k, v in on.items()}
+
+    def test_the_flag_is_off_in_the_shipped_config(self):
+        import yaml
+        from config.paths import CONFIG_YAML
+        cfg = yaml.safe_load(CONFIG_YAML.read_text(encoding="utf-8"))
+
+        def find(node):
+            if isinstance(node, dict):
+                if "uncovered_hint" in node:
+                    return node["uncovered_hint"]
+                return next((v for v in (find(x) for x in node.values()) if v is not None), None)
+            return None
+        assert find(cfg) is False
