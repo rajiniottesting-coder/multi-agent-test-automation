@@ -304,6 +304,10 @@ class SourceHub:
                      if p["head_ref"].startswith(want)), None)
     def list_open_prs(self, branch_prefix=""):
         return [p for p in self.prs.values() if p["head_ref"].startswith(branch_prefix)]
+    def find_prs_for_story(self, story_id, branch_prefix="auto/"):
+        want = f"{branch_prefix}{story_id}-"
+        return [dict(p, state="open", merged=False, updated_at="")
+                for p in self.prs.values() if p["head_ref"].startswith(want)]
     def get_pr_metadata(self, pr_number):
         p = self.prs[pr_number]
         return {"number": p["number"], "title": p["title"], "body": "b",

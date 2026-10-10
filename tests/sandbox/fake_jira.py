@@ -256,10 +256,33 @@ class FakeRepoHost:
         return sorted(p for p in self.branches[branch] if p.startswith(path.rstrip("/") + "/"))
 
     def open_pull_request(self, title, body, head_branch, base_branch="main"):
-        self.prs.append({"number": len(self.prs) + 1, "title": title, "body": body,
-                         "head_ref": head_branch, "base": base_branch})
-        return f"https://sandbox.invalid/pull/{len(self.prs)}"
+        n = len(self.prs) + 1
+        self.prs.append({"number": n, "title": title, "body": body, "head_ref": head_branch,
+                         "base": base_branch, "state": "open", "merged": False,
+                         "url": f"https://sandbox.invalid/pull/{n}", "updated_at": f"t{n}"})
+        return f"https://sandbox.invalid/pull/{n}"
+
+    # PR state changes the sandbox tests drive
+    def merge(self, number):
+        pr = self.prs[number - 1]
+        pr.update(state="closed", merged=True, updated_at=pr["updated_at"] + "m")
+
+    def close(self, number):
+        pr = self.prs[number - 1]
+        pr.update(state="closed", merged=False, updated_at=pr["updated_at"] + "c")
+
+    def reopen(self, number):
+        pr = self.prs[number - 1]
+        pr.update(state="open", updated_at=pr["updated_at"] + "o")
 
     def find_open_pr_for_story(self, story_id, branch_prefix="auto/"):
-        return next((p for p in self.prs
-                     if p["head_ref"].startswith(f"{branch_prefix}{story_id}-")), None)
+        return next((p for p in self.prs if p["state"] == "open"
+                     and p["head_ref"].startswith(f"{branch_prefix}{story_id}-")), None)
+
+    def find_prs_for_story(self, story_id, branch_prefix="auto/"):
+        return [dict(p) for p in reversed(self.prs)
+                if p["head_ref"].startswith(f"{branch_prefix}{story_id}-")]
+
+    def list_open_prs(self, branch_prefix=""):
+        return [dict(p) for p in self.prs
+                if p["state"] == "open" and p["head_ref"].startswith(branch_prefix)]

@@ -109,6 +109,29 @@ class GitHubClient:
             logger.warning(f"Could not list open PRs: {e}")
         return out
 
+    def find_prs_for_story(self, story_id: str, branch_prefix: str = "auto/") -> list[dict]:
+        """Every PR of the story, open, closed and merged, newest first.
+
+        Scans the 200 most recently updated PRs: the reconcile scan runs
+        daily, so a change story's PR is always among the recent ones.
+        """
+        want = f"{branch_prefix}{story_id}-"
+        out: list[dict] = []
+        try:
+            pulls = self.repo.get_pulls(state="all", sort="updated", direction="desc")
+            for n, pr in enumerate(pulls):
+                if n >= 200:
+                    break
+                if not pr.head.ref.startswith(want):
+                    continue
+                out.append({"number": pr.number, "head_ref": pr.head.ref,
+                            "url": pr.html_url, "title": pr.title, "state": pr.state,
+                            "merged": bool(pr.merged),
+                            "updated_at": pr.updated_at.isoformat() if pr.updated_at else ""})
+        except Exception as e:                      # never block on a lookup
+            logger.warning(f"Could not list PRs for {story_id}: {e}")
+        return out
+
     def reopen_pull_request(self, pr_number: int) -> None:
         """Close then reopen a PR to re-fire pull_request events.
 
