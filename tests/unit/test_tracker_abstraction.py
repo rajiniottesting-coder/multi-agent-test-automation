@@ -94,7 +94,10 @@ def test_a_new_adapter_needs_no_agent_changes():
         def add_comment(self, issue_key, body): return ""
         def get_comments(self, issue_key): return []
         def transition_status(self, issue_key, status): return True
-        def get_impacted_test_cases(self, story_key): return []
+        def get_impacted_test_cases(self, story_key, include_retired=False): return []
+        def create_subtask(self, parent_key, summary, description): return "DEMO-10"
+        def get_subtasks(self, parent_key): return []
+        def set_description(self, issue_key, description): pass
         def get_all_test_cases(self): return []
         def update_test_case(self, issue_key, test_case): pass
         def link_issues(self, from_key, to_key, kind): pass

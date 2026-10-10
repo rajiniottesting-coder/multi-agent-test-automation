@@ -80,9 +80,25 @@ class MemoryTracker:
         owner = {tc: story for story, tcs in self.links.items() for tc in tcs}
         return [dict(tc, owner=owner.get(k)) for k, tc in sorted(self.test_cases.items())]
 
-    def get_impacted_test_cases(self, story_key):
-        return [self.test_cases[k] for k in self.impacts.get(story_key, [])
-                if k in self.test_cases]
+    def get_impacted_test_cases(self, story_key, include_retired=False):
+        out = [self.test_cases[k] for k in self.impacts.get(story_key, [])
+               if k in self.test_cases]
+        return [dict(tc, retired=False) for tc in out] if include_retired else out
+
+    def create_subtask(self, parent_key, summary, description):
+        self._n += 1
+        key = f"ACME-S{self._n}"
+        self.stories[key] = {"key": key, "summary": summary, "description": description,
+                             "labels": [], "status": "To Do", "parent": parent_key}
+        return key
+
+    def get_subtasks(self, parent_key):
+        return [{"key": k, "summary": v["summary"], "status": v["status"],
+                 "description": v["description"]}
+                for k, v in self.stories.items() if v.get("parent") == parent_key]
+
+    def set_description(self, issue_key, description):
+        self.stories[issue_key]["description"] = description
 
     def update_test_case(self, issue_key, test_case):
         self.test_cases[issue_key]["summary"] = getattr(test_case, "title", "tc")

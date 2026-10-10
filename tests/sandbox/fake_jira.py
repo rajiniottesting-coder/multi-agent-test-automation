@@ -54,11 +54,12 @@ class FakeJira:
     # ── seeding ─────────────────────────────────────────────
     def add(self, issuetype: str, summary: str, *, key: Optional[str] = None,
             description: str = "", status: str = "To Do", labels=(),
-            components=()) -> str:
+            components=(), parent: Optional[str] = None) -> str:
         key = key or f"{self.project_key}-{next(self._n)}"
         self.issues[key] = {"key": key, "issuetype": issuetype, "summary": summary,
                             "description": description, "status": status,
-                            "labels": list(labels), "components": list(components)}
+                            "labels": list(labels), "components": list(components),
+                            "parent": parent, "seq": len(self.issues)}
         return key
 
     def link(self, type_name: str, inward: str, outward: str) -> str:
@@ -113,10 +114,14 @@ class FakeJira:
 
     def create_issue(self, fields: dict):
         self.calls.append(("create_issue", dict(fields)))
+        parent = (fields.get("parent") or {}).get("key")
+        if parent is not None and parent not in self.issues:
+            raise JIRAError(400, f"Parent {parent} does not exist")
         key = self.add(fields["issuetype"]["name"], fields["summary"],
                        description=fields.get("description", ""),
                        labels=fields.get("labels", ()),
-                       components=[c["name"] for c in fields.get("components", [])])
+                       components=[c["name"] for c in fields.get("components", [])],
+                       parent=parent)
         return SimpleNamespace(key=key)
 
     def create_issue_link(self, type, inwardIssue, outwardIssue):
@@ -150,6 +155,8 @@ class FakeJira:
         keys = [k for k in self.issues if self._match(k, jql)]
         if re.search(r"ORDER BY key ASC", jql, re.I):
             keys.sort(key=lambda k: (k.rsplit("-", 1)[0], int(k.rsplit("-", 1)[1])))
+        if re.search(r"ORDER BY created ASC", jql, re.I):
+            keys.sort(key=lambda k: self.issues[k]["seq"])
         if maxResults:
             keys = keys[:maxResults]
         return [self._issue(k) for k in keys]
@@ -204,6 +211,8 @@ class FakeJira:
             return m.group(1) in d["labels"]
         if m := re.fullmatch(r'issue in linkedIssues\("([^"]+)"(?:,\s*"([^"]+)")?\)', c, re.I):
             return key in self.linked(m.group(1), m.group(2))
+        if m := re.fullmatch(r'parent\s*=\s*"?([A-Z][A-Z0-9_]*-\d+)"?', c, re.I):
+            return d.get("parent") == m.group(1)
         if m := re.fullmatch(r'sprint\s*(=|in)\s*.+', c, re.I):
             return True
         raise ValueError(f"FakeJira does not understand JQL clause: {c!r}")

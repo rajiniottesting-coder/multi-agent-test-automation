@@ -2,10 +2,11 @@
 
 WHY THIS EXISTS
 ---------------
-The agents need sixteen operations from a tracker: read a story, find work,
+The agents need nineteen operations from a tracker: read a story, find work,
 create and update a test case, read the test cases a story owns and the ones
-it impacts, list every test case, link and unlink issues, create a story, and
-move state markers (labels/comments) around. Nothing more.
+it impacts, list every test case, link and unlink issues, create a story,
+create and read review sub-tasks, rewrite a description, and move state
+markers (labels/comments) around. Nothing more.
 
 Every one of those exists in Jira, Xray, TestRail, Azure DevOps and Linear —
 under different names, with different query languages. Depending on
@@ -124,10 +125,13 @@ class Tracker(Protocol):
         Agent 0's whole-suite analysis."""
         ...
 
-    def get_impacted_test_cases(self, story_key: str) -> list[dict]:
+    def get_impacted_test_cases(self, story_key: str,
+                                include_retired: bool = False) -> list[dict]:
         """The test cases this story IMPACTS - owned by other stories, revised
         by this one (`link_types.impacts`). Same dict shape as
-        `get_linked_test_cases`; retired test cases are left out."""
+        `get_linked_test_cases`. Retired test cases are left out unless
+        `include_retired`; then every dict also carries "retired": bool
+        (Agent 2 needs them to remove the retired scenarios)."""
         ...
 
     def update_test_case(self, issue_key: str, test_case: Any) -> None:
@@ -157,6 +161,21 @@ class Tracker(Protocol):
                      components: list[str], labels: list[str]) -> str:
         """Create a story and return its key. Used for maintenance work that
         no requirement story stands behind."""
+        ...
+
+    # ── review sub-tasks ─────────────────────────────────────
+    def create_subtask(self, parent_key: str, summary: str, description: str) -> str:
+        """Create a sub-task under `parent_key` (the Impact Review) and return
+        its key. Its type comes from agents.agent0_impact.review.issue_type."""
+        ...
+
+    def get_subtasks(self, parent_key: str) -> list[dict]:
+        """Sub-tasks of an issue as [{"key", "summary", "status",
+        "description"}, ...], oldest first."""
+        ...
+
+    def set_description(self, issue_key: str, description: str) -> None:
+        """Replace an issue's description."""
         ...
 
     # ── state markers ────────────────────────────────────────
