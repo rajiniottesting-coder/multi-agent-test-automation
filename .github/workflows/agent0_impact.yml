@@ -60,6 +60,9 @@ jobs:
           python-version: "3.13"
       - name: Read agents.agent0_impact.enabled
         id: read
+        # pyyaml only, so the gate is quick on every run while Agent 0 is off.
+        # tests/unit/test_agent0_workflow_gate.py fails if this snippet ever
+        # imports more than pyyaml and the standard library.
         run: |
           pip install pyyaml --quiet
           python - <<'PYEOF' >> "$GITHUB_OUTPUT"
