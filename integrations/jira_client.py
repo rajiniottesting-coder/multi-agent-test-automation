@@ -430,9 +430,18 @@ class JiraClient:
                  "status": i.fields.status.name,
                  "description": i.fields.description or ""} for i in issues]
 
-    def set_description(self, issue_key: str, description: str) -> None:
-        self.client.issue(issue_key).update(fields={"description": description})
-        logger.info(f"Updated the description of {issue_key}")
+    def set_description(self, issue_key: str, description: str,
+                        summary: Optional[str] = None) -> None:
+        fields = {"description": description}
+        if summary is not None:
+            fields["summary"] = summary
+        self.client.issue(issue_key).update(fields=fields)
+        logger.info(f"Updated {'summary and ' if summary is not None else ''}"
+                    f"description of {issue_key}")
+
+    def render_test_case(self, test_case: TestCase) -> dict:
+        return {"summary": self._format_test_case_summary(test_case),
+                "description": self._format_test_case_description(test_case)}
 
     # ─────────────────────────────────────────────────────────────
     # Label management

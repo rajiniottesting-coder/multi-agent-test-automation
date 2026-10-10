@@ -97,8 +97,14 @@ class MemoryTracker:
                  "description": v["description"]}
                 for k, v in self.stories.items() if v.get("parent") == parent_key]
 
-    def set_description(self, issue_key, description):
-        self.stories[issue_key]["description"] = description
+    def set_description(self, issue_key, description, summary=None):
+        target = self.stories if issue_key in self.stories else self.test_cases
+        target[issue_key]["description"] = description
+        if summary is not None:
+            target[issue_key]["summary"] = summary
+
+    def render_test_case(self, test_case):
+        return {"summary": getattr(test_case, "title", "tc"), "description": "steps"}
 
     def update_test_case(self, issue_key, test_case):
         self.test_cases[issue_key]["summary"] = getattr(test_case, "title", "tc")

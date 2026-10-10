@@ -2,10 +2,10 @@
 
 WHY THIS EXISTS
 ---------------
-The agents need nineteen operations from a tracker: read a story, find work,
+The agents need twenty operations from a tracker: read a story, find work,
 create and update a test case, read the test cases a story owns and the ones
 it impacts, list every test case, link and unlink issues, create a story,
-create and read review sub-tasks, rewrite a description, and move state
+create and read review sub-tasks, render and rewrite test case text, and move state
 markers (labels/comments) around. Nothing more.
 
 Every one of those exists in Jira, Xray, TestRail, Azure DevOps and Linear —
@@ -174,8 +174,16 @@ class Tracker(Protocol):
         "description"}, ...], oldest first."""
         ...
 
-    def set_description(self, issue_key: str, description: str) -> None:
-        """Replace an issue's description."""
+    def set_description(self, issue_key: str, description: str,
+                        summary: Optional[str] = None) -> None:
+        """Replace an issue's description, and its summary when given.
+        Used to restore a test case's earlier text verbatim (C7)."""
+        ...
+
+    def render_test_case(self, test_case: Any) -> dict:
+        """{"summary", "description"} exactly as create_test_case and
+        update_test_case would store them - so a caller can hash the new text
+        BEFORE writing it (snapshots, re-run skips)."""
         ...
 
     # ── state markers ────────────────────────────────────────
