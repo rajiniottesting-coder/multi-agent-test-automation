@@ -185,7 +185,7 @@ def get_repo_host(host_type: Optional[str] = None, *, fresh: bool = False) -> Re
         raise ValueError(
             f"Unknown repo host {host_type!r}. "
             f"Available: {', '.join(sorted(_ADAPTERS))}. "
-            f"Add an adapter to agents/repo_host.py to support a new platform."
+            f"Add an adapter to integrations/repo_host.py to support a new platform."
         )
 
     instance = _ADAPTERS[host_type]()

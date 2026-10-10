@@ -260,7 +260,7 @@ def get_tracker(tracker_type: Optional[str] = None, *, fresh: bool = False) -> T
         raise ValueError(
             f"Unknown tracker type {tracker_type!r}. "
             f"Available: {', '.join(sorted(_ADAPTERS))}. "
-            f"Add an adapter to agents/tracker.py to support a new tool."
+            f"Add an adapter to integrations/tracker.py to support a new tool."
         )
 
     instance = _ADAPTERS[tracker_type]()
