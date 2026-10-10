@@ -111,6 +111,7 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -507,8 +508,7 @@ def main() -> int:
             path = args.url
             if args.page and not path:
                 try:
-                    from pathlib import Path as _P
-                    inv_p = _P(args.inventory) if args.inventory else ctx.inventory_path()
+                    inv_p = Path(args.inventory) if args.inventory else ctx.inventory_path()
                     inv = json.loads(inv_p.read_text(encoding="utf-8"))
                     entry = (inv.get("pages") or {}).get(args.page)
                     if entry is None:
@@ -581,7 +581,6 @@ def main() -> int:
                     input()
             return 0 if count == 1 else 1
 
-        from pathlib import Path
         inv_path = Path(args.inventory) if args.inventory else ctx.inventory_path()
         if not inv_path.is_file():
             print(f"\n  ERROR: inventory not found: {inv_path}")
