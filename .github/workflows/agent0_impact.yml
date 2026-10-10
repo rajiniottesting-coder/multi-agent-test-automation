@@ -1,0 +1,183 @@
+# Agent 0 - Impact Analyst
+#
+# Three triggers (design section 7, stage 0):
+#   schedule / dispatch   the scan: stories labelled impact-check are analysed;
+#                         decided Impact Reviews are handed over; change
+#                         stories labelled impact-applied are reconciled
+#   pull_request          a change to pages/ or app_inventory/ is analysed
+#                         structurally and reported on the pull request
+#   schedule (nightly)    the inventory staleness check, then its drift
+#                         analysed
+#
+# SWITCHED OFF BY DEFAULT. The `gate` job reads agents.agent0_impact.enabled
+# from config.yaml; while it is false every other job is skipped, so merging
+# this workflow changes nothing. With enabled: true and shadow_mode: true it
+# only posts reports. Turn shadow mode off only after the backtest and two
+# sprints of shadow reports meet the targets (design section 10).
+name: Agent 0 - Impact Analyst
+
+on:
+  workflow_dispatch:
+    inputs:
+      story_key:
+        description: "Optional: analyse one story (e.g. SCRUM-210). Blank = full scan."
+        required: false
+        default: ""
+      dry_run:
+        description: "Print the report; write nothing"
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    - cron: "15 5 * * 1-5"         # scan, 10:45 IST, weekdays
+    - cron: "45 1 * * *"           # nightly drift, 07:15 IST
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "pages/**"
+      - "app_inventory/**"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: agent0-impact-${{ github.event.pull_request.number || github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Is Agent 0 enabled?
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.read.outputs.enabled }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Read agents.agent0_impact.enabled
+        id: read
+        run: |
+          pip install pyyaml --quiet
+          python - <<'PYEOF' >> "$GITHUB_OUTPUT"
+          from core.impact_settings import impact_settings
+          print(f"enabled={str(impact_settings()['enabled']).lower()}")
+          PYEOF
+
+  scan:
+    name: Analyse, hand over, reconcile
+    needs: gate
+    if: needs.gate.outputs.enabled == 'true' && (github.event_name == 'workflow_dispatch' || github.event.schedule == '15 5 * * 1-5')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run Agent 0
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'claude-opus-4-6' }}
+          LLM_PRICE_INPUT_PER_1M: ${{ vars.LLM_PRICE_INPUT_PER_1M }}
+          LLM_PRICE_OUTPUT_PER_1M: ${{ vars.LLM_PRICE_OUTPUT_PER_1M }}
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          JIRA_BOARD_ID: ${{ vars.JIRA_BOARD_ID }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_REPO: ${{ vars.GH_REPO }}
+        run: |
+          DRY=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then DRY="--dry-run"; fi
+          if [ -n "${{ github.event.inputs.story_key }}" ]; then
+            python -m agents.agent0_impact --story "${{ github.event.inputs.story_key }}" $DRY
+          else
+            python -m agents.agent0_impact --scan
+          fi
+
+  code-change:
+    name: Impact of this pull request
+    needs: gate
+    if: needs.gate.outputs.enabled == 'true' && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout the pull request
+        uses: actions/checkout@v4
+        with:
+          path: head
+      - name: Checkout the base branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+          cache-dependency-path: base/requirements.txt
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r base/requirements.txt
+      - name: Analyse and comment
+        working-directory: base
+        env:
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_REPO: ${{ vars.GH_REPO }}
+        run: |
+          python -m agents.agent0_impact --code-change --base . --head ../head \
+            --pr ${{ github.event.pull_request.number }}
+
+  drift:
+    name: Impact of nightly inventory drift
+    needs: gate
+    if: needs.gate.outputs.enabled == 'true' && github.event.schedule == '45 1 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          playwright install --with-deps chromium
+      - name: Check the inventory, then analyse the drift
+        env:
+          # Same per-role application credentials as Agent 4's E2E step.
+          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+          APP_USER_REGISTERED: ${{ secrets.APP_USER_REGISTERED }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_REPO: ${{ vars.GH_REPO }}
+        run: |
+          mkdir -p reports
+          python -m scripts.check_inventory_staleness --json reports/drift.json || true
+          if [ -f reports/drift.json ]; then
+            python -m agents.agent0_impact --drift-report reports/drift.json
+          fi
