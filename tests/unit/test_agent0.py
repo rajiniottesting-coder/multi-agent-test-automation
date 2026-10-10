@@ -288,6 +288,47 @@ class TestD4:
         assert "SBX-11" in rows and "SBX-12" not in rows
         assert any(c.startswith(a0.DELTA) for c in fake.comments["SBX-5"])
 
+    def test_after_approval_a_removal_alone_is_reported_and_the_story_released(self, world):
+        """Agent 3 review of #131: with only removals there are no new rows.
+        The DELTA comment must still say so, and impact-check must come off,
+        or the next scan analyses the story again every day."""
+        fake, jira, root, g = world
+        s = _settings(shadow_mode=False)
+        page, key = _only_in(g, "SBX-12", "SBX-11")
+        p11, k11 = _only_in(g, "SBX-11", "SBX-12")
+        both = {TITLE_12, "Successful login with valid credentials"}
+        a0.publish(jira, "SBX-5", a0.analyse_requirement(
+            jira, "SBX-5", FakeModel([f"{page}:{key}", f"{p11}:{k11}"], must=both), s, root), s)
+        first = jira.get_subtasks("SBX-5")[0]
+        assert set(__import__("core.impact_review", fromlist=["x"]).parse(first["description"])) \
+            == {"SBX-11", "SBX-12"}
+        fake.issues[first["key"]]["status"] = "Done"
+        fake.issues["SBX-5"]["labels"] = ["ai-ready", "impact-check"]     # re-analysis asked for
+        fake.issues["SBX-5"]["description"] += " The success banner is not touched after all."
+        r = a0.publish(jira, "SBX-5", a0.analyse_requirement(
+            jira, "SBX-5", FakeModel([f"{page}:{key}"], must={TITLE_12}), s, root), s)
+        assert r == {"story": "SBX-5", "action": "no-new-impact", "review": first["key"]}
+        assert len(jira.get_subtasks("SBX-5")) == 1
+        delta = [c for c in fake.comments["SBX-5"] if c.startswith(a0.DELTA)]
+        assert len(delta) == 1 and "removed [" in delta[0] and "added []" in delta[0]
+        assert f"approved review {first['key']} stands" in delta[0]
+        assert fake.issues["SBX-5"]["labels"] == ["ai-ready"]             # released, unchanged
+        assert "SBX-5" not in {x["key"] for x in jira.find_stories_to_process(s["selection"])}
+
+    def test_after_approval_nothing_ranked_still_reports_the_removal(self, world):
+        fake, jira, root, g = world
+        s = _settings(shadow_mode=False)
+        page, key = _only_in(g, "SBX-12", "SBX-11")
+        a0.publish(jira, "SBX-5", a0.analyse_requirement(
+            jira, "SBX-5", FakeModel([f"{page}:{key}"], must={TITLE_12}), s, root), s)
+        fake.issues[jira.get_subtasks("SBX-5")[0]["key"]]["status"] = "Done"
+        fake.issues["SBX-5"]["description"] += " Withdrawn: the error text stays."
+        r = a0.publish(jira, "SBX-5", a0.analyse_requirement(
+            jira, "SBX-5", FakeModel([]), s, root), s)
+        assert r["action"] == "nothing-to-review"
+        assert any(c.startswith(a0.DELTA) and "removed [" in c and "removed []" not in c
+                   for c in fake.comments["SBX-5"])
+
 
 # ─────────────────────────────────────────────────────────────────
 # D5 - the live loop, and the switches

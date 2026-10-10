@@ -251,6 +251,17 @@ def _structural_report(graph, sha, seeds, change_ref, settings, tracker, host, c
 # Stage 7 - publish
 # ─────────────────────────────────────────────────────────────
 
+def _post_delta(tracker, story_key: str, change: dict | None, note: str = "") -> None:
+    """D4: what a re-analysis added, removed and re-tiered. Posted on every
+    live path that has an earlier report, so a removal is never silent."""
+    if change and any(change.values()):
+        tracker.add_comment(story_key, f"{DELTA} Re-analysed: added "
+                            f"{[r['ref'] for r in change['added']]}, removed "
+                            f"{[r['ref'] for r in change['removed']]}, tier changed "
+                            f"{[(t['ref'], t['from'], t['to']) for t in change['tier_changed']]}."
+                            + note)
+
+
 def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool = False) -> dict:
     """Shadow: one report comment. Live: the Impact Review (or ai-ready when
     there is nothing to review), with D4's delta against an earlier report."""
@@ -276,6 +287,7 @@ def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool
     change = ia.delta(previous, report) if previous else None
     rows = _review_rows(report)
     if not rows:
+        _post_delta(tracker, story_key, change)
         tracker.add_comment(story_key, _render_report(report, title))
         tracker.remove_label(story_key, labels["check"])
         tracker.add_label(story_key, labels["ready"])
@@ -293,22 +305,27 @@ def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool
     else:
         if review and change:
             # An approved review stands; the new one lists only what changed.
+            # Removed tests are not rows - there is nothing left to decide on
+            # them - so they are reported in the DELTA comment below, which is
+            # posted on every path, including when no row remains.
             changed = {r["ref"] for r in change["added"]} | {t["ref"] for t in change["tier_changed"]}
             rows = [r for r in rows if any(x["ref"] in changed for x in report["ranked"]
                                            if x["key"] == r["key"])]
-            if not rows:
-                return {"story": story_key, "action": "no-new-impact"}
-        description = (impact_review.render(story_key, rows, intro="Grouped by owning story.")
-                       + "\n\n" + ia.embed(report))
-        review_key = tracker.create_subtask(story_key, f"{prefix}: {story_key}", description)
-        action = "review-created"
-    if change and any(change.values()):
-        tracker.add_comment(story_key, f"{DELTA} Re-analysed: added "
-                            f"{[r['ref'] for r in change['added']]}, removed "
-                            f"{[r['ref'] for r in change['removed']]}, tier changed "
-                            f"{[(t['ref'], t['from'], t['to']) for t in change['tier_changed']]}.")
+        if rows:
+            description = (impact_review.render(story_key, rows, intro="Grouped by owning story.")
+                           + "\n\n" + ia.embed(report))
+            review_key = tracker.create_subtask(story_key, f"{prefix}: {story_key}", description)
+            action = "review-created"
+        else:
+            review_key, action = review["key"], "no-new-impact"
+    _post_delta(tracker, story_key, change,
+                f" Nothing new to review; the approved review {review_key} stands."
+                if action == "no-new-impact" else "")
+    # impact-check comes off on every path, or the next scan would analyse the
+    # story again. With no new review the story keeps the labels it had.
     tracker.remove_label(story_key, labels["check"])
-    tracker.add_label(story_key, labels["proposed"])
+    if action != "no-new-impact":
+        tracker.add_label(story_key, labels["proposed"])
     return {"story": story_key, "action": action, "review": review_key}
 
 
