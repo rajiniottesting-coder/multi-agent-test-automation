@@ -117,10 +117,11 @@ def build_proposals(unmarked: list, test_cases: list, marked_keys: set,
 # apply (pure)
 # ─────────────────────────────────────────────────────────────
 
-def insert_markers(content: str, markers: dict) -> tuple[str, dict]:
+def insert_markers(content: str, markers: dict, owners: dict | None = None) -> tuple[str, dict]:
     """Insert a marker above each named, still-unmarked scenario.
 
     markers: {scenario title: (test case key, description)}
+    owners:  {scenario title: owning story key}, written on the marker (C6)
     Returns (new content, {title: "applied" | reason it was skipped}).
     The marker goes directly above the `Scenario:` line, below any tags -
     where marker injection puts it.
@@ -128,6 +129,7 @@ def insert_markers(content: str, markers: dict) -> tuple[str, dict]:
     from agents.agent2_coder import format_marker, parse_feature_file
     from agents.agent2_coder import _keyword_index, _indent_of, _scenario_title
 
+    owners = owners or {}
     header, blocks = parse_feature_file(content)
     by_title: dict = {}
     for block in blocks:
@@ -149,7 +151,7 @@ def insert_markers(content: str, markers: dict) -> tuple[str, dict]:
             continue
         k = _keyword_index(block.lines)
         indent = block.lines[k][:_indent_of(block.lines[k])]
-        block.lines.insert(k, f"{indent}{format_marker(key, description)}\n")
+        block.lines.insert(k, f"{indent}{format_marker(key, description, owner=owners.get(title))}\n")
         result[title] = "applied"
 
     new_content = "".join(header) + "".join(b.text() for b in blocks)
@@ -286,7 +288,8 @@ def cmd_apply(args) -> int:
         rel = f"features/{filename}"
         content = (gh.get_file_content(rel, branch="main") if gh
                    else (FEATURES_DIR / filename).read_text(encoding="utf-8"))
-        new_content, status = insert_markers(content, markers)
+        new_content, status = insert_markers(content, markers, {
+            title: live[key].get("owner") for title, (key, _d) in markers.items()})
         for title, s in status.items():
             print(f"{'OK  ' if s == 'applied' else 'SKIP'}  {filename} :: {title}: {s}")
         n = sum(1 for s in status.values() if s == "applied")

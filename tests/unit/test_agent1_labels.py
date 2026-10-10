@@ -38,6 +38,9 @@ def patched_agent1(fake_test_case_list):
     # MagicMock returns a truthy Mock, which the duplicate guard reads as
     # "this story already has test cases" and refuses to run.
     mock_jira.count_linked_test_cases.return_value = 0
+    # Same for the impact-aware switch (Agent 0, C3): an ordinary story
+    # impacts no test cases, and a real tracker says so with [].
+    mock_jira.get_impacted_test_cases.return_value = []
     mock_jira.get_story.return_value = {
         "summary": "Login to the site",
         "description": "User can log in...",

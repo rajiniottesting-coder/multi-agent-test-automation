@@ -103,6 +103,14 @@ class RepoHost(Protocol):
         """All open PRs as dicts, optionally filtered by branch prefix."""
         ...
 
+    def find_prs_for_story(self, story_id: str, branch_prefix: str = "auto/") -> list[dict]:
+        """EVERY PR of a story - open, closed and merged - newest first, as
+        [{"number", "head_ref", "url", "title", "state", "merged", "updated_at"}].
+        `state` is "open" or "closed"; `merged` tells a merge from a rejection
+        (get_pr_metadata has no such flag). `updated_at` is ISO-8601 text.
+        Used by the reconcile scan (Agent 0, C7)."""
+        ...
+
     def get_pr_metadata(self, pr_number: int) -> dict:
         """Full PR detail. MUST return exactly these keys:
 

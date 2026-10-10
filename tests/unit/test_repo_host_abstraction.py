@@ -118,6 +118,10 @@ def test_a_new_host_needs_no_caller_changes():
             return next((p for p in self.prs.values() if p["head_ref"].startswith(want)), None)
         def list_open_prs(self, branch_prefix=""):
             return [p for p in self.prs.values() if p["head_ref"].startswith(branch_prefix)]
+        def find_prs_for_story(self, story_id, branch_prefix="auto/"):
+            want = f"{branch_prefix}{story_id}-"
+            return [dict(p, state="open", merged=False, updated_at="")
+                    for p in self.prs.values() if p["head_ref"].startswith(want)]
         def get_pr_metadata(self, pr_number): return self.prs[pr_number]
         def get_pr_changed_files(self, pr_number): return []
         def reopen_pull_request(self, pr_number): pass

@@ -406,6 +406,44 @@ class JiraClient:
         return issue.key
 
     # ─────────────────────────────────────────────────────────────
+    # Review sub-tasks
+    # ─────────────────────────────────────────────────────────────
+
+    def create_subtask(self, parent_key: str, summary: str, description: str) -> str:
+        from core.impact_settings import impact_settings
+        issue_type = impact_settings()["review"]["issue_type"]
+        issue = self.client.create_issue(fields={
+            "project": {"key": self.project_key},
+            "parent": {"key": parent_key},
+            "summary": summary,
+            "description": description,
+            "issuetype": {"name": issue_type},
+        })
+        logger.info(f"Created {issue_type} {issue.key} under {parent_key}: {summary}")
+        return issue.key
+
+    def get_subtasks(self, parent_key: str) -> list[dict]:
+        jql = f'parent = "{parent_key}" ORDER BY created ASC'
+        issues = self.client.enhanced_search_issues(
+            jql, maxResults=False, fields="summary,status,description")
+        return [{"key": i.key, "summary": i.fields.summary,
+                 "status": i.fields.status.name,
+                 "description": i.fields.description or ""} for i in issues]
+
+    def set_description(self, issue_key: str, description: str,
+                        summary: Optional[str] = None) -> None:
+        fields = {"description": description}
+        if summary is not None:
+            fields["summary"] = summary
+        self.client.issue(issue_key).update(fields=fields)
+        logger.info(f"Updated {'summary and ' if summary is not None else ''}"
+                    f"description of {issue_key}")
+
+    def render_test_case(self, test_case: TestCase) -> dict:
+        return {"summary": self._format_test_case_summary(test_case),
+                "description": self._format_test_case_description(test_case)}
+
+    # ─────────────────────────────────────────────────────────────
     # Label management
     # ─────────────────────────────────────────────────────────────
 
@@ -545,13 +583,28 @@ class JiraClient:
         logger.info(f"Found {len(test_cases)} test cases owned by {story_key}")
         return test_cases
 
-    def get_impacted_test_cases(self, story_key: str) -> list[dict]:
-        """Test Cases this story IMPACTS (owned by other stories)."""
-        jql = self._test_case_jql(story_key, "impacts")
-        logger.info(f"Fetching test cases impacted by {story_key}: {jql}")
-        test_cases = self._search_test_cases(jql)
-        logger.info(f"Found {len(test_cases)} test cases impacted by {story_key}")
-        return test_cases
+    def get_impacted_test_cases(self, story_key: str,
+                                include_retired: bool = False) -> list[dict]:
+        """Test Cases this story IMPACTS (owned by other stories).
+
+        With include_retired, retired ones are returned too and every dict
+        carries "retired": bool.
+        """
+        if not include_retired:
+            jql = self._test_case_jql(story_key, "impacts")
+            logger.info(f"Fetching test cases impacted by {story_key}: {jql}")
+            test_cases = self._search_test_cases(jql)
+            logger.info(f"Found {len(test_cases)} test cases impacted by {story_key}")
+            return test_cases
+        query = self._link_type("impacts")["query"]
+        jql = (f'project = {self.project_key} AND issuetype = "Test Case" '
+               f'AND issue in linkedIssues("{story_key}", "{query}")')
+        issues = self.client.enhanced_search_issues(
+            jql, maxResults=100, fields="summary,description,labels")
+        return [{"key": i.key, "summary": i.fields.summary,
+                 "description": i.fields.description or "",
+                 "retired": self.retired_label in (getattr(i.fields, "labels", None) or [])}
+                for i in issues]
 
     def count_linked_test_cases(self, story_key: str) -> int:
         """How many Test Case issues this story already OWNS.

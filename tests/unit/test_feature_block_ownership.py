@@ -327,3 +327,18 @@ class TestInjectionReadsWholePreamble:
         _h, blocks = parse_feature_file(out)
         assert blocks[0].jira_key == "AB-1"
         assert "@smoke" in blocks[0].text()
+
+
+# ─────────────────────────────────────────────────────────────────
+# splice_scenario checks the hash it is given (Agent 3 review of #130)
+# ─────────────────────────────────────────────────────────────────
+def test_splice_warns_when_the_marker_hash_is_not_the_expected_one(caplog):
+    import logging
+    text = _replacement("AB-2", "Wrong password v2")            # marker hash: dddddddd
+    with caplog.at_level(logging.WARNING):
+        ok = splice_scenario(THREE_TAGGED, "AB-2", text, "dddddddd")
+    assert "was not kept as given" not in caplog.text
+    with caplog.at_level(logging.WARNING):
+        warned = splice_scenario(THREE_TAGGED, "AB-2", text, "12345678")
+    assert "AB-2" in caplog.text and "was not kept as given" in caplog.text
+    assert warned == ok                                         # behaviour unchanged

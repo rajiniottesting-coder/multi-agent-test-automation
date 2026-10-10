@@ -134,10 +134,18 @@ logger = logging.getLogger("agent2_coder")
 # Examples it matches:
 #   "# JIRA: SCRUM-22 (hash: a4f9c2e1)"
 #   "    # JIRA: PROJ-7 (hash: abcdef12)"
+#   "# JIRA: PROJ-7 (hash: abcdef12) owner: PROJ-1 impacted-by: PROJ-9,PROJ-12"
 # Does NOT match without the hash — we want to distinguish OUR markers
 # from human-added Jira-key comments.
+#
+# `owner` (the story the test case belongs to) and `impacted-by` (every story
+# that changed it, oldest first) are OPTIONAL (Agent 0 design, C6): markers
+# written before they existed keep parsing exactly as before.
+_KEY = r"[A-Z][A-Z0-9_]*-\d+"
 _JIRA_MARKER_RE = re.compile(
-    r"^\s*#\s*JIRA:\s*([A-Z][A-Z0-9_]*-\d+)\s*\(hash:\s*([0-9a-f]{8})\s*\)\s*$",
+    rf"^\s*#\s*JIRA:\s*({_KEY})\s*\(hash:\s*([0-9a-f]{{8}})\s*\)"
+    rf"(?:\s+owner:\s*({_KEY}))?"
+    rf"(?:\s+impacted-by:\s*({_KEY}(?:\s*,\s*{_KEY})*))?\s*$",
     re.IGNORECASE,
 )
 
@@ -165,10 +173,25 @@ def compute_description_hash(description: str) -> str:
     return digest[:8]
 
 
-def format_marker(jira_key: str, description: str) -> str:
-    """Build a JIRA marker comment line (no trailing newline)."""
+def format_marker(jira_key: str, description: str, owner: Optional[str] = None,
+                  impacted_by=()) -> str:
+    """Build a JIRA marker comment line (no trailing newline).
+
+    `owner` and `impacted_by` are written only when known, so a marker for a
+    test case with no owner information is exactly the format it always was.
+    """
     h = compute_description_hash(description)
-    return f"# JIRA: {jira_key} (hash: {h})"
+    marker = f"# JIRA: {jira_key} (hash: {h})"
+    if owner:
+        marker += f" owner: {owner.upper()}"
+    seen: list = []
+    for key in impacted_by or ():
+        key = key.upper()
+        if key not in seen and key != (owner or "").upper():
+            seen.append(key)
+    if seen:
+        marker += f" impacted-by: {','.join(seen)}"
+    return marker
 
 
 def parse_marker(line: str) -> Optional[tuple[str, str]]:
@@ -180,6 +203,16 @@ def parse_marker(line: str) -> Optional[tuple[str, str]]:
     if not m:
         return None
     return m.group(1).upper(), m.group(2).lower()
+
+
+def parse_marker_fields(line: str) -> Optional[dict]:
+    """{"key", "hash", "owner", "impacted_by"} for a marker line, else None."""
+    m = _JIRA_MARKER_RE.match(line or "")
+    if not m:
+        return None
+    impacted = tuple(k.strip().upper() for k in (m.group(4) or "").split(",") if k.strip())
+    return {"key": m.group(1).upper(), "hash": m.group(2).lower(),
+            "owner": m.group(3).upper() if m.group(3) else None, "impacted_by": impacted}
 
 
 @dataclass
@@ -194,6 +227,8 @@ class ScenarioBlock:
     jira_key: Optional[str] = None
     jira_hash: Optional[str] = None
     marker_line_index: Optional[int] = None
+    owner: Optional[str] = None
+    impacted_by: tuple = ()
 
     def text(self) -> str:
         return "".join(self.lines)
@@ -270,9 +305,10 @@ def _find_marker(block: ScenarioBlock) -> None:
     for idx, line in enumerate(block.lines):
         if _starts_block(line):
             return
-        parsed = parse_marker(line)
-        if parsed:
-            block.jira_key, block.jira_hash = parsed
+        fields = parse_marker_fields(line)
+        if fields:
+            block.jira_key, block.jira_hash = fields["key"], fields["hash"]
+            block.owner, block.impacted_by = fields["owner"], fields["impacted_by"]
             block.marker_line_index = idx
             return
 
@@ -332,7 +368,7 @@ def splice_scenario(
     original_content: str,
     jira_key: str,
     new_scenario_text: str,
-    new_hash: str,  # accepted for caller sanity-check; not enforced
+    new_hash: str,  # the hash the marker should carry; a mismatch is warned
 ) -> str:
     """Replace the scenario block owned by `jira_key` with new content.
 
@@ -347,7 +383,6 @@ def splice_scenario(
     matching jira_key — refusing to splice unmarkered content prevents
     orphan scenarios.
     """
-    _new_hash = new_hash  # explicit no-op; documents intent
     header, blocks = parse_feature_file(original_content)
 
     # Sanity-check the replacement before mutating anything
@@ -362,6 +397,14 @@ def splice_scenario(
             f"but caller asked to splice {jira_key!r}. Refusing to splice — "
             "this would create an orphan scenario."
         )
+    # The caller's sanity check: the marker should carry the hash of the text
+    # the caller just generated from. A mismatch means the model rewrote the
+    # marker line. Warned, not refused - ai-update has always accepted it, and
+    # a change-story run fails its coverage gate on it anyway (C4).
+    if new_hash and new_block.jira_hash != new_hash:
+        logger.warning(
+            f"{jira_key}: the replacement marker carries hash {new_block.jira_hash!r}, "
+            f"expected {new_hash!r} - the marker line was not kept as given.")
 
     target_idx = next(
         (i for i, b in enumerate(blocks) if b.jira_key == jira_key), None
@@ -474,6 +517,8 @@ class MarkerEntry:
     file: str       # filename inside the features directory, e.g. "login.feature"
     hash: str
     title: str
+    owner: Optional[str] = None
+    impacted_by: tuple = ()
 
 
 @dataclass
@@ -530,6 +575,7 @@ def build_marker_index(features_dir: Path) -> MarkerIndex:
             index.by_key[block.jira_key] = MarkerEntry(
                 key=block.jira_key, file=path.name,
                 hash=block.jira_hash or "", title=title,
+                owner=block.owner, impacted_by=block.impacted_by,
             )
     for key, files in index.duplicates.items():
         logger.warning(
@@ -601,7 +647,8 @@ def _normalize_path(p: str) -> str:
     return p.replace("\\", "/").lstrip("./")
 
 
-def validate_paths_against_policy(plan: CodePlan, ctx: AppContext) -> None:
+def validate_paths_against_policy(plan: CodePlan, ctx: AppContext,
+                                  protected_files: set | None = None) -> None:
     """Enforce the two-tier file policy on the LLM's plan.
 
     Tier 1 — RESERVED: never touched. If the plan includes any reserved path,
@@ -620,6 +667,16 @@ def validate_paths_against_policy(plan: CodePlan, ctx: AppContext) -> None:
     """
     reserved = ctx.reserved_paths_normalized()
     extendable = ctx.extendable_paths_normalized()
+
+    # Change-story runs (Agent 0, C4): feature files and step definitions
+    # that OTHER stories own are edited only by splicing, never generated.
+    protected = {_normalize_path(p) for p in (protected_files or ())}
+    owned_elsewhere = [fp.file_path for fp in plan.files_to_create
+                       if _normalize_path(fp.file_path) in protected]
+    if owned_elsewhere:
+        raise ValueError(
+            f"The plan would generate files other stories own: {owned_elsewhere}. "
+            "They are edited only by splicing the approved scenarios.")
 
     reserved_collisions: list[str] = []
     extendable_misclassified: list[str] = []  # marked is_new_file=True for an existing extendable file
@@ -3010,7 +3067,13 @@ def _inject_markers_into_feature(content: str, test_cases: list[dict]) -> str:
                 continue
             old_line = out_lines[marker_idx]
             indent = old_line[: len(old_line) - len(old_line.lstrip())]
-            new_marker = format_marker(matching_tc["key"], matching_tc.get("description", ""))
+            # Keep the owner and impacted-by the marker already records: a
+            # hash refresh must never erase the trace (C6).
+            old = parse_marker_fields(old_line) or {}
+            new_marker = format_marker(
+                matching_tc["key"], matching_tc.get("description", ""),
+                owner=old.get("owner") or matching_tc.get("owner"),
+                impacted_by=tuple(old.get("impacted_by", ())) + tuple(matching_tc.get("impacted_by", ())))
             refreshes.append((marker_idx, f"{indent}{new_marker}\n"))
             continue
 
@@ -3031,7 +3094,8 @@ def _inject_markers_into_feature(content: str, test_cases: list[dict]) -> str:
             continue
 
         indent = scenario_line[: len(scenario_line) - len(scenario_line.lstrip())]
-        new_marker = format_marker(tc["key"], tc.get("description", ""))
+        new_marker = format_marker(tc["key"], tc.get("description", ""),
+                                   owner=tc.get("owner"), impacted_by=tc.get("impacted_by", ()))
         inserts.append((scenario_idx, f"{indent}{new_marker}\n"))
 
     # Apply edits. Refreshes don't shift indices.
@@ -3118,7 +3182,8 @@ def _generate_single_scenario(
     jira_key = test_case["key"]
     summary = test_case.get("summary", "")
     description = test_case.get("description", "")
-    marker = format_marker(jira_key, description)
+    marker = format_marker(jira_key, description, owner=test_case.get("owner"),
+                           impacted_by=test_case.get("impacted_by", ()))
 
     system = (
         "You are a Senior SDET. Produce ONE Gherkin Scenario block — "
@@ -3491,6 +3556,16 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
         }
     logger.info(f"Update target feature file: {feature_file_path}")
 
+    # A reserved reference file is the style baseline Agent 2 learns from; no
+    # agent may rewrite it, ai-update included. (The marker backfill refuses to
+    # mark one for the same reason, so this only fires on a hand-made marker.)
+    from core.app_context import _normalize_path
+    if _normalize_path(feature_file_path) in ctx.reserved_paths_normalized():
+        logger.error(
+            f"{feature_file_path} is a reserved reference file "
+            "(app_under_test.reserved_paths); ai-update will not rewrite it.")
+        return {"story_id": story_id, "status": "reserved_target", "files_generated": 0}
+
     gh = get_repo_host()
     try:
         existing_content = gh.get_file_content(feature_file_path, branch="main")
@@ -3515,6 +3590,19 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
     classification = classify_test_cases(
         [tc for tc in test_cases if tc["key"] not in elsewhere], existing_content
     )
+    # A marker that names ANOTHER story as its owner is that story's scenario,
+    # sharing this file - never this story's orphan to delete (C6). Only
+    # unowned markers (written before owners were recorded) and this story's
+    # own count as orphans.
+    _h, _blocks = parse_feature_file(existing_content)
+    _owner_of = {b.jira_key: b.owner for b in _blocks if b.jira_key}
+    foreign = [k for k in classification["orphan_keys"]
+               if _owner_of.get(k) and _owner_of[k] != story_id]
+    if foreign:
+        logger.info("Not orphans - owned by other stories: %s",
+                    {k: _owner_of[k] for k in foreign})
+        classification["orphan_keys"] = [k for k in classification["orphan_keys"]
+                                         if k not in foreign]
     # A "new" test case whose scenario already sits UNMARKED in this file (it
     # was written before markers existed) must not be appended a second time.
     # Skip it and say how to fix it; the marker backfill gives it its marker.
@@ -3582,6 +3670,9 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
 
     for tc in classification["modified"]:
         logger.info(f"Generating replacement scenario for {tc['key']}...")
+        entry = marker_index.by_key.get(tc["key"])
+        tc = dict(tc, owner=(entry.owner if entry and entry.owner else story_id),
+                  impacted_by=entry.impacted_by if entry else ())
         new_scenario_text = _generate_single_scenario(
             llm, feature_file_path, tc, ctx, spliced_content
         )
@@ -3593,7 +3684,7 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
     for tc in classification["new"]:
         logger.info(f"Generating new scenario for {tc['key']}...")
         new_scenario_text = _generate_single_scenario(
-            llm, feature_file_path, tc, ctx, spliced_content
+            llm, feature_file_path, dict(tc, owner=story_id), ctx, spliced_content
         )
         spliced_content = append_scenario(spliced_content, new_scenario_text)
 
@@ -3901,14 +3992,38 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     story = jira.get_story(story_id)
     test_cases = load_test_cases_for_story(jira, story_id)
 
-    if not test_cases:
+    # CHANGE-STORY WORK (Agent 0, C4/C5): approved test cases this story
+    # revises, and retired ones whose scenarios it removes - all in other
+    # stories' feature files. ([], []) for every ordinary story, which then
+    # runs exactly as before.
+    from agents import agent2_impact
+    revisions, retirements = ([], []) if is_regenerate else \
+        agent2_impact.impacted_for_run(jira, story_id)
+    impact_work = bool(revisions or retirements)
+
+    if not test_cases and not impact_work:
         logger.warning(f"No Test Cases linked to {story_id}. Run Agent 1 first.")
         return {"story_id": story_id, "status": "no_test_cases", "files_generated": 0}
+
+    owner_files: dict = {}
+    marker_index = None
+    if impact_work:
+        marker_index = build_marker_index(FEATURES_DIR)
+        owner_files, unmarked = agent2_impact.locate(marker_index, revisions, retirements)
+        if unmarked:
+            logger.error(
+                f"{story_id}: approved test case(s) {unmarked} have no scenario marker, so "
+                "their scenarios cannot be found to revise. Give them markers "
+                "(python scripts/backfill_markers.py propose) and run again.")
+            return {"story_id": story_id, "status": "impacted_unmarked",
+                    "unmarked": unmarked, "files_generated": 0}
+        logger.info(f"{story_id} revises {[t['key'] for t in revisions]} and retires "
+                    f"{retirements} in {list(owner_files)}")
 
     # 1b. DEDUP (skipped in regenerate mode)
     new_test_cases, skipped_test_cases = _select_new_test_cases(test_cases, is_regenerate)
 
-    if not new_test_cases:
+    if not new_test_cases and not impact_work:
         # Every approved test case is already covered. No work needed.
         logger.info(
             f"All {len(test_cases)} test cases for {story_id} are already covered "
@@ -3940,7 +4055,15 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     llm = LLMClient(temperature=0.2)
 
     # 3. STAGE 1: PLAN
-    plan = build_plan(llm, new_test_cases, references, page_inventory, ctx)
+    # The plan also sees each revision, so it can extend page objects the
+    # revised steps need; any owner file it proposes is dropped - those are
+    # spliced, never generated (C4).
+    plan_revisions = agent2_impact.plan_cases(owner_files) if impact_work else []
+    plan = build_plan(llm, new_test_cases + plan_revisions, references, page_inventory, ctx)
+    if impact_work:
+        agent2_impact.drop_owner_files(plan, owner_files, new_test_cases)
+        validate_paths_against_policy(
+            plan, ctx, protected_files=agent2_impact.protected_paths(owner_files))
 
     # 4. STAGE 2: GENERATE PER-FILE CONTENT
     # Order page objects BEFORE step definitions so the step-def prompt
@@ -3961,6 +4084,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     # cached instance, so the later assignment hands back the same object.
     _plan_paths = {f.file_path for f in ordered_files}
     existing_pos: list = []
+    gh = None
     try:
         gh = get_repo_host()
         existing_pos = _existing_page_objects_on_main(
@@ -3976,8 +4100,13 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     generated_files: list[GeneratedFile] = []
     for file_plan in ordered_files:
         try:
+            # Page objects see the revisions too; the story's own feature file
+            # and step definitions see only its own new test cases.
+            file_cases = (new_test_cases + plan_revisions
+                          if plan_revisions and file_plan.file_type == "page_object"
+                          else new_test_cases)
             content = generate_file_content(
-                llm, file_plan, plan, new_test_cases, references, page_inventory, ctx,
+                llm, file_plan, plan, file_cases, references, page_inventory, ctx,
                 already_generated=generated_files,
                 existing_page_objects=existing_pos,
             )
@@ -4029,8 +4158,29 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     # which scenario maps to which Test Case. Injected here (post-gen)
     # rather than relying on the LLM to emit them — deterministic > persuaded.
     generated_files = _ensure_jira_markers_on_feature_files(
-        generated_files, new_test_cases
+        generated_files, [dict(tc, owner=story_id) for tc in new_test_cases]
     )
+    # 4d-bis. CHANGE-STORY SPLICE (C4/C5). After marker injection, which only
+    # ever touches the story's OWN files: approved scenarios are rewritten in
+    # place in their owners' files, retired ones removed, and each owner's
+    # step definitions gain only the step functions the revisions need.
+    impact_report = None
+    if impact_work:
+        if gh is None:
+            gh = get_repo_host()
+        owner_generated, impact_report = agent2_impact.splice_owner_files(
+            llm, gh, story_id, owner_files, marker_index, ctx, references,
+            page_inventory, jira)
+        by_path = {f.file_path: i for i, f in enumerate(generated_files)}
+        for f in owner_generated:
+            if f.file_path in by_path:
+                generated_files[by_path[f.file_path]] = f
+            else:
+                generated_files.append(f)
+        problems = agent2_impact.check_coverage(generated_files, revisions, retirements)
+        if problems:
+            raise ValueError(f"Change-story gate failed for {story_id}: " + "; ".join(problems))
+
     # CRITICAL: rebuild `output` so the commit loop below uses the post-injection
     # file list, not the stale pre-injection list. (Previous bug: markers were
     # injected into `generated_files` but `output.files` still pointed at the
@@ -4308,6 +4458,9 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
             )
         pr_body_with_footer = pr_body_with_footer + "".join(orphan_section_parts)
 
+    if impact_report:
+        pr_body_with_footer += agent2_impact.pr_sections(impact_report)
+
     pr_url = gh.open_pull_request(
         title=output.pr_title,
         body=pr_body_with_footer,
@@ -4344,6 +4497,9 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
         "status": "pr_opened",
         "llm_usage": usage,
     }
+    if impact_report:
+        result["revised"] = sorted(impact_report["revised"])
+        result["retired"] = sorted(impact_report["retired"])
 
     logger.info(f"=== Agent 2 (Coder) complete. PR: {pr_url} ===")
     return result

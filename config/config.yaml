@@ -133,16 +133,9 @@ app_under_test:
   # automated (e.g., adding sort methods to InventoryPage when automating sort).
   # The LLM is told the rules in the Stage 1 prompt; the validator checks them.
   #
-  # List a page object here only once it is COMMITTED ON MAIN. The path policy
-  # (validate_paths_against_policy) treats every entry as an existing file, so
-  # listing one that does not exist yet blocks the story that has to create it
-  # ("LLM marked existing extendable file(s) as new").
-  #
-  # pages/cart_page.py is the first candidate: when it lands on main it will
-  # carry empty_the_cart(), the only way a scenario in this application can
-  # own an empty starting state. Add it here in the same PR that commits the
-  # file; off this list it is Tier-3 NEW and the next story touching the cart
-  # would overwrite it and lose the method.
+  # Intentionally empty today: no extendable page object is committed on main
+  # yet. List a file only once it is on main - see docs/GUIDE.md,
+  # "extendable_paths", for why and for the first candidate.
   extendable_paths: []
 
 
@@ -220,6 +213,11 @@ agents:
       excluded_labels:
         - "ai-processed"   # idempotency marker
         - "ai-skip"        # human override / opt-out
+        # Agent 0 (C1): a story waiting for impact analysis or for its Impact
+        # Review must not be drafted early, even if someone sets ai-ready.
+        # The hand-over removes these and adds ai-ready.
+        - "impact-check"
+        - "impact-proposed"
       # ── SPRINT SCOPING ──────────────────────────────────────────
       # "auto"          → resolve the currently ACTIVE sprint from Jira at
       #                   runtime via the JIRA_BOARD_ID env var. RECOMMENDED:
@@ -321,6 +319,42 @@ agents:
     # to close — recoverable. The human-approved label gate is still the
     # primary protection; this cap is the secondary safety net.
     max_stories_per_run: 2
+
+  # Agent 0 — Impact Analyst: which existing tests does a change affect?
+  #
+  # Ships SWITCHED OFF. `enabled: false` makes every Agent 0 scan and
+  # workflow a no-op; `shadow_mode: true` (once enabled) analyses and
+  # reports only - no Impact Review, no labels, no hand-over. Turn shadow
+  # mode off only after the backtest and two sprints of shadow reports meet
+  # the targets (design section 10).
+  agent0_impact:
+    enabled: false
+    shadow_mode: true
+    selection:
+      issue_type: "Story"
+      allowed_statuses: ["To Do", "In Progress", "In Review"]
+      required_labels: ["impact-check"]
+      excluded_labels: ["ai-skip"]
+    # Label lifecycle (design section 9): a story carries at most one
+    # impact- label at a time, and none once its pull request is merged.
+    labels:
+      check: "impact-check"
+      proposed: "impact-proposed"
+      applied: "impact-applied"
+      reverted: "impact-reverted"
+      ready: "ai-ready"
+    # The Impact Review is a standard sub-task with a Decision column; a
+    # person sets the decisions and moves it to done_status.
+    review:
+      issue_type: "Subtask"
+      summary_prefix: "Impact Review"
+      done_status: "Done"
+    weights: {structural: 0.45, component: 0.15, semantic: 0.15, adjudicated: 0.25}
+    thresholds: {must_update: 0.6, review: 0.3}
+    max_candidates: 300      # most candidates one adjudication call judges
+    reconcile:
+      closed_scans: 2        # closed-without-merge must be seen on this many scans
+      no_pr_days: 14         # impact-applied with no PR this long -> ask a person
 
   # agent3_reviewer:  # triggered by GitHub PR events, no Jira selection needed
   # agent4_runner:    # triggered by GitHub PR events (CI workflow only — no .py file)

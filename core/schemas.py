@@ -35,6 +35,23 @@ class TestCaseList(BaseModel):
     test_cases: list[TestCase] = Field(..., min_length=1, description="At least one test case")
 
 
+class TestCaseRevision(BaseModel):
+    """One approved, impacted test case rewritten for the change story."""
+    key: str = Field(..., description="The existing test case key, exactly as given (e.g. 'PROJ-3')")
+    revised: TestCase = Field(..., description="The full revised test case")
+    change_note: str = Field(..., description="One line: what changed and why")
+
+
+class ImpactAwareDraft(BaseModel):
+    """Agent 1's output in impact-aware mode (Agent 0 design, C3)."""
+    story_summary: str = Field(..., description="Brief summary of the story analyzed")
+    revisions: list[TestCaseRevision] = Field(
+        default_factory=list, description="Exactly one entry per approved test case")
+    new_test_cases: list[TestCase] = Field(
+        default_factory=list,
+        description="Only for acceptance criteria no revised test case covers")
+
+
 # ─────────────────────────────────────────────────────────────
 # Schemas for Agent 2 (Coder) — TWO-STAGE APPROACH
 # ─────────────────────────────────────────────────────────────

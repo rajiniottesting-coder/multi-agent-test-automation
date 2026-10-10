@@ -745,6 +745,7 @@ app_under_test:        # The application being tested (the SINGLE decoupling poi
     page_object: ...
   reserved_paths:      # files Agent 2 must NEVER overwrite
     - ...
+  extendable_paths: [] # existing page objects Agent 2 may EXTEND, never recreate
 
 browser:               # Playwright settings (headless, viewport, timeout, slow_mo)
 
@@ -765,6 +766,24 @@ agents:
     regenerate_label: ...
     max_stories_per_run: ...
 ```
+
+### `extendable_paths`
+
+A page object listed here may be extended by Agent 2 - new methods added, none
+removed - but never created from scratch. Two rules follow:
+
+- **List a file only once it is committed on `main`.** The path policy
+  (`validate_paths_against_policy`) treats every entry as an existing file and
+  rejects a plan that marks it `is_new_file=True`. Listing a file that does not
+  exist yet therefore blocks the very story that has to create it ("LLM marked
+  existing extendable file(s) as new").
+- **Add it in the same PR that first commits it.** Off the list, the file is
+  Tier-3 NEW: the next story touching that page regenerates it whole and can
+  drop a method another story relies on.
+
+The first candidate in this repository is `pages/cart_page.py`. When it lands
+on `main` it carries `empty_the_cart()`, the only way a scenario can own an
+empty starting state - so it belongs on this list from that PR on.
 
 ### Sprint scoping
 
