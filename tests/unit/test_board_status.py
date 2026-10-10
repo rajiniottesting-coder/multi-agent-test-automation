@@ -182,6 +182,40 @@ def test_closed_without_merge_does_not_mark_done():
     assert r.returncode == 0
     assert "WITHOUT merging" in r.stdout
 
+def _close_merged(*args):
+    import subprocess, sys, os
+    env = dict(os.environ, JIRA_URL="x", JIRA_EMAIL="x",
+               JIRA_API_TOKEN="x", JIRA_PROJECT_KEY="SCRUM")
+    return subprocess.run(
+        [sys.executable, "-m", "scripts.close_merged_story", *args],
+        capture_output=True, text=True, env=env, cwd=str(
+            __import__("pathlib").Path(__file__).resolve().parents[2]))
+
+
+def test_merged_framework_branch_without_a_story_is_skipped_not_failed():
+    """Framework PRs (feature/...) carry no story key. Their merge has no card
+    to move and must not turn the workflow red."""
+    r = _close_merged("--branch", "feature/agent0-phase-b", "--merged", "true")
+    assert r.returncode == 0
+    assert "not a story branch" in r.stdout
+
+
+def test_merged_pipeline_branch_without_a_story_key_still_fails():
+    """Agent 2 always names auto/ branches after the story; a keyless one is a
+    real fault and must stay loud."""
+    r = _close_merged("--branch", "auto/no-key-here", "--merged", "true")
+    assert r.returncode == 2
+    assert "No story key found" in r.stderr
+
+
+def test_merged_non_pipeline_branch_with_a_key_is_still_a_story():
+    """Teams name branches differently; a key anywhere still means a story.
+    --dry-run stops before the tracker is called."""
+    r = _close_merged("--branch", "feature/SCRUM-5-fix", "--merged", "true", "--dry-run")
+    assert r.returncode == 0
+    assert "SCRUM-5" in r.stdout and "not a story branch" not in r.stdout
+
+
 # ── NEGATIVE: malformed config must never crash an agent ─────
 #
 # status_for_label is called BEFORE the try block in move_card_for_label, so an

@@ -21,6 +21,14 @@ FULL FLAG REFERENCE
 -------------------
     python -m scripts.close_merged_story --help
 
+NOT EVERY MERGED PR IS A STORY
+------------------------------
+The workflow fires for every merged pull request, including framework work on
+branches such as `feature/...` that carry no story key. Those have no card to
+move, so they end with exit 0 and a notice. A pipeline branch (`auto/...`) with
+no key is different: Agent 2 always names its branches after the story, so a
+keyless one is a real fault and still fails with exit 2.
+
 Usage:
     python -m scripts.close_merged_story --branch auto/SCRUM-5-login --merged true
     python -m scripts.close_merged_story --story SCRUM-5 --merged true
@@ -41,6 +49,10 @@ from integrations.tracker import get_tracker
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
+# Branches Agent 2 creates for stories. Same prefix the sweeper and the repo
+# host use to recognise pipeline PRs.
+PIPELINE_BRANCH_PREFIX = "auto/"
+
 
 def main() -> int:
     ap = argparse.ArgumentParser(
@@ -50,7 +62,8 @@ def main() -> int:
                 "  from a branch name   --branch auto/SCRUM-5-login --merged true\n"
                 "  from a story key     --story SCRUM-5 --merged true\n"
                 "  rejected PR (no-op)  --branch auto/SCRUM-5-login --merged false\n"
-                "\nexit codes: 0=done (or correctly skipped)  2=no story key found"),
+                "\nexit codes: 0=done (or correctly skipped, incl. a non-story branch)"
+                "\n            2=a pipeline (auto/) branch carries no story key"),
         formatter_class=argparse.RawDescriptionHelpFormatter)
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--branch",
@@ -71,7 +84,14 @@ def main() -> int:
 
     story_key = args.story or extract_jira_key(args.branch or "")
     if not story_key:
-        print(f"No story key found in branch {args.branch!r}. "
+        branch = args.branch or ""
+        if not branch.startswith(PIPELINE_BRANCH_PREFIX):
+            # Framework or housekeeping work: no story behind it, no card to
+            # move. Correctly skipped, so it must not fail the run.
+            print(f"::notice::Branch {branch!r} is not a story branch (no story key, "
+                  f"not {PIPELINE_BRANCH_PREFIX}...). No card to move.")
+            return 0
+        print(f"No story key found in branch {branch!r}. "
               f"Expected something like auto/PROJ-123-slug.", file=sys.stderr)
         return 2
 
