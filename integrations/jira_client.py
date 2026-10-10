@@ -9,6 +9,7 @@ from jira import JIRA, Issue
 from dotenv import load_dotenv
 
 from core.schemas import TestCase
+from integrations.tracker import tracker_settings
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -53,6 +54,25 @@ class JiraClient:
         if self._client is None:
             self._client = JIRA(server=self.url, basic_auth=(self.email, self.token))
         return self._client
+
+    # Link types and the retired label come from config.yaml, so no agent -
+    # and no query in this adapter - hard-codes a link type name. Read lazily
+    # and cached per instance.
+    @property
+    def _settings(self) -> dict:
+        cached = self.__dict__.get("_settings_cache")
+        if cached is None:
+            cached = tracker_settings()
+            self.__dict__["_settings_cache"] = cached
+        return cached
+
+    @property
+    def link_types(self) -> dict:
+        return self._settings["link_types"]
+
+    @property
+    def retired_label(self) -> str:
+        return self._settings["retired_label"]
 
     # ─────────────────────────────────────────────────────────────
     # Story selection
@@ -232,14 +252,7 @@ class JiraClient:
     def create_test_case(self, test_case: TestCase, parent_story_key: str) -> Issue:
         """Create a 'Test Case' issue in Jira, linked to the parent story."""
         description = self._format_test_case_description(test_case)
-
-        # Build summary with [test_type] prefix, but avoid duplication if
-        # the LLM already included the prefix in the title.
-        prefix = f"[{test_case.test_type}]"
-        if test_case.title.startswith(prefix):
-            summary = test_case.title
-        else:
-            summary = f"{prefix} {test_case.title}"
+        summary = self._format_test_case_summary(test_case)
 
         issue_dict = {
             "project": {"key": self.project_key},
@@ -254,8 +267,25 @@ class JiraClient:
         self._link_to_story(new_issue.key, parent_story_key)
         return new_issue
 
+    @staticmethod
+    def _format_test_case_summary(tc: TestCase) -> str:
+        """`[<test_type>] <title>`, without doubling a prefix the LLM already wrote."""
+        prefix = f"[{tc.test_type}]"
+        return tc.title if tc.title.startswith(prefix) else f"{prefix} {tc.title}"
+
+    def update_test_case(self, issue_key: str, test_case: TestCase) -> None:
+        """Rewrite summary and description with the same formatters as
+        `create_test_case`, so the marker hash of the revised scenario is
+        computed from exactly what Jira holds. Links and labels untouched."""
+        issue = self.client.issue(issue_key)
+        issue.update(fields={
+            "summary": self._format_test_case_summary(test_case),
+            "description": self._format_test_case_description(test_case),
+        })
+        logger.info(f"Updated Test Case: {issue_key} — {test_case.title}")
+
     def _link_to_story(self, test_case_key: str, story_key: str) -> None:
-        """Create a 'Relates' link between Test Case and Story.
+        """Create the ownership link (`link_types.owns`) between Test Case and Story.
 
         Note: failures here are NOT silently swallowed. A missing link means
         Agent 2 won't find the test cases later (it queries by linkedIssues).
@@ -264,11 +294,7 @@ class JiraClient:
         """
         from jira.exceptions import JIRAError
         try:
-            self.client.create_issue_link(
-                type="Relates",
-                inwardIssue=test_case_key,
-                outwardIssue=story_key,
-            )
+            self._create_link(story_key, test_case_key, "owns")
             logger.info(f"Linked {test_case_key} → {story_key}")
         except JIRAError as e:
             logger.error(
@@ -307,6 +333,77 @@ class JiraClient:
                 lines.append(f"- *{k}:* {v}")
 
         return "\n".join(lines)
+
+    # ─────────────────────────────────────────────────────────────
+    # Links
+    # ─────────────────────────────────────────────────────────────
+
+    def _link_type(self, kind: str) -> dict:
+        if kind not in self.link_types:
+            raise ValueError(
+                f"Unknown link kind {kind!r}; expected one of {sorted(self.link_types)}"
+            )
+        return self.link_types[kind]
+
+    def _create_link(self, from_key: str, to_key: str, kind: str) -> None:
+        """Jira reads a link as `inwardIssue <outward description> outwardIssue`.
+        `from_field` in config says which side the `from` issue goes to."""
+        lt = self._link_type(kind)
+        if lt.get("from_field", "inwardIssue") == "inwardIssue":
+            inward, outward = from_key, to_key
+        else:
+            inward, outward = to_key, from_key
+        self.client.create_issue_link(
+            type=lt["name"], inwardIssue=inward, outwardIssue=outward,
+        )
+
+    def _find_links(self, from_key: str, to_key: str, kind: str) -> list:
+        """Links of type `kind` between the two issues, either direction."""
+        name = self._link_type(kind)["name"].lower()
+        issue = self.client.issue(from_key, fields="issuelinks")
+        found = []
+        for link in getattr(issue.fields, "issuelinks", []) or []:
+            if (getattr(link.type, "name", "") or "").lower() != name:
+                continue
+            other = getattr(link, "outwardIssue", None) or getattr(link, "inwardIssue", None)
+            if other is not None and other.key == to_key:
+                found.append(link)
+        return found
+
+    def link_issues(self, from_key: str, to_key: str, kind: str) -> None:
+        """Create a `kind` link reading `from_key <kind> to_key`. Idempotent."""
+        if self._find_links(from_key, to_key, kind):
+            logger.info(f"{from_key} already {kind} {to_key} — skipped")
+            return
+        self._create_link(from_key, to_key, kind)
+        logger.info(f"Linked {from_key} {kind} {to_key}")
+
+    def unlink_issues(self, from_key: str, to_key: str, kind: str) -> None:
+        """Remove every `kind` link between the two issues. No-op if absent."""
+        links = self._find_links(from_key, to_key, kind)
+        for link in links:
+            self.client.delete_issue_link(link.id)
+        if links:
+            logger.info(f"Removed {len(links)} '{kind}' link(s) {from_key} — {to_key}")
+        else:
+            logger.info(f"No '{kind}' link between {from_key} and {to_key} — nothing to remove")
+
+    def create_story(self, summary: str, description: str,
+                     components: list[str], labels: list[str]) -> str:
+        """Create a Story and return its key (maintenance work with no
+        requirement story behind it)."""
+        fields = {
+            "project": {"key": self.project_key},
+            "summary": summary,
+            "description": description,
+            "issuetype": {"name": "Story"},
+            "labels": list(labels or []),
+        }
+        if components:
+            fields["components"] = [{"name": c} for c in components]
+        issue = self.client.create_issue(fields=fields)
+        logger.info(f"Created Story: {issue.key} — {summary}")
+        return issue.key
 
     # ─────────────────────────────────────────────────────────────
     # Label management
@@ -410,44 +507,68 @@ class JiraClient:
             logger.warning(f"{issue_key}: could not transition to {status!r}: {e}")
         return False
 
-    def get_linked_test_cases(self, story_key: str) -> list[dict]:
-        """Test Cases linked to a story, as plain dicts.
+    def _test_case_jql(self, story_key: str, kind: str) -> str:
+        """Test cases linked to `story_key` by link kind, retired ones left out.
 
-        Returns [{"key", "summary", "description"}, ...].
+        `labels != X` in Jira skips issues with NO labels at all, so the
+        `labels is EMPTY` half is what keeps unlabelled test cases in.
+        """
+        query = self._link_type(kind)["query"]
+        return (f'project = {self.project_key} AND issuetype = "Test Case" '
+                f'AND issue in linkedIssues("{story_key}", "{query}") '
+                f'AND (labels is EMPTY OR labels != "{self.retired_label}")')
+
+    def _search_test_cases(self, jql: str) -> list[dict]:
+        issues = self.client.enhanced_search_issues(jql, maxResults=100)
+        return [
+            {"key": i.key,
+             "summary": i.fields.summary,
+             "description": i.fields.description or ""}
+            for i in issues
+        ]
+
+    def get_linked_test_cases(self, story_key: str) -> list[dict]:
+        """Test Cases this story OWNS, as plain dicts.
+
+        Returns [{"key", "summary", "description"}, ...]. Only the ownership
+        link counts: a test case this story merely impacts belongs to another
+        story and is returned by `get_impacted_test_cases` instead.
 
         The JQL lives HERE, not in the agents: JQL is Jira-only, so a caller
         that builds its own query cannot be pointed at Xray, TestRail or Azure
         DevOps without editing the agent. Every tracker-specific detail belongs
         behind this adapter.
         """
-        jql = (f'project = {self.project_key} AND issuetype = "Test Case" '
-               f'AND issue in linkedIssues("{story_key}")')
-        logger.info(f"Fetching test cases linked to {story_key}: {jql}")
-        issues = self.client.enhanced_search_issues(jql, maxResults=50)
-        test_cases = [
-            {"key": i.key,
-             "summary": i.fields.summary,
-             "description": i.fields.description or ""}
-            for i in issues
-        ]
-        logger.info(f"Found {len(test_cases)} test cases linked to {story_key}")
+        jql = self._test_case_jql(story_key, "owns")
+        logger.info(f"Fetching test cases owned by {story_key}: {jql}")
+        test_cases = self._search_test_cases(jql)
+        logger.info(f"Found {len(test_cases)} test cases owned by {story_key}")
+        return test_cases
+
+    def get_impacted_test_cases(self, story_key: str) -> list[dict]:
+        """Test Cases this story IMPACTS (owned by other stories)."""
+        jql = self._test_case_jql(story_key, "impacts")
+        logger.info(f"Fetching test cases impacted by {story_key}: {jql}")
+        test_cases = self._search_test_cases(jql)
+        logger.info(f"Found {len(test_cases)} test cases impacted by {story_key}")
         return test_cases
 
     def count_linked_test_cases(self, story_key: str) -> int:
-        """How many Test Case issues are already linked to this story.
+        """How many Test Case issues this story already OWNS.
 
         Agent 1 creates Test Cases in a LOOP and only adds `ai-processed`
         afterwards, so a crash mid-loop leaves cases created but the story
         unmarked - and the next run would create the whole set AGAIN. The same
         hole makes `--story` unsafe to run twice by hand.
 
-        Existing linked Test Cases are the evidence that work already happened.
+        Existing owned Test Cases are the evidence that work already happened.
+        Impacted ones are not: a change story that revises other stories'
+        tests has done none of its own work yet.
         Returns 0 on any lookup failure so a Jira hiccup never blocks a run.
         """
-        jql = (f'project = {self.project_key} AND issuetype = "Test Case" '
-               f'AND issue in linkedIssues("{story_key}")')
         try:
-            return len(self.client.enhanced_search_issues(jql, maxResults=50))
+            jql = self._test_case_jql(story_key, "owns")
+            return len(self.client.enhanced_search_issues(jql, maxResults=100))
         except Exception as e:
             logger.warning(f"Could not count test cases for {story_key}: {e}")
             return 0

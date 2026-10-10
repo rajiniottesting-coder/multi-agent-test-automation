@@ -2,9 +2,10 @@
 
 WHY THIS EXISTS
 ---------------
-The agents need exactly ten operations from a tracker: read a story, find work,
-create a test case, read the test cases linked to a story, and move state
-markers (labels/comments) around. Nothing more.
+The agents need fifteen operations from a tracker: read a story, find work,
+create and update a test case, read the test cases a story owns and the ones
+it impacts, link and unlink issues, create a story, and move state markers
+(labels/comments) around. Nothing more.
 
 Every one of those exists in Jira, Xray, TestRail, Azure DevOps and Linear —
 under different names, with different query languages. Depending on
@@ -102,12 +103,53 @@ class Tracker(Protocol):
         ...
 
     def get_linked_test_cases(self, story_key: str) -> list[dict]:
-        """Linked test cases as [{"key", "summary", "description"}, ...]."""
+        """The test cases this story OWNS, as [{"key", "summary", "description"}, ...].
+
+        Only the ownership link counts (`link_types.owns`), and retired test
+        cases (`retired_label`) are left out. A test case another story merely
+        impacts is not returned here - see `get_impacted_test_cases`.
+        """
         ...
 
     def count_linked_test_cases(self, story_key: str) -> int:
-        """How many test cases are linked. Must return 0 on lookup failure so a
+        """How many test cases this story owns (same filter as
+        `get_linked_test_cases`). Must return 0 on lookup failure so a
         tracker outage never blocks the pipeline."""
+        ...
+
+    def get_impacted_test_cases(self, story_key: str) -> list[dict]:
+        """The test cases this story IMPACTS - owned by other stories, revised
+        by this one (`link_types.impacts`). Same dict shape as
+        `get_linked_test_cases`; retired test cases are left out."""
+        ...
+
+    def update_test_case(self, issue_key: str, test_case: Any) -> None:
+        """Rewrite an existing test case's summary and description, formatted
+        exactly as `create_test_case` formats them, so the scenario marker's
+        hash stays comparable. Links and labels are untouched."""
+        ...
+
+    # ── links ────────────────────────────────────────────────
+    def link_issues(self, from_key: str, to_key: str, kind: str) -> None:
+        """Create a link reading `from_key <kind> to_key`.
+
+        `kind` is a pipeline concept, never a tracker link name:
+          "owns"    - story `from_key` owns test case `to_key`
+          "impacts" - story `from_key` changed `to_key` (a test case, or the
+                      story that owns it)
+        The adapter maps the kind to its configured link type and direction.
+        Idempotent: an existing identical link is left alone.
+        """
+        ...
+
+    def unlink_issues(self, from_key: str, to_key: str, kind: str) -> None:
+        """Remove the `kind` link between the two issues. No-op if absent."""
+        ...
+
+    def create_story(self, summary: str, description: str,
+                     components: list[str], labels: list[str]) -> str:
+        """Create a story and return its key. Used for maintenance work that
+        no requirement story stands behind."""
         ...
 
     # ── state markers ────────────────────────────────────────
@@ -197,6 +239,50 @@ def _configured_type() -> str:
         return (data.get("tracker") or {}).get("type", "jira")
     except Exception:                      # missing/rewritten config -> default
         return "jira"
+
+
+# ─────────────────────────────────────────────────────────────
+# Link and label settings shared by every adapter
+# ─────────────────────────────────────────────────────────────
+
+LINK_KINDS = ("owns", "impacts")
+
+# Used when config.yaml has no `tracker.link_types` block, so an existing
+# deployment keeps today's behaviour: every test case is owned through the
+# link type it has always been created with.
+_DEFAULT_LINK_TYPES: dict[str, dict] = {
+    "owns": {"name": "Relates", "query": "relates to",
+             "inverse_query": "relates to", "from_field": "outwardIssue"},
+    "impacts": {"name": "Impacts", "query": "impacts",
+                "inverse_query": "is impacted by", "from_field": "inwardIssue"},
+}
+_DEFAULT_RETIRED_LABEL = "ai-retired"
+
+
+def tracker_settings() -> dict:
+    """`tracker.link_types` and `tracker.retired_label` from config.yaml,
+    merged over the defaults above. Never raises.
+
+    Returns {"link_types": {kind: {...}}, "retired_label": str}.
+    """
+    raw: dict = {}
+    try:
+        import yaml
+        from config.paths import CONFIG_YAML
+        data = yaml.safe_load(CONFIG_YAML.read_text(encoding="utf-8")) or {}
+        raw = data.get("tracker") or {}
+    except Exception:                      # missing/rewritten config -> defaults
+        raw = {}
+    configured = raw.get("link_types") or {}
+    link_types = {}
+    for kind in LINK_KINDS:
+        merged = dict(_DEFAULT_LINK_TYPES[kind])
+        merged.update(configured.get(kind) or {})
+        link_types[kind] = merged
+    return {
+        "link_types": link_types,
+        "retired_label": raw.get("retired_label") or _DEFAULT_RETIRED_LABEL,
+    }
 
 
 def register_adapter(name: str, factory) -> None:

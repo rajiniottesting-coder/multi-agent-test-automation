@@ -75,6 +75,31 @@ status_workflow:
 tracker:
   type: "jira"
 
+  # Link types (Agent 0 design, A4). The agents never name a tracker link
+  # type; they ask for a KIND and the adapter maps it here.
+  #
+  #   owns    - the story a test case belongs to: exactly one, never changes.
+  #             Agent 1 creates it with the test case.
+  #   impacts - a story that CHANGED a test case it does not own (or the
+  #             story that owns it). None or many; they accumulate.
+  #
+  #   name          the link type's name in the tracker
+  #   query         the link as read from the story's side ("<story> impacts X")
+  #   inverse_query the link as read from the other side
+  #   from_field    which side of the tracker's create-link call receives the
+  #                 story. Jira's REST API reads `inwardIssue <outward> outwardIssue`,
+  #                 so "<story> impacts <test>" puts the story in inwardIssue.
+  #                 `owns` keeps the layout Agent 1 has always created
+  #                 (test case inward, story outward); Relates reads the same
+  #                 both ways.
+  link_types:
+    owns:    { name: "Relates", query: "relates to", inverse_query: "relates to", from_field: "outwardIssue" }
+    impacts: { name: "Impacts", query: "impacts", inverse_query: "is impacted by", from_field: "inwardIssue" }
+
+  # A test case retired by an approved Impact Review carries this label.
+  # Every test case query skips it, so no later update brings it back.
+  retired_label: "ai-retired"
+
 app_under_test:
   name: "Automation Exercise"
   base_url: "https://automationexercise.com"

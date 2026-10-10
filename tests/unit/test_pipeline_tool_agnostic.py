@@ -40,6 +40,7 @@ class MemoryTracker:
                                    "labels": ["ai-ready"], "components": ["Login"]}}
         self.test_cases: dict = {}
         self.links: dict = {}
+        self.impacts: dict = {}
         self.comments: dict = {}
         self._n = 0
 
@@ -73,6 +74,31 @@ class MemoryTracker:
 
     def count_linked_test_cases(self, story_key):
         return len(self.links.get(story_key, []))
+
+    # Agent 0 operations: impact links live apart from ownership links.
+    def get_impacted_test_cases(self, story_key):
+        return [self.test_cases[k] for k in self.impacts.get(story_key, [])
+                if k in self.test_cases]
+
+    def update_test_case(self, issue_key, test_case):
+        self.test_cases[issue_key]["summary"] = getattr(test_case, "title", "tc")
+
+    def link_issues(self, from_key, to_key, kind):
+        table = self.links if kind == "owns" else self.impacts
+        if to_key not in table.setdefault(from_key, []):
+            table[from_key].append(to_key)
+
+    def unlink_issues(self, from_key, to_key, kind):
+        table = self.links if kind == "owns" else self.impacts
+        if to_key in table.get(from_key, []):
+            table[from_key].remove(to_key)
+
+    def create_story(self, summary, description, components, labels):
+        self._n += 1
+        key = f"ACME-{100 + self._n}"
+        self.stories[key] = {"key": key, "summary": summary, "description": description,
+                             "labels": list(labels), "components": list(components)}
+        return key
 
     def add_label(self, issue_key, label):
         self.stories[issue_key]["labels"].append(label)
