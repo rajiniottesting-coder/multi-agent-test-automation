@@ -201,7 +201,7 @@ def configured_adapters(root: Path | str) -> tuple[str, str]:
     if cfg_path.is_file():
         try:
             data = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
-        except yaml.YAMLError:
+        except (OSError, yaml.YAMLError):   # unreadable or malformed -> fall back
             data = {}
         tracker_type = (data.get("tracker") or {}).get("type") or tracker_type
         host_type = (data.get("repo_host") or {}).get("type") or host_type

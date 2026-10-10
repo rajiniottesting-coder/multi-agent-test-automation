@@ -335,3 +335,20 @@ def test_an_unreadable_app_config_falls_back_instead_of_crashing(synthetic_app, 
     monkeypatch.setattr(repo_host, "configured_type", lambda: "deploy-host")
     _w(synthetic_app, "config/config.yaml", "tracker: [unclosed\n")
     assert onboarding.configured_adapters(synthetic_app) == ("deploy-tracker", "deploy-host")
+
+
+def test_an_app_config_that_cannot_be_read_falls_back(synthetic_app, monkeypatch):
+    """An I/O error (permissions, a directory where the file should be) falls
+    back like malformed YAML does, rather than crashing the check."""
+    monkeypatch.setattr(tracker, "configured_type", lambda: "deploy-tracker")
+    monkeypatch.setattr(repo_host, "configured_type", lambda: "deploy-host")
+    _w(synthetic_app, "config/config.yaml", "tracker:\n  type: app-tracker\n")
+    real = Path.read_text
+
+    def failing(self, *a, **k):
+        if self.name == "config.yaml":
+            raise PermissionError("denied")
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(Path, "read_text", failing)
+    assert onboarding.configured_adapters(synthetic_app) == ("deploy-tracker", "deploy-host")

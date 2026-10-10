@@ -97,8 +97,8 @@ def main() -> int:
     # so a repo has ONE credential source rather than two.
     ap.add_argument("--username",
                     default=crawl_credentials()[0],
-                    help="Login username. Defaults to INVENTORY_USER, else "
-                         "INVENTORY_USER from .env.")
+                    help="Login username. Defaults to INVENTORY_USER, else the "
+                         "single APP_USER_<ROLE> variable set in .env.")
     ap.add_argument("--password",
                     default=crawl_credentials()[1],
                     help="Login password. Defaults to INVENTORY_PASS, else "

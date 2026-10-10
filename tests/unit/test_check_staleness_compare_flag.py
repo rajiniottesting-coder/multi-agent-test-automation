@@ -14,7 +14,6 @@ from unittest.mock import MagicMock
 import pytest
 
 import scripts.check_inventory_staleness as chk
-from inventory_tools import introspect
 
 BASE = "https://app.example"
 INVENTORY = {
@@ -107,3 +106,17 @@ def test_compare_marks_always_page_selectors_on_every_page(run, tmp_path, monkey
     monkeypatch.setattr(chk, "collect_uncovered", capture)
     run("--compare")
     assert seen == [["[data-qa='save-btn']", "a.menu-home"]]
+
+
+def test_compare_skips_an_unreachable_page_and_reports_it_unreachable(run, tmp_path, monkeypatch):
+    """An unreachable page was not seen, so nothing on it can be uncovered."""
+    monkeypatch.setattr(chk, "resolve_selectors",
+                        lambda page, url, sels, attrs: ({s: 0 for s in sels}, set(), False))
+    called = []
+    monkeypatch.setattr(chk, "collect_uncovered", lambda *a, **k: called.append(1) or ("", []))
+    out = tmp_path / "r.json"
+    run("--compare", "--json", str(out))
+    report = json.loads(out.read_text(encoding="utf-8"))
+    assert called == []
+    assert report["unreachable_pages"] == ["home"]
+    assert report["new_elements"] == {}
