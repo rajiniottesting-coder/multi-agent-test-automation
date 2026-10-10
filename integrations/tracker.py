@@ -260,7 +260,7 @@ def get_tracker(tracker_type: Optional[str] = None, *, fresh: bool = False) -> T
         raise ValueError(
             f"Unknown tracker type {tracker_type!r}. "
             f"Available: {', '.join(sorted(_ADAPTERS))}. "
-            f"Add an adapter to agents/tracker.py to support a new tool."
+            f"Add an adapter to integrations/tracker.py to support a new tool."
         )
 
     instance = _ADAPTERS[tracker_type]()
@@ -331,3 +331,7 @@ def register_adapter(name: str, factory) -> None:
     For a client shipping their own adapter without editing this file.
     """
     _ADAPTERS[name.strip().lower()] = factory
+
+def registered_types() -> list[str]:
+    """Names of the tracker adapters that can be constructed by name (E2)."""
+    return sorted(_ADAPTERS)
