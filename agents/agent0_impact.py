@@ -28,12 +28,15 @@ Stages:
     8-9             the review, once Done, is handed over (core.impact_handover)
     10              the outcome line, recorded by Agent 5 when the change
                     story's pull request runs (record_outcome); reconcile
-                    (core.impact_reconcile)
+                    (core.impact_reconcile, scheduled on its own)
 
 Safety:
     agents.agent0_impact.enabled false  -> the scan does nothing
     shadow_mode true                    -> reports only: no review, no label,
-                                           no hand-over, no reconcile
+                                           no hand-over (the trigger label is
+                                           consumed; outcomes are still measured)
+    reconcile (C7) runs in its own job (scripts.impact_reconcile), whatever
+    these two say: it acts only on stories a hand-over labelled impact-applied
 
 Usage:
     python -m agents.agent0_impact --scan
@@ -411,7 +414,6 @@ def record_outcome(tracker, story_key: str, settings: dict, changed, failed,
 
 def scan(tracker, host, llm, settings: dict | None = None, root: Path | None = None) -> list:
     from config.paths import PROJECT_ROOT
-    from core.impact_reconcile import reconcile_all
     settings = settings or impact_settings()
     root = Path(root or PROJECT_ROOT)
     if not settings["enabled"]:
@@ -426,8 +428,11 @@ def scan(tracker, host, llm, settings: dict | None = None, root: Path | None = N
             results.append({"story": s["key"], "action": "error", "error": str(e)})
     if settings["shadow_mode"]:
         return results                    # shadow mode never writes past a report
+    # Reconcile (C7) is not run here: it has its own scheduled job
+    # (scripts.impact_reconcile), which also covers hand-overs a person made
+    # and shadow mode. Running it in two places would let two concurrent
+    # runs count as the two scans that trigger an undo.
     results += hand_over_decided(tracker, settings)
-    results += reconcile_all(tracker, host, settings)
     return results
 
 

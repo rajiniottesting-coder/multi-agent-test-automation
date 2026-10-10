@@ -17,6 +17,7 @@ import pytest
 import agents.agent0_impact as a0
 from core import impact_analysis as ia
 from core.impact_graph import build_impact_graph
+from core.impact_reconcile import reconcile_all
 from core.impact_settings import impact_settings
 from core.schemas import CandidateAssessment, ChangeSeeds, ImpactAssessment
 from tests.sandbox.fake_jira import FakeRepoHost, jira_client_over
@@ -515,8 +516,10 @@ class TestD5:
         assert len([c for c in fake.comments["SBX-5"] if c.startswith(a0.OUTCOME)]) == 1
 
         host.merge(1)
-        out = a0.scan(jira, host, model, s, root)
-        assert {"story": "SBX-5", "action": "merged", "pr": 1} in out
+        assert not [r for r in a0.scan(jira, host, model, s, root)      # reconcile is not
+                    if r.get("action") == "merged"]                      # the scan's job
+        # reconcile has its own job (C7)
+        assert {"story": "SBX-5", "action": "merged", "pr": 1} in reconcile_all(jira, host, s)
         assert not [l for l in fake.issues["SBX-5"]["labels"] if l.startswith("impact-")]
 
     def test_shadow_mode_measures_too(self, world, tmp_path):

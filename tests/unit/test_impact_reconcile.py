@@ -145,10 +145,23 @@ def test_label_lifecycle_never_two_impact_labels(world):                  # noqa
                     ["impact-applied"], ["impact-reverted"]]
 
 
-def test_the_cli_does_nothing_while_agent0_is_off(capsys):
+def test_the_cli_reconciles_a_manual_hand_over_while_agent0_is_off(opened, monkeypatch, capsys):
+    """Design C7: phase C runs without Agent 0, so the scheduled reconcile
+    must too. The shipped config has Agent 0 off; a person handed over
+    (scripts.impact_handover), the pull request was closed - two runs of the
+    command restore the test case."""
+    import integrations.repo_host as rh
+    import integrations.tracker as tr
+    from core.impact_settings import impact_settings
     from scripts.impact_reconcile import main
-    assert main([]) == 0
-    assert "enabled is false" in capsys.readouterr().out
+    fake, jira, gh, original = opened
+    assert impact_settings()["enabled"] is False
+    monkeypatch.setattr(tr, "get_tracker", lambda *a, **k: jira)
+    monkeypatch.setattr(rh, "get_repo_host", lambda *a, **k: gh)
+    gh.close(1)
+    assert main([]) == 0 and "SBX-5: pending-close" in capsys.readouterr().out
+    assert main([]) == 0 and "SBX-5: reverted" in capsys.readouterr().out
+    assert fake.issues["SBX-11"]["description"] == original["description"]
 
 
 def test_the_latest_pr_is_chosen_whatever_order_the_host_returns(opened):
