@@ -207,10 +207,56 @@ def _starts_block(line: str) -> bool:
     return any(stripped.startswith(kw) for kw in _GHERKIN_BLOCK_KEYWORDS)
 
 
+def _indent_of(line: str) -> int:
+    return len(line) - len(line.lstrip(" \t"))
+
+
+def _keyword_index(lines: list[str]) -> Optional[int]:
+    """Index of the first line in `lines` that starts a block, or None."""
+    return next((i for i, line in enumerate(lines) if _starts_block(line)), None)
+
+
+def _is_preamble_line(line: str, keyword_indent: int) -> bool:
+    """True for a tag or comment line that belongs to the block below it.
+
+    A JIRA marker always qualifies. Any other tag or comment qualifies only
+    when it is indented no deeper than the block keyword, so a commented-out
+    step at the end of the previous scenario stays where it is.
+    """
+    stripped = line.strip()
+    if not (stripped.startswith("@") or stripped.startswith("#")):
+        return False
+    if parse_marker(line):
+        return True
+    return _indent_of(line) <= keyword_indent
+
+
+def _take_preamble(source_lines: list[str], keyword_indent: int) -> list[str]:
+    """Detach and return the tag/comment lines directly above the next block.
+
+    `source_lines` is the end of the previous block (or the file header).
+    Blank lines between that run and the keyword travel with it; blank lines
+    with no run above them stay behind as the separator of the previous
+    block. Mutates `source_lines`.
+    """
+    j = len(source_lines)
+    while j > 0 and source_lines[j - 1].strip() == "":
+        j -= 1
+    k = j
+    while k > 0 and _is_preamble_line(source_lines[k - 1], keyword_indent):
+        k -= 1
+    if k == j:
+        return []
+    moved = source_lines[k:]
+    del source_lines[k:]
+    return moved
+
+
 def _build_block(lines: list[str]) -> ScenarioBlock:
     if not lines:
         return ScenarioBlock(kind="header", lines=[])
-    first = lines[0].lstrip()
+    k = _keyword_index(lines)
+    first = lines[k].lstrip() if k is not None else ""
     if first.startswith("Scenario Outline:") or first.startswith("Scenario:"):
         kind = "scenario"
     elif first.startswith("Background:"):
@@ -222,47 +268,40 @@ def _build_block(lines: list[str]) -> ScenarioBlock:
     return ScenarioBlock(kind=kind, lines=list(lines))
 
 
-def _migrate_marker_from_previous(
-    previous_blocks: list[ScenarioBlock],
-    header_lines: list[str],
-    current_block: ScenarioBlock,
-) -> None:
-    """Pull a JIRA marker comment from the end of the previous block onto
-    the current block, so each scenario owns its own marker.
-
-    Also handles the case where the marker is already inside current_block
-    (typical for content the LLM just generated for us in
-    `_generate_single_scenario`).
-    """
-    # 1. Marker already inside current_block?
-    for idx, line in enumerate(current_block.lines):
+def _find_marker(block: ScenarioBlock) -> None:
+    """Record the JIRA marker that sits in the block's preamble, if any."""
+    for idx, line in enumerate(block.lines):
         if _starts_block(line):
-            break
+            return
         parsed = parse_marker(line)
         if parsed:
-            current_block.jira_key, current_block.jira_hash = parsed
-            current_block.marker_line_index = idx
+            block.jira_key, block.jira_hash = parsed
+            block.marker_line_index = idx
             return
 
-    # 2. Marker at the trailing edge of the previous owner?
-    source_lines = previous_blocks[-1].lines if previous_blocks else header_lines
-    j = len(source_lines) - 1
-    while j >= 0 and source_lines[j].strip() == "":
+
+def _preamble_tag_lines(block: ScenarioBlock) -> list[str]:
+    """The tag lines (`@...`) above the block keyword."""
+    k = _keyword_index(block.lines)
+    if k is None:
+        return []
+    return [line for line in block.lines[:k] if line.strip().startswith("@")]
+
+
+def _trailing_blank_lines(lines: list[str]) -> list[str]:
+    j = len(lines)
+    while j > 0 and lines[j - 1].strip() == "":
         j -= 1
-    if j < 0:
-        return
-    parsed = parse_marker(source_lines[j])
-    if not parsed:
-        return
-    candidate = source_lines[j]
-    del source_lines[j]
-    current_block.lines.insert(0, candidate)
-    current_block.jira_key, current_block.jira_hash = parsed
-    current_block.marker_line_index = 0
+    return lines[j:]
 
 
 def parse_feature_file(content: str) -> tuple[list[str], list[ScenarioBlock]]:
     """Split a feature file's content into (header_lines, blocks).
+
+    Each block owns everything that describes it: the tags, comments and
+    JIRA marker directly above its keyword, its body, and - for a Scenario
+    Outline - its Examples tables. Removing or replacing a block therefore
+    takes its tags and examples with it and never touches a neighbour.
 
     The original content can be reassembled losslessly:
         "".join(header_lines) + "".join(b.text() for b in blocks)
@@ -270,9 +309,7 @@ def parse_feature_file(content: str) -> tuple[list[str], list[ScenarioBlock]]:
     if not content:
         return [], []
     lines = content.splitlines(keepends=True)
-    first_block_idx = next(
-        (i for i, line in enumerate(lines) if _starts_block(line)), None
-    )
+    first_block_idx = _keyword_index(lines)
     if first_block_idx is None:
         return lines, []
     header = lines[:first_block_idx]
@@ -281,8 +318,15 @@ def parse_feature_file(content: str) -> tuple[list[str], list[ScenarioBlock]]:
     blocks: list[ScenarioBlock] = []
     for idx, start in enumerate(block_starts):
         end = block_starts[idx + 1] if idx + 1 < len(block_starts) else len(body)
-        block = _build_block(body[start:end])
-        _migrate_marker_from_previous(blocks, header, block)
+        segment = body[start:end]
+        source = blocks[-1].lines if blocks else header
+        preamble = _take_preamble(source, _indent_of(segment[0]))
+        block = _build_block(preamble + segment)
+        if block.kind == "examples" and blocks and blocks[-1].kind == "scenario":
+            # Examples belong to the outline above them.
+            blocks[-1].lines.extend(block.lines)
+            continue
+        _find_marker(block)
         blocks.append(block)
     return header, blocks
 
@@ -298,6 +342,10 @@ def splice_scenario(
     Returns the modified file content. If jira_key is not found, returns
     the original content unchanged (callers should treat as 'append').
 
+    The replaced block's tags are kept when the replacement carries none,
+    and its trailing blank separator is kept so the next scenario does not
+    run into the new one.
+
     Raises ValueError if `new_scenario_text` doesn't carry a marker
     matching jira_key — refusing to splice unmarkered content prevents
     orphan scenarios.
@@ -306,9 +354,11 @@ def splice_scenario(
     header, blocks = parse_feature_file(original_content)
 
     # Sanity-check the replacement before mutating anything
+    if new_scenario_text and not new_scenario_text.endswith("\n"):
+        new_scenario_text += "\n"
     new_block_lines = new_scenario_text.splitlines(keepends=True)
     new_block = _build_block(new_block_lines)
-    _migrate_marker_from_previous([], [], new_block)
+    _find_marker(new_block)
     if new_block.jira_key != jira_key:
         raise ValueError(
             f"Replacement scenario text claims JIRA key {new_block.jira_key!r} "
@@ -326,6 +376,16 @@ def splice_scenario(
         )
         return original_content
 
+    old_block = blocks[target_idx]
+    old_tags = _preamble_tag_lines(old_block)
+    if old_tags and not _preamble_tag_lines(new_block):
+        k = _keyword_index(new_block.lines)
+        if k is not None:
+            new_block.lines[k:k] = old_tags
+            _find_marker(new_block)
+    if not _trailing_blank_lines(new_block.lines):
+        new_block.lines.extend(_trailing_blank_lines(old_block.lines))
+
     blocks[target_idx] = new_block
     return "".join(header) + "".join(b.text() for b in blocks)
 
@@ -340,13 +400,19 @@ def append_scenario(original_content: str, new_scenario_text: str) -> str:
 
 
 def remove_scenario(original_content: str, jira_key: str) -> str:
-    """Remove the scenario block owned by `jira_key`. No-op if absent."""
+    """Remove the scenario block owned by `jira_key`, with its tags and
+    examples. No-op if absent."""
     header, blocks = parse_feature_file(original_content)
     survivors = [b for b in blocks if b.jira_key != jira_key]
     if len(survivors) == len(blocks):
         logger.info(f"remove_scenario: no block found for {jira_key}, no-op.")
         return original_content
-    return "".join(header) + "".join(b.text() for b in survivors)
+    result = "".join(header) + "".join(b.text() for b in survivors)
+    # Removing the last scenario leaves the previous one's blank separator
+    # at the end of the file; end the file with exactly one newline.
+    if result.strip():
+        result = result.rstrip() + "\n"
+    return result
 
 
 def classify_test_cases(test_cases: list[dict], feature_content: str) -> dict:
@@ -2675,13 +2741,18 @@ def _inject_markers_into_feature(content: str, test_cases: list[dict]) -> str:
         stripped = line.lstrip()
         if stripped.startswith("Scenario Outline:") or stripped.startswith("Scenario:"):
             scenario_starts.append(i)
+            # Search the scenario's whole preamble - tags, comments and
+            # blank lines above it - so a marker written above the tags
+            # (`# JIRA ...` / `@smoke` / `Scenario:`) is found, not doubled.
             j = i - 1
-            while j >= 0 and lines[j].strip() == "":
-                j -= 1
-            if j >= 0:
+            keyword_indent = _indent_of(line)
+            while j >= 0 and (lines[j].strip() == ""
+                              or _is_preamble_line(lines[j], keyword_indent)):
                 parsed = parse_marker(lines[j])
                 if parsed:
                     existing_marker_above[i] = (j, parsed)
+                    break
+                j -= 1
 
     if not scenario_starts:
         return content
