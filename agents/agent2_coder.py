@@ -4062,8 +4062,8 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     plan = build_plan(llm, new_test_cases + plan_revisions, references, page_inventory, ctx)
     if impact_work:
         agent2_impact.drop_owner_files(plan, owner_files, new_test_cases)
-        validate_paths_against_policy(plan, ctx, protected_files=set(owner_files) | {
-            f.step_defs_path for f in owner_files.values()})
+        validate_paths_against_policy(
+            plan, ctx, protected_files=agent2_impact.protected_paths(owner_files))
 
     # 4. STAGE 2: GENERATE PER-FILE CONTENT
     # Order page objects BEFORE step definitions so the step-def prompt

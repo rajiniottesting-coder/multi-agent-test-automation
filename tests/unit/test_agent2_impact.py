@@ -210,3 +210,17 @@ def test_orphans_found_while_retiring_are_listed_in_the_pr():
     assert "## Orphans after retiring" in body and "`old_step`" in body
     assert "## Orphans" not in pr_sections({"revised": {}, "retired": {"AB-6": "f"},
                                             "owners": {}, "orphans": []})
+
+
+def test_one_definition_of_the_files_only_splicing_may_edit():
+    """Agent 3 review of #130: the plan filter and the path policy must use
+    the same protected set."""
+    from agents.agent2_impact import OwnerFile, drop_owner_files, protected_paths
+    files = {OWNER_FILE: OwnerFile(OWNER_FILE)}
+    assert protected_paths(files) == {OWNER_FILE, "tests/step_defs/test_sandbox_login.py"}
+    plan = CodePlan(feature_name="x", branch_name="auto/X-1-x", pr_title="t", pr_body="b", notes="n",
+                    files_to_create=[FilePlan(file_path=p, purpose="p") for p in
+                                     sorted(protected_paths(files)) + ["pages/x_page.py"]])
+    assert sorted(drop_owner_files(plan, files, own_new_cases=[{"key": "A"}])) == \
+        sorted(protected_paths(files))
+    assert [f.file_path for f in plan.files_to_create] == ["pages/x_page.py"]

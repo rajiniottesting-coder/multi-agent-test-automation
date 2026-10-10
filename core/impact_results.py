@@ -21,8 +21,11 @@ def _fallback_name(title: str) -> str:
     """pytest-bdd's naming rule, for an environment without pytest-bdd.
     Pinned against the real make_python_name by a unit test."""
     import re
-    # pytest-bdd 7: spaces -> "_", drop every other non-word character, drop a
-    # leading number, lowercase (pytest_bdd.scenario.make_python_name).
+    # pytest-bdd's rule as pinned in requirements.txt (pytest-bdd==7.3.0):
+    # spaces -> "_", drop every other non-word character, drop a leading
+    # number, lowercase (pytest_bdd.scenario.make_python_name). An upgrade that
+    # changes the rule fails test_the_fallback_name_matches_pytest_bdd, and a
+    # rename fails its import - loudly, in CI, either way.
     name = re.sub(r"\W", "", title.replace(" ", "_"))
     return re.sub(r"^\d+_*", "", name).lower()
 

@@ -91,6 +91,13 @@ def plan_cases(owner_files: dict) -> list:
     return out
 
 
+def protected_paths(owner_files: dict) -> set:
+    """Files a change-story run edits ONLY by splicing: every owner's feature
+    file and its step definitions. The one definition, used both to drop them
+    from the plan and by the path policy that rejects them."""
+    return set(owner_files) | {f.step_defs_path for f in owner_files.values()}
+
+
 def drop_owner_files(plan, owner_files: dict, own_new_cases: list) -> list:
     """Remove from the plan every file the splice owns; returns what was dropped.
 
@@ -98,7 +105,7 @@ def drop_owner_files(plan, owner_files: dict, own_new_cases: list) -> list:
     With no own new test case, the story has no feature file of its own, so
     every feature file and step-definition file goes.
     """
-    protected = set(owner_files) | {f.step_defs_path for f in owner_files.values()}
+    protected = protected_paths(owner_files)
     keep, dropped = [], []
     for fp in plan.files_to_create:
         path = fp.file_path.replace("\\", "/").lstrip("./")
