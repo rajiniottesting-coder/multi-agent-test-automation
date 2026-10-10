@@ -130,6 +130,40 @@ def _previous_report(tracker, story_key: str, settings: dict):
     return None, None
 
 
+def requirement_hash(story: dict) -> str:
+    """Stage 0: what a requirement analysis depends on - the story's text and
+    Components. Computed before any model call, so a repeat is free."""
+    return ia.content_hash(story["summary"], story.get("description") or "",
+                           sorted(story.get("components") or []))
+
+
+def _already_analysed(tracker, story_key: str, chash: str, settings: dict) -> bool:
+    """Stage 0 guard: this exact content was already published.
+
+    In live mode a report published in SHADOW mode does not count: it created
+    no review, so switching shadow mode off must give the story a real one."""
+    previous, review = _previous_report(tracker, story_key, settings)
+    if not previous or previous.get("content_hash") != chash:
+        return False
+    if settings["shadow_mode"] or review:
+        return True
+    last = next((b for b in reversed(tracker.get_comments(story_key)) if b.startswith(REPORT)), "")
+    return "(shadow mode)" not in last.split("\n", 1)[0]
+
+
+def analyse_and_publish(tracker, story_key: str, llm, settings: dict, root: Path,
+                        host=None, dry_run: bool = False) -> dict:
+    """The requirement trigger, stage 0 first: an unchanged story costs no
+    model call. Its impact-check label is consumed either way."""
+    story = tracker.get_story(story_key)
+    if _already_analysed(tracker, story_key, requirement_hash(story), settings):
+        if not dry_run:
+            tracker.remove_label(story_key, settings["labels"]["check"])
+        return {"story": story_key, "action": "unchanged"}
+    report = analyse_requirement(tracker, story_key, llm, settings, root, host)
+    return publish(tracker, story_key, report, settings, dry_run=dry_run)
+
+
 def _render_report(report: dict, title: str) -> str:
     lines = [f"{REPORT} {title} | hash: {report['content_hash']} | graph: {report['graph_sha']}"]
     if report["no_component"]:
@@ -215,8 +249,8 @@ def analyse_requirement(tracker, story_key: str, llm, settings: dict, root: Path
         dropped += lost
 
     ranked = ia.rank(judged, judgements, settings["weights"], settings["thresholds"])
-    chash = ia.content_hash(story["summary"], story.get("description") or "", sorted(components))
-    return ia.report_dict(story_key, chash, sha, ranked, not_judged, no_component, seeds, dropped)
+    return ia.report_dict(story_key, requirement_hash(story), sha, ranked, not_judged,
+                          no_component, seeds, dropped)
 
 
 def analyse_code_change(base_root: Path, head_root: Path, change_ref: str, settings: dict,
@@ -266,9 +300,11 @@ def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool
     """Shadow: one report comment. Live: the Impact Review (or ai-ready when
     there is nothing to review), with D4's delta against an earlier report."""
     labels = settings["labels"]
+    if _already_analysed(tracker, story_key, report["content_hash"], settings):
+        if not dry_run:                                              # stage 0 guard
+            tracker.remove_label(story_key, labels["check"])
+        return {"story": story_key, "action": "unchanged"}
     previous, review = _previous_report(tracker, story_key, settings)
-    if previous and previous.get("content_hash") == report["content_hash"]:
-        return {"story": story_key, "action": "unchanged"}           # stage 0 guard
     if dry_run:
         print(_render_report(report, f"Impact report for {story_key} (dry run)"))
         return {"story": story_key, "action": "dry-run"}
@@ -281,7 +317,11 @@ def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool
 
     title = f"Impact report for {story_key}"
     if settings["shadow_mode"]:
+        # Shadow mode creates no review and adds no label, but it consumes the
+        # trigger: Agent 1 skips impact-check (C1), so leaving it would hold
+        # the story back for good and re-run the analysis on every scan.
         tracker.add_comment(story_key, _render_report(report, title + " (shadow mode)"))
+        tracker.remove_label(story_key, labels["check"])
         return {"story": story_key, "action": "shadow-report", "affected": len(report["ranked"])}
 
     change = ia.delta(previous, report) if previous else None
@@ -374,8 +414,7 @@ def scan(tracker, host, llm, settings: dict | None = None, root: Path | None = N
     results = []
     for s in tracker.find_stories_to_process(settings["selection"], max_results=10):
         try:
-            report = analyse_requirement(tracker, s["key"], llm, settings, root, host)
-            results.append(publish(tracker, s["key"], report, settings))
+            results.append(analyse_and_publish(tracker, s["key"], llm, settings, root, host))
         except Exception as e:                                 # noqa: BLE001
             logger.error("Agent 0 failed on %s: %s", s["key"], e, exc_info=True)
             results.append({"story": s["key"], "action": "error", "error": str(e)})
@@ -424,9 +463,8 @@ def main(argv=None) -> int:
             print(r)
         return 0
     if args.story:
-        report = analyse_requirement(tracker, args.story.upper(), LLMClient(temperature=0.0),
-                                     settings, PROJECT_ROOT, host)
-        print(publish(tracker, args.story.upper(), report, settings, dry_run=args.dry_run))
+        print(analyse_and_publish(tracker, args.story.upper(), LLMClient(temperature=0.0),
+                                  settings, PROJECT_ROOT, host, dry_run=args.dry_run))
         return 0
     if args.code_change:
         if not (args.base and args.head):

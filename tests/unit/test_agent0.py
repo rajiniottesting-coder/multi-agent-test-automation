@@ -200,7 +200,7 @@ class TestPublish:
         s = _settings()                                   # shadow_mode True by default
         r = a0.publish(jira, "SBX-5", self._report(jira, root, g), s)
         assert r["action"] == "shadow-report"
-        assert fake.issues["SBX-5"]["labels"] == ["impact-check"]
+        assert fake.issues["SBX-5"]["labels"] == []        # trigger consumed, nothing added
         assert jira.get_subtasks("SBX-5") == []
         body = next(c for c in fake.comments["SBX-5"] if c.startswith(a0.REPORT))
         assert ia.extract(body)["ranked"][0]["ref"] == "SBX-12"
@@ -211,6 +211,42 @@ class TestPublish:
         report = self._report(jira, root, g)
         a0.publish(jira, "SBX-5", report, s)
         assert a0.publish(jira, "SBX-5", report, s)["action"] == "unchanged"
+
+    def test_stage0_guard_runs_before_any_model_call(self, world):
+        """Design stage 0: 're-running is therefore free'."""
+        fake, jira, root, g = world
+        s = _settings()
+        page, key = _only_in(g, "SBX-12", "SBX-11")
+        model = FakeModel([f"{page}:{key}"], must={TITLE_12})
+        assert a0.analyse_and_publish(jira, "SBX-5", model, s, root)["action"] == "shadow-report"
+        calls = len(model.calls)
+        fake.issues["SBX-5"]["labels"].append("impact-check")      # someone asks again
+        assert a0.analyse_and_publish(jira, "SBX-5", model, s, root)["action"] == "unchanged"
+        assert len(model.calls) == calls                           # no model call at all
+        assert "impact-check" not in fake.issues["SBX-5"]["labels"]
+        fake.issues["SBX-5"]["description"] += " Edited."                # an edit is new content
+        fake.issues["SBX-5"]["labels"].append("impact-check")
+        assert a0.analyse_and_publish(jira, "SBX-5", model, s, root)["action"] == "shadow-report"
+        assert len(model.calls) > calls
+
+    def test_a_shadow_report_does_not_count_once_shadow_mode_is_off(self, world):
+        fake, jira, root, g = world
+        page, key = _only_in(g, "SBX-12", "SBX-11")
+        model = FakeModel([f"{page}:{key}"], must={TITLE_12})
+        a0.analyse_and_publish(jira, "SBX-5", model, _settings(), root)
+        fake.issues["SBX-5"]["labels"].append("impact-check")
+        r = a0.analyse_and_publish(jira, "SBX-5", model, _settings(shadow_mode=False), root)
+        assert r["action"] == "review-created" and len(jira.get_subtasks("SBX-5")) == 1
+
+    def test_a_shadow_report_releases_the_story_to_agent1(self, world):
+        from agents.agent1_analyst import load_agent_config
+        fake, jira, root, g = world
+        fake.issues["SBX-5"]["labels"].append("ai-ready")
+        selection = dict(load_agent_config()["selection"])
+        selection.pop("sprint", None)
+        assert "SBX-5" not in {x["key"] for x in jira.find_stories_to_process(selection)}
+        a0.publish(jira, "SBX-5", self._report(jira, root, g), _settings())
+        assert "SBX-5" in {x["key"] for x in jira.find_stories_to_process(selection)}
 
     def test_live_mode_creates_the_review_grouped_by_owner(self, world):
         fake, jira, root, g = world
@@ -410,7 +446,8 @@ class TestD5:
         out = a0.scan(jira, FakeRepoHost({}), FakeModel([f"{page}:{key}"], must={TITLE_12}),
                       _settings(enabled=True), root)
         assert [r["action"] for r in out] == ["shadow-report"]
-        assert jira.get_subtasks("SBX-5") == [] and "impact-check" in fake.issues["SBX-5"]["labels"]
+        assert jira.get_subtasks("SBX-5") == [] and "impact-check" not in fake.issues["SBX-5"]["labels"]
+        assert a0.scan(jira, FakeRepoHost({}), MagicMock(), _settings(enabled=True), root) == []
 
     def test_live_loop_review_handover_reconcile_outcome(self, world):
         fake, jira, root, g = world
