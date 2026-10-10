@@ -113,6 +113,7 @@ class ScenarioNode:
     elements: frozenset              # frozenset[Element]
     pages: frozenset
     components: frozenset
+    owner: Optional[str] = None      # the marker's owner field (C6), when recorded
 
     @property
     def ref(self) -> str:
@@ -353,7 +354,7 @@ def _read_step_module(path: Path, root: Path, fixtures: dict,
 
 
 def _scenarios_in_feature(path: Path, root: Path, graph: ImpactGraph) -> list:
-    """[(title, jira_key, [(kind, phrase)])] with Background steps prepended."""
+    """[(title, jira_key, [(kind, phrase)], owner)] with Background steps prepended."""
     from agents.agent2_coder import parse_feature_file
     from validators.gherkin_analyzer import _extract_feature_steps
 
@@ -371,7 +372,8 @@ def _scenarios_in_feature(path: Path, root: Path, graph: ImpactGraph) -> list:
         elif block.kind == "scenario":
             title = next((l.strip().split(":", 1)[1].strip() for l in block.lines
                           if l.strip().startswith(("Scenario:", "Scenario Outline:"))), "")
-            out.append((title, block.jira_key, background + _extract_feature_steps(block.text())))
+            out.append((title, block.jira_key, background + _extract_feature_steps(block.text()),
+                        block.owner))
     return out
 
 
@@ -409,7 +411,7 @@ def build_impact_graph(project_root: Path | str,
         # pytest-bdd steps are module-scoped: features/X.feature runs with
         # tests/step_defs/test_X.py plus conftest.py.
         visible = modules.get(f"test_{feature.stem}.py", []) + global_steps
-        for title, jira_key, steps in _scenarios_in_feature(feature, root, graph):
+        for title, jira_key, steps, owner in _scenarios_in_feature(feature, root, graph):
             where = f"{rel}::{title}"
             used: list = []
             for kind, phrase in steps:
@@ -428,6 +430,7 @@ def build_impact_graph(project_root: Path | str,
                 step_definitions=tuple(used), methods=frozenset(methods),
                 shared_methods=frozenset(shared),
                 elements=frozenset(elements), pages=pages, components=components,
+                owner=owner,
             ))
     logger.info("Impact graph: %s", graph.stats())
     return graph

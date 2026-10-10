@@ -25,6 +25,7 @@ DEFAULTS: dict = {
         "applied": "impact-applied",
         "reverted": "impact-reverted",
         "ready": "ai-ready",
+        "drift": "inventory-drift",       # marks the one open drift maintenance story
     },
     "review": {
         "issue_type": "Subtask",          # a standard type on every Jira plan
