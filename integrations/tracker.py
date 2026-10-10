@@ -331,3 +331,7 @@ def register_adapter(name: str, factory) -> None:
     For a client shipping their own adapter without editing this file.
     """
     _ADAPTERS[name.strip().lower()] = factory
+
+def registered_types() -> list[str]:
+    """Names of the tracker adapters that can be constructed by name (E2)."""
+    return sorted(_ADAPTERS)

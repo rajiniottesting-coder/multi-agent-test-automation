@@ -58,6 +58,7 @@ import ast
 import json
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional
@@ -477,6 +478,40 @@ def _walk_methods(graph: ImpactGraph, by_class: dict, start: Iterable[MethodRef]
             if _resolve_method(graph, by_class, cls, helper) is not None:
                 frontier.append((cls, helper))
     return methods, shared, elements
+
+
+# ─────────────────────────────────────────────────────────────
+# Builders per language (design E2)
+# ─────────────────────────────────────────────────────────────
+#
+# Layer 1 is the only part of Agent 0 that reads the test suite's code, so it is
+# the only part that differs per language. A builder has the signature
+#     builder(project_root, inventory_file=None) -> ImpactGraph
+# and returns the same ImpactGraph shape (scenarios, step definitions, gaps), so
+# layers 2 and 3 never learn which language produced the graph. A suite in a
+# language with no builder gets no layer 1, and Agent 0 reports that rather than
+# guessing. Register a builder for a new language with register_graph_builder().
+
+GraphBuilder = Callable[..., "ImpactGraph"]
+_GRAPH_BUILDERS: dict[str, GraphBuilder] = {}
+
+
+def register_graph_builder(language: str, builder: GraphBuilder) -> None:
+    """Make `builder` the layer 1 graph builder for `language`."""
+    _GRAPH_BUILDERS[language.strip().lower()] = builder
+
+
+def graph_builder_for(language: str) -> GraphBuilder | None:
+    """The builder registered for `language`, or None."""
+    return _GRAPH_BUILDERS.get(language.strip().lower())
+
+
+def registered_languages() -> list[str]:
+    return sorted(_GRAPH_BUILDERS)
+
+
+# The suite this repository is written in: pytest-bdd with Playwright page objects.
+register_graph_builder("python-pytest-bdd", build_impact_graph)
 
 
 if __name__ == "__main__":                       # python -m core.impact_graph [root]
