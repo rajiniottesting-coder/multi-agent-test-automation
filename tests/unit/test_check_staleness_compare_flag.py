@@ -86,3 +86,24 @@ def test_without_compare_no_collection_runs(run, monkeypatch):
                         lambda *a, **k: called.append(1) or ("", []))
     run()
     assert called == []
+
+
+def test_compare_marks_always_page_selectors_on_every_page(run, tmp_path, monkeypatch):
+    """A global menu or banner (an `always` page) appears on every page. Its
+    elements are covered there too, so its selectors must be marked on each
+    page; otherwise every one is reported as uncovered, page after page."""
+    inv = {"pages": {
+        "home": {"url": "/", "elements": {"save": "[data-qa='save-btn']"}},
+        "menu": {"url": "(overlay)", "always": True,
+                 "elements": {"menu_home_link": "a.menu-home", "_note": "not a selector"}},
+    }}
+    (tmp_path / "inventory.json").write_text(json.dumps(inv), encoding="utf-8")
+    seen = []
+
+    def capture(page, url, sels, attrs):
+        seen.append(list(sels))
+        return "Home", []
+
+    monkeypatch.setattr(chk, "collect_uncovered", capture)
+    run("--compare")
+    assert seen == [["[data-qa='save-btn']", "a.menu-home"]]
