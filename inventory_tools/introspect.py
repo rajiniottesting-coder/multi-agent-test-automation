@@ -1355,6 +1355,48 @@ def summarize_drift(per_page: dict[str, dict], missing_pages: list[str]) -> dict
     }
 
 
+# ─────────────────────────────────────────────────────────────
+# Compare mode (check_inventory_staleness --compare)
+# ─────────────────────────────────────────────────────────────
+#
+# The test-id check above only sees NEW elements that carry a test-id
+# attribute. An element added without one - a new button, a new required
+# field - is invisible to it, so the inventory never learns of it and Agent 0
+# gets no seed when it appears (design E1). Compare mode closes that gap by
+# DOM IDENTITY, not by guessing: the browser marks every node an inventory
+# selector resolves to with COVER_ATTR, then takes the normal capture
+# snapshot. Whatever the crawler would capture and is NOT marked is an element
+# the inventory does not cover.
+
+COVER_ATTR = "data-inventory-covered"
+
+
+def uncovered_descriptors(descriptors: list[dict]) -> list[dict]:
+    """The descriptors no inventory selector resolved to (pure).
+
+    A descriptor is covered when the browser marked its node with COVER_ATTR.
+    Only unmarked descriptors are returned, so the mark can never reach a
+    selector or a name built from their attributes."""
+    return [d for d in descriptors if COVER_ATTR not in (d.get("attrs") or {})]
+
+
+def uncovered_elements(url: str, title: str, descriptors: list[dict],
+                       base_url: str = "", test_attrs: tuple = TEST_ID_ATTRS) -> dict:
+    """{name: selector} for capturable elements no inventory selector covers.
+
+    Built with build_page_entry - the generator's own rules - so a reported
+    element is exactly what a fresh crawl would have drafted: the same
+    capturability filter, ranked selector and name. Third-party embeds (ad
+    networks), which the generator keeps but flags, are left out: they are
+    not part of the application. Report only - never drift."""
+    entry = build_page_entry(url, title, uncovered_descriptors(descriptors),
+                             base_url=base_url, test_attrs=test_attrs)
+    third_party = set((entry.get("_third_party_elements") or {}).get("elements") or [])
+    return {name: (value.get("selector") if isinstance(value, dict) else value)
+            for name, value in (entry.get("elements") or {}).items()
+            if not name.startswith("_") and name not in third_party}
+
+
 def pages_missing_notes(inventory: dict) -> list[str]:
     """Pages with no `elements_notes` — the 3.1 'make the gap visible' warning."""
     out = []
