@@ -14,6 +14,7 @@ DEFAULTS: dict = {
     "enabled": False,          # master switch: the scan and the workflow do nothing while false
     "shadow_mode": True,       # report only: no Impact Review, no label added, no hand-over
     "uncovered_hint": False,   # E1 follow-up: a named uncovered element adds its page as a review candidate
+    "uncovered_max_age_hours": 48,   # an older uncovered snapshot is ignored, never trusted
     "selection": {
         "issue_type": "Story",
         "allowed_statuses": ["To Do", "In Progress", "In Review"],
