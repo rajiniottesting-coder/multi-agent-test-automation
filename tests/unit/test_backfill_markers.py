@@ -229,3 +229,25 @@ class TestCommands:
         assert "# JIRA: AB-1" in content and "# JIRA: AB-2" in content
         gh.open_pull_request.assert_called_once()
         assert (project / "features" / "login.feature").read_text() == FEATURE
+
+
+def test_plain_test_case_title_strips_every_leading_type_tag():
+    from agents.agent2_coder import plain_test_case_title
+    assert plain_test_case_title("[Negative] [Validation] Empty fields") == "Empty fields"
+    assert plain_test_case_title("[Positive] [Positive] Login works") == "Login works"
+    assert plain_test_case_title("No tags [here]") == "No tags [here]"
+    assert plain_test_case_title("") == ""
+
+
+def test_a_reserved_scenario_never_takes_a_markable_scenarios_test_case():
+    """The reference file and a story's own file can hold the same title."""
+    unmarked = [("login.feature", "Login fails with an unknown email address"),
+                ("story.feature", "Login fails with an unknown email address")]
+    cases = [{"key": "AB-13", "summary": "[Negative] Login fails with an unknown email address",
+              "description": "d", "owner": "AB-1"}]
+    rows = bf.build_proposals(unmarked, cases, set(), {"login.feature"})
+    by_file = {r["file"]: r for r in rows}
+    assert by_file["story.feature"]["test_case"] == "AB-13"
+    assert by_file["story.feature"]["apply"] is True
+    assert by_file["story.feature"]["summary"].startswith("[Negative]")   # shown as in Jira
+    assert by_file["login.feature"]["test_case"] is None

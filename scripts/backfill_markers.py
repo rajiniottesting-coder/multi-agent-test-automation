@@ -51,7 +51,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -60,14 +59,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 DEFAULT_FLOOR = 0.3                 # the same floor marker injection uses
 DEFAULT_OUT = "reports/marker_backfill.json"
-_PREFIX_TAGS = re.compile(r"^(\s*\[[^\]]*\])+\s*")
-
-
-def _plain_summary(summary: str) -> str:
-    """'[Negative] [Validation] Empty fields...' -> 'Empty fields...'.
-    The type tags are not part of what the test does and only dilute the
-    title score."""
-    return _PREFIX_TAGS.sub("", summary or "").strip()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -83,12 +74,19 @@ def build_proposals(unmarked: list, test_cases: list, marked_keys: set,
     marked_keys:    test case keys already marked somewhere - never proposed
     reserved_files: feature filenames that are reserved reference files
     """
-    from agents.agent2_coder import greedy_title_pairing
+    from agents.agent2_coder import greedy_title_pairing, plain_test_case_title
 
-    candidates = [tc for tc in test_cases if tc["key"] not in marked_keys]
-    titles = {i: title for i, (_f, title) in enumerate(unmarked)}
-    chosen, _claimed = greedy_title_pairing(
-        titles, [dict(tc, summary=_plain_summary(tc.get("summary", ""))) for tc in candidates])
+    candidates = [dict(tc, summary=plain_test_case_title(tc.get("summary", "")))
+                  for tc in test_cases if tc["key"] not in marked_keys]
+    # Scenarios that can be marked pair first. Reserved-file scenarios are
+    # only shown for information, so they pair last, from what is left -
+    # otherwise an identical title in the reference file takes the test case
+    # the story's own scenario needs.
+    markable = {i: t for i, (f, t) in enumerate(unmarked) if f not in reserved_files}
+    reserved = {i: t for i, (f, t) in enumerate(unmarked) if f in reserved_files}
+    chosen, claimed = greedy_title_pairing(markable, candidates)
+    left = [c for n, c in enumerate(candidates) if n not in claimed]
+    chosen.update(greedy_title_pairing(reserved, left)[0])
 
     rows = []
     for i, (filename, title) in enumerate(unmarked):
@@ -105,7 +103,8 @@ def build_proposals(unmarked: list, test_cases: list, marked_keys: set,
             "file": filename,
             "scenario": title,
             "test_case": tc["key"] if tc else None,
-            "summary": tc.get("summary") if tc else None,
+            "summary": next((c["summary"] for c in test_cases if c["key"] == tc["key"]),
+                            None) if tc else None,
             "owner": tc.get("owner") if tc else None,
             "score": round(score, 2),
             "apply": bool(tc) and score >= floor and not reserved,
