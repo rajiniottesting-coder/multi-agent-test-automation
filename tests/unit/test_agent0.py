@@ -288,6 +288,13 @@ class TestPublish:
         assert rows["SBX-12"]["owner"] == "SBX-1" and rows["SBX-12"]["decision"] == "approve"
         assert sorted(l for l in fake.issues["SBX-5"]["labels"] if l.startswith("impact-")) == \
             ["impact-proposed"]
+        # stage 7: the ranked report is also on the change story, grouped by owner
+        body = next(c for c in fake.comments["SBX-5"] if c.startswith(a0.REPORT))
+        assert f"review {review['key']}" in body.splitlines()[0]
+        posted = ia.extract(body)
+        assert "SBX-12" in posted["by_owner"]["SBX-1"]
+        assert posted["by_owner"] == ia.by_owner(posted["ranked"])
+        assert "By owning story: " in body
 
     def test_nothing_to_review_makes_the_story_ready(self, world):
         fake, jira, root, _g = world
@@ -565,6 +572,12 @@ def test_layer2_fills_the_cap_most_relevant_first_and_reports_the_rest():
     assert [c.id for c in judged] == ["C1", "C2", "C3"]
     judged, rest = ia.shortlist(l1 * 1, l2, "x", 0)            # a zero cap still judges layer 1
     assert [c.ref for c in judged] == ["A"] and len(rest) == 3
+
+def test_report_groups_by_owner_and_keeps_the_unowned():
+    rows = [{"ref": "A-3", "owner": "A-1"}, {"ref": "f::t", "owner": None},
+            {"ref": "A-4", "owner": "A-1"}, {"ref": "B-9", "owner": "B-2"}]
+    assert ia.by_owner(rows) == {ia.UNOWNED: ["f::t"], "A-1": ["A-3", "A-4"], "B-2": ["B-9"]}
+
 
 def test_outcome_and_delta_math():
     assert ia.outcome(["A", "B"], ["B"], ["C"]) == {

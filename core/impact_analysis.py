@@ -337,10 +337,25 @@ def rank(candidates: list, judgements: dict, weights: dict, thresholds: dict,
 REPORT_OPEN, REPORT_CLOSE = "{code:json}", "{code}"
 
 
+UNOWNED = "(no owner)"
+
+
+def by_owner(rows: list) -> dict:
+    """The design's per-owner groups: {owning story: [ref, ...]}, rank order
+    kept. A test with no known owner (unmarked, or no Relates link) is
+    grouped under UNOWNED so it is never dropped from the view."""
+    groups: dict = {}
+    for r in rows:
+        groups.setdefault(r.get("owner") or UNOWNED, []).append(r["ref"])
+    return dict(sorted(groups.items()))
+
+
 def report_dict(change_ref: str, chash: str, graph_sha: str, ranked: list,
                 not_judged: list, no_component: bool, seeds: Seeds, dropped: list) -> dict:
+    affected = [r for r in ranked if r["tier"] != "unaffected"]
     return {"change_ref": change_ref, "content_hash": chash, "graph_sha": graph_sha,
-            "ranked": [r for r in ranked if r["tier"] != "unaffected"],
+            "ranked": affected,
+            "by_owner": by_owner(affected),
             "unaffected": [r for r in ranked if r["tier"] == "unaffected"],
             "not_judged": [{"ref": c.ref, "key": c.test_case_key, "file": c.file,
                             "title": c.title} for c in not_judged],

@@ -176,6 +176,9 @@ def _render_report(report: dict, title: str) -> str:
                      "tests not judged.")
     lines.append(f"Affected: {len(report['ranked'])}; unaffected: {len(report['unaffected'])}; "
                  f"not judged: {len(report['not_judged'])}.")
+    if report.get("by_owner"):
+        lines.append("By owning story: " + "; ".join(
+            f"{owner}: {', '.join(refs)}" for owner, refs in report["by_owner"].items()))
     if report["seeds"]["dropped"]:
         lines.append("Dropped invented element keys: " + ", ".join(report["seeds"]["dropped"]))
     lines += ["", "||Tier||Score||Test||Owner||Scenario||Evidence||"]
@@ -366,6 +369,10 @@ def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool
     _post_delta(tracker, story_key, change,
                 f" Nothing new to review; the approved review {review_key} stands."
                 if action == "no-new-impact" else "")
+    if action != "no-new-impact":
+        # Stage 7: the ranked report on the change story itself, next to the
+        # requirement, as well as the table in the Impact Review.
+        tracker.add_comment(story_key, _render_report(report, f"{title} - review {review_key}"))
     # impact-check comes off on every path, or the next scan would analyse the
     # story again. With no new review the story keeps the labels it had.
     tracker.remove_label(story_key, labels["check"])
