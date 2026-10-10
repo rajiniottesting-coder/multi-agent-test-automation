@@ -236,6 +236,7 @@ class FakeRepoHost:
     def __init__(self, files: dict):
         self.branches = {"main": dict(files)}
         self.prs: list = []
+        self.pr_comments: dict = {}
 
     def create_branch(self, branch_name, from_branch="main"):
         self.branches.setdefault(branch_name, dict(self.branches[from_branch]))
@@ -261,6 +262,29 @@ class FakeRepoHost:
                          "base": base_branch, "state": "open", "merged": False,
                          "url": f"https://sandbox.invalid/pull/{n}", "updated_at": f"t{n}"})
         return f"https://sandbox.invalid/pull/{n}"
+
+    def get_pr_changed_files(self, pr_number):
+        """Files that differ between the PR's head branch and main."""
+        head = self.branches.get(self.prs[pr_number - 1]["head_ref"], {})
+        main = self.branches["main"]
+        out = []
+        for path in sorted(set(head) | set(main)):
+            if path not in main:
+                status = "added"
+            elif path not in head:
+                status = "removed"
+            elif head[path] != main[path]:
+                status = "modified"
+            else:
+                continue
+            out.append({"filename": path, "status": status, "content": head.get(path)})
+        return out
+
+    def post_pr_comment(self, pr_number, body):
+        self.pr_comments.setdefault(pr_number, []).append(body)
+
+    def get_pr_comments(self, pr_number):
+        return list(self.pr_comments.get(pr_number, []))
 
     # PR state changes the sandbox tests drive
     def merge(self, number):

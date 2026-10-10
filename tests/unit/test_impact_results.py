@@ -59,3 +59,28 @@ def test_the_fallback_name_matches_pytest_bdd(title):
     from pytest_bdd.scenario import make_python_name
     from core.impact_results import _fallback_name
     assert _fallback_name(title) == make_python_name(title)
+
+
+def test_changed_existing_keys_counts_revised_and_removed_not_added(tmp_path):
+    """Stage 10's 'actual changed': a marker whose hash moved, or a marked
+    scenario that is gone (a retire). A new file holds no existing test."""
+    from agents.agent2_coder import build_marker_index, format_marker
+    from core.impact_results import changed_existing_keys
+    from tests.sandbox.fake_jira import FakeRepoHost
+
+    def feature(*blocks):
+        return "Feature: f\n" + "".join(f"\n  {format_marker(k, d)}\n  Scenario: {t}\n    Then x\n"
+                                        for k, d, t in blocks)
+
+    main = feature(("AB-1", "a", "One"), ("AB-2", "b", "Two"), ("AB-3", "c", "Three"))
+    branch = feature(("AB-1", "a", "One"), ("AB-2", "b-revised", "Two"))       # AB-3 retired
+    host = FakeRepoHost({"features/f.feature": main})
+    host.create_branch("auto/AB-9-x")
+    host.branches["auto/AB-9-x"]["features/f.feature"] = branch
+    host.branches["auto/AB-9-x"]["features/new.feature"] = feature(("AB-7", "n", "New"))
+    host.open_pull_request("t", "b", "auto/AB-9-x")
+    checkout = tmp_path / "features"
+    checkout.mkdir()
+    (checkout / "f.feature").write_text(branch)
+    (checkout / "new.feature").write_text(feature(("AB-7", "n", "New")))
+    assert changed_existing_keys(host, 1, build_marker_index(checkout)) == {"AB-2", "AB-3"}

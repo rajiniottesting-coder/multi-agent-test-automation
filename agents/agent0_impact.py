@@ -26,7 +26,9 @@ Stages:
     7 publish       shadow: a report comment only. Live: an Impact Review
                     sub-task (C2's table) and impact-check -> impact-proposed
     8-9             the review, once Done, is handed over (core.impact_handover)
-    10              reconcile (core.impact_reconcile) and the outcome line
+    10              the outcome line, recorded by Agent 5 when the change
+                    story's pull request runs (record_outcome); reconcile
+                    (core.impact_reconcile)
 
 Safety:
     agents.agent0_impact.enabled false  -> the scan does nothing
@@ -388,17 +390,21 @@ def hand_over_decided(tracker, settings: dict) -> list:
     return out
 
 
-def record_outcome(tracker, story_key: str, settings: dict) -> dict | None:
-    """Stage 10: recall and precision of the prediction, once per story."""
-    if any(c.startswith(OUTCOME) for c in tracker.get_comments(story_key)):
+def record_outcome(tracker, story_key: str, settings: dict, changed, failed,
+                   ref: str) -> dict | None:
+    """Stage 10: the prediction against what the pull request's run showed,
+    once per pull request. Works in shadow mode too - measuring is what the
+    shadow period is for (design section 10). Called by Agent 5
+    (core.impact_results.record_prediction_outcome)."""
+    head = f"{OUTCOME} pr: {ref} "
+    if any(c.startswith(head) for c in tracker.get_comments(story_key)):
         return None
     report, _review = _previous_report(tracker, story_key, settings)
     if not report:
-        return None
+        return None                                   # no prediction, nothing to measure
     predicted = [r["key"] for r in report["ranked"] if r["key"]]
-    actual = [c["key"] for c in tracker.get_impacted_test_cases(story_key, include_retired=True)]
-    result = ia.outcome(predicted, actual)
-    tracker.add_comment(story_key, f"{OUTCOME} recall: {result['recall']} precision: "
+    result = ia.outcome(predicted, changed, failed)
+    tracker.add_comment(story_key, f"{head}| recall: {result['recall']} precision: "
                                    f"{result['precision']}\n{json.dumps(result)}")
     return result
 
@@ -421,10 +427,7 @@ def scan(tracker, host, llm, settings: dict | None = None, root: Path | None = N
     if settings["shadow_mode"]:
         return results                    # shadow mode never writes past a report
     results += hand_over_decided(tracker, settings)
-    for r in reconcile_all(tracker, host, settings):
-        results.append(r)
-        if r["action"] == "merged":
-            record_outcome(tracker, r["story"], settings)
+    results += reconcile_all(tracker, host, settings)
     return results
 
 

@@ -168,3 +168,52 @@ def test_run_reports_the_regression_and_returns_failed(monkeypatch, tmp_path, ca
     assert "test_older_module::test_broken_by_this_branch" in printed
     assert "test_broken_by_this_branch" not in seen["prompt"], \
         "the model is still given only the story's own tests"
+
+
+def _posting_run(monkeypatch, tmp_path, outcome_hook):
+    """run() for real (not dry run) with the tracker faked: returns the result."""
+    from unittest.mock import MagicMock
+
+    import core.impact_results as ir
+    import core.usage_ledger as ledger
+    _story_owns(monkeypatch, "tests/step_defs/test_story_module.py")
+    monkeypatch.setattr(a5, "parse_junit_xml", lambda path: _session())
+    monkeypatch.setattr(a5, "load_prompt", lambda: "{run_report_json}")
+    tracker = MagicMock()
+    tracker.get_comments.return_value = []
+    monkeypatch.setattr(a5, "get_tracker", lambda *a, **k: tracker)
+    monkeypatch.setattr(ledger, "post_usage_to_story", lambda *a, **k: None)
+    monkeypatch.setattr(ir, "post_owner_results", lambda *a, **k: {})
+    monkeypatch.setattr(ir, "record_prediction_outcome", outcome_hook)
+
+    class FakeLLM:
+        def __init__(self, *a, **k):
+            pass
+
+        def invoke_structured(self, system_prompt, user_prompt, output_schema):
+            return JiraCommentDraft(title="t", body_markdown="b")
+
+    monkeypatch.setattr(a5, "LLMClient", FakeLLM)
+    return a5.run("STORY-1", Path(tmp_path), cli_pr=7)
+
+
+def test_run_records_agent0s_outcome_with_the_whole_run(monkeypatch, tmp_path):
+    """Agent 0 stage 10: Agent 5 hands the WHOLE session (not the scoped
+    report) to record_prediction_outcome - failures outside the story are
+    exactly the second half of the outcome."""
+    seen = {}
+
+    def hook(tracker, host, story, pr_number, pr_url, results, features_dir, *a, **k):
+        seen.update(story=story, pr=pr_number, names={r.name for r in results})
+
+    result = _posting_run(monkeypatch, tmp_path, hook)
+    assert result["status"] == "comment_posted"
+    assert seen["story"] == "STORY-1" and seen["pr"] == 7
+    assert "test_broken_by_this_branch" in seen["names"]
+
+
+def test_a_failing_outcome_hook_never_fails_the_report(monkeypatch, tmp_path):
+    def hook(*a, **k):
+        raise RuntimeError("tracker down")
+
+    assert _posting_run(monkeypatch, tmp_path, hook)["status"] == "comment_posted"

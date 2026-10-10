@@ -377,10 +377,15 @@ def delta(previous: dict, current: dict) -> dict:
                              if old[k]["tier"] != new[k]["tier"]]}
 
 
-def outcome(predicted: Iterable[str], actual: Iterable[str]) -> dict:
-    """Recall and precision of a prediction against what really changed."""
-    p, a = set(predicted), set(actual)
+def outcome(predicted: Iterable[str], changed: Iterable[str],
+            failed: Iterable[str] = ()) -> dict:
+    """ImpactOutcome (design section 9): recall and precision of a prediction
+    against what really happened - the existing tests the pull request
+    changed, and the existing tests that failed on its branch. A test is
+    truly affected if either holds."""
+    p, c, f = set(predicted), set(changed), set(failed)
+    a = c | f
     hit = p & a
-    return {"predicted": sorted(p), "actual": sorted(a),
+    return {"predicted": sorted(p), "actual_changed": sorted(c), "actual_failed": sorted(f),
             "recall": round(len(hit) / len(a), 3) if a else None,
             "precision": round(len(hit) / len(p), 3) if p else None}
