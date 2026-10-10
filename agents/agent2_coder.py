@@ -3904,16 +3904,25 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     # they do not change while this batch is generated, and a per-file fetch
     # would multiply API calls for no benefit. Fails soft to an empty list, in
     # which case behaviour is exactly as it was before.
+    #
+    # `gh` is bound HERE, before its first use. It used to be assigned only
+    # further down (before the branch/PR step), which made it an unbound local
+    # at this point: the UnboundLocalError was swallowed by the except below
+    # and this context never reached a prompt. get_repo_host() returns a
+    # cached instance, so the later assignment hands back the same object.
     _plan_paths = {f.file_path for f in ordered_files}
     existing_pos: list = []
     try:
+        gh = get_repo_host()
         existing_pos = _existing_page_objects_on_main(
             gh, _plan_paths, branch=getattr(plan, "branch_name", None))
         if existing_pos:
             logger.info("Stage 2: injecting method signatures from %d existing "
                         "page object(s).", len(existing_pos))
     except Exception as exc:                                   # noqa: BLE001
-        logger.debug("No existing-page-object context: %s", exc)
+        # WARNING, not DEBUG: a failure here silently thins every Stage-2
+        # prompt, and at DEBUG that went unnoticed.
+        logger.warning("No existing-page-object context: %s", exc)
 
     generated_files: list[GeneratedFile] = []
     for file_plan in ordered_files:

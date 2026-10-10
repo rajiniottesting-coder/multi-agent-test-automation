@@ -190,6 +190,41 @@ def test_agent2_reads_test_cases_and_marks_coded(tracker):
     assert "ai-coded" in tracker.stories["ACME-1"]["labels"]
 
 
+def test_agent2_run_passes_the_repo_host_to_existing_page_object_lookup(tracker):
+    """Regression: run() assigned `gh` only AFTER the Stage-2 block that uses
+    it, so `gh` was an unbound local there. The UnboundLocalError was caught
+    by the block's own `except Exception` and logged at DEBUG, and the
+    existing-page-object context never reached a single prompt."""
+    import agents.agent2_coder as a2
+    tracker.test_cases = {"ACME-T1": {"key": "ACME-T1", "summary": "Login",
+                                      "description": "steps"}}
+    tracker.links = {"ACME-1": ["ACME-T1"]}
+    tracker.stories["ACME-1"]["labels"] = ["ai-processed", "human-approved"]
+    plan = CodePlan(feature_name="login", branch_name="auto/ACME-1-login",
+                    pr_title="t", pr_body="b", notes="n",
+                    files_to_create=[FilePlan(file_path="features/login_acme.feature",
+                                              file_type="feature", purpose="p",
+                                              is_new_file=True)])
+    gh = MagicMock()
+    gh.find_open_pr_for_story.return_value = None
+    gh.branch_exists.return_value = False
+    gh.open_pull_request.return_value = "https://example/pull/1"
+
+    with patch.object(a2, "get_tracker", return_value=tracker), \
+         patch.object(a2, "get_repo_host", return_value=gh), \
+         patch.object(a2, "LLMClient") as LLM, \
+         patch.object(a2, "_validate_generated_files"), \
+         patch.object(a2, "_attempt_step_coverage_repair", side_effect=lambda g, *a, **k: g), \
+         patch.object(a2, "_existing_page_objects_on_main", return_value=[]) as lookup:
+        LLM.return_value.invoke_structured.return_value = plan
+        LLM.return_value.invoke_text.return_value = (
+            "Feature: Login\n\n  Scenario: Login\n    Given I am on the login page\n")
+        a2.run("ACME-1")
+
+    lookup.assert_called_once()
+    assert lookup.call_args.args[0] is gh
+
+
 def test_agent5_writes_the_run_report_to_a_non_jira_tracker(tracker, tmp_path):
     """READ junit.xml -> WRITE comment -> move state marker."""
     import agents.agent5_reporter as a5
