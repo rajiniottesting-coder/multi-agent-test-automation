@@ -86,6 +86,9 @@ def handover(tracker, change_story: str, decisions: dict, review_key: str | None
     summary = tracker.get_story(change_story).get("summary", "")
     for owner, keys in sorted(result.owners.items()):
         if owner == change_story:
+            # Unreachable today: a story that owns an impacted test case is
+            # refused above. Kept so a future change to that check can never
+            # make a story link to, or post a trace on, itself.
             continue
         tracker.link_issues(change_story, owner, "impacts")
         comments = tracker.get_comments(owner)

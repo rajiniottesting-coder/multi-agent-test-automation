@@ -133,16 +133,9 @@ app_under_test:
   # automated (e.g., adding sort methods to InventoryPage when automating sort).
   # The LLM is told the rules in the Stage 1 prompt; the validator checks them.
   #
-  # List a page object here only once it is COMMITTED ON MAIN. The path policy
-  # (validate_paths_against_policy) treats every entry as an existing file, so
-  # listing one that does not exist yet blocks the story that has to create it
-  # ("LLM marked existing extendable file(s) as new").
-  #
-  # pages/cart_page.py is the first candidate: when it lands on main it will
-  # carry empty_the_cart(), the only way a scenario in this application can
-  # own an empty starting state. Add it here in the same PR that commits the
-  # file; off this list it is Tier-3 NEW and the next story touching the cart
-  # would overwrite it and lose the method.
+  # Intentionally empty today: no extendable page object is committed on main
+  # yet. List a file only once it is on main - see docs/GUIDE.md,
+  # "extendable_paths", for why and for the first candidate.
   extendable_paths: []
 
 

@@ -45,7 +45,13 @@ class TestReconcile:
         fake, jira, gh, _o = opened
         gh.merge(1)
         assert _scan(jira, gh)["action"] == "merged"
-        assert _scan(jira, gh)["action"] in ("merged", "no-pr-noted")   # label gone; harmless
+        # A re-scan finds the same merged PR: "merged" again, nothing new posted
+        # (Agent 3 suggested it fell through to the no-PR branch; it does not).
+        before = {k: list(v) for k, v in fake.comments.items()}
+        assert _scan(jira, gh)["action"] == "merged"
+        assert fake.comments == before
+        # ...and the scheduled scan never selects it again: its label is gone.
+        assert reconcile_all(jira, gh, now=NOW) == []
         merged = [c for c in fake.comments["SBX-1"]
                   if (impact_trace.parse(c) or {}).get("kind") == "merged"]
         assert len(merged) == 1 and "SBX-11" in merged[0]

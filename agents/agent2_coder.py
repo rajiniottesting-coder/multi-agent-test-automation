@@ -368,7 +368,7 @@ def splice_scenario(
     original_content: str,
     jira_key: str,
     new_scenario_text: str,
-    new_hash: str,  # accepted for caller sanity-check; not enforced
+    new_hash: str,  # the hash the marker should carry; a mismatch is warned
 ) -> str:
     """Replace the scenario block owned by `jira_key` with new content.
 
@@ -383,7 +383,6 @@ def splice_scenario(
     matching jira_key — refusing to splice unmarkered content prevents
     orphan scenarios.
     """
-    _new_hash = new_hash  # explicit no-op; documents intent
     header, blocks = parse_feature_file(original_content)
 
     # Sanity-check the replacement before mutating anything
@@ -398,6 +397,14 @@ def splice_scenario(
             f"but caller asked to splice {jira_key!r}. Refusing to splice — "
             "this would create an orphan scenario."
         )
+    # The caller's sanity check: the marker should carry the hash of the text
+    # the caller just generated from. A mismatch means the model rewrote the
+    # marker line. Warned, not refused - ai-update has always accepted it, and
+    # a change-story run fails its coverage gate on it anyway (C4).
+    if new_hash and new_block.jira_hash != new_hash:
+        logger.warning(
+            f"{jira_key}: the replacement marker carries hash {new_block.jira_hash!r}, "
+            f"expected {new_hash!r} - the marker line was not kept as given.")
 
     target_idx = next(
         (i for i, b in enumerate(blocks) if b.jira_key == jira_key), None
