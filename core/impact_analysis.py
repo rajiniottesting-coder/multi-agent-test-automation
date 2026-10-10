@@ -171,7 +171,7 @@ def structural_candidates(graph, seeds: Seeds) -> list:
         paths, score = [], 0.0
         for page, key in sorted(seeds.elements & s.elements):
             users = sorted(f"{c}.{m}" for c, m in s.methods | s.shared_methods
-                           if key in getattr(graph.page_methods.get(_def_of(graph, c, m)), "keys", ()))
+                           if _reads(graph, c, m, key))
             paths.append(f"element {page}:{key} <- {', '.join(users) or 'a page method'} <- scenario")
             score = max(score, DIRECT_ELEMENT)
         for cls, name in sorted(seeds.methods):
@@ -195,6 +195,17 @@ def _def_of(graph, cls: str, name: str):
         if (c, name) in graph.page_methods:
             return (c, name)
     return None
+
+
+def _reads(graph, cls: str, name: str, key: str) -> bool:
+    """Whether page method cls.name reads element `key` (evidence text only).
+
+    An unresolved method is False here and that drops nothing: a scenario's
+    elements come only from methods the graph resolved, so it cannot be the
+    one that matched, and the graph already recorded it in `gaps`
+    (unknown_method / unknown_page_class) when it was built."""
+    found = _def_of(graph, cls, name)
+    return found is not None and key in graph.page_methods[found].keys
 
 
 def _candidate(s, layer: int, structural: float, paths: list) -> Candidate:
