@@ -89,7 +89,6 @@ from validators.gherkin_analyzer import (
     detect_drifted_steps,
     _extract_feature_steps,
     validate_fixtures_exist,
-    _extract_feature_steps,
     _extract_decorator_phrases,
     _phrase_matches,
 )
