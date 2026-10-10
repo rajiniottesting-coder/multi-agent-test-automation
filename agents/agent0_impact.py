@@ -504,10 +504,20 @@ def main(argv=None) -> int:
     if story is None:
         story = tracker.create_story(
             "Maintenance: inventory drift", "The nightly inventory check found drift.\n\n"
-            + "\n".join(report["seeds"]["elements"]), [],
+            + "\n".join(report["seeds"]["elements"] + report["seeds"]["pages"]),
+            _drift_components(report, PROJECT_ROOT),
             [settings["labels"]["check"], settings["labels"]["drift"]])
     print(publish(tracker, story, report, settings))
     return 0
+
+
+def _drift_components(report: dict, root: Path) -> list:
+    """The Components of the drifted pages - the maintenance-story template
+    (design A1) carries a Component, like any story, so its later analysis
+    is focused instead of whole-suite."""
+    graph, _sha = load_graph(root)
+    pages = {e.split(":", 1)[0] for e in report["seeds"]["elements"]} | set(report["seeds"]["pages"])
+    return sorted({c for p in pages for c in graph.page_components.get(p, ())})
 
 
 def _posted_on_pr(host, pr_number: int, chash: str) -> bool:

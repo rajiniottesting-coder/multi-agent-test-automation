@@ -510,8 +510,11 @@ class TestDriftCli:
 
     def test_first_drift_creates_a_labelled_story_with_a_review(self, cli, capsys):
         fake, jira, g, run = cli
-        run(_only_in(g, "SBX-12", "SBX-11"))
+        page, key = _only_in(g, "SBX-12", "SBX-11")
+        run((page, key))
         (story,) = self._drift_stories(fake)
+        assert story["components"] == sorted(g.page_components[page])     # A1 template
+        assert story["components"] and f"{page}:{key}" in story["description"]
         assert "inventory-drift" in story["labels"] and "impact-proposed" in story["labels"]
         assert "impact-check" not in story["labels"]
         assert len(jira.get_subtasks(story["key"])) == 1
