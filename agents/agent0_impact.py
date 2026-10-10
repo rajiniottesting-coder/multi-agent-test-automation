@@ -489,6 +489,8 @@ def main(argv=None) -> int:
         body = _render_report(report, f"Impact of PR #{args.pr or '?'} (code change)")
         if args.dry_run or not args.pr:
             print(body)
+        elif _posted_on_pr(host, args.pr, report["content_hash"]):
+            print(f"PR #{args.pr}: unchanged since the last report")   # stage 0
         else:
             host.post_pr_comment(args.pr, body)
         return 0
@@ -506,6 +508,13 @@ def main(argv=None) -> int:
             [settings["labels"]["check"], settings["labels"]["drift"]])
     print(publish(tracker, story, report, settings))
     return 0
+
+
+def _posted_on_pr(host, pr_number: int, chash: str) -> bool:
+    """Stage 0 for the code-change trigger: every push re-runs the workflow,
+    but a report whose content (the seeds) is unchanged is not posted again."""
+    return any(c.startswith(REPORT) and f"| hash: {chash} |" in c.split("\n", 1)[0]
+               for c in host.get_pr_comments(pr_number))
 
 
 def _open_drift_story(tracker, settings: dict) -> str | None:

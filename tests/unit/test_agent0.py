@@ -445,6 +445,39 @@ class TestD4:
                    for c in fake.comments["SBX-5"])
 
 
+def test_cli_code_change_posts_once_per_distinct_change(world, monkeypatch, tmp_path):
+    """Stage 0 for code changes: each push re-runs the workflow; the same
+    seeds are not reported on the pull request twice."""
+    _fake, jira, root, g = world
+    s = _settings(enabled=True)
+    host = FakeRepoHost(repo_files(root))
+    host.open_pull_request("t", "b", "feature/x")
+    import dotenv
+
+    import integrations.repo_host as rh
+    monkeypatch.setattr(a0, "impact_settings", lambda *a, **k: s)
+    monkeypatch.setattr(a0, "get_tracker", lambda *a, **k: jira)
+    monkeypatch.setattr(dotenv, "load_dotenv", lambda *a, **k: None)
+    monkeypatch.setattr(rh, "get_repo_host", lambda *a, **k: host)
+    head = tmp_path / "head"
+    shutil.copytree(root, head)
+    page, key = _only_in(g, "SBX-12", "SBX-11")
+    inv_path = next((head / "app_inventory").glob("*.json"))
+    inv = json.loads(inv_path.read_text())
+    inv["pages"][page]["elements"][key] = "#changed"
+    inv_path.write_text(json.dumps(inv))
+    argv = ["--code-change", "--base", str(root), "--head", str(head), "--pr", "1"]
+    assert a0.main(argv) == 0 and a0.main(argv) == 0
+    assert len(host.get_pr_comments(1)) == 1                       # the push changed nothing
+    inv["pages"][page]["elements"][key] = "#changed-again"         # same seeds: same element
+    inv_path.write_text(json.dumps(inv))
+    assert a0.main(argv) == 0 and len(host.get_pr_comments(1)) == 1
+    other_page, other_key = _only_in(g, "SBX-11", "SBX-12")        # a new seed
+    inv["pages"][other_page]["elements"][other_key] = "#also"
+    inv_path.write_text(json.dumps(inv))
+    assert a0.main(argv) == 0 and len(host.get_pr_comments(1)) == 2
+
+
 class TestDriftCli:
     """The nightly drift job, live: one maintenance story carries the drift
     for as long as it lasts (Agent 3 review of #131)."""
