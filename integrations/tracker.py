@@ -2,9 +2,9 @@
 
 WHY THIS EXISTS
 ---------------
-The agents need twenty operations from a tracker: read a story, find work,
+The agents need twenty-one operations from a tracker: read a story, find work,
 create and update a test case, read the test cases a story owns and the ones
-it impacts, list every test case, link and unlink issues, create a story,
+it impacts (and the reverse), list every test case, link and unlink issues, create a story,
 create and read review sub-tasks, render and rewrite test case text, and move state
 markers (labels/comments) around. Nothing more.
 
@@ -132,6 +132,12 @@ class Tracker(Protocol):
         `get_linked_test_cases`. Retired test cases are left out unless
         `include_retired`; then every dict also carries "retired": bool
         (Agent 2 needs them to remove the retired scenarios)."""
+        ...
+
+    def get_impacting_stories(self, test_case_key: str) -> list[str]:
+        """Keys of the stories whose Impacts link points at this test case -
+        the reverse of get_impacted_test_cases. Agent 0's in-flight guard (D4)
+        uses it to find another open change to the same test."""
         ...
 
     def update_test_case(self, issue_key: str, test_case: Any) -> None:

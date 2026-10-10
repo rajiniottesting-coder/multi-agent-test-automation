@@ -100,6 +100,7 @@ def test_a_new_adapter_needs_no_agent_changes():
         def set_description(self, issue_key, description, summary=None): pass
         def render_test_case(self, test_case): return {"summary": "s", "description": "d"}
         def get_all_test_cases(self): return []
+        def get_impacting_stories(self, test_case_key): return []
         def update_test_case(self, issue_key, test_case): pass
         def link_issues(self, from_key, to_key, kind): pass
         def unlink_issues(self, from_key, to_key, kind): pass

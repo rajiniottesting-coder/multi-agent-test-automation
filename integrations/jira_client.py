@@ -606,6 +606,17 @@ class JiraClient:
                  "retired": self.retired_label in (getattr(i.fields, "labels", None) or [])}
                 for i in issues]
 
+    def get_impacting_stories(self, test_case_key: str) -> list[str]:
+        inverse = self._link_type("impacts")["inverse_query"]
+        jql = (f'project = {self.project_key} AND issuetype = "Story" '
+               f'AND issue in linkedIssues("{test_case_key}", "{inverse}") ORDER BY key ASC')
+        try:
+            return [i.key for i in self.client.enhanced_search_issues(
+                jql, maxResults=100, fields="summary")]
+        except Exception as e:
+            logger.warning(f"Could not find stories impacting {test_case_key}: {e}")
+            return []
+
     def count_linked_test_cases(self, story_key: str) -> int:
         """How many Test Case issues this story already OWNS.
 
