@@ -330,6 +330,70 @@ class TestD4:
                    for c in fake.comments["SBX-5"])
 
 
+class TestDriftCli:
+    """The nightly drift job, live: one maintenance story carries the drift
+    for as long as it lasts (Agent 3 review of #131)."""
+
+    @pytest.fixture
+    def cli(self, world, monkeypatch, tmp_path):
+        fake, jira, root, g = world
+        s = _settings(enabled=True, shadow_mode=False)
+        monkeypatch.setattr(a0, "impact_settings", lambda *a, **k: s)
+        monkeypatch.setattr(a0, "get_tracker", lambda *a, **k: jira)
+        import dotenv
+
+        import integrations.repo_host as rh
+        monkeypatch.setattr(dotenv, "load_dotenv", lambda *a, **k: None)
+        monkeypatch.setattr(rh, "get_repo_host", lambda *a, **k: FakeRepoHost(repo_files(root)))
+
+        def run(*elements):
+            path = tmp_path / "drift.json"
+            pages: dict = {}
+            for page, key in elements:
+                pages.setdefault(page, {"missing": []})["missing"].append({"element": key})
+            path.write_text(json.dumps({"pages": pages, "unreachable_pages": []}))
+            assert a0.main(["--drift-report", str(path)]) == 0
+
+        return fake, jira, g, run
+
+    @staticmethod
+    def _drift_stories(fake):
+        return [i for i in fake.issues.values() if i["summary"] == "Maintenance: inventory drift"]
+
+    def test_first_drift_creates_a_labelled_story_with_a_review(self, cli, capsys):
+        fake, jira, g, run = cli
+        run(_only_in(g, "SBX-12", "SBX-11"))
+        (story,) = self._drift_stories(fake)
+        assert "inventory-drift" in story["labels"] and "impact-proposed" in story["labels"]
+        assert "impact-check" not in story["labels"]
+        assert len(jira.get_subtasks(story["key"])) == 1
+        assert "'action': 'review-created'" in capsys.readouterr().out
+
+    def test_the_same_drift_next_night_reuses_the_story(self, cli, capsys):
+        fake, jira, g, run = cli
+        element = _only_in(g, "SBX-12", "SBX-11")
+        run(element)
+        run(element)
+        (story,) = self._drift_stories(fake)
+        assert len(jira.get_subtasks(story["key"])) == 1
+        assert "'action': 'unchanged'" in capsys.readouterr().out.splitlines()[-1]
+
+    def test_new_drift_updates_the_open_review_on_the_same_story(self, cli, capsys):
+        fake, jira, g, run = cli
+        run(_only_in(g, "SBX-12", "SBX-11"))
+        run(_only_in(g, "SBX-12", "SBX-11"), _only_in(g, "SBX-11", "SBX-12"))
+        (story,) = self._drift_stories(fake)
+        assert len(jira.get_subtasks(story["key"])) == 1
+        assert "'action': 'review-updated'" in capsys.readouterr().out.splitlines()[-1]
+
+    def test_a_closed_drift_story_is_not_reused(self, cli):
+        fake, _jira, g, run = cli
+        run(_only_in(g, "SBX-12", "SBX-11"))
+        self._drift_stories(fake)[0]["status"] = "Done"
+        run(_only_in(g, "SBX-11", "SBX-12"))
+        assert len(self._drift_stories(fake)) == 2
+
+
 # ─────────────────────────────────────────────────────────────────
 # D5 - the live loop, and the switches
 # ─────────────────────────────────────────────────────────────────

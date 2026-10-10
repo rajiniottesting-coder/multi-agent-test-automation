@@ -343,6 +343,9 @@ agents:
       applied: "impact-applied"
       reverted: "impact-reverted"
       ready: "ai-ready"
+      # Not an impact- label: it stays on the nightly drift maintenance story
+      # for its whole life, so the next night's drift reuses that story.
+      drift: "inventory-drift"
     # The Impact Review is a standard sub-task with a Decision column; a
     # person sets the decisions and moves it to done_status.
     review:

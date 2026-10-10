@@ -445,11 +445,28 @@ def main(argv=None) -> int:
     if args.dry_run or settings["shadow_mode"] or not report["ranked"]:
         print(body)
         return 0
-    story = tracker.create_story(
-        "Maintenance: inventory drift", "The nightly inventory check found drift.\n\n"
-        + "\n".join(report["seeds"]["elements"]), [], [settings["labels"]["check"]])
+    story = _open_drift_story(tracker, settings)
+    if story is None:
+        story = tracker.create_story(
+            "Maintenance: inventory drift", "The nightly inventory check found drift.\n\n"
+            + "\n".join(report["seeds"]["elements"]), [],
+            [settings["labels"]["check"], settings["labels"]["drift"]])
     print(publish(tracker, story, report, settings))
     return 0
+
+
+def _open_drift_story(tracker, settings: dict) -> str | None:
+    """The drift maintenance story still open, if any.
+
+    Drift persists until someone fixes the inventory, so the nightly job finds
+    it again and again. One story carries it: publish() then treats a repeat
+    as a re-analysis (D4) - unchanged drift is skipped by the stage-0 guard, an
+    open review is updated in place, an approved one gets a difference-only
+    review - instead of a new story every night."""
+    found = tracker.find_stories_to_process(
+        {"issue_type": "Story", "required_labels": [settings["labels"]["drift"]],
+         "allowed_statuses": settings["selection"]["allowed_statuses"]}, max_results=10)
+    return found[0]["key"] if found else None
 
 
 if __name__ == "__main__":
