@@ -640,7 +640,8 @@ def _normalize_path(p: str) -> str:
     return p.replace("\\", "/").lstrip("./")
 
 
-def validate_paths_against_policy(plan: CodePlan, ctx: AppContext) -> None:
+def validate_paths_against_policy(plan: CodePlan, ctx: AppContext,
+                                  protected_files: set | None = None) -> None:
     """Enforce the two-tier file policy on the LLM's plan.
 
     Tier 1 — RESERVED: never touched. If the plan includes any reserved path,
@@ -659,6 +660,16 @@ def validate_paths_against_policy(plan: CodePlan, ctx: AppContext) -> None:
     """
     reserved = ctx.reserved_paths_normalized()
     extendable = ctx.extendable_paths_normalized()
+
+    # Change-story runs (Agent 0, C4): feature files and step definitions
+    # that OTHER stories own are edited only by splicing, never generated.
+    protected = {_normalize_path(p) for p in (protected_files or ())}
+    owned_elsewhere = [fp.file_path for fp in plan.files_to_create
+                       if _normalize_path(fp.file_path) in protected]
+    if owned_elsewhere:
+        raise ValueError(
+            f"The plan would generate files other stories own: {owned_elsewhere}. "
+            "They are edited only by splicing the approved scenarios.")
 
     reserved_collisions: list[str] = []
     extendable_misclassified: list[str] = []  # marked is_new_file=True for an existing extendable file
@@ -3974,14 +3985,38 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     story = jira.get_story(story_id)
     test_cases = load_test_cases_for_story(jira, story_id)
 
-    if not test_cases:
+    # CHANGE-STORY WORK (Agent 0, C4/C5): approved test cases this story
+    # revises, and retired ones whose scenarios it removes - all in other
+    # stories' feature files. ([], []) for every ordinary story, which then
+    # runs exactly as before.
+    from agents import agent2_impact
+    revisions, retirements = ([], []) if is_regenerate else \
+        agent2_impact.impacted_for_run(jira, story_id)
+    impact_work = bool(revisions or retirements)
+
+    if not test_cases and not impact_work:
         logger.warning(f"No Test Cases linked to {story_id}. Run Agent 1 first.")
         return {"story_id": story_id, "status": "no_test_cases", "files_generated": 0}
+
+    owner_files: dict = {}
+    marker_index = None
+    if impact_work:
+        marker_index = build_marker_index(FEATURES_DIR)
+        owner_files, unmarked = agent2_impact.locate(marker_index, revisions, retirements)
+        if unmarked:
+            logger.error(
+                f"{story_id}: approved test case(s) {unmarked} have no scenario marker, so "
+                "their scenarios cannot be found to revise. Give them markers "
+                "(python scripts/backfill_markers.py propose) and run again.")
+            return {"story_id": story_id, "status": "impacted_unmarked",
+                    "unmarked": unmarked, "files_generated": 0}
+        logger.info(f"{story_id} revises {[t['key'] for t in revisions]} and retires "
+                    f"{retirements} in {list(owner_files)}")
 
     # 1b. DEDUP (skipped in regenerate mode)
     new_test_cases, skipped_test_cases = _select_new_test_cases(test_cases, is_regenerate)
 
-    if not new_test_cases:
+    if not new_test_cases and not impact_work:
         # Every approved test case is already covered. No work needed.
         logger.info(
             f"All {len(test_cases)} test cases for {story_id} are already covered "
@@ -4013,7 +4048,15 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     llm = LLMClient(temperature=0.2)
 
     # 3. STAGE 1: PLAN
-    plan = build_plan(llm, new_test_cases, references, page_inventory, ctx)
+    # The plan also sees each revision, so it can extend page objects the
+    # revised steps need; any owner file it proposes is dropped - those are
+    # spliced, never generated (C4).
+    plan_revisions = agent2_impact.plan_cases(owner_files) if impact_work else []
+    plan = build_plan(llm, new_test_cases + plan_revisions, references, page_inventory, ctx)
+    if impact_work:
+        agent2_impact.drop_owner_files(plan, owner_files, new_test_cases)
+        validate_paths_against_policy(plan, ctx, protected_files=set(owner_files) | {
+            f.step_defs_path for f in owner_files.values()})
 
     # 4. STAGE 2: GENERATE PER-FILE CONTENT
     # Order page objects BEFORE step definitions so the step-def prompt
@@ -4034,6 +4077,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     # cached instance, so the later assignment hands back the same object.
     _plan_paths = {f.file_path for f in ordered_files}
     existing_pos: list = []
+    gh = None
     try:
         gh = get_repo_host()
         existing_pos = _existing_page_objects_on_main(
@@ -4049,8 +4093,13 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     generated_files: list[GeneratedFile] = []
     for file_plan in ordered_files:
         try:
+            # Page objects see the revisions too; the story's own feature file
+            # and step definitions see only its own new test cases.
+            file_cases = (new_test_cases + plan_revisions
+                          if plan_revisions and file_plan.file_type == "page_object"
+                          else new_test_cases)
             content = generate_file_content(
-                llm, file_plan, plan, new_test_cases, references, page_inventory, ctx,
+                llm, file_plan, plan, file_cases, references, page_inventory, ctx,
                 already_generated=generated_files,
                 existing_page_objects=existing_pos,
             )
@@ -4104,6 +4153,27 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     generated_files = _ensure_jira_markers_on_feature_files(
         generated_files, [dict(tc, owner=story_id) for tc in new_test_cases]
     )
+    # 4d-bis. CHANGE-STORY SPLICE (C4/C5). After marker injection, which only
+    # ever touches the story's OWN files: approved scenarios are rewritten in
+    # place in their owners' files, retired ones removed, and each owner's
+    # step definitions gain only the step functions the revisions need.
+    impact_report = None
+    if impact_work:
+        if gh is None:
+            gh = get_repo_host()
+        owner_generated, impact_report = agent2_impact.splice_owner_files(
+            llm, gh, story_id, owner_files, marker_index, ctx, references,
+            page_inventory, jira)
+        by_path = {f.file_path: i for i, f in enumerate(generated_files)}
+        for f in owner_generated:
+            if f.file_path in by_path:
+                generated_files[by_path[f.file_path]] = f
+            else:
+                generated_files.append(f)
+        problems = agent2_impact.check_coverage(generated_files, revisions, retirements)
+        if problems:
+            raise ValueError(f"Change-story gate failed for {story_id}: " + "; ".join(problems))
+
     # CRITICAL: rebuild `output` so the commit loop below uses the post-injection
     # file list, not the stale pre-injection list. (Previous bug: markers were
     # injected into `generated_files` but `output.files` still pointed at the
@@ -4381,6 +4451,9 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
             )
         pr_body_with_footer = pr_body_with_footer + "".join(orphan_section_parts)
 
+    if impact_report:
+        pr_body_with_footer += agent2_impact.pr_sections(impact_report)
+
     pr_url = gh.open_pull_request(
         title=output.pr_title,
         body=pr_body_with_footer,
@@ -4417,6 +4490,9 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
         "status": "pr_opened",
         "llm_usage": usage,
     }
+    if impact_report:
+        result["revised"] = sorted(impact_report["revised"])
+        result["retired"] = sorted(impact_report["retired"])
 
     logger.info(f"=== Agent 2 (Coder) complete. PR: {pr_url} ===")
     return result
