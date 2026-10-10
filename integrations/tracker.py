@@ -2,10 +2,10 @@
 
 WHY THIS EXISTS
 ---------------
-The agents need fifteen operations from a tracker: read a story, find work,
+The agents need sixteen operations from a tracker: read a story, find work,
 create and update a test case, read the test cases a story owns and the ones
-it impacts, link and unlink issues, create a story, and move state markers
-(labels/comments) around. Nothing more.
+it impacts, list every test case, link and unlink issues, create a story, and
+move state markers (labels/comments) around. Nothing more.
 
 Every one of those exists in Jira, Xray, TestRail, Azure DevOps and Linear —
 under different names, with different query languages. Depending on
@@ -115,6 +115,13 @@ class Tracker(Protocol):
         """How many test cases this story owns (same filter as
         `get_linked_test_cases`). Must return 0 on lookup failure so a
         tracker outage never blocks the pipeline."""
+        ...
+
+    def get_all_test_cases(self) -> list[dict]:
+        """Every non-retired test case in the project, as
+        [{"key", "summary", "description", "owner"}, ...] where `owner` is the
+        owning story's key or None. Used by the marker backfill and by
+        Agent 0's whole-suite analysis."""
         ...
 
     def get_impacted_test_cases(self, story_key: str) -> list[dict]:

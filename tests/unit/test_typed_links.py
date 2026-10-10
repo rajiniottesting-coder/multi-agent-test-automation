@@ -255,3 +255,35 @@ def test_memory_tracker_keeps_owned_and_impacted_apart():
     assert t.get_parent_story_key("T1") == "ACME-1"
     t.unlink_issues("ACME-2", "T1", "impacts")
     assert t.get_impacted_test_cases("ACME-2") == []
+
+
+# ─────────────────────────────────────────────────────────────────
+# B1 - every test case in the project, with its owner
+# ─────────────────────────────────────────────────────────────────
+class TestAllTestCases:
+    def _hit(self, key, links):
+        return SimpleNamespace(key=key, fields=SimpleNamespace(
+            summary=f"s{key}", description=None, issuelinks=links))
+
+    def test_owner_comes_from_the_ownership_link_only(self, jira):
+        jc, client = jira
+        client.enhanced_search_issues.return_value = [
+            self._hit("AB-3", [_link("Impacts", inward=("AB-2", "Story")),
+                               _link("Relates", outward=("AB-1", "Story"))]),
+            self._hit("AB-4", [_link("Impacts", inward=("AB-2", "Story"))]),
+        ]
+        out = jc.get_all_test_cases()
+        assert out == [
+            {"key": "AB-3", "summary": "sAB-3", "description": "", "owner": "AB-1"},
+            {"key": "AB-4", "summary": "sAB-4", "description": "", "owner": None},
+        ]
+
+    def test_fetches_every_page_and_skips_retired(self, jira):
+        jc, client = jira
+        client.enhanced_search_issues.return_value = []
+        jc.get_all_test_cases()
+        args, kwargs = client.enhanced_search_issues.call_args
+        assert kwargs["maxResults"] is False
+        assert '(labels is EMPTY OR labels != "ai-retired")' in args[0]
+        assert 'issuetype = "Test Case"' in args[0]
+        assert "issuelinks" in kwargs["fields"]
