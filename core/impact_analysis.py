@@ -23,6 +23,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -214,7 +215,8 @@ def uncovered_hits(story_text: str, uncovered: dict) -> list:
     return hits
 
 
-def load_uncovered_snapshot(path, max_age_hours: float, now=None) -> tuple:
+def load_uncovered_snapshot(path: str | Path | None, max_age_hours: float,
+                            now: datetime | None = None) -> tuple[dict, str]:
     """(uncovered, why_not) from a check_inventory_staleness --compare report.
 
     Returns ({page: {element: selector}}, "") when the report is usable, and
@@ -225,8 +227,6 @@ def load_uncovered_snapshot(path, max_age_hours: float, now=None) -> tuple:
     `new_elements`), no or unparseable `checked_at`, a report older than
     `max_age_hours`, or one dated in the future (a clock problem; trust nothing).
     """
-    from datetime import datetime, timedelta, timezone
-
     if not path:
         return {}, "no snapshot given"
     try:
