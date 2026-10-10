@@ -81,8 +81,6 @@ from core.schemas import CodePlan, GeneratedFile, CodeGenerationOutput
 from validators.gherkin_analyzer import (
     validate_step_coverage,
     validate_no_duplicate_step_definitions,
-    scan_features_dir,
-    filter_duplicate_test_cases,
     validate_filename_consistency,
     validate_feature_file_structure,
     validate_examples_hold_data_not_placeholders,
@@ -91,7 +89,6 @@ from validators.gherkin_analyzer import (
     detect_drifted_steps,
     _extract_feature_steps,
     validate_fixtures_exist,
-    _extract_feature_steps,
     _extract_decorator_phrases,
     _phrase_matches,
 )
@@ -207,10 +204,56 @@ def _starts_block(line: str) -> bool:
     return any(stripped.startswith(kw) for kw in _GHERKIN_BLOCK_KEYWORDS)
 
 
+def _indent_of(line: str) -> int:
+    return len(line) - len(line.lstrip(" \t"))
+
+
+def _keyword_index(lines: list[str]) -> Optional[int]:
+    """Index of the first line in `lines` that starts a block, or None."""
+    return next((i for i, line in enumerate(lines) if _starts_block(line)), None)
+
+
+def _is_preamble_line(line: str, keyword_indent: int) -> bool:
+    """True for a tag or comment line that belongs to the block below it.
+
+    A JIRA marker always qualifies. Any other tag or comment qualifies only
+    when it is indented no deeper than the block keyword, so a commented-out
+    step at the end of the previous scenario stays where it is.
+    """
+    stripped = line.strip()
+    if not (stripped.startswith("@") or stripped.startswith("#")):
+        return False
+    if parse_marker(line):
+        return True
+    return _indent_of(line) <= keyword_indent
+
+
+def _take_preamble(source_lines: list[str], keyword_indent: int) -> list[str]:
+    """Detach and return the tag/comment lines directly above the next block.
+
+    `source_lines` is the end of the previous block (or the file header).
+    Blank lines between that run and the keyword travel with it; blank lines
+    with no run above them stay behind as the separator of the previous
+    block. Mutates `source_lines`.
+    """
+    j = len(source_lines)
+    while j > 0 and source_lines[j - 1].strip() == "":
+        j -= 1
+    k = j
+    while k > 0 and _is_preamble_line(source_lines[k - 1], keyword_indent):
+        k -= 1
+    if k == j:
+        return []
+    moved = source_lines[k:]
+    del source_lines[k:]
+    return moved
+
+
 def _build_block(lines: list[str]) -> ScenarioBlock:
     if not lines:
         return ScenarioBlock(kind="header", lines=[])
-    first = lines[0].lstrip()
+    k = _keyword_index(lines)
+    first = lines[k].lstrip() if k is not None else ""
     if first.startswith("Scenario Outline:") or first.startswith("Scenario:"):
         kind = "scenario"
     elif first.startswith("Background:"):
@@ -222,47 +265,40 @@ def _build_block(lines: list[str]) -> ScenarioBlock:
     return ScenarioBlock(kind=kind, lines=list(lines))
 
 
-def _migrate_marker_from_previous(
-    previous_blocks: list[ScenarioBlock],
-    header_lines: list[str],
-    current_block: ScenarioBlock,
-) -> None:
-    """Pull a JIRA marker comment from the end of the previous block onto
-    the current block, so each scenario owns its own marker.
-
-    Also handles the case where the marker is already inside current_block
-    (typical for content the LLM just generated for us in
-    `_generate_single_scenario`).
-    """
-    # 1. Marker already inside current_block?
-    for idx, line in enumerate(current_block.lines):
+def _find_marker(block: ScenarioBlock) -> None:
+    """Record the JIRA marker that sits in the block's preamble, if any."""
+    for idx, line in enumerate(block.lines):
         if _starts_block(line):
-            break
+            return
         parsed = parse_marker(line)
         if parsed:
-            current_block.jira_key, current_block.jira_hash = parsed
-            current_block.marker_line_index = idx
+            block.jira_key, block.jira_hash = parsed
+            block.marker_line_index = idx
             return
 
-    # 2. Marker at the trailing edge of the previous owner?
-    source_lines = previous_blocks[-1].lines if previous_blocks else header_lines
-    j = len(source_lines) - 1
-    while j >= 0 and source_lines[j].strip() == "":
+
+def _preamble_tag_lines(block: ScenarioBlock) -> list[str]:
+    """The tag lines (`@...`) above the block keyword."""
+    k = _keyword_index(block.lines)
+    if k is None:
+        return []
+    return [line for line in block.lines[:k] if line.strip().startswith("@")]
+
+
+def _trailing_blank_lines(lines: list[str]) -> list[str]:
+    j = len(lines)
+    while j > 0 and lines[j - 1].strip() == "":
         j -= 1
-    if j < 0:
-        return
-    parsed = parse_marker(source_lines[j])
-    if not parsed:
-        return
-    candidate = source_lines[j]
-    del source_lines[j]
-    current_block.lines.insert(0, candidate)
-    current_block.jira_key, current_block.jira_hash = parsed
-    current_block.marker_line_index = 0
+    return lines[j:]
 
 
 def parse_feature_file(content: str) -> tuple[list[str], list[ScenarioBlock]]:
     """Split a feature file's content into (header_lines, blocks).
+
+    Each block owns everything that describes it: the tags, comments and
+    JIRA marker directly above its keyword, its body, and - for a Scenario
+    Outline - its Examples tables. Removing or replacing a block therefore
+    takes its tags and examples with it and never touches a neighbour.
 
     The original content can be reassembled losslessly:
         "".join(header_lines) + "".join(b.text() for b in blocks)
@@ -270,9 +306,7 @@ def parse_feature_file(content: str) -> tuple[list[str], list[ScenarioBlock]]:
     if not content:
         return [], []
     lines = content.splitlines(keepends=True)
-    first_block_idx = next(
-        (i for i, line in enumerate(lines) if _starts_block(line)), None
-    )
+    first_block_idx = _keyword_index(lines)
     if first_block_idx is None:
         return lines, []
     header = lines[:first_block_idx]
@@ -281,8 +315,15 @@ def parse_feature_file(content: str) -> tuple[list[str], list[ScenarioBlock]]:
     blocks: list[ScenarioBlock] = []
     for idx, start in enumerate(block_starts):
         end = block_starts[idx + 1] if idx + 1 < len(block_starts) else len(body)
-        block = _build_block(body[start:end])
-        _migrate_marker_from_previous(blocks, header, block)
+        segment = body[start:end]
+        source = blocks[-1].lines if blocks else header
+        preamble = _take_preamble(source, _indent_of(segment[0]))
+        block = _build_block(preamble + segment)
+        if block.kind == "examples" and blocks and blocks[-1].kind == "scenario":
+            # Examples belong to the outline above them.
+            blocks[-1].lines.extend(block.lines)
+            continue
+        _find_marker(block)
         blocks.append(block)
     return header, blocks
 
@@ -298,6 +339,10 @@ def splice_scenario(
     Returns the modified file content. If jira_key is not found, returns
     the original content unchanged (callers should treat as 'append').
 
+    The replaced block's tags are kept when the replacement carries none,
+    and its trailing blank separator is kept so the next scenario does not
+    run into the new one.
+
     Raises ValueError if `new_scenario_text` doesn't carry a marker
     matching jira_key — refusing to splice unmarkered content prevents
     orphan scenarios.
@@ -306,9 +351,11 @@ def splice_scenario(
     header, blocks = parse_feature_file(original_content)
 
     # Sanity-check the replacement before mutating anything
+    if new_scenario_text and not new_scenario_text.endswith("\n"):
+        new_scenario_text += "\n"
     new_block_lines = new_scenario_text.splitlines(keepends=True)
     new_block = _build_block(new_block_lines)
-    _migrate_marker_from_previous([], [], new_block)
+    _find_marker(new_block)
     if new_block.jira_key != jira_key:
         raise ValueError(
             f"Replacement scenario text claims JIRA key {new_block.jira_key!r} "
@@ -326,6 +373,16 @@ def splice_scenario(
         )
         return original_content
 
+    old_block = blocks[target_idx]
+    old_tags = _preamble_tag_lines(old_block)
+    if old_tags and not _preamble_tag_lines(new_block):
+        k = _keyword_index(new_block.lines)
+        if k is not None:
+            new_block.lines[k:k] = old_tags
+            _find_marker(new_block)
+    if not _trailing_blank_lines(new_block.lines):
+        new_block.lines.extend(_trailing_blank_lines(old_block.lines))
+
     blocks[target_idx] = new_block
     return "".join(header) + "".join(b.text() for b in blocks)
 
@@ -340,13 +397,19 @@ def append_scenario(original_content: str, new_scenario_text: str) -> str:
 
 
 def remove_scenario(original_content: str, jira_key: str) -> str:
-    """Remove the scenario block owned by `jira_key`. No-op if absent."""
+    """Remove the scenario block owned by `jira_key`, with its tags and
+    examples. No-op if absent."""
     header, blocks = parse_feature_file(original_content)
     survivors = [b for b in blocks if b.jira_key != jira_key]
     if len(survivors) == len(blocks):
         logger.info(f"remove_scenario: no block found for {jira_key}, no-op.")
         return original_content
-    return "".join(header) + "".join(b.text() for b in survivors)
+    result = "".join(header) + "".join(b.text() for b in survivors)
+    # Removing the last scenario leaves the previous one's blank separator
+    # at the end of the file; end the file with exactly one newline.
+    if result.strip():
+        result = result.rstrip() + "\n"
+    return result
 
 
 def classify_test_cases(test_cases: list[dict], feature_content: str) -> dict:
@@ -381,6 +444,135 @@ def classify_test_cases(test_cases: list[dict], feature_content: str) -> dict:
         "new": new,
         "orphan_keys": orphan_keys,
     }
+
+
+def _scenario_title(block: ScenarioBlock) -> str:
+    for line in block.lines:
+        stripped = line.lstrip()
+        if stripped.startswith("Scenario Outline:") or stripped.startswith("Scenario:"):
+            return stripped.split(":", 1)[1].strip()
+    return ""
+
+
+@dataclass(frozen=True)
+class MarkerEntry:
+    """One marked scenario: which test case it implements, and where."""
+    key: str
+    file: str       # filename inside the features directory, e.g. "login.feature"
+    hash: str
+    title: str
+
+
+@dataclass
+class MarkerIndex:
+    """Every scenario in the features directory, by test case key.
+
+    `by_key`      - marked scenarios, keyed by test case key
+    `unmarked`    - (file, title) of scenarios with no JIRA marker
+    `duplicates`  - keys marked in more than one place: key -> files
+    """
+    by_key: dict = field(default_factory=dict)
+    unmarked: list = field(default_factory=list)
+    duplicates: dict = field(default_factory=dict)
+
+    def files_for_keys(self, keys) -> dict:
+        """{file: [keys]} for the keys found in the index, in file order."""
+        out: dict = {}
+        for key in keys:
+            entry = self.by_key.get(key)
+            if entry is not None:
+                out.setdefault(entry.file, []).append(key)
+        return dict(sorted(out.items()))
+
+
+def build_marker_index(features_dir: Path) -> MarkerIndex:
+    """Read every feature file once and index its scenarios by marker.
+
+    Identity is the test case key in the `# JIRA:` marker, not the title:
+    a revised test case keeps its title, and a renamed one keeps its key.
+    A key marked twice is kept at its first location (files in name order)
+    and reported in `duplicates`.
+    """
+    index = MarkerIndex()
+    if not features_dir.is_dir():
+        return index
+    for path in sorted(features_dir.glob("*.feature")):
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as e:
+            logger.warning(f"Marker index: could not read {path.name}: {e}")
+            continue
+        _h, blocks = parse_feature_file(content)
+        for block in blocks:
+            if block.kind != "scenario":
+                continue
+            title = _scenario_title(block)
+            if not block.jira_key:
+                index.unmarked.append((path.name, title))
+                continue
+            if block.jira_key in index.by_key:
+                first = index.by_key[block.jira_key].file
+                index.duplicates.setdefault(block.jira_key, [first]).append(path.name)
+                continue
+            index.by_key[block.jira_key] = MarkerEntry(
+                key=block.jira_key, file=path.name,
+                hash=block.jira_hash or "", title=title,
+            )
+    for key, files in index.duplicates.items():
+        logger.warning(
+            f"Marker index: {key} is marked in more than one place {files}; "
+            f"using {files[0]}."
+        )
+    return index
+
+
+def classify_against_index(test_cases: list[dict], index: MarkerIndex) -> dict:
+    """Classify test cases by identity first, title second.
+
+    | Test case                                   | Class      |
+    |---------------------------------------------|------------|
+    | key in the index, hash equal                | unchanged  |
+    | key in the index, hash different            | modified   |
+    | key not in the index, title matches an      | legacy     |
+    |   unmarked scenario                         |            |
+    | key not in the index, title matches a       | title_clash|
+    |   scenario marked with another key          |            |
+    | key not in the index, no title match        | new        |
+
+    Returns {class: [{"test_case", "file", "scenario"}]}; for `new` the
+    file and scenario are None. The title fallback protects unmarked
+    legacy scenarios from being generated twice.
+    """
+    from validators.gherkin_analyzer import normalize_scenario_name
+
+    unmarked_by_title: dict = {}
+    for filename, title in index.unmarked:
+        unmarked_by_title.setdefault(normalize_scenario_name(title), (filename, title))
+    marked_by_title: dict = {}
+    for entry in index.by_key.values():
+        marked_by_title.setdefault(normalize_scenario_name(entry.title), entry)
+
+    result: dict = {c: [] for c in ("unchanged", "modified", "legacy", "title_clash", "new")}
+    for tc in test_cases:
+        entry = index.by_key.get(tc.get("key"))
+        if entry is not None:
+            current = compute_description_hash(tc.get("description", ""))
+            cls = "unchanged" if entry.hash == current else "modified"
+            result[cls].append({"test_case": tc, "file": entry.file, "scenario": entry.title})
+            continue
+        norm = normalize_scenario_name(tc.get("summary", "") or "")
+        if norm and norm in unmarked_by_title:
+            filename, title = unmarked_by_title[norm]
+            result["legacy"].append({"test_case": tc, "file": filename, "scenario": title})
+        elif norm and norm in marked_by_title:
+            other = marked_by_title[norm]
+            result["title_clash"].append({
+                "test_case": tc, "file": other.file, "scenario": other.title,
+                "other_key": other.key,
+            })
+        else:
+            result["new"].append({"test_case": tc, "file": None, "scenario": None})
+    return result
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1876,8 +2068,16 @@ def generate_file_content(
 def _select_new_test_cases(
     test_cases: list[dict],
     is_regenerate: bool,
+    features_dir: Optional[Path] = None,
 ) -> tuple[list[dict], list[dict]]:
     """Filter out test cases already covered by existing scenarios.
+
+    Classifies by marker first, title second (`classify_against_index`).
+    Only `new` cases are generated. The rest are skipped, each with a
+    `reason`: `unchanged`, `modified` (revised in place by ai-update, not
+    regenerated here), `legacy` (an unmarked scenario has the same title)
+    or `title_clash` (a scenario marked with another key has the same
+    title).
 
     Returns (new_test_cases, skipped_test_cases). In regenerate mode, dedup
     is bypassed and all test cases are returned as new.
@@ -1889,8 +2089,25 @@ def _select_new_test_cases(
         )
         return test_cases, []
 
-    inventory = scan_features_dir(FEATURES_DIR)
-    new_cases, skipped = filter_duplicate_test_cases(test_cases, inventory)
+    index = build_marker_index(features_dir or FEATURES_DIR)
+    classes = classify_against_index(test_cases, index)
+    new_cases = [item["test_case"] for item in classes["new"]]
+
+    _why = {
+        "unchanged": "already implemented, unchanged",
+        "modified": "already implemented, changed since - ai-update revises it in place",
+        "legacy": "an unmarked scenario has the same title - the marker backfill will mark it",
+        "title_clash": "a scenario marked with another test case has the same title",
+    }
+    skipped: list[dict] = []
+    for reason in ("unchanged", "modified", "legacy", "title_clash"):
+        for item in classes[reason]:
+            skipped.append({
+                "test_case": item["test_case"],
+                "matched_file": item["file"],
+                "matched_scenario": item["scenario"],
+                "reason": reason,
+            })
 
     if skipped:
         logger.info(
@@ -1899,10 +2116,11 @@ def _select_new_test_cases(
         )
         for skip in skipped:
             tc = skip["test_case"]
-            logger.info(
-                f"  - {tc.get('key', '?')}: '{tc.get('summary', '?')}' "
-                f"already covered by '{skip['matched_scenario']}' "
-                f"in {skip['matched_file']}"
+            log = logger.warning if skip["reason"] in ("modified", "title_clash") else logger.info
+            log(
+                f"  - {tc.get('key', '?')}: '{tc.get('summary', '?')}' -> "
+                f"'{skip['matched_scenario']}' in {skip['matched_file']} "
+                f"({_why[skip['reason']]})"
             )
 
     return new_cases, skipped
@@ -2675,13 +2893,18 @@ def _inject_markers_into_feature(content: str, test_cases: list[dict]) -> str:
         stripped = line.lstrip()
         if stripped.startswith("Scenario Outline:") or stripped.startswith("Scenario:"):
             scenario_starts.append(i)
+            # Search the scenario's whole preamble - tags, comments and
+            # blank lines above it - so a marker written above the tags
+            # (`# JIRA ...` / `@smoke` / `Scenario:`) is found, not doubled.
             j = i - 1
-            while j >= 0 and lines[j].strip() == "":
-                j -= 1
-            if j >= 0:
+            keyword_indent = _indent_of(line)
+            while j >= 0 and (lines[j].strip() == ""
+                              or _is_preamble_line(lines[j], keyword_indent)):
                 parsed = parse_marker(lines[j])
                 if parsed:
                     existing_marker_above[i] = (j, parsed)
+                    break
+                j -= 1
 
     if not scenario_starts:
         return content
@@ -2825,27 +3048,30 @@ def _find_unused_update_branch(gh, base_branch: str) -> str:
 
 
 def _locate_feature_file_for_story(
-    story_id: str, test_cases: list[dict]
+    story_id: str,
+    test_cases: list[dict],
+    index: Optional[MarkerIndex] = None,
 ) -> Optional[str]:
-    """Find the feature file on `main` containing scenarios for this story.
+    """Find the feature file that holds this story's marked scenarios.
 
-    Looks for a file whose existing JIRA markers reference any Test Case
-    key linked to this Story. Returns the project-relative path or None
-    if no such file exists.
+    Uses the marker index, so every key is found in its own file. When the
+    keys are spread over several files, returns the file holding most of
+    them and names the others: one ai-update run edits one file until the
+    multi-file run (Agent 0 design, C4). Returns the project-relative path,
+    or None if no key is marked anywhere.
     """
-    _ = story_id  # currently used only for logging context
-    inventory = scan_features_dir()
-    test_keys = {tc["key"] for tc in test_cases}
-    for filename in inventory.get("scenarios_by_file", {}).keys():
-        full_path = FEATURES_DIR / filename
-        if not full_path.exists():
-            continue
-        content = full_path.read_text(encoding="utf-8")
-        _h, blocks = parse_feature_file(content)
-        markers_in_file = {b.jira_key for b in blocks if b.jira_key}
-        if markers_in_file & test_keys:
-            return f"features/{filename}"
-    return None
+    index = index if index is not None else build_marker_index(FEATURES_DIR)
+    by_file = index.files_for_keys(tc["key"] for tc in test_cases)
+    if not by_file:
+        return None
+    chosen = max(by_file, key=lambda f: (len(by_file[f]), -sorted(by_file).index(f)))
+    others = {f: keys for f, keys in by_file.items() if f != chosen}
+    if others:
+        logger.warning(
+            f"{story_id}: test cases are marked in more than one feature file. "
+            f"Updating {chosen}; not touched in this run: {others}."
+        )
+    return f"features/{chosen}"
 
 
 def _generate_single_scenario(
@@ -3217,7 +3443,8 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
         logger.warning(f"No Test Cases linked to {story_id}. Run Agent 1 first.")
         return {"story_id": story_id, "status": "no_test_cases", "files_generated": 0}
 
-    feature_file_path = _locate_feature_file_for_story(story_id, test_cases)
+    marker_index = build_marker_index(FEATURES_DIR)
+    feature_file_path = _locate_feature_file_for_story(story_id, test_cases, marker_index)
     if feature_file_path is None:
         logger.error(
             f"ai-update mode requires existing scenarios for {story_id} carrying "
@@ -3239,7 +3466,23 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
         logger.error(f"Could not read {feature_file_path} from main: {e}")
         raise
 
-    classification = classify_test_cases(test_cases, existing_content)
+    # A key marked in another file is not new here: appending it would
+    # write a second copy of that scenario into this file.
+    target_name = feature_file_path.split("/")[-1]
+    elsewhere = {
+        tc["key"]: marker_index.by_key[tc["key"]].file
+        for tc in test_cases
+        if tc["key"] in marker_index.by_key
+        and marker_index.by_key[tc["key"]].file != target_name
+    }
+    if elsewhere:
+        logger.warning(
+            f"Leaving {len(elsewhere)} test case(s) marked in other files "
+            f"untouched in this run: {elsewhere}"
+        )
+    classification = classify_test_cases(
+        [tc for tc in test_cases if tc["key"] not in elsewhere], existing_content
+    )
     logger.info(
         "Classification: unchanged=%d modified=%d new=%d orphan=%d",
         len(classification["unchanged"]),
@@ -3661,16 +3904,25 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     # they do not change while this batch is generated, and a per-file fetch
     # would multiply API calls for no benefit. Fails soft to an empty list, in
     # which case behaviour is exactly as it was before.
+    #
+    # `gh` is bound HERE, before its first use. It used to be assigned only
+    # further down (before the branch/PR step), which made it an unbound local
+    # at this point: the UnboundLocalError was swallowed by the except below
+    # and this context never reached a prompt. get_repo_host() returns a
+    # cached instance, so the later assignment hands back the same object.
     _plan_paths = {f.file_path for f in ordered_files}
     existing_pos: list = []
     try:
+        gh = get_repo_host()
         existing_pos = _existing_page_objects_on_main(
             gh, _plan_paths, branch=getattr(plan, "branch_name", None))
         if existing_pos:
             logger.info("Stage 2: injecting method signatures from %d existing "
                         "page object(s).", len(existing_pos))
     except Exception as exc:                                   # noqa: BLE001
-        logger.debug("No existing-page-object context: %s", exc)
+        # WARNING, not DEBUG: a failure here silently thins every Stage-2
+        # prompt, and at DEBUG that went unnoticed.
+        logger.warning("No existing-page-object context: %s", exc)
 
     generated_files: list[GeneratedFile] = []
     for file_plan in ordered_files:

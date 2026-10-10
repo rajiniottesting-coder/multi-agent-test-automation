@@ -40,6 +40,7 @@ class MemoryTracker:
                                    "labels": ["ai-ready"], "components": ["Login"]}}
         self.test_cases: dict = {}
         self.links: dict = {}
+        self.impacts: dict = {}
         self.comments: dict = {}
         self._n = 0
 
@@ -73,6 +74,31 @@ class MemoryTracker:
 
     def count_linked_test_cases(self, story_key):
         return len(self.links.get(story_key, []))
+
+    # Agent 0 operations: impact links live apart from ownership links.
+    def get_impacted_test_cases(self, story_key):
+        return [self.test_cases[k] for k in self.impacts.get(story_key, [])
+                if k in self.test_cases]
+
+    def update_test_case(self, issue_key, test_case):
+        self.test_cases[issue_key]["summary"] = getattr(test_case, "title", "tc")
+
+    def link_issues(self, from_key, to_key, kind):
+        table = self.links if kind == "owns" else self.impacts
+        if to_key not in table.setdefault(from_key, []):
+            table[from_key].append(to_key)
+
+    def unlink_issues(self, from_key, to_key, kind):
+        table = self.links if kind == "owns" else self.impacts
+        if to_key in table.get(from_key, []):
+            table[from_key].remove(to_key)
+
+    def create_story(self, summary, description, components, labels):
+        self._n += 1
+        key = f"ACME-{100 + self._n}"
+        self.stories[key] = {"key": key, "summary": summary, "description": description,
+                             "labels": list(labels), "components": list(components)}
+        return key
 
     def add_label(self, issue_key, label):
         self.stories[issue_key]["labels"].append(label)
@@ -162,6 +188,41 @@ def test_agent2_reads_test_cases_and_marks_coded(tracker):
 
     assert result["status"] == "pr_opened"
     assert "ai-coded" in tracker.stories["ACME-1"]["labels"]
+
+
+def test_agent2_run_passes_the_repo_host_to_existing_page_object_lookup(tracker):
+    """Regression: run() assigned `gh` only AFTER the Stage-2 block that uses
+    it, so `gh` was an unbound local there. The UnboundLocalError was caught
+    by the block's own `except Exception` and logged at DEBUG, and the
+    existing-page-object context never reached a single prompt."""
+    import agents.agent2_coder as a2
+    tracker.test_cases = {"ACME-T1": {"key": "ACME-T1", "summary": "Login",
+                                      "description": "steps"}}
+    tracker.links = {"ACME-1": ["ACME-T1"]}
+    tracker.stories["ACME-1"]["labels"] = ["ai-processed", "human-approved"]
+    plan = CodePlan(feature_name="login", branch_name="auto/ACME-1-login",
+                    pr_title="t", pr_body="b", notes="n",
+                    files_to_create=[FilePlan(file_path="features/login_acme.feature",
+                                              file_type="feature", purpose="p",
+                                              is_new_file=True)])
+    gh = MagicMock()
+    gh.find_open_pr_for_story.return_value = None
+    gh.branch_exists.return_value = False
+    gh.open_pull_request.return_value = "https://example/pull/1"
+
+    with patch.object(a2, "get_tracker", return_value=tracker), \
+         patch.object(a2, "get_repo_host", return_value=gh), \
+         patch.object(a2, "LLMClient") as LLM, \
+         patch.object(a2, "_validate_generated_files"), \
+         patch.object(a2, "_attempt_step_coverage_repair", side_effect=lambda g, *a, **k: g), \
+         patch.object(a2, "_existing_page_objects_on_main", return_value=[]) as lookup:
+        LLM.return_value.invoke_structured.return_value = plan
+        LLM.return_value.invoke_text.return_value = (
+            "Feature: Login\n\n  Scenario: Login\n    Given I am on the login page\n")
+        a2.run("ACME-1")
+
+    lookup.assert_called_once()
+    assert lookup.call_args.args[0] is gh
 
 
 def test_agent5_writes_the_run_report_to_a_non_jira_tracker(tracker, tmp_path):
