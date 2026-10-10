@@ -76,6 +76,10 @@ class MemoryTracker:
         return len(self.links.get(story_key, []))
 
     # Agent 0 operations: impact links live apart from ownership links.
+    def get_all_test_cases(self):
+        owner = {tc: story for story, tcs in self.links.items() for tc in tcs}
+        return [dict(tc, owner=owner.get(k)) for k, tc in sorted(self.test_cases.items())]
+
     def get_impacted_test_cases(self, story_key):
         return [self.test_cases[k] for k in self.impacts.get(story_key, [])
                 if k in self.test_cases]

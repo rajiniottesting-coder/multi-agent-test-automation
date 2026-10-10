@@ -5,4 +5,5 @@
     app_context     config + app inventory loading
     usage_ledger    per-story token and cost accounting
     board_status    board column automation
+    impact_graph    scenario -> step -> page method -> element -> Component graph (Agent 0)
 """

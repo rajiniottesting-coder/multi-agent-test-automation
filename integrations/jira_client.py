@@ -573,6 +573,51 @@ class JiraClient:
             logger.warning(f"Could not count test cases for {story_key}: {e}")
             return 0
 
+    def _owner_from_links(self, issuelinks) -> Optional[str]:
+        """The owning Story among a test case's issue links, or None.
+
+        Only the OWNERSHIP link names the owner. A test case can also carry
+        `impacts` links from stories that revised it; following one of those
+        would post the owner's report on the change story instead.
+
+        create_test_case() puts the story on `outwardIssue`, so that side is
+        checked first; an ownership link a person added from the story's side
+        puts it on `inwardIssue`, which is checked second.
+        """
+        owns_name = self.link_types["owns"]["name"].lower()
+        links = [l for l in issuelinks
+                 if (getattr(l.type, "name", "") or "").lower() == owns_name]
+        for side in ("outwardIssue", "inwardIssue"):
+            for link in links:
+                other = getattr(link, side, None)
+                if other is None:
+                    continue
+                other_type = getattr(other.fields.issuetype, "name", "") or ""
+                if other_type.lower() == "story":
+                    return other.key
+        return None
+
+    def get_all_test_cases(self) -> list[dict]:
+        """Every non-retired Test Case in the project, with its owner.
+
+        Returns [{"key", "summary", "description", "owner"}, ...]; `owner` is
+        the owning story's key, or None. Fetches every page of results.
+        """
+        jql = (f'project = {self.project_key} AND issuetype = "Test Case" '
+               f'AND (labels is EMPTY OR labels != "{self.retired_label}") '
+               f'ORDER BY key ASC')
+        issues = self.client.enhanced_search_issues(
+            jql, maxResults=False, fields="summary,description,issuelinks")
+        out = [
+            {"key": i.key,
+             "summary": i.fields.summary,
+             "description": i.fields.description or "",
+             "owner": self._owner_from_links(getattr(i.fields, "issuelinks", []) or [])}
+            for i in issues
+        ]
+        logger.info(f"Found {len(out)} test cases in project {self.project_key}")
+        return out
+
     def get_parent_story_key(self, issue_key: str) -> Optional[str]:
         """Return the parent Story key for a Test Case, or None if not applicable.
 
@@ -601,27 +646,10 @@ class JiraClient:
             # Already a Story (or Bug, Task, etc.) — no walking needed.
             return None
 
-        # Only the OWNERSHIP link names the parent. A test case can also carry
-        # `impacts` links from stories that revised it; following one of those
-        # would post the owner's report on the change story instead.
-        #
-        # create_test_case() puts the story on `outwardIssue`, so that side is
-        # checked first; an ownership link a person added from the story's side
-        # puts it on `inwardIssue`, which is checked second.
-        owns_name = self.link_types["owns"]["name"].lower()
-        links = [l for l in (getattr(issue.fields, "issuelinks", []) or [])
-                 if (getattr(l.type, "name", "") or "").lower() == owns_name]
-        for side in ("outwardIssue", "inwardIssue"):
-            for link in links:
-                other = getattr(link, side, None)
-                if other is None:
-                    continue
-                other_type = getattr(other.fields.issuetype, "name", "") or ""
-                if other_type.lower() == "story":
-                    logger.info(
-                        f"Resolved test-case {issue_key} → parent story {other.key}"
-                    )
-                    return other.key
+        owner = self._owner_from_links(getattr(issue.fields, "issuelinks", []) or [])
+        if owner:
+            logger.info(f"Resolved test-case {issue_key} → parent story {owner}")
+            return owner
 
         logger.info(
             f"{issue_key} is a Test Case but has no ownership link to a Story; "

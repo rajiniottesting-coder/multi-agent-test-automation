@@ -95,6 +95,7 @@ def test_a_new_adapter_needs_no_agent_changes():
         def get_comments(self, issue_key): return []
         def transition_status(self, issue_key, status): return True
         def get_impacted_test_cases(self, story_key): return []
+        def get_all_test_cases(self): return []
         def update_test_case(self, issue_key, test_case): pass
         def link_issues(self, from_key, to_key, kind): pass
         def unlink_issues(self, from_key, to_key, kind): pass

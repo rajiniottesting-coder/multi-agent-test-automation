@@ -2869,6 +2869,42 @@ def _title_similarity(a: str, b: str) -> float:
     return len(ta & tb) / len(ta | tb)
 
 
+def greedy_title_pairing(titles: dict, test_cases: list[dict]) -> tuple[dict, set]:
+    """Pair scenario titles with test cases by best title match.
+
+    `titles` maps any hashable scenario id to its title. Every scenario is
+    scored against every test case's `summary` (`_title_similarity`); the
+    scenario whose best score is highest picks first, and each test case is
+    claimed at most once.
+
+    Returns ({scenario id: (score, test case)}, {indexes of claimed cases}).
+    No floor is applied here: callers decide what score is good enough.
+    Shared by marker injection and the marker backfill (scripts/backfill_markers.py),
+    so both pair the same way.
+    """
+    pairing: dict = {
+        sid: sorted(
+            ((_title_similarity(title, c.get("summary", "")), i)
+             for i, c in enumerate(test_cases)),
+            key=lambda pair: -pair[0],
+        )
+        for sid, title in titles.items()
+    }
+    claimed: set = set()
+    chosen: dict = {}
+    ranked = sorted(
+        ((scores[0][0], sid) for sid, scores in pairing.items() if scores),
+        key=lambda pair: -pair[0],
+    )
+    for _, sid in ranked:
+        for score, i in pairing[sid]:
+            if i not in claimed:
+                claimed.add(i)
+                chosen[sid] = (score, test_cases[i])
+                break
+    return chosen, claimed
+
+
 def _inject_markers_into_feature(content: str, test_cases: list[dict]) -> str:
     """Add/refresh JIRA markers above each scenario. Returns new content.
 
@@ -2937,31 +2973,14 @@ def _inject_markers_into_feature(content: str, test_cases: list[dict]) -> str:
     # changes for a run that was working. The 0.3 floor still applies to the
     # best available pair: a scenario with no plausible case stays unmarkered
     # rather than mislabelled, which was the right call and stays the default.
-    _claimed: set = set()
-    _pairing: dict = {}
-    for _idx in scenario_starts[:min(n_scenarios, n_cases)]:
-        if _idx in existing_marker_above:
-            continue                       # keeps its own key; handled below
-        _line = lines[_idx]
-        _title = _line.lstrip().partition(":")[2].strip()
-        _scored = sorted(
-            ((_title_similarity(_title, c.get("summary", "")), i)
-             for i, c in enumerate(test_cases)),
-            key=lambda pair: -pair[0],
-        )
-        _pairing[_idx] = _scored
-
-    _chosen: dict = {}
-    _ranked = sorted(
-        ((scores[0][0], idx) for idx, scores in _pairing.items() if scores),
-        key=lambda pair: -pair[0],
+    _chosen, _claimed = greedy_title_pairing(
+        {
+            _idx: lines[_idx].lstrip().partition(":")[2].strip()
+            for _idx in scenario_starts[:min(n_scenarios, n_cases)]
+            if _idx not in existing_marker_above   # keeps its own key; handled below
+        },
+        test_cases,
     )
-    for _, _idx in _ranked:
-        for _score, _i in _pairing[_idx]:
-            if _i not in _claimed:
-                _claimed.add(_i)
-                _chosen[_idx] = (_score, test_cases[_i])
-                break
 
     for k in range(min(n_scenarios, n_cases)):
         scenario_idx = scenario_starts[k]
