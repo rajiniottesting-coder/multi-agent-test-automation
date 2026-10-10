@@ -127,7 +127,8 @@ def splice_owner_files(llm, gh, story_id: str, owner_files: dict, index, ctx,
                                      remove_scenario, splice_scenario)
     from validators.orphan_cleanup import cleanup_orphans_after_removal
 
-    files, report = [], {"revised": {}, "retired": {}, "owners": {}, "step_defs": {}}
+    files, report = [], {"revised": {}, "retired": {}, "owners": {}, "step_defs": {},
+                         "orphans": []}
     for path, of in owner_files.items():
         original = gh.get_file_content(path, branch="main")
         content = original
@@ -154,11 +155,15 @@ def splice_owner_files(llm, gh, story_id: str, owner_files: dict, index, ctx,
         page_updates: dict = {}
         if of.retire:
             try:
-                (sd_files, page_updates, _defs, _methods) = cleanup_orphans_after_removal(
+                (sd_files, page_updates, defs, methods) = cleanup_orphans_after_removal(
                     old_feature_content=original, new_feature_content=content,
                     removed_jira_keys=of.retire, step_def_files={sd_path: sd_content},
                     page_object_files={}, reserved_file_paths={"pages/base_page.py"})
                 sd_content = sd_files.get(sd_path, sd_content)
+                report["orphans"] += [f"step definition `{d.function_name}` in `{sd_path}`"
+                                      for d in defs]
+                report["orphans"] += [f"page method `{m.class_name}.{m.method_name}`"
+                                      for m in methods]
             except Exception as e:                             # noqa: BLE001
                 logger.warning("Orphan cleanup after retiring %s failed: %s", of.retire, e)
         files.append(GeneratedFile(file_path=path, content=content, is_new_file=False,
@@ -207,6 +212,9 @@ def pr_sections(report: dict) -> str:
         parts.append("\n## Retired\n")
         for key, path in sorted(report["retired"].items()):
             parts.append(f"- {key} - scenario removed from `{path}`\n")
+    if report.get("orphans"):
+        parts.append("\n## Orphans after retiring (commented out for review)\n")
+        parts += [f"- {o}\n" for o in report["orphans"]]
     if parts:
         parts.append("\nScenarios in other stories' files were edited only by splicing: "
                      "every scenario not listed here is byte-for-byte unchanged.\n")

@@ -17,14 +17,23 @@ from core import impact_trace
 logger = logging.getLogger(__name__)
 
 
+def _fallback_name(title: str) -> str:
+    """pytest-bdd's naming rule, for an environment without pytest-bdd.
+    Pinned against the real make_python_name by a unit test."""
+    import re
+    # pytest-bdd 7: spaces -> "_", drop every other non-word character, drop a
+    # leading number, lowercase (pytest_bdd.scenario.make_python_name).
+    name = re.sub(r"\W", "", title.replace(" ", "_"))
+    return re.sub(r"^\d+_*", "", name).lower()
+
+
 def _test_name(title: str) -> str:
     """The pytest function pytest-bdd generates for a scenario title."""
     try:
         from pytest_bdd.scenario import make_python_name
         return "test_" + make_python_name(title)
     except ImportError:                                        # pragma: no cover
-        import re
-        return "test_" + re.sub(r"\W+", "_", title.lower()).strip("_")
+        return "test_" + _fallback_name(title)
 
 
 def outcomes_by_key(results: list, index, keys: list) -> dict:

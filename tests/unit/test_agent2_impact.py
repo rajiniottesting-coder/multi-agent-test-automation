@@ -201,3 +201,12 @@ def test_an_ordinary_story_has_no_impact_work():
     assert impacted_for_run(jira, "X-1") == ([], [])
     jira.get_impacted_test_cases.return_value = MagicMock()     # not a list: not trusted
     assert impacted_for_run(jira, "X-1") == ([], [])
+
+
+def test_orphans_found_while_retiring_are_listed_in_the_pr():
+    from agents.agent2_impact import pr_sections
+    body = pr_sections({"revised": {}, "retired": {"AB-6": "features/f.feature"},
+                        "owners": {}, "orphans": ["step definition `old_step` in `x.py`"]})
+    assert "## Orphans after retiring" in body and "`old_step`" in body
+    assert "## Orphans" not in pr_sections({"revised": {}, "retired": {"AB-6": "f"},
+                                            "owners": {}, "orphans": []})

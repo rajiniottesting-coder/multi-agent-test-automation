@@ -148,3 +148,17 @@ class TestUpdateWithOwners:
                                  if "JIRA: SBX-1" not in l) + "\n")
         result, gh = _update(jira, root)
         assert result["status"] == "reserved_target" and gh.prs == []
+
+
+def test_repeated_refreshes_never_grow_the_marker():
+    """Agent 3 review on #130: the refresh concatenates the recorded and the
+    new impacted-by before format_marker de-duplicates; pin that the line is
+    stable across any number of refreshes."""
+    content = ("Feature: x\n\n  " + format_marker("AB-3", "old", "AB-1", ["AB-9"])
+               + "\n  Scenario: Login works\n    Then a\n")
+    tc = {"key": "AB-3", "summary": "Login works", "description": "new",
+          "impacted_by": ("AB-9", "AB-9", "AB-1")}
+    once = _inject_markers_into_feature(content, [tc])
+    assert _inject_markers_into_feature(_inject_markers_into_feature(once, [tc]), [tc]) == once
+    line = next(l for l in once.splitlines() if "JIRA" in l)
+    assert line.strip() == format_marker("AB-3", "new", "AB-1", ["AB-9"])

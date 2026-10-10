@@ -1,6 +1,8 @@
 """
 Agent 5's one-line run result on each owning story (Agent 0 design, stage 9).
 """
+import pytest
+
 from core import impact_trace
 from tests.unit.test_agent2_impact import world  # noqa: F401
 from tests.unit.test_impact_reconcile import opened  # noqa: F401
@@ -46,3 +48,14 @@ def test_outline_passes_only_if_every_row_passes():
     rows = [TestResult(name="test_add_items[1]", classname="tests.step_defs.test_cart", status="passed"),
             TestResult(name="test_add_items[2]", classname="tests.step_defs.test_cart", status="failed")]
     assert outcomes_by_key(rows, idx, ["AB-1", "AB-2"]) == {"AB-1": "failed", "AB-2": "not run"}
+
+
+@pytest.mark.parametrize("title", [
+    "Successful login with valid credentials", "Login fails: wrong password (v2)",
+    "A failed login can be cleared and retried", "  Spaces   and -- dashes ", "Ümlaut café",
+    "3 items in the cart", "Tab\tand new-line",
+])
+def test_the_fallback_name_matches_pytest_bdd(title):
+    from pytest_bdd.scenario import make_python_name
+    from core.impact_results import _fallback_name
+    assert _fallback_name(title) == make_python_name(title)

@@ -198,3 +198,16 @@ def test_lookup_failure_with_agent0_on_is_raised(monkeypatch):
     jira.get_impacted_test_cases.side_effect = RuntimeError("no such link type")
     with pytest.raises(RuntimeError):
         _impacted_test_cases(jira, "X-1")
+
+
+def test_a_tagged_existing_scenario_title_still_counts_as_existing(world, monkeypatch):
+    """Agent 3 review on #130: existing titles and new titles must be
+    normalised the same way, or a [Type]-tagged scenario slips past."""
+    fake, jira = world
+    import config.paths as paths
+    path = paths.FEATURES_DIR / "sandbox_login.feature"
+    path.write_text(path.read_text() + "\n  Scenario: [Negative] Session expires on idle\n"
+                                       "    Then I should be logged in\n")
+    dup = _draft(new=["[Edge] Session expires on idle"])
+    with pytest.raises(ValueError, match="repeats an existing scenario"):
+        _run(jira, [dup, dup])

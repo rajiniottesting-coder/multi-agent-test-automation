@@ -125,8 +125,10 @@ def run_impact_aware(tracker, story_id: str, story: dict, prompt_header: dict,
                if c.get("retired")]
     reasons = _review_rows(tracker, story_id, settings)
     index = build_marker_index(FEATURES_DIR)
-    existing_titles = {normalize_scenario_name(e.title) for e in index.by_key.values()}
-    existing_titles |= {normalize_scenario_name(t) for _f, t in index.unmarked}
+    # The same normalisation the validator applies to new titles (_norm strips
+    # a leading [Type] tag), so a tagged scenario title cannot slip past it.
+    existing_titles = {_norm(e.title) for e in index.by_key.values()}
+    existing_titles |= {_norm(t) for _f, t in index.unmarked}
 
     prompt = (PROMPTS_DIR / "agent1_impact_aware.md").read_text(encoding="utf-8")
     for name, value in prompt_header.items():
