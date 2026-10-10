@@ -393,8 +393,12 @@ def do_login(page, login_url: Optional[str], username_selector: Optional[str],
     try:
         # Same URL: a still-present password field means we never got in
         # (SPAs that authenticate without navigating will have removed it).
-        return page.locator(password_selector).count() == 0
-    except Exception:
+        # Check the field we FILLED - pass_sel. The caller's password_selector
+        # is None whenever auto-detection was used, and checking that instead
+        # raised, which read as success and let a failed login through.
+        return page.locator(pass_sel).count() == 0
+    except Exception as exc:
+        logger.warning(f"  could not confirm login result ({exc}); assuming it worked")
         return True                      # can't tell — don't block the run
 
 
@@ -432,7 +436,13 @@ def _goto_spa_tolerant(page, url: str, settle_ms: int = 3000):
     try:
         page.wait_for_load_state("networkidle", timeout=settle_ms)
     except Exception:
-        page.wait_for_timeout(settle_ms)      # SPA still busy - render anyway
+        # LAST-RESORT CAP, deliberately a fixed wait. This runs only when the
+        # page never reaches network idle (a websocket or poll keeps it busy).
+        # No application-agnostic readiness signal exists to wait on instead:
+        # the only candidates are app-specific selectors, which this layer must
+        # not hardcode. The wait is bounded by settle_ms and is the fallback,
+        # not the path a normal page takes.
+        page.wait_for_timeout(settle_ms)
     return resp
 
 
