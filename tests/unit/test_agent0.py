@@ -137,6 +137,28 @@ class TestD1:
         seeds = ia.code_change_seeds(root, head)
         assert (cls, name) in seeds.methods and len(seeds.methods) == 1
 
+    def test_a_signature_change_beyond_positional_names_is_a_seed(self, world, tmp_path):
+        """A keyword-only parameter, a default or a decorator changes how
+        callers bind; comparing positional argument names alone missed it."""
+        _f, _jira, root, g = world
+        head = tmp_path / "head"
+        shutil.copytree(root, head)
+        cls, name = min(g.scenario_for_key("SBX-12").methods)
+        path = next(p for p in (head / "pages").glob("*.py") if f"class {cls}(" in p.read_text())
+        src = path.read_text()
+        new = re.sub(rf"(    def {name}\(self)", r"\1, *, strict=False", src, count=1)
+        assert new != src
+        path.write_text(new)
+        assert ia.code_change_seeds(root, head).methods == {(cls, name)}
+
+    def test_moving_a_method_is_not_a_change(self, world, tmp_path):
+        _f, _jira, root, _g = world
+        head = tmp_path / "head"
+        shutil.copytree(root, head)
+        for path in (head / "pages").glob("*.py"):
+            path.write_text("\n\n\n" + path.read_text())           # every line number moves
+        assert ia.code_change_seeds(root, head).methods == set()
+
     def test_drift_report_seeds(self, world):
         _f, jira, root, g = world
         page, key = _only_in(g, "SBX-12", "SBX-11")

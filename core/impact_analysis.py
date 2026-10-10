@@ -82,7 +82,13 @@ def _inventory(root: Path) -> dict:
 
 
 def _methods_of(root: Path) -> dict:
-    """{(class, method): (normalised source, argument names)} for pages/*.py."""
+    """{(class, method): normalised definition} for pages/*.py.
+
+    The whole definition is compared - body, every part of the signature
+    (positional, keyword-only, *args/**kwargs, defaults), decorators and the
+    return annotation - not just the argument names. Recall first: any
+    change a caller could notice is a seed. Line numbers are not part of the
+    dump, so moving a method is not a change."""
     out = {}
     pages = Path(root) / "pages"
     for path in sorted(pages.glob("*.py")) if pages.is_dir() else []:
@@ -96,9 +102,7 @@ def _methods_of(root: Path) -> dict:
             if isinstance(node, ast.ClassDef):
                 for item in node.body:
                     if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                        body = ast.dump(ast.Module(body=item.body, type_ignores=[]))
-                        args = tuple(a.arg for a in item.args.args)
-                        out[(node.name, item.name)] = (body, args)
+                        out[(node.name, item.name)] = ast.dump(item)
     return out
 
 
@@ -108,8 +112,8 @@ def code_change_seeds(base_root: Path, head_root: Path) -> Seeds:
     selector changed or that were removed. Added things impact no existing test."""
     seeds = Seeds()
     base_m, head_m = _methods_of(base_root), _methods_of(head_root)
-    for ref, (body, args) in base_m.items():
-        if ref not in head_m or head_m[ref] != (body, args):
+    for ref, definition in base_m.items():
+        if head_m.get(ref) != definition:
             seeds.methods.add(ref)
     base_i, head_i = _inventory(base_root), _inventory(head_root)
     for page, spec in base_i.items():
