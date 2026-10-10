@@ -166,23 +166,46 @@ def validate_requirement_seeds(change, graph, story_components: Iterable[str]) -
 # Uncovered-element hint (E1 follow-up, gated by agent0_impact.uncovered_hint)
 # ─────────────────────────────────────────────────────────────
 
+def _name_words(element: str) -> list:
+    """The words of an element name that say what it is ABOUT.
+
+    Trailing words the name builder adds are dropped: a dedupe number
+    (`_2`) always, and the kind (`_button`, `_input`, `_link`, ...) only when
+    at least TWO subject words remain. So coupon_code_input matches "coupon
+    code", while apply_button still needs "apply button": a single subject word
+    is usually a common verb ("apply", "save", "submit") that would fire on
+    almost any story.
+    """
+    from inventory_tools.introspect import NAME_KIND_SUFFIXES
+    words = [w for w in element.lower().split("_") if w]
+    while len(words) > 1 and words[-1].isdigit():
+        words.pop()
+    if len(words) > 2 and words[-1] in NAME_KIND_SUFFIXES:
+        words.pop()
+    return words
+
+
 def uncovered_hits(story_text: str, uncovered: dict) -> list:
-    """(page, element) pairs whose name the story names in full.
+    """(page, element) pairs whose subject the story names in full.
 
     `uncovered` is {page: {element: selector}} - live elements no inventory
-    selector covers (--compare). A story naming one ("cancel button" for
-    cancel_button) means a page the suite visits may change.
+    selector covers (--compare). A story naming one ("coupon code" for
+    coupon_code_input) means a page the suite visits may change.
 
-    Conservative by design: every word of the element name must appear in the
-    story, so "button" alone never matches cancel_button, and a name with no
-    word of four or more letters is never matched. Plurals do not match
-    ("buttons" is not "button"); a missed hint is safe, a false one costs review.
+    - Language: story text is folded exactly as element names are
+      (inventory_tools.introspect.fold_to_ascii), so "Größe wählen" in a story
+      matches grosse_wahlen_link. Scripts with no Latin form produce no ASCII
+      names and so never match - a missed hint, never a wrong one.
+    - Conservative: every subject word must appear, at least one of them four
+      letters or longer. "button" alone never matches. Plurals do not match.
+      A missed hint is safe; a false one costs reviewer time.
     """
-    tokens = set(re.findall(r"[a-z0-9]+", (story_text or "").lower()))
+    from inventory_tools.introspect import fold_to_ascii
+    tokens = set(re.findall(r"[a-z0-9]+", fold_to_ascii(story_text or "").lower()))
     hits = []
     for page, elements in sorted((uncovered or {}).items()):
         for element in sorted(elements or {}):
-            words = [w for w in element.lower().split("_") if w]
+            words = _name_words(element)
             if not any(len(w) >= 4 for w in words):
                 continue
             if all(w in tokens for w in words):

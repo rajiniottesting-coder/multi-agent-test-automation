@@ -144,6 +144,17 @@ _ROLE_KIND = {
 }
 
 
+# Words the name builder appends to say WHAT an element is, never what it is
+# about: `{base}_{kind}` (element_kind), `{name}_buttons` for a family and
+# `{name}_alt` for an image. Anything matching names against prose (Agent 0's
+# uncovered-element hint) strips these, so "coupon code" finds
+# coupon_code_input. Kept beside the builder so the two cannot drift apart.
+NAME_KIND_SUFFIXES = frozenset(
+    set(_ROLE_KIND.values())
+    | {"button", "buttons", "input", "link", "dropdown", "checkbox", "radio",
+       "element", "alt"}
+)
+
 def _looks_generated_id(value: str) -> bool:
     return bool(_GENERATED_ID.search(value or ""))
 

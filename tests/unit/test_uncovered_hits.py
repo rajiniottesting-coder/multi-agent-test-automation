@@ -52,3 +52,40 @@ def test_the_page_seed_scores_below_must_update_and_above_review():
     """A hint alone must land in the review band. Checked against the weights
     the rest of Agent 0 uses, not restated here."""
     assert 0.3 <= ia.PAGE_ONLY < 0.6
+
+
+# ─────────────────────────────────────────────────────────────
+# Generality audit (G4): the kind word, accented text, dedupe numbers
+# ─────────────────────────────────────────────────────────────
+
+KINDS = {"form": {"coupon_code_input": "a", "apply_button_2": "b",
+                  "grosse_wahlen_link": "c", "search": "d"}}
+
+
+def test_the_kind_word_is_not_needed_when_the_subject_has_two_words():
+    """Stories say "field", "box", "Feld" - not the generator's "input"."""
+    assert ia.uncovered_hits("Add a coupon code field", KINDS) == [("form", "coupon_code_input")]
+
+
+def test_a_single_subject_word_still_needs_its_kind_word():
+    """'apply' alone is a common verb; it must not fire on every story."""
+    assert ia.uncovered_hits("apply the voucher", KINDS) == []
+    assert ia.uncovered_hits("the apply button moves", KINDS) == [("form", "apply_button_2")]
+
+
+def test_a_dedupe_number_is_not_needed():
+    assert ia.uncovered_hits("apply button", KINDS) == [("form", "apply_button_2")]
+
+
+def test_accented_story_text_matches_a_folded_name():
+    assert ia.uncovered_hits("Neue Option: Größe wählen", KINDS) == [("form", "grosse_wahlen_link")]
+
+
+def test_a_bare_kind_name_needs_that_word():
+    assert ia.uncovered_hits("search results improve", KINDS) == [("form", "search")]
+
+
+def test_the_kind_suffix_set_lives_beside_the_name_builder():
+    from inventory_tools.introspect import NAME_KIND_SUFFIXES, element_kind
+    for tag in ("button", "a", "select", "textarea", "input"):
+        assert element_kind(tag, {}) in NAME_KIND_SUFFIXES
