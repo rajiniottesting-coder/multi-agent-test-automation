@@ -44,6 +44,7 @@ import argparse
 import json
 import os
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -54,6 +55,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from core import inventory_proposals
 from core.app_context import AppContext
 from inventory_tools import introspect
 from inventory_tools.browser import (
@@ -119,7 +121,13 @@ def main() -> int:
                     help="Also report live elements NO inventory selector covers "
                          "(new elements with no test-id). Report only: it never "
                          "affects drift or the exit code.")
+    ap.add_argument("--propose", metavar="PATH",
+                    help="Write the uncovered elements as an inventory proposals "
+                         "file for review (implies --compare). The inventory is "
+                         "not changed; apply with scripts.apply_inventory_proposals.")
     args = ap.parse_args()
+    if args.propose:
+        args.compare = True
 
     ctx = AppContext.load()
     base_url = ctx.base_url.rstrip("/")
@@ -216,6 +224,16 @@ def main() -> int:
                       f"fail on this)")
             for nt in diff["new_data_tests"]:
                 print(f"    NEW     test-id '{nt}' present live but not in inventory")
+    if args.propose:
+        proposals = inventory_proposals.build_proposals(
+            {p: els for p, els in new_by_page.items() if els}, inventory,
+            inventory_path=ctx.inventory_file, base_url=base_url)
+        Path(args.propose).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.propose).write_text(
+            json.dumps(proposals, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        print(f"Proposals written to {args.propose} "
+              f"({len(proposals['rows'])} row(s)). The inventory is unchanged.")
+
     if args.compare:
         new_total = sum(len(els) for els in new_by_page.values())
         print(f"  uncovered elements : {new_total} (no selector in the inventory)")
