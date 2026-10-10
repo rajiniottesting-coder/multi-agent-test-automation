@@ -57,7 +57,11 @@ def reconcile_story(tracker, host, story: str, settings: dict | None = None, now
     """Settle one change story; returns {"story", "action", ...}."""
     settings = settings or impact_settings()
     labels = settings["labels"]
-    prs = host.find_prs_for_story(story)
+    # Newest first is the repo-host contract; sorted here too, so an adapter
+    # returning another order can never make the revert act on an older PR.
+    # Stable: PRs without updated_at keep the adapter's order.
+    prs = sorted(host.find_prs_for_story(story), key=lambda p: p.get("updated_at") or "",
+                 reverse=True)
     comments = tracker.get_comments(story)
 
     if any(p["state"] == "open" for p in prs):

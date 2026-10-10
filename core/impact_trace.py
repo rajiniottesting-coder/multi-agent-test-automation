@@ -30,7 +30,8 @@ _HEAD = re.compile(r"^\[agent0:trace\] (?P<kind>[a-z-]+) \| change: (?P<change>\
 
 
 def _head(kind: str, change: str, ref: Optional[str]) -> str:
-    assert kind in KINDS, kind
+    if kind not in KINDS:                 # not an assert: it must survive python -O
+        raise ValueError(f"unknown trace kind {kind!r}; expected one of {KINDS}")
     return f"{TRACE} {kind} | change: {change}" + (f" | ref: {ref}" if ref else "")
 
 

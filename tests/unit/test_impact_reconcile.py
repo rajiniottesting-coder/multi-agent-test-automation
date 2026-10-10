@@ -147,3 +147,14 @@ def test_the_cli_does_nothing_while_agent0_is_off(capsys):
     from scripts.impact_reconcile import main
     assert main([]) == 0
     assert "enabled is false" in capsys.readouterr().out
+
+
+def test_the_latest_pr_is_chosen_whatever_order_the_host_returns(opened):
+    """Agent 3 review of #130: an adapter returning oldest-first must not make
+    the revert act on an older PR."""
+    fake, jira, gh, _o = opened
+    gh.close(1)
+    old = dict(gh.prs[0], number=99, updated_at="0000")         # an older, closed PR
+    real = gh.find_prs_for_story
+    gh.find_prs_for_story = lambda story, branch_prefix="auto/": [old] + real(story)
+    assert _scan(jira, gh)["pr"] == 1

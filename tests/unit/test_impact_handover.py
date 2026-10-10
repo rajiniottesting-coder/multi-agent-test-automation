@@ -193,3 +193,20 @@ class TestReviewDrivenHandover:
         monkeypatch.setattr(tr, "get_tracker", lambda *a, **k: jira)
         from scripts.impact_handover import main
         assert main(["--story", "SBX-5", "--approve", "SBX-11", "--retire", "SBX-11"]) == 2
+
+
+# Agent 3 review of #130 (fourth run)
+def test_parse_rows_maps_a_full_row_and_survives_a_pipe_in_evidence():
+    row = "|AB-3|AB-1|must-update|0.9|uses the error banner|retire|"
+    assert impact_review.parse_rows(row)["AB-3"] == {
+        "owner": "AB-1", "tier": "must-update", "score": "0.9",
+        "evidence": "uses the error banner", "decision": "retire"}
+    # a reviewer types a pipe in the evidence: the decision is still the LAST cell
+    edited = "|AB-3|AB-1|must-update|0.9|before | after|reject|"
+    assert impact_review.parse_rows(edited)["AB-3"]["decision"] == "reject"
+    assert impact_review.parse(edited) == {"AB-3": "reject"}
+
+
+def test_an_unknown_trace_kind_is_refused_even_under_python_O():
+    with pytest.raises(ValueError, match="unknown trace kind"):
+        impact_trace._head("deleted", "AB-9", None)

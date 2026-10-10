@@ -168,11 +168,9 @@ def run_impact_aware(tracker, story_id: str, story: dict, prompt_header: dict,
         tracker.update_test_case(rev.key, rev.revised)
         revised.append(rev.key)
 
-    for tc in draft.new_test_cases:
-        if dry_run:
-            created.append("(dry run)")
-            continue
-        created.append(tracker.create_test_case(tc, parent_story_key=story_id).key)
+    if not dry_run:                       # a dry run creates nothing, like normal mode
+        for tc in draft.new_test_cases:
+            created.append(tracker.create_test_case(tc, parent_story_key=story_id).key)
 
     if not dry_run:
         body = [f"{GATE} Impact-aware draft for {story_id}",
@@ -204,4 +202,5 @@ def run_impact_aware(tracker, story_id: str, story: dict, prompt_header: dict,
             "mode": "impact-aware", "revised": revised, "skipped_revisions": skipped,
             "retired": [c["key"] for c in retired], "near_matches": near,
             "test_cases_generated": len(draft.new_test_cases), "test_case_keys": created,
+            "would_create": len(draft.new_test_cases) if dry_run else 0,
             "status": "tests_revised" if not dry_run else "tests_revised_dry_run"}

@@ -167,6 +167,7 @@ class TestImpactAwareRun:
         before = dict(fake.issues["SBX-11"])
         result, _ = _run(jira, [_draft(new=[self.NEW])], dry_run=True)
         assert result["status"] == "tests_revised_dry_run"
+        assert result["test_case_keys"] == [] and result["would_create"] == 1
         assert fake.issues["SBX-11"] == before and "SBX-11" not in fake.comments
 
     def test_an_ordinary_story_never_enters_impact_mode(self, world, monkeypatch):
