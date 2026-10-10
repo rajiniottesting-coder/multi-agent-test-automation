@@ -81,8 +81,6 @@ from core.schemas import CodePlan, GeneratedFile, CodeGenerationOutput
 from validators.gherkin_analyzer import (
     validate_step_coverage,
     validate_no_duplicate_step_definitions,
-    scan_features_dir,
-    filter_duplicate_test_cases,
     validate_filename_consistency,
     validate_feature_file_structure,
     validate_examples_hold_data_not_placeholders,
@@ -447,6 +445,135 @@ def classify_test_cases(test_cases: list[dict], feature_content: str) -> dict:
         "new": new,
         "orphan_keys": orphan_keys,
     }
+
+
+def _scenario_title(block: ScenarioBlock) -> str:
+    for line in block.lines:
+        stripped = line.lstrip()
+        if stripped.startswith("Scenario Outline:") or stripped.startswith("Scenario:"):
+            return stripped.split(":", 1)[1].strip()
+    return ""
+
+
+@dataclass(frozen=True)
+class MarkerEntry:
+    """One marked scenario: which test case it implements, and where."""
+    key: str
+    file: str       # filename inside the features directory, e.g. "login.feature"
+    hash: str
+    title: str
+
+
+@dataclass
+class MarkerIndex:
+    """Every scenario in the features directory, by test case key.
+
+    `by_key`      - marked scenarios, keyed by test case key
+    `unmarked`    - (file, title) of scenarios with no JIRA marker
+    `duplicates`  - keys marked in more than one place: key -> files
+    """
+    by_key: dict = field(default_factory=dict)
+    unmarked: list = field(default_factory=list)
+    duplicates: dict = field(default_factory=dict)
+
+    def files_for_keys(self, keys) -> dict:
+        """{file: [keys]} for the keys found in the index, in file order."""
+        out: dict = {}
+        for key in keys:
+            entry = self.by_key.get(key)
+            if entry is not None:
+                out.setdefault(entry.file, []).append(key)
+        return dict(sorted(out.items()))
+
+
+def build_marker_index(features_dir: Path) -> MarkerIndex:
+    """Read every feature file once and index its scenarios by marker.
+
+    Identity is the test case key in the `# JIRA:` marker, not the title:
+    a revised test case keeps its title, and a renamed one keeps its key.
+    A key marked twice is kept at its first location (files in name order)
+    and reported in `duplicates`.
+    """
+    index = MarkerIndex()
+    if not features_dir.is_dir():
+        return index
+    for path in sorted(features_dir.glob("*.feature")):
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as e:
+            logger.warning(f"Marker index: could not read {path.name}: {e}")
+            continue
+        _h, blocks = parse_feature_file(content)
+        for block in blocks:
+            if block.kind != "scenario":
+                continue
+            title = _scenario_title(block)
+            if not block.jira_key:
+                index.unmarked.append((path.name, title))
+                continue
+            if block.jira_key in index.by_key:
+                first = index.by_key[block.jira_key].file
+                index.duplicates.setdefault(block.jira_key, [first]).append(path.name)
+                continue
+            index.by_key[block.jira_key] = MarkerEntry(
+                key=block.jira_key, file=path.name,
+                hash=block.jira_hash or "", title=title,
+            )
+    for key, files in index.duplicates.items():
+        logger.warning(
+            f"Marker index: {key} is marked in more than one place {files}; "
+            f"using {files[0]}."
+        )
+    return index
+
+
+def classify_against_index(test_cases: list[dict], index: MarkerIndex) -> dict:
+    """Classify test cases by identity first, title second.
+
+    | Test case                                   | Class      |
+    |---------------------------------------------|------------|
+    | key in the index, hash equal                | unchanged  |
+    | key in the index, hash different            | modified   |
+    | key not in the index, title matches an      | legacy     |
+    |   unmarked scenario                         |            |
+    | key not in the index, title matches a       | title_clash|
+    |   scenario marked with another key          |            |
+    | key not in the index, no title match        | new        |
+
+    Returns {class: [{"test_case", "file", "scenario"}]}; for `new` the
+    file and scenario are None. The title fallback protects unmarked
+    legacy scenarios from being generated twice.
+    """
+    from validators.gherkin_analyzer import normalize_scenario_name
+
+    unmarked_by_title: dict = {}
+    for filename, title in index.unmarked:
+        unmarked_by_title.setdefault(normalize_scenario_name(title), (filename, title))
+    marked_by_title: dict = {}
+    for entry in index.by_key.values():
+        marked_by_title.setdefault(normalize_scenario_name(entry.title), entry)
+
+    result: dict = {c: [] for c in ("unchanged", "modified", "legacy", "title_clash", "new")}
+    for tc in test_cases:
+        entry = index.by_key.get(tc.get("key"))
+        if entry is not None:
+            current = compute_description_hash(tc.get("description", ""))
+            cls = "unchanged" if entry.hash == current else "modified"
+            result[cls].append({"test_case": tc, "file": entry.file, "scenario": entry.title})
+            continue
+        norm = normalize_scenario_name(tc.get("summary", "") or "")
+        if norm and norm in unmarked_by_title:
+            filename, title = unmarked_by_title[norm]
+            result["legacy"].append({"test_case": tc, "file": filename, "scenario": title})
+        elif norm and norm in marked_by_title:
+            other = marked_by_title[norm]
+            result["title_clash"].append({
+                "test_case": tc, "file": other.file, "scenario": other.title,
+                "other_key": other.key,
+            })
+        else:
+            result["new"].append({"test_case": tc, "file": None, "scenario": None})
+    return result
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1942,8 +2069,16 @@ def generate_file_content(
 def _select_new_test_cases(
     test_cases: list[dict],
     is_regenerate: bool,
+    features_dir: Optional[Path] = None,
 ) -> tuple[list[dict], list[dict]]:
     """Filter out test cases already covered by existing scenarios.
+
+    Classifies by marker first, title second (`classify_against_index`).
+    Only `new` cases are generated. The rest are skipped, each with a
+    `reason`: `unchanged`, `modified` (revised in place by ai-update, not
+    regenerated here), `legacy` (an unmarked scenario has the same title)
+    or `title_clash` (a scenario marked with another key has the same
+    title).
 
     Returns (new_test_cases, skipped_test_cases). In regenerate mode, dedup
     is bypassed and all test cases are returned as new.
@@ -1955,8 +2090,25 @@ def _select_new_test_cases(
         )
         return test_cases, []
 
-    inventory = scan_features_dir(FEATURES_DIR)
-    new_cases, skipped = filter_duplicate_test_cases(test_cases, inventory)
+    index = build_marker_index(features_dir or FEATURES_DIR)
+    classes = classify_against_index(test_cases, index)
+    new_cases = [item["test_case"] for item in classes["new"]]
+
+    _why = {
+        "unchanged": "already implemented, unchanged",
+        "modified": "already implemented, changed since - ai-update revises it in place",
+        "legacy": "an unmarked scenario has the same title - the marker backfill will mark it",
+        "title_clash": "a scenario marked with another test case has the same title",
+    }
+    skipped: list[dict] = []
+    for reason in ("unchanged", "modified", "legacy", "title_clash"):
+        for item in classes[reason]:
+            skipped.append({
+                "test_case": item["test_case"],
+                "matched_file": item["file"],
+                "matched_scenario": item["scenario"],
+                "reason": reason,
+            })
 
     if skipped:
         logger.info(
@@ -1965,10 +2117,11 @@ def _select_new_test_cases(
         )
         for skip in skipped:
             tc = skip["test_case"]
-            logger.info(
-                f"  - {tc.get('key', '?')}: '{tc.get('summary', '?')}' "
-                f"already covered by '{skip['matched_scenario']}' "
-                f"in {skip['matched_file']}"
+            log = logger.warning if skip["reason"] in ("modified", "title_clash") else logger.info
+            log(
+                f"  - {tc.get('key', '?')}: '{tc.get('summary', '?')}' -> "
+                f"'{skip['matched_scenario']}' in {skip['matched_file']} "
+                f"({_why[skip['reason']]})"
             )
 
     return new_cases, skipped
@@ -2896,27 +3049,30 @@ def _find_unused_update_branch(gh, base_branch: str) -> str:
 
 
 def _locate_feature_file_for_story(
-    story_id: str, test_cases: list[dict]
+    story_id: str,
+    test_cases: list[dict],
+    index: Optional[MarkerIndex] = None,
 ) -> Optional[str]:
-    """Find the feature file on `main` containing scenarios for this story.
+    """Find the feature file that holds this story's marked scenarios.
 
-    Looks for a file whose existing JIRA markers reference any Test Case
-    key linked to this Story. Returns the project-relative path or None
-    if no such file exists.
+    Uses the marker index, so every key is found in its own file. When the
+    keys are spread over several files, returns the file holding most of
+    them and names the others: one ai-update run edits one file until the
+    multi-file run (Agent 0 design, C4). Returns the project-relative path,
+    or None if no key is marked anywhere.
     """
-    _ = story_id  # currently used only for logging context
-    inventory = scan_features_dir()
-    test_keys = {tc["key"] for tc in test_cases}
-    for filename in inventory.get("scenarios_by_file", {}).keys():
-        full_path = FEATURES_DIR / filename
-        if not full_path.exists():
-            continue
-        content = full_path.read_text(encoding="utf-8")
-        _h, blocks = parse_feature_file(content)
-        markers_in_file = {b.jira_key for b in blocks if b.jira_key}
-        if markers_in_file & test_keys:
-            return f"features/{filename}"
-    return None
+    index = index if index is not None else build_marker_index(FEATURES_DIR)
+    by_file = index.files_for_keys(tc["key"] for tc in test_cases)
+    if not by_file:
+        return None
+    chosen = max(by_file, key=lambda f: (len(by_file[f]), -sorted(by_file).index(f)))
+    others = {f: keys for f, keys in by_file.items() if f != chosen}
+    if others:
+        logger.warning(
+            f"{story_id}: test cases are marked in more than one feature file. "
+            f"Updating {chosen}; not touched in this run: {others}."
+        )
+    return f"features/{chosen}"
 
 
 def _generate_single_scenario(
@@ -3288,7 +3444,8 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
         logger.warning(f"No Test Cases linked to {story_id}. Run Agent 1 first.")
         return {"story_id": story_id, "status": "no_test_cases", "files_generated": 0}
 
-    feature_file_path = _locate_feature_file_for_story(story_id, test_cases)
+    marker_index = build_marker_index(FEATURES_DIR)
+    feature_file_path = _locate_feature_file_for_story(story_id, test_cases, marker_index)
     if feature_file_path is None:
         logger.error(
             f"ai-update mode requires existing scenarios for {story_id} carrying "
@@ -3310,7 +3467,23 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
         logger.error(f"Could not read {feature_file_path} from main: {e}")
         raise
 
-    classification = classify_test_cases(test_cases, existing_content)
+    # A key marked in another file is not new here: appending it would
+    # write a second copy of that scenario into this file.
+    target_name = feature_file_path.split("/")[-1]
+    elsewhere = {
+        tc["key"]: marker_index.by_key[tc["key"]].file
+        for tc in test_cases
+        if tc["key"] in marker_index.by_key
+        and marker_index.by_key[tc["key"]].file != target_name
+    }
+    if elsewhere:
+        logger.warning(
+            f"Leaving {len(elsewhere)} test case(s) marked in other files "
+            f"untouched in this run: {elsewhere}"
+        )
+    classification = classify_test_cases(
+        [tc for tc in test_cases if tc["key"] not in elsewhere], existing_content
+    )
     logger.info(
         "Classification: unchanged=%d modified=%d new=%d orphan=%d",
         len(classification["unchanged"]),
