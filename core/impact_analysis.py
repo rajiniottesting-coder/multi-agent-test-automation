@@ -18,6 +18,7 @@ Stages (design section 7):
 from __future__ import annotations
 
 import ast
+import copy
 import hashlib
 import json
 import re
@@ -220,7 +221,6 @@ def with_uncovered_hint(seeds: Seeds, story_text: str, uncovered: dict) -> tuple
     (0.4): it lands in the review tier and can never be must-update on this
     evidence alone. The weights are the existing ones; nothing new is scored.
     """
-    import copy
     hits = uncovered_hits(story_text, uncovered)
     out = copy.deepcopy(seeds)
     out.pages.update(page for page, _element in hits)
