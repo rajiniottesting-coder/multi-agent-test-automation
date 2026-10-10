@@ -144,6 +144,25 @@ def load_app_context_block(components: list[str] | None = None) -> str:
     return "\n\n".join(blocks)
 
 
+def _impacted_test_cases(jira, story_id: str) -> list:
+    """Approved impacted test cases of the story, [] for an ordinary story.
+
+    A lookup failure (a Jira without the Impacts link type, say) must not
+    stop Agent 1's normal work while Agent 0 is switched off, so it is
+    logged and treated as "none". With Agent 0 on, it is raised: drafting
+    from scratch a story that should revise existing tests would duplicate them.
+    """
+    try:
+        return jira.get_impacted_test_cases(story_id)
+    except Exception as e:                                     # noqa: BLE001
+        from core.impact_settings import impact_settings
+        if impact_settings()["enabled"]:
+            raise
+        logger.warning(f"Impacted test case lookup failed for {story_id} "
+                       f"({type(e).__name__}: {e}); Agent 0 is off - normal mode.")
+        return []
+
+
 def load_agent_config(agent_key: str = "agent1_analyst") -> dict:
     """Load this agent's config section from config.yaml."""
     with open(CONFIG_YAML) as f:
@@ -254,6 +273,32 @@ def run(story_id: str, dry_run: bool = False) -> dict:
                 f"Usage ledger: reset check failed for {story_id}: "
                 f"{type(e).__name__}: {e}. Non-fatal — continuing."
             )
+
+    # IMPACT-AWARE MODE (Agent 0 design, C3). A story whose Impact Review
+    # approved existing test cases carries Impacts links to them; it revises
+    # those in place and drafts new ones only for uncovered criteria. A story
+    # with no impacted cases - every story today - continues below unchanged.
+    impacted = _impacted_test_cases(jira, story_id)
+    if impacted:
+        from agents.agent1_impact import run_impact_aware
+        logger.info(f"{story_id} impacts {len(impacted)} approved test case(s): "
+                    f"impact-aware mode")
+        llm = LLMClient(temperature=0.3, max_output_tokens=12288)
+        result = run_impact_aware(
+            jira, story_id, story,
+            {"app_name": ctx.name, "app_base_url": ctx.base_url,
+             "app_context": load_app_context_block(story.get("components")),
+             "story_text": story_text},
+            llm, dry_run, load_agent_config())
+        from core.llm_client import log_usage_summary, reset_usage
+        result["llm_usage"] = log_usage_summary(f"story {story_id} (analyst, impact-aware)")
+        reset_usage()
+        if not dry_run:
+            from core.usage_ledger import post_usage_to_story
+            post_usage_to_story(story_id, "Agent 1 (Analyst)", result["llm_usage"], jira=jira)
+        logger.info(f"=== Agent 1 (Analyst) complete for {story_id}: revised "
+                    f"{result['revised']}, created {result['test_case_keys']} ===")
+        return result
 
     # 2. REASON: call LLM with structured output
     prompt_template = load_prompt()

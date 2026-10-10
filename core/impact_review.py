@@ -51,5 +51,21 @@ def parse(description: str) -> dict:
     return out
 
 
+def parse_rows(description: str) -> dict:
+    """{key: {"owner", "tier", "score", "evidence", "decision"}} - every cell."""
+    out: dict = {}
+    for line in (description or "").splitlines():
+        m = _ROW.match(line.strip())
+        if not m:
+            continue
+        cells = [c.strip() for c in m.group("rest").split("|")]
+        cells += [""] * (5 - len(cells))
+        decision = cells[-1].lower()
+        out[m.group("key")] = {"owner": cells[0], "tier": cells[1], "score": cells[2],
+                               "evidence": cells[3] if len(cells) > 4 else "",
+                               "decision": decision if decision in DECISIONS else UNDECIDED}
+    return out
+
+
 def undecided(decisions: dict) -> list:
     return sorted(k for k, v in decisions.items() if v not in DECISIONS)
