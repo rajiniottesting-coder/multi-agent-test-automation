@@ -446,6 +446,19 @@ def classify_test_cases(test_cases: list[dict], feature_content: str) -> dict:
     }
 
 
+_TYPE_TAGS = re.compile(r"^(\s*\[[^\]]*\])+\s*")
+
+
+def plain_test_case_title(summary: str) -> str:
+    """A test case summary without its leading type tags.
+
+    Agent 1 writes summaries as `[Negative] Login fails ...` (sometimes with
+    the tag doubled); the scenario Agent 2 writes is titled `Login fails ...`.
+    Any comparison of a test case with a scenario title strips the tags first.
+    """
+    return _TYPE_TAGS.sub("", summary or "").strip()
+
+
 def _scenario_title(block: ScenarioBlock) -> str:
     for line in block.lines:
         stripped = line.lstrip()
@@ -3502,6 +3515,23 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
     classification = classify_test_cases(
         [tc for tc in test_cases if tc["key"] not in elsewhere], existing_content
     )
+    # A "new" test case whose scenario already sits UNMARKED in this file (it
+    # was written before markers existed) must not be appended a second time.
+    # Skip it and say how to fix it; the marker backfill gives it its marker.
+    from validators.gherkin_analyzer import normalize_scenario_name
+    _h, _blocks = parse_feature_file(existing_content)
+    unmarked_here = {normalize_scenario_name(_scenario_title(b))
+                     for b in _blocks if b.kind == "scenario" and not b.jira_key}
+    legacy_here = [tc for tc in classification["new"]
+                   if normalize_scenario_name(plain_test_case_title(tc.get("summary", "")))
+                   in unmarked_here]
+    if legacy_here:
+        classification["new"] = [tc for tc in classification["new"] if tc not in legacy_here]
+        logger.warning(
+            "%d test case(s) already have an UNMARKED scenario in %s and are not "
+            "appended again: %s. Give them their marker with "
+            "`python scripts/backfill_markers.py propose`.",
+            len(legacy_here), feature_file_path, [tc["key"] for tc in legacy_here])
     logger.info(
         "Classification: unchanged=%d modified=%d new=%d orphan=%d",
         len(classification["unchanged"]),
