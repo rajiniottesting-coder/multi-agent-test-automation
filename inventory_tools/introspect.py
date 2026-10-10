@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 import re as _re
+import unicodedata
 from urllib.parse import urlparse
 
 
@@ -352,8 +353,36 @@ def is_unstable_strategy(strategy: str) -> bool:
 # Element naming + kind
 # ─────────────────────────────────────────────────────────────
 
+# Latin letters that Unicode does not decompose into base letter + accent, so
+# NFKD alone would drop them. Written out the conventional way.
+_FOLD_SPECIAL = str.maketrans({
+    "ß": "ss", "ẞ": "SS", "æ": "ae", "Æ": "AE", "œ": "oe", "Œ": "OE",
+    "ø": "o", "Ø": "O", "đ": "d", "Đ": "D", "ł": "l", "Ł": "L",
+    "þ": "th", "Þ": "TH", "ð": "d", "Ð": "D", "ı": "i",
+})
+
+
+def fold_to_ascii(value: str) -> str:
+    """Latin-script text with its accents removed: 'Größe wählen' -> 'Grosse wahlen'.
+
+    Element names are ASCII snake_case. Text from an application in German,
+    French, Spanish, Polish and the like used to be cut at every accented
+    letter, so 'Größe wählen' became 'gr_e_w_hlen'. Folding first keeps the
+    word. The same function folds a story's text before it is matched against
+    element names, so both sides agree.
+
+    Scripts with no Latin form (Cyrillic, Greek, CJK, Arabic) are left as they
+    are; the name builder then drops them as before, and other naming sources
+    (test ids, ids, the element kind) take over.
+    """
+    value = (value or "").translate(_FOLD_SPECIAL)
+    value = unicodedata.normalize("NFKD", value)
+    return "".join(ch for ch in value if not unicodedata.combining(ch))
+
+
 def _slug_to_name(value: str) -> str:
-    """'add-to-cart-backpack' / 'firstName' -> snake_case token."""
+    """'add-to-cart-backpack' / 'firstName' / 'Größe wählen' -> snake_case token."""
+    value = fold_to_ascii(value)
     value = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", value)  # camelCase split
     value = re.sub(r"[^0-9a-zA-Z]+", "_", value)
     return re.sub(r"_+", "_", value).strip("_").lower()
