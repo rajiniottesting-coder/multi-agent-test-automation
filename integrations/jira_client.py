@@ -583,8 +583,9 @@ class JiraClient:
         Resolution logic:
           - If `issue_key` itself is a Story (or anything that's not a Test Case),
             return None — caller should keep the original key.
-          - If `issue_key` is a Test Case, scan its issuelinks for a "Relates"
-            link pointing OUT to a Story and return that Story's key.
+          - If `issue_key` is a Test Case, scan its issuelinks for the ownership
+            link (`link_types.owns`) to a Story and return that Story's key.
+            Links of any other type - `impacts` above all - are ignored.
           - If the test case has no Story-typed parent, return None and let the
             caller fall back. We never raise here — Agent 5 should still post
             *somewhere* even if link resolution fails.
@@ -600,21 +601,30 @@ class JiraClient:
             # Already a Story (or Bug, Task, etc.) — no walking needed.
             return None
 
-        # create_test_case() builds links as inwardIssue=test_case, outwardIssue=story
-        # with type "Relates", so the parent appears on `outwardIssue` of the link.
-        for link in getattr(issue.fields, "issuelinks", []) or []:
-            outward = getattr(link, "outwardIssue", None)
-            if outward is None:
-                continue
-            outward_type = getattr(outward.fields.issuetype, "name", "") or ""
-            if outward_type.lower() == "story":
-                logger.info(
-                    f"Resolved test-case {issue_key} → parent story {outward.key}"
-                )
-                return outward.key
+        # Only the OWNERSHIP link names the parent. A test case can also carry
+        # `impacts` links from stories that revised it; following one of those
+        # would post the owner's report on the change story instead.
+        #
+        # create_test_case() puts the story on `outwardIssue`, so that side is
+        # checked first; an ownership link a person added from the story's side
+        # puts it on `inwardIssue`, which is checked second.
+        owns_name = self.link_types["owns"]["name"].lower()
+        links = [l for l in (getattr(issue.fields, "issuelinks", []) or [])
+                 if (getattr(l.type, "name", "") or "").lower() == owns_name]
+        for side in ("outwardIssue", "inwardIssue"):
+            for link in links:
+                other = getattr(link, side, None)
+                if other is None:
+                    continue
+                other_type = getattr(other.fields.issuetype, "name", "") or ""
+                if other_type.lower() == "story":
+                    logger.info(
+                        f"Resolved test-case {issue_key} → parent story {other.key}"
+                    )
+                    return other.key
 
         logger.info(
-            f"{issue_key} is a Test Case but has no Story-typed outward link; "
+            f"{issue_key} is a Test Case but has no ownership link to a Story; "
             f"will comment on {issue_key} itself."
         )
         return None
