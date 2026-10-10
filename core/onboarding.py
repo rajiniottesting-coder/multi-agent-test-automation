@@ -184,16 +184,47 @@ def marker_checks(graph) -> list[Check]:
 # All checks
 # ─────────────────────────────────────────────────────────────
 
+def configured_adapters(root: Path | str) -> tuple[str, str]:
+    """(tracker type, repo-host type) for the application at `root`.
+
+    The application's own config/config.yaml decides when it has one - an
+    application on another tracker must be checked against THAT adapter.
+    Without one, the types this deployment is configured for are used.
+    """
+    import yaml
+
+    from integrations import repo_host as hosts
+    from integrations import tracker as trackers
+
+    tracker_type, host_type = trackers.configured_type(), hosts.configured_type()
+    cfg_path = Path(root) / "config" / "config.yaml"
+    if cfg_path.is_file():
+        try:
+            data = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            data = {}
+        tracker_type = (data.get("tracker") or {}).get("type") or tracker_type
+        host_type = (data.get("repo_host") or {}).get("type") or host_type
+    return tracker_type, host_type
+
+
 def run_checks(root: Path | str, *, language: str = "python-pytest-bdd",
                inventory_file: str | None = None,
-               tracker: str = "jira", repo_host: str = "github") -> list[Check]:
-    """Every readiness check for the application at `root`, in build order."""
+               tracker: str | None = None, repo_host: str | None = None) -> list[Check]:
+    """Every readiness check for the application at `root`, in build order.
+
+    `tracker` / `repo_host` default to the application's configured types
+    (configured_adapters), never to a fixed product name.
+    """
     from integrations import repo_host as hosts
     from integrations import tracker as trackers
     from integrations.repo_host import RepoHost
     from integrations.tracker import Tracker
 
     root = Path(root)
+    default_tracker, default_host = configured_adapters(root)
+    tracker = tracker or default_tracker
+    repo_host = repo_host or default_host
     checks = [
         adapter_check("tracker", tracker.strip().lower(), Tracker,
                       trackers.registered_types(), trackers.get_tracker),

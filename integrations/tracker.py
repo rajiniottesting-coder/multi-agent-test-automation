@@ -335,3 +335,8 @@ def register_adapter(name: str, factory) -> None:
 def registered_types() -> list[str]:
     """Names of the tracker adapters that can be constructed by name (E2)."""
     return sorted(_ADAPTERS)
+
+
+def configured_type() -> str:
+    """The tracker type this deployment is configured for (E2)."""
+    return _configured_type()

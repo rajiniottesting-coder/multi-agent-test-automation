@@ -5,7 +5,10 @@ Run it from anywhere, against any project root - this repository's own or
 another application's. It reads the project and reports; it changes nothing.
 
     python -m scripts.onboarding_check --root /path/to/app-repo \\
-        --inventory qa/inventory.json --tracker jira --repo-host github
+        --inventory qa/inventory.json
+
+The tracker and repository-host adapters default to the types in the
+application's own config/config.yaml, else this deployment's configured ones.
 
 Exit code: 1 when any check FAILs; with --strict, also when any WARNs.
 
@@ -36,9 +39,12 @@ def main(argv=None) -> int:
     ap.add_argument("--language", default="python-pytest-bdd",
                     help="suite language; selects the layer 1 graph builder "
                          "(default: python-pytest-bdd)")
-    ap.add_argument("--tracker", default="jira", help="tracker adapter name (default: jira)")
-    ap.add_argument("--repo-host", default="github",
-                    help="repository-host adapter name (default: github)")
+    ap.add_argument("--tracker",
+                    help="tracker adapter name (default: tracker.type in the "
+                         "application's config/config.yaml, else this deployment's)")
+    ap.add_argument("--repo-host",
+                    help="repository-host adapter name (default: repo_host.type in "
+                         "the application's config/config.yaml, else this deployment's)")
     ap.add_argument("--strict", action="store_true",
                     help="exit 1 on WARN as well as FAIL")
     args = ap.parse_args(argv)

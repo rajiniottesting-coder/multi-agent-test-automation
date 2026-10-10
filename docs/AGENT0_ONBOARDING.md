@@ -6,8 +6,13 @@ the verification:
 
 ```bash
 python -m scripts.onboarding_check --root /path/to/app-repo \
-    --inventory qa/inventory.json --tracker jira --repo-host github
+    --inventory qa/inventory.json
 ```
+
+The tracker and repository-host adapters default to `tracker.type` and
+`repo_host.type` in the application's own `config/config.yaml`, falling back to
+this deployment's configured types. Pass `--tracker` / `--repo-host` to check a
+different adapter.
 
 It reads the project and changes nothing. Exit 1 means a layer cannot run; add
 `--strict` to fail on warnings too. Every result carries the action it implies.
