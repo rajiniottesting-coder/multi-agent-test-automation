@@ -18,7 +18,7 @@ import os
 from contextlib import contextmanager
 from typing import Iterator, Optional
 
-from inventory_tools.introspect import TEST_ID_ATTRS, FRAME_DELIM
+from inventory_tools.introspect import COVER_ATTR, TEST_ID_ATTRS, FRAME_DELIM
 
 logger = logging.getLogger(__name__)
 
@@ -393,8 +393,12 @@ def do_login(page, login_url: Optional[str], username_selector: Optional[str],
     try:
         # Same URL: a still-present password field means we never got in
         # (SPAs that authenticate without navigating will have removed it).
-        return page.locator(password_selector).count() == 0
-    except Exception:
+        # Check the field we FILLED - pass_sel. The caller's password_selector
+        # is None whenever auto-detection was used, and checking that instead
+        # raised, which read as success and let a failed login through.
+        return page.locator(pass_sel).count() == 0
+    except Exception as exc:
+        logger.warning(f"  could not confirm login result ({exc}); assuming it worked")
         return True                      # can't tell — don't block the run
 
 
@@ -432,18 +436,22 @@ def _goto_spa_tolerant(page, url: str, settle_ms: int = 3000):
     try:
         page.wait_for_load_state("networkidle", timeout=settle_ms)
     except Exception:
-        page.wait_for_timeout(settle_ms)      # SPA still busy - render anyway
+        # LAST-RESORT CAP, deliberately a fixed wait. This runs only when the
+        # page never reaches network idle (a websocket or poll keeps it busy).
+        # No application-agnostic readiness signal exists to wait on instead:
+        # the only candidates are app-specific selectors, which this layer must
+        # not hardcode. The wait is bounded by settle_ms and is the fallback,
+        # not the path a normal page takes.
+        page.wait_for_timeout(settle_ms)
     return resp
 
 
-def collect_descriptors(page, url: str, test_attrs: tuple = TEST_ID_ATTRS
-                        ) -> tuple[str, list[dict]]:
-    """Navigate to `url`; return (page_title, element_descriptors).
+def _snapshot_descriptors(page, test_attrs: tuple = TEST_ID_ATTRS) -> list[dict]:
+    """Capture every element on the CURRENT page state (no navigation).
 
     Collects the main frame plus every child frame (each element tagged with its
     frame-chain selector) and pierces open shadow DOM within each frame.
     """
-    _goto_spa_tolerant(page, url)
     js = _collect_js(test_attrs)
     descriptors = list(page.evaluate(js))
     try:
@@ -462,7 +470,57 @@ def collect_descriptors(page, url: str, test_attrs: tuple = TEST_ID_ATTRS
             if frame_sel:
                 d["frame"] = frame_sel
         descriptors.extend(fd)
-    return page.title(), descriptors
+    return descriptors
+
+
+def collect_descriptors(page, url: str, test_attrs: tuple = TEST_ID_ATTRS
+                        ) -> tuple[str, list[dict]]:
+    """Navigate to `url`; return (page_title, element_descriptors)."""
+    _goto_spa_tolerant(page, url)
+    return page.title(), _snapshot_descriptors(page, test_attrs)
+
+
+def _mark_selector(page, selector: str) -> None:
+    """Tag every node `selector` resolves to with COVER_ATTR (design E1).
+
+    Mirrors _count_selector: a frame-prefixed selector enters its iframe chain
+    through frame_locator first, so a node inside an iframe is marked in the
+    frame it lives in. Only the attribute is written - the node is not clicked,
+    focused or changed in any way a user could see.
+    """
+    if FRAME_DELIM in selector:
+        parts = [p.strip() for p in selector.split(FRAME_DELIM)]
+        *frame_parts, elem = parts
+        loc = page
+        for fp in frame_parts:
+            loc = loc.frame_locator(fp)
+        matches = _resolve_one(loc, elem)
+    else:
+        matches = _resolve_one(page, selector)
+    matches.evaluate_all(
+        f"els => els.forEach(e => e.setAttribute('{COVER_ATTR}', ''))")
+
+
+def collect_uncovered(page, url: str, selectors: list[str],
+                      test_attrs: tuple = TEST_ID_ATTRS
+                      ) -> tuple[str, list[dict]]:
+    """Navigate to `url`; mark what the inventory's selectors resolve to; then
+    return (page_title, element_descriptors) with the marks in each attrs dict.
+
+    Pass the result to introspect.uncovered_elements() - the marks are what tell
+    a covered element from an uncovered one. A selector that fails to resolve is
+    skipped rather than aborting the page: it is already reported as stale by
+    the normal drift check.
+    """
+    from playwright.sync_api import Error as PlaywrightError  # imported lazily
+
+    _goto_spa_tolerant(page, url)
+    for sel in selectors:
+        try:
+            _mark_selector(page, sel)
+        except PlaywrightError as exc:
+            logger.debug(f"  compare: could not mark {sel!r}: {exc}")
+    return page.title(), _snapshot_descriptors(page, test_attrs)
 
 
 def find_login_path(inventory: dict) -> str | None:

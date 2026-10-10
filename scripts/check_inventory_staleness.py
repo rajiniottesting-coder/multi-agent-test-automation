@@ -58,7 +58,7 @@ from core.app_context import AppContext
 from inventory_tools import introspect
 from inventory_tools.browser import (
     crawl_credentials,
-    browser_page, do_login, resolve_selectors,
+    browser_page, do_login, resolve_selectors, collect_uncovered,
     DEFAULT_USERNAME_SELECTOR, DEFAULT_PASSWORD_SELECTOR, DEFAULT_SUBMIT_SELECTOR, resolve_page_url,
 )
 
@@ -115,6 +115,10 @@ def main() -> int:
     ap.add_argument("--fail-on-drift", action="store_true",
                     help="Exit 1 if any drift is found (for CI gating).")
     ap.add_argument("--json", help="Also write the full drift report to this path.")
+    ap.add_argument("--compare", action="store_true",
+                    help="Also report live elements NO inventory selector covers "
+                         "(new elements with no test-id). Report only: it never "
+                         "affects drift or the exit code.")
     args = ap.parse_args()
 
     ctx = AppContext.load()
@@ -126,6 +130,7 @@ def main() -> int:
 
     per_page: dict[str, dict] = {}
     unreachable: list[str] = []
+    new_by_page: dict[str, dict] = {}   # --compare: {page: {element: selector}}
 
     with browser_page(headless=not args.headed) as page:
         if not args.no_login:
@@ -169,6 +174,15 @@ def main() -> int:
             if not reachable:
                 unreachable.append(name)
                 continue
+            if args.compare:
+                # Marks every node the inventory covers, then reports what the
+                # generator would capture that is NOT marked. Read-only in the
+                # sense that matters: no element is changed, clicked or saved.
+                title, descriptors = collect_uncovered(
+                    page, base_url + url_path, list(selectors.values()), test_attrs)
+                new_by_page[name] = introspect.uncovered_elements(
+                    base_url + url_path, title, descriptors,
+                    base_url=base_url, test_attrs=test_attrs)
             per_page[name] = introspect.diff_page(
                 name, selectors, counts, live_test_ids, test_attrs,
                 # The inventory states which keys are meant to match several
@@ -179,6 +193,10 @@ def main() -> int:
 
     report = introspect.summarize_drift(per_page, unreachable)
     report["pages_missing_notes"] = introspect.pages_missing_notes(inventory)
+    if args.compare:
+        # Informational: deliberately NOT folded into summarize_drift, so an
+        # uncovered element can never fail --fail-on-drift.
+        report["new_elements"] = {p: els for p, els in new_by_page.items() if els}
 
     # ── human-readable summary ──
     print(f"\nInventory staleness report for {ctx.name} ({base_url})")
@@ -198,6 +216,14 @@ def main() -> int:
                       f"fail on this)")
             for nt in diff["new_data_tests"]:
                 print(f"    NEW     test-id '{nt}' present live but not in inventory")
+    if args.compare:
+        new_total = sum(len(els) for els in new_by_page.values())
+        print(f"  uncovered elements : {new_total} (no selector in the inventory)")
+        for pname, els in new_by_page.items():
+            if els:
+                print(f"\n  [{pname}] uncovered")
+                for ename, sel in els.items():
+                    print(f"    NEW-ELEMENT   {ename}: {sel}")
     if report["pages_missing_notes"]:
         print(f"\n  WARN: pages with no elements_notes (author them): "
               f"{', '.join(report['pages_missing_notes'])}")
