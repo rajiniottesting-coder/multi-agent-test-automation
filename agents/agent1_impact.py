@@ -168,11 +168,10 @@ def run_impact_aware(tracker, story_id: str, story: dict, prompt_header: dict,
         tracker.update_test_case(rev.key, rev.revised)
         revised.append(rev.key)
 
-    if not dry_run:                       # a dry run creates nothing, like normal mode
+    if not dry_run:                       # a dry run creates and posts nothing, like normal mode
         for tc in draft.new_test_cases:
             created.append(tracker.create_test_case(tc, parent_story_key=story_id).key)
 
-    if not dry_run:
         body = [f"{GATE} Impact-aware draft for {story_id}",
                 f"Revised {len(revised)}, skipped {len(skipped)} (already revised), "
                 f"new {len(created)}. Review these before adding human-approved."]

@@ -73,6 +73,8 @@ def reconcile_story(tracker, host, story: str, settings: dict | None = None, now
 
     merged = next((p for p in prs if p.get("merged")), None)
     if merged:
+        # Safe to re-run: the trace line is skipped where already_posted finds
+        # it, and removing a label that is already gone is a no-op.
         for owner, owned in sorted(owners.items()):
             if not impact_trace.already_posted(tracker.get_comments(owner), "merged",
                                                story, merged["url"]):

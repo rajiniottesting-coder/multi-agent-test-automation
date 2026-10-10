@@ -4080,8 +4080,8 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     # `gh` is bound HERE, before its first use. It used to be assigned only
     # further down (before the branch/PR step), which made it an unbound local
     # at this point: the UnboundLocalError was swallowed by the except below
-    # and this context never reached a prompt. get_repo_host() returns a
-    # cached instance, so the later assignment hands back the same object.
+    # and this context never reached a prompt. Later steps reuse this `gh`
+    # and call get_repo_host() only if it is still None here.
     _plan_paths = {f.file_path for f in ordered_files}
     existing_pos: list = []
     gh = None
@@ -4390,7 +4390,8 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
         output.branch_name = corrected
         assert_valid_branch_for_pipeline(output.branch_name)
 
-    gh = get_repo_host()
+    if gh is None:                    # stage 2 could not reach the host; try again here
+        gh = get_repo_host()
 
     # REGENERATE: append -revN suffix so we don't reuse the existing branch.
     if is_regenerate:
