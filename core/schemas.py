@@ -52,6 +52,35 @@ class ImpactAwareDraft(BaseModel):
         description="Only for acceptance criteria no revised test case covers")
 
 
+class ChangeSeeds(BaseModel):
+    """Agent 0, stage 2 (requirement trigger): where a story's change lands."""
+    change_type: Literal["new_behaviour", "changed_behaviour", "removed_behaviour", "mixed"] = Field(
+        ..., description="What kind of change the story makes to EXISTING behaviour")
+    behaviours: list[str] = Field(default_factory=list,
+                                  description="Each existing behaviour the story changes, one short line each")
+    element_keys: list[str] = Field(
+        default_factory=list,
+        description="Inventory elements the story names or clearly changes, as 'page:key' "
+                    "exactly as they appear in the inventory")
+    components: list[str] = Field(default_factory=list,
+                                  description="Components the change touches")
+
+
+class CandidateAssessment(BaseModel):
+    candidate_id: str = Field(..., description="The candidate id exactly as given, e.g. 'C3'")
+    tier: Literal["must-update", "review", "unaffected"] = Field(...)
+    reason: str = Field(..., description="One or two sentences")
+    evidence_refs: list[str] = Field(
+        default_factory=list,
+        description="Each item is EITHER a path id given for this candidate (e.g. 'P1') OR a "
+                    "step quoted VERBATIM from the candidate's scenario")
+
+
+class ImpactAssessment(BaseModel):
+    """Agent 0, stage 5: the model's judgement of the short list."""
+    assessments: list[CandidateAssessment] = Field(default_factory=list)
+
+
 # ─────────────────────────────────────────────────────────────
 # Schemas for Agent 2 (Coder) — TWO-STAGE APPROACH
 # ─────────────────────────────────────────────────────────────
