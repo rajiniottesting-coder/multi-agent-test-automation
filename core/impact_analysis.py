@@ -26,7 +26,8 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 # Structural evidence strength (stage 3): a direct link scores higher.
-DIRECT_ELEMENT = 1.0          # a changed element the scenario uses
+ASSERTED_ELEMENT = 1.0        # a changed element a Then step reads directly (an assertion)
+DIRECT_ELEMENT = 0.95         # a changed element the scenario uses otherwise
 PAGE_METHOD = 0.9             # a changed method of a page the scenario calls
 SHARED_METHOD = 0.5           # a changed shared-base method: reaches nearly everything
 PAGE_ONLY = 0.4               # the scenario visits a changed / unreachable page
@@ -176,8 +177,14 @@ def structural_candidates(graph, seeds: Seeds) -> list:
         for page, key in sorted(seeds.elements & s.elements):
             users = sorted(f"{c}.{m}" for c, m in s.methods | s.shared_methods
                            if _reads(graph, c, m, key))
-            paths.append(f"element {page}:{key} <- {', '.join(users) or 'a page method'} <- scenario")
-            score = max(score, DIRECT_ELEMENT)
+            if _asserted(graph, s, key):
+                paths.append(f"element {page}:{key} <- {', '.join(users) or 'a page method'} "
+                             "<- Then step (assertion) <- scenario")
+                score = max(score, ASSERTED_ELEMENT)
+            else:
+                paths.append(f"element {page}:{key} <- {', '.join(users) or 'a page method'} "
+                             "<- scenario")
+                score = max(score, DIRECT_ELEMENT)
         for cls, name in sorted(seeds.methods):
             recv = _receivers(graph, cls)
             if any(m == name and c in recv for c, m in s.methods):
@@ -199,6 +206,14 @@ def _def_of(graph, cls: str, name: str):
         if (c, name) in graph.page_methods:
             return (c, name)
     return None
+
+
+def _asserted(graph, scenario, key: str) -> bool:
+    """Design stage 3: "direct links such as a changed element used in an
+    assertion score higher". True when a Then step definition of the
+    scenario calls, directly, a page method that reads `key`."""
+    return any(sd.kind == "then" and any(_reads(graph, c, m, key) for c, m in sd.calls)
+               for sd in scenario.step_definitions)
 
 
 def _reads(graph, cls: str, name: str, key: str) -> bool:

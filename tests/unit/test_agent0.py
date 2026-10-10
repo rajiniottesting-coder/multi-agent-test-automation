@@ -159,6 +159,26 @@ class TestD1:
             path.write_text("\n\n\n" + path.read_text())           # every line number moves
         assert ia.code_change_seeds(root, head).methods == set()
 
+    def test_an_element_read_by_a_then_step_scores_higher(self, world):
+        """Design stage 3: direct links such as an element used in an
+        assertion score higher."""
+        _f, _jira, _root, g = world
+        asserted, other = None, None
+        for s in g.scenarios:
+            for el in sorted(s.elements):
+                if ia._asserted(g, s, el[1]):
+                    asserted = asserted or (s, el)
+                else:
+                    other = other or (s, el)
+        assert asserted and other, "the sandbox suite has both kinds of link"
+        for (s, el), expected, marker in ((asserted, ia.ASSERTED_ELEMENT, True),
+                                          (other, ia.DIRECT_ELEMENT, False)):
+            cand = next(c for c in ia.structural_candidates(g, ia.Seeds(elements={el}))
+                        if c.ref == s.ref)
+            assert cand.structural == expected
+            assert ("Then step (assertion)" in cand.paths[0]["text"]) is marker
+        assert ia.ASSERTED_ELEMENT > ia.DIRECT_ELEMENT > ia.PAGE_METHOD
+
     def test_drift_report_seeds(self, world):
         _f, jira, root, g = world
         page, key = _only_in(g, "SBX-12", "SBX-11")
