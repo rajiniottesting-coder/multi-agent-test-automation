@@ -2,16 +2,18 @@
 #
 # Three triggers (design section 7, stage 0):
 #   schedule / dispatch   the scan: stories labelled impact-check are analysed;
-#                         decided Impact Reviews are handed over; change
-#                         stories labelled impact-applied are reconciled
+#                         decided Impact Reviews are handed over
+#   schedule / dispatch   reconcile (C7): change stories labelled
+#                         impact-applied are settled - its own job, see below
 #   pull_request          a change to pages/ or app_inventory/ is analysed
 #                         structurally and reported on the pull request
 #   schedule (nightly)    the inventory staleness check, then its drift
 #                         analysed
 #
 # SWITCHED OFF BY DEFAULT. The `gate` job reads agents.agent0_impact.enabled
-# from config.yaml; while it is false every other job is skipped, so merging
-# this workflow changes nothing. With enabled: true and shadow_mode: true it
+# from config.yaml; while it is false every analysis job is skipped. The
+# reconcile job is the exception and is harmless: it acts only on stories
+# labelled impact-applied, and none exist until something is handed over. With enabled: true and shadow_mode: true it
 # only posts reports. Turn shadow mode off only after the backtest and two
 # sprints of shadow reports meet the targets (design section 10).
 name: Agent 0 - Impact Analyst
@@ -109,6 +111,38 @@ jobs:
           else
             python -m agents.agent0_impact --scan
           fi
+
+  reconcile:
+    # C7. Not gated on agents.agent0_impact.enabled, and it runs in shadow
+    # mode too: a hand-over can be made by a person (scripts.impact_handover,
+    # phase C) as well as by Agent 0 (D5), and a closed pull request must be
+    # undone either way. This is the ONLY place reconcile runs, so the
+    # two-scan rule counts real, separate scans.
+    name: Reconcile change stories (C7)
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '15 5 * * 1-5'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Settle stories labelled impact-applied
+        env:
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          JIRA_BOARD_ID: ${{ vars.JIRA_BOARD_ID }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_REPO: ${{ vars.GH_REPO }}
+        run: python -m scripts.impact_reconcile
 
   code-change:
     name: Impact of this pull request

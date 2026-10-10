@@ -26,7 +26,8 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 # Structural evidence strength (stage 3): a direct link scores higher.
-DIRECT_ELEMENT = 1.0          # a changed element the scenario uses
+ASSERTED_ELEMENT = 1.0        # a changed element a Then step reads directly (an assertion)
+DIRECT_ELEMENT = 0.95         # a changed element the scenario uses otherwise
 PAGE_METHOD = 0.9             # a changed method of a page the scenario calls
 SHARED_METHOD = 0.5           # a changed shared-base method: reaches nearly everything
 PAGE_ONLY = 0.4               # the scenario visits a changed / unreachable page
@@ -82,7 +83,13 @@ def _inventory(root: Path) -> dict:
 
 
 def _methods_of(root: Path) -> dict:
-    """{(class, method): (normalised source, argument names)} for pages/*.py."""
+    """{(class, method): normalised definition} for pages/*.py.
+
+    The whole definition is compared - body, every part of the signature
+    (positional, keyword-only, *args/**kwargs, defaults), decorators and the
+    return annotation - not just the argument names. Recall first: any
+    change a caller could notice is a seed. Line numbers are not part of the
+    dump, so moving a method is not a change."""
     out = {}
     pages = Path(root) / "pages"
     for path in sorted(pages.glob("*.py")) if pages.is_dir() else []:
@@ -96,9 +103,7 @@ def _methods_of(root: Path) -> dict:
             if isinstance(node, ast.ClassDef):
                 for item in node.body:
                     if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                        body = ast.dump(ast.Module(body=item.body, type_ignores=[]))
-                        args = tuple(a.arg for a in item.args.args)
-                        out[(node.name, item.name)] = (body, args)
+                        out[(node.name, item.name)] = ast.dump(item)
     return out
 
 
@@ -108,8 +113,8 @@ def code_change_seeds(base_root: Path, head_root: Path) -> Seeds:
     selector changed or that were removed. Added things impact no existing test."""
     seeds = Seeds()
     base_m, head_m = _methods_of(base_root), _methods_of(head_root)
-    for ref, (body, args) in base_m.items():
-        if ref not in head_m or head_m[ref] != (body, args):
+    for ref, definition in base_m.items():
+        if head_m.get(ref) != definition:
             seeds.methods.add(ref)
     base_i, head_i = _inventory(base_root), _inventory(head_root)
     for page, spec in base_i.items():
@@ -172,8 +177,14 @@ def structural_candidates(graph, seeds: Seeds) -> list:
         for page, key in sorted(seeds.elements & s.elements):
             users = sorted(f"{c}.{m}" for c, m in s.methods | s.shared_methods
                            if _reads(graph, c, m, key))
-            paths.append(f"element {page}:{key} <- {', '.join(users) or 'a page method'} <- scenario")
-            score = max(score, DIRECT_ELEMENT)
+            if _asserted(graph, s, key):
+                paths.append(f"element {page}:{key} <- {', '.join(users) or 'a page method'} "
+                             "<- Then step (assertion) <- scenario")
+                score = max(score, ASSERTED_ELEMENT)
+            else:
+                paths.append(f"element {page}:{key} <- {', '.join(users) or 'a page method'} "
+                             "<- scenario")
+                score = max(score, DIRECT_ELEMENT)
         for cls, name in sorted(seeds.methods):
             recv = _receivers(graph, cls)
             if any(m == name and c in recv for c, m in s.methods):
@@ -195,6 +206,14 @@ def _def_of(graph, cls: str, name: str):
         if (c, name) in graph.page_methods:
             return (c, name)
     return None
+
+
+def _asserted(graph, scenario, key: str) -> bool:
+    """Design stage 3: "direct links such as a changed element used in an
+    assertion score higher". True when a Then step definition of the
+    scenario calls, directly, a page method that reads `key`."""
+    return any(sd.kind == "then" and any(_reads(graph, c, m, key) for c, m in sd.calls)
+               for sd in scenario.step_definitions)
 
 
 def _reads(graph, cls: str, name: str, key: str) -> bool:
@@ -337,10 +356,25 @@ def rank(candidates: list, judgements: dict, weights: dict, thresholds: dict,
 REPORT_OPEN, REPORT_CLOSE = "{code:json}", "{code}"
 
 
+UNOWNED = "(no owner)"
+
+
+def by_owner(rows: list) -> dict:
+    """The design's per-owner groups: {owning story: [ref, ...]}, rank order
+    kept. A test with no known owner (unmarked, or no Relates link) is
+    grouped under UNOWNED so it is never dropped from the view."""
+    groups: dict = {}
+    for r in rows:
+        groups.setdefault(r.get("owner") or UNOWNED, []).append(r["ref"])
+    return dict(sorted(groups.items()))
+
+
 def report_dict(change_ref: str, chash: str, graph_sha: str, ranked: list,
                 not_judged: list, no_component: bool, seeds: Seeds, dropped: list) -> dict:
+    affected = [r for r in ranked if r["tier"] != "unaffected"]
     return {"change_ref": change_ref, "content_hash": chash, "graph_sha": graph_sha,
-            "ranked": [r for r in ranked if r["tier"] != "unaffected"],
+            "ranked": affected,
+            "by_owner": by_owner(affected),
             "unaffected": [r for r in ranked if r["tier"] == "unaffected"],
             "not_judged": [{"ref": c.ref, "key": c.test_case_key, "file": c.file,
                             "title": c.title} for c in not_judged],
@@ -377,10 +411,15 @@ def delta(previous: dict, current: dict) -> dict:
                              if old[k]["tier"] != new[k]["tier"]]}
 
 
-def outcome(predicted: Iterable[str], actual: Iterable[str]) -> dict:
-    """Recall and precision of a prediction against what really changed."""
-    p, a = set(predicted), set(actual)
+def outcome(predicted: Iterable[str], changed: Iterable[str],
+            failed: Iterable[str] = ()) -> dict:
+    """ImpactOutcome (design section 9): recall and precision of a prediction
+    against what really happened - the existing tests the pull request
+    changed, and the existing tests that failed on its branch. A test is
+    truly affected if either holds."""
+    p, c, f = set(predicted), set(changed), set(failed)
+    a = c | f
     hit = p & a
-    return {"predicted": sorted(p), "actual": sorted(a),
+    return {"predicted": sorted(p), "actual_changed": sorted(c), "actual_failed": sorted(f),
             "recall": round(len(hit) / len(a), 3) if a else None,
             "precision": round(len(hit) / len(p), 3) if p else None}

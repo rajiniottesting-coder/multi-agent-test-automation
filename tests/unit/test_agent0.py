@@ -17,6 +17,7 @@ import pytest
 import agents.agent0_impact as a0
 from core import impact_analysis as ia
 from core.impact_graph import build_impact_graph
+from core.impact_reconcile import reconcile_all
 from core.impact_settings import impact_settings
 from core.schemas import CandidateAssessment, ChangeSeeds, ImpactAssessment
 from tests.sandbox.fake_jira import FakeRepoHost, jira_client_over
@@ -75,6 +76,35 @@ class FakeModel:
 TITLE_12 = "Login fails with an incorrect password"
 
 
+def _revise_on_branch(host, root, tmp_path, key):
+    """Agent 2's pull request, reduced to what stage 10 reads: the marker of
+    `key` gets a new hash on a branch. Returns the branch name and a local
+    checkout of its features/ (what Agent 5 runs on)."""
+    from agents.agent2_coder import build_marker_index
+    entry = build_marker_index(root / "features").by_key[key]
+    path = f"features/{entry.file}"
+    name = f"auto/SBX-5-revise-{key.lower()}"
+    host.create_branch(name)
+    host.branches[name][path] = host.branches[name][path].replace(
+        f"# JIRA: {key} (hash: {entry.hash})", f"# JIRA: {key} (hash: 0000ffff)")
+    checkout = tmp_path / "checkout" / "features"
+    shutil.copytree(root / "features", checkout)
+    (checkout / entry.file).write_text(host.branches[name][path])
+    return {"name": name, "features": checkout}
+
+
+def _junit(root, key, status):
+    """A junit result for the scenario of `key`, named as pytest-bdd names it."""
+    from types import SimpleNamespace
+
+    from agents.agent2_coder import build_marker_index
+    from core.impact_results import _test_name
+    entry = build_marker_index(root / "features").by_key[key]
+    module = "test_" + entry.file.rsplit(".", 1)[0]
+    return SimpleNamespace(classname=f"tests.step_defs.{module}", name=_test_name(entry.title),
+                           status=status)
+
+
 # ─────────────────────────────────────────────────────────────────
 # D1 - code change and drift: structural only, no model
 # ─────────────────────────────────────────────────────────────────
@@ -106,6 +136,48 @@ class TestD1:
         path.write_text(src)
         seeds = ia.code_change_seeds(root, head)
         assert (cls, name) in seeds.methods and len(seeds.methods) == 1
+
+    def test_a_signature_change_beyond_positional_names_is_a_seed(self, world, tmp_path):
+        """A keyword-only parameter, a default or a decorator changes how
+        callers bind; comparing positional argument names alone missed it."""
+        _f, _jira, root, g = world
+        head = tmp_path / "head"
+        shutil.copytree(root, head)
+        cls, name = min(g.scenario_for_key("SBX-12").methods)
+        path = next(p for p in (head / "pages").glob("*.py") if f"class {cls}(" in p.read_text())
+        src = path.read_text()
+        new = re.sub(rf"(    def {name}\(self)", r"\1, *, strict=False", src, count=1)
+        assert new != src
+        path.write_text(new)
+        assert ia.code_change_seeds(root, head).methods == {(cls, name)}
+
+    def test_moving_a_method_is_not_a_change(self, world, tmp_path):
+        _f, _jira, root, _g = world
+        head = tmp_path / "head"
+        shutil.copytree(root, head)
+        for path in (head / "pages").glob("*.py"):
+            path.write_text("\n\n\n" + path.read_text())           # every line number moves
+        assert ia.code_change_seeds(root, head).methods == set()
+
+    def test_an_element_read_by_a_then_step_scores_higher(self, world):
+        """Design stage 3: direct links such as an element used in an
+        assertion score higher."""
+        _f, _jira, _root, g = world
+        asserted, other = None, None
+        for s in g.scenarios:
+            for el in sorted(s.elements):
+                if ia._asserted(g, s, el[1]):
+                    asserted = asserted or (s, el)
+                else:
+                    other = other or (s, el)
+        assert asserted and other, "the sandbox suite has both kinds of link"
+        for (s, el), expected, marker in ((asserted, ia.ASSERTED_ELEMENT, True),
+                                          (other, ia.DIRECT_ELEMENT, False)):
+            cand = next(c for c in ia.structural_candidates(g, ia.Seeds(elements={el}))
+                        if c.ref == s.ref)
+            assert cand.structural == expected
+            assert ("Then step (assertion)" in cand.paths[0]["text"]) is marker
+        assert ia.ASSERTED_ELEMENT > ia.DIRECT_ELEMENT > ia.PAGE_METHOD
 
     def test_drift_report_seeds(self, world):
         _f, jira, root, g = world
@@ -200,7 +272,7 @@ class TestPublish:
         s = _settings()                                   # shadow_mode True by default
         r = a0.publish(jira, "SBX-5", self._report(jira, root, g), s)
         assert r["action"] == "shadow-report"
-        assert fake.issues["SBX-5"]["labels"] == ["impact-check"]
+        assert fake.issues["SBX-5"]["labels"] == []        # trigger consumed, nothing added
         assert jira.get_subtasks("SBX-5") == []
         body = next(c for c in fake.comments["SBX-5"] if c.startswith(a0.REPORT))
         assert ia.extract(body)["ranked"][0]["ref"] == "SBX-12"
@@ -212,6 +284,42 @@ class TestPublish:
         a0.publish(jira, "SBX-5", report, s)
         assert a0.publish(jira, "SBX-5", report, s)["action"] == "unchanged"
 
+    def test_stage0_guard_runs_before_any_model_call(self, world):
+        """Design stage 0: 're-running is therefore free'."""
+        fake, jira, root, g = world
+        s = _settings()
+        page, key = _only_in(g, "SBX-12", "SBX-11")
+        model = FakeModel([f"{page}:{key}"], must={TITLE_12})
+        assert a0.analyse_and_publish(jira, "SBX-5", model, s, root)["action"] == "shadow-report"
+        calls = len(model.calls)
+        fake.issues["SBX-5"]["labels"].append("impact-check")      # someone asks again
+        assert a0.analyse_and_publish(jira, "SBX-5", model, s, root)["action"] == "unchanged"
+        assert len(model.calls) == calls                           # no model call at all
+        assert "impact-check" not in fake.issues["SBX-5"]["labels"]
+        fake.issues["SBX-5"]["description"] += " Edited."                # an edit is new content
+        fake.issues["SBX-5"]["labels"].append("impact-check")
+        assert a0.analyse_and_publish(jira, "SBX-5", model, s, root)["action"] == "shadow-report"
+        assert len(model.calls) > calls
+
+    def test_a_shadow_report_does_not_count_once_shadow_mode_is_off(self, world):
+        fake, jira, root, g = world
+        page, key = _only_in(g, "SBX-12", "SBX-11")
+        model = FakeModel([f"{page}:{key}"], must={TITLE_12})
+        a0.analyse_and_publish(jira, "SBX-5", model, _settings(), root)
+        fake.issues["SBX-5"]["labels"].append("impact-check")
+        r = a0.analyse_and_publish(jira, "SBX-5", model, _settings(shadow_mode=False), root)
+        assert r["action"] == "review-created" and len(jira.get_subtasks("SBX-5")) == 1
+
+    def test_a_shadow_report_releases_the_story_to_agent1(self, world):
+        from agents.agent1_analyst import load_agent_config
+        fake, jira, root, g = world
+        fake.issues["SBX-5"]["labels"].append("ai-ready")
+        selection = dict(load_agent_config()["selection"])
+        selection.pop("sprint", None)
+        assert "SBX-5" not in {x["key"] for x in jira.find_stories_to_process(selection)}
+        a0.publish(jira, "SBX-5", self._report(jira, root, g), _settings())
+        assert "SBX-5" in {x["key"] for x in jira.find_stories_to_process(selection)}
+
     def test_live_mode_creates_the_review_grouped_by_owner(self, world):
         fake, jira, root, g = world
         s = _settings(shadow_mode=False)
@@ -222,6 +330,13 @@ class TestPublish:
         assert rows["SBX-12"]["owner"] == "SBX-1" and rows["SBX-12"]["decision"] == "approve"
         assert sorted(l for l in fake.issues["SBX-5"]["labels"] if l.startswith("impact-")) == \
             ["impact-proposed"]
+        # stage 7: the ranked report is also on the change story, grouped by owner
+        body = next(c for c in fake.comments["SBX-5"] if c.startswith(a0.REPORT))
+        assert f"review {review['key']}" in body.splitlines()[0]
+        posted = ia.extract(body)
+        assert "SBX-12" in posted["by_owner"]["SBX-1"]
+        assert posted["by_owner"] == ia.by_owner(posted["ranked"])
+        assert "By owning story: " in body
 
     def test_nothing_to_review_makes_the_story_ready(self, world):
         fake, jira, root, _g = world
@@ -330,6 +445,39 @@ class TestD4:
                    for c in fake.comments["SBX-5"])
 
 
+def test_cli_code_change_posts_once_per_distinct_change(world, monkeypatch, tmp_path):
+    """Stage 0 for code changes: each push re-runs the workflow; the same
+    seeds are not reported on the pull request twice."""
+    _fake, jira, root, g = world
+    s = _settings(enabled=True)
+    host = FakeRepoHost(repo_files(root))
+    host.open_pull_request("t", "b", "feature/x")
+    import dotenv
+
+    import integrations.repo_host as rh
+    monkeypatch.setattr(a0, "impact_settings", lambda *a, **k: s)
+    monkeypatch.setattr(a0, "get_tracker", lambda *a, **k: jira)
+    monkeypatch.setattr(dotenv, "load_dotenv", lambda *a, **k: None)
+    monkeypatch.setattr(rh, "get_repo_host", lambda *a, **k: host)
+    head = tmp_path / "head"
+    shutil.copytree(root, head)
+    page, key = _only_in(g, "SBX-12", "SBX-11")
+    inv_path = next((head / "app_inventory").glob("*.json"))
+    inv = json.loads(inv_path.read_text())
+    inv["pages"][page]["elements"][key] = "#changed"
+    inv_path.write_text(json.dumps(inv))
+    argv = ["--code-change", "--base", str(root), "--head", str(head), "--pr", "1"]
+    assert a0.main(argv) == 0 and a0.main(argv) == 0
+    assert len(host.get_pr_comments(1)) == 1                       # the push changed nothing
+    inv["pages"][page]["elements"][key] = "#changed-again"         # same seeds: same element
+    inv_path.write_text(json.dumps(inv))
+    assert a0.main(argv) == 0 and len(host.get_pr_comments(1)) == 1
+    other_page, other_key = _only_in(g, "SBX-11", "SBX-12")        # a new seed
+    inv["pages"][other_page]["elements"][other_key] = "#also"
+    inv_path.write_text(json.dumps(inv))
+    assert a0.main(argv) == 0 and len(host.get_pr_comments(1)) == 2
+
+
 class TestDriftCli:
     """The nightly drift job, live: one maintenance story carries the drift
     for as long as it lasts (Agent 3 review of #131)."""
@@ -362,8 +510,11 @@ class TestDriftCli:
 
     def test_first_drift_creates_a_labelled_story_with_a_review(self, cli, capsys):
         fake, jira, g, run = cli
-        run(_only_in(g, "SBX-12", "SBX-11"))
+        page, key = _only_in(g, "SBX-12", "SBX-11")
+        run((page, key))
         (story,) = self._drift_stories(fake)
+        assert story["components"] == sorted(g.page_components[page])     # A1 template
+        assert story["components"] and f"{page}:{key}" in story["description"]
         assert "inventory-drift" in story["labels"] and "impact-proposed" in story["labels"]
         assert "impact-check" not in story["labels"]
         assert len(jira.get_subtasks(story["key"])) == 1
@@ -410,9 +561,10 @@ class TestD5:
         out = a0.scan(jira, FakeRepoHost({}), FakeModel([f"{page}:{key}"], must={TITLE_12}),
                       _settings(enabled=True), root)
         assert [r["action"] for r in out] == ["shadow-report"]
-        assert jira.get_subtasks("SBX-5") == [] and "impact-check" in fake.issues["SBX-5"]["labels"]
+        assert jira.get_subtasks("SBX-5") == [] and "impact-check" not in fake.issues["SBX-5"]["labels"]
+        assert a0.scan(jira, FakeRepoHost({}), MagicMock(), _settings(enabled=True), root) == []
 
-    def test_live_loop_review_handover_reconcile_outcome(self, world):
+    def test_live_loop_review_handover_reconcile_outcome(self, world, tmp_path):
         fake, jira, root, g = world
         s = _settings(enabled=True, shadow_mode=False)
         host = FakeRepoHost(repo_files(root))
@@ -434,13 +586,51 @@ class TestD5:
         # (Agents 1 and 2 run here - tested in test_agent1_impact / test_agent2_impact)
         jira.remove_label("SBX-5", "ai-ready")
         jira.add_label("SBX-5", "impact-applied")
-        host.open_pull_request("t", "b", "auto/SBX-5-reset-link")
+        branch = _revise_on_branch(host, root, tmp_path, "SBX-12")    # Agent 2's PR
+        url = host.open_pull_request("t", "b", branch["name"])
+
+        # Agent 4 runs the branch; Agent 5 records the outcome (stage 10)
+        from core.impact_results import record_prediction_outcome
+        failed_11 = _junit(root, "SBX-11", "failed")                  # broke, not predicted
+        out = record_prediction_outcome(jira, host, "SBX-5", 1, url, [failed_11],
+                                        branch["features"], s)
+        assert out["actual_changed"] == ["SBX-12"] and out["actual_failed"] == ["SBX-11"]
+        assert (out["recall"], out["precision"]) == (0.5, 1.0)
+        assert record_prediction_outcome(jira, host, "SBX-5", 1, url, [failed_11],
+                                         branch["features"], s) is None    # once per PR
+        assert len([c for c in fake.comments["SBX-5"] if c.startswith(a0.OUTCOME)]) == 1
+
         host.merge(1)
-        out = a0.scan(jira, host, model, s, root)
-        assert {"story": "SBX-5", "action": "merged", "pr": 1} in out
-        outcome = next(c for c in fake.comments["SBX-5"] if c.startswith(a0.OUTCOME))
-        assert "recall: 1.0" in outcome
+        assert not [r for r in a0.scan(jira, host, model, s, root)      # reconcile is not
+                    if r.get("action") == "merged"]                      # the scan's job
+        # reconcile has its own job (C7)
+        assert {"story": "SBX-5", "action": "merged", "pr": 1} in reconcile_all(jira, host, s)
         assert not [l for l in fake.issues["SBX-5"]["labels"] if l.startswith("impact-")]
+
+    def test_shadow_mode_measures_too(self, world, tmp_path):
+        """Design section 10: the targets must also hold over two sprints of
+        shadow mode, so shadow predictions are measured when the PR runs."""
+        _fake, jira, root, g = world
+        s = _settings(enabled=True)                                    # shadow
+        host = FakeRepoHost(repo_files(root))
+        page, key = _only_in(g, "SBX-12", "SBX-11")
+        a0.scan(jira, host, FakeModel([f"{page}:{key}"], must={TITLE_12}), s, root)
+        branch = _revise_on_branch(host, root, tmp_path, "SBX-12")
+        url = host.open_pull_request("t", "b", branch["name"])
+        from core.impact_results import record_prediction_outcome
+        out = record_prediction_outcome(jira, host, "SBX-5", 1, url, [], branch["features"], s)
+        assert (out["recall"], out["precision"]) == (1.0, 1.0)
+
+    def test_no_prediction_or_agent0_off_records_nothing(self, world, tmp_path):
+        fake, jira, root, _g = world
+        host = FakeRepoHost(repo_files(root))
+        branch = _revise_on_branch(host, root, tmp_path, "SBX-12")
+        host.open_pull_request("t", "b", branch["name"])
+        from core.impact_results import record_prediction_outcome
+        for s in (_settings(enabled=True), _settings()):               # no report; off
+            assert record_prediction_outcome(jira, host, "SBX-5", 1, "u", [],
+                                             branch["features"], s) is None
+        assert not [c for c in fake.comments.get("SBX-5", []) if c.startswith(a0.OUTCOME)]
 
     def test_cli_is_a_no_op_while_disabled(self, capsys):
         assert a0.main(["--scan"]) == 0
@@ -461,10 +651,19 @@ def test_layer2_fills_the_cap_most_relevant_first_and_reports_the_rest():
     judged, rest = ia.shortlist(l1 * 1, l2, "x", 0)            # a zero cap still judges layer 1
     assert [c.ref for c in judged] == ["A"] and len(rest) == 3
 
+def test_report_groups_by_owner_and_keeps_the_unowned():
+    rows = [{"ref": "A-3", "owner": "A-1"}, {"ref": "f::t", "owner": None},
+            {"ref": "A-4", "owner": "A-1"}, {"ref": "B-9", "owner": "B-2"}]
+    assert ia.by_owner(rows) == {ia.UNOWNED: ["f::t"], "A-1": ["A-3", "A-4"], "B-2": ["B-9"]}
+
+
 def test_outcome_and_delta_math():
-    assert ia.outcome(["A", "B"], ["B", "C"]) == {"predicted": ["A", "B"], "actual": ["B", "C"],
-                                                  "recall": 0.5, "precision": 0.5}
-    assert ia.outcome([], []) == {"predicted": [], "actual": [], "recall": None, "precision": None}
+    assert ia.outcome(["A", "B"], ["B"], ["C"]) == {
+        "predicted": ["A", "B"], "actual_changed": ["B"], "actual_failed": ["C"],
+        "recall": 0.5, "precision": 0.5}
+    assert ia.outcome(["B"], ["B"], ["B"])["recall"] == 1.0          # changed and failed: once
+    assert ia.outcome([], []) == {"predicted": [], "actual_changed": [], "actual_failed": [],
+                                  "recall": None, "precision": None}
     d = ia.delta({"ranked": [{"ref": "a", "tier": "review"}, {"ref": "b", "tier": "review"}]},
                  {"ranked": [{"ref": "a", "tier": "must-update"}, {"ref": "c", "tier": "review"}]})
     assert [r["ref"] for r in d["added"]] == ["c"] and [r["ref"] for r in d["removed"]] == ["b"]

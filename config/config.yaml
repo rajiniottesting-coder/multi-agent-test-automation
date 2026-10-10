@@ -322,11 +322,14 @@ agents:
 
   # Agent 0 — Impact Analyst: which existing tests does a change affect?
   #
-  # Ships SWITCHED OFF. `enabled: false` makes every Agent 0 scan and
-  # workflow a no-op; `shadow_mode: true` (once enabled) analyses and
-  # reports only - no Impact Review, no labels, no hand-over. Turn shadow
-  # mode off only after the backtest and two sprints of shadow reports meet
-  # the targets (design section 10).
+  # Ships SWITCHED OFF. `enabled: false` makes every Agent 0 scan and the
+  # workflow's analysis jobs a no-op; `shadow_mode: true` (once enabled)
+  # analyses and reports only - no Impact Review, no label added (the
+  # impact-check trigger is consumed), no hand-over; outcomes are still
+  # measured when the pull request runs. Reconcile (C7) runs in its own job
+  # whatever these say: it acts only on stories a hand-over (a person's or
+  # Agent 0's) labelled impact-applied. Turn shadow mode off only after the
+  # backtest and two sprints of shadow reports meet the targets (section 10).
   agent0_impact:
     enabled: false
     shadow_mode: true

@@ -8,7 +8,11 @@ labels removed, story labelled impact-reverted. See core/impact_reconcile.py.
     python -m scripts.impact_reconcile
     python -m scripts.impact_reconcile --story SCRUM-210
 
-Does nothing while agents.agent0_impact.enabled is false.
+Runs whatever agents.agent0_impact.enabled and shadow_mode say: it acts only
+on stories labelled impact-applied, which exist only after a hand-over - by a
+person (scripts.impact_handover, phase C) or by Agent 0 (D5) - and a closed
+pull request must be undone either way. Scheduled by the reconcile job in
+.github/workflows/agent0_impact.yml, the one place it runs.
 """
 from __future__ import annotations
 
@@ -34,9 +38,6 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     settings = impact_settings()
-    if not settings["enabled"]:
-        print("agents.agent0_impact.enabled is false - nothing to do.")
-        return 0
     tracker, host = get_tracker(), get_repo_host()
     results = ([reconcile_story(tracker, host, args.story.upper(), settings)] if args.story
                else reconcile_all(tracker, host, settings))

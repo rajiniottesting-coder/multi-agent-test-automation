@@ -608,6 +608,16 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
         post_owner_results(jira, story_key, report.pr_url, full_report.results, FEATURES_DIR)
     except Exception as e:                                     # noqa: BLE001
         logger.warning(f"Owner result lines skipped (non-fatal): {e}")
+    # Agent 0, stage 10: when Agent 0 predicted this story's impact (shadow or
+    # live), record recall and precision against what this run showed. Does
+    # nothing otherwise, and never fails the report.
+    try:
+        from config.paths import FEATURES_DIR
+        from core.impact_results import record_prediction_outcome
+        record_prediction_outcome(jira, get_repo_host(), story_key, report.pr_number,
+                                  report.pr_url, full_report.results, FEATURES_DIR)
+    except Exception as e:                                     # noqa: BLE001
+        logger.warning(f"Impact outcome skipped (non-fatal): {e}")
     # Record this agent's usage on the ledger too, so any later re-run or
     # re-aggregation sees the full picture.
     post_usage_to_story(story_key, "Agent 5 (Reporter)", own_usage, jira=jira)

@@ -53,3 +53,17 @@ def test_gate_snippet_runs_with_only_pyyaml_and_the_stdlib():
                          text=True, timeout=60, check=False)
     assert out.returncode == 0, out.stderr
     assert re.fullmatch(r"enabled=(true|false)\n", out.stdout), out.stdout
+
+
+def test_reconcile_has_one_ungated_job():
+    """C7 must run while Agent 0 is off or in shadow mode (a person can hand
+    over in phase C), and in exactly one place, so two concurrent runs can
+    never count as the two scans that trigger an undo."""
+    jobs = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+
+    def runs(job):
+        return "\n".join(step.get("run", "") for step in job["steps"])
+
+    with_reconcile = [name for name, job in jobs.items() if "impact_reconcile" in runs(job)]
+    assert with_reconcile == ["reconcile"]
+    assert "needs" not in jobs["reconcile"] and "gate" not in jobs["reconcile"].get("if", "")

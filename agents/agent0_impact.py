@@ -26,12 +26,17 @@ Stages:
     7 publish       shadow: a report comment only. Live: an Impact Review
                     sub-task (C2's table) and impact-check -> impact-proposed
     8-9             the review, once Done, is handed over (core.impact_handover)
-    10              reconcile (core.impact_reconcile) and the outcome line
+    10              the outcome line, recorded by Agent 5 when the change
+                    story's pull request runs (record_outcome); reconcile
+                    (core.impact_reconcile, scheduled on its own)
 
 Safety:
     agents.agent0_impact.enabled false  -> the scan does nothing
     shadow_mode true                    -> reports only: no review, no label,
-                                           no hand-over, no reconcile
+                                           no hand-over (the trigger label is
+                                           consumed; outcomes are still measured)
+    reconcile (C7) runs in its own job (scripts.impact_reconcile), whatever
+    these two say: it acts only on stories a hand-over labelled impact-applied
 
 Usage:
     python -m agents.agent0_impact --scan
@@ -130,6 +135,40 @@ def _previous_report(tracker, story_key: str, settings: dict):
     return None, None
 
 
+def requirement_hash(story: dict) -> str:
+    """Stage 0: what a requirement analysis depends on - the story's text and
+    Components. Computed before any model call, so a repeat is free."""
+    return ia.content_hash(story["summary"], story.get("description") or "",
+                           sorted(story.get("components") or []))
+
+
+def _already_analysed(tracker, story_key: str, chash: str, settings: dict) -> bool:
+    """Stage 0 guard: this exact content was already published.
+
+    In live mode a report published in SHADOW mode does not count: it created
+    no review, so switching shadow mode off must give the story a real one."""
+    previous, review = _previous_report(tracker, story_key, settings)
+    if not previous or previous.get("content_hash") != chash:
+        return False
+    if settings["shadow_mode"] or review:
+        return True
+    last = next((b for b in reversed(tracker.get_comments(story_key)) if b.startswith(REPORT)), "")
+    return "(shadow mode)" not in last.split("\n", 1)[0]
+
+
+def analyse_and_publish(tracker, story_key: str, llm, settings: dict, root: Path,
+                        host=None, dry_run: bool = False) -> dict:
+    """The requirement trigger, stage 0 first: an unchanged story costs no
+    model call. Its impact-check label is consumed either way."""
+    story = tracker.get_story(story_key)
+    if _already_analysed(tracker, story_key, requirement_hash(story), settings):
+        if not dry_run:
+            tracker.remove_label(story_key, settings["labels"]["check"])
+        return {"story": story_key, "action": "unchanged"}
+    report = analyse_requirement(tracker, story_key, llm, settings, root, host)
+    return publish(tracker, story_key, report, settings, dry_run=dry_run)
+
+
 def _render_report(report: dict, title: str) -> str:
     lines = [f"{REPORT} {title} | hash: {report['content_hash']} | graph: {report['graph_sha']}"]
     if report["no_component"]:
@@ -137,6 +176,9 @@ def _render_report(report: dict, title: str) -> str:
                      "tests not judged.")
     lines.append(f"Affected: {len(report['ranked'])}; unaffected: {len(report['unaffected'])}; "
                  f"not judged: {len(report['not_judged'])}.")
+    if report.get("by_owner"):
+        lines.append("By owning story: " + "; ".join(
+            f"{owner}: {', '.join(refs)}" for owner, refs in report["by_owner"].items()))
     if report["seeds"]["dropped"]:
         lines.append("Dropped invented element keys: " + ", ".join(report["seeds"]["dropped"]))
     lines += ["", "||Tier||Score||Test||Owner||Scenario||Evidence||"]
@@ -215,8 +257,8 @@ def analyse_requirement(tracker, story_key: str, llm, settings: dict, root: Path
         dropped += lost
 
     ranked = ia.rank(judged, judgements, settings["weights"], settings["thresholds"])
-    chash = ia.content_hash(story["summary"], story.get("description") or "", sorted(components))
-    return ia.report_dict(story_key, chash, sha, ranked, not_judged, no_component, seeds, dropped)
+    return ia.report_dict(story_key, requirement_hash(story), sha, ranked, not_judged,
+                          no_component, seeds, dropped)
 
 
 def analyse_code_change(base_root: Path, head_root: Path, change_ref: str, settings: dict,
@@ -266,9 +308,11 @@ def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool
     """Shadow: one report comment. Live: the Impact Review (or ai-ready when
     there is nothing to review), with D4's delta against an earlier report."""
     labels = settings["labels"]
+    if _already_analysed(tracker, story_key, report["content_hash"], settings):
+        if not dry_run:                                              # stage 0 guard
+            tracker.remove_label(story_key, labels["check"])
+        return {"story": story_key, "action": "unchanged"}
     previous, review = _previous_report(tracker, story_key, settings)
-    if previous and previous.get("content_hash") == report["content_hash"]:
-        return {"story": story_key, "action": "unchanged"}           # stage 0 guard
     if dry_run:
         print(_render_report(report, f"Impact report for {story_key} (dry run)"))
         return {"story": story_key, "action": "dry-run"}
@@ -281,7 +325,11 @@ def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool
 
     title = f"Impact report for {story_key}"
     if settings["shadow_mode"]:
+        # Shadow mode creates no review and adds no label, but it consumes the
+        # trigger: Agent 1 skips impact-check (C1), so leaving it would hold
+        # the story back for good and re-run the analysis on every scan.
         tracker.add_comment(story_key, _render_report(report, title + " (shadow mode)"))
+        tracker.remove_label(story_key, labels["check"])
         return {"story": story_key, "action": "shadow-report", "affected": len(report["ranked"])}
 
     change = ia.delta(previous, report) if previous else None
@@ -321,6 +369,10 @@ def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool
     _post_delta(tracker, story_key, change,
                 f" Nothing new to review; the approved review {review_key} stands."
                 if action == "no-new-impact" else "")
+    if action != "no-new-impact":
+        # Stage 7: the ranked report on the change story itself, next to the
+        # requirement, as well as the table in the Impact Review.
+        tracker.add_comment(story_key, _render_report(report, f"{title} - review {review_key}"))
     # impact-check comes off on every path, or the next scan would analyse the
     # story again. With no new review the story keeps the labels it had.
     tracker.remove_label(story_key, labels["check"])
@@ -348,24 +400,27 @@ def hand_over_decided(tracker, settings: dict) -> list:
     return out
 
 
-def record_outcome(tracker, story_key: str, settings: dict) -> dict | None:
-    """Stage 10: recall and precision of the prediction, once per story."""
-    if any(c.startswith(OUTCOME) for c in tracker.get_comments(story_key)):
+def record_outcome(tracker, story_key: str, settings: dict, changed, failed,
+                   ref: str) -> dict | None:
+    """Stage 10: the prediction against what the pull request's run showed,
+    once per pull request. Works in shadow mode too - measuring is what the
+    shadow period is for (design section 10). Called by Agent 5
+    (core.impact_results.record_prediction_outcome)."""
+    head = f"{OUTCOME} pr: {ref} "
+    if any(c.startswith(head) for c in tracker.get_comments(story_key)):
         return None
     report, _review = _previous_report(tracker, story_key, settings)
     if not report:
-        return None
+        return None                                   # no prediction, nothing to measure
     predicted = [r["key"] for r in report["ranked"] if r["key"]]
-    actual = [c["key"] for c in tracker.get_impacted_test_cases(story_key, include_retired=True)]
-    result = ia.outcome(predicted, actual)
-    tracker.add_comment(story_key, f"{OUTCOME} recall: {result['recall']} precision: "
+    result = ia.outcome(predicted, changed, failed)
+    tracker.add_comment(story_key, f"{head}| recall: {result['recall']} precision: "
                                    f"{result['precision']}\n{json.dumps(result)}")
     return result
 
 
 def scan(tracker, host, llm, settings: dict | None = None, root: Path | None = None) -> list:
     from config.paths import PROJECT_ROOT
-    from core.impact_reconcile import reconcile_all
     settings = settings or impact_settings()
     root = Path(root or PROJECT_ROOT)
     if not settings["enabled"]:
@@ -374,18 +429,17 @@ def scan(tracker, host, llm, settings: dict | None = None, root: Path | None = N
     results = []
     for s in tracker.find_stories_to_process(settings["selection"], max_results=10):
         try:
-            report = analyse_requirement(tracker, s["key"], llm, settings, root, host)
-            results.append(publish(tracker, s["key"], report, settings))
+            results.append(analyse_and_publish(tracker, s["key"], llm, settings, root, host))
         except Exception as e:                                 # noqa: BLE001
             logger.error("Agent 0 failed on %s: %s", s["key"], e, exc_info=True)
             results.append({"story": s["key"], "action": "error", "error": str(e)})
     if settings["shadow_mode"]:
         return results                    # shadow mode never writes past a report
+    # Reconcile (C7) is not run here: it has its own scheduled job
+    # (scripts.impact_reconcile), which also covers hand-overs a person made
+    # and shadow mode. Running it in two places would let two concurrent
+    # runs count as the two scans that trigger an undo.
     results += hand_over_decided(tracker, settings)
-    for r in reconcile_all(tracker, host, settings):
-        results.append(r)
-        if r["action"] == "merged":
-            record_outcome(tracker, r["story"], settings)
     return results
 
 
@@ -424,9 +478,8 @@ def main(argv=None) -> int:
             print(r)
         return 0
     if args.story:
-        report = analyse_requirement(tracker, args.story.upper(), LLMClient(temperature=0.0),
-                                     settings, PROJECT_ROOT, host)
-        print(publish(tracker, args.story.upper(), report, settings, dry_run=args.dry_run))
+        print(analyse_and_publish(tracker, args.story.upper(), LLMClient(temperature=0.0),
+                                  settings, PROJECT_ROOT, host, dry_run=args.dry_run))
         return 0
     if args.code_change:
         if not (args.base and args.head):
@@ -436,6 +489,8 @@ def main(argv=None) -> int:
         body = _render_report(report, f"Impact of PR #{args.pr or '?'} (code change)")
         if args.dry_run or not args.pr:
             print(body)
+        elif _posted_on_pr(host, args.pr, report["content_hash"]):
+            print(f"PR #{args.pr}: unchanged since the last report")   # stage 0
         else:
             host.post_pr_comment(args.pr, body)
         return 0
@@ -449,10 +504,27 @@ def main(argv=None) -> int:
     if story is None:
         story = tracker.create_story(
             "Maintenance: inventory drift", "The nightly inventory check found drift.\n\n"
-            + "\n".join(report["seeds"]["elements"]), [],
+            + "\n".join(report["seeds"]["elements"] + report["seeds"]["pages"]),
+            _drift_components(report, PROJECT_ROOT),
             [settings["labels"]["check"], settings["labels"]["drift"]])
     print(publish(tracker, story, report, settings))
     return 0
+
+
+def _drift_components(report: dict, root: Path) -> list:
+    """The Components of the drifted pages - the maintenance-story template
+    (design A1) carries a Component, like any story, so its later analysis
+    is focused instead of whole-suite."""
+    graph, _sha = load_graph(root)
+    pages = {e.split(":", 1)[0] for e in report["seeds"]["elements"]} | set(report["seeds"]["pages"])
+    return sorted({c for p in pages for c in graph.page_components.get(p, ())})
+
+
+def _posted_on_pr(host, pr_number: int, chash: str) -> bool:
+    """Stage 0 for the code-change trigger: every push re-runs the workflow,
+    but a report whose content (the seeds) is unchanged is not posted again."""
+    return any(c.startswith(REPORT) and f"| hash: {chash} |" in c.split("\n", 1)[0]
+               for c in host.get_pr_comments(pr_number))
 
 
 def _open_drift_story(tracker, settings: dict) -> str | None:

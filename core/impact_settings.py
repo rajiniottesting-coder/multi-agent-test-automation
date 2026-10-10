@@ -12,7 +12,7 @@ import copy
 
 DEFAULTS: dict = {
     "enabled": False,          # master switch: the scan and the workflow do nothing while false
-    "shadow_mode": True,       # analyse and report only; no Impact Review, no labels, no hand-over
+    "shadow_mode": True,       # report only: no Impact Review, no label added, no hand-over
     "selection": {
         "issue_type": "Story",
         "allowed_statuses": ["To Do", "In Progress", "In Review"],
