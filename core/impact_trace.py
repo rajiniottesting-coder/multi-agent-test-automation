@@ -63,10 +63,13 @@ def merged(change: str, pr_url: str, tests: Iterable[str]) -> str:
 
 
 def restored(change: str, pr_url: Optional[str], tests: Iterable[str],
-             left_for_a_person: Iterable[str] = ()) -> str:
+             left_for_a_person: Iterable[str] = (), unretired: Iterable[str] = ()) -> str:
     lines = [_head("restored", change, pr_url),
              f"{change}'s pull request was closed without merging. Restored to "
              f"their earlier text: {', '.join(sorted(tests)) or 'none'}."]
+    back = sorted(unretired)
+    if back:
+        lines.append("Retirement withdrawn - these stay active: " + ", ".join(back))
     left = sorted(left_for_a_person)
     if left:
         lines.append("Edited since the revision, so NOT restored - a person must "

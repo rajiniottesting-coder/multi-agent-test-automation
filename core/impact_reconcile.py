@@ -109,7 +109,7 @@ def reconcile_story(tracker, host, story: str, settings: dict | None = None, now
 
 
 def _revert(tracker, story, pr, cases, owners, labels) -> dict:
-    restored, left, unsnapped = [], [], []
+    restored, left, unsnapped, unretired = [], [], [], []
     from agents.agent2_coder import compute_description_hash
     from integrations.tracker import tracker_settings
     retired_label = tracker_settings()["retired_label"]
@@ -118,6 +118,7 @@ def _revert(tracker, story, pr, cases, owners, labels) -> dict:
         key = case["key"]
         if case.get("retired"):
             tracker.remove_label(key, retired_label)
+            unretired.append(key)
         snap = impact_trace.latest_snapshot(tracker.get_comments(key), story)
         if snap is None:
             unsnapped.append(key)               # retired only, or never revised
@@ -134,12 +135,14 @@ def _revert(tracker, story, pr, cases, owners, labels) -> dict:
         if not impact_trace.already_posted(tracker.get_comments(owner), "restored",
                                            story, pr["url"]):
             tracker.add_comment(owner, impact_trace.restored(
-                story, pr["url"], mine, [k for k in owned if k in left]))
+                story, pr["url"], mine, [k for k in owned if k in left],
+                unretired=[k for k in owned if k in unretired]))
     tracker.remove_label(story, labels["applied"])
     tracker.add_label(story, labels["reverted"])
     logger.info("Reverted %s: restored %s, left for a person %s", story, restored, left)
     return {"story": story, "action": "reverted", "pr": pr["number"],
-            "restored": restored, "left_for_a_person": left, "no_snapshot": unsnapped}
+            "restored": restored, "left_for_a_person": left, "no_snapshot": unsnapped,
+            "unretired": unretired}
 
 
 def reconcile_all(tracker, host, settings: dict | None = None, now=None) -> list:

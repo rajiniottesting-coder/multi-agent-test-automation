@@ -51,6 +51,9 @@ def outcomes_by_key(results: list, index, keys: list) -> dict:
         if entry is None:
             out[key] = "not run"
             continue
+        # features/X.feature runs from tests/step_defs/test_X.py: the pairing
+        # the generation gate enforces (validate_filename_consistency) and the
+        # impact graph relies on.
         module = "test_" + entry.file.rsplit(".", 1)[0]
         name = _test_name(entry.title)
         mine = [r for r in results

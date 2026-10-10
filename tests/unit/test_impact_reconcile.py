@@ -68,11 +68,13 @@ class TestReconcile:
         assert fake.issues["SBX-11"]["description"] == original["description"]
         assert fake.issues["SBX-11"]["summary"] == original["summary"]
         assert "ai-retired" not in fake.issues["SBX-12"]["labels"]
+        assert r["unretired"] == ["SBX-12"]
         assert jira.get_impacted_test_cases("SBX-5", include_retired=True) == []
         assert not any(t == "Impacts" and i == "SBX-5" for t, i, _ in fake.links.values())
         restored = [c for c in fake.comments["SBX-1"]
                     if (impact_trace.parse(c) or {}).get("kind") == "restored"]
         assert len(restored) == 1 and "SBX-11" in restored[0]
+        assert "Retirement withdrawn - these stay active: SBX-12" in restored[0]
         assert _impact_labels(fake) == ["impact-reverted"]
 
     def test_the_sweepers_close_and_reopen_is_absorbed(self, opened):

@@ -120,9 +120,9 @@ def run_impact_aware(tracker, story_id: str, story: dict, prompt_header: dict,
     from config.paths import FEATURES_DIR, PROMPTS_DIR
     settings = impact_settings()
 
-    approved = {c["key"]: c for c in tracker.get_impacted_test_cases(story_id)}
-    retired = [c for c in tracker.get_impacted_test_cases(story_id, include_retired=True)
-               if c.get("retired")]
+    impacted = tracker.get_impacted_test_cases(story_id, include_retired=True)
+    approved = {c["key"]: c for c in impacted if not c.get("retired")}
+    retired = [c for c in impacted if c.get("retired")]
     reasons = _review_rows(tracker, story_id, settings)
     index = build_marker_index(FEATURES_DIR)
     # The same normalisation the validator applies to new titles (_norm strips
