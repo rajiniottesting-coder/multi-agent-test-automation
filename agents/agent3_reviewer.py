@@ -235,6 +235,44 @@ def _waives_itself(issue) -> bool:
     return not _RETRACTS_THE_WAIVER.search(first)
 
 
+# A STOP NEEDS A FAILURE, NOT A LABEL.
+#
+# The waiver check above reads one phrase in one field, and exempts an
+# explicit `blocking` severity. A review on SCRUM-111 then filed a
+# `blocking` / `functional_bug` whose own description walked through the flow
+# and ended "This flow is valid. No blocking bug - downgrading." The severity
+# field was never changed, and the pull request went red while every test
+# passed. Four incidents, four wordings: a phrase list does not converge.
+#
+# So blocking now requires positive evidence instead of the absence of a
+# retraction: a non-empty `failure_scenario` - the step, the line, and what
+# goes wrong. A model that concluded the code works has nothing to put there.
+# A finding filed as blocking without one is lowered to `major` and shown,
+# not dropped. Security is exempt, as everywhere in this module.
+def _names_a_failure(issue) -> bool:
+    return bool((getattr(issue, "failure_scenario", None) or "").strip())
+
+
+def _require_failure_for_blocking(report: ReviewReport) -> ReviewReport:
+    lowered = []
+    issues = []
+    for issue in report.issues:
+        if (issue.severity == "blocking"
+                and issue.issue_type not in _ALWAYS_BLOCKING_TYPES
+                and not _names_a_failure(issue)):
+            lowered.append(issue)
+            issue = issue.model_copy(update={"severity": "major"})
+        issues.append(issue)
+    if lowered:
+        logger.warning(
+            "%d finding(s) filed as blocking LOWERED to major: none names a "
+            "concrete failure (failure_scenario is empty), so nothing shows "
+            "the code breaks: %s", len(lowered),
+            "; ".join(f"{i.file_path}: {(i.description or '')[:120]}" for i in lowered))
+        report = report.model_copy(update={"issues": issues})
+    return report
+
+
 def derive_verdict(report: ReviewReport) -> ReviewReport:
     """Recompute overall_verdict from the issues the review actually found.
 
@@ -262,20 +300,8 @@ def derive_verdict(report: ReviewReport) -> ReviewReport:
     own findings usually means the summary saw something the issue list did
     not capture - worth a human glance even though it no longer blocks.
     """
-    blocking = [
-        issue for issue in report.issues
-        if (issue.severity in _BLOCKING_SEVERITIES
-            or issue.issue_type in _ALWAYS_BLOCKING_TYPES
-            or (issue.issue_type in _BLOCKING_ISSUE_TYPES
-                and issue.severity in _TYPE_BLOCKS_AT))
-        # A finding whose own fix opens with "no change required" has
-        # withdrawn itself. Two exemptions: a security finding that shrugs is
-        # still worth one look, and an explicit `blocking` severity is a
-        # deliberate call that a waiver phrase does not get to overturn.
-        and not (issue.issue_type not in _ALWAYS_BLOCKING_TYPES
-                 and issue.severity not in _BLOCKING_SEVERITIES
-                 and _waives_itself(issue))
-    ]
+    report = _require_failure_for_blocking(report)
+    blocking = [issue for issue in report.issues if _blocks(issue)]
     if not blocking:
         if report.overall_verdict == "request_changes":
             logger.warning(
@@ -304,6 +330,193 @@ def derive_verdict(report: ReviewReport) -> ReviewReport:
         ", ".join(sorted({f"{i.severity}/{i.issue_type}" for i in blocking})),
     )
     return report.model_copy(update={"overall_verdict": "request_changes"})
+
+
+# A PREDICTED FAILURE IS REFUTED BY A RUN.
+#
+# "This test will fail" is a prediction, and this repository runs the tests:
+# Agent 4 executes every scenario on the same commit, in parallel with this
+# review. PR #148 (SCRUM-111) was blocked by a major/functional_bug whose
+# failure_scenario read "if the site renders two separate rows ... the
+# assertion fails" and whose fix read "No code change needed if behaviour is
+# confirmed". The runner had already confirmed it: all four scenarios passed
+# on that commit. The review was blocking on a question the pipeline had
+# answered.
+#
+# So when the ONLY thing stopping the pull request is a prediction that a
+# test fails, the review waits for the runner on this exact commit. Green
+# refutes the prediction: the finding is lowered to major and annotated, not
+# dropped. Red, absent or still running at the deadline: the block stands -
+# no evidence is never treated as good evidence. A finding that says the test
+# PASSES WRONGLY is never refuted by a pass, and security never waits.
+RUNNER_WORKFLOW = "agent4_runner.yml"
+RUNNER_WAIT_SECONDS = 480
+RUNNER_POLL_SECONDS = 20
+_REFUTED_NOTE = ("Refuted by the runner: this commit's scenarios were executed "
+                 "and passed, so the predicted failure did not happen.")
+
+
+def _refutable_by_a_green_run(issue) -> bool:
+    return (issue.issue_type == "functional_bug"
+            and getattr(issue, "test_outcome", None) != "passes_wrongly")
+
+
+def _blocks(issue) -> bool:
+    """The one definition of a finding that stops a pull request."""
+    return ((issue.severity in _BLOCKING_SEVERITIES
+             or issue.issue_type in _ALWAYS_BLOCKING_TYPES
+             or (issue.issue_type in _BLOCKING_ISSUE_TYPES
+                 and issue.severity in _TYPE_BLOCKS_AT
+                 and _names_a_failure(issue)))
+            # A finding whose own fix opens with "no change required" has
+            # withdrawn itself. Two exemptions: a security finding that shrugs
+            # is still worth one look, and an explicit `blocking` severity is a
+            # deliberate call that a waiver phrase does not get to overturn.
+            and not (issue.issue_type not in _ALWAYS_BLOCKING_TYPES
+                     and issue.severity not in _BLOCKING_SEVERITIES
+                     and _waives_itself(issue)))
+
+
+def runner_result_for_head(host, pr_number: int, head_branch: str,
+                           wait_seconds: int = RUNNER_WAIT_SECONDS,
+                           poll_seconds: int = RUNNER_POLL_SECONDS,
+                           sleep=None, clock=None) -> str | None:
+    """'success' / 'failure' / ... for the runner on this PR's head commit, or
+    None when it has not concluded by the deadline or cannot be read."""
+    import time
+    sleep = sleep or time.sleep
+    clock = clock or time.monotonic
+    head_sha = next((p.get("head_sha") for p in host.list_open_prs()
+                     if p.get("number") == pr_number), None)
+    if not head_sha:
+        return None
+    deadline = clock() + wait_seconds
+    while True:
+        runs = [r for r in host.get_workflow_runs(RUNNER_WORKFLOW, head_branch)
+                if r.get("head_sha") == head_sha]
+        done = [r for r in runs if r.get("status") == "completed"]
+        if done:
+            return done[0].get("conclusion")
+        if clock() >= deadline:
+            return None
+        sleep(poll_seconds)
+
+
+def apply_runner_evidence(report: ReviewReport, runner_result) -> ReviewReport:
+    """Lower blocking functional_bug predictions refuted by a green run.
+
+    Acts only when every blocking finding is such a prediction - anything else
+    blocking means the pull request stops regardless, and the run need not be
+    consulted. Returns the report unchanged unless the runner passed.
+    """
+    blocking = [i for i in report.issues if _blocks(i)]
+    if not blocking or not all(_refutable_by_a_green_run(i) for i in blocking):
+        return report
+    if runner_result != "success":
+        logger.info("Runner result for this commit: %s - predicted failure(s) "
+                    "keep blocking.", runner_result or "not concluded")
+        return report
+    issues = []
+    for issue in report.issues:
+        if issue in blocking:
+            issue = issue.model_copy(update={
+                "severity": "major" if issue.severity == "blocking" else issue.severity,
+                "issue_type": "best_practice",
+                "description": f"{issue.description} ({_REFUTED_NOTE})",
+            })
+        issues.append(issue)
+    logger.warning("%d predicted test failure(s) REFUTED: the runner passed on "
+                   "this commit. Lowered, not dropped.", len(blocking))
+    return report.model_copy(update={"issues": issues, "overall_verdict": "comment"})
+
+
+def _needs_runner_evidence(report: ReviewReport) -> bool:
+    blocking = [i for i in report.issues if _blocks(i)]
+    return bool(blocking) and all(_refutable_by_a_green_run(i) for i in blocking)
+
+
+# THE REPORT MUST SAY ONE THING.
+#
+# The gate fixes made the VERDICT follow the findings, but the comment a human
+# reads kept contradicting itself. The final review of PR #148 (SCRUM-111)
+# was advisory - correct - yet its summary still announced "SCRUM-215 has a
+# functional bug", and it listed a major/functional_bug whose own fix read
+# "No change required ... Leaving as advisory." A reader trusts the summary
+# and the label, not the fine print, so the gate was right and the page was
+# wrong.
+#
+# So findings are reconciled before anything is rendered:
+#   - a finding whose own fix asks for nothing is WITHDRAWN: not listed,
+#     counted in a footnote, logged in full
+#   - a functional_bug that names no failure is not a functional bug: it is
+#     shown as an unverified info note
+# and when that, or any later step, changed what the model filed, the model's
+# summary describes findings that no longer exist and is replaced with one
+# built from the final list. Security findings are never touched.
+def reconcile_findings(report: ReviewReport) -> tuple[ReviewReport, list]:
+    """(report with substantiated findings only, withdrawn findings)."""
+    kept, withdrawn = [], []
+    for issue in report.issues:
+        if issue.issue_type in _ALWAYS_BLOCKING_TYPES:
+            kept.append(issue)
+            continue
+        if _waives_itself(issue) and not _names_a_failure(issue):
+            withdrawn.append(issue)
+            continue
+        if issue.issue_type == "functional_bug" and not _names_a_failure(issue):
+            issue = issue.model_copy(update={
+                "issue_type": "best_practice", "severity": "info",
+                "description": f"Unverified - no failing scenario was named. {issue.description}",
+            })
+        kept.append(issue)
+    if withdrawn:
+        logger.info("%d finding(s) WITHDRAWN - their own suggested fix asks for "
+                    "no change: %s", len(withdrawn),
+                    "; ".join(f"{i.file_path}: {(i.description or '')[:120]}" for i in withdrawn))
+    return report.model_copy(update={"issues": kept}), withdrawn
+
+
+def _signature(issues) -> list:
+    return [(i.file_path, i.line_number, i.severity, i.issue_type, i.description)
+            for i in issues]
+
+
+def finalize_summary(original: ReviewReport, final: ReviewReport,
+                     withdrawn_count: int = 0) -> ReviewReport:
+    """Keep the model's summary only if the findings it describes survived."""
+    if _signature(original.issues) == _signature(final.issues) and not withdrawn_count:
+        return final
+    counts = {}
+    for issue in final.issues:
+        counts[issue.severity] = counts.get(issue.severity, 0) + 1
+    listed = ", ".join(f"{counts[k]} {k}" for k in ("blocking", "major", "minor", "info")
+                       if counts.get(k)) or "none"
+    stops = ("Nothing here blocks this pull request."
+             if final.overall_verdict != "request_changes"
+             else "The blocking finding(s) below must be fixed before merge.")
+    summary = (f"Findings after verification: {listed}. {stops} Findings the reviewer "
+               f"filed without a concrete failure, or withdrew in its own fix, were "
+               f"lowered or left out, so the reviewer's original summary was replaced.")
+    return final.model_copy(update={"summary": summary})
+
+
+def postprocess_review(report: ReviewReport, get_runner_result=None) -> tuple[ReviewReport, list]:
+    """Everything between the model's answer and the posted comment, in order.
+
+    One function so the whole chain can be replayed on a real review: dedupe,
+    reconcile findings, derive the verdict, consult the runner when only
+    predicted failures block (`get_runner_result` is a zero-argument callable, or
+    None to skip), then make the summary match what is left.
+    """
+    report = dedupe_and_cap_issues(report, max_issues=MAX_ISSUES)
+    as_filed = report
+    report, withdrawn = reconcile_findings(report)
+    report = derive_verdict(report)
+    if _needs_runner_evidence(report) and get_runner_result is not None:
+        logger.info("Only predicted test failures block this review - waiting "
+                    "up to %ds for the runner on this commit.", RUNNER_WAIT_SECONDS)
+        report = apply_runner_evidence(report, get_runner_result())
+    return finalize_summary(as_filed, report, len(withdrawn)), withdrawn
 
 
 # ─────────────────────────────────────────────────────────────
@@ -335,7 +548,7 @@ def format_changed_files_for_prompt(files: list[dict]) -> str:
 # ─────────────────────────────────────────────────────────────
 # Markdown rendering for the PR comment
 # ─────────────────────────────────────────────────────────────
-def format_review_as_markdown(report: ReviewReport) -> str:
+def format_review_as_markdown(report: ReviewReport, withdrawn_count: int = 0) -> str:
     """Convert a ReviewReport into a Markdown PR comment."""
     verdict_emoji = {
         "approve": "✅",
@@ -376,11 +589,19 @@ def format_review_as_markdown(report: ReviewReport) -> str:
                 md.append("")
                 md.append(f"   {issue.description}")
                 md.append("")
+                if (issue.failure_scenario or "").strip():
+                    md.append(f"   **Fails when:** {issue.failure_scenario.strip()}")
+                    md.append("")
                 md.append(f"   **Suggested fix:**")
                 md.append(f"   {issue.suggested_fix}")
                 md.append("")
     else:
         md.append("### No issues found 🎉")
+        md.append("")
+    if withdrawn_count:
+        md.append(f"_{withdrawn_count} further finding(s) were withdrawn by the "
+                  f"reviewer's own suggested fix (no change requested) and are "
+                  f"listed only in the workflow log._")
         md.append("")
 
     md.append("### Compliance Checklist")
@@ -470,8 +691,10 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
     )
 
     # 3b. POST-PROCESS: dedupe and cap (handles LLM repetition collapse)
-    report = dedupe_and_cap_issues(report, max_issues=MAX_ISSUES)
-    report = derive_verdict(report)
+    report, withdrawn = postprocess_review(
+        report,
+        None if dry_run else
+        (lambda: runner_result_for_head(gh, pr_number, pr_metadata["head_branch"])))
 
     logger.info(f"Review verdict: {report.overall_verdict}")
     logger.info(f"Issues found: {len(report.issues)}")
@@ -479,7 +702,7 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
         logger.info(f"  - [{issue.severity}/{issue.issue_type}] {issue.file_path}: {issue.description}")
 
     # 4. FORMAT
-    markdown = format_review_as_markdown(report)
+    markdown = format_review_as_markdown(report, withdrawn_count=len(withdrawn))
 
     # 5. ACT
     if dry_run:

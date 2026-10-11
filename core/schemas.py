@@ -182,6 +182,32 @@ class ReviewIssue(BaseModel):
         ...,
         description="How to fix it. Include corrected code snippet if helpful."
     )
+    # Positive evidence for a stop. Defaulted so an older or partial report
+    # still parses; agent3_reviewer.derive_verdict treats a missing one as
+    # "no failure was found" for anything but a security finding.
+    failure_scenario: str | None = Field(
+        default=None,
+        description="REQUIRED for severity=blocking and for issue_type=functional_bug: "
+                    "the concrete scenario or step, the line that breaks, and what goes "
+                    "wrong (the error raised or the wrong result). If, after checking, you "
+                    "cannot name one because the code works, the finding is not blocking: "
+                    "lower its severity or leave it out. The application is assumed to "
+                    "behave as the test case says: 'if the app behaves differently, the "
+                    "assertion fails' is the test doing its job, not a bug - never file it. "
+                    "null for advisory findings."
+    )
+    # Which of the two ways a test can be wrong. They are refuted by different
+    # evidence: a test predicted to FAIL that the runner just ran green on this
+    # commit was not broken; a test that PASSES WRONGLY is untouched by a green
+    # run, because passing is exactly its defect.
+    test_outcome: Literal["fails", "passes_wrongly"] | None = Field(
+        default=None,
+        description="With failure_scenario: 'fails' when the test errors or its "
+                    "assertion fails against an application behaving as the test case "
+                    "says; 'passes_wrongly' when the test passes even though the "
+                    "application is wrong (a vacuous or missing assertion). null when "
+                    "there is no failure_scenario."
+    )
 
 
 class ReviewReport(BaseModel):
