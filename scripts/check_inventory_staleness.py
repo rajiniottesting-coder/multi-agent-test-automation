@@ -97,8 +97,8 @@ def main() -> int:
     # so a repo has ONE credential source rather than two.
     ap.add_argument("--username",
                     default=crawl_credentials()[0],
-                    help="Login username. Defaults to INVENTORY_USER, else "
-                         "INVENTORY_USER from .env.")
+                    help="Login username. Defaults to INVENTORY_USER, else the "
+                         "single APP_USER_<ROLE> variable set in .env.")
     ap.add_argument("--password",
                     default=crawl_credentials()[1],
                     help="Login password. Defaults to INVENTORY_PASS, else "
@@ -139,6 +139,12 @@ def main() -> int:
     per_page: dict[str, dict] = {}
     unreachable: list[str] = []
     new_by_page: dict[str, dict] = {}   # --compare: {page: {element: selector}}
+    # Pages marked `always` (a global menu, a cookie banner, a footer) are
+    # rendered on EVERY page. Their elements are covered wherever they appear,
+    # so compare marks their selectors on each page it visits. Without this,
+    # every shared-overlay element was reported as uncovered on every page.
+    always_selectors = [sel for entry in pages.values() if entry.get("always")
+                        for sel in _page_selectors(entry).values()]
 
     with browser_page(headless=not args.headed) as page:
         if not args.no_login:
@@ -187,7 +193,8 @@ def main() -> int:
                 # generator would capture that is NOT marked. Read-only in the
                 # sense that matters: no element is changed, clicked or saved.
                 title, descriptors = collect_uncovered(
-                    page, base_url + url_path, list(selectors.values()), test_attrs)
+                    page, base_url + url_path,
+                    list(selectors.values()) + always_selectors, test_attrs)
                 new_by_page[name] = introspect.uncovered_elements(
                     base_url + url_path, title, descriptors,
                     base_url=base_url, test_attrs=test_attrs)

@@ -294,3 +294,61 @@ def test_no_config_and_no_inventory_flag_is_a_readable_fail(tmp_path):
     assert graph is None
     assert checks[0].status == onboarding.FAIL
     assert "--inventory" in checks[0].detail
+
+
+# ─────────────────────────────────────────────────────────────
+# Adapter defaults come from configuration, never from a product name
+# ─────────────────────────────────────────────────────────────
+
+def _register(monkeypatch, tracker_name, host_name):
+    monkeypatch.setitem(tracker._ADAPTERS, tracker_name, lambda: _complete_stub(Tracker))
+    monkeypatch.setitem(repo_host._ADAPTERS, host_name, lambda: _complete_stub(RepoHost))
+
+
+def test_the_applications_own_config_chooses_the_adapters(synthetic_app, monkeypatch):
+    _register(monkeypatch, "app-tracker", "app-host")
+    _w(synthetic_app, "config/config.yaml",
+       "tracker:\n  type: app-tracker\nrepo_host:\n  type: app-host\n")
+    checks = onboarding.run_checks(synthetic_app, inventory_file="qa/inventory.json")
+    assert "'app-tracker'" in _by_name(checks, "tracker adapter").detail
+    assert "'app-host'" in _by_name(checks, "repo host adapter").detail
+
+
+def test_without_an_app_config_the_deployments_types_are_used(synthetic_app, monkeypatch):
+    _register(monkeypatch, "deploy-tracker", "deploy-host")
+    monkeypatch.setattr(tracker, "configured_type", lambda: "deploy-tracker")
+    monkeypatch.setattr(repo_host, "configured_type", lambda: "deploy-host")
+    assert onboarding.configured_adapters(synthetic_app) == ("deploy-tracker", "deploy-host")
+
+
+def test_an_explicit_adapter_beats_any_config(synthetic_app, monkeypatch):
+    _register(monkeypatch, "app-tracker", "app-host")
+    _register(monkeypatch, "chosen", "chosen-host")
+    _w(synthetic_app, "config/config.yaml", "tracker:\n  type: app-tracker\n")
+    checks = onboarding.run_checks(synthetic_app, inventory_file="qa/inventory.json",
+                                   tracker="chosen", repo_host="chosen-host")
+    assert "'chosen'" in _by_name(checks, "tracker adapter").detail
+
+
+def test_an_unreadable_app_config_falls_back_instead_of_crashing(synthetic_app, monkeypatch):
+    monkeypatch.setattr(tracker, "configured_type", lambda: "deploy-tracker")
+    monkeypatch.setattr(repo_host, "configured_type", lambda: "deploy-host")
+    _w(synthetic_app, "config/config.yaml", "tracker: [unclosed\n")
+    assert onboarding.configured_adapters(synthetic_app) == ("deploy-tracker", "deploy-host")
+
+
+def test_an_app_config_that_cannot_be_read_falls_back(synthetic_app, monkeypatch):
+    """An I/O error (permissions, a directory where the file should be) falls
+    back like malformed YAML does, rather than crashing the check."""
+    monkeypatch.setattr(tracker, "configured_type", lambda: "deploy-tracker")
+    monkeypatch.setattr(repo_host, "configured_type", lambda: "deploy-host")
+    _w(synthetic_app, "config/config.yaml", "tracker:\n  type: app-tracker\n")
+    real = Path.read_text
+
+    def failing(self, *a, **k):
+        if self.name == "config.yaml":
+            raise PermissionError("denied")
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(Path, "read_text", failing)
+    assert onboarding.configured_adapters(synthetic_app) == ("deploy-tracker", "deploy-host")
