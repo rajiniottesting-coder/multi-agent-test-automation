@@ -2473,18 +2473,36 @@ def _group_validator_errors_by_file(
     and the file never got a repair attempt (SCRUM-103, 31 Jul 2026).
 
     Returns: {file_path: [error_messages_for_that_file]}
+
+    The FIRST `in '<path>'` names the file, whatever words precede it. The
+    pattern used to require the literal word "error" before "in", so a rule
+    worded `Row index used as a cell index in '<path>' line N:` or `Drifted
+    step wording in '<path>':` was dropped here without a word: the file never
+    got a repair attempt and the story failed at the final gate on a defect
+    the loop was never shown (SCRUM-111, 11 Oct 2026). Only the first quoted
+    path counts, so a message that mentions a second file later - "(in
+    '<feature>')" - is still routed to the file it is about.
     """
     grouped: dict[str, list[str]] = {}
-    # Match `<words> error in '<path>'[ line N]:` regardless of the emitter
-    pattern = re.compile(r"error in '([^']+)'(?: line \d+)?:")
+    first_path = re.compile(r"^[^'\n]*?\bin '([^']+)'(?: line \d+)?:")
+    conventional = re.compile(r"error in '([^']+)'(?: line \d+)?:")
+    dropped = []
     for err in validator_errors:
-        match = pattern.search(err)
+        # The conventional form wins wherever it appears, exactly as before;
+        # the first-path form only rescues a rule worded without "error".
+        match = conventional.search(str(err)) or first_path.search(str(err))
         if not match:
-            # Validator returned an error in an unexpected format — skip;
-            # final validation will still raise it, just no targeted retry.
+            dropped.append(err)
             continue
         path = match.group(1)
         grouped.setdefault(path, []).append(err)
+    if dropped:
+        # Not silent any more: final validation still raises these, but the
+        # log now says they got no targeted repair, and why.
+        logger.warning(
+            "%d validator error(s) name no file in the `<rule> in '<path>':` "
+            "form, so no repair can be targeted at them: %s",
+            len(dropped), "; ".join(str(e)[:120] for e in dropped))
     return grouped
 
 
@@ -2498,12 +2516,17 @@ def _rules_persisting(before, after) -> list:
     Keyed on the RULE, not the message, because the message carries the step
     text and the step text is exactly what a stuck model changes. Every error
     this project raises opens with `<Rule name> error in '<path>'`, so the
-    rule is the text before " error in ".
+    rule is the text before " error in " (or before " in '" for a rule
+    worded without the word "error").
     """
     def rules(errors):
         found = set()
         for error in errors or ():
-            head = str(error).split(" error in ", 1)[0].strip()
+            match = re.match(r"([^'\n]*?)\s+in '", str(error))
+            if not match:
+                continue
+            head = match.group(1).strip()
+            head = head.removesuffix(" error")
             if head and len(head) < 60:
                 found.add(head)
         return found
