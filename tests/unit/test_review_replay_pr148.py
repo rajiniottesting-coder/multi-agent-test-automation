@@ -62,7 +62,35 @@ RUN_3 = RUN_1.model_copy(update={
                ReviewIssue(**_DEAD_CODE)]})
 
 
-@pytest.mark.parametrize("filed", [RUN_1, RUN_2, RUN_3], ids=["run1", "run2", "run3"])
+# 4th review: the re-run that used the stale reviewer from the story branch.
+RUN_4 = RUN_1.model_copy(update={
+    "summary": "There is also a functional bug in the SCRUM-215 step wiring.",
+    "issues": [ReviewIssue(severity="major", file_path="features/cart_management.feature",
+                           issue_type="functional_bug",
+                           description="... so this is acceptable; however the quantity assertion "
+                                       "of 2 depends on the app incrementing.",
+                           suggested_fix="Confirm that adding the same product twice increments "
+                                         "quantity to 2; if the app produces two rows, the "
+                                         "assertion will fail."),
+               ReviewIssue(**_DEAD_CODE)]})
+
+# 5th review: the first with the current reviewer - names a failure AND waives it.
+RUN_5 = RUN_1.model_copy(update={
+    "overall_verdict": "comment",
+    "summary": "SCRUM-215 relies on quantity aggregation.",
+    "issues": [ReviewIssue(severity="major", file_path="features/cart_management.feature",
+                           issue_type="functional_bug",
+                           description="Adds the product twice from the same detail page.",
+                           suggested_fix="No code change required if the site aggregates two "
+                                         "single adds into quantity 2. Leaving as advisory.",
+                           failure_scenario="If the app behaves as the test case states this "
+                                            "passes. This is the test doing its job - downgrading.",
+                           test_outcome="fails"),
+               ReviewIssue(**_DEAD_CODE)]})
+
+
+@pytest.mark.parametrize("filed", [RUN_1, RUN_2, RUN_3, RUN_4, RUN_5],
+                         ids=["run1", "run2", "run3", "run4", "run5"])
 def test_every_real_review_of_pr_148_comes_out_consistent(filed):
     final, withdrawn = postprocess_review(filed, get_runner_result=lambda: "success")
     md = format_review_as_markdown(final, withdrawn_count=len(withdrawn))
@@ -71,6 +99,8 @@ def test_every_real_review_of_pr_148_comes_out_consistent(filed):
     assert not any(i.issue_type == "functional_bug" for i in final.issues)
     assert "functional bug" not in final.summary.lower()
     assert "[functional_bug]" not in md
+    assert "Fails when" not in md
+    assert "Major" not in md, "nothing the reviewer itself withdrew or the run refuted ranks as major"
     assert any(i.description == _DEAD_CODE["description"] for i in final.issues), \
         "a real, unrelated finding survives untouched"
 
