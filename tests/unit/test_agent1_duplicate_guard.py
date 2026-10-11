@@ -31,7 +31,7 @@ def test_completed_run_is_reported_as_already_processed():
         out = a1.run("SCRUM-5")
     assert out["status"] == "already_processed"
     assert out["existing_test_cases"] == 6
-    assert out["test_cases_created"] == 0
+    assert out["test_cases_generated"] == 0 and out["test_case_keys"] == []
 
 
 def test_interrupted_run_is_reported_as_partial():

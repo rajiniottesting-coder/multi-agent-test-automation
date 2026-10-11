@@ -9,9 +9,9 @@ both unconditionally - so the refusal reached the log as
 from agents.agent1_analyst import print_summary
 
 REFUSED = {"story_id": "X-1", "status": "partial_test_cases",
-           "test_cases_created": 0, "existing_test_cases": 3}
+           "test_cases_generated": 0, "existing_test_cases": 3}
 DONE = {"story_id": "X-2", "status": "already_processed",
-        "test_cases_created": 0, "existing_test_cases": 2}
+        "test_cases_generated": 0, "existing_test_cases": 2}
 CREATED = {"story_id": "X-3", "story_summary": "A story", "status": "success",
            "test_cases_generated": 2, "test_case_keys": ["X-4", "X-5"]}
 

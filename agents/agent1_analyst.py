@@ -271,7 +271,8 @@ def run(story_id: str, dry_run: bool = False) -> dict:
             status = "partial_test_cases"
 
         return {"story_id": story_id, "status": status,
-                "test_cases_created": 0, "existing_test_cases": existing}
+                "test_cases_generated": 0, "test_case_keys": [],
+                "existing_test_cases": existing}
 
     story = jira.get_story(story_id)
     logger.info(f"Story: {story['summary']}")
