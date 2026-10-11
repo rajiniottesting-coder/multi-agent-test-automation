@@ -428,18 +428,43 @@ def run(story_id: str, dry_run: bool = False) -> dict:
 # ─────────────────────────────────────────────────────────────
 # CLI entrypoint
 # ─────────────────────────────────────────────────────────────
-def print_summary(results: list[dict]) -> None:
-    """Pretty-print a summary of all stories processed."""
+# Statuses that need a person before the story can go on. Anything else that
+# is not a failure is a normal outcome.
+_NEEDS_A_PERSON = {"partial_test_cases"}
+
+
+def print_summary(results: list[dict]) -> bool:
+    """Pretty-print every story's outcome. True when the run is clean.
+
+    Every result shape is printed, including the duplicate guard's early
+    refusals, which carry no summary and no created keys. The summary used to
+    read those keys unconditionally, so the guard's clear refusal surfaced as
+    `KeyError: 'story_summary'` and the reason was lost behind a traceback.
+    """
     print("\n" + "=" * 60)
-    print(f"✅ Agent 1 (Test Designer) finished — processed {len(results)} story(ies)")
+    print(f"Agent 1 (Test Designer) finished — {len(results)} story(ies)")
+    clean = True
     for r in results:
-        status_marker = "✅" if "failed" not in r["status"] else "❌"
-        print(f"\n{status_marker} {r['story_id']} — {r['story_summary']}")
-        print(f"   Status: {r['status']}")
-        print(f"   Test cases generated: {r['test_cases_generated']}")
-        if r["test_case_keys"]:
+        status = str(r.get("status", "unknown"))
+        if status.startswith("failed") or status in _NEEDS_A_PERSON:
+            marker, clean = "❌", False
+        else:
+            marker = "✅"
+        title = r.get("story_summary") or ""
+        print(f"\n{marker} {r.get('story_id', '?')}" + (f" — {title}" if title else ""))
+        print(f"   Status: {status}")
+        if "existing_test_cases" in r:
+            print(f"   Linked test cases already present: {r['existing_test_cases']}")
+        if status in _NEEDS_A_PERSON:
+            print("   Action: a previous run stopped part-way. Delete (or retire) the "
+                  "linked test cases, then label the story ai-ready again.")
+        elif status == "already_processed":
+            print("   Nothing to do: this story's test cases were already created.")
+        print(f"   Test cases generated: {r.get('test_cases_generated', 0)}")
+        if r.get("test_case_keys"):
             print(f"   Created Jira issues: {', '.join(r['test_case_keys'])}")
     print("=" * 60)
+    return clean
 
 
 def main():
@@ -479,11 +504,13 @@ def main():
     # Fast-fail on missing config
     validate_required_env(REQUIRED_JIRA_ENV_VARS + REQUIRED_LLM_ENV_VARS)
 
+    clean = True
     try:
         if args.story:
             logger.info(f"Manual mode: processing {args.story}")
             result = run(args.story, dry_run=args.dry_run)
-            print_summary([result])
+            if not print_summary([result]):
+                sys.exit(1)
             return
 
         # Scan mode: config-driven selection
@@ -536,10 +563,14 @@ def main():
                     "status": f"failed: {type(e).__name__}",
                 })
 
-        print_summary(results)
+        clean = print_summary(results)
 
     except Exception as e:
         logger.error(f"Agent 1 (Test Designer) failed: {type(e).__name__}: {e}", exc_info=True)
+        sys.exit(1)
+    # Red, deliberately, when a story needs a person: a stopped story that
+    # leaves the run green is a story nobody looks at.
+    if not clean:
         sys.exit(1)
 
 
