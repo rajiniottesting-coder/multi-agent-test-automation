@@ -58,6 +58,19 @@ class ProductsPage(BasePage):
             self.sel("view_product_links"),
         )
 
+    def search_for(self, term: str) -> None:
+        """Enter a search term and submit the search form.
+
+        Confirms it is ON the listing first: filling the search box as an
+        opening move from somewhere else does not fail fast — Playwright waits
+        the full timeout and then blames the field selector. An EMPTY term is
+        valid and intentional: submitting it does NOT run a search, it leaves
+        the full catalogue in place (see is_full_listing_shown).
+        """
+        self.require_own_page()
+        self.fill(self.sel("search_input"), term)
+        self.click(self.sel("search_button"))
+
     # ── queries ──────────────────────────────────────────────
     def is_loaded(self, timeout_ms: Optional[int] = None) -> bool:
         """True once the All Products heading is on screen. WAITS for it.
@@ -65,6 +78,26 @@ class ProductsPage(BasePage):
         The All Products heading is the state-independent readiness signal on
         the unsearched listing — it is present whenever this page is simply
         navigated to, before any search replaces it.
+        """
+        return self.is_showing(self.sel("all_products_heading"), timeout_ms=timeout_ms)
+
+    def is_search_results_shown(self, timeout_ms: Optional[int] = None) -> bool:
+        """True once the Searched Products heading is on screen. WAITS for it.
+
+        This heading is the only reliable signal that a search EXECUTED: a
+        result count alone cannot tell 'returned one product' from 'never ran
+        and still shows the full catalogue'. Call this only where a run search
+        is expected — it times out instead of returning False for an empty
+        query, which leaves the All Products heading in place.
+        """
+        return self.is_showing(self.sel("searched_products_heading"), timeout_ms=timeout_ms)
+
+    def is_full_listing_shown(self, timeout_ms: Optional[int] = None) -> bool:
+        """True once the unsearched All Products heading is on screen. WAITS.
+
+        An empty search does NOT run a search: the form submit leaves this
+        heading in place and the full catalogue displayed. Use this (never the
+        Searched Products reader) for an empty-query scenario.
         """
         return self.is_showing(self.sel("all_products_heading"), timeout_ms=timeout_ms)
 
@@ -76,3 +109,46 @@ class ProductsPage(BasePage):
         for containment checks ('is this product listed?'), not for counting.
         """
         return self.get_all_texts(self.sel("product_names"))
+
+    def has_product(self, product_name: str) -> bool:
+        """True if a product whose name CONTAINS `product_name` is listed.
+
+        Containment, not equality: the name family is read as text, and a card
+        name may carry extra words. Use this to assert a known product is
+        present in the results.
+        """
+        return any(product_name in name for name in self.product_names())
+
+    def all_products_match(self, term: str) -> bool:
+        """True if EVERY listed product name contains `term`.
+
+        For asserting a search returned only matching products. Returns False
+        if any card name does not contain the term. On an empty result set
+        there are no names, so this returns True — pair it with has_product to
+        prove the result set is non-empty first.
+        """
+        return all(term in name for name in self.product_names())
+
+    def has_product_cards(self) -> bool:
+        """True once AT LEAST ONE product card is rendered. WAITS for one.
+
+        For the positive case where cards are expected. Do NOT negate this to
+        assert emptiness — it would time out waiting for a card that never
+        appears. Use has_no_product_cards for the empty case.
+        """
+        self.wait_for_any(self.sel("product_cards"))
+        return True
+
+    def has_no_product_cards(self) -> bool:
+        """True once NO product cards are rendered. WAITS for them to clear.
+
+        A search matching nothing renders no result cards and no empty-state
+        message, so absence of cards IS the signal. This WAITS for the family
+        to empty with wait_for_any(present=False), which retries until the
+        timeout and logs the reason it gives up — rather than snapshotting the
+        count and racing the search response. Call this only where zero cards
+        is the expected answer; for a term that matches products it would time
+        out instead of returning False.
+        """
+        self.wait_for_any(self.sel("product_cards"), present=False)
+        return True
