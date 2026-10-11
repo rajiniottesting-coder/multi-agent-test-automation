@@ -494,6 +494,17 @@ class JiraClient:
             logger.warning(f"Could not fetch comments for {issue_key}: {e}")
             return []
 
+    def render_markdown(self, markdown: str) -> str:
+        """Markdown -> the markup this client's comments render (Jira wiki).
+
+        Optional tracker capability: a caller that authors Markdown asks the
+        tracker to render it, and a tracker without the method receives the
+        Markdown unchanged. Bodies other callers already write in wiki markup
+        never pass through here.
+        """
+        from integrations.jira_markup import markdown_to_jira_wiki
+        return markdown_to_jira_wiki(markdown)
+
     def add_comment(self, issue_key: str, body: str) -> str:
         """Post a comment on a Jira issue and return the comment URL.
 
