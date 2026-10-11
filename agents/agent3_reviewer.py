@@ -301,21 +301,7 @@ def derive_verdict(report: ReviewReport) -> ReviewReport:
     not capture - worth a human glance even though it no longer blocks.
     """
     report = _require_failure_for_blocking(report)
-    blocking = [
-        issue for issue in report.issues
-        if (issue.severity in _BLOCKING_SEVERITIES
-            or issue.issue_type in _ALWAYS_BLOCKING_TYPES
-            or (issue.issue_type in _BLOCKING_ISSUE_TYPES
-                and issue.severity in _TYPE_BLOCKS_AT
-                and _names_a_failure(issue)))
-        # A finding whose own fix opens with "no change required" has
-        # withdrawn itself. Two exemptions: a security finding that shrugs is
-        # still worth one look, and an explicit `blocking` severity is a
-        # deliberate call that a waiver phrase does not get to overturn.
-        and not (issue.issue_type not in _ALWAYS_BLOCKING_TYPES
-                 and issue.severity not in _BLOCKING_SEVERITIES
-                 and _waives_itself(issue))
-    ]
+    blocking = [issue for issue in report.issues if _blocks(issue)]
     if not blocking:
         if report.overall_verdict == "request_changes":
             logger.warning(
@@ -344,6 +330,109 @@ def derive_verdict(report: ReviewReport) -> ReviewReport:
         ", ".join(sorted({f"{i.severity}/{i.issue_type}" for i in blocking})),
     )
     return report.model_copy(update={"overall_verdict": "request_changes"})
+
+
+# A PREDICTED FAILURE IS REFUTED BY A RUN.
+#
+# "This test will fail" is a prediction, and this repository runs the tests:
+# Agent 4 executes every scenario on the same commit, in parallel with this
+# review. PR #148 (SCRUM-111) was blocked by a major/functional_bug whose
+# failure_scenario read "if the site renders two separate rows ... the
+# assertion fails" and whose fix read "No code change needed if behaviour is
+# confirmed". The runner had already confirmed it: all four scenarios passed
+# on that commit. The review was blocking on a question the pipeline had
+# answered.
+#
+# So when the ONLY thing stopping the pull request is a prediction that a
+# test fails, the review waits for the runner on this exact commit. Green
+# refutes the prediction: the finding is lowered to major and annotated, not
+# dropped. Red, absent or still running at the deadline: the block stands -
+# no evidence is never treated as good evidence. A finding that says the test
+# PASSES WRONGLY is never refuted by a pass, and security never waits.
+RUNNER_WORKFLOW = "agent4_runner.yml"
+RUNNER_WAIT_SECONDS = 480
+RUNNER_POLL_SECONDS = 20
+_REFUTED_NOTE = ("Refuted by the runner: this commit's scenarios were executed "
+                 "and passed, so the predicted failure did not happen.")
+
+
+def _refutable_by_a_green_run(issue) -> bool:
+    return (issue.issue_type == "functional_bug"
+            and getattr(issue, "test_outcome", None) != "passes_wrongly")
+
+
+def _blocks(issue) -> bool:
+    """The one definition of a finding that stops a pull request."""
+    return ((issue.severity in _BLOCKING_SEVERITIES
+             or issue.issue_type in _ALWAYS_BLOCKING_TYPES
+             or (issue.issue_type in _BLOCKING_ISSUE_TYPES
+                 and issue.severity in _TYPE_BLOCKS_AT
+                 and _names_a_failure(issue)))
+            # A finding whose own fix opens with "no change required" has
+            # withdrawn itself. Two exemptions: a security finding that shrugs
+            # is still worth one look, and an explicit `blocking` severity is a
+            # deliberate call that a waiver phrase does not get to overturn.
+            and not (issue.issue_type not in _ALWAYS_BLOCKING_TYPES
+                     and issue.severity not in _BLOCKING_SEVERITIES
+                     and _waives_itself(issue)))
+
+
+def runner_result_for_head(host, pr_number: int, head_branch: str,
+                           wait_seconds: int = RUNNER_WAIT_SECONDS,
+                           poll_seconds: int = RUNNER_POLL_SECONDS,
+                           sleep=None, clock=None) -> str | None:
+    """'success' / 'failure' / ... for the runner on this PR's head commit, or
+    None when it has not concluded by the deadline or cannot be read."""
+    import time
+    sleep = sleep or time.sleep
+    clock = clock or time.monotonic
+    head_sha = next((p.get("head_sha") for p in host.list_open_prs()
+                     if p.get("number") == pr_number), None)
+    if not head_sha:
+        return None
+    deadline = clock() + wait_seconds
+    while True:
+        runs = [r for r in host.get_workflow_runs(RUNNER_WORKFLOW, head_branch)
+                if r.get("head_sha") == head_sha]
+        done = [r for r in runs if r.get("status") == "completed"]
+        if done:
+            return done[0].get("conclusion")
+        if clock() >= deadline:
+            return None
+        sleep(poll_seconds)
+
+
+def apply_runner_evidence(report: ReviewReport, runner_result) -> ReviewReport:
+    """Lower blocking functional_bug predictions refuted by a green run.
+
+    Acts only when every blocking finding is such a prediction - anything else
+    blocking means the pull request stops regardless, and the run need not be
+    consulted. Returns the report unchanged unless the runner passed.
+    """
+    blocking = [i for i in report.issues if _blocks(i)]
+    if not blocking or not all(_refutable_by_a_green_run(i) for i in blocking):
+        return report
+    if runner_result != "success":
+        logger.info("Runner result for this commit: %s - predicted failure(s) "
+                    "keep blocking.", runner_result or "not concluded")
+        return report
+    issues = []
+    for issue in report.issues:
+        if issue in blocking:
+            issue = issue.model_copy(update={
+                "severity": "major" if issue.severity == "blocking" else issue.severity,
+                "issue_type": "best_practice",
+                "description": f"{issue.description} ({_REFUTED_NOTE})",
+            })
+        issues.append(issue)
+    logger.warning("%d predicted test failure(s) REFUTED: the runner passed on "
+                   "this commit. Lowered, not dropped.", len(blocking))
+    return report.model_copy(update={"issues": issues, "overall_verdict": "comment"})
+
+
+def _needs_runner_evidence(report: ReviewReport) -> bool:
+    blocking = [i for i in report.issues if _blocks(i)]
+    return bool(blocking) and all(_refutable_by_a_green_run(i) for i in blocking)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -515,6 +604,11 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
     # 3b. POST-PROCESS: dedupe and cap (handles LLM repetition collapse)
     report = dedupe_and_cap_issues(report, max_issues=MAX_ISSUES)
     report = derive_verdict(report)
+    if _needs_runner_evidence(report) and not dry_run:
+        logger.info("Only predicted test failures block this review - waiting "
+                    "up to %ds for the runner on this commit.", RUNNER_WAIT_SECONDS)
+        report = apply_runner_evidence(
+            report, runner_result_for_head(gh, pr_number, pr_metadata["head_branch"]))
 
     logger.info(f"Review verdict: {report.overall_verdict}")
     logger.info(f"Issues found: {len(report.issues)}")
