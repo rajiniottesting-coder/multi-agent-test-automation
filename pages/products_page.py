@@ -152,3 +152,26 @@ class ProductsPage(BasePage):
         """
         self.wait_for_any(self.sel("product_cards"), present=False)
         return True
+
+    def search_ran(self, timeout_ms: Optional[int] = None) -> bool:
+        """True once a search has actually EXECUTED. WAITS for the signal.
+
+        Reads the Searched Products heading, which replaces the All Products
+        heading only when a non-empty term was entered and submitted. This is
+        the reliable 'the search ran' signal the SCRUM-224 / SCRUM-226 steps
+        assert on — a card count alone cannot distinguish a one-result search
+        from a search that never ran. Call this only where a run is expected;
+        it times out rather than returning False for an empty query.
+        """
+        return self.is_search_results_shown(timeout_ms=timeout_ms)
+
+    def has_product_in_results(self, product_name: str) -> bool:
+        """True once the named product is present in the results. WAITS.
+
+        Waits for at least one card to render, then checks containment against
+        the name family. For the positive search scenario where the product IS
+        expected — do not use this to assert a product is absent, as it waits
+        for cards that an empty result never produces.
+        """
+        self.wait_for_any(self.sel("product_cards"))
+        return self.has_product(product_name)
