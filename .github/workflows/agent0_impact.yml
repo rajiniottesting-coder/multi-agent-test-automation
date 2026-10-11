@@ -78,6 +78,11 @@ jobs:
     if: needs.gate.outputs.enabled == 'true' && (github.event_name == 'workflow_dispatch' || github.event.schedule == '15 5 * * 1-5')
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Job permissions replace the workflow's, so contents is restated.
+    # actions: read lets the job fetch the nightly drift report artifact.
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -89,6 +94,22 @@ jobs:
       - run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      - name: Fetch the latest nightly drift report
+        # Optional input for the uncovered-element hint. Missing, expired or
+        # unreachable just means no hint - the scan never fails on it. Agent 0
+        # itself refuses a report older than uncovered_max_age_hours.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p reports
+          id=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=inventory-drift-report&per_page=10" \
+                 --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .id // empty')
+          if [ -n "$id" ]; then
+            gh api "repos/${{ github.repository }}/actions/artifacts/$id/zip" > reports/drift.zip
+            unzip -o -q reports/drift.zip -d reports
+            rm -f reports/drift.zip
+          fi
       - name: Run Agent 0
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -106,10 +127,12 @@ jobs:
         run: |
           DRY=""
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then DRY="--dry-run"; fi
+          SNAP=""
+          if [ -f reports/drift.json ]; then SNAP="--uncovered-snapshot reports/drift.json"; fi
           if [ -n "${{ github.event.inputs.story_key }}" ]; then
-            python -m agents.agent0_impact --story "${{ github.event.inputs.story_key }}" $DRY
+            python -m agents.agent0_impact --story "${{ github.event.inputs.story_key }}" $DRY $SNAP
           else
-            python -m agents.agent0_impact --scan
+            python -m agents.agent0_impact --scan $SNAP
           fi
 
   reconcile:
@@ -214,7 +237,19 @@ jobs:
           GITHUB_REPO: ${{ vars.GH_REPO }}
         run: |
           mkdir -p reports
-          python -m scripts.check_inventory_staleness --json reports/drift.json || true
+          # --compare adds the elements no inventory selector covers. Report
+          # only: it never changes drift, and the drift analysis ignores it.
+          python -m scripts.check_inventory_staleness --compare --json reports/drift.json || true
           if [ -f reports/drift.json ]; then
             python -m agents.agent0_impact --drift-report reports/drift.json
           fi
+      - name: Keep the report for the next scan
+        # The weekday scan reads the newest of these for the uncovered-element
+        # hint. Short retention: Agent 0 refuses a report older than 48h anyway.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-drift-report
+          path: reports/drift.json
+          retention-days: 7
+          if-no-files-found: ignore

@@ -337,6 +337,9 @@ agents:
     # review-tier candidate. Review only, never must-update. Off until the
     # backtest with and without it has been compared.
     uncovered_hint: false
+    # The snapshot comes from the nightly inventory check. One older than this
+    # is ignored (no hint), because the inventory may have caught up since.
+    uncovered_max_age_hours: 48
     selection:
       issue_type: "Story"
       allowed_statuses: ["To Do", "In Progress", "In Review"]

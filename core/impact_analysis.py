@@ -23,6 +23,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -212,6 +213,42 @@ def uncovered_hits(story_text: str, uncovered: dict) -> list:
             if all(w in tokens for w in words):
                 hits.append((page, element))
     return hits
+
+
+def load_uncovered_snapshot(path: str | Path | None, max_age_hours: float,
+                            now: datetime | None = None) -> tuple[dict, str]:
+    """(uncovered, why_not) from a check_inventory_staleness --compare report.
+
+    Returns ({page: {element: selector}}, "") when the report is usable, and
+    ({}, reason) otherwise. Every failure means "no hint", never an error:
+    the hint is optional evidence, and a wrong snapshot is worse than none.
+
+    Refused: no path, an unreadable file, a report made without --compare (no
+    `new_elements`), no or unparseable `checked_at`, a report older than
+    `max_age_hours`, or one dated in the future (a clock problem; trust nothing).
+    """
+    if not path:
+        return {}, "no snapshot given"
+    try:
+        report = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return {}, f"snapshot unreadable ({type(exc).__name__})"
+    if not isinstance(report, dict) or "new_elements" not in report:
+        return {}, "snapshot was made without --compare"
+    try:
+        taken = datetime.fromisoformat(str(report["checked_at"]))
+    except (KeyError, ValueError):
+        return {}, "snapshot has no valid checked_at"
+    if taken.tzinfo is None:
+        taken = taken.replace(tzinfo=timezone.utc)
+    now = now or datetime.now(timezone.utc)
+    if taken > now + timedelta(hours=1):
+        return {}, f"snapshot is dated in the future ({taken.isoformat()})"
+    age = now - taken
+    if age > timedelta(hours=max_age_hours):
+        return {}, f"snapshot is {age.total_seconds() / 3600:.0f}h old (limit {max_age_hours}h)"
+    pages = report.get("new_elements") or {}
+    return {p: dict(els) for p, els in pages.items() if isinstance(els, dict)}, ""
 
 
 def with_uncovered_hint(seeds: Seeds, story_text: str, uncovered: dict) -> tuple:

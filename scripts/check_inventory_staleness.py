@@ -44,6 +44,7 @@ import argparse
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -208,6 +209,9 @@ def main() -> int:
 
     report = introspect.summarize_drift(per_page, unreachable)
     report["pages_missing_notes"] = introspect.pages_missing_notes(inventory)
+    # When the live application was looked at. A reader of this file later
+    # (Agent 0's uncovered-element hint) uses it to refuse a stale report.
+    report["checked_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     if args.compare:
         # Informational: deliberately NOT folded into summarize_drift, so an
         # uncovered element can never fail --fail-on-drift.

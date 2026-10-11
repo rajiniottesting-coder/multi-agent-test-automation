@@ -157,15 +157,20 @@ def _already_analysed(tracker, story_key: str, chash: str, settings: dict) -> bo
 
 
 def analyse_and_publish(tracker, story_key: str, llm, settings: dict, root: Path,
-                        host=None, dry_run: bool = False) -> dict:
+                        host=None, dry_run: bool = False, uncovered: dict | None = None) -> dict:
     """The requirement trigger, stage 0 first: an unchanged story costs no
-    model call. Its impact-check label is consumed either way."""
+    model call. Its impact-check label is consumed either way.
+
+    `uncovered` (the nightly uncovered-element snapshot) feeds the optional
+    hint. It is not part of the stage-0 hash: a new snapshot alone does not
+    re-analyse a story, because that would cost model calls every night."""
     story = tracker.get_story(story_key)
     if _already_analysed(tracker, story_key, requirement_hash(story), settings):
         if not dry_run:
             tracker.remove_label(story_key, settings["labels"]["check"])
         return {"story": story_key, "action": "unchanged"}
-    report = analyse_requirement(tracker, story_key, llm, settings, root, host)
+    report = analyse_requirement(tracker, story_key, llm, settings, root, host,
+                                 uncovered=uncovered)
     return publish(tracker, story_key, report, settings, dry_run=dry_run)
 
 
@@ -426,7 +431,8 @@ def record_outcome(tracker, story_key: str, settings: dict, changed, failed,
     return result
 
 
-def scan(tracker, host, llm, settings: dict | None = None, root: Path | None = None) -> list:
+def scan(tracker, host, llm, settings: dict | None = None, root: Path | None = None,
+         uncovered: dict | None = None) -> list:
     from config.paths import PROJECT_ROOT
     settings = settings or impact_settings()
     root = Path(root or PROJECT_ROOT)
@@ -436,7 +442,8 @@ def scan(tracker, host, llm, settings: dict | None = None, root: Path | None = N
     results = []
     for s in tracker.find_stories_to_process(settings["selection"], max_results=10):
         try:
-            results.append(analyse_and_publish(tracker, s["key"], llm, settings, root, host))
+            results.append(analyse_and_publish(tracker, s["key"], llm, settings, root, host,
+                                               uncovered=uncovered))
         except Exception as e:                                 # noqa: BLE001
             logger.error("Agent 0 failed on %s: %s", s["key"], e, exc_info=True)
             results.append({"story": s["key"], "action": "error", "error": str(e)})
@@ -469,6 +476,9 @@ def main(argv=None) -> int:
     ap.add_argument("--head", help="--code-change: checkout of the pull request")
     ap.add_argument("--pr", type=int, help="--code-change: pull request number to comment on")
     ap.add_argument("--dry-run", action="store_true", help="print the report; write nothing")
+    ap.add_argument("--uncovered-snapshot", metavar="PATH",
+                    help="--scan / --story: a check_inventory_staleness --compare report. "
+                         "Used only when uncovered_hint is on and the report is fresh.")
     args = ap.parse_args(argv)
 
     settings = impact_settings()
@@ -480,13 +490,16 @@ def main(argv=None) -> int:
     tracker = get_tracker()
     host = get_repo_host()
 
+    uncovered = _uncovered_for(args.uncovered_snapshot, settings)
     if args.scan:
-        for r in scan(tracker, host, LLMClient(temperature=0.0), settings, PROJECT_ROOT):
+        for r in scan(tracker, host, LLMClient(temperature=0.0), settings, PROJECT_ROOT,
+                      uncovered=uncovered):
             print(r)
         return 0
     if args.story:
         print(analyse_and_publish(tracker, args.story.upper(), LLMClient(temperature=0.0),
-                                  settings, PROJECT_ROOT, host, dry_run=args.dry_run))
+                                  settings, PROJECT_ROOT, host, dry_run=args.dry_run,
+                                  uncovered=uncovered))
         return 0
     if args.code_change:
         if not (args.base and args.head):
@@ -516,6 +529,19 @@ def main(argv=None) -> int:
             [settings["labels"]["check"], settings["labels"]["drift"]])
     print(publish(tracker, story, report, settings))
     return 0
+
+
+def _uncovered_for(path: str | None, settings: dict) -> dict | None:
+    """The uncovered snapshot to pass on, or None. Read only when the hint is
+    switched on; every reason it is not used is logged, never raised."""
+    if not settings.get("uncovered_hint", False):
+        return None
+    uncovered, why_not = ia.load_uncovered_snapshot(
+        path, settings.get("uncovered_max_age_hours", 48))
+    if why_not:
+        logger.info("uncovered-element hint not used: %s", why_not)
+        return None
+    return uncovered
 
 
 def _drift_components(report: dict, root: Path) -> list:

@@ -120,3 +120,14 @@ def test_compare_skips_an_unreachable_page_and_reports_it_unreachable(run, tmp_p
     assert called == []
     assert report["unreachable_pages"] == ["home"]
     assert report["new_elements"] == {}
+
+
+def test_every_report_records_when_the_application_was_checked(run, tmp_path):
+    """Agent 0 refuses an uncovered snapshot older than its limit; that needs a
+    timestamp written by the check itself, independent of any CI system."""
+    from datetime import datetime, timezone
+    out = tmp_path / "r.json"
+    run("--compare", "--json", str(out))
+    taken = datetime.fromisoformat(json.loads(out.read_text(encoding="utf-8"))["checked_at"])
+    assert taken.tzinfo is not None
+    assert abs((datetime.now(timezone.utc) - taken).total_seconds()) < 60
