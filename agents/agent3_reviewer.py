@@ -477,7 +477,8 @@ def reconcile_findings(report: ReviewReport) -> tuple[ReviewReport, list]:
 
 
 def _signature(issues) -> list:
-    return [(i.file_path, i.line_number, i.severity, i.issue_type) for i in issues]
+    return [(i.file_path, i.line_number, i.severity, i.issue_type, i.description)
+            for i in issues]
 
 
 def finalize_summary(original: ReviewReport, final: ReviewReport,
@@ -499,22 +500,22 @@ def finalize_summary(original: ReviewReport, final: ReviewReport,
     return final.model_copy(update={"summary": summary})
 
 
-def postprocess_review(report: ReviewReport, runner_result=None) -> tuple[ReviewReport, list]:
+def postprocess_review(report: ReviewReport, get_runner_result=None) -> tuple[ReviewReport, list]:
     """Everything between the model's answer and the posted comment, in order.
 
     One function so the whole chain can be replayed on a real review: dedupe,
     reconcile findings, derive the verdict, consult the runner when only
-    predicted failures block (`runner_result` is a zero-argument callable, or
+    predicted failures block (`get_runner_result` is a zero-argument callable, or
     None to skip), then make the summary match what is left.
     """
     report = dedupe_and_cap_issues(report, max_issues=MAX_ISSUES)
     as_filed = report
     report, withdrawn = reconcile_findings(report)
     report = derive_verdict(report)
-    if _needs_runner_evidence(report) and runner_result is not None:
+    if _needs_runner_evidence(report) and get_runner_result is not None:
         logger.info("Only predicted test failures block this review - waiting "
                     "up to %ds for the runner on this commit.", RUNNER_WAIT_SECONDS)
-        report = apply_runner_evidence(report, runner_result())
+        report = apply_runner_evidence(report, get_runner_result())
     return finalize_summary(as_filed, report, len(withdrawn)), withdrawn
 
 

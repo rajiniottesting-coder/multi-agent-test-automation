@@ -64,7 +64,7 @@ RUN_3 = RUN_1.model_copy(update={
 
 @pytest.mark.parametrize("filed", [RUN_1, RUN_2, RUN_3], ids=["run1", "run2", "run3"])
 def test_every_real_review_of_pr_148_comes_out_consistent(filed):
-    final, withdrawn = postprocess_review(filed, runner_result=lambda: "success")
+    final, withdrawn = postprocess_review(filed, get_runner_result=lambda: "success")
     md = format_review_as_markdown(final, withdrawn_count=len(withdrawn))
 
     assert final.overall_verdict != "request_changes"
@@ -76,7 +76,7 @@ def test_every_real_review_of_pr_148_comes_out_consistent(filed):
 
 
 def test_a_red_run_still_blocks_the_conditional_prediction():
-    final, _ = postprocess_review(RUN_2, runner_result=lambda: "failure")
+    final, _ = postprocess_review(RUN_2, get_runner_result=lambda: "failure")
     assert final.overall_verdict == "request_changes"
 
 
@@ -88,7 +88,7 @@ def test_an_untouched_review_keeps_the_model_summary():
 
 
 def test_the_withdrawn_finding_is_footnoted_not_listed():
-    final, withdrawn = postprocess_review(RUN_3, runner_result=lambda: "success")
+    final, withdrawn = postprocess_review(RUN_3, get_runner_result=lambda: "success")
     assert len(withdrawn) == 1
     md = format_review_as_markdown(final, withdrawn_count=len(withdrawn))
     assert "1 further finding(s) were withdrawn" in md
