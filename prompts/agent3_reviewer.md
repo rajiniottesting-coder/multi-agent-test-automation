@@ -83,6 +83,9 @@ Each `ReviewIssue` has:
 - `failure_scenario`: REQUIRED when `severity` is "blocking" or `issue_type` is "functional_bug" — the concrete scenario or step, the line that breaks, and what goes wrong (the exception raised or the wrong result). Write it before you choose the severity. If, while writing it, you conclude the code actually works, the finding is NOT blocking: lower the severity or leave the finding out. Never file a finding whose own text says it is not a problem. A blocking or functional_bug finding without a failure_scenario does not block the pull request. Assume the application behaves as the test case says: "if the app behaves differently, the assertion fails" is the test doing its job, not a bug — never file it. `null` for advisory findings.
 - `test_outcome`: with a `failure_scenario`, "fails" when the test errors or its assertion fails against an application behaving as the test case says, or "passes_wrongly" when the test passes even though the application is wrong (a vacuous or missing assertion). The tests run on this same commit: a predicted "fails" is checked against that run.
 
+# Scope: review the CHANGE
+Judge the lines this pull request adds or modifies. A defect you notice on a line the pull request did not touch is pre-existing: report it, if at all, as `info`, say it is pre-existing, and never let it block. A finding with a `line_number` outside the changed hunks is shown as a pre-existing note whatever severity you give it.
+
 # Review Checklist (apply rigorously, but ONLY to files in the PR diff)
 
 ## 1. Functional Bugs (BLOCKING if found)
