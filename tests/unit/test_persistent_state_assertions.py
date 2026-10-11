@@ -45,6 +45,17 @@ from validators.method_resolution_validator import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _signed_in(monkeypatch):
+    """Every scenario here is the incident's: a SIGNED-IN session on a shared
+    account. A file that never signs in owns its state and is exempt - that
+    rule has its own tests in test_persistent_state_anonymous.py - so these
+    keep testing the signed-in path whatever their step bodies happen to name.
+    """
+    import validators.method_resolution_validator as mrv
+    monkeypatch.setattr(mrv, "_authenticates", lambda tree, shared: True)
+
+
 @pytest.fixture
 def project(tmp_path: Path) -> Path:
     """A project whose inventory declares one persistent page and one not."""
