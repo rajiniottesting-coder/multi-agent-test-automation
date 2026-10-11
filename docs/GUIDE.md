@@ -25,7 +25,7 @@ Everything you need to operate, configure, extend, and onboard new apps to this 
 ```mermaid
 flowchart TB
     Story["📋 Jira Story<br/>label: ai-ready"]
-    A1["🤖 Agent 1: Analyst"]
+    A1["🤖 Agent 1: Test Designer"]
     H1{{"🛑 Human: review<br/>label: human-approved"}}
     A2["🤖 Agent 2: Coder"]
     PR["🔀 GitHub PR"]
@@ -66,9 +66,9 @@ For more diagrams — component view, Agent 2 sequence, and the labels-as-state-
 
 ## The 5 agents in depth
 
-### Agent 1: Analyst (`agents/agent1_analyst.py`)
+### Agent 1: Test Designer (`agents/agent1_analyst.py`)
 
-**Role analogy:** Business Analyst / QA Lead.
+**Role analogy:** QA test designer / QA Lead.
 
 **What it does:**
 1. Reads a Jira story (description + acceptance criteria) — manual mode (`--story KEY`) or scan mode (`--scan` reads selection criteria from config).
@@ -874,7 +874,7 @@ For a fresh story (e.g. SCRUM-25) the lifecycle looks like this:
 | Stage | You do | Tracked automatically |
 |---|---|---|
 | 1. Create story, add `ai-ready` | manual | — |
-| 2. Agent 1 picks it up (cron) | nothing | Actions log: per-call tokens + `LLM TOKEN USAGE` / `LLM COST` summaries; posts `[LLM-USAGE] agent="Agent 1 (Analyst)" ...` comment on the story |
+| 2. Agent 1 picks it up (cron) | nothing | Actions log: per-call tokens + `LLM TOKEN USAGE` / `LLM COST` summaries; posts `[LLM-USAGE] agent="Agent 1 (Test Designer)" ...` comment on the story |
 | 3. Review TCs, add `human-approved` | manual | — |
 | 4. Agent 2 generates code, opens PR | nothing | Summary lines + `[LLM-USAGE] agent="Agent 2 (Coder, initial)"` comment |
 | 5. Agent 3 reviews the PR | nothing | Derives the story key from the `auto/<KEY>-` branch, posts `[LLM-USAGE] agent="Agent 3 (Reviewer)"` |
@@ -1347,7 +1347,7 @@ flowchart TB
     end
 
     subgraph PIPELINE["🔄 Pipeline"]
-        A1["🤖 Agent 1: Analyst<br/>agent1_analyst.py"]
+        A1["🤖 Agent 1: Test Designer<br/>agent1_analyst.py"]
         H1{{"🛑 Human Gate<br/>label: human-approved"}}
         A2["🤖 Agent 2: Coder<br/>agent2_coder.py"]
         PR["🔀 GitHub PR<br/>auto/KEY-feature-name"]

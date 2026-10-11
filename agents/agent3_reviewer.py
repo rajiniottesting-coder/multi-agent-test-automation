@@ -6,7 +6,7 @@ Role:
     rigorous checklist, and posts the review as a comment on the PR.
 
 Position in pipeline:
-    Agent 1 (Analyst) → Agent 2 (Coder) → [Agent 3: Reviewer]
+    Agent 1 (Test Designer) → Agent 2 (Coder) → [Agent 3: Reviewer]
                       → Agent 4 (Runner) → Agent 5 (Reporter)
 
 Triggering modes:

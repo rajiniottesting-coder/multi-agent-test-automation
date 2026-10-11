@@ -11,7 +11,7 @@
 1. [System overview](#1-system-overview)
 2. [Repository layout & line counts](#2-repository-layout--line-counts)
 3. [The end-to-end flow](#3-the-end-to-end-flow)
-4. [Agent 1 — Analyst (deep)](#4-agent-1--analyst-deep)
+4. [Agent 1 — Test Designer (deep)](#4-agent-1--test-designer-deep)
 5. [Agent 2 — Coder (deep, longest section)](#5-agent-2--coder-deep-longest-section)
 6. [Agent 3 — Reviewer (deep)](#6-agent-3--reviewer-deep)
 7. [Agent 4 — Runner (CI workflow only)](#7-agent-4--runner-ci-workflow-only)
@@ -112,7 +112,7 @@ config/config.yaml                     — App config + agent selection rules
               ↓
 [Cron every 15 min: Agent 1 polls Jira]
               ↓
-[Agent 1 — Analyst]
+[Agent 1 — Test Designer]
   - reads story description + ACs
   - LLM produces 3-7 Test Cases (structured JSON via Pydantic)
   - creates each as Jira sub-issue, links to parent story
@@ -165,7 +165,7 @@ config/config.yaml                     — App config + agent selection rules
 
 ---
 
-## 4. Agent 1 — Analyst (deep)
+## 4. Agent 1 — Test Designer (deep)
 
 **File:** `agents/agent1_analyst.py` (270 lines)
 **Workflow:** `.github/workflows/agent1_analyst.yml`

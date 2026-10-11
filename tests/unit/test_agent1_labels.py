@@ -1,5 +1,5 @@
 """
-Unit tests for Agent 1 (Analyst) label lifecycle.
+Unit tests for Agent 1 (Test Designer) label lifecycle.
 
 Specifically: after Agent 1 successfully creates test cases for a story,
 the trigger label(s) that brought the story into scope (e.g., `ai-ready`)

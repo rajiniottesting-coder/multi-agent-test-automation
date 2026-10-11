@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────
-# Agent 1 (Analyst) — manual + scheduled trigger
+# Agent 1 (Test Designer) — manual + scheduled trigger
 #
 # WHEN THIS RUNS:
 #   1. Manually triggered from GitHub Actions UI (workflow_dispatch)
@@ -41,7 +41,7 @@
 #   No GitHub PAT or contents:write permission is needed here.
 # ─────────────────────────────────────────────────────────────
 
-name: Agent 1 - Analyst
+name: Agent 1 - Test Designer
 
 on:
   workflow_dispatch:
