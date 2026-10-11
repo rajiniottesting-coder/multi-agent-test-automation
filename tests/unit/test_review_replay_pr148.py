@@ -1,11 +1,11 @@
-"""Replay of all three real reviews of PR #148 through the whole post-processing chain.
+"""Replay of all five real reviews of PR #148 through the whole post-processing chain.
 
 Each review was fixed in isolation and the next one failed differently. This
 runs every one of them, as the model filed it, through everything between the
 model's answer and the posted comment - so a change that fixes one and
 breaks another fails here, not on the next pull request.
 
-What a human must see for all three (Agent 4 ran green on that commit):
+What a human must see for all five (Agent 4 ran green on that commit):
   - the verdict does not block
   - no finding is still labelled a functional bug
   - the summary does not announce a functional bug the findings no longer hold

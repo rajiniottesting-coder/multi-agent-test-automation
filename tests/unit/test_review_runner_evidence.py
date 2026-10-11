@@ -13,12 +13,12 @@ from agents.agent3_reviewer import (
     runner_result_for_head,
 )
 from agents.agent3_reviewer import apply_runner_evidence as _apply
+from core.schemas import ReviewIssue, ReviewReport
 
 
 def apply_runner_evidence(report, result):
     """Evidence, then the verdict re-derived from the labels - as the chain does."""
     return align_labels_with_verdict(_apply(report, result))
-from core.schemas import ReviewIssue, ReviewReport
 
 ReviewIssue.__test__ = False
 
