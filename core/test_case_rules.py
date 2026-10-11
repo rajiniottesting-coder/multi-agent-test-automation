@@ -54,8 +54,8 @@ _SENTENCE = re.compile(r"(?<=[.!?])\s+|\n+")
 def persistent_pages(inventory: dict) -> dict[str, list[str]]:
     """{page: [words that name it in prose]} for every persistent_state page.
 
-    A page is named by its key (`view_cart` also as `view cart`) and by its URL
-    path, so "the cart" and "/view_cart" both count as mentioning it.
+    A page is named by its key (`saved_items` also as `saved items`) and by its
+    URL path, so "the saved items" and "/saved_items" both count as mentioning it.
     """
     out: dict[str, list[str]] = {}
     for name, spec in ((inventory or {}).get("pages") or {}).items():

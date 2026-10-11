@@ -17,15 +17,15 @@ from core.schemas import ReviewIssue, ReviewReport
 
 ReviewIssue.__test__ = False
 
-_DEAD_CODE = {"severity": "minor", "file_path": "pages/product_detail_page.py",
-              "issue_type": "best_practice", "description": "set_quantity() is unused.",
+_DEAD_CODE = {"severity": "minor", "file_path": "pages/record_detail_page.py",
+              "issue_type": "best_practice", "description": "an unused public reader.",
               "suggested_fix": "Remove it or use it."}
 
 # 1st review: blocking, the description retracts itself, no failure named.
 RUN_1 = ReviewReport(
     pr_number=148, overall_verdict="request_changes",
-    summary="SCRUM-215 has a blocking functional bug in the repeat add.",
-    issues=[ReviewIssue(severity="blocking", file_path="features/cart_management.feature",
+    summary="the repeat-add scenario has a blocking functional bug in the repeat add.",
+    issues=[ReviewIssue(severity="blocking", file_path="features/widget_flow.feature",
                         issue_type="functional_bug",
                         description="The second add re-opens the modal. This flow is valid. "
                                     "No blocking bug - downgrading.",
@@ -36,53 +36,53 @@ RUN_1 = ReviewReport(
 
 # 2nd review: major, a CONDITIONAL failure on app behaviour, fix asks to confirm.
 RUN_2 = RUN_1.model_copy(update={
-    "summary": "There is a genuine functional bug in SCRUM-215.",
-    "issues": [ReviewIssue(severity="major", file_path="tests/step_defs/test_cart_management.py",
+    "summary": "There is a genuine functional bug in the repeat-add scenario.",
+    "issues": [ReviewIssue(severity="major", file_path="tests/step_defs/test_widget_flow.py",
                            issue_type="functional_bug",
-                           description="Quantity 2 depends on the app merging repeat adds - "
+                           description="A count of 2 depends on the app merging repeat adds - "
                                        "acceptable, flag only for verification.",
-                           suggested_fix="Confirm the app increments quantity on a repeated "
+                           suggested_fix="Confirm the app increments the count on a repeated "
                                          "add. No code change needed if behaviour is confirmed.",
-                           failure_scenario="If the site renders two separate rows, "
-                                            "quantity_for reads 1 and the assertion fails.",
+                           failure_scenario="If the application renders two separate rows, "
+                                            "the row reader reads 1 and the assertion fails.",
                            test_outcome="fails"),
                ReviewIssue(**_DEAD_CODE)]})
 
 # 3rd review: major, no failure named, own fix says nothing is required.
 RUN_3 = RUN_1.model_copy(update={
     "overall_verdict": "comment",
-    "summary": "SCRUM-215 has a functional bug: adding the same product twice does not "
-               "increase quantity to 2.",
-    "issues": [ReviewIssue(severity="major", file_path="features/cart_management.feature",
+    "summary": "the repeat-add scenario has a functional bug: adding the same record twice does not "
+               "increase its count to 2.",
+    "issues": [ReviewIssue(severity="major", file_path="features/widget_flow.feature",
                            issue_type="functional_bug",
                            description="Relies on app-side merge; the assertion is legitimately "
                                        "the test's job.",
                            suggested_fix="No change required if the app merges duplicate "
-                                         "additions into quantity 2. Leaving as advisory."),
+                                         "additions into a count of 2. Leaving as advisory."),
                ReviewIssue(**_DEAD_CODE)]})
 
 
 # 4th review: the re-run that used the stale reviewer from the story branch.
 RUN_4 = RUN_1.model_copy(update={
-    "summary": "There is also a functional bug in the SCRUM-215 step wiring.",
-    "issues": [ReviewIssue(severity="major", file_path="features/cart_management.feature",
+    "summary": "There is also a functional bug in the the repeat-add scenario step wiring.",
+    "issues": [ReviewIssue(severity="major", file_path="features/widget_flow.feature",
                            issue_type="functional_bug",
-                           description="... so this is acceptable; however the quantity assertion "
+                           description="... so this is acceptable; however the count assertion "
                                        "of 2 depends on the app incrementing.",
-                           suggested_fix="Confirm that adding the same product twice increments "
-                                         "quantity to 2; if the app produces two rows, the "
+                           suggested_fix="Confirm that adding the same record twice increments "
+                                         "its count to 2; if the app produces two rows, the "
                                          "assertion will fail."),
                ReviewIssue(**_DEAD_CODE)]})
 
 # 5th review: the first with the current reviewer - names a failure AND waives it.
 RUN_5 = RUN_1.model_copy(update={
     "overall_verdict": "comment",
-    "summary": "SCRUM-215 relies on quantity aggregation.",
-    "issues": [ReviewIssue(severity="major", file_path="features/cart_management.feature",
+    "summary": "the repeat-add scenario relies on count aggregation.",
+    "issues": [ReviewIssue(severity="major", file_path="features/widget_flow.feature",
                            issue_type="functional_bug",
-                           description="Adds the product twice from the same detail page.",
+                           description="Adds the record twice from the same detail page.",
                            suggested_fix="No code change required if the site aggregates two "
-                                         "single adds into quantity 2. Leaving as advisory.",
+                                         "single adds into a count of 2. Leaving as advisory.",
                            failure_scenario="If the app behaves as the test case states this "
                                             "passes. This is the test doing its job - downgrading.",
                            test_outcome="fails"),

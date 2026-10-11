@@ -105,8 +105,8 @@ def build_repo(dest: Path) -> Path:
     objects, and the framework's base page) are copied - never whatever stories
     have merged since. Copying the whole features/ and pages/ folders coupled
     every sandbox test to the pipeline's own output: the first story merged
-    (SCRUM-111, cart_add_remove.feature) arrived without its step definitions,
-    which are not copied here, and failed the framework's unit tests on its
+    (SCRUM-111) arrived without its step definitions, which are not copied here,
+    and failed the framework's unit tests on its
     own PR with "no step definition" gaps and a changed scenario count.
     """
     from agents.agent2_coder import format_marker
