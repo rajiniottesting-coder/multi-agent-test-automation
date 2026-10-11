@@ -658,5 +658,11 @@ jobs:
           # need for the artifact-passing workaround we used in the
           # workflow_run version. Real PR event context is available here.
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          # Agent 5 reads the PR's changed files to scope the report to the
+          # story's own tests, and the impact-results step reads the repo.
+          # Without these the lookup failed silently ("GITHUB_TOKEN and
+          # GITHUB_REPO must be set") and every story was reported unscoped.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ vars.GH_REPO || github.repository }}
         run: |
           python -m agents.agent5_reporter --reports-dir reports/

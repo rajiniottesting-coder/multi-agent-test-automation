@@ -202,6 +202,9 @@ def gather_ci_context(report: RunReport, cli_pr: int | None = None) -> RunReport
                 pr_number = int(env_pr)
             except ValueError:
                 pass
+    if pr_number is None:
+        # Keep what the report already knows rather than erase it.
+        pr_number = report.pr_number
 
     pr_url = f"https://github.com/{repo}/pull/{pr_number}" if (repo and pr_number) else None
     workflow_run_url = f"https://github.com/{repo}/actions/runs/{run_id}" if (repo and run_id) else None
@@ -234,7 +237,7 @@ def gather_ci_context(report: RunReport, cli_pr: int | None = None) -> RunReport
 # to omit. Determinism belongs in code.
 # ─────────────────────────────────────────────────────────────
 def build_final_comment(prose_body: str, report: RunReport,
-                        outside: list = ()) -> str:
+                        outside: list = (), unscoped_total: int | None = None) -> str:
     """Assemble the final Jira comment from LLM prose + deterministic links.
 
     Args:
@@ -244,10 +247,18 @@ def build_final_comment(prose_body: str, report: RunReport,
             _failures_outside_scope). Listed by code, after the prose, with a
             one-line warning above it, so a reader cannot miss them.
 
+        unscoped_total: set when the report could NOT be narrowed to the
+            story's own tests. The comment then says so in plain words, so a
+            whole-session count is never read as the story's own.
+
     Returns:
         Final markdown string ready to post to Jira.
     """
     parts: list[str] = []
+    if unscoped_total is not None:
+        parts.append(f"_Scope: all {unscoped_total} tests in this run - the run "
+                     f"could not be narrowed to this story's own tests._")
+        parts.append("")
     if outside:
         parts.append(f"> ⚠ **Not green:** {len(outside)} test"
                      f"{'' if len(outside) == 1 else 's'} outside this story "
@@ -508,6 +519,13 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
     # three-scenario story was reported to Jira as "3 of 8 tests failed", with
     # a login failure it had nothing to do with listed under its own key. The
     # PR tells us which step-def files the story actually added or changed.
+    #
+    # The CI context comes FIRST: scoping needs the PR number, and the PR
+    # number is resolved here (event payload, PR_NUMBER). It used to run
+    # after scoping, so in CI the scope always saw "no PR number" and every
+    # story's comment counted the whole session - "All 12 tests passed" on a
+    # three-scenario story, and failures outside it never listed.
+    report = gather_ci_context(report, cli_pr=cli_pr)
     full_report = report
     report = _scope_to_story(full_report, cli_pr=cli_pr)
     outside = _failures_outside_scope(full_report, report)
@@ -518,8 +536,7 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
             len(outside), ", ".join(f"{r.classname}::{r.name}" for r in outside[:10]))
     verdict = _overall_verdict(report, outside)
 
-    # 2. CONTEXT: enrich with CI info
-    report = gather_ci_context(report, cli_pr=cli_pr)
+    # 2. CONTEXT: already gathered above, before scoping.
     if report.pr_number:
         logger.info(f"PR context: #{report.pr_number} ({report.pr_url})")
     if report.workflow_run_url:
@@ -543,7 +560,9 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
 
     # 3b. ASSEMBLE: Python builds the final comment from LLM prose + deterministic links.
     # This avoids the LLM rendering "View PR (None)" when fields are unavailable.
-    final_body = build_final_comment(draft.body_markdown, report, outside)
+    final_body = build_final_comment(draft.body_markdown, report, outside,
+                                     unscoped_total=(full_report.total
+                                                     if report is full_report else None))
 
     # 3c. USAGE LEDGER: log this agent's own token/cost summary, then read
     # all [LLM-USAGE] comments posted by earlier agents (1, 2, 3) and append
@@ -596,7 +615,13 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
         }
 
     jira = get_tracker()
-    comment_url = jira.add_comment(story_key, final_body)
+    # The comment is authored in Markdown. A tracker whose comments use another
+    # markup converts it (Jira's REST v2 renders wiki markup, where a Markdown
+    # table separator becomes a row of dashes and **bold** keeps its stars);
+    # a tracker without the capability gets the Markdown as written.
+    render = getattr(jira, "render_markdown", None)
+    comment_url = jira.add_comment(story_key, render(final_body) if callable(render)
+                                   else final_body)
     jira.add_label(story_key, "tests-run")  # idempotent — won't dup-add
 
     # A change story that revised tests OTHER stories own (Agent 0, stage 9):
