@@ -64,8 +64,8 @@ def test_first_story_has_no_existing_pages_and_no_context():
 
 def test_a_later_story_sees_the_earlier_page_object():
     got = _existing_page_objects_on_main(
-        FakeRepo({"pages/products_page.py": PAGE_OBJECT}), set())
-    assert [f.file_path for f in got] == ["pages/products_page.py"]
+        FakeRepo({"pages/listing_page.py": PAGE_OBJECT}), set())
+    assert [f.file_path for f in got] == ["pages/listing_page.py"]
     block = _build_sibling_page_object_context(got)
     assert "search" in block and "has_product" in block
 
@@ -74,8 +74,8 @@ def test_a_file_being_written_this_run_is_not_fetched():
     """The batch copy is newer than main's. Injecting both would give the model
     two versions of the same class to choose between."""
     got = _existing_page_objects_on_main(
-        FakeRepo({"pages/products_page.py": PAGE_OBJECT}),
-        {"pages/products_page.py"})
+        FakeRepo({"pages/listing_page.py": PAGE_OBJECT}),
+        {"pages/listing_page.py"})
     assert got == []
 
 
@@ -99,7 +99,7 @@ def test_an_unreachable_repo_yields_no_context():
 
 def test_a_failed_file_read_is_skipped():
     assert _existing_page_objects_on_main(
-        FakeRepo({"pages/products_page.py": PAGE_OBJECT}, read_raises=True), set()) == []
+        FakeRepo({"pages/listing_page.py": PAGE_OBJECT}, read_raises=True), set()) == []
 
 
 def test_an_empty_file_is_skipped():
@@ -165,9 +165,9 @@ def _run_generation(file_type):
     from agents.agent2_coder import generate_file_content
     from core.app_context import AppContext
 
-    existing = [SimpleNamespace(file_path="pages/products_page.py",
+    existing = [SimpleNamespace(file_path="pages/listing_page.py",
                                 content=PAGE_OBJECT)]
-    file_plan = SimpleNamespace(file_path="pages/cart_page.py",
+    file_plan = SimpleNamespace(file_path="pages/widget_page.py",
                                 file_type=file_type, purpose="p",
                                 is_new_file=True)
     plan = SimpleNamespace(feature_name="f", branch_name="b", pr_title="t",
@@ -234,22 +234,22 @@ _ON_BRANCH = "class ListingPage:\n    def new_name(self): pass\n"
 
 
 def test_the_story_branch_wins_over_main():
-    repo = _BranchRepo({"main": {"pages/products_page.py": _ON_MAIN},
-                        "auto/S-1-x": {"pages/products_page.py": _ON_BRANCH}})
+    repo = _BranchRepo({"main": {"pages/listing_page.py": _ON_MAIN},
+                        "auto/S-1-x": {"pages/listing_page.py": _ON_BRANCH}})
     got = _existing_page_objects_on_main(repo, set(), branch="auto/S-1-x")
     assert "new_name" in got[0].content, "a re-run must see its own earlier work"
 
 
 def test_main_is_used_when_the_branch_does_not_exist_yet():
     """The first generation for a story runs before its branch is pushed."""
-    repo = _BranchRepo({"main": {"pages/products_page.py": _ON_MAIN}},
+    repo = _BranchRepo({"main": {"pages/listing_page.py": _ON_MAIN}},
                        missing_branches={"auto/S-2-y"})
     got = _existing_page_objects_on_main(repo, set(), branch="auto/S-2-y")
     assert "old_name" in got[0].content
 
 
 def test_no_branch_argument_behaves_exactly_as_before():
-    repo = _BranchRepo({"main": {"pages/products_page.py": _ON_MAIN}})
+    repo = _BranchRepo({"main": {"pages/listing_page.py": _ON_MAIN}})
     assert "old_name" in _existing_page_objects_on_main(repo, set())[0].content
 
 

@@ -22,8 +22,8 @@ def apply_runner_evidence(report, result):
 
 ReviewIssue.__test__ = False
 
-FAILS = ("Scenario 'Adding the same product twice': if the site renders two "
-         "separate rows, quantity_for reads 1 and the assertion fails.")
+FAILS = ("Scenario 'Adding the same record twice': if the application renders "
+         "two separate rows, the row reader returns 1 and the assertion fails.")
 
 
 def _issue(severity="major", issue_type="functional_bug", outcome=None, failure=FAILS):

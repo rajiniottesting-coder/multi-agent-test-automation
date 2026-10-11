@@ -12,7 +12,7 @@ from core.schemas import ReviewIssue, ReviewReport
 ReviewIssue.__test__ = False
 
 THE_REAL_ONE = (
-    "In SCRUM-215, the first add step calls continue_shopping() ... This flow is "
+    "In the repeat-add scenario, the first add step dismisses the dialog ... This flow is "
     "valid. No blocking bug - downgrading."
 )
 

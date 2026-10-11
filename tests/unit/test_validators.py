@@ -520,7 +520,7 @@ class TestPathPolicy:
     """
 
     def test_brand_new_file_accepted(self, policy_ctx):
-        plan = _FakePlan([_FakeFP("pages/cart_page.py", True)])
+        plan = _FakePlan([_FakeFP("pages/widget_page.py", True)])
         validate_paths_against_policy(plan, policy_ctx)  # no exception
 
     def test_reserved_file_overwrite_rejected(self, policy_ctx):
@@ -543,7 +543,7 @@ class TestPathPolicy:
 # 5. Import resolution (Hotfix v3 — SCRUM-13 regression)
 # =============================================================================
 class TestImportResolution:
-    """The LLM hallucinated `from pages.product_detail_page import
+    """The LLM hallucinated `from pages.record_detail_page import
     RecordDetailPage` when no such file was planned. Validator catches
     this before tests crash at collection time.
     """

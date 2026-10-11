@@ -227,6 +227,7 @@ def test_a_brand_new_page_object_is_not_judged():
 # Names that are POM convention everywhere, not this application's property.
 _CONVENTIONAL = frozenset({
     "LoginPage", "NavPage", "HomePage", "BasePage",
+    "login_page", "nav_page", "home_page", "base_page",
     "login_as", "is_loaded", "page_url", "open_login_page", "clear_credentials",
     "data-qa", "data-test", "data-testid", "data-cy",
 })
@@ -254,7 +255,8 @@ def _coined_by_the_application() -> dict:
     def add(token, kind):
         text = str(token).strip()
         distinctive = (len(text) >= 5 and re.search(r"[_\-.#\[]", text)) or (
-            len(text) >= 6 and text[:1].isupper())
+            len(text) >= 6 and text[:1].isupper()) or (
+            len(text) >= 6 and " " in text and text[:1].isupper())
         if distinctive and text not in _CONVENTIONAL:
             coined.setdefault(text, kind)
 
@@ -289,6 +291,38 @@ def _coined_by_the_application() -> dict:
         for cls in _ast.parse(path.read_text(encoding="utf-8")).body:
             if isinstance(cls, _ast.ClassDef):
                 add(cls.name, "page-object class")
+
+    # The same application also names things through its FILES and PAGES.
+    # A framework test quoted `features/<story>.feature` and
+    # `pages/<app>_page.py` verbatim and passed, because only class names,
+    # element keys and selector fragments were harvested.
+    reserved = {str(p).replace("\\", "/") for p in (app.get("reserved_paths") or [])}
+    if inventory_path.is_file():
+        for page_key, entry in (inventory.get("pages") or {}).items():
+            add(page_key, "inventory page key")
+            if not isinstance(entry, dict):
+                continue
+            add(Path(str(entry.get("page_object_file", ""))).stem, "page-object file")
+            for segment in re.split(r"[/?#]", str(entry.get("url", ""))):
+                if "{" not in segment:
+                    add(segment, "page URL path")
+    for folder, pattern, kind in (("features", "*.feature", "feature file"),
+                                  ("tests/step_defs", "test_*.py", "step-definition file"),
+                                  ("pages", "*_page.py", "page-object file")):
+        for path in sorted((_PROJECT / folder).glob(pattern)):
+            if f"{folder}/{path.name}" in reserved or path.name == "base_page.py":
+                continue
+            add(path.stem, kind)
+            add(path.stem.removeprefix("test_"), kind)
+
+    # ...and through its DATA. The app's own context modules quote the values
+    # its scenarios use - record names, UI labels - in backticks. A multi-word
+    # value made only of words is data, not code: harvested. Paths, code and
+    # single words are not, so ordinary vocabulary is never flagged.
+    for md in sorted((_PROJECT / "prompts" / "app_context").glob("*.md")):
+        for value in re.findall(r"`([A-Z][A-Za-z0-9]*(?: [A-Za-z0-9]+)+)`",
+                                md.read_text(encoding="utf-8")):
+            add(value, "application data value")
     return coined
 
 
