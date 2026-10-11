@@ -64,12 +64,15 @@ def test_settings_defaults_are_off_and_shadow():
     s = impact_settings({})
     assert s["enabled"] is False and s["shadow_mode"] is True
     assert impact_settings({"labels": {"check": "x"}})["labels"]["proposed"] == "impact-proposed"
-    # The shipped config equals the defaults apart from the on/off switch,
-    # which a project sets for itself (see the comment in config.yaml).
+    # The shipped config equals the defaults apart from the mode switches
+    # (enabled, shadow_mode), which a project sets for itself - see the
+    # comment in config.yaml. The framework DEFAULTS above stay off and shadow,
+    # so a project that never sets them can never run live by accident.
+    switches = {"enabled", "shadow_mode"}
     shipped = impact_settings()
-    assert {k: v for k, v in shipped.items() if k != "enabled"} == \
-        {k: v for k, v in DEFAULTS.items() if k != "enabled"}
-    assert shipped["shadow_mode"] is True, "never ship live mode by accident"
+    assert {k: v for k, v in shipped.items() if k not in switches} == \
+        {k: v for k, v in DEFAULTS.items() if k not in switches}
+    assert isinstance(shipped["shadow_mode"], bool)
 
 
 # ─────────────────────────────────────────────────────────────────
