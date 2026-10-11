@@ -25,6 +25,12 @@ THE FAILURE MODES THIS CATCHES:
         legitimately inherited; this validator must accept them, not flag
         them as missing.
 
+    (D) A page object calling a method on ITSELF that nothing defines.
+        `self.require_own_page_on()` inside a generated page object, where
+        neither the class nor BasePage has it. Every `self.<name>()` call in
+        a generated page object is resolved against its own class hierarchy
+        (see _page_object_self_calls_unresolved).
+
 DESIGN PRINCIPLES (app-agnostic, reusable across projects):
 
     1. NO HARDCODED PROJECT KNOWLEDGE.
