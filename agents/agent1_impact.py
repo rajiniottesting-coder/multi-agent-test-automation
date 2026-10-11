@@ -9,9 +9,9 @@ What it does, in order:
               was chosen), the retired keys, and every existing scenario title.
   2. Draft    one structured call returning ImpactAwareDraft: a revision per
               approved key, plus new cases only for uncovered criteria.
-  3. Validate every approved key revised exactly once, no unknown key, and no
+  3. Validate every approved key revised exactly once, no unknown key, no
               new case repeating a revised case or an existing scenario (by
-              normalised title). A failing draft is sent back once with the
+              normalised title), and every case follows core.test_case_rules. A failing draft is sent back once with the
               problems listed; a second failure stops the run before any write.
               Near matches are flagged in the gate comment, not rejected.
   4. Snapshot before each revision, a comment on the test case holding its old
@@ -34,6 +34,7 @@ from agents.agent2_coder import (build_marker_index, compute_description_hash,
 from core import impact_review, impact_trace
 from core.impact_settings import impact_settings
 from core.schemas import ImpactAwareDraft
+from core.test_case_rules import draft_problems, load_persistent_pages
 from validators.gherkin_analyzer import normalize_scenario_name
 
 logger = logging.getLogger("agent1_impact")
@@ -46,9 +47,16 @@ def _norm(title: str) -> str:
     return normalize_scenario_name(plain_test_case_title(title))
 
 
-def validate_draft(draft: ImpactAwareDraft, approved_keys: set, existing_titles: set) -> tuple:
-    """(errors, near_matches). Errors reject the draft; near matches are shown."""
+def validate_draft(draft: ImpactAwareDraft, approved_keys: set, existing_titles: set,
+                   persistent: dict | None = None) -> tuple:
+    """(errors, near_matches). Errors reject the draft; near matches are shown.
+
+    Revised and new test cases also follow core.test_case_rules: each runs on
+    its own, and makes no absolute claim about a page that keeps state.
+    """
     errors, near = [], []
+    errors.extend(draft_problems([r.revised for r in draft.revisions], persistent))
+    errors.extend(draft_problems(draft.new_test_cases, persistent))
     seen: dict = {}
     for rev in draft.revisions:
         seen[rev.key] = seen.get(rev.key, 0) + 1
@@ -93,9 +101,10 @@ def _review_rows(tracker, story_id: str, settings: dict) -> dict:
 
 def _draft(llm, prompt: str, approved_keys: set, existing_titles: set) -> tuple:
     system = "You are a meticulous, expert QA test analyst."
+    persistent = load_persistent_pages()
     draft = llm.invoke_structured(system_prompt=system, user_prompt=prompt,
                                   output_schema=ImpactAwareDraft)
-    errors, near = validate_draft(draft, approved_keys, existing_titles)
+    errors, near = validate_draft(draft, approved_keys, existing_titles, persistent)
     if not errors:
         return draft, near
     logger.warning("Impact-aware draft rejected, asking once more: %s", errors)
@@ -103,7 +112,7 @@ def _draft(llm, prompt: str, approved_keys: set, existing_titles: set) -> tuple:
              + "\n".join(f"- {e}" for e in errors) + "\nReturn a corrected answer.")
     draft = llm.invoke_structured(system_prompt=system, user_prompt=retry,
                                   output_schema=ImpactAwareDraft)
-    errors, near = validate_draft(draft, approved_keys, existing_titles)
+    errors, near = validate_draft(draft, approved_keys, existing_titles, persistent)
     if errors:
         raise ValueError("impact-aware draft rejected twice; nothing was written: "
                          + "; ".join(errors))

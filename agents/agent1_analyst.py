@@ -173,6 +173,39 @@ def load_agent_config(agent_key: str = "agent1_analyst") -> dict:
 # ─────────────────────────────────────────────────────────────
 # Core agent workflow (Read → Reason → Act → Return)
 # ─────────────────────────────────────────────────────────────
+def _draft_test_cases(llm, user_prompt: str) -> TestCaseList:
+    """Draft, check against core.test_case_rules, send back once, then stop.
+
+    The draft used to go straight into the tracker, so a test case that leaned
+    on another one, or claimed an absolute count on a page that keeps state
+    between runs, reached human approval and failed later in code generation or
+    in the browser. A draft that still breaks a rule after one correction raises
+    BEFORE any test case is created, so nothing partial is written.
+    """
+    from core.test_case_rules import (
+        draft_problems,
+        load_persistent_pages,
+        rejection_note,
+    )
+
+    system ="You are a meticulous, expert QA test analyst."
+    persistent = load_persistent_pages()
+    draft: TestCaseList = llm.invoke_structured(
+        system_prompt=system, user_prompt=user_prompt, output_schema=TestCaseList)
+    problems = draft_problems(draft.test_cases, persistent)
+    if not problems:
+        return draft
+    logger.warning("Test case draft rejected, asking once more: %s", problems)
+    draft = llm.invoke_structured(
+        system_prompt=system, user_prompt=user_prompt + rejection_note(problems),
+        output_schema=TestCaseList)
+    problems = draft_problems(draft.test_cases, persistent)
+    if problems:
+        raise ValueError("test case draft rejected twice; nothing was written: "
+                         + "; ".join(problems))
+    return draft
+
+
 def run(story_id: str, dry_run: bool = False) -> dict:
     """Process a single story end-to-end."""
     logger.info(f"=== Agent 1 (Test Designer) starting for {story_id} (dry_run={dry_run}) ===")
@@ -323,11 +356,7 @@ def run(story_id: str, dry_run: bool = False) -> dict:
     # NOTE: if you raise the "3-7 test cases" target in
     # prompts/agent1_analyst.md, revisit this cap in the same commit.
     llm = LLMClient(temperature=0.3, max_output_tokens=12288)
-    test_case_list: TestCaseList = llm.invoke_structured(
-        system_prompt="You are a meticulous, expert QA test analyst.",
-        user_prompt=user_prompt,
-        output_schema=TestCaseList,
-    )
+    test_case_list = _draft_test_cases(llm, user_prompt)
 
     logger.info(f"LLM generated {len(test_case_list.test_cases)} test cases:")
     for i, tc in enumerate(test_case_list.test_cases, 1):
