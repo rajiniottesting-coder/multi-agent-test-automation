@@ -51,12 +51,16 @@ on:
 permissions:
   contents: read         # to read repo files
   pull-requests: write   # to read PR details and post comments
+  actions: read          # to read Agent 4's run on the same commit (runner evidence)
 
 jobs:
   review:
     name: AI Code Review
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # 12, not 5: when the only blocking finding is a predicted test failure,
+    # the review waits up to 8 minutes for Agent 4's result on the same commit
+    # (agents/agent3_reviewer.py, RUNNER_WAIT_SECONDS) instead of guessing.
+    timeout-minutes: 12
 
     steps:
       - name: Checkout repository
