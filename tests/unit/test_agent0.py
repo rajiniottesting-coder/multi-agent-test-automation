@@ -731,7 +731,7 @@ class TestUncoveredHint:
         assert self._rows(on)["SBX-12"]["tier"] == "review"
 
     def test_a_name_the_story_does_not_say_changes_nothing(self, world):
-        fake, jira, root, g = world
+        _fake, jira, root, g = world
         page, _ = _only_in(g, "SBX-12", "SBX-11")
         off = self._rows(a0.analyse_requirement(jira, "SBX-5", FakeModel([]), _settings(), root))
         on = self._rows(a0.analyse_requirement(
@@ -741,6 +741,7 @@ class TestUncoveredHint:
 
     def test_the_flag_is_off_in_the_shipped_config(self):
         import yaml
+
         from config.paths import CONFIG_YAML
         cfg = yaml.safe_load(CONFIG_YAML.read_text(encoding="utf-8"))
 
