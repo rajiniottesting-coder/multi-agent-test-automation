@@ -18,6 +18,7 @@ Stages (design section 7):
 from __future__ import annotations
 
 import ast
+import copy
 import hashlib
 import json
 import re
@@ -160,6 +161,70 @@ def validate_requirement_seeds(change, graph, story_components: Iterable[str]) -
             continue
         seeds.dropped.append(raw)
     return seeds
+
+
+# ─────────────────────────────────────────────────────────────
+# Uncovered-element hint (E1 follow-up, gated by agent0_impact.uncovered_hint)
+# ─────────────────────────────────────────────────────────────
+
+def _name_words(element: str) -> list:
+    """The words of an element name that say what it is ABOUT.
+
+    Trailing words the name builder adds are dropped: a dedupe number
+    (`_2`) always, and the kind (`_button`, `_input`, `_link`, ...) only when
+    at least TWO subject words remain. So coupon_code_input matches "coupon
+    code", while apply_button still needs "apply button": a single subject word
+    is usually a common verb ("apply", "save", "submit") that would fire on
+    almost any story.
+    """
+    from inventory_tools.introspect import NAME_KIND_SUFFIXES
+    words = [w for w in element.lower().split("_") if w]
+    while len(words) > 1 and words[-1].isdigit():
+        words.pop()
+    if len(words) > 2 and words[-1] in NAME_KIND_SUFFIXES:
+        words.pop()
+    return words
+
+
+def uncovered_hits(story_text: str, uncovered: dict) -> list:
+    """(page, element) pairs whose subject the story names in full.
+
+    `uncovered` is {page: {element: selector}} - live elements no inventory
+    selector covers (--compare). A story naming one ("coupon code" for
+    coupon_code_input) means a page the suite visits may change.
+
+    - Language: story text is folded exactly as element names are
+      (inventory_tools.introspect.fold_to_ascii), so "Größe wählen" in a story
+      matches grosse_wahlen_link. Scripts with no Latin form produce no ASCII
+      names and so never match - a missed hint, never a wrong one.
+    - Conservative: every subject word must appear, at least one of them four
+      letters or longer. "button" alone never matches. Plurals do not match.
+      A missed hint is safe; a false one costs reviewer time.
+    """
+    from inventory_tools.introspect import fold_to_ascii
+    tokens = set(re.findall(r"[a-z0-9]+", fold_to_ascii(story_text or "").lower()))
+    hits = []
+    for page, elements in sorted((uncovered or {}).items()):
+        for element in sorted(elements or {}):
+            words = _name_words(element)
+            if not any(len(w) >= 4 for w in words):
+                continue
+            if all(w in tokens for w in words):
+                hits.append((page, element))
+    return hits
+
+
+def with_uncovered_hint(seeds: Seeds, story_text: str, uncovered: dict) -> tuple:
+    """(seeds with the hit pages added, hits). The input seeds are not modified.
+
+    Only a PAGE seed is added, so a candidate reached this way scores PAGE_ONLY
+    (0.4): it lands in the review tier and can never be must-update on this
+    evidence alone. The weights are the existing ones; nothing new is scored.
+    """
+    hits = uncovered_hits(story_text, uncovered)
+    out = copy.deepcopy(seeds)
+    out.pages.update(page for page, _element in hits)
+    return out, hits
 
 
 # ─────────────────────────────────────────────────────────────
