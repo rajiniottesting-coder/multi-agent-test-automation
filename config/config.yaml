@@ -337,7 +337,12 @@ agents:
   # Agent 0's) labelled impact-applied. Turn shadow mode off only after the
   # backtest and two sprints of shadow reports meet the targets (section 10).
   agent0_impact:
-    enabled: false
+    # ON in shadow mode (validation Phase 2): every story labelled
+    # impact-check gets an impact report as a comment and is then released to
+    # Agent 1; no review sub-task is created and no test case is changed.
+    # Set shadow_mode: false only after the shadow reports have been scored.
+    # The framework default (core/impact_settings.DEFAULTS) stays off.
+    enabled: true
     shadow_mode: true
     # A story that names an element no selector covers (E1) adds its page as a
     # review-tier candidate. Review only, never must-update. Off until the
