@@ -767,23 +767,32 @@ agents:
     max_stories_per_run: ...
 ```
 
-### `extendable_paths`
+### `extendable_paths` and `auto_extend_page_objects`
 
-A page object listed here may be extended by Agent 2 - new methods added, none
-removed - but never created from scratch. Two rules follow:
+An extendable page object may be extended by Agent 2 - new methods added, none
+removed - but never created from scratch.
 
-- **List a file only once it is committed on `main`.** The path policy
-  (`validate_paths_against_policy`) treats every entry as an existing file and
-  rejects a plan that marks it `is_new_file=True`. Listing a file that does not
-  exist yet therefore blocks the very story that has to create it ("LLM marked
-  existing extendable file(s) as new").
-- **Add it in the same PR that first commits it.** Off the list, the file is
-  Tier-3 NEW: the next story touching that page regenerates it whole and can
-  drop a method another story relies on.
+**Every page object already committed under `pages/` is extendable
+automatically** (`app_under_test.auto_extend_page_objects: true`, the default),
+except reserved files and `base_page.py`. Agent 2 runs on a checkout of `main`,
+so "committed" means merged. Three things follow:
 
-The first candidate in this repository is `pages/cart_page.py`. When it lands
-on `main` it carries `empty_the_cart()`, the only way a scenario can own an
-empty starting state - so it belongs on this list from that PR on.
+- **Nothing needs listing after a merge.** The next story touching that page
+  extends the file. Without this, the file was Tier-3 NEW and the next story
+  regenerated it whole, which could drop a method another story relies on.
+- **A wrong "new file" flag is corrected, not fatal.** If the plan marks an
+  existing page object `is_new_file=True`, Agent 2 sets it to `False` and
+  extends the file, logging the correction.
+- **Removing a method is refused.** `validate_extended_page_objects_keep_methods`
+  compares each generated page object with its committed version. A removed
+  method, or a changed parameter list, goes back to the model through the
+  repair loop, and blocks the run if it survives. A new parameter is allowed
+  only at the end and with a default.
+
+`extendable_paths` remains for files the automatic rule cannot see. List a file
+only once it is on `main`: a listed file that does not exist yet still stops the
+story that has to create it ("LLM marked existing extendable file(s) as new").
+Set `auto_extend_page_objects: false` to go back to list-only behaviour.
 
 ### Sprint scoping
 

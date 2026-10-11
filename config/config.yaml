@@ -133,10 +133,16 @@ app_under_test:
   # automated (e.g., adding sort methods to InventoryPage when automating sort).
   # The LLM is told the rules in the Stage 1 prompt; the validator checks them.
   #
-  # Intentionally empty today: no extendable page object is committed on main
-  # yet. List a file only once it is on main - see docs/GUIDE.md,
-  # "extendable_paths", for why and for the first candidate.
+  # Every page object already committed under pages/ is extendable
+  # AUTOMATICALLY (auto_extend_page_objects below), except reserved files and
+  # base_page.py. So nothing needs listing after a story merges: the next
+  # story extends the file instead of regenerating it, and a check refuses any
+  # change that removes a method other stories call.
+  #
+  # List a file here only for something the automatic rule cannot see, and
+  # only once it is on main - see docs/GUIDE.md, "extendable_paths".
   extendable_paths: []
+  auto_extend_page_objects: true
 
 
 # ────────────────────────────────────────────────────────────

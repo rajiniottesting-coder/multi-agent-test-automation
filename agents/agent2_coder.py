@@ -55,6 +55,7 @@ from integrations.tracker import get_tracker
 from core.board_status import move_card_for_label
 from integrations.repo_host import get_repo_host
 from validators.import_validator import validate_imports_resolvable
+from validators.page_object_contract import validate_extended_page_objects_keep_methods
 from validators.method_resolution_validator import (
     validate_method_resolution,
     validate_page_object_selectors,
@@ -1342,6 +1343,15 @@ _ERROR_TYPE_RULES: list[tuple[str, str, str]] = [
         "remove the import — never invent a module.",
     ),
     (
+        "removed_method",
+        "removed method error",
+        ("- METHOD REMOVED FROM A COMMITTED PAGE OBJECT: the page object below is "
+         "already on main and other stories' step definitions call its methods. "
+         "Keep EVERY existing method with exactly its current parameters, and "
+         "only ADD the new methods this story needs. A new parameter on an "
+         "existing method must go last and have a default."),
+    ),
+    (
         "method_resolution",
         "method resolution error",
         "- UNKNOWN PAGE METHOD: you called a method that does not exist on the "
@@ -1696,9 +1706,37 @@ def build_plan(
     for fp in plan.files_to_create:
         logger.info(f"  - {fp.file_path} [{fp.file_type}] -- {fp.purpose}")
 
+    _extend_existing_page_objects(plan, ctx)
     # Defensive guard: enforce the two-tier reserved/extendable policy
     validate_paths_against_policy(plan, ctx)
     return plan
+
+
+def _extend_existing_page_objects(plan: CodePlan, ctx: AppContext,
+                                  project_root: Path | None = None) -> list[str]:
+    """Correct a plan that marks an EXISTING extendable page object as new.
+
+    The file is on disk, so "create from scratch" is wrong by definition -
+    and taken literally it would wipe methods other stories call. Stopping
+    the whole run for a wrong flag is worse than correcting it: the file is
+    then extended (its current content injected, every method kept, which
+    validate_extended_page_objects_keep_methods enforces).
+
+    A listed file that does NOT exist yet is left alone, so the policy check
+    still reports that configuration mistake. Returns the corrected paths.
+    """
+    root = project_root or PROJECT_ROOT
+    extendable = ctx.extendable_paths_normalized()
+    corrected = []
+    for fp in plan.files_to_create:
+        path = _normalize_path(fp.file_path)
+        if fp.is_new_file and path in extendable and (root / path).is_file():
+            fp.is_new_file = False
+            corrected.append(fp.file_path)
+    if corrected:
+        logger.warning("Plan marked existing page object(s) as new; extending "
+                       "them instead so no method is lost: %s", corrected)
+    return corrected
 
 
 # ---------------------------------------------------------------------------
@@ -2242,6 +2280,14 @@ def _validate_generated_files(
             f"test collection time. See logs for details."
         )
 
+    removed = validate_extended_page_objects_keep_methods(generated_files, PROJECT_ROOT)
+    if removed:
+        for err in removed:
+            logger.error(f"  - {err}")
+        raise ValueError(
+            f"Committed page object(s) lost methods for {story_id} even after "
+            f"repair: other stories' tests call them. See logs for details.")
+
     coverage_errors = validate_step_definitions_complete(generated_files)
     if coverage_errors:
         logger.error(
@@ -2555,6 +2601,10 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     errors.extend(validate_fixtures_exist(generated_files, PROJECT_ROOT))
     errors.extend(validate_imports_resolvable(generated_files, PROJECT_ROOT))
     errors.extend(validate_method_resolution(generated_files, PROJECT_ROOT))
+    # A committed page object keeps every method other stories call: a later
+    # story may only ADD to it. Routed here so the page object is regenerated
+    # with the list of methods to restore, not just refused at the gate.
+    errors.extend(validate_extended_page_objects_keep_methods(generated_files, PROJECT_ROOT))
     # Duplicate step-defs across files (SCRUM-54 lesson). repair_format=True so
     # the loop can target and regenerate the offending GENERATED file with the
     # feedback baked in, rather than only catching it at final validation.
