@@ -522,7 +522,75 @@ def finalize_summary(original: ReviewReport, final: ReviewReport,
     return final.model_copy(update={"summary": summary})
 
 
-def postprocess_review(report: ReviewReport, get_runner_result=None) -> tuple[ReviewReport, list]:
+# A PULL REQUEST IS JUDGED ON WHAT IT CHANGES.
+#
+# PR #160 changed one line of a test file. The review blocked it on a
+# different, pre-existing line of that file - a vacuous assertion that had
+# been on main for weeks - and the same code had been "ready" on the
+# previous run. Pre-existing defects are worth reporting, but blocking on
+# them makes the gate depend on which old line the model happens to read,
+# and stops a correct change for something it did not do.
+#
+# So a finding located on a line the pull request did not touch is lowered
+# to an info note marked pre-existing. "Touched" is generous: every line
+# inside a changed hunk (context included) plus a small margin, because the
+# model's line numbers drift by a few lines. A finding with no line, in a
+# file the PR added, or with no patch to read is left alone - no evidence,
+# no change. Security is never lowered.
+_LINE_MARGIN = 3
+_PRE_EXISTING = "Pre-existing - not on a line this pull request changed."
+_HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+
+
+def changed_line_map(changed_files) -> dict:
+    """{path: set of head-side line numbers inside changed hunks}, or the
+    string "all" for an added file. Files without a patch are omitted."""
+    out: dict = {}
+    for f in changed_files or []:
+        path = (f.get("filename") or "").replace("\\", "/")
+        if not path:
+            continue
+        if f.get("status") == "added":
+            out[path] = "all"
+            continue
+        patch = f.get("patch")
+        if not patch:
+            continue
+        lines: set = set()
+        for row in patch.splitlines():
+            m = _HUNK.match(row)
+            if m:
+                start, count = int(m.group(1)), int(m.group(2) or 1)
+                lines.update(range(start - _LINE_MARGIN, start + count + _LINE_MARGIN))
+        out[path] = lines
+    return out
+
+
+def lower_findings_on_unchanged_lines(report: ReviewReport, changed: dict | None) -> ReviewReport:
+    if not changed:
+        return report
+    issues, lowered = [], 0
+    for issue in report.issues:
+        where = changed.get((issue.file_path or "").replace("\\", "/"))
+        on_unchanged_line = (issue.issue_type not in _ALWAYS_BLOCKING_TYPES
+                             and issue.line_number is not None
+                             and isinstance(where, set)
+                             and issue.line_number not in where)
+        if on_unchanged_line:
+            lowered += 1
+            issue = issue.model_copy(update={
+                "severity": "info", "issue_type": "best_practice",
+                "failure_scenario": None, "test_outcome": None,
+                "description": f"{_PRE_EXISTING} {issue.description}"})
+        issues.append(issue)
+    if lowered:
+        logger.info("%d finding(s) on lines this PR did not change were lowered "
+                    "to pre-existing notes.", lowered)
+    return report.model_copy(update={"issues": issues})
+
+
+def postprocess_review(report: ReviewReport, get_runner_result=None,
+                       changed_lines: dict | None = None) -> tuple[ReviewReport, list]:
     """Everything between the model's answer and the posted comment, in order.
 
     One function so the whole chain can be replayed on a real review: dedupe,
@@ -533,6 +601,7 @@ def postprocess_review(report: ReviewReport, get_runner_result=None) -> tuple[Re
     report = dedupe_and_cap_issues(report, max_issues=MAX_ISSUES)
     as_filed = report
     report, withdrawn = reconcile_findings(report)
+    report = lower_findings_on_unchanged_lines(report, changed_lines)
     report = derive_verdict(report)
     if _needs_runner_evidence(report) and get_runner_result is not None:
         logger.info("Only predicted test failures block this review - waiting "
@@ -739,7 +808,8 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
     report, withdrawn = postprocess_review(
         report,
         None if dry_run else
-        (lambda: runner_result_for_head(gh, pr_number, pr_metadata["head_branch"])))
+        (lambda: runner_result_for_head(gh, pr_number, pr_metadata["head_branch"])),
+        changed_lines=changed_line_map(changed_files))
 
     logger.info(f"Review verdict: {report.overall_verdict}")
     logger.info(f"Issues found: {len(report.issues)}")
