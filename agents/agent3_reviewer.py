@@ -435,6 +435,89 @@ def _needs_runner_evidence(report: ReviewReport) -> bool:
     return bool(blocking) and all(_refutable_by_a_green_run(i) for i in blocking)
 
 
+# THE REPORT MUST SAY ONE THING.
+#
+# The gate fixes made the VERDICT follow the findings, but the comment a human
+# reads kept contradicting itself. The final review of PR #148 (SCRUM-111)
+# was advisory - correct - yet its summary still announced "SCRUM-215 has a
+# functional bug", and it listed a major/functional_bug whose own fix read
+# "No change required ... Leaving as advisory." A reader trusts the summary
+# and the label, not the fine print, so the gate was right and the page was
+# wrong.
+#
+# So findings are reconciled before anything is rendered:
+#   - a finding whose own fix asks for nothing is WITHDRAWN: not listed,
+#     counted in a footnote, logged in full
+#   - a functional_bug that names no failure is not a functional bug: it is
+#     shown as an unverified info note
+# and when that, or any later step, changed what the model filed, the model's
+# summary describes findings that no longer exist and is replaced with one
+# built from the final list. Security findings are never touched.
+def reconcile_findings(report: ReviewReport) -> tuple[ReviewReport, list]:
+    """(report with substantiated findings only, withdrawn findings)."""
+    kept, withdrawn = [], []
+    for issue in report.issues:
+        if issue.issue_type in _ALWAYS_BLOCKING_TYPES:
+            kept.append(issue)
+            continue
+        if _waives_itself(issue) and not _names_a_failure(issue):
+            withdrawn.append(issue)
+            continue
+        if issue.issue_type == "functional_bug" and not _names_a_failure(issue):
+            issue = issue.model_copy(update={
+                "issue_type": "best_practice", "severity": "info",
+                "description": f"Unverified - no failing scenario was named. {issue.description}",
+            })
+        kept.append(issue)
+    if withdrawn:
+        logger.info("%d finding(s) WITHDRAWN - their own suggested fix asks for "
+                    "no change: %s", len(withdrawn),
+                    "; ".join(f"{i.file_path}: {(i.description or '')[:120]}" for i in withdrawn))
+    return report.model_copy(update={"issues": kept}), withdrawn
+
+
+def _signature(issues) -> list:
+    return [(i.file_path, i.line_number, i.severity, i.issue_type) for i in issues]
+
+
+def finalize_summary(original: ReviewReport, final: ReviewReport,
+                     withdrawn_count: int = 0) -> ReviewReport:
+    """Keep the model's summary only if the findings it describes survived."""
+    if _signature(original.issues) == _signature(final.issues) and not withdrawn_count:
+        return final
+    counts = {}
+    for issue in final.issues:
+        counts[issue.severity] = counts.get(issue.severity, 0) + 1
+    listed = ", ".join(f"{counts[k]} {k}" for k in ("blocking", "major", "minor", "info")
+                       if counts.get(k)) or "none"
+    stops = ("Nothing here blocks this pull request."
+             if final.overall_verdict != "request_changes"
+             else "The blocking finding(s) below must be fixed before merge.")
+    summary = (f"Findings after verification: {listed}. {stops} Findings the reviewer "
+               f"filed without a concrete failure, or withdrew in its own fix, were "
+               f"lowered or left out, so the reviewer's original summary was replaced.")
+    return final.model_copy(update={"summary": summary})
+
+
+def postprocess_review(report: ReviewReport, runner_result=None) -> tuple[ReviewReport, list]:
+    """Everything between the model's answer and the posted comment, in order.
+
+    One function so the whole chain can be replayed on a real review: dedupe,
+    reconcile findings, derive the verdict, consult the runner when only
+    predicted failures block (`runner_result` is a zero-argument callable, or
+    None to skip), then make the summary match what is left.
+    """
+    report = dedupe_and_cap_issues(report, max_issues=MAX_ISSUES)
+    as_filed = report
+    report, withdrawn = reconcile_findings(report)
+    report = derive_verdict(report)
+    if _needs_runner_evidence(report) and runner_result is not None:
+        logger.info("Only predicted test failures block this review - waiting "
+                    "up to %ds for the runner on this commit.", RUNNER_WAIT_SECONDS)
+        report = apply_runner_evidence(report, runner_result())
+    return finalize_summary(as_filed, report, len(withdrawn)), withdrawn
+
+
 # ─────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────
@@ -464,7 +547,7 @@ def format_changed_files_for_prompt(files: list[dict]) -> str:
 # ─────────────────────────────────────────────────────────────
 # Markdown rendering for the PR comment
 # ─────────────────────────────────────────────────────────────
-def format_review_as_markdown(report: ReviewReport) -> str:
+def format_review_as_markdown(report: ReviewReport, withdrawn_count: int = 0) -> str:
     """Convert a ReviewReport into a Markdown PR comment."""
     verdict_emoji = {
         "approve": "✅",
@@ -513,6 +596,11 @@ def format_review_as_markdown(report: ReviewReport) -> str:
                 md.append("")
     else:
         md.append("### No issues found 🎉")
+        md.append("")
+    if withdrawn_count:
+        md.append(f"_{withdrawn_count} further finding(s) were withdrawn by the "
+                  f"reviewer's own suggested fix (no change requested) and are "
+                  f"listed only in the workflow log._")
         md.append("")
 
     md.append("### Compliance Checklist")
@@ -602,13 +690,10 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
     )
 
     # 3b. POST-PROCESS: dedupe and cap (handles LLM repetition collapse)
-    report = dedupe_and_cap_issues(report, max_issues=MAX_ISSUES)
-    report = derive_verdict(report)
-    if _needs_runner_evidence(report) and not dry_run:
-        logger.info("Only predicted test failures block this review - waiting "
-                    "up to %ds for the runner on this commit.", RUNNER_WAIT_SECONDS)
-        report = apply_runner_evidence(
-            report, runner_result_for_head(gh, pr_number, pr_metadata["head_branch"]))
+    report, withdrawn = postprocess_review(
+        report,
+        None if dry_run else
+        (lambda: runner_result_for_head(gh, pr_number, pr_metadata["head_branch"])))
 
     logger.info(f"Review verdict: {report.overall_verdict}")
     logger.info(f"Issues found: {len(report.issues)}")
@@ -616,7 +701,7 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
         logger.info(f"  - [{issue.severity}/{issue.issue_type}] {issue.file_path}: {issue.description}")
 
     # 4. FORMAT
-    markdown = format_review_as_markdown(report)
+    markdown = format_review_as_markdown(report, withdrawn_count=len(withdrawn))
 
     # 5. ACT
     if dry_run:
