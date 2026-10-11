@@ -176,7 +176,7 @@ When you produce the `CodePlan`:
 4. For all remaining test cases, group them into ONE NEW feature file with a NEW name (TIER 3). The feature MUST contain exactly that count of scenarios — one per test case.
 5. The new feature name MUST NOT collide with any RESERVED path. Use a specific name (snake_case) that names ONLY what the test cases cover. Pick a name that matches the test cases' actual scope — do not generalize. If the test cases all concern a single user action, name the feature after that action; do not roll it up into a broader category.
 6. If your tests need new methods on an EXTENDABLE page object (e.g., adding `select_sort_option()` to InventoryPage to test sort), include that page object in `files_to_create` with `is_new_file: false`. The system will give you the existing content in Stage 2 so you can preserve it.
-7. If your tests need a brand-new page object that doesn't exist anywhere yet (e.g., `pages/cart_page.py` for a new cart feature), include it with `is_new_file: true` (TIER 3).
+7. If your tests need a brand-new page object that doesn't exist anywhere yet (e.g., `pages/widget_page.py` for a new widget feature), include it with `is_new_file: true` (TIER 3).
 
 # Reminder
 Return ONLY the plan. NO actual code. Just metadata about what files to create or extend. NEVER plan to modify the RESERVED paths. EXTENDABLE paths may be modified with `is_new_file: false`.

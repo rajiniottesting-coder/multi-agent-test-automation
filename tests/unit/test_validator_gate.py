@@ -427,7 +427,7 @@ def test_detection_pattern_is_anchored_and_exact():
 
     Two properties still matter. The pattern must be anchored at ^, or a
     directory merely NAMED like a watched one would match. And filenames must
-    be exact with escaped dots, so config/other.yaml and pages/products_page.py
+    be exact with escaped dots, so config/other.yaml and pages/listing_page.py
     - a generated file - are not swept in alongside config/config.yaml and
     pages/base_page.py.
     """
@@ -437,7 +437,7 @@ def test_detection_pattern_is_anchored_and_exact():
     assert pattern and pattern.startswith("^("), "the pattern must be anchored"
     assert r"config/config\.yaml" in pattern, "the dot must be escaped"
     assert not re.search(pattern, "config/other.yaml")
-    assert not re.search(pattern, "pages/products_page.py")
+    assert not re.search(pattern, "pages/listing_page.py")
     assert not re.search(pattern, "app_inventory_old/x.json")
 
 

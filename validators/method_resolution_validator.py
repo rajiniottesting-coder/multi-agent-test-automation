@@ -4217,8 +4217,8 @@ def validate_page_object_methods(generated_files: list) -> list[str]:
 # `-> str` hands it a string. Comparing them is always False:
 #
 #     @then(parsers.parse("the quantity should be {quantity:d}"))
-#     def assert_quantity(cart_page, record_name, quantity):
-#         actual = cart_page.get_quantity(record_name)   # -> str
+#     def assert_quantity(widget_page, record_name, quantity):
+#         actual = widget_page.get_quantity(record_name)   # -> str
 #         assert actual == quantity                       # "2" == 2, never true
 #
 # This is the worst shape a test can have. It does not error, it does not

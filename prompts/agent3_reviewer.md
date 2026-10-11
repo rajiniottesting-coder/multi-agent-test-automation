@@ -95,7 +95,7 @@ Each `ReviewIssue` has:
 
 ### What is NOT a binding error
 
-`pytest-bdd` injects only the arguments a step function declares and **ignores every other captured placeholder**. So `@then(parsers.parse("... exactly {count:d} ..."))` bound to `def check(cart_page):` does NOT raise, does not fail to bind, and runs green — a review reported it as a blocking binding failure and the same run passed in CI. Do not claim a binding or fixture-mismatch error for an unused capture. The real defect is the one above: the step is parameterised and behaves identically for every value. Report THAT, at the severity it deserves, and describe it accurately.
+`pytest-bdd` injects only the arguments a step function declares and **ignores every other captured placeholder**. So `@then(parsers.parse("... exactly {count:d} ..."))` bound to `def check(widget_page):` does NOT raise, does not fail to bind, and runs green — a review reported it as a blocking binding failure and the same run passed in CI. Do not claim a binding or fixture-mismatch error for an unused capture. The real defect is the one above: the step is parameterised and behaves identically for every value. Report THAT, at the severity it deserves, and describe it accurately.
 
 ### Regex Semantics Reference for parsers.re Patterns
 

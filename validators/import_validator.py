@@ -9,8 +9,8 @@ PURPOSE:
     planned and never created.
 
 THE FAILURE MODE THIS CATCHES:
-    Step def files imported `pages.product_detail_page.RecordDetailPage`
-    but `pages/product_detail_page.py` was never planned, never created,
+    Step def files imported `pages.record_detail_page.RecordDetailPage`
+    but `pages/record_detail_page.py` was never planned, never created,
     and didn't exist in the repo. Tests crashed at collection time with
     `ModuleNotFoundError`.
 
