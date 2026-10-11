@@ -765,7 +765,122 @@ def validate_method_resolution(
 
     errors.extend(_methods_removed_by_regeneration(generated_files, project_root))
     errors.extend(_signatures_broken_by_regeneration(generated_files, project_root))
+    errors.extend(_page_object_self_calls_unresolved(generated_files, class_sources,
+                                                     project_root))
 
+    return errors
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# A page object calling a method nothing defines
+#
+# Method resolution checked the step definitions' calls INTO page objects,
+# never a page object's calls on ITSELF. SCRUM-111 shipped
+# `self.require_own_page_on(...)` and `self.sel_on(...)` - neither exists on
+# the class or on BasePage - passed every gate, and all four scenarios died
+# at runtime with AttributeError before touching the application.
+#
+# Resolved the same way as the step-definition check: the class, then its
+# bases through the batch and pages/ on disk. A class whose hierarchy cannot
+# be fully resolved, or that defines __getattr__, is skipped - an unknown
+# base could define anything, and a guess here would refuse working code.
+# ─────────────────────────────────────────────────────────────────────────
+
+def _hierarchy_is_known(class_name: str, class_sources: dict, project_root: Path,
+                        seen: set | None = None) -> bool:
+    seen = set() if seen is None else seen
+    if class_name in seen:
+        return True
+    seen.add(class_name)
+    source = class_sources.get(class_name) or _find_class_source_on_disk(
+        class_name, project_root)
+    if source is None:
+        return False
+    return all(base == "object" or _hierarchy_is_known(base, class_sources,
+                                                         project_root, seen)
+               for base in _parse_class_bases(source, class_name))
+
+
+def _names_assigned_in_hierarchy(class_name: str, class_sources: dict,
+                                 project_root: Path, seen: set | None = None) -> set:
+    """Class-level and `self.x = ...` names: an attribute may hold a callable."""
+    seen = set() if seen is None else seen
+    if class_name in seen:
+        return set()
+    seen.add(class_name)
+    source = class_sources.get(class_name) or _find_class_source_on_disk(
+        class_name, project_root)
+    if source is None:
+        return set()
+    names: set = set()
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return names
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.ClassDef) and node.name == class_name):
+            continue
+        for item in ast.walk(node):
+            targets = (item.targets if isinstance(item, ast.Assign)
+                       else [item.target] if isinstance(item, (ast.AnnAssign, ast.AugAssign))
+                       else [])
+            for t in targets:
+                if isinstance(t, ast.Name):
+                    names.add(t.id)
+                elif (isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name)
+                      and t.value.id == "self"):
+                    names.add(t.attr)
+    for base in _parse_class_bases(source, class_name):
+        if base != "object":
+            names |= _names_assigned_in_hierarchy(base, class_sources, project_root, seen)
+    return names
+
+
+def _page_object_self_calls_unresolved(generated_files, class_sources: dict,
+                                       project_root: Path) -> list[str]:
+    errors: list[str] = []
+    for f in generated_files or []:
+        path = getattr(f, "file_path", "") or ""
+        if not (path.startswith("pages/") and path.endswith(".py")) \
+                or path.endswith("base_page.py"):
+            continue
+        try:
+            tree = ast.parse(getattr(f, "content", "") or "")
+        except SyntaxError:
+            continue
+        for cls in [n for n in tree.body if isinstance(n, ast.ClassDef)]:
+            if not _hierarchy_is_known(cls.name, class_sources, project_root):
+                continue
+            methods = _resolve_class_methods_with_inheritance(
+                cls.name, class_sources, project_root)
+            if "__getattr__" in methods:
+                continue
+            known = methods | _names_assigned_in_hierarchy(
+                cls.name, class_sources, project_root)
+            reported: set = set()
+            for node in ast.walk(cls):
+                if not (isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Attribute)
+                        and isinstance(node.func.value, ast.Name)
+                        and node.func.value.id == "self"):
+                    continue
+                name = node.func.attr
+                if name in known or name in reported:
+                    continue
+                reported.add(name)
+                similar = _find_similar_methods(name, methods)
+                hint = (f" Did you mean: {', '.join(f'`{m}()`' for m in similar)}?"
+                        if similar else "")
+                errors.append(
+                    f"Method resolution error in '{path}' line {node.lineno}: "
+                    f"`self.{name}()` is called inside {cls.name}, but neither "
+                    f"{cls.name} nor any class it inherits from defines "
+                    f"`{name}`.{hint} Python raises AttributeError the first "
+                    f"time a test reaches this line, before the application is "
+                    f"touched. Call a method that exists - the inherited "
+                    f"helpers are listed in the prompt - or define `{name}` on "
+                    f"this class."
+                )
     return errors
 
 
