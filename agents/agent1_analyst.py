@@ -1,13 +1,13 @@
 """
-Agent 1 — Analyst.
+Agent 1 — Test Designer.
 
 Role:
-    The Analyst reads a user story (requirement) from Jira, uses an LLM to
+    The Test Designer reads a user story (requirement) from Jira, uses an LLM to
     derive comprehensive manual test cases (positive, negative, edge cases),
     and creates them as linked "Test Case" issues in Jira.
 
 Position in pipeline:
-    [Agent 1: Analyst] → Agent 2: Coder → Agent 3: Reviewer → Agent 4: Runner → Agent 5: Reporter
+    [Agent 1: Test Designer] → Agent 2: Coder → Agent 3: Reviewer → Agent 4: Runner → Agent 5: Reporter
 
 Inputs:
     - A Jira story key (manual mode), OR
@@ -175,7 +175,7 @@ def load_agent_config(agent_key: str = "agent1_analyst") -> dict:
 # ─────────────────────────────────────────────────────────────
 def run(story_id: str, dry_run: bool = False) -> dict:
     """Process a single story end-to-end."""
-    logger.info(f"=== Agent 1 (Analyst) starting for {story_id} (dry_run={dry_run}) ===")
+    logger.info(f"=== Agent 1 (Test Designer) starting for {story_id} (dry_run={dry_run}) ===")
 
     ctx = AppContext.load()
     logger.info(f"App under test: {ctx.name} ({ctx.base_url})")
@@ -295,8 +295,8 @@ def run(story_id: str, dry_run: bool = False) -> dict:
         reset_usage()
         if not dry_run:
             from core.usage_ledger import post_usage_to_story
-            post_usage_to_story(story_id, "Agent 1 (Analyst)", result["llm_usage"], jira=jira)
-        logger.info(f"=== Agent 1 (Analyst) complete for {story_id}: revised "
+            post_usage_to_story(story_id, "Agent 1 (Test Designer)", result["llm_usage"], jira=jira)
+        logger.info(f"=== Agent 1 (Test Designer) complete for {story_id}: revised "
                     f"{result['revised']}, created {result['test_case_keys']} ===")
         return result
 
@@ -381,7 +381,7 @@ def run(story_id: str, dry_run: bool = False) -> dict:
     reset_usage()  # per-story numbers in scan mode
     if not dry_run:
         from core.usage_ledger import post_usage_to_story
-        post_usage_to_story(story_id, "Agent 1 (Analyst)", usage, jira=jira)
+        post_usage_to_story(story_id, "Agent 1 (Test Designer)", usage, jira=jira)
 
     result = {
         "story_id": story_id,
@@ -392,7 +392,7 @@ def run(story_id: str, dry_run: bool = False) -> dict:
         "llm_usage": usage,
     }
 
-    logger.info(f"=== Agent 1 (Analyst) complete for {story_id}. Created: {created_keys} ===")
+    logger.info(f"=== Agent 1 (Test Designer) complete for {story_id}. Created: {created_keys} ===")
     return result
 
 
@@ -402,7 +402,7 @@ def run(story_id: str, dry_run: bool = False) -> dict:
 def print_summary(results: list[dict]) -> None:
     """Pretty-print a summary of all stories processed."""
     print("\n" + "=" * 60)
-    print(f"✅ Agent 1 (Analyst) finished — processed {len(results)} story(ies)")
+    print(f"✅ Agent 1 (Test Designer) finished — processed {len(results)} story(ies)")
     for r in results:
         status_marker = "✅" if "failed" not in r["status"] else "❌"
         print(f"\n{status_marker} {r['story_id']} — {r['story_summary']}")
@@ -415,7 +415,7 @@ def print_summary(results: list[dict]) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Agent 1 (Analyst): Generate manual test cases from Jira stories",
+        description="Agent 1 (Test Designer): Generate manual test cases from Jira stories",
         epilog=("examples:\n  one story          --story SCRUM-5\n  scan for ai-ready  (no flags - uses config.yaml selection rules)\n  preview only       --story SCRUM-5 --dry-run\n\nNOTE: --story has no re-processing guard. Running it twice on the same\nstory creates DUPLICATE test cases in Jira."),
         formatter_class=argparse.RawDescriptionHelpFormatter)
     group = parser.add_mutually_exclusive_group(required=True)
@@ -510,7 +510,7 @@ def main():
         print_summary(results)
 
     except Exception as e:
-        logger.error(f"Agent 1 (Analyst) failed: {type(e).__name__}: {e}", exc_info=True)
+        logger.error(f"Agent 1 (Test Designer) failed: {type(e).__name__}: {e}", exc_info=True)
         sys.exit(1)
 
 

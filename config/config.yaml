@@ -7,7 +7,7 @@
 #   3. Drop your reference .feature, step-def .py, and page-object .py
 #      into the locations listed under `reference_files` below
 #   4. Update app context (prompts/app_context.md OR prompts/app_context/ modules) for
-#      Agent 1's analyst prompt
+#      Agent 1's test-design prompt
 #
 # No agent code changes are needed. See docs/GUIDE.md "Onboarding a
 # new app" section for the full checklist.
@@ -206,7 +206,7 @@ base_url: https://automationexercise.com
 # Naming convention: agent<N>_<role> reflects pipeline order.
 # ────────────────────────────────────────────────────────────
 agents:
-  # Agent 1 — Analyst: Jira story → manual test cases
+  # Agent 1 — Test Designer: Jira story → manual test cases
   agent1_analyst:
     selection:
       issue_type: "Story"

@@ -3,7 +3,7 @@ Usage ledger — end-to-end LLM token & cost tracking per story, across agents.
 
 PROBLEM: each agent runs in a separate CI process, so in-memory usage
 tracking (agents/llm_client.py) can only see ONE agent's calls. A story's
-true end-to-end cost spans Agent 1 (analyst) + Agent 2 (coder, possibly
+true end-to-end cost spans Agent 1 (test designer) + Agent 2 (coder, possibly
 multiple update/regen runs) + Agent 3 (reviewer) + Agent 5 (reporter).
 
 SOLUTION: the Jira story itself is the ledger. After each agent finishes,

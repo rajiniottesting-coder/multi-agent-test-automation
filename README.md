@@ -39,7 +39,7 @@ Each agent has a **human approval gate** — agents propose, humans dispose. Thi
 
 | # | Agent | Role | Implementation |
 |:-:|---|---|---|
-| 1️⃣ | **Analyst** | Reads Jira story → creates manual test cases | `agents/agent1_analyst.py` |
+| 1️⃣ | **Test Designer** | Reads Jira story → creates manual test cases | `agents/agent1_analyst.py` |
 | 2️⃣ | **Coder** | Test cases → Playwright code → opens PR | `agents/agent2_coder.py` |
 | 3️⃣ | **Reviewer** | AI code review on the PR | `agents/agent3_reviewer.py` |
 | 4️⃣ | **Runner** | Executes tests on PR (CI workflow only — no Python module) | `.github/workflows/agent4_runner.yml` |
@@ -54,7 +54,7 @@ Each agent has a **human approval gate** — agents propose, humans dispose. Thi
 ```mermaid
 flowchart TB
     Story["📋 Jira Story<br/>label: ai-ready"]
-    A1["🤖 Agent 1: Analyst"]
+    A1["🤖 Agent 1: Test Designer"]
     H1{{"🛑 Human: review<br/>label: human-approved"}}
     A2["🤖 Agent 2: Coder"]
     PR["🔀 GitHub PR"]

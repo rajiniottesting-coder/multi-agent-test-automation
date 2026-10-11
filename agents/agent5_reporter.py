@@ -6,7 +6,7 @@ Role:
     them with the LLM, and posts a friendly comment to the parent Jira story.
 
 Position in pipeline:
-    Agent 1 (Analyst) → Agent 2 (Coder) → Agent 3 (Reviewer) → Agent 4 (Runner) → [Agent 5: Reporter]
+    Agent 1 (Test Designer) → Agent 2 (Coder) → Agent 3 (Reviewer) → Agent 4 (Runner) → [Agent 5: Reporter]
 
 Triggering modes:
     1. Local CLI:

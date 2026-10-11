@@ -45,7 +45,7 @@ class TestFormatParseRoundTrip:
         assert parsed["cost_usd"] == pytest.approx(0.292794)
 
     def test_round_trip_without_pricing(self):
-        body = format_usage_comment("Agent 1 (Analyst)", usage(in_cost=None, out_cost=None))
+        body = format_usage_comment("Agent 1 (Test Designer)", usage(in_cost=None, out_cost=None))
         assert "cost_usd=n/a" in body
         parsed = parse_usage_comment(body)
         assert parsed["cost_usd"] is None
@@ -80,7 +80,7 @@ class TestAggregation:
     def test_sums_across_agents(self):
         comments = [
             "some human comment",
-            format_usage_comment("Agent 1 (Analyst)", usage(calls=1, inp=5000, out=2000, in_cost=0.015, out_cost=0.03)),
+            format_usage_comment("Agent 1 (Test Designer)", usage(calls=1, inp=5000, out=2000, in_cost=0.015, out_cost=0.03)),
             format_usage_comment("Agent 2 (Coder, initial)", usage(calls=5, inp=48000, out=10000, in_cost=0.144, out_cost=0.15)),
             format_usage_comment("Agent 3 (Reviewer)", usage(calls=1, inp=20000, out=1500, in_cost=0.06, out_cost=0.0225)),
         ]
@@ -105,7 +105,7 @@ class TestAggregation:
 
     def test_partial_pricing_flags_incomplete(self):
         comments = [
-            format_usage_comment("Agent 1 (Analyst)", usage(in_cost=None, out_cost=None)),
+            format_usage_comment("Agent 1 (Test Designer)", usage(in_cost=None, out_cost=None)),
             format_usage_comment("Agent 2 (Coder, initial)", usage(in_cost=0.10, out_cost=0.05)),
         ]
         agg = aggregate_story_usage(comments)
@@ -124,19 +124,19 @@ class TestE2ESection:
 
     def test_renders_table_with_total(self):
         comments = [
-            format_usage_comment("Agent 1 (Analyst)", usage(calls=1, inp=5000, out=2000, in_cost=0.015, out_cost=0.03)),
+            format_usage_comment("Agent 1 (Test Designer)", usage(calls=1, inp=5000, out=2000, in_cost=0.015, out_cost=0.03)),
             format_usage_comment("Agent 2 (Coder, initial)", usage(calls=5, inp=48000, out=10000, in_cost=0.144, out_cost=0.15)),
         ]
         section = format_e2e_section(aggregate_story_usage(comments))
         assert "End-to-end LLM usage & cost" in section
-        assert "Agent 1 (Analyst)" in section
+        assert "Agent 1 (Test Designer)" in section
         assert "Agent 2 (Coder, initial)" in section
         assert "TOTAL (2 agent runs)" in section
         assert "$0.3390" in section
 
     def test_lower_bound_note_when_pricing_partial(self):
         comments = [
-            format_usage_comment("Agent 1 (Analyst)", usage(in_cost=None, out_cost=None)),
+            format_usage_comment("Agent 1 (Test Designer)", usage(in_cost=None, out_cost=None)),
             format_usage_comment("Agent 2 (Coder, initial)", usage()),
         ]
         section = format_e2e_section(aggregate_story_usage(comments))
@@ -152,7 +152,7 @@ class TestPostUsageDefensive:
         assert post_usage_to_story("SCRUM-1", "Agent 3 (Reviewer)", usage()) is False
 
     def test_skips_on_empty_story_key(self):
-        assert post_usage_to_story("", "Agent 1 (Analyst)", usage()) is False
+        assert post_usage_to_story("", "Agent 1 (Test Designer)", usage()) is False
 
     def test_posts_via_supplied_client(self):
         class FakeJira:
@@ -215,9 +215,9 @@ def test_post_reset_to_story_never_raises():
 
 def test_aggregate_ignores_usage_before_reset():
     """The core fix: pre-reset usage must not inflate the total."""
-    discarded = format_usage_comment("Agent 1 (Analyst)", usage(calls=1, inp=5000, out=2000))
+    discarded = format_usage_comment("Agent 1 (Test Designer)", usage(calls=1, inp=5000, out=2000))
     boundary = format_reset_comment("story reprocessed from ai-ready")
-    current = format_usage_comment("Agent 1 (Analyst)", usage(calls=1, inp=3000, out=1000))
+    current = format_usage_comment("Agent 1 (Test Designer)", usage(calls=1, inp=3000, out=1000))
 
     agg = aggregate_story_usage([discarded, boundary, current])
 
@@ -229,11 +229,11 @@ def test_aggregate_ignores_usage_before_reset():
 def test_aggregate_honours_only_the_last_reset():
     """Two restarts: only usage after the most recent boundary counts."""
     bodies = [
-        format_usage_comment("Agent 1 (Analyst)", usage(calls=1, inp=9999, out=9999)),
+        format_usage_comment("Agent 1 (Test Designer)", usage(calls=1, inp=9999, out=9999)),
         format_reset_comment("first restart"),
-        format_usage_comment("Agent 1 (Analyst)", usage(calls=1, inp=8888, out=8888)),
+        format_usage_comment("Agent 1 (Test Designer)", usage(calls=1, inp=8888, out=8888)),
         format_reset_comment("second restart"),
-        format_usage_comment("Agent 1 (Analyst)", usage(calls=1, inp=1000, out=500)),
+        format_usage_comment("Agent 1 (Test Designer)", usage(calls=1, inp=1000, out=500)),
         format_usage_comment("Agent 2 (Coder)", usage(calls=3, inp=2000, out=700)),
     ]
     agg = aggregate_story_usage(bodies)
@@ -246,7 +246,7 @@ def test_aggregate_honours_only_the_last_reset():
 def test_aggregate_without_reset_is_unchanged():
     """Backward compatibility: no boundary → every comment counts (old behaviour)."""
     bodies = [
-        format_usage_comment("Agent 1 (Analyst)", usage(calls=1, inp=1000, out=500)),
+        format_usage_comment("Agent 1 (Test Designer)", usage(calls=1, inp=1000, out=500)),
         format_usage_comment("Agent 2 (Coder)", usage(calls=3, inp=2000, out=700)),
     ]
     agg = aggregate_story_usage(bodies)
@@ -258,7 +258,7 @@ def test_aggregate_without_reset_is_unchanged():
 def test_aggregate_reset_with_no_usage_after_is_empty():
     """Reset posted, run then aborted before any usage — totals are zero, not stale."""
     bodies = [
-        format_usage_comment("Agent 1 (Analyst)", usage(calls=1, inp=5000, out=2000)),
+        format_usage_comment("Agent 1 (Test Designer)", usage(calls=1, inp=5000, out=2000)),
         format_reset_comment("restart"),
     ]
     agg = aggregate_story_usage(bodies)
@@ -272,10 +272,10 @@ def test_reset_boundary_ignores_unrelated_comments():
     """Human comments interleaved with the ledger must not confuse the boundary."""
     bodies = [
         "Looks good to me, approving.",
-        format_usage_comment("Agent 1 (Analyst)", usage(calls=1, inp=5000, out=2000)),
+        format_usage_comment("Agent 1 (Test Designer)", usage(calls=1, inp=5000, out=2000)),
         format_reset_comment("restart"),
         "Deleted the old test cases, re-running.",
-        format_usage_comment("Agent 1 (Analyst)", usage(calls=1, inp=1234, out=567)),
+        format_usage_comment("Agent 1 (Test Designer)", usage(calls=1, inp=1234, out=567)),
     ]
     agg = aggregate_story_usage(bodies)
 
@@ -284,7 +284,7 @@ def test_reset_boundary_ignores_unrelated_comments():
 
 
 def test_has_usage_comments_true_when_costed():
-    assert has_usage_comments([format_usage_comment("Agent 1 (Analyst)", usage())]) is True
+    assert has_usage_comments([format_usage_comment("Agent 1 (Test Designer)", usage())]) is True
 
 
 def test_has_usage_comments_false_when_only_human_comments():
@@ -294,7 +294,7 @@ def test_has_usage_comments_false_when_only_human_comments():
 def test_has_usage_comments_false_after_reset_with_no_new_usage():
     """Already reset and nothing since — Agent 1 must not post a second boundary."""
     bodies = [
-        format_usage_comment("Agent 1 (Analyst)", usage()),
+        format_usage_comment("Agent 1 (Test Designer)", usage()),
         format_reset_comment("restart"),
     ]
     assert has_usage_comments(bodies) is False
