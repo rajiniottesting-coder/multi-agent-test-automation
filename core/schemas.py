@@ -182,6 +182,17 @@ class ReviewIssue(BaseModel):
         ...,
         description="How to fix it. Include corrected code snippet if helpful."
     )
+    # Positive evidence for a stop. Defaulted so an older or partial report
+    # still parses; agent3_reviewer.derive_verdict treats a missing one as
+    # "no failure was found" for anything but a security finding.
+    failure_scenario: str | None = Field(
+        default=None,
+        description="REQUIRED for severity=blocking and for issue_type=functional_bug: "
+                    "the concrete scenario or step, the line that breaks, and what goes "
+                    "wrong (the error raised or the wrong result). If, after checking, you "
+                    "cannot name one because the code works, the finding is not blocking: "
+                    "lower its severity or leave it out. null for advisory findings."
+    )
 
 
 class ReviewReport(BaseModel):

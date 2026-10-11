@@ -235,6 +235,44 @@ def _waives_itself(issue) -> bool:
     return not _RETRACTS_THE_WAIVER.search(first)
 
 
+# A STOP NEEDS A FAILURE, NOT A LABEL.
+#
+# The waiver check above reads one phrase in one field, and exempts an
+# explicit `blocking` severity. A review on SCRUM-111 then filed a
+# `blocking` / `functional_bug` whose own description walked through the flow
+# and ended "This flow is valid. No blocking bug - downgrading." The severity
+# field was never changed, and the pull request went red while every test
+# passed. Four incidents, four wordings: a phrase list does not converge.
+#
+# So blocking now requires positive evidence instead of the absence of a
+# retraction: a non-empty `failure_scenario` - the step, the line, and what
+# goes wrong. A model that concluded the code works has nothing to put there.
+# A finding filed as blocking without one is lowered to `major` and shown,
+# not dropped. Security is exempt, as everywhere in this module.
+def _names_a_failure(issue) -> bool:
+    return bool((getattr(issue, "failure_scenario", None) or "").strip())
+
+
+def _require_failure_for_blocking(report: ReviewReport) -> ReviewReport:
+    lowered = []
+    issues = []
+    for issue in report.issues:
+        if (issue.severity == "blocking"
+                and issue.issue_type not in _ALWAYS_BLOCKING_TYPES
+                and not _names_a_failure(issue)):
+            lowered.append(issue)
+            issue = issue.model_copy(update={"severity": "major"})
+        issues.append(issue)
+    if lowered:
+        logger.warning(
+            "%d finding(s) filed as blocking LOWERED to major: none names a "
+            "concrete failure (failure_scenario is empty), so nothing shows "
+            "the code breaks: %s", len(lowered),
+            "; ".join(f"{i.file_path}: {(i.description or '')[:120]}" for i in lowered))
+        report = report.model_copy(update={"issues": issues})
+    return report
+
+
 def derive_verdict(report: ReviewReport) -> ReviewReport:
     """Recompute overall_verdict from the issues the review actually found.
 
@@ -262,12 +300,14 @@ def derive_verdict(report: ReviewReport) -> ReviewReport:
     own findings usually means the summary saw something the issue list did
     not capture - worth a human glance even though it no longer blocks.
     """
+    report = _require_failure_for_blocking(report)
     blocking = [
         issue for issue in report.issues
         if (issue.severity in _BLOCKING_SEVERITIES
             or issue.issue_type in _ALWAYS_BLOCKING_TYPES
             or (issue.issue_type in _BLOCKING_ISSUE_TYPES
-                and issue.severity in _TYPE_BLOCKS_AT))
+                and issue.severity in _TYPE_BLOCKS_AT
+                and _names_a_failure(issue)))
         # A finding whose own fix opens with "no change required" has
         # withdrawn itself. Two exemptions: a security finding that shrugs is
         # still worth one look, and an explicit `blocking` severity is a
@@ -376,6 +416,9 @@ def format_review_as_markdown(report: ReviewReport) -> str:
                 md.append("")
                 md.append(f"   {issue.description}")
                 md.append("")
+                if (issue.failure_scenario or "").strip():
+                    md.append(f"   **Fails when:** {issue.failure_scenario.strip()}")
+                    md.append("")
                 md.append(f"   **Suggested fix:**")
                 md.append(f"   {issue.suggested_fix}")
                 md.append("")
