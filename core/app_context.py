@@ -35,9 +35,33 @@ from typing import Optional
 
 import yaml
 
-from config.paths import CONFIG_YAML, PROJECT_ROOT
+from config.paths import CONFIG_YAML, PAGES_DIR, PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
+
+
+def discover_page_objects(pages_dir: Path, project_root: Path,
+                          reserved: set[str]) -> list[str]:
+    """Page objects already committed, as project-relative paths (sorted).
+
+    A page object that exists has methods other stories' step definitions
+    call. Regenerating it whole for a new story can drop one of them and
+    break those tests. Every existing page object is therefore extendable:
+    a later story may ADD methods but never recreate the file.
+
+    Left out: reserved files (never touched at all) and `*base_page.py`,
+    which holds the universal helpers every page inherits.
+    """
+    if not pages_dir.is_dir():
+        return []
+    found = []
+    for path in sorted(pages_dir.glob("*_page.py")):
+        if path.name.endswith("base_page.py"):
+            continue
+        rel = _normalize_path(path.relative_to(project_root).as_posix())
+        if rel not in reserved:
+            found.append(rel)
+    return found
 
 
 def _normalize_path(p: str) -> str:
@@ -229,9 +253,16 @@ class AppContext:
                 "LLM. Recommended: include at least your reference files."
             )
 
-        extendable = aut.get("extendable_paths", []) or []
-        # extendable is fine to be empty — many apps may not have any
-        # page objects yet that need extending. We only log this at debug.
+        extendable = list(aut.get("extendable_paths", []) or [])
+        # Page objects already in the repository are extendable without being
+        # listed: listing them by hand after every merge was a step people
+        # forgot, and the next story then regenerated the file whole.
+        # `auto_extend_page_objects: false` restores list-only behaviour.
+        if aut.get("auto_extend_page_objects", True):
+            discovered = discover_page_objects(
+                PAGES_DIR, PROJECT_ROOT, {_normalize_path(p) for p in reserved})
+            extendable = list(dict.fromkeys(
+                [_normalize_path(p) for p in extendable] + discovered))
         logger.debug(
             f"AppContext: {len(reserved)} reserved path(s), "
             f"{len(extendable)} extendable path(s)."
