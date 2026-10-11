@@ -53,9 +53,9 @@ def test_guard_runs_before_any_llm_call():
          patch.object(a1, "AppContext") as ctx, \
          patch.object(a1, "LLMClient") as llm:
         ctx.load.return_value = MagicMock(name="App", base_url="https://x")
-        a1.run("SCRUM-5")
+        out = a1.run("SCRUM-5")
     llm.assert_not_called()
-    assert out is not None if False else True   # guard returned early
+    assert out["status"] == "partial_test_cases", "the guard returned early, before any model call"
 
 
 def test_zero_existing_cases_proceeds():
