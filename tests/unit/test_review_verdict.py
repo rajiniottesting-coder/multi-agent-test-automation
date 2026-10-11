@@ -41,6 +41,11 @@ def _report(verdict: str, *issues: ReviewIssue) -> ReviewReport:
     )
 
 
+# Every finding these tests file names how the code fails, as a real one
+# does. A stop without a failure is covered in test_review_needs_a_failure.py.
+_FAILS = "Scenario X, step Y: line 1 raises AttributeError."
+
+
 def _issue(severity: str, issue_type: str) -> ReviewIssue:
     return ReviewIssue(
         severity=severity,
@@ -49,6 +54,7 @@ def _issue(severity: str, issue_type: str) -> ReviewIssue:
         issue_type=issue_type,
         description="d",
         suggested_fix="f",
+        failure_scenario=_FAILS,
     )
 
 
@@ -183,6 +189,7 @@ def _waived(severity: str, issue_type: str, fix: str) -> ReviewIssue:
         issue_type=issue_type,
         description="d",
         suggested_fix=fix,
+        failure_scenario=_FAILS,
     )
 
 

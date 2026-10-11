@@ -80,6 +80,7 @@ Each `ReviewIssue` has:
 - `issue_type`: "style" | "functional_bug" | "missing_coverage" | "security" | "best_practice"
 - `description`: 1-2 sentences explaining the issue
 - `suggested_fix`: how to fix it, with code snippet if applicable
+- `failure_scenario`: REQUIRED when `severity` is "blocking" or `issue_type` is "functional_bug" — the concrete scenario or step, the line that breaks, and what goes wrong (the exception raised or the wrong result). Write it before you choose the severity. If, while writing it, you conclude the code actually works, the finding is NOT blocking: lower the severity or leave the finding out. Never file a finding whose own text says it is not a problem. A blocking or functional_bug finding without a failure_scenario does not block the pull request. `null` for advisory findings.
 
 # Review Checklist (apply rigorously, but ONLY to files in the PR diff)
 
