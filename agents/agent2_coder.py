@@ -3998,6 +3998,27 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
 # ---------------------------------------------------------------------------
 # Core agent workflow
 # ---------------------------------------------------------------------------
+def title_for_story(title: str, story_id: str) -> str:
+    """A pull request title names the story it belongs to, and no other key.
+
+    The model picks keys from its input, where test-case keys outnumber the
+    story's. Any other issue key in the title is removed (with the brackets or
+    separators it leaves behind) and the story key is appended if absent, so
+    the title, the branch and the board all name the same owner.
+    """
+    from config import JIRA_KEY_PATTERN
+    text = title or ""
+    for key in set(JIRA_KEY_PATTERN.findall(text)) - {story_id}:
+        text = re.sub(rf"\b{re.escape(key)}\b", "", text)
+    text = re.sub(r"\(\s*[,;/&]*\s*\)|\[\s*[,;/&]*\s*\]", "", text)   # emptied brackets
+    text = re.sub(r"([(\[])\s*[,;/&]\s*", r"\1", text)                  # leading separator
+    text = re.sub(r"\s*[,;/&]\s*([)\]])", r"\1", text)                  # trailing separator
+    text = re.sub(r"\s{2,}", " ", text).strip(" -:,;")
+    if story_id not in JIRA_KEY_PATTERN.findall(text):
+        text = f"{text} ({story_id})" if text else story_id
+    return text
+
+
 def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> dict:
     """Main agent flow — Stage 1 plan, then Stage 2 per-file generation.
 
@@ -4462,6 +4483,10 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
         )
         output.branch_name = corrected
         assert_valid_branch_for_pipeline(output.branch_name)
+
+    # The same ambiguity reaches the TITLE: PR #157 went out as "... (SCRUM-223)",
+    # a test case's key, after its branch had been corrected to the story.
+    output.pr_title = title_for_story(output.pr_title, story_id)
 
     if gh is None:                    # stage 2 could not reach the host; try again here
         gh = get_repo_host()
