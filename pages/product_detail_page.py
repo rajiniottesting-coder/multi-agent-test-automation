@@ -47,6 +47,45 @@ class ProductDetailPage(BasePage):
         self.wait_visible(self.sel("product_price"))
         return self.get_text(self.sel("product_price"))
 
+    def availability_label(self) -> str:
+        """The Availability label text. WAITS for it to appear.
+
+        Used to assert the label is present; the inventory exposes no separate
+        cell for its value, so callers assert on the label itself.
+        """
+        self.wait_visible(self.sel("availability"))
+        return self.get_text(self.sel("availability"))
+
+    def condition_label(self) -> str:
+        """The Condition label text. WAITS for it to appear."""
+        self.wait_visible(self.sel("condition"))
+        return self.get_text(self.sel("condition"))
+
+    def brand_label(self) -> str:
+        """The Brand label text. WAITS for it to appear."""
+        self.wait_visible(self.sel("brand"))
+        return self.get_text(self.sel("brand"))
+
+    def has_availability_label(self) -> bool:
+        """True once the Availability label is on screen. WAITS for it.
+
+        A waiting predicate: call it only where the label is expected to be
+        present, which is every detail page this app serves.
+        """
+        return self.is_showing(self.sel("availability"))
+
+    def has_condition_label(self) -> bool:
+        """True once the Condition label is on screen. WAITS for it."""
+        return self.is_showing(self.sel("condition"))
+
+    def has_brand_label(self) -> bool:
+        """True once the Brand label is on screen. WAITS for it."""
+        return self.is_showing(self.sel("brand"))
+
+    def current_quantity(self) -> str:
+        """The current value typed in the quantity field (DOM value, not text)."""
+        return self.get_input_value(self.sel("quantity_input"))
+
     # ── actions ──────────────────────────────────────────────
     def set_quantity(self, quantity: int) -> None:
         """Set the quantity BEFORE adding to cart.
