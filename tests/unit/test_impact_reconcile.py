@@ -155,7 +155,15 @@ def test_the_cli_reconciles_a_manual_hand_over_while_agent0_is_off(opened, monke
     from core.impact_settings import impact_settings
     from scripts.impact_reconcile import main
     fake, jira, gh, original = opened
-    assert impact_settings()["enabled"] is False
+    # Agent 0 OFF regardless of the shipped config: reconcile must not depend on it.
+    import core.impact_settings as settings_module
+    monkeypatch.setattr(settings_module, "impact_settings",
+                        lambda raw=None, _real=impact_settings: _real({"enabled": False}))
+    import scripts.impact_reconcile as script
+    if hasattr(script, "impact_settings"):
+        monkeypatch.setattr(script, "impact_settings",
+                            lambda raw=None, _real=impact_settings: _real({"enabled": False}))
+    assert settings_module.impact_settings()["enabled"] is False
     monkeypatch.setattr(tr, "get_tracker", lambda *a, **k: jira)
     monkeypatch.setattr(rh, "get_repo_host", lambda *a, **k: gh)
     gh.close(1)

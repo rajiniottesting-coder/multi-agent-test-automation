@@ -184,8 +184,10 @@ class TestImpactAwareRun:
         assert llm.invoke_structured.call_args.kwargs["output_schema"] is TestCaseList
 
 
-def test_lookup_failure_with_agent0_off_falls_back_to_normal_mode():
+def test_lookup_failure_with_agent0_off_falls_back_to_normal_mode(monkeypatch):
+    import core.impact_settings as s
     from agents.agent1_analyst import _impacted_test_cases
+    monkeypatch.setattr(s, "impact_settings", lambda raw=None: {"enabled": False})
     jira = MagicMock()
     jira.get_impacted_test_cases.side_effect = RuntimeError("no such link type")
     assert _impacted_test_cases(jira, "X-1") == []

@@ -634,7 +634,15 @@ class TestD5:
                                              branch["features"], s) is None
         assert not [c for c in fake.comments.get("SBX-5", []) if c.startswith(a0.OUTCOME)]
 
-    def test_cli_is_a_no_op_while_disabled(self, capsys):
+    def test_cli_is_a_no_op_while_disabled(self, capsys, monkeypatch):
+        # Off explicitly: a project may ship Agent 0 on; the off path must hold.
+        import core.impact_settings as settings_module
+        real = settings_module.impact_settings
+        monkeypatch.setattr(settings_module, "impact_settings",
+                            lambda raw=None: real({**(raw or {}), "enabled": False}))
+        if hasattr(a0, "impact_settings"):
+            monkeypatch.setattr(a0, "impact_settings",
+                                lambda raw=None: real({**(raw or {}), "enabled": False}))
         assert a0.main(["--scan"]) == 0
         assert "enabled is false" in capsys.readouterr().out
 
