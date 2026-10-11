@@ -98,12 +98,28 @@ SANDBOX_FEATURE = """Feature: Sandbox login
 
 
 def build_repo(dest: Path) -> Path:
-    """A copy of the real repository's test surface, plus one sandbox feature
-    owned by SBX-1. The real reference file login.feature is kept as is."""
+    """The framework's own baseline test surface, plus one sandbox feature
+    owned by SBX-1. The real reference file login.feature is kept as is.
+
+    Only the RESERVED files (the reference feature, step definitions and page
+    objects, and the framework's base page) are copied - never whatever stories
+    have merged since. Copying the whole features/ and pages/ folders coupled
+    every sandbox test to the pipeline's own output: the first story merged
+    (SCRUM-111, cart_add_remove.feature) arrived without its step definitions,
+    which are not copied here, and failed the framework's unit tests on its
+    own PR with "no step definition" gaps and a changed scenario count.
+    """
     from agents.agent2_coder import format_marker
-    for rel in ("pages", "features", "app_inventory", "config"):
+    from core.app_context import AppContext
+    for rel in ("app_inventory", "config"):
         shutil.copytree(ROOT / rel, dest / rel,
                         ignore=shutil.ignore_patterns("__pycache__"))
+    baseline = {p for p in AppContext.load().reserved_paths_normalized()
+                if p.startswith(("pages/", "features/"))} | {"pages/__init__.py"}
+    for rel in sorted(baseline):
+        if (ROOT / rel).is_file():
+            (dest / rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(ROOT / rel, dest / rel)
     (dest / "tests" / "step_defs").mkdir(parents=True)
     for name in ("__init__.py", "conftest.py", "test_login.py"):
         shutil.copy(ROOT / "tests" / "step_defs" / name, dest / "tests" / "step_defs" / name)
