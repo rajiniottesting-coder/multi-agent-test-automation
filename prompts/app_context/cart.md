@@ -46,9 +46,9 @@ behind by an earlier run.
 
 Even so, phrase cart outcomes RELATIVELY - "the cart contains `Men Tshirt` with
 quantity 3" - never "the cart contains only...", "exactly...", or "the cart is
-empty". The generation gate rejects absolute claims about the cart because the
-inventory marks it persistent, and it cannot tell a logged-out scenario from a
-logged-in one.
+empty". The inventory marks the cart persistent: code generation accepts an
+exact quantity only in a scenario that never signs in, and the test-case check
+rejects "only", "exactly", a row count and "empty" on the cart in every case.
 
 ## Cart rows are a family
 

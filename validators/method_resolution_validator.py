@@ -2646,6 +2646,42 @@ def _absolute_assertion_target(test: ast.AST, derived: set, fixtures: dict):
     return next(iter(fixtures), None)
 
 
+# Identifiers that mean a step definition signs in, or reads a session that
+# did. Matched against parameter, variable and attribute names only - never
+# against step TEXT, which describes intent ("I am not signed in") and proves
+# nothing either way. Over-matching only keeps the persistent-state rule on.
+_AUTH_SIGNAL = re.compile(
+    r"log_?in|sign_?in|logged|authenticat|credential|password|storage_state",
+    re.IGNORECASE)
+_SESSION_PROBES = ("is_", "has_", "wait_until_", "wait_for_")
+
+
+def _authenticates(tree: ast.AST, shared_accounts: frozenset) -> bool:
+    """True when anything in this file signs in or depends on a signed-in user.
+
+    Signing in needs a secret, and secrets reach a step definition only
+    through a fixture (`credentials`) or a page object's login method - both
+    show up as identifiers. A shared account named as a string counts too.
+    """
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if node.value in shared_accounts:
+                return True
+            continue
+        name = (node.arg if isinstance(node, ast.arg)
+                else node.id if isinstance(node, ast.Name)
+                else node.attr if isinstance(node, ast.Attribute)
+                else None)
+        if (isinstance(node, ast.Attribute)
+                and node.attr.startswith(_SESSION_PROBES)):
+            # `assert not nav.is_logged_in()` READS the session - it is how
+            # an anonymous scenario proves it is anonymous - and signs no one in.
+            continue
+        if name and _AUTH_SIGNAL.search(name):
+            return True
+    return False
+
+
 def validate_persistent_state_assertions(
         generated_files: list, project_root=None) -> list[str]:
     """Fail an absolute assertion on state the inventory says the app keeps."""
@@ -2674,6 +2710,24 @@ def validate_persistent_state_assertions(
         try:
             tree = ast.parse(source)
         except SyntaxError:
+            continue
+
+        # A file that never signs in owns its state outright.
+        #
+        # The rule exists because the application keeps this state against
+        # the SIGNED-IN user: sign in as a shared account and you inherit what
+        # every earlier run left. A scenario that never signs in has no such
+        # user. The framework's `page` fixture opens a fresh browser context
+        # per test, so an anonymous session starts with nothing - no cookie,
+        # no storage, nothing carried over - and an exact count on it is as
+        # safe as on a freshly registered account.
+        #
+        # Refusing that sent SCRUM-111 (every scenario anonymous by its
+        # acceptance criteria) round the repair loop three times asking for a
+        # remedy the scenario did not need, and failed the story.
+        #
+        # Conservative on purpose: ANY sign of authentication keeps the rule.
+        if not _authenticates(tree, shared_accounts):
             continue
 
         # Does this file establish its own starting state anywhere?
