@@ -357,8 +357,19 @@ _REFUTED_NOTE = ("Refuted by the runner: this commit's scenarios were executed "
 
 
 def _refutable_by_a_green_run(issue) -> bool:
-    return (issue.issue_type == "functional_bug"
-            and getattr(issue, "test_outcome", None) != "passes_wrongly")
+    """A prediction that a test FAILS - whatever category it was filed under.
+
+    Keyed on the claim, not the label: a `blocking` / `best_practice` finding
+    whose failure_scenario predicts a failing test is the same prediction as
+    a functional_bug, and a green run refutes it the same way. Security is
+    never a prediction about a test result.
+    """
+    if issue.issue_type in _ALWAYS_BLOCKING_TYPES:
+        return False
+    outcome = getattr(issue, "test_outcome", None)
+    if outcome == "fails":
+        return _names_a_failure(issue)
+    return issue.issue_type == "functional_bug" and outcome is None
 
 
 def _blocks(issue) -> bool:
@@ -403,14 +414,15 @@ def runner_result_for_head(host, pr_number: int, head_branch: str,
 
 
 def apply_runner_evidence(report: ReviewReport, runner_result) -> ReviewReport:
-    """Lower blocking functional_bug predictions refuted by a green run.
+    """Lower every blocking prediction of a failing test that a green run refuted.
 
-    Acts only when every blocking finding is such a prediction - anything else
-    blocking means the pull request stops regardless, and the run need not be
-    consulted. Returns the report unchanged unless the runner passed.
+    Each finding is judged on its own: a refuted prediction stops blocking even
+    when another, unrelated finding still stops the pull request - otherwise it
+    is shown as Blocking beside the real one and the reader fixes the wrong
+    thing. The verdict is re-derived by align_labels_with_verdict.
     """
-    blocking = [i for i in report.issues if _blocks(i)]
-    if not blocking or not all(_refutable_by_a_green_run(i) for i in blocking):
+    refuted = [i for i in report.issues if _blocks(i) and _refutable_by_a_green_run(i)]
+    if not refuted:
         return report
     if runner_result != "success":
         logger.info("Runner result for this commit: %s - predicted failure(s) "
@@ -418,21 +430,25 @@ def apply_runner_evidence(report: ReviewReport, runner_result) -> ReviewReport:
         return report
     issues = []
     for issue in report.issues:
-        if issue in blocking:
+        if issue in refuted:
+            # Shown as a note, without its failure scenario: a "Fails when"
+            # line under a finding the run just disproved reads as a failure.
             issue = issue.model_copy(update={
-                "severity": "major" if issue.severity == "blocking" else issue.severity,
+                "severity": "info",
                 "issue_type": "best_practice",
+                "failure_scenario": None,
+                "test_outcome": None,
                 "description": f"{issue.description} ({_REFUTED_NOTE})",
             })
         issues.append(issue)
     logger.warning("%d predicted test failure(s) REFUTED: the runner passed on "
-                   "this commit. Lowered, not dropped.", len(blocking))
-    return report.model_copy(update={"issues": issues, "overall_verdict": "comment"})
+                   "this commit. Lowered, not dropped.", len(refuted))
+    return report.model_copy(update={"issues": issues})
 
 
 def _needs_runner_evidence(report: ReviewReport) -> bool:
-    blocking = [i for i in report.issues if _blocks(i)]
-    return bool(blocking) and all(_refutable_by_a_green_run(i) for i in blocking)
+    """Any blocking finding that only predicts a failing test: worth the wait."""
+    return any(_blocks(i) and _refutable_by_a_green_run(i) for i in report.issues)
 
 
 # THE REPORT MUST SAY ONE THING.
@@ -446,8 +462,8 @@ def _needs_runner_evidence(report: ReviewReport) -> bool:
 # wrong.
 #
 # So findings are reconciled before anything is rendered:
-#   - a finding whose own fix asks for nothing is WITHDRAWN: not listed,
-#     counted in a footnote, logged in full
+#   - a finding whose own fix asks for nothing is WITHDRAWN, even if it names
+#     a failure: not listed, counted in a footnote, logged in full
 #   - a functional_bug that names no failure is not a functional bug: it is
 #     shown as an unverified info note
 # and when that, or any later step, changed what the model filed, the model's
@@ -460,7 +476,13 @@ def reconcile_findings(report: ReviewReport) -> tuple[ReviewReport, list]:
         if issue.issue_type in _ALWAYS_BLOCKING_TYPES:
             kept.append(issue)
             continue
-        if _waives_itself(issue) and not _names_a_failure(issue):
+        # Its own fix asks for nothing, so there is nothing for anyone to do -
+        # even when it names a failure. PR #148's fifth review filed one that
+        # did both: "Fails when: ... this is the test doing its job, not a
+        # bug - downgrading" / "No code change required". A finding that
+        # still wants something says so in the same sentence ("but ...",
+        # "however ..."), which _waives_itself already honours.
+        if _waives_itself(issue):
             withdrawn.append(issue)
             continue
         if issue.issue_type == "functional_bug" and not _names_a_failure(issue):
@@ -516,7 +538,30 @@ def postprocess_review(report: ReviewReport, get_runner_result=None) -> tuple[Re
         logger.info("Only predicted test failures block this review - waiting "
                     "up to %ds for the runner on this commit.", RUNNER_WAIT_SECONDS)
         report = apply_runner_evidence(report, get_runner_result())
+    report = align_labels_with_verdict(report)
     return finalize_summary(as_filed, report, len(withdrawn)), withdrawn
+
+
+def align_labels_with_verdict(report: ReviewReport) -> ReviewReport:
+    """A reader sees the verdict and the section headings, so they must agree.
+
+    `request_changes` exactly when a finding stops the pull request, and every
+    finding that stops it is shown under Blocking - a major/functional_bug that
+    blocks used to sit under "Major" beneath a red verdict. Anything that does
+    not block is never shown as Blocking.
+    """
+    issues = []
+    for issue in report.issues:
+        blocks = _blocks(issue)
+        if blocks and issue.severity != "blocking":
+            issue = issue.model_copy(update={"severity": "blocking"})
+        elif not blocks and issue.severity == "blocking":
+            issue = issue.model_copy(update={"severity": "major"})
+        issues.append(issue)
+    verdict = ("request_changes" if any(i.severity == "blocking" for i in issues)
+               else ("comment" if report.overall_verdict == "request_changes"
+                     else report.overall_verdict))
+    return report.model_copy(update={"issues": issues, "overall_verdict": verdict})
 
 
 # ─────────────────────────────────────────────────────────────

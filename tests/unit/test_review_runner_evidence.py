@@ -8,11 +8,17 @@ predicted failure is the only thing blocking, and a green run refutes it.
 """
 from agents.agent3_reviewer import (
     _needs_runner_evidence,
-    apply_runner_evidence,
+    align_labels_with_verdict,
     derive_verdict,
     runner_result_for_head,
 )
+from agents.agent3_reviewer import apply_runner_evidence as _apply
 from core.schemas import ReviewIssue, ReviewReport
+
+
+def apply_runner_evidence(report, result):
+    """Evidence, then the verdict re-derived from the labels - as the chain does."""
+    return align_labels_with_verdict(_apply(report, result))
 
 ReviewIssue.__test__ = False
 
@@ -54,10 +60,15 @@ def test_passing_wrongly_is_not_refuted_by_a_pass():
     assert apply_runner_evidence(report, "success").overall_verdict == "request_changes"
 
 
-def test_any_other_blocker_means_no_wait():
+def test_a_refuted_prediction_stops_blocking_beside_a_real_blocker():
+    """Judged one by one: the style finding still blocks, the refuted prediction
+    no longer sits under Blocking beside it."""
     report = _report(_issue(), _issue("blocking", "style", failure="Line 3 raises."))
-    assert not _needs_runner_evidence(report)
-    assert apply_runner_evidence(report, "success").overall_verdict == "request_changes"
+    assert _needs_runner_evidence(report)
+    out = apply_runner_evidence(report, "success")
+    assert out.overall_verdict == "request_changes"
+    assert [(i.issue_type, i.severity) for i in out.issues] == [
+        ("best_practice", "info"), ("style", "blocking")]
 
 
 def test_security_never_waits():
