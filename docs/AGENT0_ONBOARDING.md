@@ -1,7 +1,8 @@
 # Attaching Agent 0 to another application
 
 Agent 0 (the impact analyst) can run against an application whose tests are not
-in this repository. This page is the checklist. The readiness check does most of
+in this repository. How Agent 0 works — modes, triggers, review, hand-over,
+context update and reconcile — is in [GUIDE.md → Change stories — Agent 0](./GUIDE.md#change-stories--agent-0). This page is the checklist. The readiness check does most of
 the verification:
 
 ```bash

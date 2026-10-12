@@ -14,10 +14,10 @@ unsafe/invalid output. This project enforces them at four layers:
 
 | Layer | Guardrail | Where |
 |---|---|---|
-| **Input** | Label state machine — LLM only ever sees stories a human explicitly marked `ai-ready` / `human-approved`. No arbitrary input reaches the model. | config.yaml selection blocks + JQL |
-| **Output schema** | Structured outputs via Pydantic + function-calling. Malformed JSON is impossible to act on — it raises before any side effect. | `LLMClient.invoke_structured()` + schemas.py |
-| **Output content** | Six validators: filename consistency, feature structure, step coverage, path policy, import resolution, method resolution. Invalid code never reaches a commit. | gherkin_analyzer.py, agent2_coder.py, import_validator.py, method_resolution_validator.py |
-| **Action / blast radius** | Path policy (reserved files can NEVER be written; extendable files can never be wiped), `max_stories_per_run: 2` cap, human-approval gate before any code gen, PR review before any merge, one-shot label consumption, branch protection on main. | `validate_paths_against_policy()`, config caps, GitHub branch rules |
+| **Input** | Label state machine — LLM only ever sees stories a human explicitly marked `ai-ready` / `human-approved` / `impact-check`. No arbitrary input reaches the model. | config.yaml selection blocks + JQL |
+| **Output schema** | Structured outputs via Pydantic: the JSON schema goes into the prompt and the reply is parsed back through it (provider-agnostic — no tool-calling needed). One repair attempt, then it raises before any side effect. 21 schemas. | `LLMClient.invoke_structured()` + `core/schemas.py` |
+| **Output content** | 28 static checks on generated code (filename consistency, Gherkin structure, step coverage, path policy, imports, method resolution, selector boundaries, waiting predicates, …); test-case rules on Agent 1's drafts; Agent 0's evidence check (a verdict citing no real graph path or verbatim step is dropped, invented element keys are dropped). Invalid output never reaches a commit or a ticket. | `validators/`, `agents/agent2_coder.py`, `core/test_case_rules.py`, `core/impact_analysis.py` |
+| **Action / blast radius** | Path policy (reserved files can NEVER be written; extendable files can never be wiped), `max_stories_per_run` caps, human gates before any test-case revision (Impact Review), before code gen and before any merge, one-shot label consumption, Agent 0 shadow mode, Agent 3 blocking only for a named failure, context updates as PRs (never auto-merged). | `validate_paths_against_policy()`, config caps, GitHub branch rules |
 
 What we do NOT have (and why that's fine at current scope):
 - **Content-safety filters** (toxicity, PII): the model only generates
@@ -33,7 +33,8 @@ prompt injection via Jira ticket content — a malicious story description
 could try to steer the coder agent. Mitigations in place: human-approval
 gate (a human reads every story and test case before Agent 2 runs), path
 policy (even a steered LLM cannot touch reserved files or workflows), and
-PR review (a human reads every diff before merge).
+PR review (a human reads every diff before merge). For a change story the
+Impact Review adds a gate before any existing test is revised.
 
 ---
 
@@ -41,15 +42,20 @@ PR review (a human reads every diff before merge).
 
 | Concept | Industry name | Where in this repo |
 |---|---|---|
-| Multiple specialized agents with durable handoffs | **Multi-agent architecture / agentic pipeline** | 5 agents; Jira labels + GitHub as the shared state |
+| Multiple specialized agents with durable handoffs | **Multi-agent architecture / agentic pipeline** | 6 agents (0–5); Jira labels, marker comments + GitHub as the shared state |
 | Labels controlling triggering, idempotency, one-shot actions | **Agent state machine / orchestration** (what LangGraph models in memory, we model in Jira) | config.yaml selection blocks |
 | Plan first, then generate per-file | **Prompt chaining / decomposition** (Plan-and-Execute pattern) | `build_plan()` → `generate_file_content()` loop |
-| Pydantic-enforced JSON via function calling | **Structured outputs** | `invoke_structured()`, schemas.py |
-| Validators feed errors back to the LLM for retry | **Reflexion / self-correction loop** | `_attempt_step_coverage_repair()`, max 4 retries |
+| Pydantic-enforced JSON, schema in the prompt | **Structured outputs** | `invoke_structured()`, `core/schemas.py` |
+| Validators feed errors back to the LLM for retry | **Reflexion / self-correction loop** | `_attempt_step_coverage_repair()`, max 4 attempts; one corrective retry in Agent 1 and in the splice writers |
+| Graph finds candidates, the model judges, a formula ranks | **Hybrid retrieval + LLM-as-judge, deterministic scoring** | Agent 0: `core/impact_graph.py` → `ImpactAssessment` → `rank()`; the model's verdict caps the tier |
+| A verdict must cite a real path or a verbatim step | **Grounding / citation check** | Agent 0's evidence check in `core/impact_analysis.py` |
+| Run beside production, write nothing, measure | **Shadow deployment / online evaluation** | Agent 0 shadow mode; Agent 5 scores each prediction (`record_prediction_outcome()`); `scripts/agent0_backtest.py` for offline evaluation |
+| Every model writer gets the facts it must not invent | **Grounded generation** | readable values, real page-object signatures; `tests/unit/test_splice_grounding.py` fails an ungrounded writer |
 | Already-generated method signatures injected into later prompts | **Context injection (RAG-style, in-run retrieval)** | `_build_sibling_page_object_context()` — AST-extracted, not embeddings |
 | One gold-standard example the LLM mimics | **Few-shot prompting / reference-based generation** | reference_files in config.yaml |
-| 15 catalogued failures → prompt rules + validators | **Prompt engineering as institutional memory** | the "Lessons learned" section below, prompts v12–v18 |
-| Human must approve before code gen and before merge | **Human-in-the-loop (HITL)** | `human-approved` label + PR review |
+| Catalogued failures → prompt rules + validators | **Prompt engineering as institutional memory** | the "Lessons learned" section below |
+| Human must approve before revisions, code gen and merge | **Human-in-the-loop (HITL)** | Impact Review, `human-approved` label, PR review |
+| Snapshots let a rejected change be rolled back | **Compensating actions / undo** | Agent 1 snapshots; reconcile restores them when the PR is closed unmerged |
 | SHA-256 hash markers to detect changed inputs | **Content-addressable change detection** (not ML, but ask-worthy) | `# JIRA: KEY (hash: xxx)` markers |
 
 ## 3. Concepts NOT used — and the honest reason
@@ -57,26 +63,26 @@ PR review (a human reads every diff before merge).
 | Concept | Why not here |
 |---|---|
 | **LangGraph / CrewAI / agent frameworks** | Our "graph" is the Jira label machine (`ai-ready` -> `ai-processed` -> `human-approved` -> `ai-coded` -> `tests-run`), which is externally observable, survives process death, and costs zero tokens to coordinate — an in-memory graph does none of those. Raw API + custom orchestration also means no framework churn. **LangChain itself IS used**, but only as a provider-agnostic HTTP client (`ChatOpenAI` + message types, two imports in `llm_client.py`) — no chains, agents, tools or memory. Structured output is Pydantic, not LangChain. |
-| **Vector DB / embeddings / semantic RAG** | Dedup is exact-title matching on ~dozens of scenarios; page-object retrieval is AST-based and exact. Embeddings would add infra and fuzziness where we need precision. |
+| **Vector DB / embeddings / semantic RAG** | Dedup is exact-title matching on ~dozens of scenarios; page-object retrieval is AST-based and exact; Agent 0's candidates come from a code graph plus lexical relevance within the story's Components. Embeddings would add infra and fuzziness where we need precision. |
 | **LangSmith / hosted tracing** | Token and cost tracking is `core/usage_ledger.py`, which posts `[LLM-USAGE]` directly onto the Jira story — the number lands on the work item, and no third party holds our prompts. LangSmith is present in `pip list` only as a transitive dependency of `langchain-core`; nothing imports it. |
 | **Fine-tuning** | Failure modes were fixable with prompt rules (see the "Lessons learned" section below); fine-tuning freezes behavior into an uninspectable artifact. |
 | **Runtime memory / learning loop** | Lessons are curated into prompts at development time — zero marginal token cost. see "Why not runtime learning" in the Lessons learned section below. |
 | **Multi-model routing** | One model keeps behavior predictable; the LLM client is a single swap point if we ever route (e.g., cheap model for Agent 5 summaries). |
-| **Evals / benchmark harness** | Partially covered: the unit suite pins validator behaviour; the real "eval" is Agent 4 running the generated tests. A dedicated prompt-regression eval set is a fair future item. |
+| **Evals / benchmark harness** | Partially covered: the unit suite pins validator behaviour; the real "eval" is Agent 4 running the generated tests; Agent 0 has a backtest and per-story prediction scoring. A dedicated prompt-regression eval set for Agents 1–3 is a fair future item. |
 
 ## 4. Demo Q&A — questions you should expect
 
-**Q: Why five agents instead of one big agent?**
+**Q: Why six agents instead of one big agent?**
 A: Context-window economics, natural human checkpoints (approve test cases before code), and durability — every agent's output is persisted (Jira issue, commit, PR comment) so a crash loses nothing. One mega-agent would lose its place.
 
 **Q: How do agents communicate without a message bus?**
 A: They don't talk to each other at all. Each reads state from Jira/GitHub and writes state back. The Jira label set IS the message. This makes the whole pipeline observable from the Jira board and recoverable from any point.
 
 **Q: What stops the LLM from hallucinating code that doesn't run?**
-A: Six validators + a repair loop before any commit, then Agent 4 actually executes the tests, then a human reviews the PR. Three independent nets.
+A: 28 static checks + a repair loop before any commit — the model is also handed the real method signatures, so it has less to invent — then Agent 4 actually executes the tests, then a human reviews the PR. Three independent nets.
 
 **Q: What happens when the LLM output fails validation?**
-A: Repairable categories (step coverage) go through the Reflexion loop — the exact validator errors are fed back and only the broken file is regenerated, up to 4 times. Non-repairable failures abort the run with the LLM output logged; no partial commits, no PR.
+A: Repairable failures go through the Reflexion loop — the exact validator errors are fed back and only the broken file is regenerated, up to 4 times. Non-repairable failures abort the run with the LLM output logged; no partial commits, no PR.
 
 **Q: How do you prevent the agent from modifying critical files?**
 A: Path policy validator. Reserved paths (reference files) can never appear in a plan; extendable paths can be appended to but never recreated. This is checked on the PLAN, before any generation happens.
@@ -84,23 +90,29 @@ A: Path policy validator. Reserved paths (reference files) can never appear in a
 **Q: How does it handle a Test Case being edited or deleted after code exists?**
 A: Hash markers. Every scenario carries `# JIRA: KEY (hash: 8char)` — SHA-256 of the Jira description. Edited → hash mismatch → surgical regeneration of just that scenario (`ai-update`). Deleted → orphan key → scenario removed, dead page-object methods detected via AST and commented out with `# AI-ORPHAN:` banners.
 
+**Q: A story changes behaviour that existing tests check. How do you find them?**
+A: Agent 0. One call names the elements the story changes; a code graph (scenario → step → method → selector) finds the scenarios that reach them; a second call judges each with evidence; a weighted score ranks them, capped by the model's verdict. A person then approves, rejects or retires each test in an Impact Review — nothing is revised before that. Agent 5 later scores the prediction against what the PR actually changed and failed.
+
+**Q: And if the change is rejected?**
+A: Agent 1 snapshots every test before revising it. If the PR is closed without merging (seen on two scans, so a sweeper close-and-reopen doesn't count), reconcile restores each test's old text, un-retires tests, removes the links, resets the story's labels and moves the card back to To Do.
+
 **Q: Prompt injection — what if someone puts instructions in a Jira ticket?**
 A: Human-approval gate means a human reads the story and generated test cases before the coder runs; path policy caps what a steered model could touch; PR review catches anything that gets through. We treat ticket text as data, but the real defense is that no output reaches production without two human checkpoints.
 
-**Q: Why no LangChain?**
-A: We use the same underlying patterns (chains, structured output, retries) directly against the API. The orchestration state lives in Jira, which beats in-memory graphs for durability and observability. Understanding the internals was also the point of the project.
+**Q: Why not LangChain / LangGraph for orchestration?**
+A: LangChain is used only as the HTTP transport (`ChatOpenAI` + message types). The patterns it offers — chains, structured output, retries — are written directly, and the orchestration state lives in Jira, which beats an in-memory graph for durability and observability: the agents never share a process.
 
 **Q: How does it learn from mistakes?**
-A: Two mechanisms. Within a run: the repair loop (validator errors → retry). Across runs: a curated failure catalog (the "Lessons learned" section below, 15 entries) distilled into prompt rules and validators — permanent, token-free, version-controlled. Deliberately not a runtime memory store; see the catalog for the trade-off analysis.
+A: Two mechanisms. Within a run: the repair loop (validator errors → retry). Across runs: a curated failure catalog (the "Lessons learned" section below) distilled into prompt rules and validators — permanent, token-free, version-controlled. Deliberately not a runtime memory store; see the catalog for the trade-off analysis.
 
 **Q: What does a run cost and how is cost bounded?**
-A: Measured, not estimated — and tokens and cost are tracked separately. Every LLM call records API-reported token usage (`core/llm_client.py`); each story run ends with two log lines: `LLM TOKEN USAGE` (exact counts) and `LLM COST` (input + output cost from the `LLM_PRICE_INPUT_PER_1M` / `LLM_PRICE_OUTPUT_PER_1M` repo variables). For the full story cost, every LLM-using agent posts a `[LLM-USAGE]` comment to the story, and Agent 5 aggregates them into an "End-to-end LLM usage & cost" table in its final report (`core/usage_ledger.py`) — the actual measured cost of Agent 1 + Agent 2 + Agent 3 + Agent 5 for that story in one place. Cost scales with test-case count and repair-loop retries on top of a fixed prompt-overhead floor. Bounding is separate from measurement: `max_stories_per_run: 2` caps blast radius per cron tick; the human-approval gate stops accidental mass processing.
+A: Measured, not estimated — and tokens and cost are tracked separately. Every LLM call records API-reported token usage (`core/llm_client.py`); each story run ends with two log lines: `LLM TOKEN USAGE` (exact counts) and `LLM COST` (input + output cost from the `LLM_PRICE_INPUT_PER_1M` / `LLM_PRICE_OUTPUT_PER_1M` repo variables). For the full story cost, every LLM-using agent posts a `[LLM-USAGE]` comment to the story, and Agent 5 aggregates them into an "End-to-end LLM usage & cost" table in its final report (`core/usage_ledger.py`) — the actual measured cost of every agent that ran for that story (Agent 0 too, for a change story) in one place. Cost scales with test-case count and repair-loop retries on top of a fixed prompt-overhead floor. Bounding is separate from measurement: `max_stories_per_run` caps blast radius per cron tick; the human-approval gate stops accidental mass processing.
 
 **Q: How would this scale to 50 stories a sprint?**
 A: Raise the per-run cap, or parallelize — each story is independent (own branch, own PR, no shared state). The bottleneck becomes human review of PRs, which is by design.
 
 **Q: What's the weakest part of the system?**
-A: Honest answers impress: (1) `ai-update` can't add new page-object methods (documented limitation — use `ai-regenerate`), (2) dedup is title-based, so a reworded duplicate slips through, (3) no dedicated prompt-regression eval suite yet.
+A: Honest answers impress: (1) dedup is title-based, so a reworded duplicate slips through, (2) no dedicated prompt-regression eval suite for Agents 1–3 yet, (3) Agent 0 is only as good as the scenario markers and inventory `components` it reads — gaps are reported as unknown, not as unaffected.
 
 ---
 
@@ -128,17 +140,27 @@ prompts look the way they do.
 | 2 | PR #7 | `features/sort-products.feature` paired with `test_sort_products.py` — kebab vs snake_case mismatch → feature not found at runtime | LLM inconsistent about filename casing across files in one plan | Filename consistency validator with auto-correct | `validate_filename_consistency()` in gherkin_analyzer.py |
 | 3 | PR #9 | Validator passed but pytest-bdd failed at runtime on `parsers.parse` with empty quoted values | Our validator was more permissive than pytest-bdd's actual `parse` backend | Validator now uses the SAME `parse` library pytest-bdd uses at runtime | `_phrase_matches()` in gherkin_analyzer.py |
 | 4 | PR #14 | Orphan `Given/When/Then` lines outside any Scenario block → cryptic collection error | LLM emitted stray steps after the last scenario | Feature structure validator | `validate_feature_file_structure()` in gherkin_analyzer.py |
-| 5 | v12 | Stage 1 plan JSON parse failures (markdown fences, trailing prose) | Free-text JSON is unreliable | Structured output: Pydantic schema + function-calling mode | `LLMClient.invoke_structured()` |
+| 5 | v12 | Stage 1 plan JSON parse failures (markdown fences, trailing prose) | Free-text JSON is unreliable | Structured output: Pydantic schema in the prompt, reply parsed through it, one repair retry | `LLMClient.invoke_structured()` |
 | 6 | v12e | Code extraction failed when LLM emitted 6-backtick fences | Model occasionally doubles fence characters | Normalize 4+ backticks to 3 before extraction | `extract_code_from_response()` in agent2_coder.py |
 | 7 | v15 | Validator rejected valid cross-file step reuse (step defined in another file) | Validator only looked at the paired step-def file | Cross-file awareness: check pre-existing step-def files on disk too | `validate_step_definitions_complete()` |
 | 8 | v17 | `[float(p.replace("$",...)) for p in prices]` when method already returned `list[float]` → AttributeError | LLM ignored declared return types | Type-contract awareness prompt rule | prompts/agent2_coder_generate.md §Type contract awareness |
 | 9 | v17 | Invented `.active_option` CSS class on native `<select>` → selector never matched | LLM hallucinated framework-specific DOM patterns | Locator discipline prompt rule (`input_value()` / `evaluate()`) | prompts/agent2_coder_generate.md §Locator discipline |
 | 10 | v18 | `@then("I should be on the inventory page")` vs feature's "redirected to the inventory page" → StepDefinitionNotFoundError | LLM paraphrased instead of exact-matching | Exact phrase matching rule with examples | prompts/agent2_coder_generate.md §Step 2 |
 | 11 | v18 | `parsers.parse('sort by {key}')` captured quotes into the variable → comparisons always failed | Quote-placement subtlety in `parse` templates | parsers.parse quote-handling rule (`"{value}"` vs `{value}`) | prompts/agent2_coder_generate.md §Step 3 |
-| 12 | v18 | LLM re-invented dropdown/wait patterns differently every run → inconsistent, sometimes broken | No shared primitives to call | Generic BasePage helpers (10 at v18, 72 today); prompt lists them | pages/base_page.py + prompt §BasePage helpers |
+| 12 | v18 | LLM re-invented dropdown/wait patterns differently every run → inconsistent, sometimes broken | No shared primitives to call | Generic BasePage helpers (10 at v18, 85 today); prompt lists them | pages/base_page.py + prompt §BasePage helpers |
 | 13 | May 2026 | Deleted Jira Test Cases left dead page-object methods forever | ai-update preserves page objects by design | Orphan detection: AST analysis, comment-out with `# AI-ORPHAN:` banners | validators/orphan_cleanup.py |
 | 14 | May 2026 | Scan picked up stories from old sprints | JQL had no sprint clause | Sprint scoping: `sprint: "auto"` resolves active sprint via JIRA_BOARD_ID | integrations/jira_client.py `get_active_sprint_name()` |
 | 15 | SCRUM-54 | A new login-adjacent feature re-declared `@given("I am on the OrangeHRM login page")`, already defined in the reference `test_login.py` → pytest-bdd registers steps globally across the package, so the duplicate collides at collection time (Agent 3 flagged it) | LLM re-declares common steps (navigation, login) in the new file instead of reusing the reference's existing ones — it doesn't know they're already registered package-wide | (a) prompt rule: reuse existing steps, never re-declare; (b) cross-file duplicate validator — narrowly flags only genuine (keyword, parser_type, phrase) collisions across step-def files incl. the reference | `validate_no_duplicate_step_definitions()` in gherkin_analyzer.py + prompts/agent2_coder_generate.md §rule 13 |
+| 16 | PR #149 / #162 | Agent 3 turned PRs red for failures no test showed, and for lines the PR never changed | A predicted failure was treated as a fact | Blocking needs a named failure scenario; a green Agent 4 run on the same commit refutes it; unchanged lines only advise | `postprocess_review()` in agents/agent3_reviewer.py |
+| 17 | PR #151 | Re-running an old check replayed an outdated reviewer copied onto the PR branch | The workflow checked out the PR head | Agent 3 checks out the base branch | `.github/workflows/agent3-reviewer.yml` |
+| 18 | PR #164 | An Impact Review table could read as empty | Jira turned test keys into links | Keys read in every link form; an unreadable or empty review refuses to hand over | `core/impact_review.py`, `core/impact_handover.py` |
+| 19 | PR #166 | A renamed label left a broken selector and notes teaching the old wording | No agent writes the reference material | Context-update PR at hand-over (wording; since #173 also passages the story makes untrue) | `core/context_update.py` |
+| 20 | PR #169 | A change story's spliced step called a page method that does not exist, after the repair loop | The splice writers lacked the grounding the full-file writers had | Grounding for every model writer + one corrected retry; contract test for new writers | `agents/agent2_coder.py`, `tests/unit/test_splice_grounding.py` |
+| 21 | PR #171 | The PR said an orphan was commented out, but the file was not in the PR | The cleanup's change was committed only when a step was added | Commit the file whenever the cleanup changed it | `agents/agent2_impact.py` |
+| 22 | PR #172 | No outcome was posted for a reviewed change | Jira re-stored an edited JSON code block in another format | One reader for every format Jira writes; unreadable data warns | `core/json_block.py` |
+| 23 | PR #173 | A test the model judged "review" ranked must-update on structure alone | The score ignored the model's verdict | The verdict caps the tier | `rank()` in core/impact_analysis.py |
+| 24 | PR #173 | A "not shown" assertion passed while the element was still loading | A probe that waits for the element was used to assert absence | New validator | `validate_absence_not_asserted_with_waiting_probe()` |
+| 25 | PR #173 | After an undo the story kept `ai-coded`/In Review and its unshipped tests stayed active | The undo restored the other stories but not this one | Retire unshipped tests, reset labels, card to To Do, retry steps | `_settle_story()` in core/impact_reconcile.py |
 
 ### Why not runtime learning (RAG over past failures, fine-tuning, etc.)?
 
@@ -150,7 +172,7 @@ Considered and deliberately rejected for now:
 2. **Fine-tuning** requires training data volume we don't have and freezes
    lessons into a model we can't inspect or diff.
 3. **A vector DB of failures** adds infrastructure for what is currently a
-   14-row table.
+   25-row table.
 
 The validator + repair-loop combination gives *runtime* self-correction within
 a single run (the LLM sees its own errors and fixes them), while this catalog +

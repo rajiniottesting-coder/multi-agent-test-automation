@@ -4,6 +4,79 @@ Consolidated ADRs, newest first. Each section is an immutable decision record; l
 
 ---
 
+## ADR-013 — Agent 0: graph-first impact analysis, a human Impact Review, undo by snapshot
+
+### Status
+
+Accepted (2026-10, PRs #126–#139 phases A–E, #163 live mode, #166 context
+update, #172–#173 validation findings).
+
+### Context
+
+A story that changes existing behaviour silently invalidates tests other
+stories own. Finding them by hand is slow and incomplete, and a test revised
+for a change that is later rejected leaves Jira describing behaviour that never
+shipped. The pipeline needed a step before Agent 1 that answers "which tests
+does this change touch?" without letting a model rewrite tests on its own.
+
+### Decision
+
+1. **Graph first, model second, formula last.** A deterministic impact graph
+   (scenario → step → method → selector, built from `# JIRA:` markers and the
+   code) and component/text relevance produce the candidates; one model call
+   names the change (`ChangeSeeds`) and one judges each candidate
+   (`ImpactAssessment`); a weighted score sets the tier. The model's verdict is
+   the ceiling (since #173), so structure alone never promotes a test the model
+   judged *review* or *unaffected*.
+2. **Evidence or nothing.** A verdict that cites no real graph path or verbatim
+   step is dropped, and an element key not in the inventory is dropped and
+   reported. A graph gap is reported as *unknown*, never as *not impacted*.
+3. **Off, then shadow, then live.** The framework default is off. Shadow mode
+   posts reports only and Agent 5 scores every prediction, so Agent 0 is
+   measured before it writes anything.
+4. **A person decides each test.** Live mode opens an Impact Review sub-task;
+   nothing is revised until it is Done. Approve, reject and retire are per test.
+5. **State in labels and marker comments**, like the rest of the pipeline —
+   `impact-check → impact-proposed → ai-ready → impact-applied →
+   (merged | impact-reverted)`, with `[agent0:…]` comments as memory.
+6. **Undo by snapshot.** Agent 1 snapshots each test before revising it.
+   Reconcile restores a snapshot only where the text is still what the change
+   wrote; a test edited since is left for a person. A closed PR is acted on
+   only when the same close is seen on two scans, and reconcile is its own
+   job, because the sweeper restarts stalled PRs by closing and reopening them
+   and two concurrent runs must not count as two scans.
+7. **Leave an undone story ready to retry** (since #173): its own unshipped
+   tests are retired, the pipeline labels reset, the card moved to To Do, and
+   the retry steps posted.
+8. **Reference material changes through a separate PR.** Wording the story
+   replaces and passages it makes untrue are proposed for the inventory and
+   `prompts/app_context/` as a context-update PR whose branch carries no issue
+   key. Selectors are never edited, and it is merged after deployment.
+
+### Alternatives considered
+
+- **Model-only analysis** — no recall guarantee and no evidence to check; a
+  model can name a test that does not exist.
+- **Embeddings over scenarios** — adds infrastructure and fuzziness where the
+  graph gives exact paths.
+- **Undo on the `pull_request: closed` event** — the sweeper's close-and-reopen
+  emits the same event and would trigger false undos.
+- **One PR for code and context** — the context must wait for deployment while
+  the test code must not; one PR would block one or break the other.
+
+### Consequences
+
+- Agent 0 is only as good as the scenario markers and the inventory's
+  `components`; `scripts/onboarding_check.py` and `scripts/backfill_markers.py`
+  exist for that.
+- A change story can produce two PRs. Only the story's own PR closes it.
+- An undo takes two scans — the next weekday's scheduled run, or two manual
+  runs.
+- The graph builder is per test-stack language (`register_graph_builder`); the
+  rest of Agent 0 carries over to another stack unchanged.
+
+---
+
 ## ADR-012 — Shared step definitions live in `tests/step_defs/conftest.py`
 
 ### Status

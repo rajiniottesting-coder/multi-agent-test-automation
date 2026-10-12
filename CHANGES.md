@@ -4,6 +4,40 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## October 2026 — Agent 0 (impact analysis) and the change-story pipeline
+
+A sixth agent, Agent 0 (Impact Analyst), runs before Agent 1 for a story that
+changes behaviour existing tests rely on. Design record: [ADR-013](./docs/DECISIONS.md);
+operator guide: [GUIDE.md → Change stories — Agent 0](./docs/GUIDE.md#change-stories--agent-0).
+
+**Agent 0, built in phases (all PRs merged 10–12 Oct):**
+- #126 Phase A — foundations; #127 Phase B — impact graph and marker backfill (`scripts/backfill_markers.py`)
+- #130 Phase C — hand-over pipeline: Impact Review, hand-over, Agent 1 impact-aware mode, Agent 2 owner splice, reconcile
+- #131 Phase D — Agent 0 itself (seeds, candidates, adjudication, ranking, publish), switched off by default; #132 design-audit fixes
+- #134–#139 Phase E — uncovered live elements (`--compare`, inventory proposals), onboarding kit for applications outside this repository (`scripts/onboarding_check.py`, `docs/AGENT0_ONBOARDING.md`), generality audit
+- #159 shadow mode on; #163 live mode for a single-story trial
+- #164 Impact Review reads decisions from linked keys and refuses an unreadable review; #165 scenarios without a test case are shown
+- #166 context-update PR: the wording a story replaces, proposed for the inventory and app notes
+
+**Validation series A1–A3 (real change stories) — generic fixes:**
+- #169 Agent 2 splice writers get the same grounding as the full-file writers, plus one corrected retry; `test_splice_grounding.py` fails any ungrounded model writer
+- #171 the orphan cleanup's file is committed even when the splice adds no step function
+- #172 `core/json_block.py` reads stored review data however Jira re-stores an edited code block
+- #173 the model's verdict caps the tier; short evidence per row; a re-analysis that changes nothing says so; the context update also rewrites passages a story makes untrue (`NoteRewrites`); a revision repeating an existing scenario is flagged; new validator `validate_absence_not_asserted_with_waiting_probe` (28 checks); scenario marker placed below the tags; after an undo, reconcile retires the story's unshipped tests, resets its pipeline labels (`reconcile.reset_labels`), moves the card to To Do (`status_workflow.on_label.impact-reverted`) and posts the retry steps
+
+**Rest of the pipeline in the same period:**
+- #140 committed page objects are extended automatically and keep their methods (`validate_extended_page_objects_keep_methods`)
+- #141 Agent 1 named "Test Designer" (distinct from Agent 0, the Impact Analyst)
+- #142 Agent 1 checks drafted test cases (`core/test_case_rules.py`) before writing them; #160 its run summary handles every outcome
+- #143 every validator error is routed to the repair loop; #144, #146 new validator rules
+- #149–#152, #162 Agent 3 blocks only for a named failure in lines the PR changed, checks a predicted failure against Agent 4 on the same commit, and is always the reviewer on `main`
+- #153 golden-rule guard: application names harvested from the inventory and page objects may not appear in framework files
+- #155 Agent 5 scopes the report to the story's own tests and renders Jira markup; #158 the PR title names the story
+
+**Docs:** README, GUIDE, TECHNICAL_DEEP_DIVE, AI_CONCEPTS, REUSE_FOR_NEW_PROJECT and AGENT0_ONBOARDING brought up to date with six agents; ADR-013 added.
+
+---
+
 ## Phase 2 — Shared step definitions moved to `tests/step_defs/conftest.py`
 
 Fixes a runtime failure that every validator passed. Agent 2 generated a feature
