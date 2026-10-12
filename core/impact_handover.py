@@ -127,7 +127,16 @@ def decisions_from_review(tracker, change_story: str, settings: dict | None = No
     if review["status"].strip().lower() != settings["review"]["done_status"].strip().lower():
         raise HandoverRefused(f"{review['key']} is {review['status']!r}, not "
                               f"{settings['review']['done_status']!r}")
-    return review["key"], impact_review.parse(review["description"])
+    # A review whose rows cannot be read must never hand over as "nothing
+    # decided": that would label the story ai-ready with no test revised.
+    unreadable = impact_review.unreadable_rows(review["description"])
+    if unreadable:
+        raise HandoverRefused(f"{review['key']}: cannot read the test case key in row(s): "
+                              + "; ".join(unreadable))
+    decisions = impact_review.parse(review["description"])
+    if not decisions:
+        raise HandoverRefused(f"{review['key']}: no decision rows found in its table")
+    return review["key"], decisions
 
 
 def _retired_label() -> str:
