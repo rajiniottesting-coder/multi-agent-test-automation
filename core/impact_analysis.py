@@ -487,8 +487,15 @@ def report_dict(change_ref: str, chash: str, graph_sha: str, ranked: list,
             "dropped_assessments": dropped}
 
 
+DATA_NOTE = ("Agent 0 data - read back by the agents (repeat check, change delta, "
+             "accuracy measurement). Do not edit.")
+
+
 def embed(report: dict) -> str:
-    return REPORT_OPEN + "\n" + json.dumps(report, indent=1) + "\n" + REPORT_CLOSE
+    """The machine copy of the report, under a note telling people to leave it
+    alone. The note sits outside the code block, so extract() is unaffected."""
+    return (DATA_NOTE + "\n" + REPORT_OPEN + "\n" + json.dumps(report, indent=1)
+            + "\n" + REPORT_CLOSE)
 
 
 def extract(text: str) -> Optional[dict]:
