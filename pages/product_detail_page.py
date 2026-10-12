@@ -82,6 +82,32 @@ class ProductDetailPage(BasePage):
         """True once the Brand label is on screen. WAITS for it."""
         return self.is_showing(self.sel("brand"))
 
+    def has_quantity_input(self) -> bool:
+        """True once a quantity input field is on screen. WAITS for it.
+
+        A WAITING predicate, built on is_showing() so it retries until the
+        timeout and logs the selector and wait it gave up on. Call it only
+        where the field is EXPECTED to be present.
+
+        For the no-quantity scenarios, which assert the field is ABSENT, do
+        NOT call this: a waiting probe can answer "no" only by exhausting its
+        full timeout and then raising, so an absence assertion on top of it
+        would never be reached. Use quantity_input_count() instead, which
+        reads once without waiting, and assert it is zero.
+        """
+        return self.is_showing(self.sel("quantity_input"))
+
+    def quantity_input_count(self) -> int:
+        """How many quantity input fields are on the page right now. No wait.
+
+        The NON-WAITING reader for asserting ABSENCE: a step checking "I should
+        not see a quantity input field" asserts this is zero. It returns at
+        once either way, so the absence case does not cost a timeout. Do NOT
+        use it to assert the field is present — that would race any state change
+        ahead of it; has_quantity_input() is the waiting probe for presence.
+        """
+        return self.get_count(self.sel("quantity_input"))
+
     def current_quantity(self) -> str:
         """The current value typed in the quantity field (DOM value, not text)."""
         return self.get_input_value(self.sel("quantity_input"))
