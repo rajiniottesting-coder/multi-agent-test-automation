@@ -123,11 +123,14 @@ def drop_owner_files(plan, owner_files: dict, own_new_cases: list) -> list:
 
 
 def splice_owner_files(llm, gh, story_id: str, owner_files: dict, index, ctx,
-                       references: dict, page_inventory: str, tracker) -> tuple:
+                       references: dict, page_inventory: str, tracker,
+                       batch_files: list | None = None) -> tuple:
     """Rewrite approved scenarios and remove retired ones in the owners' files.
 
     Returns (generated files, report). Each owner's step definitions gain only
     the step functions the revised scenarios need (_splice_step_defs_incremental).
+    batch_files are the files this run already wrote: their page objects are
+    the methods the new step functions may call.
     """
     from agents.agent2_coder import (GeneratedFile, _generate_single_scenario,
                                      _splice_step_defs_incremental, compute_description_hash,
@@ -157,7 +160,8 @@ def splice_owner_files(llm, gh, story_id: str, owner_files: dict, index, ctx,
 
         sd_path = of.step_defs_path
         sd_content, mode = _splice_step_defs_incremental(
-            llm, gh, path, content, sd_path, ctx, references, page_inventory)
+            llm, gh, path, content, sd_path, ctx, references, page_inventory,
+            batch_files=batch_files)
         report["step_defs"][sd_path] = mode
         page_updates: dict = {}
         if of.retire:
