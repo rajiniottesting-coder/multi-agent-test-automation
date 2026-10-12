@@ -499,13 +499,9 @@ def embed(report: dict) -> str:
 
 
 def extract(text: str) -> Optional[dict]:
-    m = re.search(r"\{code:json\}\n(.*?)\n\{code\}", text or "", re.S)
-    if not m:
-        return None
-    try:
-        data = json.loads(m.group(1))
-    except ValueError:
-        return None
+    """The report stored by embed(), also after a person edited the issue."""
+    from core.json_block import read_json_block
+    data = read_json_block(text)
     return data if isinstance(data, dict) and "content_hash" in data else None
 
 

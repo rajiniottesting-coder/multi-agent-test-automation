@@ -128,10 +128,19 @@ def _previous_report(tracker, story_key: str, settings: dict):
     prefix = settings["review"]["summary_prefix"]
     reviews = [s for s in tracker.get_subtasks(story_key) if s["summary"].startswith(prefix)]
     if reviews:
-        return ia.extract(reviews[-1]["description"]), reviews[-1]
+        report = ia.extract(reviews[-1]["description"])
+        if report is None:
+            logger.warning("%s: the Agent 0 data in %s cannot be read - the repeat check, "
+                           "the delta and the outcome measurement will treat the story as "
+                           "never analysed.", story_key, reviews[-1]["key"])
+        return report, reviews[-1]
     for body in reversed(tracker.get_comments(story_key)):
         if body.startswith(REPORT):
-            return ia.extract(body), None
+            report = ia.extract(body)
+            if report is None:
+                logger.warning("%s: the Agent 0 data in the latest report comment cannot "
+                               "be read.", story_key)
+            return report, None
     return None, None
 
 
