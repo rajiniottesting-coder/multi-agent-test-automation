@@ -49,6 +49,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -217,12 +218,39 @@ def _render_report(report: dict, title: str) -> str:
     lines += ["", "||Tier||Score||Test||Owner||Scenario||Evidence||"]
     for r in report["ranked"]:
         lines.append(f"|{r['tier']}|{r['score']}|{r['key'] or '-'}|{r['owner'] or '-'}|"
-                     f"{r['title']}|{(r['evidence'] or '-').replace('|', '/')}|")
+                     f"{r['title']}|{short_evidence(r).replace('|', '/')}|")
     if report["not_judged"]:
         lines += ["", "Not judged (beyond max_candidates, never shown as unaffected): "
                   + ", ".join(n["key"] or n["ref"] for n in report["not_judged"][:50])]
     lines += _manual_section(report)
     return "\n".join(lines) + "\n\n" + ia.embed(report)
+
+
+_ELEMENT_IN_PATH = re.compile(r"element (\S+:\S+)")
+_EVIDENCE_LIMIT = 240
+
+
+def short_evidence(row: dict) -> str:
+    """One readable line per test for the tables a person reads.
+
+    The full structural paths repeat every element a scenario reaches and
+    made the Impact Review hard to read; they stay in the embedded data.
+    A person needs WHY the test is affected - the model's reason - and which
+    of the changed elements it touches.
+    """
+    elements = sorted(set(_ELEMENT_IN_PATH.findall(row.get("evidence") or "")))
+    reason = " ".join((row.get("reason") or "").split())
+    parts = []
+    if reason:
+        parts.append(reason if len(reason) <= _EVIDENCE_LIMIT
+                     else reason[:_EVIDENCE_LIMIT - 3].rsplit(" ", 1)[0] + "...")
+    if elements:
+        parts.append("Elements: " + ", ".join(elements))
+    if not parts:
+        text = " ".join((row.get("evidence") or "-").split())
+        parts.append(text if len(text) <= _EVIDENCE_LIMIT
+                     else text[:_EVIDENCE_LIMIT - 3] + "...")
+    return " - ".join(parts)
 
 
 def _norm_path(path) -> str:
@@ -266,7 +294,7 @@ def _review_rows(report: dict, decided: dict | None = None) -> list:
         if r["blocked_by"]:
             decision = "blocked by " + ",".join(r["blocked_by"])
         rows.append({"key": r["key"], "owner": r["owner"], "tier": r["tier"], "score": r["score"],
-                     "evidence": r["evidence"], "decision": decision})
+                     "evidence": short_evidence(r), "decision": decision})
     return rows
 
 
@@ -369,12 +397,20 @@ def _structural_report(graph, sha, seeds, change_ref, settings, tracker, host, c
 def _post_delta(tracker, story_key: str, change: dict | None, note: str = "") -> None:
     """D4: what a re-analysis added, removed and re-tiered. Posted on every
     live path that has an earlier report, so a removal is never silent."""
-    if change and any(change.values()):
+    if change is None:
+        return                                   # a first analysis has nothing to compare
+    if any(change.values()):
         tracker.add_comment(story_key, f"{DELTA} Re-analysed: added "
                             f"{[r['ref'] for r in change['added']]}, removed "
                             f"{[r['ref'] for r in change['removed']]}, tier changed "
                             f"{[(t['ref'], t['from'], t['to']) for t in change['tier_changed']]}."
                             + note)
+    else:
+        # A re-analysis runs only because the story changed (stage 0 skips an
+        # unchanged one). Without this line a person sees a second full report
+        # and has to compare it by hand to learn that the edit changed nothing.
+        tracker.add_comment(story_key, f"{DELTA} Re-analysed after the story changed: "
+                            "no change to the affected tests or their tiers." + note)
 
 
 def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool = False) -> dict:

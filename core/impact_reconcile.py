@@ -16,6 +16,13 @@ looks at each such story's pull requests and settles it:
                                impact-reverted.
   no PR after no_pr_days       one comment asking a person to decide
 
+After an undo the change story itself is left ready to retry or drop, not
+half-done: its own test cases that never reached main are retired (a label,
+reversible), the pipeline-progress labels the closed PR made untrue
+(reconcile.reset_labels) come off, the card follows the impact-reverted
+label (status_workflow.on_label), and one comment on the story says what
+happened and how to retry.
+
 Why scheduled and not on the PR's closed event: the sweeper restarts a
 stalled PR by closing and reopening it, which emits the same event. The
 two-scan rule absorbs that - a close is acted on only when the SAME close
@@ -92,7 +99,7 @@ def reconcile_story(tracker, host, story: str, settings: dict | None = None, now
                                        "If it is still closed on the next scan, the revised test "
                                        "cases are restored to their earlier text.")
             return {"story": story, "action": "pending-close", "pr": pr["number"]}
-        return _revert(tracker, story, pr, cases, owners, labels)
+        return _revert(tracker, story, pr, cases, owners, labels, settings)
 
     since = _NO_PR.findall("\n".join(comments))
     if not since:
@@ -110,7 +117,62 @@ def reconcile_story(tracker, host, story: str, settings: dict | None = None, now
     return {"story": story, "action": "waiting-for-pr", "days": age}
 
 
-def _revert(tracker, story, pr, cases, owners, labels) -> dict:
+def _unautomated(keys, features_dir=None) -> list:
+    """The keys with no scenario on main. Empty when main cannot be read -
+    a test case is never retired on a guess."""
+    try:
+        from pathlib import Path
+
+        from agents.agent2_coder import build_marker_index
+        if features_dir is None:
+            from config.paths import FEATURES_DIR as features_dir
+        if not Path(features_dir).is_dir():
+            raise FileNotFoundError(str(features_dir))      # an index of nothing is not "none shipped"
+        index = build_marker_index(features_dir)
+    except Exception as e:                                     # noqa: BLE001
+        logger.warning("Reconcile: cannot read the scenarios on main (%s); "
+                       "the story's own test cases are left active.", e)
+        return []
+    return [k for k in keys if k not in index.by_key]
+
+
+def _settle_story(tracker, story, pr, labels, settings, retired_label,
+                  features_dir=None) -> dict:
+    """Leave the undone change story ready to retry or drop.
+
+    Before this, the story kept ai-coded / tests-run / the In Review column
+    and its own new test cases stayed active, describing behaviour that was
+    never shipped - a state no agent acts on and a person had to untangle.
+    """
+    own = [c["key"] for c in tracker.get_linked_test_cases(story)]
+    retired = _unautomated(own, features_dir)
+    for key in retired:
+        tracker.add_label(key, retired_label)
+    reset = [lab for lab in settings["reconcile"].get("reset_labels") or []]
+    for label in reset:
+        tracker.remove_label(story, label)
+    try:
+        from core.board_status import move_card_for_label
+        move_card_for_label(tracker, story, labels["reverted"])
+    except Exception as e:                                     # noqa: BLE001
+        logger.warning("Reconcile: could not move %s on the board: %s", story, e)
+    lines = [f"{MARK} reverted pr: {pr['number']}",
+             (f"Pull request #{pr['number']} was closed without merging, so this change "
+              "was undone: the other stories' test cases it revised have their earlier "
+              "text back.")]
+    if retired:
+        lines.append("This story's own test cases that never reached main are retired "
+                     f"(label {retired_label}, reversible): {', '.join(retired)}")
+    if reset:
+        lines.append("Pipeline labels removed: " + ", ".join(reset))
+    lines.append(f"To retry: remove {labels['reverted']} and add {labels['check']} - "
+                 "Agent 0 analyses the story again. To drop it: nothing more to do.")
+    tracker.add_comment(story, "\n".join(lines))
+    return {"retired_own": retired, "reset_labels": reset}
+
+
+def _revert(tracker, story, pr, cases, owners, labels, settings=None,
+            features_dir=None) -> dict:
     restored, left, unsnapped, unretired = [], [], [], []
     from agents.agent2_coder import compute_description_hash
     from integrations.tracker import tracker_settings
@@ -141,10 +203,12 @@ def _revert(tracker, story, pr, cases, owners, labels) -> dict:
                 unretired=[k for k in owned if k in unretired]))
     tracker.remove_label(story, labels["applied"])
     tracker.add_label(story, labels["reverted"])
+    settled = _settle_story(tracker, story, pr, labels, settings or impact_settings(),
+                            retired_label, features_dir)
     logger.info("Reverted %s: restored %s, left for a person %s", story, restored, left)
     return {"story": story, "action": "reverted", "pr": pr["number"],
             "restored": restored, "left_for_a_person": left, "no_snapshot": unsnapped,
-            "unretired": unretired}
+            "unretired": unretired, **settled}
 
 
 def reconcile_all(tracker, host, settings: dict | None = None, now=None) -> list:

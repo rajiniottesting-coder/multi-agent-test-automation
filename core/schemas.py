@@ -79,6 +79,22 @@ class WordingChanges(BaseModel):
         description="Each text replacement the story states explicitly. Empty when it states none")
 
 
+class NoteRewrite(BaseModel):
+    path: str = Field(..., description="The file the passage is in, exactly as given")
+    old: str = Field(..., description="The passage copied VERBATIM from that file - a whole "
+                                      "sentence, bullet or paragraph")
+    new: str = Field(..., description="The passage rewritten to describe the application "
+                                      "AFTER the change")
+    reason: str = Field(..., description="The story sentence that makes the old passage untrue")
+
+
+class NoteRewrites(BaseModel):
+    """Agent 0, context update: reference passages a story makes untrue."""
+    rewrites: list[NoteRewrite] = Field(
+        default_factory=list,
+        description="Each passage the story makes untrue. Empty when it makes none untrue")
+
+
 class CandidateAssessment(BaseModel):
     candidate_id: str = Field(..., description="The candidate id exactly as given, e.g. 'C3'")
     tier: Literal["must-update", "review", "unaffected"] = Field(...)

@@ -2158,6 +2158,148 @@ def validate_predicates_wait(generated_files: list, project_root=None) -> list[s
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Absence must not be asserted with a predicate that waits for PRESENCE
+#
+# `assert not page.has_x()` where has_x() is built on is_showing() waits the
+# full timeout on every run in exactly the case the step expects - the
+# element absent - before it answers. The predicates rule above pushes
+# question-shaped methods to wait (correct for presence), so without this
+# rule an absence step inherits a waiting probe and becomes slow and flaky.
+# Agent 3 caught it on a change story in validation; this moves the catch before the
+# branch exists.
+# ─────────────────────────────────────────────────────────────────────────
+
+_PRESENCE_WAITS = frozenset({"is_showing", "wait_visible", "wait_for_any", "wait_for_text",
+                             "wait_for_count", "wait_enabled"})
+_ABSENCE_ANSWERS = frozenset({"wait_hidden", "get_count", "is_visible", "exists"})
+
+
+def _self_calls_in(func: ast.AST, names: frozenset, returns_only: bool) -> str | None:
+    """The first self.<name>() call in the function (in a `return` if asked)."""
+    roots = ([n.value for n in ast.walk(func) if isinstance(n, ast.Return) and n.value]
+             if returns_only else [func])
+    for root in roots:
+        for node in ast.walk(root):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and isinstance(node.func.value, ast.Name) and node.func.value.id == "self"
+                    and node.func.attr in names):
+                return node.func.attr
+    return None
+
+
+def _negated_call(test: ast.AST) -> ast.Call | None:
+    """The call in `not x.m()`, `x.m() is False` or `x.m() == False`."""
+    if isinstance(test, ast.UnaryOp) and isinstance(test.op, ast.Not) \
+            and isinstance(test.operand, ast.Call):
+        return test.operand
+    if (isinstance(test, ast.Compare) and isinstance(test.left, ast.Call)
+            and len(test.ops) == 1 and isinstance(test.ops[0], (ast.Is, ast.Eq))
+            and isinstance(test.comparators[0], ast.Constant)
+            and test.comparators[0].value is False):
+        return test.left
+    return None
+
+
+def _page_classes(generated_files, project_root: Path) -> dict:
+    """{fixture name: (class node, page file)} - this batch first, then disk."""
+    sources: dict = {}
+    root = Path(project_root)
+    pages_dir = root / "pages"
+    if pages_dir.is_dir():
+        for f in sorted(pages_dir.glob("*.py")):
+            try:
+                sources[f"pages/{f.name}"] = f.read_text(encoding="utf-8")
+            except OSError:
+                continue
+    for f in generated_files or []:
+        path = (getattr(f, "file_path", "") or "").replace("\\", "/")
+        if path.startswith("pages/") and path.endswith(".py"):
+            sources[path] = getattr(f, "content", "") or ""
+    out: dict = {}
+    for path, src in sources.items():
+        if path.endswith("base_page.py"):
+            continue
+        try:
+            tree = ast.parse(src)
+        except SyntaxError:
+            continue
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef):
+                out[_camel_to_snake(node.name)] = (node, path)
+    return out
+
+
+def validate_absence_not_asserted_with_waiting_probe(generated_files: list,
+                                                     project_root=None) -> list[str]:
+    """Fail a step that asserts ABSENCE through a predicate that waits for presence.
+
+    Points at the step definition when the page object already offers a
+    method that answers absence for the same element, and at the page object
+    when it offers none - so the repair loop changes the file that can
+    actually fix it.
+    """
+    classes = _page_classes(generated_files, Path(project_root or "."))
+    errors: list[str] = []
+    for f in generated_files or []:
+        path = (getattr(f, "file_path", "") or "").replace("\\", "/")
+        if not (path.startswith("tests/step_defs/") and path.endswith(".py")):
+            continue
+        try:
+            tree = ast.parse(getattr(f, "content", "") or "")
+        except SyntaxError:
+            continue
+        for func in ast.walk(tree):
+            if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            params = {a.arg for a in func.args.args}
+            for node in ast.walk(func):
+                if not isinstance(node, ast.Assert):
+                    continue
+                call = _negated_call(node.test)
+                if not (call and isinstance(call.func, ast.Attribute)
+                        and isinstance(call.func.value, ast.Name)
+                        and call.func.value.id in params):
+                    continue
+                found = classes.get(call.func.value.id)
+                if not found:
+                    continue
+                cls, page_path = found
+                method = next((m for m in cls.body if isinstance(m, ast.FunctionDef)
+                               and m.name == call.func.attr), None)
+                probe = method and _self_calls_in(method, _PRESENCE_WAITS, returns_only=True)
+                if not probe:
+                    continue
+                keys = _sel_keys_in(method)
+                alternatives = sorted(
+                    m.name for m in cls.body
+                    if isinstance(m, ast.FunctionDef) and not m.name.startswith("_")
+                    and m.name != method.name and keys & _sel_keys_in(m)
+                    and _self_calls_in(m, _ABSENCE_ANSWERS, returns_only=False)
+                    and not _self_calls_in(m, _PRESENCE_WAITS, returns_only=False))
+                what = (f"`{call.func.value.id}.{method.name}()` is built on self.{probe}(), "
+                        f"which waits for the element to APPEAR: when it is absent - the "
+                        f"outcome this step expects - it waits the full timeout on every run "
+                        f"before it answers")
+                if alternatives:
+                    errors.append(
+                        f"Absence assertion error in '{path}' line {node.lineno}: the step "
+                        f"asserts something is ABSENT, but {what}. Assert with "
+                        f"{cls.name}.{alternatives[0]}(), which answers absence without "
+                        f"waiting for the element to appear.")
+                else:
+                    key = min(keys) if keys else "<element>"
+                    errors.append(
+                        f"Absence assertion error in '{page_path}': '{path}' line "
+                        f"{node.lineno} asserts {cls.name}.{method.name}() is False, but "
+                        f"{what}, and {cls.name} has no method that answers absence. Add "
+                        f"one for the same element - built on self.wait_hidden(self.sel("
+                        f"\"{key}\")) to wait until it is gone, or on self.get_count(self.sel("
+                        f"\"{key}\")) == 0 to answer at once - and keep {method.name}() for "
+                        f"presence.")
+    return errors
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # A step definition must not resolve selectors
 #
 # `nav_page.sel("some_key")` in a step definition puts a selector key in the

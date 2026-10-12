@@ -8,7 +8,19 @@ matches on the old text stops resolving after deployment, and notes quoting
 the old text keep teaching the agents the old wording, story after story.
 
 When Agent 0 hands a change story over (or finds nothing to review), it
-proposes the update as a pull request for a person to review:
+proposes the update as a pull request for a person to review. Two kinds of
+change make the material stale, and each has its own step:
+
+  * WORDING the story replaces (a label, a message): an exact replacement,
+    below (steps 1-3).
+  * BEHAVIOUR, a rule or an element the story changes or removes: one more
+    model call reads the notes and the inventory's note text and rewrites
+    each passage the story makes untrue (extract_note_rewrites). A passage
+    not found verbatim is dropped and reported; a selector is never touched
+    (the element is live until the change is deployed). Found in validation:
+    a story removing a dialog left every note that described the dialog.
+
+For wording:
 
 1. One model call lists the text the story replaces: old -> new, as the
    story states it. A change whose old text appears in none of the sources
@@ -50,6 +62,7 @@ class Proposal:
     code_mentions: list = field(default_factory=list)  # {"path","line","text"}
     applied: list = field(default_factory=list)     # [(old, new)] that matched something
     dropped: list = field(default_factory=list)     # [(old, new, why)]
+    rewrites: list = field(default_factory=list)    # {"path","before","after","reason"}
 
     @property
     def empty(self) -> bool:
@@ -158,8 +171,65 @@ def _apply_text(text: str, old: str, new: str, relpath: str, prop: Proposal) -> 
     return text.replace(old, new)
 
 
-def propose(sources: dict, changes, code: dict | None = None) -> Proposal:
-    """Apply each old -> new to the sources. Pure: nothing is written."""
+def _apply_json_notes(text: str, old: str, new: str) -> str | None:
+    """Replace `old` inside the inventory's NOTE values only - never a selector
+    (a value under an `elements` map). None when no note holds it."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return None
+
+    def walk(node, path):
+        if isinstance(node, dict):
+            return {k: walk(v, path + (str(k),)) for k, v in node.items()}
+        if isinstance(node, list):
+            return [walk(v, path + (str(i),)) for i, v in enumerate(node)]
+        if isinstance(node, str) and "elements" not in path and old in node:
+            hits.append(path)
+            return node.replace(old, new)
+        return node
+    hits: list = []
+    expected = walk(data, ())
+    if not hits:
+        return None
+    # Keep the file's own formatting where a raw replacement gives exactly the
+    # note-only result (as _apply_json does for wording).
+    candidate = text.replace(json.dumps(old)[1:-1], json.dumps(new)[1:-1])
+    try:
+        if json.loads(candidate) == expected:
+            return candidate
+    except ValueError:
+        pass
+    return json.dumps(expected, indent=2, ensure_ascii=False) + "\n"
+
+
+def _apply_rewrites(current: dict, rewrites, prop: Proposal) -> None:
+    for rw in rewrites or []:
+        path = (getattr(rw, "path", "") or "").strip()
+        old = (getattr(rw, "old", "") or "").strip()
+        new = (getattr(rw, "new", "") or "").strip()
+        reason = (getattr(rw, "reason", "") or "").strip()
+        if not old or not new or old == new:
+            prop.dropped.append((old[:60], new[:60], "empty or unchanged rewrite"))
+            continue
+        if path not in current:
+            prop.dropped.append((old[:60], new[:60], f"{path or '(no path)'} is not a note file"))
+            continue
+        text = current[path]
+        if path.endswith(".json"):
+            updated = _apply_json_notes(text, old, new)
+        else:
+            updated = text.replace(old, new) if old in text else None
+        if updated is None:
+            prop.dropped.append((old[:60], new[:60], f"the passage is not in {path} verbatim"))
+            continue
+        current[path] = updated
+        prop.rewrites.append({"path": path, "before": old, "after": new, "reason": reason})
+
+
+def propose(sources: dict, changes, code: dict | None = None, rewrites=()) -> Proposal:
+    """Apply each old -> new, then each passage rewrite, to the sources.
+    Pure: nothing is written."""
     prop = Proposal()
     current = dict(sources)
     seen: set = set()
@@ -186,6 +256,7 @@ def propose(sources: dict, changes, code: dict | None = None) -> Proposal:
             for n, line in enumerate(text.splitlines(), 1):
                 if old in line:
                     prop.code_mentions.append({"path": relpath, "line": n, "text": line.strip()})
+    _apply_rewrites(current, rewrites, prop)
     prop.edits = {p: t for p, t in current.items() if t != sources.get(p)}
     return prop
 
@@ -215,12 +286,21 @@ def render_body(story_key: str, prop: Proposal) -> str:
              "**Merge only after the change is deployed.** Before that, a selector below "
              "no longer matches the live application. Re-run this PR's checks after "
              "deployment; the nightly inventory check also confirms the selectors.", "",
-             "Wording changes taken from the story:"]
-    lines += [f"- `{old}` → `{new}`" for old, new in prop.applied]
-    lines += ["", "| File | Where | Kind | Before | After |", "|---|---|---|---|---|"]
-    for f in prop.findings:
-        lines.append(f"| `{f['path']}` | {_cell(f['where'], 60)} | {f['kind']} | "
-                     f"{_cell(f['before'])} | {_cell(f['after'])} |")
+             ]
+    if prop.applied:
+        lines += ["Wording changes taken from the story:"]
+        lines += [f"- `{old}` → `{new}`" for old, new in prop.applied]
+        lines += ["", "| File | Where | Kind | Before | After |", "|---|---|---|---|---|"]
+        for f in prop.findings:
+            lines.append(f"| `{f['path']}` | {_cell(f['where'], 60)} | {f['kind']} | "
+                         f"{_cell(f['before'])} | {_cell(f['after'])} |")
+    if prop.rewrites:
+        lines += ["", ("Passages the story makes untrue - rewritten for the changed "
+                       "application. Check each against the story before merging:"),
+                  "", "| File | Before | After | Why |", "|---|---|---|---|"]
+        for r in prop.rewrites:
+            lines.append(f"| `{r['path']}` | {_cell(r['before'], 200)} | "
+                         f"{_cell(r['after'], 200)} | {_cell(r['reason'], 160)} |")
     if any(f["kind"] == "selector" for f in prop.findings):
         lines += ["", "Selectors: verify after deployment that each matches exactly the "
                       "element it should (`python -m scripts.verify_locators`)."]
@@ -273,6 +353,41 @@ def extract_changes(llm, story: dict):
                                  user_prompt=prompt, output_schema=WordingChanges).changes
 
 
+def _notes_block(sources: dict) -> str:
+    """The notes as the model sees them: each notes file whole, and the
+    inventory as its NOTE values only, so a selector is never offered."""
+    parts = []
+    for relpath, text in sorted(sources.items()):
+        if relpath.endswith(".json"):
+            try:
+                notes = [(".".join(p), s) for p, s in _walk(json.loads(text))
+                         if "elements" not in p]
+            except ValueError:
+                continue
+            if notes:
+                parts.append(f"## FILE {relpath} (inventory - note text only)\n"
+                             + "\n".join(f"- {where}: {value}" for where, value in notes))
+        else:
+            parts.append(f"## FILE {relpath}\n{text}")
+    return "\n\n".join(parts)
+
+
+def extract_note_rewrites(llm, story: dict, story_key: str, sources: dict) -> list:
+    """One model call: each reference passage the story makes untrue, rewritten."""
+    from config.paths import PROMPTS_DIR
+    from core.schemas import NoteRewrites
+    block = _notes_block(sources)
+    if not block:
+        return []
+    text = f"Title: {story['summary']}\n\nDescription:\n{story.get('description') or ''}"
+    prompt = ((PROMPTS_DIR / "agent0_context_notes.md").read_text(encoding="utf-8")
+              .replace("{story_key}", story_key).replace("{story_text}", text)
+              .replace("{notes_block}", block))
+    result = llm.invoke_structured(system_prompt="You are a senior QA analyst.",
+                                   user_prompt=prompt, output_schema=NoteRewrites)
+    return list(getattr(result, "rewrites", None) or [])
+
+
 def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: Path) -> dict:
     """Propose the context update for one change story, once."""
     cfg = settings.get("context_update") or {}
@@ -280,17 +395,28 @@ def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: 
         return {"story": story_key, "context": "disabled"}
     if any(c.startswith(MARKER) for c in tracker.get_comments(story_key)):
         return {"story": story_key, "context": "already-proposed"}
-    changes = extract_changes(llm, tracker.get_story(story_key))
-    prop = propose(context_sources(root), changes, code_sources(root))
+    story = tracker.get_story(story_key)
+    sources = context_sources(root)
+    changes = extract_changes(llm, story)
+    try:
+        rewrites = extract_note_rewrites(llm, story, story_key, sources)
+        unchecked = ""
+    except Exception as e:                                         # noqa: BLE001
+        # The wording update must not be lost to a failure of this step.
+        logger.warning("context update for %s: behaviour notes not checked: %s", story_key, e)
+        rewrites, unchecked = [], f"\nBehaviour notes were not checked ({type(e).__name__})."
+    prop = propose(sources, changes, code_sources(root), rewrites)
     if prop.empty:
         tracker.add_comment(story_key, f"{MARKER} No context update needed: the story replaces "
-                            "no wording that the inventory or the context notes contain."
+                            "no wording, and makes no passage untrue, in the inventory or the "
+                            "context notes."
                             + ("".join(f"\nNot applied: {o} -> {n} ({why})"
-                                       for o, n, why in prop.dropped)))
+                                       for o, n, why in prop.dropped)) + unchecked)
         return {"story": story_key, "context": "none"}
     url = open_pull_request(host, story_key, prop, cfg.get("branch_prefix", "context-update/"))
     if url:
         tracker.add_comment(story_key, f"{MARKER} Context update proposed: {url} - "
-                            f"{len(prop.findings)} change(s) to the inventory and context notes. "
+                            f"{len(prop.findings) + len(prop.rewrites)} change(s) to the inventory "
+                            "and context notes. "
                             "Merge it after this change is deployed.")
     return {"story": story_key, "context": "proposed" if url else "branch-exists", "url": url}
