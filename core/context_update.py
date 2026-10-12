@@ -1,0 +1,296 @@
+"""Context update: keep the agents' reference material in step with a change story.
+
+Agent 1 and Agent 2 read two kinds of reference material that no agent
+writes: the page inventory (every selector, plus notes about each page) and
+the app context notes (prompts/app_context/*.md, or prompts/app_context.md).
+When a story changes user-visible wording, both go stale. A selector that
+matches on the old text stops resolving after deployment, and notes quoting
+the old text keep teaching the agents the old wording, story after story.
+
+When Agent 0 hands a change story over (or finds nothing to review), it
+proposes the update as a pull request for a person to review:
+
+1. One model call lists the text the story replaces: old -> new, as the
+   story states it. A change whose old text appears in none of the sources
+   is dropped and reported, the same rule as invented element keys.
+2. The replacement is applied to the inventory's string values and to the
+   context notes, exactly and case-sensitively. Each hit is classified as a
+   selector (verify after deployment), an inventory note or a context note.
+3. Code that mentions the old text (features, step definitions, page
+   objects) is listed but not edited: code changes go through the story's
+   own pull request.
+4. The pull request is never merged here. Its branch carries no issue key,
+   so merging it neither closes the story nor reports on it. The nightly
+   inventory check confirms the selectors after deployment.
+
+Everything comes from the story, the configured inventory file and the
+configured context notes, so nothing here is specific to one application.
+Idempotent: a marker comment on the story means the proposal was made.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+MARKER = "[agent0:context-update]"
+_CODE_GLOBS = ("features/**/*.feature", "tests/step_defs/**/*.py", "pages/**/*.py")
+
+
+@dataclass
+class Proposal:
+    edits: dict = field(default_factory=dict)       # relpath -> new full text
+    findings: list = field(default_factory=list)    # {"path","where","kind","before","after"}
+    code_mentions: list = field(default_factory=list)  # {"path","line","text"}
+    applied: list = field(default_factory=list)     # [(old, new)] that matched something
+    dropped: list = field(default_factory=list)     # [(old, new, why)]
+
+    @property
+    def empty(self) -> bool:
+        return not self.edits
+
+
+# ─────────────────────────────────────────────────────────────
+# Sources
+# ─────────────────────────────────────────────────────────────
+
+def context_sources(root: Path) -> dict:
+    """{relpath: text} of the files this proposal may edit: the configured
+    inventory and the app context notes. Missing files are simply absent."""
+    root = Path(root)
+    out: dict = {}
+    try:
+        from core.app_context import AppContext
+        inv = AppContext.load().inventory_file
+    except Exception:                                   # noqa: BLE001 - no app config
+        inv = None
+    if inv and (root / inv).is_file():
+        out[Path(inv).as_posix()] = (root / inv).read_text(encoding="utf-8")
+    folder = root / "prompts" / "app_context"
+    files = sorted(folder.glob("*.md")) if folder.is_dir() else []
+    single = root / "prompts" / "app_context.md"
+    if not files and single.is_file():
+        files = [single]
+    for f in files:
+        out[f.relative_to(root).as_posix()] = f.read_text(encoding="utf-8")
+    return out
+
+
+def code_sources(root: Path) -> dict:
+    """{relpath: text} of code that may mention the wording - listed, never edited."""
+    root = Path(root)
+    out: dict = {}
+    for pattern in _CODE_GLOBS:
+        for f in sorted(root.glob(pattern)):
+            if f.is_file() and "__pycache__" not in f.parts:
+                out[f.relative_to(root).as_posix()] = f.read_text(encoding="utf-8")
+    return out
+
+
+# ─────────────────────────────────────────────────────────────
+# The replacement
+# ─────────────────────────────────────────────────────────────
+
+def _walk(node, path=()):
+    """(path, string) for every string VALUE in a JSON document."""
+    if isinstance(node, dict):
+        for k, v in node.items():
+            yield from _walk(v, path + (str(k),))
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            yield from _walk(v, path + (str(i),))
+    elif isinstance(node, str):
+        yield path, node
+
+
+def _replace_values(node, old: str, new: str):
+    if isinstance(node, dict):
+        return {k: _replace_values(v, old, new) for k, v in node.items()}
+    if isinstance(node, list):
+        return [_replace_values(v, old, new) for v in node]
+    if isinstance(node, str):
+        return node.replace(old, new)
+    return node
+
+
+def _json_kind(path: tuple) -> str:
+    return "selector" if "elements" in path else "inventory note"
+
+
+def _apply_json(text: str, old: str, new: str, relpath: str, prop: Proposal) -> Optional[str]:
+    try:
+        data = json.loads(text)
+    except ValueError:
+        logger.warning("context update: %s is not valid JSON - left alone", relpath)
+        return None
+    hits = [(p, s) for p, s in _walk(data) if old in s]
+    if not hits:
+        return None
+    for p, s in hits:
+        prop.findings.append({"path": relpath, "where": ".".join(p), "kind": _json_kind(p),
+                              "before": s, "after": s.replace(old, new)})
+    expected = _replace_values(data, old, new)
+    # Replace in the raw text so the file keeps its own formatting; accept it
+    # only if it parses to exactly the value-only replacement (no key touched).
+    enc_old, enc_new = json.dumps(old)[1:-1], json.dumps(new)[1:-1]
+    candidate = text.replace(enc_old, enc_new)
+    try:
+        if json.loads(candidate) == expected:
+            return candidate
+    except ValueError:
+        pass
+    return json.dumps(expected, indent=2, ensure_ascii=False) + "\n"
+
+
+def _apply_text(text: str, old: str, new: str, relpath: str, prop: Proposal) -> Optional[str]:
+    if old not in text:
+        return None
+    for n, line in enumerate(text.splitlines(), 1):
+        if old in line:
+            prop.findings.append({"path": relpath, "where": f"line {n}", "kind": "context note",
+                                  "before": line.strip(), "after": line.replace(old, new).strip()})
+    return text.replace(old, new)
+
+
+def propose(sources: dict, changes, code: dict | None = None) -> Proposal:
+    """Apply each old -> new to the sources. Pure: nothing is written."""
+    prop = Proposal()
+    current = dict(sources)
+    seen: set = set()
+    for ch in changes:
+        old, new = (getattr(ch, "old", None) or "").strip(), (getattr(ch, "new", None) or "").strip()
+        if not old or not new or old == new:
+            prop.dropped.append((old, new, "empty or unchanged"))
+            continue
+        if old in seen:
+            continue
+        seen.add(old)
+        matched = False
+        for relpath, text in current.items():
+            apply = _apply_json if relpath.endswith(".json") else _apply_text
+            updated = apply(text, old, new, relpath, prop)
+            if updated is not None and updated != text:
+                current[relpath] = updated
+                matched = True
+        if not matched:
+            prop.dropped.append((old, new, "the old text appears in none of the context files"))
+            continue
+        prop.applied.append((old, new))
+        for relpath, text in (code or {}).items():
+            for n, line in enumerate(text.splitlines(), 1):
+                if old in line:
+                    prop.code_mentions.append({"path": relpath, "line": n, "text": line.strip()})
+    prop.edits = {p: t for p, t in current.items() if t != sources.get(p)}
+    return prop
+
+
+# ─────────────────────────────────────────────────────────────
+# The pull request
+# ─────────────────────────────────────────────────────────────
+
+def branch_for(story_key: str, prefix: str) -> str:
+    """A branch with NO issue key in it: merging a context update must not
+    close the story or report on it, and both find the story by its key in
+    the branch name."""
+    from config import extract_jira_key
+    branch = f"{prefix}{story_key.lower()}"
+    if extract_jira_key(branch):
+        branch = f"{prefix}{hashlib.sha1(story_key.encode()).hexdigest()[:10]}"
+    return branch
+
+
+def _cell(text: str, limit: int = 120) -> str:
+    text = text.replace("|", "\\|").replace("\n", " ")
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def render_body(story_key: str, prop: Proposal) -> str:
+    lines = [f"Context update proposed by Agent 0 for **{story_key}**.", "",
+             "**Merge only after the change is deployed.** Before that, a selector below "
+             "no longer matches the live application. Re-run this PR's checks after "
+             "deployment; the nightly inventory check also confirms the selectors.", "",
+             "Wording changes taken from the story:"]
+    lines += [f"- `{old}` → `{new}`" for old, new in prop.applied]
+    lines += ["", "| File | Where | Kind | Before | After |", "|---|---|---|---|---|"]
+    for f in prop.findings:
+        lines.append(f"| `{f['path']}` | {_cell(f['where'], 60)} | {f['kind']} | "
+                     f"{_cell(f['before'])} | {_cell(f['after'])} |")
+    if any(f["kind"] == "selector" for f in prop.findings):
+        lines += ["", "Selectors: verify after deployment that each matches exactly the "
+                      "element it should (`python -m scripts.verify_locators`)."]
+    if prop.code_mentions:
+        lines += ["", "Also mentions the old text - **not edited here**; code changes go "
+                      "through the story's own pull request:"]
+        lines += [f"- `{m['path']}:{m['line']}` {_cell(m['text'], 100)}"
+                  for m in prop.code_mentions[:40]]
+    if prop.dropped:
+        lines += ["", "Not applied:"]
+        lines += [f"- `{o}` → `{n}`: {why}" for o, n, why in prop.dropped]
+    lines += ["", "Review every row: an exact text match can also hit a sentence that "
+                  "means something else. Edit or revert such rows before merging."]
+    return "\n".join(lines)
+
+
+def open_pull_request(host, story_key: str, prop: Proposal, prefix: str) -> Optional[str]:
+    """Branch, commit each edited file, open the PR. Returns its URL, or None
+    when the branch already exists (proposed before)."""
+    branch = branch_for(story_key, prefix)
+    if host.branch_exists(branch):
+        logger.info("context update for %s: branch %s exists - not proposed again",
+                    story_key, branch)
+        return None
+    host.create_branch(branch, "main")
+    try:
+        for relpath, text in sorted(prop.edits.items()):
+            host.create_or_update_file(relpath, text,
+                                       f"chore(context): wording from {story_key} in {relpath}",
+                                       branch)
+        return host.open_pull_request(
+            f"chore(context): reference wording from {story_key} - merge after deploy",
+            render_body(story_key, prop), branch, "main")
+    except Exception:
+        host.delete_branch(branch)            # never leave a half-written branch
+        raise
+
+
+# ─────────────────────────────────────────────────────────────
+# Entry point (Agent 0)
+# ─────────────────────────────────────────────────────────────
+
+def extract_changes(llm, story: dict):
+    from config.paths import PROMPTS_DIR
+    from core.schemas import WordingChanges
+    text = f"Title: {story['summary']}\n\nDescription:\n{story.get('description') or ''}"
+    prompt = (PROMPTS_DIR / "agent0_wording.md").read_text(encoding="utf-8").replace(
+        "{story_text}", text)
+    return llm.invoke_structured(system_prompt="You are a senior QA analyst.",
+                                 user_prompt=prompt, output_schema=WordingChanges).changes
+
+
+def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: Path) -> dict:
+    """Propose the context update for one change story, once."""
+    cfg = settings.get("context_update") or {}
+    if not cfg.get("enabled", False):
+        return {"story": story_key, "context": "disabled"}
+    if any(c.startswith(MARKER) for c in tracker.get_comments(story_key)):
+        return {"story": story_key, "context": "already-proposed"}
+    changes = extract_changes(llm, tracker.get_story(story_key))
+    prop = propose(context_sources(root), changes, code_sources(root))
+    if prop.empty:
+        tracker.add_comment(story_key, f"{MARKER} No context update needed: the story replaces "
+                            "no wording that the inventory or the context notes contain."
+                            + ("".join(f"\nNot applied: {o} -> {n} ({why})"
+                                       for o, n, why in prop.dropped)))
+        return {"story": story_key, "context": "none"}
+    url = open_pull_request(host, story_key, prop, cfg.get("branch_prefix", "context-update/"))
+    if url:
+        tracker.add_comment(story_key, f"{MARKER} Context update proposed: {url} - "
+                            f"{len(prop.findings)} change(s) to the inventory and context notes. "
+                            "Merge it after this change is deployed.")
+    return {"story": story_key, "context": "proposed" if url else "branch-exists", "url": url}

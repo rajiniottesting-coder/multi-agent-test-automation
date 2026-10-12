@@ -384,6 +384,12 @@ agents:
     reconcile:
       closed_scans: 2        # closed-without-merge must be seen on this many scans
       no_pr_days: 14         # impact-applied with no PR this long -> ask a person
+    # Live mode: at hand-over, propose the wording a story changes in the
+    # inventory and prompts/app_context as a pull request (never merged by an
+    # agent; merge it after deployment). See core/context_update.py.
+    context_update:
+      enabled: true
+      branch_prefix: "context-update/"   # must not contain an issue key
 
   # agent3_reviewer:  # triggered by GitHub PR events, no Jira selection needed
   # agent4_runner:    # triggered by GitHub PR events (CI workflow only — no .py file)

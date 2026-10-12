@@ -568,7 +568,11 @@ class TestD5:
 
     def test_live_loop_review_handover_reconcile_outcome(self, world, tmp_path):
         fake, jira, root, g = world
-        s = _settings(enabled=True, shadow_mode=False)
+        # The context-update pull request has its own tests
+        # (test_context_update.py); this loop covers review, hand-over,
+        # reconcile and outcome, so it is switched off here explicitly.
+        s = _settings(enabled=True, shadow_mode=False,
+                      context_update={"enabled": False, "branch_prefix": "context-update/"})
         host = FakeRepoHost(repo_files(root))
         page, key = _only_in(g, "SBX-12", "SBX-11")
         model = FakeModel([f"{page}:{key}"], must={TITLE_12})
