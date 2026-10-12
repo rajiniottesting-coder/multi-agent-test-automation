@@ -2,7 +2,7 @@
 
 A reusable framework where **six AI agents** turn a Jira story into a reviewed, executed pull request: test cases, Playwright + BDD code, an AI code review, a test run and a report back to Jira. A person stays in control at every gate. When a story **changes** behaviour that existing tests rely on, Agent 0 first finds the affected tests and a person decides what happens to each one.
 
-> **App-agnostic by design.** The agent code has no application-specific knowledge. Everything an application contributes lives in `config/config.yaml`, `app_inventory/<app>.json`, `prompts/app_context/` and the reference trio (one feature, one step-definition file, one page object). Onboarding a new application means editing configuration, never agent code.
+> **App-agnostic by design.** The agent code has no application-specific knowledge. Everything an application contributes lives in `config/config.yaml`, `app_inventory/<app>.json`, `prompts/app_context/` and the reference trio (one feature, one step-definition file, one page object). Onboarding a new application means editing configuration, never agent code. A unit test harvests the names the application coins (inventory keys, page-object classes and methods, selector fragments) and fails if any framework file uses one.
 
 ---
 
@@ -365,7 +365,7 @@ The framework was moved from an Angular HR system to this e-commerce application
 pytest tests/unit/ -q   # ~2,780 offline tests, about 70 s; no Jira, GitHub or LLM needed
 ```
 
-They cover the agents' logic, every validator, Agent 0's graph, ranking, hand-over and reconcile, the inventory tooling, the sweeper, and the Protocol contracts (the whole pipeline against a fake tracker and repo host). Agent 4 runs them on every PR before the BDD tests.
+They cover the agents' logic, every validator, Agent 0's graph, ranking, hand-over and reconcile, the inventory tooling, the sweeper, the Protocol contracts (the whole pipeline against a fake tracker and repo host) and the golden-rule guard that keeps application names out of framework files (`test_committed_tree_resolves.py`). Agent 4 runs them on every PR before the BDD tests.
 
 ---
 

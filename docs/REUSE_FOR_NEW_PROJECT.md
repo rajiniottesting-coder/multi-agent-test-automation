@@ -2,9 +2,10 @@
 
 ## Package layout
 
-    agents/         the four agents - the pipeline itself
+    agents/         the agents with Python code (0, 1, 2, 3, 5 - Agent 4
+                    is the runner workflow) - the pipeline itself
     core/           shared infrastructure (LLM client, schemas, config,
-                    usage ledger, board status)
+                    usage ledger, board status, Agent 0's impact modules)
     integrations/   tool adapters + the Protocols they satisfy
                     (tracker/jira_client, repo_host/github_client)
     validators/     static checks on LLM-generated code
@@ -12,15 +13,16 @@
 Porting to a new tool means adding ONE file under `integrations/` and changing
 one line in `config/config.yaml`. Nothing in `agents/` changes.
 
-> **Verification status (Aug 2026):** ALL FIXES PRESENT. The full unit suite
-> pass. Deployed: v17/v18 prompt hardening, orphan cleanup (`ai-update` AND
-> `ai-regenerate`), dynamic sprint scoping (`sprint: "auto"` via JIRA_BOARD_ID),
-> and end-to-end LLM token & cost instrumentation (per-run tracker + per-story
-> ledger). Phase 2 (Tier 1 + Tier 2) also deployed: module-wise app context
-> (`prompts/app_context/`), inventory JSON minification, duplicate step-definition
-> guard, per-story ledger reset marker, and light-model routing (`LLM_MODEL_LIGHT`).
-> Audit-confirmed: zero hardcoded application references in agent code,
-> agent prompts, or unit-test logic.
+> **Verification status (Oct 2026, main `e89fd4a`):** the full unit suite
+> passes (~2,780 offline tests). Deployed: v17/v18 prompt hardening, orphan
+> cleanup (`ai-update` AND `ai-regenerate`), dynamic sprint scoping
+> (`sprint: "auto"` via JIRA_BOARD_ID), end-to-end LLM token & cost
+> instrumentation, module-wise app context (`prompts/app_context/`), inventory
+> JSON minification, duplicate step-definition guard, per-story ledger reset
+> marker, light-model routing (`LLM_MODEL_LIGHT` for Agents 1 and 5), the
+> 28-check validator gate, board automation, and **Agent 0** (impact analysis,
+> Impact Review, hand-over, context update, reconcile). Framework code, agent
+> prompts and unit-test logic carry no application-specific references.
 
 This guide explains exactly what to change to point this framework at a different application (e.g., banking app, CMS, internal portal, anything with a web UI testable by Playwright + pytest-bdd).
 
@@ -33,39 +35,43 @@ The framework's design principle is: **agent code never changes between projects
 These files contain zero project-specific knowledge. Reuse as-is:
 
 ### Agents (the orchestration brains)
-- `agents/agent1_analyst.py` — Jira → Test Cases
-- `agents/agent2_coder.py` — Test Cases → Playwright code + PR
+- `agents/agent0_impact.py` — change story → affected tests, Impact Review (Agent 0)
+- `agents/agent1_analyst.py` — Jira → Test Cases; `agents/agent1_impact.py` — revise approved tests
+- `agents/agent2_coder.py` — Test Cases → Playwright code + PR; `agents/agent2_impact.py` — change-story splice
 - `agents/agent3_reviewer.py` — PR review
-- `agents/agent5_reporter.py` — Slack/Jira notification
+- `agents/agent5_reporter.py` — results and cost to Jira; scores Agent 0
+- `core/impact_*.py`, `core/context_update.py`, `core/json_block.py` — Agent 0's graph, analysis, review, hand-over, reconcile, context update
+- `core/board_status.py`, `core/test_case_rules.py`, `core/failure_diagnosis.py`, `core/allure_*.py`
 - `validators/orphan_cleanup.py` — dead-code detection (purely AST + Gherkin)
 - `core/app_context.py` — loads app_under_test from config
-- `integrations/github_client.py` — GitHub API wrapper
-- `integrations/jira_client.py` — Jira API wrapper
+- `integrations/tracker.py`, `integrations/repo_host.py` — the Protocols
+- `integrations/github_client.py` — GitHub adapter
+- `integrations/jira_client.py`, `integrations/jira_markup.py` — Jira adapter
 - `core/llm_client.py` — provider-agnostic LLM wrapper (OpenAI-compatible) + token/cost tracking
 - `core/usage_ledger.py` — per-story LLM cost ledger (Jira comments) — fully app-agnostic
 - `validators/gherkin_analyzer.py` — Gherkin / step-def matching primitives (renamed from test_inventory.py)
-- `validators/import_validator.py`, `validators/method_resolution_validator.py` — generic validators
+- `validators/import_validator.py`, `validators/method_resolution_validator.py`, `validators/page_object_contract.py` — generic validators
 - `core/schemas.py` — Pydantic models
 
 ### Agent prompts (templated, read app info from config at runtime)
-- `prompts/agent1_analyst.md`
+- `prompts/agent0_seeds.md`, `prompts/agent0_adjudicate.md`, `prompts/agent0_wording.md`, `prompts/agent0_context_notes.md`
+- `prompts/agent1_analyst.md`, `prompts/agent1_impact_aware.md`
 - `prompts/agent2_coder_plan.md`
-- `prompts/agent2_coder_generate.md` — includes ALL fixes v15-v18 + BasePage helpers section
+- `prompts/agent2_coder_generate.md` — all generation rules + BasePage helpers section
 - `prompts/agent3_reviewer.md`
 - `prompts/agent5_reporter.md`
 
 ### Universal page-object helpers
-- `pages/base_page.py` — 72 generic Playwright-native helpers. Universal across projects.
+- `pages/base_page.py` — 85 generic Playwright-native helpers. Universal across projects.
 
 ### Unit tests (the test suite is project-agnostic)
-- `tests/unit/test_agent1_labels.py`
-- `tests/unit/test_incremental_update.py`
+- everything under `tests/unit/` (~2,780 offline tests) — synthetic fixtures (banking, CMS, a fake tracker and repo host), for example:
 - `tests/unit/test_orphan_cleanup.py` — uses banking + CMS fixtures
-- `tests/unit/test_repair_loop.py`
+- `tests/unit/test_pipeline_tool_agnostic.py` — the pipeline against an in-memory tracker
 - `tests/unit/test_validators.py` — a fixture uses "Admin" as a generic role placeholder, not tied to any app
 
 ### Infrastructure
-- `.github/workflows/*.yml` — all six workflows
+- `.github/workflows/*.yml` — all eight workflows
 - `requirements.txt`
 - `pytest.ini`
 - `config/__init__.py`, `config/paths.py`
@@ -74,7 +80,7 @@ These files contain zero project-specific knowledge. Reuse as-is:
 
 ## What you MUST change (project-specific touch points)
 
-There are exactly **6 changes** for a new project. I've ranked them by criticality.
+There are **6 changes** for a new project, plus an optional seventh (Agent 0). They are ranked by criticality.
 
 ### Change 1 — `config/config.yaml` (MANDATORY)
 
@@ -101,7 +107,7 @@ app_under_test:
     - "pages/base_page.py"        # NEVER remove — universal helpers
 ```
 
-ALSO update the legacy `base_url:` alias at line 61:
+ALSO update the legacy top-level `base_url:` alias:
 
 ```yaml
 base_url: https://bank.acme.example.com   # was: the previous app's base URL
@@ -150,7 +156,7 @@ ALSO update or REMOVE the `test_users:` block - it holds the previous app's role
 > API keys, DB connection strings, tokens. Behavioural knowledge in the prompt;
 > secrets in the environment.
 
-The `agents:` section (label selection rules, completion labels) **stays exactly the same**. The Jira label workflow is universal.
+The `agents:` section (label selection rules, completion labels) **stays exactly the same**. The Jira label workflow is universal. Two exceptions: set `agents.agent0_impact.enabled: false` until Change 7, and check the column names under `status_workflow` match your board.
 
 ### Change 2 — `app_inventory/<your_app>.json` (MANDATORY)
 
@@ -343,6 +349,18 @@ Delete:
 
   describe the OLD app's behaviour and will mislead Agent 1 if left.
 
+### Change 7 - Turn on Agent 0 (OPTIONAL)
+
+Agent 0 needs two things from the new application before it can trace a change
+to tests: `components` on every inventory page, and a `# JIRA:` marker above every
+scenario (`python -m scripts.backfill_markers` adds missing ones). Then:
+
+1. `python -m scripts.onboarding_check` — readiness: layout, inventory, markers, adapters
+2. `enabled: true`, `shadow_mode: true` — reports only, scored by Agent 5
+3. `shadow_mode: false` once the shadow reports are trusted — Impact Reviews go live
+
+Details: [AGENT0_ONBOARDING.md](./AGENT0_ONBOARDING.md).
+
 ---
 
 ## Changing the test stack (e.g. Playwright + Python to Playwright + JS)
@@ -358,9 +376,9 @@ projects" tested against something harder than an app swap.
 
 | Layer | Why it survives |
 |---|---|
-| All five agents' orchestration | They read a tracker, call an LLM, write text files, open a PR. None of them knows what language the text is in. |
+| All six agents' orchestration | They read a tracker, call an LLM, write text files, open a PR. None of them knows what language the text is in. |
 | `core/llm_client.py`, `core/schemas.py` | Schema-in-prompt and Pydantic validation; provider- and language-agnostic. |
-| `integrations/` — Tracker (12 ops), RepoHost (15 ops) | Nothing to do with the test stack. |
+| `integrations/` — Tracker (23 ops), RepoHost (16 ops) | Nothing to do with the test stack. |
 | **`app_inventory/*.json`** | `role=`, `text=` and `label=` are PLAYWRIGHT concepts, not Python ones. `page.getByRole('button', {name:'Save'})` in JS resolves the identical locator, so **the whole inventory carries over unchanged**. |
 | `inventory_tools/` — crawler, ranking, staleness | Produces selectors, not code. |
 | CI workflow structure, the label state machine, the sweeper | Unchanged. |
