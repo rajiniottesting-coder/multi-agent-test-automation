@@ -37,7 +37,10 @@ DEFAULTS: dict = {
     "weights": {"structural": 0.45, "component": 0.15, "semantic": 0.15, "adjudicated": 0.25},
     "thresholds": {"must_update": 0.6, "review": 0.3},
     "max_candidates": 300,
-    "reconcile": {"closed_scans": 2, "no_pr_days": 14},
+    "reconcile": {"closed_scans": 2, "no_pr_days": 14,
+                  # Pipeline-progress labels a closed-unmerged PR makes untrue:
+                  # removed on undo so the story can simply be retried.
+                  "reset_labels": ["ai-processed", "human-approved", "ai-coded", "tests-run"]},
     # Live mode only: when a change story is handed over (or has nothing to
     # review), propose the inventory / context-note wording update as a pull
     # request for a person to merge after deployment (core.context_update).

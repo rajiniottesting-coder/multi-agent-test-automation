@@ -66,6 +66,7 @@ status_workflow:
   on_label:
     ai-processed: "In Progress"    # Agent 1 drafted test cases
     ai-coded: "In Review"          # Agent 2 opened a PR
+    impact-reverted: "To Do"       # reconcile undid a closed-unmerged change
 
   # Driven by a real MERGE event, not by a label. No agent sets this: merging
   # is the human decision the pipeline is built around, so only a human
@@ -384,6 +385,9 @@ agents:
     reconcile:
       closed_scans: 2        # closed-without-merge must be seen on this many scans
       no_pr_days: 14         # impact-applied with no PR this long -> ask a person
+      # On undo: labels the closed PR made untrue, removed so a retry is just
+      # "remove impact-reverted, add impact-check".
+      reset_labels: ["ai-processed", "human-approved", "ai-coded", "tests-run"]
     # Live mode: at hand-over, propose the wording a story changes in the
     # inventory and prompts/app_context as a pull request (never merged by an
     # agent; merge it after deployment). See core/context_update.py.

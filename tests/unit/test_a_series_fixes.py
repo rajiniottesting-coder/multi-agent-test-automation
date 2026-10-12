@@ -374,3 +374,50 @@ def test_an_appended_marker_is_indented_like_the_scenario():
                                     "  Scenario: three\n    Given d\n")
     assert out.endswith("\n  # JIRA: AB-3 (hash: 44444444) owner: AB-5\n"
                         "  Scenario: three\n    Given d\n")
+
+
+# ── after an undo the change story is ready to retry or drop ────────
+
+def _undo(tmp_path, own=("AB-20", "AB-21")):
+    from core import impact_reconcile as rec
+    from core.impact_settings import impact_settings
+    feature = tmp_path / "features" / "f.feature"
+    feature.parent.mkdir(parents=True)
+    feature.write_text("Feature: F\n\n  # JIRA: AB-21 (hash: 1a2b3c4d) owner: AB-9\n"
+                       "  Scenario: shipped earlier\n    Given a\n", encoding="utf-8")
+    tracker = MagicMock()
+    tracker.get_linked_test_cases.return_value = [{"key": k} for k in own]
+    tracker.get_comments.return_value = []
+    settings = impact_settings()
+    out = rec._revert(tracker, "AB-9", {"number": 7, "url": "u"}, [], {},
+                      settings["labels"], settings, features_dir=tmp_path / "features")
+    return tracker, out, settings
+
+
+def test_own_tests_that_never_reached_main_are_retired_others_kept(tmp_path):
+    tracker, out, _s = _undo(tmp_path)
+    assert out["retired_own"] == ["AB-20"]                     # AB-21 has a scenario on main
+    labelled = [c.args for c in tracker.add_label.call_args_list]
+    assert ("AB-20", "ai-retired") in labelled and ("AB-21", "ai-retired") not in labelled
+
+
+def test_progress_labels_come_off_and_the_story_says_how_to_retry(tmp_path):
+    tracker, _out, settings = _undo(tmp_path)
+    removed = {c.args[1] for c in tracker.remove_label.call_args_list if c.args[0] == "AB-9"}
+    assert set(settings["reconcile"]["reset_labels"]) <= removed
+    body = next(c.args[1] for c in tracker.add_comment.call_args_list if c.args[0] == "AB-9")
+    assert body.startswith("[agent0:reconcile] reverted pr: 7")
+    assert "AB-20" in body and "To retry: remove impact-reverted and add impact-check" in body
+
+
+def test_the_card_follows_the_reverted_label(tmp_path, monkeypatch):
+    import core.board_status as bs
+    moved = []
+    monkeypatch.setattr(bs, "move_card_for_label", lambda t, key, label: moved.append((key, label)))
+    _undo(tmp_path)
+    assert moved == [("AB-9", "impact-reverted")]
+
+
+def test_an_unreadable_main_retires_nothing(tmp_path):
+    from core import impact_reconcile as rec
+    assert rec._unautomated(["AB-20"], tmp_path / "missing") == []
