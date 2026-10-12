@@ -193,7 +193,40 @@ def _render_report(report: dict, title: str) -> str:
     if report["not_judged"]:
         lines += ["", "Not judged (beyond max_candidates, never shown as unaffected): "
                   + ", ".join(n["key"] or n["ref"] for n in report["not_judged"][:50])]
+    lines += _manual_section(report)
     return "\n".join(lines) + "\n\n" + ia.embed(report)
+
+
+def _norm_path(path) -> str:
+    try:
+        from core.app_context import _normalize_path
+        return _normalize_path(path or "")
+    except Exception:
+        return path or ""
+
+
+def _reserved_paths() -> set:
+    try:
+        from core.app_context import AppContext
+        return set(AppContext.load().reserved_paths_normalized())
+    except Exception:                      # no app config (tests, other trackers)
+        return set()
+
+
+def _manual_section(report: dict) -> list:
+    """Affected scenarios that have no test case cannot be decided in the
+    Impact Review or handed over, so they would otherwise vanish from it.
+    They are listed here for a person to revise by hand, with why."""
+    unmarked = [r for r in report["ranked"] if not r.get("key")]
+    if not unmarked:
+        return []
+    reserved = _reserved_paths()
+    lines = ["", "Revise by hand - affected, but not decidable here (no test case):"]
+    for r in unmarked:
+        why = ("reserved file: the agents never edit it" if _norm_path(r.get("file")) in reserved
+               else "no test case marker: link one and it becomes a review row")
+        lines.append(f"* {r['ref']} ({r['tier']}, {r['score']}) - {why}")
+    return lines
 
 
 def _review_rows(report: dict, decided: dict | None = None) -> list:
@@ -360,7 +393,8 @@ def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool
         # that did not change.
         decided = impact_review.parse(review["description"])
         tracker.set_description(review["key"], impact_review.render(
-            story_key, _review_rows(report, decided)) + "\n\n" + ia.embed(report))
+            story_key, _review_rows(report, decided))
+            + "\n".join(_manual_section(report)) + "\n\n" + ia.embed(report))
         review_key, action = review["key"], "review-updated"
     else:
         if review and change:
@@ -373,7 +407,7 @@ def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool
                                            if x["key"] == r["key"])]
         if rows:
             description = (impact_review.render(story_key, rows, intro="Grouped by owning story.")
-                           + "\n\n" + ia.embed(report))
+                           + "\n".join(_manual_section(report)) + "\n\n" + ia.embed(report))
             review_key = tracker.create_subtask(story_key, f"{prefix}: {story_key}", description)
             action = "review-created"
         else:
