@@ -37,10 +37,10 @@ product's name, its price, and three labelled facts: `Availability:`,
 - **Availability, Condition and Brand** are shown as labels. A scenario can
   check that each label is present. Do not assert a particular VALUE for them:
   nothing here records those values, and an invented one fails in the browser.
-- **Quantity** has its own input. Set it BEFORE clicking Add to cart - changing
+- **Quantity** has its own input. Set it BEFORE clicking Add to basket - changing
   it afterwards does not update the cart. "Add 3 of a product" means: set the
   quantity to 3, then add.
-- **Add to cart** here is a single control for this product, and it opens the
+- **Add to basket** here is a single control for this product, and it opens the
   same confirmation modal as the listing - see `cart.md`.
 
 ### Writing a review
@@ -62,11 +62,11 @@ not write a test case asserting that it is.
 
 ## Every product card is a FAMILY
 
-Each card renders its price, its name and its "Add to cart" control TWICE —
+Each card renders its price, its name and its "Add to basket" control TWICE —
 once in the card body and once in the hover overlay. So:
 
 - a selector for a product name matches 2 elements PER PRODUCT
-- a selector for "Add to cart" matches 68 elements on the all-products page
+- a selector for "Add to basket" matches 68 elements on the all-products page
 
 Read them with `get_all_texts()` / `get_count()`. To act on ONE product, scope
 by the product's own container or use the `View Product` link, which is unique
