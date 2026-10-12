@@ -163,6 +163,7 @@ def splice_owner_files(llm, gh, story_id: str, owner_files: dict, index, ctx,
             llm, gh, path, content, sd_path, ctx, references, page_inventory,
             batch_files=batch_files)
         report["step_defs"][sd_path] = mode
+        sd_spliced = sd_content
         page_updates: dict = {}
         if of.retire:
             try:
@@ -180,10 +181,14 @@ def splice_owner_files(llm, gh, story_id: str, owner_files: dict, index, ctx,
         files.append(GeneratedFile(file_path=path, content=content, is_new_file=False,
                                    purpose=f"Impact of {story_id}: revised "
                                            f"{[t['key'] for t in of.revise]}, retired {of.retire}"))
-        if mode != "unchanged":
+        # Commit the step definitions when the splice OR the orphan cleanup
+        # changed them. Keying this on the splice mode alone dropped the
+        # cleanup whenever the splice needed no new function, while the PR
+        # body still listed the orphans as commented out.
+        if mode != "unchanged" or sd_content != sd_spliced:
             files.append(GeneratedFile(file_path=sd_path, content=sd_content, is_new_file=False,
                                        purpose=f"Impact of {story_id}: step functions for "
-                                               "revised scenarios"))
+                                               "revised scenarios, orphans commented out"))
         for page_path, page_content in page_updates.items():
             files.append(GeneratedFile(file_path=page_path, content=page_content,
                                        is_new_file=False, purpose="Retired: orphan methods"))
