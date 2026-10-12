@@ -106,13 +106,9 @@ def snapshot(change: str, old_summary: str, old_description: str,
 def parse_snapshot(body: str) -> Optional[dict]:
     if not (body or "").startswith(SNAPSHOT):
         return None
-    m = re.search(r"\{code:json\}\n(.*)\n\{code\}", body, re.S)
-    if not m:
-        return None
-    try:
-        return json.loads(m.group(1))
-    except ValueError:
-        return None
+    from core.json_block import read_json_block
+    data = read_json_block(body)
+    return data if isinstance(data, dict) else None
 
 
 def latest_snapshot(comments: Iterable[str], change: str) -> Optional[dict]:

@@ -76,3 +76,40 @@ def test_a_table_with_no_rows_refuses_the_hand_over():
 def test_a_linked_table_hands_over_its_decisions():
     text = "\n".join([HEADER, _row(KEY_FORMS["smart link"], decision="approve")])
     assert decisions_from_review(_Tracker(text), "AB-9") == ("AB-50", {"AB-12": "approve"})
+
+
+# ── machine data after a person edits the issue (A3, SCRUM-206) ────
+
+def test_report_is_read_back_after_jira_rewrites_the_code_block():
+    """Editing the Impact Review in Jira's editor stores the block again as
+    {code:json}{...}{code} - no line breaks. The outcome measurement read
+    "no report" from every decided review."""
+    from core import impact_analysis as ia
+    report = {"change_ref": "AB-9", "content_hash": "abc", "ranked": []}
+    stored = ia.embed(report)
+    edited = stored.replace("{code:json}\n", "{code:json}").replace("\n{code}", "{code}")
+    assert ia.extract(stored) == report
+    assert ia.extract(edited) == report
+    assert ia.extract("Impact Review\n||a||b||\n|x|y|") is None
+
+
+def test_snapshot_is_read_back_after_jira_rewrites_the_code_block():
+    from core import impact_trace
+    body = impact_trace.snapshot("AB-9", "old title", "old text", "h1", "h2")
+    edited = body.replace("{code:json}\n", "{code:json}").replace("\n{code}", "{code}")
+    assert impact_trace.parse_snapshot(body)["old_description"] == "old text"
+    assert impact_trace.parse_snapshot(edited)["old_description"] == "old text"
+
+
+def test_an_unreadable_review_is_reported_not_silent(caplog):
+    from unittest.mock import MagicMock
+
+    import agents.agent0_impact as a0
+    from core.impact_settings import impact_settings
+    tracker = MagicMock()
+    tracker.get_subtasks.return_value = [{"key": "AB-10", "summary": "Impact Review: AB-9",
+                                          "status": "Done", "description": "table only"}]
+    with caplog.at_level("WARNING"):
+        report, review = a0._previous_report(tracker, "AB-9", impact_settings())
+    assert report is None and review["key"] == "AB-10"
+    assert "AB-10" in caplog.text and "cannot be read" in caplog.text
