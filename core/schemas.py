@@ -66,6 +66,19 @@ class ChangeSeeds(BaseModel):
                                   description="Components the change touches")
 
 
+class WordingChange(BaseModel):
+    old: str = Field(..., description="The user-visible text as the application shows it TODAY, "
+                                      "exactly, without surrounding quotes")
+    new: str = Field(..., description="The text the story says it becomes, exactly, without quotes")
+
+
+class WordingChanges(BaseModel):
+    """Agent 0, context update: user-visible text a story replaces."""
+    changes: list[WordingChange] = Field(
+        default_factory=list,
+        description="Each text replacement the story states explicitly. Empty when it states none")
+
+
 class CandidateAssessment(BaseModel):
     candidate_id: str = Field(..., description="The candidate id exactly as given, e.g. 'C3'")
     tier: Literal["must-update", "review", "unaffected"] = Field(...)

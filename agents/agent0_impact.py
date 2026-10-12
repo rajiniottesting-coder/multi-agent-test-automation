@@ -171,7 +171,26 @@ def analyse_and_publish(tracker, story_key: str, llm, settings: dict, root: Path
         return {"story": story_key, "action": "unchanged"}
     report = analyse_requirement(tracker, story_key, llm, settings, root, host,
                                  uncovered=uncovered)
-    return publish(tracker, story_key, report, settings, dry_run=dry_run)
+    result = publish(tracker, story_key, report, settings, dry_run=dry_run)
+    if result.get("action") == "nothing-to-review":
+        # Released straight to ai-ready: no hand-over will follow, so the
+        # context update is proposed now.
+        result.update(_propose_context(tracker, host, llm, story_key, settings, root))
+    return result
+
+
+def _propose_context(tracker, host, llm, story_key: str, settings: dict, root: Path) -> dict:
+    """The context-update pull request (core.context_update). Never fails the
+    hand-over it follows: that is already done and must stand."""
+    if host is None or llm is None or not (settings.get("context_update") or {}).get("enabled"):
+        return {}                         # off: the result keeps its usual shape
+    from core.context_update import propose_for_story
+    try:
+        out = propose_for_story(tracker, host, llm, story_key, settings, Path(root))
+        return {"context": out.get("context"), "context_pr": out.get("url")}
+    except Exception as e:                                         # noqa: BLE001
+        logger.error("context update for %s failed: %s", story_key, e, exc_info=True)
+        return {"context": "error", "context_error": str(e)}
 
 
 def _render_report(report: dict, title: str) -> str:
@@ -431,7 +450,8 @@ def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool
 # Stages 8-10 - hand-over, reconcile, outcome
 # ─────────────────────────────────────────────────────────────
 
-def hand_over_decided(tracker, settings: dict) -> list:
+def hand_over_decided(tracker, settings: dict, host=None, llm=None,
+                      root: Path | None = None) -> list:
     from core.impact_handover import HandoverRefused, decisions_from_review, handover
     out = []
     for s in tracker.find_stories_to_process(
@@ -440,9 +460,13 @@ def hand_over_decided(tracker, settings: dict) -> list:
         try:
             review_key, decisions = decisions_from_review(tracker, s["key"], settings)
             handover(tracker, s["key"], decisions, review_key=review_key, settings=settings)
-            out.append({"story": s["key"], "action": "handed-over", "review": review_key})
+            result = {"story": s["key"], "action": "handed-over", "review": review_key}
         except HandoverRefused as e:
             out.append({"story": s["key"], "action": "waiting", "why": str(e)})
+            continue
+        if root is not None:
+            result.update(_propose_context(tracker, host, llm, s["key"], settings, root))
+        out.append(result)
     return out
 
 
@@ -487,7 +511,7 @@ def scan(tracker, host, llm, settings: dict | None = None, root: Path | None = N
     # (scripts.impact_reconcile), which also covers hand-overs a person made
     # and shadow mode. Running it in two places would let two concurrent
     # runs count as the two scans that trigger an undo.
-    results += hand_over_decided(tracker, settings)
+    results += hand_over_decided(tracker, settings, host=host, llm=llm, root=root)
     return results
 
 

@@ -38,6 +38,10 @@ DEFAULTS: dict = {
     "thresholds": {"must_update": 0.6, "review": 0.3},
     "max_candidates": 300,
     "reconcile": {"closed_scans": 2, "no_pr_days": 14},
+    # Live mode only: when a change story is handed over (or has nothing to
+    # review), propose the inventory / context-note wording update as a pull
+    # request for a person to merge after deployment (core.context_update).
+    "context_update": {"enabled": True, "branch_prefix": "context-update/"},
 }
 
 
