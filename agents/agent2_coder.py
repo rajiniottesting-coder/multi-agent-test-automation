@@ -73,6 +73,7 @@ from validators.method_resolution_validator import (
     validate_step_claims_are_verified,
     validate_readiness_probe,
     validate_predicates_wait,
+    validate_absence_not_asserted_with_waiting_probe,
     validate_no_selectors_in_step_defs,
     validate_persistent_state_assertions,
     validate_page_method_names_are_specific,
@@ -322,6 +323,29 @@ def _preamble_tag_lines(block: ScenarioBlock) -> list[str]:
     return [line for line in block.lines[:k] if line.strip().startswith("@")]
 
 
+def _place_marker_above_keyword(block: ScenarioBlock) -> None:
+    """Put the block's JIRA marker directly above its keyword, indented like it.
+
+    The layout every generated feature file uses (tags, then the marker, then
+    `Scenario:`). A single scenario from the model arrives with the marker
+    first and unindented, so a splice that added the old tags after it wrote
+    the marker at column 0 ABOVE the tags. It parsed, but the file no longer
+    looked like its neighbours. Mutates the block.
+    """
+    _find_marker(block)
+    k = _keyword_index(block.lines)
+    m = block.marker_line_index
+    if m is None or k is None or m > k:
+        return
+    keyword = block.lines[k]
+    indent = keyword[:len(keyword) - len(keyword.lstrip(" \t"))]
+    marker = block.lines.pop(m)
+    k -= 1
+    ending = "\n" if marker.endswith("\n") else ""
+    block.lines.insert(k, indent + marker.strip() + ending)
+    _find_marker(block)
+
+
 def _trailing_blank_lines(lines: list[str]) -> list[str]:
     j = len(lines)
     while j > 0 and lines[j - 1].strip() == "":
@@ -424,6 +448,7 @@ def splice_scenario(
         if k is not None:
             new_block.lines[k:k] = old_tags
             _find_marker(new_block)
+    _place_marker_above_keyword(new_block)
     if not _trailing_blank_lines(new_block.lines):
         new_block.lines.extend(_trailing_blank_lines(old_block.lines))
 
@@ -435,6 +460,10 @@ def append_scenario(original_content: str, new_scenario_text: str) -> str:
     """Append a brand-new scenario block to the end of a feature file."""
     if not original_content.endswith("\n"):
         original_content += "\n"
+    block = _build_block(new_scenario_text.splitlines(keepends=True))
+    if block.kind == "scenario":
+        _place_marker_above_keyword(block)
+        new_scenario_text = block.text()
     if not new_scenario_text.startswith("\n"):
         new_scenario_text = "\n" + new_scenario_text
     return original_content + new_scenario_text
@@ -1313,6 +1342,16 @@ _DEGRADED_OUTPUT_CHAR_THRESHOLD = 500
 # Ordered (label, substring-that-identifies-the-class, targeted repair hint).
 # First matching substring wins, so more specific strings come first.
 _ERROR_TYPE_RULES: list[tuple[str, str, str]] = [
+    (
+        "absence_waits",
+        "absence assertion error",
+        ("- ABSENCE ASSERTED WITH A WAITING PREDICATE: a step asserts something is NOT "
+         "there through a page-object method that waits for it to APPEAR, so it burns "
+         "the full timeout whenever the step is right. In the step definition, call the "
+         "page-object method named in the error that answers absence; in a page object, "
+         "add that method (self.wait_hidden(...) or self.get_count(...) == 0) and keep "
+         "the waiting one for presence."),
+    ),
     (
         "selector_inventory",
         "selector inventory error",
@@ -2593,6 +2632,10 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     # method built on a non-waiting probe. One entry point, three prefixes -
     # the repair loop still routes each to the rule it broke.
     errors.extend(validate_page_object_methods(generated_files))
+    # Absence asserted through a predicate that waits for presence: slow and
+    # flaky in exactly the case the step expects (found by Agent 3 in validation).
+    errors.extend(validate_absence_not_asserted_with_waiting_probe(
+        generated_files, PROJECT_ROOT))
     # A readiness probe must hold in every state the page can be in. The
     # generator cannot know which element does; a human who has seen the page
     # in each state declares it, and this makes that declaration binding.

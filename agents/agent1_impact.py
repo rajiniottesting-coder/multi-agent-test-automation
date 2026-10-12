@@ -41,6 +41,9 @@ logger = logging.getLogger("agent1_impact")
 
 GATE = "[agent1:impact-draft]"
 NEAR_MATCH = 0.6
+# Below this, a revision's title shares too little with its old title to
+# still be the same test: its purpose changed, and it may now repeat another.
+PURPOSE_KEPT = 0.4
 
 
 def _norm(title: str) -> str:
@@ -48,11 +51,19 @@ def _norm(title: str) -> str:
 
 
 def validate_draft(draft: ImpactAwareDraft, approved_keys: set, existing_titles: set,
-                   persistent: dict | None = None) -> tuple:
+                   persistent: dict | None = None,
+                   approved_titles: dict | None = None) -> tuple:
     """(errors, near_matches). Errors reject the draft; near matches are shown.
 
     Revised and new test cases also follow core.test_case_rules: each runs on
     its own, and makes no absolute claim about a page that keeps state.
+
+    approved_titles ({key: current title}) lets a REVISION be checked too: a
+    revision whose title no longer resembles the old one changed the test's
+    purpose, and a revision close to another existing scenario may repeat it.
+    Both are shown to the reviewer, never rejected - retiring may fit better,
+    and only a person can tell. (Seen in validation: a test whose purpose the
+    change removed was rewritten into a copy of another existing test.)
     """
     errors, near = [], []
     errors.extend(draft_problems([r.revised for r in draft.revisions], persistent))
@@ -67,6 +78,19 @@ def validate_draft(draft: ImpactAwareDraft, approved_keys: set, existing_titles:
     for key, n in sorted(seen.items()):
         if n > 1:
             errors.append(f"{key} was revised {n} times; revise it exactly once")
+
+    for rev in draft.revisions:
+        old = (approved_titles or {}).get(rev.key)
+        new = _norm(rev.revised.title)
+        if old and _title_similarity(new, _norm(old)) < PURPOSE_KEPT:
+            near.append(f"{rev.key} changed its purpose ('{old}' -> '{rev.revised.title}'): "
+                        "check it does not repeat an existing test; if its purpose is gone, "
+                        "retiring it may fit better")
+        own = _norm(old) if old else None
+        for other in existing_titles:
+            if other != own and other != new and _title_similarity(new, other) >= NEAR_MATCH:
+                near.append(f"revised {rev.key} '{rev.revised.title}' is close to an existing "
+                            f"scenario ('{other}')")
 
     taken = {_norm(r.revised.title): f"revised {r.key}" for r in draft.revisions}
     taken.update({t: "an existing scenario" for t in existing_titles if t not in taken})
@@ -99,12 +123,14 @@ def _review_rows(tracker, story_id: str, settings: dict) -> dict:
     return impact_review.parse_rows(reviews[-1]["description"]) if reviews else {}
 
 
-def _draft(llm, prompt: str, approved_keys: set, existing_titles: set) -> tuple:
+def _draft(llm, prompt: str, approved_keys: set, existing_titles: set,
+           approved_titles: dict | None = None) -> tuple:
     system = "You are a meticulous, expert QA test analyst."
     persistent = load_persistent_pages()
     draft = llm.invoke_structured(system_prompt=system, user_prompt=prompt,
                                   output_schema=ImpactAwareDraft)
-    errors, near = validate_draft(draft, approved_keys, existing_titles, persistent)
+    errors, near = validate_draft(draft, approved_keys, existing_titles, persistent,
+                                  approved_titles)
     if not errors:
         return draft, near
     logger.warning("Impact-aware draft rejected, asking once more: %s", errors)
@@ -112,7 +138,8 @@ def _draft(llm, prompt: str, approved_keys: set, existing_titles: set) -> tuple:
              + "\n".join(f"- {e}" for e in errors) + "\nReturn a corrected answer.")
     draft = llm.invoke_structured(system_prompt=system, user_prompt=retry,
                                   output_schema=ImpactAwareDraft)
-    errors, near = validate_draft(draft, approved_keys, existing_titles, persistent)
+    errors, near = validate_draft(draft, approved_keys, existing_titles, persistent,
+                                  approved_titles)
     if errors:
         raise ValueError("impact-aware draft rejected twice; nothing was written: "
                          + "; ".join(errors))
@@ -149,7 +176,8 @@ def run_impact_aware(tracker, story_id: str, story: dict, prompt_header: dict,
               .replace("{existing_titles_block}", "\n".join(f"- {t}" for t in
                                                             sorted(existing_titles)) or "(none)"))
 
-    draft, near = _draft(llm, prompt, set(approved), existing_titles)
+    draft, near = _draft(llm, prompt, set(approved), existing_titles,
+                         {k: c.get("summary", "") for k, c in approved.items()})
     logger.info("Impact-aware draft for %s: %d revision(s), %d new test case(s)",
                 story_id, len(draft.revisions), len(draft.new_test_cases))
 

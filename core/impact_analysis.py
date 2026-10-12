@@ -34,6 +34,7 @@ PAGE_METHOD = 0.9             # a changed method of a page the scenario calls
 SHARED_METHOD = 0.5           # a changed shared-base method: reaches nearly everything
 PAGE_ONLY = 0.4               # the scenario visits a changed / unreachable page
 TIER_SCORE = {"must-update": 1.0, "review": 0.5, "unaffected": 0.0}
+_TIER_ORDER = {"unaffected": 0, "review": 1, "must-update": 2}
 
 
 @dataclass
@@ -425,7 +426,15 @@ def rank(candidates: list, judgements: dict, weights: dict, thresholds: dict,
 
     Signals a trigger cannot produce (a code change has no semantic or
     adjudicated signal) are left out and the remaining weights renormalised,
-    so a direct structural hit still reaches must-update."""
+    so a direct structural hit still reaches must-update.
+
+    The model's verdict CAPS the tier: the score can lower a judged
+    candidate's tier but never raise it above what the model said. A
+    validation run had the model say "matches the new behaviour, worth a
+    look" (review) while shared structural evidence scored 0.74 and made the
+    tier must-update - a reviewer trusting the tier would have approved tests
+    that needed no change. Unjudged candidates (code change, drift) are
+    tiered by the score alone, as before."""
     signals = list(signals)
     total = sum(weights[s] for s in signals) or 1.0
     rows = []
@@ -435,14 +444,14 @@ def rank(candidates: list, judgements: dict, weights: dict, thresholds: dict,
                   "semantic": c.semantic,
                   "adjudicated": TIER_SCORE.get(tier_j, 0.0) if tier_j else 0.0}
         score = round(sum(weights[s] * values[s] for s in signals) / total, 3)
-        if tier_j == "unaffected":
-            tier = "unaffected"          # the model saw the scenario and cleared it
-        elif score >= thresholds["must_update"]:
+        if score >= thresholds["must_update"]:
             tier = "must-update"
         elif score >= thresholds["review"]:
             tier = "review"
         else:
             tier = "unaffected"
+        if tier_j in _TIER_ORDER and _TIER_ORDER[tier_j] < _TIER_ORDER[tier]:
+            tier = tier_j                # the model's verdict is the ceiling
         rows.append({"id": c.id, "ref": c.ref, "key": c.test_case_key, "file": c.file,
                      "title": c.title, "owner": c.owner, "layer": c.layer, "score": score,
                      "tier": tier, "reason": reason,
