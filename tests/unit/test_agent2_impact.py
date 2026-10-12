@@ -224,3 +224,33 @@ def test_one_definition_of_the_files_only_splicing_may_edit():
     assert sorted(drop_owner_files(plan, files, own_new_cases=[{"key": "A"}])) == \
         sorted(protected_paths(files))
     assert [f.file_path for f in plan.files_to_create] == ["pages/x_page.py"]
+
+
+def test_orphan_cleanup_is_committed_even_when_no_step_function_was_added(monkeypatch):
+    """A3 (SCRUM-206): retiring a scenario left its step function orphaned; the
+    PR body said it was commented out, but the step-def file was not in the PR,
+    because the file was committed only when the splice ADDED a function."""
+    import agents.agent2_coder as a2
+    import validators.orphan_cleanup as oc
+    from agents.agent2_impact import OwnerFile, splice_owner_files
+
+    feature = ("Feature: F\n\n  # JIRA: AB-6 (hash: 1) owner: AB-1\n  Scenario: old\n"
+               "    When I do the old thing\n")
+    steps = '@when("I do the old thing")\ndef old_thing():\n    pass\n'
+    commented = "# ORPHAN\n# " + steps.replace("\n", "\n# ")
+    monkeypatch.setattr(a2, "_splice_step_defs_incremental",
+                        lambda *a, **k: (steps, "unchanged"))
+    monkeypatch.setattr(oc, "cleanup_orphans_after_removal",
+                        lambda **k: ({"tests/step_defs/test_f.py": commented}, {},
+                                     [MagicMock(function_name="old_thing")], []))
+
+    class GH:
+        def get_file_content(self, path, branch="main"):
+            return feature
+    of = OwnerFile("features/f.feature")
+    of.retire = ["AB-6"]
+    files, report = splice_owner_files(None, GH(), "AB-9", {"features/f.feature": of},
+                                       None, None, {}, "", None)
+    by_path = {f.file_path: f.content for f in files}
+    assert by_path.get(of.step_defs_path) == commented
+    assert report["orphans"] == [f"step definition `old_thing` in `{of.step_defs_path}`"]
