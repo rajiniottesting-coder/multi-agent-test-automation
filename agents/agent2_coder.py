@@ -3250,7 +3250,15 @@ def _generate_single_scenario(
     ctx: AppContext,  # reserved for future use; intentionally unused for now
     existing_feature_content: str,
 ) -> str:
-    """Ask the LLM for ONE Scenario block for ONE Test Case."""
+    """Ask the LLM for ONE Scenario block for ONE Test Case.
+
+    Used by ai-update and by a change story's splice into an owner's file.
+    It is a scenario WRITER like the feature stage of generate_file_content,
+    so it gets the same grounding: what the application can actually show
+    (_build_readable_values_block). Without it a revised test case naming a
+    value no element holds (a total, a badge) became a step nothing could
+    satisfy, and the story failed at the final gate after the repair loop.
+    """
     _ = ctx  # reserved
     jira_key = test_case["key"]
     summary = test_case.get("summary", "")
@@ -3275,7 +3283,11 @@ def _generate_single_scenario(
         "  4. Do NOT emit Feature:, Background:, or Examples: keywords.\n"
         "  5. Reuse step phrasing that already exists in the file when applicable, "
         "to avoid forcing new step-definition functions.\n"
+        "  6. Every value a step names must be readable from an element listed "
+        "below. If the test case names a value nothing lists, keep the "
+        "scenario's purpose and assert what IS listed instead.\n"
     )
+    user += _build_readable_values_block()
     response = llm.invoke_text(system_prompt=system, user_prompt=user)
     return extract_code_from_response(response)
 
@@ -3452,8 +3464,16 @@ def _generate_missing_step_functions(
     feature_content: str,
     missing_steps: list[tuple[str, str]],
     step_defs_path: str,
+    page_objects_block: str = "",
+    validator_feedback: str = "",
 ) -> str:
-    """Ask the LLM for ONLY the new step functions needed for `missing_steps`."""
+    """Ask the LLM for ONLY the new step functions needed for `missing_steps`.
+
+    A step-definition WRITER, so it gets the same grounding as the step-def
+    stage of generate_file_content: the page objects' real method signatures
+    (page_objects_block). On a retry, validator_feedback names what the
+    previous attempt called that does not exist.
+    """
     missing_block = "\n".join(f"  - {kw.capitalize()}: {phrase}" for kw, phrase in missing_steps)
     system = (
         "You are a Senior SDET. Output ONLY new pytest-bdd step-definition "
@@ -3476,8 +3496,56 @@ def _generate_missing_step_functions(
         "existing file (they are in scope). Use parsers.parse() for parameterised "
         "steps, a plain string otherwise.\n"
         "  4. Declare every step the feature uses; steps are module-scoped, so duplicates are safe.\n"
+        "  5. Call ONLY page-object methods listed below, by their exact names. "
+        "If no listed method reads what a step asserts, assert with one that "
+        "does - never invent a method.\n"
     )
+    if page_objects_block:
+        user += "\n" + page_objects_block
+    if validator_feedback:
+        user += ("\n\nYour previous answer was rejected by the validator:\n"
+                 f"{validator_feedback}\nFix exactly these problems.\n")
     return llm.invoke_text(system_prompt=system, user_prompt=user)
+
+
+def _splice_page_objects(gh, step_defs_path: str, batch_files=None,
+                         branch: str | None = None) -> list:
+    """The page objects a spliced step function may call: the ones written
+    in this run win over the committed copies on the branch / main.
+
+    Fails soft: no repo, no listing - just this run's page objects.
+    """
+    batch = [f for f in (batch_files or [])
+             if (getattr(f, "file_path", "") or "").startswith("pages/")
+             and f.file_path.endswith(".py") and getattr(f, "content", "")]
+    try:
+        committed = _existing_page_objects_on_main(
+            gh, {f.file_path for f in batch} | {step_defs_path}, branch=branch)
+    except Exception:                                          # noqa: BLE001
+        committed = []
+    return list(committed) + batch
+
+
+def _new_method_resolution_errors(step_defs_path: str, before: str, after: str,
+                                  page_objects: list) -> list[str]:
+    """Method-resolution errors the splice INTRODUCED in `step_defs_path`.
+
+    Errors already present in the committed file are not the splice's and
+    are left to the gate; appending functions does not move existing lines,
+    so an unchanged error keeps its exact text.
+    """
+    def errors(content: str) -> list[str]:
+        files = [GeneratedFile(file_path=step_defs_path, content=content,
+                               is_new_file=False, purpose="splice check")]
+        files += [GeneratedFile(file_path=p.file_path, content=p.content,
+                                is_new_file=False, purpose="page object")
+                  for p in page_objects]
+        try:
+            return validate_method_resolution(files, PROJECT_ROOT)
+        except Exception:                                      # noqa: BLE001
+            return []
+    old = set(errors(before)) if before else set()
+    return [e for e in errors(after) if e not in old]
 
 
 def _splice_step_defs_incremental(
@@ -3490,23 +3558,33 @@ def _splice_step_defs_incremental(
     references: dict,
     page_inventory: str,
     branch: str | None = None,
+    batch_files: list | None = None,
 ) -> tuple[str, str]:
     """Produce the step-def file for an ai-update by splicing (backlog 2.4).
+
+    batch_files: files written earlier in this run (a change story's own page
+    objects). Their methods are ground truth for the new step functions, and
+    the splice is checked against them - so a call to a method that does not
+    exist is caught and corrected HERE, with feedback, instead of reaching
+    the final gate after the repair loop has finished.
 
     Returns (content, mode) where mode is one of:
       - "unchanged"   : existing file already covered the feature (0 LLM calls)
       - "spliced"     : only the new step functions were appended
       - "regenerated" : fell back to whole-file regeneration (Tier C)
     """
+    _po_cache: list = []
+
+    def _page_objects() -> list:
+        # Read once, and only when a step function has to be written.
+        if not _po_cache:
+            _po_cache.append(_splice_page_objects(gh, step_defs_path, batch_files, branch))
+        return _po_cache[0]
+
     def _whole() -> tuple[str, str]:
-        # ai-update regenerates against page objects that already exist on
-        # main, so their real method signatures are the ground truth here.
-        # Fails soft: no repo, no context, same behaviour as before.
-        try:
-            _existing = _existing_page_objects_on_main(
-                gh, {step_defs_path}, branch=branch)
-        except Exception:                                      # noqa: BLE001
-            _existing = []
+        # Regenerate against the real page objects: this run's first, then
+        # the committed ones. Fails soft: no repo, no context.
+        _existing = _page_objects()
         return (
             _regenerate_step_defs_whole(
                 llm, feature_file_path, spliced_feature_content,
@@ -3547,44 +3625,66 @@ def _splice_step_defs_incremental(
         "Splice: %d new step(s) need definitions in %s: %s",
         len(missing), step_defs_path, [p for _, p in missing],
     )
-    snippet = _generate_missing_step_functions(
-        llm, existing, spliced_feature_content, missing, step_defs_path
-    )
-    new_funcs = _extract_new_step_functions(snippet)
-    if not new_funcs:
-        logger.warning(
-            "Splice: LLM returned no usable step function(s) — regenerating whole."
+    page_objects = _page_objects()
+    po_block = _build_sibling_page_object_context(page_objects)
+    feedback = ""
+    for attempt in (1, 2):
+        snippet = _generate_missing_step_functions(
+            llm, existing, spliced_feature_content, missing, step_defs_path,
+            page_objects_block=po_block, validator_feedback=feedback,
         )
-        return _whole()
+        new_funcs = _extract_new_step_functions(snippet)
+        if not new_funcs:
+            logger.warning(
+                "Splice: LLM returned no usable step function(s) — regenerating whole."
+            )
+            return _whole()
 
-    spliced = existing.rstrip() + "\n\n\n" + "\n\n\n".join(new_funcs) + "\n"
-    if "parsers." in "\n".join(new_funcs) and "parsers" not in existing:
-        spliced = _ensure_parsers_import(spliced)
+        spliced = existing.rstrip() + "\n\n\n" + "\n\n\n".join(new_funcs) + "\n"
+        if "parsers." in "\n".join(new_funcs) and "parsers" not in existing:
+            spliced = _ensure_parsers_import(spliced)
 
-    # Post-splice safety net — any doubt falls back to whole regeneration.
-    if not _is_parseable_step_def(spliced):
-        logger.warning("Splice: spliced result did not parse — regenerating whole.")
-        return _whole()
-    still_missing = _missing_feature_steps(spliced_feature_content, spliced)
-    if still_missing:
-        logger.warning(
-            "Splice: %d step(s) still uncovered after splice — regenerating whole.",
-            len(still_missing),
+        # Post-splice safety net — any doubt falls back to whole regeneration.
+        if not _is_parseable_step_def(spliced):
+            logger.warning("Splice: spliced result did not parse — regenerating whole.")
+            return _whole()
+        still_missing = _missing_feature_steps(spliced_feature_content, spliced)
+        if still_missing:
+            logger.warning(
+                "Splice: %d step(s) still uncovered after splice — regenerating whole.",
+                len(still_missing),
+            )
+            return _whole()
+        dup = validate_no_duplicate_step_definitions(
+            [GeneratedFile(
+                file_path=step_defs_path, content=spliced,
+                is_new_file=False, purpose="incremental splice",
+            )],
+            PROJECT_ROOT,
         )
-        return _whole()
-    dup = validate_no_duplicate_step_definitions(
-        [GeneratedFile(
-            file_path=step_defs_path, content=spliced,
-            is_new_file=False, purpose="incremental splice",
-        )],
-        PROJECT_ROOT,
-    )
-    if dup:
+        if dup:
+            logger.warning(
+                "Splice: duplicate step-def collision after splice — regenerating "
+                "whole. First: %s", dup[0][:140],
+            )
+            return _whole()
+        # A call to a page-object method that does not exist: corrected here
+        # with the validator's words, once, before anything else sees it.
+        unresolved = _new_method_resolution_errors(
+            step_defs_path, existing, spliced, page_objects)
+        if not unresolved:
+            break
+        if attempt == 2:
+            logger.warning(
+                "Splice: new step functions still call unknown page-object "
+                "methods after one correction — regenerating whole. First: %s",
+                unresolved[0][:160],
+            )
+            return _whole()
         logger.warning(
-            "Splice: duplicate step-def collision after splice — regenerating "
-            "whole. First: %s", dup[0][:140],
-        )
-        return _whole()
+            "Splice: new step functions call %d unknown page-object method(s) - "
+            "asking once more with the validator's feedback.", len(unresolved))
+        feedback = "\n".join(f"- {e}" for e in unresolved)
 
     logger.info(
         "Splice: appended %d new step function(s) to %s; existing functions "
@@ -4264,7 +4364,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
             gh = get_repo_host()
         owner_generated, impact_report = agent2_impact.splice_owner_files(
             llm, gh, story_id, owner_files, marker_index, ctx, references,
-            page_inventory, jira)
+            page_inventory, jira, batch_files=generated_files)
         by_path = {f.file_path: i for i, f in enumerate(generated_files)}
         for f in owner_generated:
             if f.file_path in by_path:
