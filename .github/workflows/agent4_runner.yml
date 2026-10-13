@@ -115,18 +115,6 @@ permissions:
   contents: read
   pull-requests: write   # Agent 5 may need to read PR metadata
 
-# Serialise runs per PR (or per branch on push).
-#
-# cancel-in-progress is TRUE ONLY for push: superseding a main build costs
-# nothing. On pull_request it is FALSE on purpose — a cancelled run has no
-# settled conclusion, and scripts/sweep_stalled_prs.py treats "no settled run
-# for this SHA" as a stalled PR and reopens it to re-fire the event chain.
-# Cancelling story runs would manufacture exactly the condition the sweeper
-# is built to repair.
-concurrency:
-  group: agent4-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'push' }}
-
 jobs:
   # ─────────────────────────────────────────────────────────────
   # Job 1: Run the Playwright tests
@@ -135,6 +123,26 @@ jobs:
     name: Run Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Serialise test runs per PR (or per branch on push) - two runs of one PR
+    # must not drive the live application at the same time.
+    #
+    # JOB-level, not workflow-level, on purpose. A workflow-level group holds
+    # the whole run back while an earlier one finishes, and GitHub creates no
+    # check for a run that has not started: the PR then showed "All checks
+    # have passed" with only Agent 3 listed, and the merge button green, while
+    # Agent 4 for the newest commit had not run at all. A job-level group lets
+    # the run start, so "Run Tests" is listed on the PR as waiting until its
+    # turn comes - a merge before it finishes is visibly premature.
+    #
+    # cancel-in-progress is TRUE ONLY for push: superseding a main build costs
+    # nothing. On pull_request it is FALSE on purpose - a cancelled run has no
+    # settled conclusion, and scripts/sweep_stalled_prs.py treats "no settled
+    # run for this SHA" as a stalled PR and reopens it to re-fire the event
+    # chain. Cancelling story runs would manufacture exactly the condition the
+    # sweeper is built to repair.
+    concurrency:
+      group: agent4-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'push' }}
 
     steps:
       - name: Checkout repository
