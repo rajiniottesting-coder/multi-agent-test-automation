@@ -203,6 +203,10 @@ def page(browser, config, request) -> Page:
 
     page = context.new_page()
     page.set_default_timeout(browser_config["timeout"])
+    # Failed requests and HTTP errors, for failure messages to name (blocked
+    # third parties excluded: those are refused on purpose).
+    from pages.base_page import watch_network
+    watch_network(page, ignore=lambda url: should_block_request(url, blocked_hosts))
 
     yield page
 
