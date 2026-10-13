@@ -86,6 +86,16 @@ class ProductDetailPage(BasePage):
         """The current value typed in the quantity field (DOM value, not text)."""
         return self.get_input_value(self.sel("quantity_input"))
 
+    def is_quantity_input_absent(self) -> bool:
+        """True once the quantity input is gone from the page.
+
+        Built on is_gone(): returns True at once when the field is absent,
+        waiting only while it is still on its way out. For the revised SCRUM
+        scenarios, where the quantity field has been removed, this is the
+        expected answer - so it must not be built on a waiting presence probe.
+        """
+        return self.is_gone(self.sel("quantity_input"))
+
     # ── actions ──────────────────────────────────────────────
     def set_quantity(self, quantity: int) -> None:
         """Set the quantity BEFORE adding to cart.
@@ -106,6 +116,14 @@ class ProductDetailPage(BasePage):
         self.require_own_page()
         self.click(self.sel("add_to_cart_button"))
         self.wait_visible(self.sel("added_modal"))
+
+    def has_added_modal(self) -> bool:
+        """True once the add-to-cart confirmation modal is on screen. WAITS.
+
+        Call only where the modal is expected (right after add_to_cart). It is
+        the waiting presence probe for asserting the confirmation appeared.
+        """
+        return self.is_showing(self.sel("added_modal"))
 
     def continue_shopping(self) -> None:
         """Dismiss the add-to-cart modal and stay on this product page.
