@@ -1048,12 +1048,13 @@ exact (reported by the API per call); cost is derived from the
 - **Per run:** every LLM call logs its own tokens plus running totals; each
   story run ends with two lines in the Actions log — `LLM TOKEN USAGE [...]`
   and `LLM COST [...]` (input + output cost shown separately).
-- **Per story, end to end:** each LLM-using agent (0, 1, 2, 3, 5) posts a
+- **Per story, end to end:** each LLM-using agent (1, 2, 3, 5) posts a
   machine-parseable `[LLM-USAGE]` comment on the Jira story after it
   finishes. Agent 5 aggregates every entry and appends an
   **"End-to-end LLM usage & cost"** table to its final test report — one
   row per agent run plus a TOTAL row. That table is the actual measured
   cost of taking the story from `ai-ready` to a tested, reported PR.
+  Agent 0 is not in it yet: its calls appear only in its own run log.
 - Dry runs never post ledger comments. Posting and reading are
   best-effort: a Jira hiccup can't fail a pipeline run. If some runs had
   no pricing configured, the total is marked as a lower bound (token
