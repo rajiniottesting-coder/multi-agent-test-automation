@@ -1664,7 +1664,7 @@ def validate_page_object_selectors(
                         f"selector matches SEVERAL elements. Playwright is "
                         f"strict, so this raises 'strict mode violation: "
                         f"locator(...) resolved to N elements' at runtime. "
-                        f"Either {remedy}, or, if you meant the whole set, "
+                        f"Either {remedy}. "
                         f"To act on ONE member, scope to the row that contains "
                         f"its text: click_in_row(<row family>, text, <control>). "
                         f"Or, if you meant the whole set, read it with one of: "
@@ -2060,6 +2060,23 @@ def _returns_non_waiting_probe(func: ast.AST) -> Optional[str]:
     return None
 
 
+def _negated_glance(func: ast.AST) -> str | None:
+    """The probe a `return not self.<probe>(...)` negates, if the predicate
+    returns one: the shape of an ABSENCE question asked with a single glance."""
+    for node in ast.walk(func):
+        if not isinstance(node, ast.Return) or node.value is None:
+            continue
+        v = node.value
+        if (isinstance(v, ast.UnaryOp) and isinstance(v.op, ast.Not)
+                and isinstance(v.operand, ast.Call)
+                and isinstance(v.operand.func, ast.Attribute)
+                and isinstance(v.operand.func.value, ast.Name)
+                and v.operand.func.value.id == "self"
+                and v.operand.func.attr in ("is_visible", "exists")):
+            return v.operand.func.attr
+    return None
+
+
 def _conditional_keys(project_root) -> set:
     """Selector keys the inventory declares as CONDITIONAL, on any page.
 
@@ -2140,6 +2157,25 @@ def validate_predicates_wait(generated_files: list, project_root=None) -> list[s
                     continue
                 if conditional & _sel_keys_in(node):
                     continue
+                negated = _negated_glance(node)
+                if negated:
+                    # An ABSENCE question. The presence remedy below (is_showing)
+                    # would answer it only by exhausting the timeout, and the
+                    # absence rule rejects that - so a model given it had no
+                    # answer that passed both gates (validation story A3: the
+                    # repair loop stalled and the run failed). Name the
+                    # absence wait instead.
+                    errors.append(
+                        f"Waiting predicate error in '{path}' line {node.lineno}: "
+                        f"{cls.name}.{node.name}() returns `not self.{negated}(...)`, "
+                        f"an ABSENCE answer read from one glance: taken while the "
+                        f"element is still on its way out, it says 'present' and "
+                        f"fails a correct step. Return self.is_gone(<same selector>) "
+                        f"instead - True at once when the element is absent, "
+                        f"waiting only while it is still shown. Do NOT use "
+                        f"is_showing() here: a presence wait can answer 'absent' "
+                        f"only by exhausting its timeout.")
+                    continue
                 errors.append(
                     f"Waiting predicate error in '{path}' line {node.lineno}: "
                     f"{cls.name}.{node.name}() returns self.{probe}(...), which reads the page ONCE and "
@@ -2171,7 +2207,7 @@ def validate_predicates_wait(generated_files: list, project_root=None) -> list[s
 
 _PRESENCE_WAITS = frozenset({"is_showing", "wait_visible", "wait_for_any", "wait_for_text",
                              "wait_for_count", "wait_enabled"})
-_ABSENCE_ANSWERS = frozenset({"wait_hidden", "get_count", "is_visible", "exists"})
+_ABSENCE_ANSWERS = frozenset({"wait_hidden", "is_gone", "get_count", "is_visible", "exists"})
 
 
 def _self_calls_in(func: ast.AST, names: frozenset, returns_only: bool) -> str | None:
@@ -2292,10 +2328,10 @@ def validate_absence_not_asserted_with_waiting_probe(generated_files: list,
                         f"Absence assertion error in '{page_path}': '{path}' line "
                         f"{node.lineno} asserts {cls.name}.{method.name}() is False, but "
                         f"{what}, and {cls.name} has no method that answers absence. Add "
-                        f"one for the same element - built on self.wait_hidden(self.sel("
-                        f"\"{key}\")) to wait until it is gone, or on self.get_count(self.sel("
-                        f"\"{key}\")) == 0 to answer at once - and keep {method.name}() for "
-                        f"presence.")
+                        f"one for the same element - `return self.is_gone(self.sel("
+                        f"\"{key}\"))`, True at once when it is absent and waiting only while "
+                        f"it is still shown - and assert it is True; keep {method.name}() "
+                        f"for presence.")
     return errors
 
 

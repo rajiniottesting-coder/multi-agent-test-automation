@@ -164,6 +164,18 @@ prompts look the way they do.
 | 26 | PR #181 | Agent 2 failed a change story: a step function its revisions and retirement left unused | The cleanup only reported orphan step functions, only after retirements, and commented-out code still counted as a definition | Step functions the change left unused are commented out deterministically after every splice; commented-out decorators no longer count | `comment_out_step_defs_unused_by()` in validators/orphan_cleanup.py, `_extract_decorator_phrases()` |
 | 27 | PR #181 | The PR said "All checks have passed" while Agent 4 had not run the newest commit | A workflow-level concurrency group hides a queued run: GitHub shows no check for it | The group moved to the test job, so the waiting run is listed as pending | `.github/workflows/agent4_runner.yml` |
 | 28 | PR #181 | A hidden confirmation blamed signed-in state, then a blocked font | Nothing recorded whether the action's request was made or answered; the first fix counted static resources | Failures list the page's action requests (XHR, fetch, navigation) and their outcome | `watch_network()` in pages/base_page.py, core/failure_diagnosis.py |
+| 29 | PR #182 | Agent 2's repair loop stalled on an `is_<x>_absent()` predicate and the run failed | Two gates disagreed: the predicate rule demanded a presence wait (is_showing) for an absence question, which the absence rule rejects | `BasePage.is_gone()` - the absence wait; predicate rule, absence rule, repair hint and prompt all name it | `pages/base_page.py`, validators/method_resolution_validator.py |
+
+### Gates must agree with each other
+
+Each validator is tested on its own, and that is not enough: in A3 two of them
+gave the model opposite instructions for one absence check, so no rewrite
+could pass and Agent 2 failed with every individual test green.
+`tests/unit/test_gate_remedies_agree.py` runs the real Agent 2 gate on the
+canonical shape of each common concern (presence check, absence check) and on
+each known wrong shape, and requires every remedy a gate names to pass the
+whole gate. **When you add a validator or change a remedy, add its canonical
+shape and its wrong-to-right pair there.**
 
 ### Why not runtime learning (RAG over past failures, fine-tuning, etc.)?
 

@@ -1021,6 +1021,32 @@ class BasePage:
         )
         return False
 
+    def is_gone(self, locator: str,
+                timeout_ms: Optional[int] = None) -> bool:
+        """True once the element is hidden or not in the DOM, WAITING while it
+        is still shown. The absence counterpart of is_showing().
+
+        Absence has no single-glance answer worth asserting on: a glance taken
+        while the element is still on its way out says "present" and fails a
+        correct step. A presence wait (is_showing) is worse - it can say
+        "absent" only by exhausting its whole timeout. This answers at once
+        when the element is already absent, the expected case, and waits only
+        while it is still showing. Build an `is_<thing>_absent()` predicate on
+        it; a step asserting absence then asserts it is True.
+
+        Logs the selector and the wait at WARNING before returning False.
+        """
+        try:
+            expect(self._locator(locator)).to_be_hidden(timeout=self._timeout(timeout_ms))
+            return True
+        except AssertionError as e:
+            logger.warning(
+                "%s.is_gone(%r) is False after %d ms at %s - still shown: %s",
+                type(self).__name__, locator, self._timeout(timeout_ms),
+                self._where(), str(e).splitlines()[0] if str(e) else "",
+            )
+            return False
+
     def _where(self) -> str:
         """The current URL, or a placeholder when the page has gone away."""
         try:

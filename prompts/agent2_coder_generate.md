@@ -700,7 +700,7 @@ The braces that DO appear below are literals inside code examples
 
 16. **A row-level selector matches the WHOLE row, not one cell:** A selector that resolves to a table row / card (a repeated container) returns the CONCATENATED text of every column in that row — id, name, status, action labels and all. Never compare it with `==` against a single field value; that assertion can never pass. Assert containment (`expected in row_text`) or use a cell-scoped selector if the inventory has one. If you need a specific column and no cell-scoped key exists, request it in `notes` (see rule 15) rather than asserting on the blob.
 
-17. **Presence and absence need DIFFERENT readers - getting this backwards is how a passing app looks broken:** To assert something APPEARED, use the WAITING reader (`wait_visible(...)` then read, or the page object's `get_<thing>_text()`). A non-waiting probe called straight after the action that triggers it races the request and reports False while the app is working correctly. To assert something is ABSENT, the waiting reader is equally wrong:** A getter that waits for visibility (`wait_visible(...)` then read) raises a timeout when the element never appears — so a "no error is shown" / "no success message" assertion written on top of it can never be reached, it just fails after the timeout. it raises a timeout when the element never appears, so the assertion is never reached. For absence use the non-waiting probe (`is_visible`, `get_all_texts`, `exists`, or a page-object `has_*()` helper built on them) and assert it is empty/False. Add a `has_<thing>()` helper next to the waiting getter if the page object has none. Never assert absence by catching the timeout, and never assert presence with `has_*()`. One more thing: a missing success message is usually a symptom, not the bug - if the form was rejected client-side nothing was ever submitted, so check for field errors before assuming a timing problem.
+17. **Presence and absence need DIFFERENT readers - getting this backwards is how a passing app looks broken:** To assert something APPEARED, use the WAITING reader (`wait_visible(...)` then read, or the page object's `get_<thing>_text()`). A non-waiting probe called straight after the action that triggers it races the request and reports False while the app is working correctly. To assert something is ABSENT, the waiting reader is equally wrong:** A getter that waits for visibility (`wait_visible(...)` then read) raises a timeout when the element never appears — so a "no error is shown" / "no success message" assertion written on top of it can never be reached, it just fails after the timeout. it raises a timeout when the element never appears, so the assertion is never reached. For absence use a page-object `is_<thing>_absent()` built on `self.is_gone(...)` (True at once when the element is absent, waiting only while it is still shown) and assert it is True; add one next to the waiting getter if the page object has none. Only for an element the inventory lists under `conditional` may a `has_<thing>()` built on `is_visible` be negated instead. Never assert absence by catching the timeout, and never assert presence with `has_*()`. One more thing: a missing success message is usually a symptom, not the bug - if the form was rejected client-side nothing was ever submitted, so check for field errors before assuming a timing problem.
 
 18. **Gherkin tags: lowercase single words only.** Tags become pytest markers via `getattr(pytest.mark, tag)`, so a hyphenated tag like `@admin-user-management` produces a marker that cannot be selected with `-m` and warns on every run. Use short single words: `@smoke`, `@negative`, `@validation`, `@regression`, plus at most ONE theme word for the feature (`@admin`, `@login`). Do not turn the story title into a tag.
 
@@ -1063,6 +1063,30 @@ def assert_no_message(some_page) -> None:
 If the page object has no boolean predicate for the thing you need to check,
 add one alongside the getter. Every `get_*` that waits MUST have a matching
 `has_*` or `is_*` that does not, or absence can never be asserted.
+
+When the question itself is "is it ABSENT?", build the predicate on
+`is_gone()` - True at once when the element is absent, waiting only while it
+is still shown - and assert it is True:
+
+```python
+def is_<thing>_absent(self) -> bool:
+    return self.is_gone(self.sel("<key>"))
+```
+
+Never `return not self.is_visible(...)` (a glance taken while the element is
+still on its way out fails a correct step), and never `is_showing()` for this
+(a presence wait answers "absent" only by exhausting its timeout).
+
+A predicate that ANSWERS ABSENCE returns a negated glance - this is the one
+shape a non-waiting `is_*` may take without a waiting partner:
+
+```python
+def is_<thing>_absent(self) -> bool:
+    return not self.is_visible(self.sel("<key>"))      # or: self.get_count(self.sel("<key>")) == 0
+```
+
+A predicate that answers PRESENCE (`return self.is_visible(...)`) must wait
+instead - build it on `self.is_showing(...)`.
 
 ### RULE: only request fixtures that exist
 

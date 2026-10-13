@@ -332,7 +332,7 @@ def test_absence_with_no_answering_method_points_at_the_page_object():
     errors = _absence("assert widget_page.has_badge() is False", extra="")
     assert len(errors) == 1
     assert errors[0].startswith("Absence assertion error in 'pages/widget_page.py'")
-    assert 'self.wait_hidden(self.sel("badge"))' in errors[0]
+    assert 'self.is_gone(self.sel("badge"))' in errors[0]   # the absence wait (A3)
 
 
 @pytest.mark.parametrize("body", ["assert widget_page.has_badge()",
