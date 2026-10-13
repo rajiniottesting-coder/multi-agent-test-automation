@@ -1349,8 +1349,9 @@ _ERROR_TYPE_RULES: list[tuple[str, str, str]] = [
          "there through a page-object method that waits for it to APPEAR, so it burns "
          "the full timeout whenever the step is right. In the step definition, call the "
          "page-object method named in the error that answers absence; in a page object, "
-         "add that method (self.wait_hidden(...) or self.get_count(...) == 0) and keep "
-         "the waiting one for presence."),
+         "add that method - `return self.is_gone(self.sel(\"<key>\"))`, True at once when "
+         "the element is absent - assert it is True, and keep the waiting one for "
+         "presence."),
     ),
     (
         "selector_inventory",

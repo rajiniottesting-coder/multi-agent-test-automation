@@ -1064,6 +1064,30 @@ If the page object has no boolean predicate for the thing you need to check,
 add one alongside the getter. Every `get_*` that waits MUST have a matching
 `has_*` or `is_*` that does not, or absence can never be asserted.
 
+When the question itself is "is it ABSENT?", build the predicate on
+`is_gone()` - True at once when the element is absent, waiting only while it
+is still shown - and assert it is True:
+
+```python
+def is_<thing>_absent(self) -> bool:
+    return self.is_gone(self.sel("<key>"))
+```
+
+Never `return not self.is_visible(...)` (a glance taken while the element is
+still on its way out fails a correct step), and never `is_showing()` for this
+(a presence wait answers "absent" only by exhausting its timeout).
+
+A predicate that ANSWERS ABSENCE returns a negated glance - this is the one
+shape a non-waiting `is_*` may take without a waiting partner:
+
+```python
+def is_<thing>_absent(self) -> bool:
+    return not self.is_visible(self.sel("<key>"))      # or: self.get_count(self.sel("<key>")) == 0
+```
+
+A predicate that answers PRESENCE (`return self.is_visible(...)`) must wait
+instead - build it on `self.is_showing(...)`.
+
 ### RULE: only request fixtures that exist
 
 A step definition may only take fixtures that are declared in a conftest.py
