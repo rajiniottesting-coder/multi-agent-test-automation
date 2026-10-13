@@ -22,8 +22,10 @@ whatever the catalogue contains and never hardcodes a number.
 
 The same applies to adding one product to the cart. On the listing, the
 add-to-cart control is a FAMILY of 68 and clicking it is rejected at generation
-time; on the product detail page it is unique. So a scenario that adds a
-NAMED product should open its detail page first.
+time; on the product detail page it is unique. A card's own Add to cart button
+puts exactly one item of that product in the cart without opening its detail
+page. So a scenario that adds a NAMED product should scope to one card or open
+its detail page first.
 
 ## The product detail page
 
@@ -37,9 +39,10 @@ product's name, its price, and three labelled facts: `Availability:`,
 - **Availability, Condition and Brand** are shown as labels. A scenario can
   check that each label is present. Do not assert a particular VALUE for them:
   nothing here records those values, and an invented one fails in the browser.
-- **Quantity** has its own input. Set it BEFORE clicking Add to cart - changing
-  it afterwards does not update the cart. "Add 3 of a product" means: set the
-  quantity to 3, then add.
+- **Quantity** is no longer chosen on the page - there is no quantity field.
+  Each click of Add to cart puts exactly one item in the cart, raising that
+  product's cart quantity by one. "Add 3 of a product" means: click Add to cart
+  three times.
 - **Add to cart** here is a single control for this product, and it opens the
   same confirmation modal as the listing - see `cart.md`.
 
