@@ -534,8 +534,17 @@ Every story labelled `impact-applied` is settled on each scan:
 After an undo the story is left ready to retry or drop, not half-done: its own
 test cases that never reached `main` are retired (reversible), the labels in
 `reconcile.reset_labels` (`ai-processed`, `human-approved`, `ai-coded`,
-`tests-run`) are removed, the card moves to To Do, and one comment says how to
-retry: remove `impact-reverted`, add `impact-check`.
+`tests-run`) are removed, the Impact Review is renamed `[undone PR #N] Impact
+Review: …` (so it no longer counts), the card moves to To Do, and one comment
+says how to retry: remove `impact-reverted`, add `impact-check`.
+
+**A retry is its own attempt.** Agent 0 analyses the story afresh and opens a
+new Impact Review. Agent 1 writes `Change applied at: <UTC>` in its gate
+comment whenever it revises or creates tests, and reconcile considers only PRs
+opened after that, so the earlier attempt's closed (or merged) PR can never
+undo (or finish) the retry. The context update is checked again too: its
+marker counts only for the story text it carries (`(story: <hash>)`) and only
+after the latest undo.
 
 Reconcile keeps its memory in marker comments, so it can run anywhere, any
 number of times.

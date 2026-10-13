@@ -37,7 +37,10 @@ For wording:
 
 Everything comes from the story, the configured inventory file and the
 configured context notes, so nothing here is specific to one application.
-Idempotent: a marker comment on the story means the proposal was made.
+Idempotent: a marker comment on the story means the proposal was made - for
+the story as it reads now (the marker carries its content hash) and for the
+current attempt (a marker before the latest reconcile undo does not count).
+An edited story, or a retry after an undo, is checked again.
 """
 from __future__ import annotations
 
@@ -52,6 +55,8 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 MARKER = "[agent0:context-update]"
+_STORY_HASH = re.compile(r"\(story: ([0-9a-f]+)\)")
+_UNDONE = "[agent0:reconcile] reverted"
 _CODE_GLOBS = ("features/**/*.feature", "tests/step_defs/**/*.py", "pages/**/*.py")
 
 
@@ -393,9 +398,10 @@ def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: 
     cfg = settings.get("context_update") or {}
     if not cfg.get("enabled", False):
         return {"story": story_key, "context": "disabled"}
-    if any(c.startswith(MARKER) for c in tracker.get_comments(story_key)):
-        return {"story": story_key, "context": "already-proposed"}
     story = tracker.get_story(story_key)
+    chash = _story_hash(story)
+    if _already_proposed(tracker.get_comments(story_key), chash):
+        return {"story": story_key, "context": "already-proposed"}
     sources = context_sources(root)
     changes = extract_changes(llm, story)
     try:
@@ -411,12 +417,36 @@ def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: 
                             "no wording, and makes no passage untrue, in the inventory or the "
                             "context notes."
                             + ("".join(f"\nNot applied: {o} -> {n} ({why})"
-                                       for o, n, why in prop.dropped)) + unchecked)
+                                       for o, n, why in prop.dropped)) + unchecked
+                            + f"\n(story: {chash})")
         return {"story": story_key, "context": "none"}
     url = open_pull_request(host, story_key, prop, cfg.get("branch_prefix", "context-update/"))
     if url:
         tracker.add_comment(story_key, f"{MARKER} Context update proposed: {url} - "
                             f"{len(prop.findings) + len(prop.rewrites)} change(s) to the inventory "
                             "and context notes. "
-                            "Merge it after this change is deployed.")
+                            "Merge it after this change is deployed."
+                            f"\n(story: {chash})")
     return {"story": story_key, "context": "proposed" if url else "branch-exists", "url": url}
+
+
+def _story_hash(story: dict) -> str:
+    from core.impact_analysis import content_hash
+    return content_hash(story.get("summary") or "", story.get("description") or "",
+                        sorted(story.get("components") or []))
+
+
+def _already_proposed(comments: list, chash: str) -> bool:
+    """A proposal stands only for this attempt and this text of the story.
+
+    Comments are oldest first. A marker before the latest undo belonged to a
+    change that never shipped; a marker for other story text (or one written
+    before markers carried the hash) cannot say the current text was checked."""
+    last_undo = max((i for i, c in enumerate(comments) if (c or "").startswith(_UNDONE)),
+                    default=-1)
+    for c in comments[last_undo + 1:]:
+        if (c or "").startswith(MARKER):
+            m = _STORY_HASH.search(c)
+            if m and m.group(1) == chash:
+                return True
+    return False

@@ -20,8 +20,15 @@ After an undo the change story itself is left ready to retry or drop, not
 half-done: its own test cases that never reached main are retired (a label,
 reversible), the pipeline-progress labels the closed PR made untrue
 (reconcile.reset_labels) come off, the card follows the impact-reverted
-label (status_workflow.on_label), and one comment on the story says what
-happened and how to retry.
+label (status_workflow.on_label), the Impact Review is marked undone so a
+retry is analysed afresh, and one comment on the story says what happened
+and how to retry.
+
+A retried story has the PRs of its earlier attempts too. Only PRs opened
+after Agent 1 applied the current attempt ("Change applied at:" in its gate
+comment) are considered, so an old closed PR can never undo - and an old
+merged PR never finish - a new attempt. A story applied before the stamp
+existed keeps the earlier behaviour.
 
 Why scheduled and not on the PR's closed event: the sweeper restarts a
 stalled PR by closing and reopening it, which emits the same event. The
@@ -60,16 +67,30 @@ def _owners(tracker, keys) -> dict:
     return owners
 
 
+def _in_attempt(pr: dict, since) -> bool:
+    """Was this PR opened for the current attempt? Unknown counts as yes."""
+    if since is None or not pr.get("created_at"):
+        return True
+    try:
+        created = datetime.fromisoformat(str(pr["created_at"]).replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return created >= since
+
+
 def reconcile_story(tracker, host, story: str, settings: dict | None = None, now=None) -> dict:
     """Settle one change story; returns {"story", "action", ...}."""
     settings = settings or impact_settings()
     labels = settings["labels"]
+    comments = tracker.get_comments(story)
+    since = impact_trace.latest_applied(comments)
     # Newest first is the repo-host contract; sorted here too, so an adapter
     # returning another order can never make the revert act on an older PR.
     # Stable: PRs without updated_at keep the adapter's order.
-    prs = sorted(host.find_prs_for_story(story), key=lambda p: p.get("updated_at") or "",
-                 reverse=True)
-    comments = tracker.get_comments(story)
+    prs = sorted((p for p in host.find_prs_for_story(story) if _in_attempt(p, since)),
+                 key=lambda p: p.get("updated_at") or "", reverse=True)
 
     if any(p["state"] == "open" for p in prs):
         return {"story": story, "action": "open"}
@@ -101,14 +122,18 @@ def reconcile_story(tracker, host, story: str, settings: dict | None = None, now
             return {"story": story, "action": "pending-close", "pr": pr["number"]}
         return _revert(tracker, story, pr, cases, owners, labels, settings)
 
-    since = _NO_PR.findall("\n".join(comments))
-    if not since:
+    # A no-PR note from an earlier attempt does not age this one. Comments
+    # are oldest first, so this attempt's notes follow its stamp.
+    start = max((i for i, c in enumerate(comments)
+                 if impact_trace.APPLIED in (c or "")), default=0)
+    noted = _NO_PR.findall("\n".join(comments[start:]))
+    if not noted:
         tracker.add_comment(story, f"{MARK} no-pr since: {_today(now).isoformat()}\n"
                                    "Labelled impact-applied, but no pull request exists yet.")
         return {"story": story, "action": "no-pr-noted"}
-    age = (_today(now) - date.fromisoformat(since[0])).days
+    age = (_today(now) - date.fromisoformat(noted[0])).days
     if age >= settings["reconcile"]["no_pr_days"] and \
-            f"{MARK} ask-a-person" not in "\n".join(comments):
+            f"{MARK} ask-a-person" not in "\n".join(comments[start:]):
         tracker.add_comment(story, f"{MARK} ask-a-person\nThe test cases were revised "
                                    f"{age} days ago and no pull request has been opened. "
                                    "Decide: run Agent 2 (add human-approved), or undo by "
@@ -156,6 +181,7 @@ def _settle_story(tracker, story, pr, labels, settings, retired_label,
         move_card_for_label(tracker, story, labels["reverted"])
     except Exception as e:                                     # noqa: BLE001
         logger.warning("Reconcile: could not move %s on the board: %s", story, e)
+    review = _retire_review(tracker, story, pr, settings)
     lines = [f"{MARK} reverted pr: {pr['number']}",
              (f"Pull request #{pr['number']} was closed without merging, so this change "
               "was undone: the other stories' test cases it revised have their earlier "
@@ -165,10 +191,33 @@ def _settle_story(tracker, story, pr, labels, settings, retired_label,
                      f"(label {retired_label}, reversible): {', '.join(retired)}")
     if reset:
         lines.append("Pipeline labels removed: " + ", ".join(reset))
+    if review:
+        lines.append(f"Impact Review {review} is marked undone; a retry opens a new one.")
     lines.append(f"To retry: remove {labels['reverted']} and add {labels['check']} - "
                  "Agent 0 analyses the story again. To drop it: nothing more to do.")
     tracker.add_comment(story, "\n".join(lines))
-    return {"retired_own": retired, "reset_labels": reset}
+    return {"retired_own": retired, "reset_labels": reset, "review_undone": review}
+
+
+def _retire_review(tracker, story, pr, settings) -> str | None:
+    """Mark the story's Impact Review as undone, so it no longer counts.
+
+    The repeat check, the hand-over and Agent 1 all read the latest sub-task
+    whose summary starts with review.summary_prefix. Left as it was, an undone
+    review made a retry of an unchanged story a no-op ("already analysed").
+    Prefixing the summary keeps the record and its decisions readable."""
+    prefix = settings["review"]["summary_prefix"]
+    try:
+        reviews = [s for s in tracker.get_subtasks(story) if s["summary"].startswith(prefix)]
+        if not reviews:
+            return None
+        review = reviews[-1]
+        tracker.set_description(review["key"], review["description"],
+                                summary=f"[undone PR #{pr['number']}] {review['summary']}")
+        return review["key"]
+    except Exception as e:                                     # noqa: BLE001
+        logger.warning("Reconcile: could not mark the Impact Review of %s undone: %s", story, e)
+        return None
 
 
 def _revert(tracker, story, pr, cases, owners, labels, settings=None,

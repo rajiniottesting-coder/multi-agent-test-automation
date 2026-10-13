@@ -220,6 +220,12 @@ def run_impact_aware(tracker, story_id: str, story: dict, prompt_header: dict,
         if retired:
             body += ["", "*Retired (scenarios removed by Agent 2)*: "
                      + ", ".join(c["key"] for c in retired)]
+        if revised or created:
+            # The start of this attempt. Reconcile settles the story only on
+            # pull requests opened after it, so a retried change is never
+            # finished or undone by the PR of an earlier attempt. A re-run
+            # that changed nothing keeps the attempt (and its PR) it had.
+            body += ["", impact_trace.applied_line()]
         tracker.add_comment(story_id, "\n".join(body))
 
         from core.board_status import move_card_for_label

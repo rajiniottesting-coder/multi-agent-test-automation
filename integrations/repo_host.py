@@ -105,9 +105,11 @@ class RepoHost(Protocol):
 
     def find_prs_for_story(self, story_id: str, branch_prefix: str = "auto/") -> list[dict]:
         """EVERY PR of a story - open, closed and merged - newest first, as
-        [{"number", "head_ref", "url", "title", "state", "merged", "updated_at"}].
-        `state` is "open" or "closed"; `merged` tells a merge from a rejection
-        (get_pr_metadata has no such flag). `updated_at` is ISO-8601 text.
+        [{"number", "head_ref", "url", "title", "state", "merged", "updated_at",
+        "created_at"}]. `state` is "open" or "closed"; `merged` tells a merge
+        from a rejection (get_pr_metadata has no such flag). `updated_at` and
+        `created_at` are ISO-8601 text; an adapter that cannot supply
+        `created_at` may omit it (reconcile then considers every PR, as before).
         Used by the reconcile scan (Agent 0, C7)."""
         ...
 
