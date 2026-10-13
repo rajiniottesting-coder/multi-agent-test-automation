@@ -140,9 +140,24 @@ class TestChangeStoryRun:
         # the story's own file holds only its own new case, owned by the story
         own = _blocks(files[OWN_FEATURE])
         assert len(own) == 1 and next(iter(own.values())).owner == "SBX-5"
-        # the owner's step definitions gained step functions, nothing replaced
-        assert files["tests/step_defs/test_sandbox_login.py"].startswith(
-            gh.branches["main"]["tests/step_defs/test_sandbox_login.py"])
+        # the owner's step definitions: nothing replaced - every live step the
+        # feature still uses is kept, and every step the change left unused is
+        # commented out, so the unused-step gate cannot fail on this file
+        from validators.gherkin_analyzer import (_extract_decorator_phrases,
+                                                 validate_no_unused_step_definitions)
+        sd = "tests/step_defs/test_sandbox_login.py"
+        main_live = _extract_decorator_phrases(gh.branches["main"][sd])
+        after_live = _extract_decorator_phrases(files[sd])
+        assert set(after_live) <= set(main_live) and after_live
+        assert "AI-ORPHAN" in files[sd]
+        assert files[sd].endswith("# + steps for revised scenarios\n")
+        def unused(feature, steps):
+            return set(validate_no_unused_step_definitions(
+                [MagicMock(file_path=OWNER_FILE, content=feature),
+                 MagicMock(file_path=sd, content=steps)]))
+        # the sandbox's step file carries reference steps its feature never
+        # used; the change may not add a single unused step to those
+        assert unused(after, files[sd]) <= unused(before, gh.branches["main"][sd])
         # the PR says what changed in whose file
         body = gh.prs[0]["body"]
         assert "## Revised (owner)" in body and "SBX-11 - owner SBX-1" in body
@@ -207,7 +222,7 @@ def test_orphans_found_while_retiring_are_listed_in_the_pr():
     from agents.agent2_impact import pr_sections
     body = pr_sections({"revised": {}, "retired": {"AB-6": "features/f.feature"},
                         "owners": {}, "orphans": ["step definition `old_step` in `x.py`"]})
-    assert "## Orphans after retiring" in body and "`old_step`" in body
+    assert "## Left unused by this change" in body and "`old_step`" in body
     assert "## Orphans" not in pr_sections({"revised": {}, "retired": {"AB-6": "f"},
                                             "owners": {}, "orphans": []})
 
@@ -229,20 +244,18 @@ def test_one_definition_of_the_files_only_splicing_may_edit():
 def test_orphan_cleanup_is_committed_even_when_no_step_function_was_added(monkeypatch):
     """A3 (SCRUM-206): retiring a scenario left its step function orphaned; the
     PR body said it was commented out, but the step-def file was not in the PR,
-    because the file was committed only when the splice ADDED a function."""
+    because the file was committed only when the splice ADDED a function.
+
+    Runs the REAL cleanup: an earlier version of this test mocked it, and the
+    mock commented the function out while the real code only reported it."""
     import agents.agent2_coder as a2
-    import validators.orphan_cleanup as oc
     from agents.agent2_impact import OwnerFile, splice_owner_files
 
-    feature = ("Feature: F\n\n  # JIRA: AB-6 (hash: 1) owner: AB-1\n  Scenario: old\n"
-               "    When I do the old thing\n")
+    feature = ("Feature: F\n\n  " + format_marker("AB-6", "d", "AB-1", ()) +
+               "\n  Scenario: old\n    When I do the old thing\n")
     steps = '@when("I do the old thing")\ndef old_thing():\n    pass\n'
-    commented = "# ORPHAN\n# " + steps.replace("\n", "\n# ")
     monkeypatch.setattr(a2, "_splice_step_defs_incremental",
                         lambda *a, **k: (steps, "unchanged"))
-    monkeypatch.setattr(oc, "cleanup_orphans_after_removal",
-                        lambda **k: ({"tests/step_defs/test_f.py": commented}, {},
-                                     [MagicMock(function_name="old_thing")], []))
 
     class GH:
         def get_file_content(self, path, branch="main"):
@@ -252,5 +265,6 @@ def test_orphan_cleanup_is_committed_even_when_no_step_function_was_added(monkey
     files, report = splice_owner_files(None, GH(), "AB-9", {"features/f.feature": of},
                                        None, None, {}, "", None)
     by_path = {f.file_path: f.content for f in files}
-    assert by_path.get(of.step_defs_path) == commented
+    assert "# @when(\"I do the old thing\")" in by_path[of.step_defs_path]
+    assert "AI-ORPHAN" in by_path[of.step_defs_path]
     assert report["orphans"] == [f"step definition `old_thing` in `{of.step_defs_path}`"]

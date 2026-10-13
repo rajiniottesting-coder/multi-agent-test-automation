@@ -42,10 +42,91 @@ automatically.
 """
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 from urllib.parse import urlparse
 
 from playwright.sync_api import Locator, Page, expect
+import weakref
+
+# ── Network evidence for failure messages ──────────────────────────────
+#
+# "The confirmation never appeared" has different causes: the application
+# refused the action (its request failed or returned an error), the action
+# never reached the application (no request was made), or the test asked for
+# a state the application never had. The DOM alone cannot tell them apart.
+# The test fixture registers each page here; a failed wait then lists the
+# requests the page made FOR ACTIONS - XHR, fetch and navigations, with their
+# outcome - so the message carries its own evidence.
+#
+# Static resources (fonts, styles, images, scripts) are left out on purpose:
+# a site whose fonts are blocked as mixed content fails those on every page,
+# and listing them made an unrelated font read as the cause (PR #180).
+_ACTION_RESOURCE_TYPES = frozenset({"xhr", "fetch", "document"})
+_NETWORK_LOG: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+_NETWORK_LOG_KEPT = 20
+
+
+def watch_network(page: Page, ignore: Optional[Callable[[str], bool]] = None) -> None:
+    """Record the action requests `page` makes (XHR, fetch, navigations) and
+    how each ended: an HTTP status, or the reason it got no response.
+
+    `ignore(url) -> bool` filters requests refused on purpose (blocked third
+    parties), which are failures nobody needs to read about.
+    """
+    log: list = []
+    _NETWORK_LOG[page] = log
+
+    def _keep(request: Any, outcome: str, failed: bool) -> None:
+        if getattr(request, "resource_type", None) not in _ACTION_RESOURCE_TYPES:
+            return
+        if ignore is not None:
+            try:
+                if ignore(request.url):
+                    return
+            except Exception:                                  # noqa: BLE001
+                pass
+        log.append((f"{request.method} {request.url} - {outcome}", failed))
+        del log[:-_NETWORK_LOG_KEPT]
+
+    def _response(response: Any) -> None:
+        # The "response" event carries the status directly. Calling
+        # request.response() from inside a handler instead does not return
+        # for every request type in the sync API, and those were lost.
+        _keep(response.request, f"HTTP {response.status}", response.status >= 400)
+
+    def _failed(request: Any) -> None:
+        _keep(request, f"no response ({request.failure or 'failed'})", True)
+
+    page.on("response", _response)
+    page.on("requestfailed", _failed)
+
+
+def network_problems(page: Page) -> list:
+    """Action requests on `page` that failed or returned an HTTP error, oldest first."""
+    return [text for text, failed in _NETWORK_LOG.get(page, ()) if failed]
+
+
+def _network_evidence(page: Page) -> str:
+    """One paragraph for a failure message: the page's recent action requests
+    and their outcome, or a note that it made none."""
+    if page not in _NETWORK_LOG:
+        return ""
+    log = _NETWORK_LOG[page]
+    problems = [text for text, failed in log if failed]
+    if problems:
+        return (" Action requests on this page that failed or returned an HTTP "
+                "error (most recent last) - if the action's own request is among "
+                "them, the application refused or never answered it, and the "
+                "missing state is the consequence: " + "; ".join(problems[-5:]) + ".")
+    if not log:
+        return (" The page made no XHR, fetch or navigation request at all, so the "
+                "action never reached the application: look at whether the control "
+                "was ready to act when it was clicked.")
+    return (" Every action request on this page succeeded (most recent last): "
+            + "; ".join(text for text, _f in log[-5:]) + ". If the action's own "
+            "request is not in this list, the action never reached the "
+            "application: look at whether the control was ready when it was "
+            "clicked.")
 
 logger = logging.getLogger(__name__)
 
@@ -859,11 +940,12 @@ class BasePage:
                     f"{self.page.url}. The selector is correct and so is the "
                     f"page - the application is simply not in the state this "
                     f"step expected, so look at what was supposed to put it "
-                    f"there rather than at the selector. A common cause is a "
-                    f"scenario that assumes a starting state it never "
-                    f"established: anything the application stores against the "
-                    f"signed-in user usually survives logout and survives the "
-                    f"run, so a previous run's leftovers are still there."
+                    f"there rather than at the selector. Two common causes: "
+                    f"the action meant to show it did not complete (its request "
+                    f"failed or the application rejected it), or the scenario "
+                    f"assumes a starting state it never established (anything "
+                    f"stored against a signed-in user survives logout and the "
+                    f"run)." + _network_evidence(self.page)
                 ) from None
             raise
 

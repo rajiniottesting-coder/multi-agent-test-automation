@@ -161,6 +161,29 @@ _SIGNATURES: list[tuple[re.Pattern, Diagnosis]] = [
         ),
     ),
     (
+        # PRESENT BUT HIDDEN, and the page recorded failed requests. wait_visible
+        # appends them (pages/base_page.py, watch_network). The likeliest reading
+        # is then that the application refused or never answered the action,
+        # not that the scenario assumed a wrong starting state - so this more
+        # specific entry is tried first.
+        re.compile(r"PRESENT in the DOM but HIDDEN.*Action requests on this page that failed",
+                   re.I | re.S),
+        Diagnosis(
+            "action's request failed",
+            "The element is in the DOM but was never shown, and action requests "
+            "on the page (XHR, fetch, navigation) failed or returned an HTTP "
+            "error while the step waited. The "
+            "application did not complete the action, so the state it would "
+            "have shown never came about.",
+            "Read the failed requests listed in the message. If the action's "
+            "own request is among them (an HTTP 5xx, a 429, or no response), "
+            "the application or the network refused it: re-run, and if it "
+            "keeps failing, check the application under test before the test. "
+            "If only unrelated requests failed, treat it as a state problem "
+            "and read the trace in reports/failure-evidence/.",
+        ),
+    ),
+    (
         # PRESENT BUT HIDDEN. Playwright says "expected to be visible" for both
         # a missing element and one that is in the DOM and not shown, and the
         # readiness-probe entry below then advises checking the selector. That
