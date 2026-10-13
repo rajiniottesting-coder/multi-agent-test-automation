@@ -37,9 +37,10 @@ product's name, its price, and three labelled facts: `Availability:`,
 - **Availability, Condition and Brand** are shown as labels. A scenario can
   check that each label is present. Do not assert a particular VALUE for them:
   nothing here records those values, and an invented one fails in the browser.
-- **Quantity** has its own input. Set it BEFORE clicking Add to cart - changing
-  it afterwards does not update the cart. "Add 3 of a product" means: set the
-  quantity to 3, then add.
+- **Quantity** is no longer chosen here: there is no quantity input. Each click
+  of Add to cart puts exactly one item in the cart, and adding the same product
+  again raises its cart quantity by one. "Add 3 of a product" means: add it three
+  times.
 - **Add to cart** here is a single control for this product, and it opens the
   same confirmation modal as the listing - see `cart.md`.
 
