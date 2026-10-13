@@ -124,6 +124,31 @@ def test_a_failed_review_rename_never_fails_the_undo(tmp_path):
     assert out["action"] == "reverted" and out["review_undone"] is None
 
 
+def test_the_report_of_an_undone_review_does_not_count_either(monkeypatch):
+    import agents.agent0_impact as a0
+    monkeypatch.setattr(a0.ia, "extract", lambda body: {"content_hash": "h"})
+    settings = impact_settings()
+    tracker = MagicMock()
+    tracker.get_subtasks.return_value = [
+        {"key": "AB-30", "summary": "[undone PR #7] Impact Review: AB-9",
+         "status": "Done", "description": "x"}]
+    tracker.get_comments.return_value = [
+        f"{a0.REPORT} Impact report for AB-9 - review AB-30 | hash: h | graph: g\nbody"]
+    assert a0._previous_report(tracker, "AB-9", settings) == (None, None)
+    assert a0._already_analysed(tracker, "AB-9", "h", settings) is False
+
+
+def test_a_nothing_to_review_report_still_counts(monkeypatch):
+    import agents.agent0_impact as a0
+    settings = impact_settings()
+    tracker = MagicMock()
+    tracker.get_subtasks.return_value = []
+    tracker.get_comments.return_value = [
+        f"{a0.REPORT} Impact report for AB-9 | hash: h | graph: g\nbody"]
+    monkeypatch.setattr(a0.ia, "extract", lambda body: {"content_hash": "h"})
+    assert a0._already_analysed(tracker, "AB-9", "h", settings) is True
+
+
 def test_a_retry_of_an_unchanged_story_is_analysed_again():
     import agents.agent0_impact as a0
     settings = impact_settings()

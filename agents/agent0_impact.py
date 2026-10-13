@@ -137,6 +137,10 @@ def _previous_report(tracker, story_key: str, settings: dict):
         return report, reviews[-1]
     for body in reversed(tracker.get_comments(story_key)):
         if body.startswith(REPORT):
+            if " - review " in body.split("\n", 1)[0]:
+                # The report of a review that no longer counts (undone by
+                # reconcile): the story has no current analysis.
+                return None, None
             report = ia.extract(body)
             if report is None:
                 logger.warning("%s: the Agent 0 data in the latest report comment cannot "
