@@ -1,11 +1,17 @@
 """
 ProductsPage — the All Products listing (/products).
 
-Navigation surface for cart scenarios: the shopper opens a named product's
-details page by clicking the 'View Product' link on that product's card. This
-page object does NOT add to cart from the listing — the listing's add-to-cart
-family matches 68 elements (doubled per card) and is a strict-mode trap; adding
-belongs on the product detail page, which exposes a single unique control.
+Navigation surface for cart scenarios. Two ways off this page for a shopper
+who wants a product:
+
+  - open the product's detail page via its 'View Product' link, OR
+  - add the product straight from its listing card, which opens the
+    add-to-cart MODAL over the listing without ever leaving it.
+
+Both are strict-mode traps if done naively: the add-to-cart family matches 68
+elements (doubled per card) and the view-product family one per card. Every
+method here scopes to the CARD that contains the product name with
+click_in_row(), so no family is ever addressed as a whole.
 
 Selectors: see `products` in the app inventory. No literals live here.
 
@@ -58,6 +64,46 @@ class ProductsPage(BasePage):
             self.sel("view_product_links"),
         )
 
+    def add_to_cart_from_listing(self, product_name: str) -> None:
+        """Add the named product to the cart from its listing card.
+
+        Scopes to the product CARD containing the name and clicks the Add to
+        cart control INSIDE that card, so the add-to-cart family (68 elements,
+        doubled per card) is never addressed as a whole — click_in_row pins the
+        action to the one card. Confirms it is on the listing first: clicking a
+        card control as an opening move from elsewhere does not fail fast, it
+        pays the full timeout and then blames the button selector.
+
+        This does NOT open the product detail page: it opens the add-to-cart
+        MODAL over the listing. Confirm that modal (is_added_modal_shown) before
+        any further interaction, because it blocks the page underneath.
+        """
+        self.require_own_page()
+        self.click_in_row(
+            self.sel("product_cards"),
+            product_name,
+            self.sel("add_to_cart_buttons"),
+        )
+
+    def open_cart_from_modal(self) -> None:
+        """Click View Cart inside the add-to-cart modal, landing on the cart.
+
+        Only valid after a product has been added from the listing — the modal
+        is where this link lives. Does NOT confirm arrival here: the cart's own
+        page object owns the /view_cart URL and confirms it, so a step opening
+        the cart asserts readiness through the cart page object, not this one.
+        """
+        self.click(self.sel("view_cart_link_in_modal"))
+
+    def continue_shopping(self) -> None:
+        """Dismiss the add-to-cart modal and stay on the listing.
+
+        Only valid after a product has been added — the button lives inside the
+        modal. A scenario adding a SECOND product must call this first, or the
+        next card click lands on the overlay rather than the page.
+        """
+        self.click(self.sel("continue_shopping_button"))
+
     def search_for(self, term: str) -> None:
         """Enter a search term and submit the search form.
 
@@ -80,6 +126,16 @@ class ProductsPage(BasePage):
         navigated to, before any search replaces it.
         """
         return self.is_showing(self.sel("all_products_heading"), timeout_ms=timeout_ms)
+
+    def is_added_modal_shown(self, timeout_ms: Optional[int] = None) -> bool:
+        """True once the 'product has been added to cart' modal is on screen.
+
+        WAITS for it. The modal is the signal that adding from the listing card
+        succeeded and that the shopper was NOT taken to the product detail page.
+        Call this only where the modal is expected — it times out instead of
+        returning False when nothing was added.
+        """
+        return self.is_showing(self.sel("added_modal"), timeout_ms=timeout_ms)
 
     def is_search_results_shown(self, timeout_ms: Optional[int] = None) -> bool:
         """True once the Searched Products heading is on screen. WAITS for it.
