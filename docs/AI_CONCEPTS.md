@@ -161,6 +161,7 @@ prompts look the way they do.
 | 23 | PR #173 | A test the model judged "review" ranked must-update on structure alone | The score ignored the model's verdict | The verdict caps the tier | `rank()` in core/impact_analysis.py |
 | 24 | PR #173 | A "not shown" assertion passed while the element was still loading | A probe that waits for the element was used to assert absence | New validator | `validate_absence_not_asserted_with_waiting_probe()` |
 | 25 | PR #173 | After an undo the story kept `ai-coded`/In Review and its unshipped tests stayed active | The undo restored the other stories but not this one | Retire unshipped tests, reset labels, card to To Do, retry steps | `_settle_story()` in core/impact_reconcile.py |
+| 26 | this PR | Agent 2 failed a change story: a step function its revisions and retirement left unused | The cleanup only reported orphan step functions, only after retirements, and commented-out code still counted as a definition | Step functions the change left unused are commented out deterministically after every splice; commented-out decorators no longer count | `comment_out_step_defs_unused_by()` in validators/orphan_cleanup.py, `_extract_decorator_phrases()` |
 
 ### Why not runtime learning (RAG over past failures, fine-tuning, etc.)?
 

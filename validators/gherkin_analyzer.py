@@ -596,6 +596,8 @@ _DECORATOR_STRING_PATTERN = re.compile(
     r'@(given|when|then)\s*\(\s*[\'"](.+?)[\'"]\s*\)',
     re.DOTALL,
 )
+# A whole line that is a Python comment (leading whitespace allowed).
+_COMMENT_LINE_PATTERN = re.compile(r'(?m)^[ \t]*#[^\n]*')
 
 
 def _extract_feature_steps(feature_content: str) -> list[tuple[str, str]]:
@@ -672,6 +674,14 @@ def _extract_decorator_phrases(step_def_content: str) -> list[tuple[str, str, st
       - 're':     Python `re` module — full regex power
     """
     decorators = []
+
+    # A commented-out decorator is never registered by pytest-bdd, so it must
+    # not count here either. Without this, a step function commented out as an
+    # orphan still read as defined: the unused-step check kept flagging it, and
+    # the coverage check could call a step "defined" that fails at runtime.
+    # Comment lines are blanked to the same length so match offsets stay valid.
+    step_def_content = _COMMENT_LINE_PATTERN.sub(
+        lambda m: " " * len(m.group(0)), step_def_content)
 
     # Find parsers.parse(...) / parsers.re(...) / parsers.cfparse(...) decorators
     for match in _DECORATOR_PARSER_PATTERN.finditer(step_def_content):

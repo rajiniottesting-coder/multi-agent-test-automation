@@ -135,7 +135,8 @@ def splice_owner_files(llm, gh, story_id: str, owner_files: dict, index, ctx,
     from agents.agent2_coder import (GeneratedFile, _generate_single_scenario,
                                      _splice_step_defs_incremental, compute_description_hash,
                                      remove_scenario, splice_scenario)
-    from validators.orphan_cleanup import cleanup_orphans_after_removal
+    from validators.orphan_cleanup import (cleanup_orphans_after_removal,
+                                           comment_out_step_defs_unused_by)
 
     files, report = [], {"revised": {}, "retired": {}, "owners": {}, "step_defs": {},
                          "orphans": []}
@@ -167,17 +168,25 @@ def splice_owner_files(llm, gh, story_id: str, owner_files: dict, index, ctx,
         page_updates: dict = {}
         if of.retire:
             try:
-                (sd_files, page_updates, defs, methods) = cleanup_orphans_after_removal(
+                (_sd, page_updates, _defs, methods) = cleanup_orphans_after_removal(
                     old_feature_content=original, new_feature_content=content,
                     removed_jira_keys=of.retire, step_def_files={sd_path: sd_content},
                     page_object_files={}, reserved_file_paths={"pages/base_page.py"})
-                sd_content = sd_files.get(sd_path, sd_content)
-                report["orphans"] += [f"step definition `{d.function_name}` in `{sd_path}`"
-                                      for d in defs]
                 report["orphans"] += [f"page method `{m.class_name}.{m.method_name}`"
                                       for m in methods]
             except Exception as e:                             # noqa: BLE001
                 logger.warning("Orphan cleanup after retiring %s failed: %s", of.retire, e)
+        # Step definitions the change left unused: commented out here,
+        # deterministically, by the unused-step check's own rule. A revision
+        # takes a step's last use as surely as a retirement does, so this runs
+        # for both. cleanup_orphans_after_removal above only REPORTS step
+        # definitions (its ai-update caller regenerates the file whole), which
+        # left them live - and the unused-step check then failed the run.
+        sd_content, defs = comment_out_step_defs_unused_by(
+            original, content, sd_content, sd_path, path, story_id,
+            [t["key"] for t in of.revise] + list(of.retire))
+        report["orphans"] += [f"step definition `{d.function_name}` in `{sd_path}`"
+                              for d in defs]
         files.append(GeneratedFile(file_path=path, content=content, is_new_file=False,
                                    purpose=f"Impact of {story_id}: revised "
                                            f"{[t['key'] for t in of.revise]}, retired {of.retire}"))
@@ -229,7 +238,7 @@ def pr_sections(report: dict) -> str:
         for key, path in sorted(report["retired"].items()):
             parts.append(f"- {key} - scenario removed from `{path}`\n")
     if report.get("orphans"):
-        parts.append("\n## Orphans after retiring (commented out for review)\n")
+        parts.append("\n## Left unused by this change (commented out for review)\n")
         parts += [f"- {o}\n" for o in report["orphans"]]
     if parts:
         parts.append("\nScenarios in other stories' files were edited only by splicing: "

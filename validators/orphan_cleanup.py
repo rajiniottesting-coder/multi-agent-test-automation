@@ -592,3 +592,119 @@ def cleanup_orphans_after_removal(
         )
 
     return step_def_files, updated_pages, orphan_defs, orphan_methods
+
+# ════════════════════════════════════════════════════════════════════
+# Step definitions a change left unused (splice path)
+# ════════════════════════════════════════════════════════════════════
+
+UNUSED_STEP_BANNER_TEMPLATE = (
+    "# AI-ORPHAN: no scenario in {feature} uses this step after {change} "
+    "revised or retired {keys}. Review before deleting."
+)
+
+
+def _parser_type_from_decorator_ast(dec_node: ast.Call) -> str:
+    """'string', or the parsers.<name> the decorator wraps (parse/cfparse/re)."""
+    arg = dec_node.args[0] if dec_node.args else None
+    if isinstance(arg, ast.Call) and isinstance(arg.func, ast.Attribute) \
+            and arg.func.attr in ("parse", "cfparse", "re"):
+        return arg.func.attr
+    return "string"
+
+
+def comment_out_step_defs_unused_by(
+    old_feature_content: str,
+    feature_content: str,
+    step_def_content: str,
+    file_path: str,
+    feature_path: str,
+    change_ref: str,
+    keys: list[str],
+) -> tuple[str, list[OrphanStepDef]]:
+    """Comment out every step decorator this change left unused.
+
+    For a file edited ONLY by splicing (an owner's step definitions, changed
+    by a change story's revisions and retirements). A scenario that is
+    revised or retired can take the last use of a step with it, and the
+    unused-step check then fails the whole run on code no model wrote.
+
+    The rule is the unused-step check's own, applied deterministically:
+    a decorator is unused when no step in the paired feature file matches
+    it (keyword-agnostic, same pytest-bdd matcher). Only decorators the
+    feature USED before the change and no longer uses are touched - this
+    change's doing, whether through a retirement, a revision, or both.
+    Anything already unused before is not this change's to edit.
+
+    A function whose decorators are ALL unused is commented out whole; a
+    function that keeps one used decorator loses only the unused decorator
+    lines, so a live step is never disabled. Commented, not deleted: the
+    banner and the PR list them for a person to review.
+
+    Returns (new content, the orphans). Unparseable content is returned
+    unchanged with no orphans - the syntax check reports it.
+    """
+    try:
+        tree = ast.parse(step_def_content)
+    except SyntaxError as e:
+        logger.warning("Cannot parse %s - unused step definitions not checked. %s",
+                       file_path, e)
+        return step_def_content, []
+
+    before = _extract_feature_steps(old_feature_content)
+    after = _extract_feature_steps(feature_content)
+
+    def matches(steps, phrase: str, parser_type: str) -> bool:
+        return any(_phrase_matches(f_phrase, phrase, parser_type)
+                   for _kw, f_phrase in steps)
+
+    def left_unused(phrase: str, parser_type: str) -> bool:
+        return matches(before, phrase, parser_type) and not matches(after, phrase, parser_type)
+
+    ranges: list[tuple[int, int]] = []          # 1-indexed inclusive
+    orphans: list[OrphanStepDef] = []
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        steps = [d for d in node.decorator_list if _is_step_decorator(d)]
+        if not steps:
+            continue
+        dead = []
+        for d in steps:
+            phrase = _phrase_from_decorator_ast(d)
+            if phrase is not None and left_unused(phrase, _parser_type_from_decorator_ast(d)):
+                dead.append((d, phrase))
+        if not dead:
+            continue
+        first, (first_dec, phrase) = node.decorator_list[0], dead[0]
+        if len(dead) == len(steps):
+            start = first.lineno
+            ranges.append((start, _function_end_line(node, step_def_content)))
+        else:
+            ranges += [(d.lineno, d.end_lineno or d.lineno) for d, _p in dead]
+            start = dead[0][0].lineno
+        orphans.append(OrphanStepDef(
+            file_path=file_path, function_name=node.name, decorator_phrase=phrase,
+            decorator_kind=first_dec.func.id, line_start=start,
+            line_end=_function_end_line(node, step_def_content)))
+
+    if not ranges:
+        return step_def_content, []
+
+    banner = UNUSED_STEP_BANNER_TEMPLATE.format(
+        feature=feature_path, change=change_ref, keys=", ".join(keys) or "(none)")
+    lines = step_def_content.splitlines(keepends=True)
+    to_comment = {ln for a, b in ranges for ln in range(a, b + 1)}
+    starts = {a for a, _b in ranges}
+    out: list[str] = []
+    for i, line in enumerate(lines, start=1):
+        if i in starts:
+            indent = line[: len(line) - len(line.lstrip())]
+            out.append(f"{indent}{banner}\n")
+        if i in to_comment and line.strip():
+            indent = line[: len(line) - len(line.lstrip())]
+            out.append(f"{indent}# {line[len(indent):]}")
+        else:
+            out.append(line)
+    logger.info("Step definitions left unused by %s in %s: %s", change_ref, file_path,
+                [o.function_name for o in orphans])
+    return "".join(out), orphans
