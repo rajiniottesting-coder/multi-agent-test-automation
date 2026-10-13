@@ -105,3 +105,16 @@ class CartPage(BasePage):
     def product_names(self) -> list[str]:
         """Return the names of every product currently in the cart."""
         return self.get_all_texts(self.sel("cart_product_names"))
+
+    # ── queries added for SCRUM-235 (reusable by SCRUM-220/221) ──
+    def confirm_product_present(self, product_name: str) -> bool:
+        """True once a row for `product_name` is present. WAITS for it.
+
+        A named confirmation that the product this test added reached the cart,
+        asserted RELATIVELY so it holds whatever the cart started with. Call
+        only where the product is EXPECTED — it waits and times out on absence.
+        To assert absence instead, use wait_for_product(product_name,
+        present=False), which waits for the row to disappear.
+        """
+        self.wait_for_row(self.sel("cart_rows"), product_name, present=True)
+        return True
