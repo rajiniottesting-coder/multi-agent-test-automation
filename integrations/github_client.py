@@ -127,7 +127,8 @@ class GitHubClient:
                 out.append({"number": pr.number, "head_ref": pr.head.ref,
                             "url": pr.html_url, "title": pr.title, "state": pr.state,
                             "merged": bool(pr.merged),
-                            "updated_at": pr.updated_at.isoformat() if pr.updated_at else ""})
+                            "updated_at": pr.updated_at.isoformat() if pr.updated_at else "",
+                            "created_at": pr.created_at.isoformat() if pr.created_at else ""})
         except Exception as e:                      # never block on a lookup
             logger.warning(f"Could not list PRs for {story_id}: {e}")
         return out

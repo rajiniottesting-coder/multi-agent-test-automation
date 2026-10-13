@@ -11,6 +11,10 @@ story and reference first.
     [agent0:trace] restored      on each owning story, at reconcile (C7)
     [agent0:snapshot]            on each REVISED test case, before Agent 1
                                  rewrites it (C3); the undo source for C7
+    Change applied at: <UTC>     a line in Agent 1's impact-aware gate comment
+                                 when it revised or created test cases: the
+                                 start of this attempt, so reconcile never
+                                 settles a retried story on an earlier PR
 
 Trace comments are the owner's only view of a change made by another story,
 so they name the change story, the tests and where to look.
@@ -19,9 +23,12 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timezone
 from typing import Iterable, Optional
 
 TRACE = "[agent0:trace]"
+APPLIED = "Change applied at:"
+_APPLIED = re.compile(r"^Change applied at: (\S+)", re.M)
 SNAPSHOT = "[agent0:snapshot]"
 KINDS = ("will-revise", "result", "merged", "restored")
 
@@ -117,4 +124,26 @@ def latest_snapshot(comments: Iterable[str], change: str) -> Optional[dict]:
         snap = parse_snapshot(body)
         if snap and snap.get("change") == change:
             found = snap
+    return found
+
+
+def applied_line(now: Optional[datetime] = None) -> str:
+    """The attempt boundary Agent 1 writes when it revises or creates tests."""
+    when = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    return f"{APPLIED} {when.replace(microsecond=0).isoformat()}"
+
+
+def latest_applied(comments: Iterable[str]) -> Optional[datetime]:
+    """When the latest attempt at this change was applied, if recorded.
+
+    None for a story applied before the stamp existed: callers then keep
+    their earlier behaviour rather than guess."""
+    found = None
+    for body in comments:
+        for stamp in _APPLIED.findall(body or ""):
+            try:
+                when = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            found = when if when.tzinfo else when.replace(tzinfo=timezone.utc)
     return found

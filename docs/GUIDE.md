@@ -534,8 +534,17 @@ Every story labelled `impact-applied` is settled on each scan:
 After an undo the story is left ready to retry or drop, not half-done: its own
 test cases that never reached `main` are retired (reversible), the labels in
 `reconcile.reset_labels` (`ai-processed`, `human-approved`, `ai-coded`,
-`tests-run`) are removed, the card moves to To Do, and one comment says how to
-retry: remove `impact-reverted`, add `impact-check`.
+`tests-run`) are removed, the Impact Review is renamed `[undone PR #N] Impact
+Review: …` (so it no longer counts), the card moves to To Do, and one comment
+says how to retry: remove `impact-reverted`, add `impact-check`.
+
+**A retry is its own attempt.** Agent 0 analyses the story afresh and opens a
+new Impact Review. Agent 1 writes `Change applied at: <UTC>` in its gate
+comment whenever it revises or creates tests, and reconcile considers only PRs
+opened after that, so the earlier attempt's closed (or merged) PR can never
+undo (or finish) the retry. The context update is checked again too: its
+marker counts only for the story text it carries (`(story: <hash>)`) and only
+after the latest undo.
 
 Reconcile keeps its memory in marker comments, so it can run anywhere, any
 number of times.
@@ -1039,12 +1048,13 @@ exact (reported by the API per call); cost is derived from the
 - **Per run:** every LLM call logs its own tokens plus running totals; each
   story run ends with two lines in the Actions log — `LLM TOKEN USAGE [...]`
   and `LLM COST [...]` (input + output cost shown separately).
-- **Per story, end to end:** each LLM-using agent (0, 1, 2, 3, 5) posts a
+- **Per story, end to end:** each LLM-using agent (1, 2, 3, 5) posts a
   machine-parseable `[LLM-USAGE]` comment on the Jira story after it
   finishes. Agent 5 aggregates every entry and appends an
   **"End-to-end LLM usage & cost"** table to its final test report — one
   row per agent run plus a TOTAL row. That table is the actual measured
   cost of taking the story from `ai-ready` to a tested, reported PR.
+  Agent 0 is not in it yet: its calls appear only in its own run log.
 - Dry runs never post ledger comments. Posting and reading are
   best-effort: a Jira hiccup can't fail a pipeline run. If some runs had
   no pricing configured, the total is marked as a lower bound (token

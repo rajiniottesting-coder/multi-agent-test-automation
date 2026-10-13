@@ -75,6 +75,13 @@ does this change touch?" without letting a model rewrite tests on its own.
 - The graph builder is per test-stack language (`register_graph_builder`); the
   rest of Agent 0 carries over to another stack unchanged.
 
+**Note (2026-10-13).** Validation re-run A3 showed decision 7's retry did not
+work: the undone review still counted, earlier PRs were settled against the
+new attempt, and the context marker outlived the attempt. Since then the undo
+renames the review `[undone PR #N] …`, reconcile only settles PRs opened after
+Agent 1's `Change applied at:` stamp, and the context marker carries the story
+hash and counts only after the latest undo.
+
 ---
 
 ## ADR-012 — Shared step definitions live in `tests/step_defs/conftest.py`
