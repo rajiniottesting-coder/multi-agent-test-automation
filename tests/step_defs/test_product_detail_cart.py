@@ -29,9 +29,10 @@ def view_product(products_page, product_name):
     products_page.open_product_details(product_name)
 
 
-@when(parsers.parse("I set the quantity to {quantity:d}"))
-def set_quantity(product_detail_page, quantity):
-    product_detail_page.set_quantity(quantity)
+# AI-ORPHAN: no scenario in features/product_detail_cart.feature uses this step after SCRUM-206 revised or retired SCRUM-221, SCRUM-220, SCRUM-222. Review before deleting.
+# @when(parsers.parse("I set the quantity to {quantity:d}"))
+# def set_quantity(product_detail_page, quantity):
+    # product_detail_page.set_quantity(quantity)
 
 
 @when("I add the product to the cart")
@@ -100,4 +101,11 @@ def assert_remain_on_detail(product_detail_page, product_name):
     actual = product_detail_page.product_name()
     assert product_name in actual, (
         f"Expected to remain on {product_name!r} detail page, name was {actual!r}"
+    )
+
+
+@then("the product detail page should not show the quantity input field")
+def assert_quantity_input_absent(product_detail_page):
+    assert product_detail_page.is_quantity_input_absent(), (
+        "Expected the quantity input field to be absent"
     )
