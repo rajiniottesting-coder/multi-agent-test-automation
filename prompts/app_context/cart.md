@@ -40,9 +40,9 @@ clean up - the one way in this application to own the cart's starting state
 without a clearing step.
 
 Use it whenever a scenario depends on a quantity. As a logged-out shopper, add
-3 of `Men Tshirt` and the cart shows `Men Tshirt` with quantity 3. Signed in as
-the shared `registered` account, the same scenario can find a quantity left
-behind by an earlier run.
+`Men Tshirt` three times and the cart shows `Men Tshirt` with quantity 3 - each
+add raises the quantity by one. Signed in as the shared `registered` account,
+the same scenario can find a quantity left behind by an earlier run.
 
 Even so, phrase cart outcomes RELATIVELY - "the cart contains `Men Tshirt` with
 quantity 3" - never "the cart contains only...", "exactly...", or "the cart is
