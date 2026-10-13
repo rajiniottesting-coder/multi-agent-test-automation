@@ -1664,7 +1664,7 @@ def validate_page_object_selectors(
                         f"selector matches SEVERAL elements. Playwright is "
                         f"strict, so this raises 'strict mode violation: "
                         f"locator(...) resolved to N elements' at runtime. "
-                        f"Either {remedy}, or, if you meant the whole set, "
+                        f"Either {remedy}. "
                         f"To act on ONE member, scope to the row that contains "
                         f"its text: click_in_row(<row family>, text, <control>). "
                         f"Or, if you meant the whole set, read it with one of: "
