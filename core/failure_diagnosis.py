@@ -166,12 +166,13 @@ _SIGNATURES: list[tuple[re.Pattern, Diagnosis]] = [
         # is then that the application refused or never answered the action,
         # not that the scenario assumed a wrong starting state - so this more
         # specific entry is tried first.
-        re.compile(r"PRESENT in the DOM but HIDDEN.*Requests on this page that failed",
+        re.compile(r"PRESENT in the DOM but HIDDEN.*Action requests on this page that failed",
                    re.I | re.S),
         Diagnosis(
             "action's request failed",
-            "The element is in the DOM but was never shown, and requests on the "
-            "page failed or returned an HTTP error while the step waited. The "
+            "The element is in the DOM but was never shown, and action requests "
+            "on the page (XHR, fetch, navigation) failed or returned an HTTP "
+            "error while the step waited. The "
             "application did not complete the action, so the state it would "
             "have shown never came about.",
             "Read the failed requests listed in the message. If the action's "

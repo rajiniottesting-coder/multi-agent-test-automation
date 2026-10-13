@@ -675,13 +675,13 @@ def comment_out_step_defs_unused_by(
                 dead.append((d, phrase))
         if not dead:
             continue
-        first, (first_dec, phrase) = node.decorator_list[0], dead[0]
-        if len(dead) == len(steps):
-            start = first.lineno
+        first_dec, phrase = dead[0]
+        if len(dead) == len(steps):            # the whole function is dead
+            start = node.decorator_list[0].lineno
             ranges.append((start, _function_end_line(node, step_def_content)))
-        else:
+        else:                                   # only some decorators are
+            start = first_dec.lineno
             ranges += [(d.lineno, d.end_lineno or d.lineno) for d, _p in dead]
-            start = dead[0][0].lineno
         orphans.append(OrphanStepDef(
             file_path=file_path, function_name=node.name, decorator_phrase=phrase,
             decorator_kind=first_dec.func.id, line_start=start,

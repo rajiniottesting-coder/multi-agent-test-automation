@@ -1,11 +1,11 @@
-"""A hidden-element failure names the requests that failed while it waited.
+"""A hidden-element failure says what the page's action requests did.
 
-Found on PRs #177-#179: product-detail "Add to cart" never showed its
-confirmation in three scenarios, intermittently, on identical code. The message
-blamed state stored against a signed-in user - the scenarios sign nobody in -
-and nothing said whether the application had even answered the click. The
-page now records failed requests and HTTP errors (blocked third parties
-excluded) and the failure message carries them.
+Found on PRs #177-#180: product-detail "Add to cart" never showed its
+confirmation in some scenarios, intermittently, on identical code. The first
+message blamed state stored against a signed-in user (those scenarios sign
+nobody in); the next version listed EVERY failed request, so fonts blocked as
+mixed content on every page read as the cause. Only action requests - XHR,
+fetch, navigations - are evidence about an action; static resources are not.
 
 Fake page and events; no browser, no application names.
 """
@@ -31,32 +31,39 @@ class FakePage:
             fn(obj)
 
 
-def _response(status, url, method="GET"):
-    return MagicMock(status=status, url=url, request=MagicMock(method=method))
+def _req(url, rtype="xhr", status=None, failure=None, method="GET"):
+    r = MagicMock(method=method, url=url, resource_type=rtype, failure=failure)
+    r.response.return_value = None if status is None else MagicMock(status=status)
+    return r
 
 
-def _failed(url, why="net::ERR_TIMED_OUT"):
-    return MagicMock(method="GET", url=url, failure=why)
+def _finish(page, url, status, rtype="xhr"):
+    page.emit("response", MagicMock(status=status, request=_req(url, rtype)))
 
 
-def test_errors_and_failures_are_recorded_and_blocked_hosts_ignored():
+def _fail(page, url, why="net::ERR_TIMED_OUT", rtype="xhr"):
+    page.emit("requestfailed", _req(url, rtype, failure=why))
+
+
+def test_only_action_requests_count_and_blocked_hosts_are_ignored():
     page = FakePage()
     bp.watch_network(page, ignore=lambda url: "ads.example" in url)
-    page.emit("response", _response(200, "https://app.example/ok"))
-    page.emit("response", _response(503, "https://app.example/add/1"))
-    page.emit("requestfailed", _failed("https://app.example/add/2"))
-    page.emit("requestfailed", _failed("https://ads.example/x", "net::ERR_FAILED"))
+    _fail(page, "http://fonts.example/css", "mixed-content", rtype="stylesheet")
+    _fail(page, "https://ads.example/x", "net::ERR_FAILED", rtype="script")
+    _fail(page, "https://ads.example/frame", "net::ERR_FAILED", rtype="document")
+    _finish(page, "https://app.example/add/1", 503)
+    _fail(page, "https://app.example/add/2")
     assert bp.network_problems(page) == [
         "GET https://app.example/add/1 - HTTP 503",
         "GET https://app.example/add/2 - no response (net::ERR_TIMED_OUT)"]
 
 
-def test_the_list_is_bounded():
+def test_the_log_is_bounded():
     page = FakePage()
     bp.watch_network(page)
     for i in range(50):
-        page.emit("response", _response(500, f"https://app.example/{i}"))
-    assert len(bp.network_problems(page)) == bp._NETWORK_PROBLEMS_KEPT
+        _finish(page, f"https://app.example/{i}", 500)
+    assert len(bp.network_problems(page)) == bp._NETWORK_LOG_KEPT
 
 
 def _hidden_failure(page, monkeypatch):
@@ -72,25 +79,45 @@ def _hidden_failure(page, monkeypatch):
     return str(e.value)
 
 
-def test_a_hidden_element_message_names_the_failed_request(monkeypatch):
+def test_a_failed_action_request_is_named_and_diagnosed(monkeypatch):
     page = FakePage()
     bp.watch_network(page)
-    page.emit("response", _response(503, "https://app.example/add/1"))
+    _finish(page, "https://app.example/item/1", 200, rtype="document")
+    _finish(page, "https://app.example/add/1", 503)
     msg = _hidden_failure(page, monkeypatch)
-    assert "PRESENT in the DOM but HIDDEN" in msg
     assert "GET https://app.example/add/1 - HTTP 503" in msg
     assert diagnose(msg).label == "action's request failed"
 
 
-def test_no_failed_request_says_so_and_keeps_the_state_diagnosis(monkeypatch):
+def test_a_failing_font_is_not_evidence(monkeypatch):
+    """The PR #180 misreading: mixed-content fonts fail on every page."""
+    page = FakePage()
+    bp.watch_network(page)
+    _finish(page, "https://app.example/item/1", 200, rtype="document")
+    _fail(page, "http://fonts.example/css", "mixed-content", rtype="stylesheet")
+    msg = _hidden_failure(page, monkeypatch)
+    assert "fonts.example" not in msg
+    assert "Every action request on this page succeeded" in msg
+    assert "never reached the application" in msg
+    assert diagnose(msg).label == "element present but hidden"
+
+
+def test_successful_action_requests_are_listed(monkeypatch):
+    page = FakePage()
+    bp.watch_network(page)
+    _finish(page, "https://app.example/add/1", 200)
+    msg = _hidden_failure(page, monkeypatch)
+    assert "GET https://app.example/add/1 - HTTP 200" in msg
+
+
+def test_no_action_request_at_all_says_so(monkeypatch):
     page = FakePage()
     bp.watch_network(page)
     msg = _hidden_failure(page, monkeypatch)
-    assert "No request on this page failed" in msg
-    assert diagnose(msg).label == "element present but hidden"
+    assert "made no XHR, fetch or navigation request" in msg
 
 
 def test_an_unwatched_page_adds_nothing(monkeypatch):
     msg = _hidden_failure(FakePage(), monkeypatch)
-    assert "request" not in msg.split("HIDDEN", 1)[1].split("Two common causes")[0]
+    assert "request" not in msg.split("Two common causes")[0]
     assert diagnose(msg).label == "element present but hidden"
