@@ -46,6 +46,71 @@ from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urlparse
 
 from playwright.sync_api import Locator, Page, expect
+import weakref
+
+# ── Network evidence for failure messages ──────────────────────────────
+#
+# "The confirmation never appeared" has two very different causes: the
+# application refused the action (its request failed or returned an error),
+# or the test asked for a state the application never had. The DOM alone
+# cannot tell them apart, and the generic advice for the second sent readers
+# hunting for stored state on scenarios that store none. The test fixture
+# registers each page here; waits that fail then name the requests that
+# failed while the page was open, so the message carries its own evidence.
+_NETWORK_PROBLEMS: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+_NETWORK_PROBLEMS_KEPT = 20
+
+
+def watch_network(page: Page, ignore=None) -> None:
+    """Record failed requests and HTTP error responses for `page`.
+
+    `ignore(url) -> bool` filters requests refused on purpose (blocked third
+    parties), which are failures nobody needs to read about.
+    """
+    problems: list = []
+    _NETWORK_PROBLEMS[page] = problems
+
+    def _keep(text: str, url: str) -> None:
+        if ignore is not None:
+            try:
+                if ignore(url):
+                    return
+            except Exception:                                  # noqa: BLE001
+                pass
+        problems.append(text)
+        del problems[:-_NETWORK_PROBLEMS_KEPT]
+
+    def _failed(request) -> None:
+        _keep(f"{request.method} {request.url} - no response "
+              f"({request.failure or 'failed'})", request.url)
+
+    def _response(response) -> None:
+        if response.status >= 400:
+            _keep(f"{response.request.method} {response.url} - HTTP {response.status}",
+                  response.url)
+
+    page.on("requestfailed", _failed)
+    page.on("response", _response)
+
+
+def network_problems(page: Page) -> list:
+    """Requests that failed or returned an HTTP error on `page`, oldest first."""
+    return list(_NETWORK_PROBLEMS.get(page, ()))
+
+
+def _network_evidence(page: Page) -> str:
+    """One paragraph for a failure message: the failed requests, or a note that
+    there were none (which rules the application's server out)."""
+    if page not in _NETWORK_PROBLEMS:
+        return ""
+    problems = network_problems(page)
+    if not problems:
+        return (" No request on this page failed or returned an HTTP error, so "
+                "the application accepted every request it was sent.")
+    return (" Requests on this page that failed or returned an HTTP error "
+            "(most recent last) - if the action's own request is among them, the "
+            "application refused or never answered it, and the missing state is "
+            "the consequence: " + "; ".join(problems[-5:]) + ".")
 
 logger = logging.getLogger(__name__)
 
@@ -859,11 +924,12 @@ class BasePage:
                     f"{self.page.url}. The selector is correct and so is the "
                     f"page - the application is simply not in the state this "
                     f"step expected, so look at what was supposed to put it "
-                    f"there rather than at the selector. A common cause is a "
-                    f"scenario that assumes a starting state it never "
-                    f"established: anything the application stores against the "
-                    f"signed-in user usually survives logout and survives the "
-                    f"run, so a previous run's leftovers are still there."
+                    f"there rather than at the selector. Two common causes: "
+                    f"the action meant to show it did not complete (its request "
+                    f"failed or the application rejected it), or the scenario "
+                    f"assumes a starting state it never established (anything "
+                    f"stored against a signed-in user survives logout and the "
+                    f"run)." + _network_evidence(self.page)
                 ) from None
             raise
 
