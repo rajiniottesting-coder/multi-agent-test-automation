@@ -113,7 +113,7 @@ does not name them, use these:
 | two different products | `Blue Top` and `Men Tshirt` |
 | three different products | add `Sleeveless Dress` |
 | the product's price | its price from the table above - detail page only |
-| several, or more than one, of a product | quantity `3` |
+| several, or more than one, of a product | add the same product `3` times |
 | a registered or returning shopper | the `registered` role - never a literal email or password |
 | a shopper who has not signed in | no login step at all |
 | an email address for a form (review, newsletter) | a literal address such as `demo.user@example.com` |
