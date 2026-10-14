@@ -3,9 +3,10 @@ ProductsPage — the All Products listing (/products).
 
 Navigation surface for cart scenarios: the shopper opens a named product's
 details page by clicking the 'View Product' link on that product's card. This
-page object does NOT add to cart from the listing — the listing's add-to-cart
-family matches 68 elements (doubled per card) and is a strict-mode trap; adding
-belongs on the product detail page, which exposes a single unique control.
+page object ALSO supports adding a named product to the cart directly from its
+own listing card, scoped to the card that contains the product name so the
+doubled add-to-cart family (68 elements) is never addressed as a whole, and
+opening the cart from the add-to-cart confirmation modal.
 
 Selectors: see `products` in the app inventory. No literals live here.
 
@@ -58,6 +59,34 @@ class ProductsPage(BasePage):
             self.sel("view_product_links"),
         )
 
+    def add_to_cart_from_card(self, product_name: str) -> None:
+        """Add the named product to the cart from its own listing card.
+
+        Scopes to the product CARD containing the name and clicks the Add to
+        cart control INSIDE that card, so the doubled add-to-cart family (two
+        controls per card, 68 in total) is never clicked as a whole — which
+        would raise a strict-mode violation. Confirms it is on the listing
+        first: clicking as an opening move from elsewhere does not fail fast,
+        it waits the full timeout and then blames the control selector.
+
+        Opens the add-to-cart confirmation modal; it does NOT navigate.
+        """
+        self.require_own_page()
+        self.click_in_row(
+            self.sel("product_cards"),
+            product_name,
+            self.sel("add_to_cart_buttons"),
+        )
+
+    def view_cart_from_modal(self) -> None:
+        """Click 'View Cart' in the add-to-cart confirmation modal.
+
+        Only valid after a product has been added, because the modal exists
+        only then. Navigates to the cart, which is the DESTINATION page; the
+        cart page object confirms arrival, so this method does not.
+        """
+        self.click(self.sel("view_cart_link_in_modal"))
+
     def search_for(self, term: str) -> None:
         """Enter a search term and submit the search form.
 
@@ -80,6 +109,15 @@ class ProductsPage(BasePage):
         navigated to, before any search replaces it.
         """
         return self.is_showing(self.sel("all_products_heading"), timeout_ms=timeout_ms)
+
+    def is_added_modal_shown(self, timeout_ms: Optional[int] = None) -> bool:
+        """True once the add-to-cart confirmation modal is on screen. WAITS.
+
+        Call this only where the modal is expected — it appears only after a
+        product has been added. It times out rather than returning False if the
+        add never happened, so do not use it to assert the modal is absent.
+        """
+        return self.is_showing(self.sel("added_modal"), timeout_ms=timeout_ms)
 
     def is_search_results_shown(self, timeout_ms: Optional[int] = None) -> bool:
         """True once the Searched Products heading is on screen. WAITS for it.
