@@ -21,11 +21,14 @@ import ast
 import copy
 import hashlib
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable, Optional
+
+logger = logging.getLogger("impact_analysis")
 
 # Structural evidence strength (stage 3): a direct link scores higher.
 ASSERTED_ELEMENT = 1.0        # a changed element a Then step reads directly (an assertion)
@@ -148,6 +151,20 @@ def validate_requirement_seeds(change, graph, story_components: Iterable[str]) -
     rejects invented keys. A bare key resolves to every page that has it."""
     seeds = Seeds(behaviours=list(change.behaviours),
                   components=set(story_components) | set(change.components))
+    if getattr(change, "change_type", None) == "new_behaviour":
+        # The model's own classification, enforced: a story that changes
+        # nothing existing has no element to start from and no changed
+        # behaviour to judge against. Without this, a journey story (sign in,
+        # search, add, sign out) listed every element it USES, and every
+        # existing test of those behaviours reached the review table on
+        # overlap alone. Candidates found by topic are still judged - against
+        # "(none)" changed behaviours.
+        if change.element_keys or change.behaviours:
+            logger.info("Story classified new_behaviour: %d element seed(s) and %d "
+                        "behaviour(s) ignored - nothing existing changes.",
+                        len(change.element_keys), len(change.behaviours))
+        seeds.behaviours = []
+        return seeds
     by_key: dict = {}
     for page, key in graph.inventory_elements:
         by_key.setdefault(key, set()).add(page)
