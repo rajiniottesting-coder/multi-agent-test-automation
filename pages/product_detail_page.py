@@ -86,6 +86,16 @@ class ProductDetailPage(BasePage):
         """The current value typed in the quantity field (DOM value, not text)."""
         return self.get_input_value(self.sel("quantity_input"))
 
+    def is_quantity_input_absent(self) -> bool:
+        """True once the quantity input is NOT present on the page.
+
+        The revised detail-page flow drops the quantity field, so scenarios
+        assert its absence. Built on is_gone so it returns at once when the
+        field is already absent, waiting only while it is still on its way out.
+        A non-waiting absence predicate, correct to assert directly.
+        """
+        return self.is_gone(self.sel("quantity_input"))
+
     # ── actions ──────────────────────────────────────────────
     def set_quantity(self, quantity: int) -> None:
         """Set the quantity BEFORE adding to cart.
@@ -106,6 +116,15 @@ class ProductDetailPage(BasePage):
         self.require_own_page()
         self.click(self.sel("add_to_cart_button"))
         self.wait_visible(self.sel("added_modal"))
+
+    def has_added_modal(self) -> bool:
+        """True once the add-to-cart confirmation modal is on screen. WAITS.
+
+        A waiting predicate: call it only where the modal is expected, i.e.
+        right after add_to_cart(). The step asserting the modal appeared
+        asserts on this.
+        """
+        return self.is_showing(self.sel("added_modal"))
 
     def continue_shopping(self) -> None:
         """Dismiss the add-to-cart modal and stay on this product page.
