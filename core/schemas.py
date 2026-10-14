@@ -55,7 +55,9 @@ class ImpactAwareDraft(BaseModel):
 class ChangeSeeds(BaseModel):
     """Agent 0, stage 2 (requirement trigger): where a story's change lands."""
     change_type: Literal["new_behaviour", "changed_behaviour", "removed_behaviour", "mixed"] = Field(
-        ..., description="What kind of change the story makes to EXISTING behaviour")
+        ..., description="What kind of change the story makes to EXISTING behaviour. "
+                         "new_behaviour: nothing that exists today works differently - new "
+                         "functionality, or a new journey through existing behaviour")
     behaviours: list[str] = Field(default_factory=list,
                                   description="Each existing behaviour the story changes, one short line each")
     element_keys: list[str] = Field(

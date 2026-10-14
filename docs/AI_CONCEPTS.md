@@ -168,6 +168,7 @@ prompts look the way they do.
 | 30 | A3 retry PR | A retry's context update was skipped silently | The 'already proposed' check trusted comment history; a clean-up deleted the undo comment and kept the closed PR's marker | A marker that opened a PR stands only while that PR is open | `_already_proposed()` in core/context_update.py |
 | 31 | A3 retry PR | The change story's own new test failed with 'resolved to 2 elements' | The control was drawn twice inside one card (card + hover overlay); click_in_row clicked the pair | click_in_row clicks the visible copy | `BasePage.click_in_row()` |
 | 32 | A3 retry PR | Agent 1 followed the story over the context notes only by luck of wording | No rule said which wins; the notes describe the app before the change | Both Agent 1 prompts: the story is the intended behaviour | `prompts/agent1_*.md` |
+| 33 | Agent 0 quality PR | A journey story put 10 existing test cases up for review | The model listed every element the story USES as a change seed, and "review" accepted overlap | Using is not changing: a new_behaviour story seeds nothing (in code); review must name what becomes different | `validate_requirement_seeds()`, `prompts/agent0_seeds.md`, `prompts/agent0_adjudicate.md` |
 
 ### Gates must agree with each other
 
