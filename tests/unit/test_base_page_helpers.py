@@ -715,6 +715,9 @@ class _Row:
     def click(self, timeout=None):
         self._targets.append((self.label, self.clicked))
 
+    def count(self):
+        return 1            # one control in the row (see test_click_in_row_duplicate_control.py)
+
 
 class _Rows:
     """A repeating container; .filter(has_text=...) narrows it."""

@@ -400,7 +400,7 @@ def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: 
         return {"story": story_key, "context": "disabled"}
     story = tracker.get_story(story_key)
     chash = _story_hash(story)
-    if _already_proposed(tracker.get_comments(story_key), chash):
+    if _already_proposed(tracker.get_comments(story_key), chash, _pr_is_open(host)):
         return {"story": story_key, "context": "already-proposed"}
     sources = context_sources(root)
     changes = extract_changes(llm, story)
@@ -436,17 +436,50 @@ def _story_hash(story: dict) -> str:
                         sorted(story.get("components") or []))
 
 
-def _already_proposed(comments: list, chash: str) -> bool:
-    """A proposal stands only for this attempt and this text of the story.
+_PR_NUMBER = re.compile(r"/pull/(\d+)")
+
+
+def _pr_is_open(host):
+    """is_open(number) -> bool for markers that link a pull request.
+
+    A failed lookup answers True: proposing a second PR because the repo host
+    was unreachable would be worse than skipping one scan."""
+    def is_open(number: int) -> bool:
+        if host is None:
+            return True
+        try:
+            return (host.get_pr_metadata(number) or {}).get("state") == "open"
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning("context update: could not read PR #%s (%s) - "
+                           "treating it as still open", number, e)
+            return True
+    return is_open
+
+
+def _already_proposed(comments: list, chash: str, pr_is_open=None) -> bool:
+    """A proposal stands only for this attempt, this text of the story, and -
+    when it opened a pull request - only while that pull request is open.
 
     Comments are oldest first. A marker before the latest undo belonged to a
     change that never shipped; a marker for other story text (or one written
-    before markers carried the hash) cannot say the current text was checked."""
+    before markers carried the hash) cannot say the current text was checked.
+
+    The pull request's own state is the authority, not comment history: in
+    validation story A3 the undo comment was deleted during a manual clean-up
+    while the marker of the closed PR stayed, and the retry's context update
+    was skipped silently. A closed PR - rejected, or merged so the notes no
+    longer hold the old text - no longer stands; proposing again yields a new
+    PR or a 'no context update needed' marker. A marker without a PR (no update
+    needed) stands on the hash and the undo rule alone."""
     last_undo = max((i for i, c in enumerate(comments) if (c or "").startswith(_UNDONE)),
                     default=-1)
     for c in comments[last_undo + 1:]:
         if (c or "").startswith(MARKER):
             m = _STORY_HASH.search(c)
-            if m and m.group(1) == chash:
-                return True
+            if not (m and m.group(1) == chash):
+                continue
+            pr = _PR_NUMBER.search(c)
+            if pr and pr_is_open is not None and not pr_is_open(int(pr.group(1))):
+                continue
+            return True
     return False

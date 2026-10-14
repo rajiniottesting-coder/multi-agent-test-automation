@@ -165,6 +165,9 @@ prompts look the way they do.
 | 27 | PR #181 | The PR said "All checks have passed" while Agent 4 had not run the newest commit | A workflow-level concurrency group hides a queued run: GitHub shows no check for it | The group moved to the test job, so the waiting run is listed as pending | `.github/workflows/agent4_runner.yml` |
 | 28 | PR #181 | A hidden confirmation blamed signed-in state, then a blocked font | Nothing recorded whether the action's request was made or answered; the first fix counted static resources | Failures list the page's action requests (XHR, fetch, navigation) and their outcome | `watch_network()` in pages/base_page.py, core/failure_diagnosis.py |
 | 29 | PR #182 | Agent 2's repair loop stalled on an `is_<x>_absent()` predicate and the run failed | Two gates disagreed: the predicate rule demanded a presence wait (is_showing) for an absence question, which the absence rule rejects | `BasePage.is_gone()` - the absence wait; predicate rule, absence rule, repair hint and prompt all name it | `pages/base_page.py`, validators/method_resolution_validator.py |
+| 30 | A3 retry PR | A retry's context update was skipped silently | The 'already proposed' check trusted comment history; a clean-up deleted the undo comment and kept the closed PR's marker | A marker that opened a PR stands only while that PR is open | `_already_proposed()` in core/context_update.py |
+| 31 | A3 retry PR | The change story's own new test failed with 'resolved to 2 elements' | The control was drawn twice inside one card (card + hover overlay); click_in_row clicked the pair | click_in_row clicks the visible copy | `BasePage.click_in_row()` |
+| 32 | A3 retry PR | Agent 1 followed the story over the context notes only by luck of wording | No rule said which wins; the notes describe the app before the change | Both Agent 1 prompts: the story is the intended behaviour | `prompts/agent1_*.md` |
 
 ### Gates must agree with each other
 

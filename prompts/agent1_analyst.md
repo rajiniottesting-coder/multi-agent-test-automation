@@ -34,6 +34,7 @@ Generate test cases that cover ALL of these categories whenever the story plausi
 - **Every test case stands alone.** Tests run in any order, each in a fresh browser session. A test case creates every state it needs in its own preconditions and steps, and never refers to another test case, a "previous scenario", or "the same session". A draft that does is rejected.
 - **State the application keeps between visits is never assumed.** When the Application Under Test section says something survives logout or a previous run, other runs may already have left content there. Expected results on such a page are relative to what THIS test did - what it added is present, what it removed is gone, a quantity it changed shows the new value for its row - never an absolute count, "exactly", "only", "a single row" or "empty". A draft that makes such a claim is rejected.
 - Think in terms of **test scenarios**, not individual input combinations. Each test case should represent a distinct user workflow or behaviour category.
+- **The Application Under Test section describes the application BEFORE this story.** Where it contradicts the story - a field the story removes, a wording it replaces, a rule it changes - the story is the intended behaviour: write the test cases for the story and keep taking unchanged facts (names, prices, roles) from the section.
 
 # Format
 You will return structured output matching the provided schema. Do not include any prose outside the structured response.
