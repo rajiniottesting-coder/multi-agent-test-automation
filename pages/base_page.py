@@ -790,6 +790,13 @@ class BasePage:
 
         `row_locator` must match the repeating container - a table row, a card -
         not the text element within it.
+
+        A control can be rendered more than once INSIDE one row - the same
+        listing draws a card's Add to cart in the card and again in a hover
+        overlay. Playwright is strict, so clicking that pair raised "resolved
+        to 2 elements" (validation story A3). The VISIBLE one is the control a
+        user clicks, so that is the one clicked; with a single match nothing
+        changes, and with none visible the click waits as before.
         """
         row = self._locator(row_locator).filter(has_text=text)
         count = row.count()
@@ -799,8 +806,26 @@ class BasePage:
                 f"text is exact and that the row locator matches the repeating "
                 f"CONTAINER rather than the text element inside it."
             )
-        row.first.locator(target_locator).click(
-            timeout=self._default_timeout_ms())
+        target = row.first.locator(target_locator)
+        target = self._visible_member(target)
+        target.click(timeout=self._default_timeout_ms())
+
+    @staticmethod
+    def _visible_member(target: Locator) -> Locator:
+        """`target` itself when it matches at most one element; otherwise its
+        first VISIBLE member, or its first member when none is visible yet (the
+        click then waits for it, as a single match would).
+
+        Read element by element rather than with filter(visible=...), which the
+        pinned Playwright version does not have."""
+        matches = target.count()
+        if matches <= 1:
+            return target
+        for i in range(matches):
+            member = target.nth(i)
+            if member.is_visible():
+                return member
+        return target.first
 
     def row_containing(self, row_locator: str, text: str) -> Locator:
         """The first row that contains `text`, for reading rather than clicking."""
