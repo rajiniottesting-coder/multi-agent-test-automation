@@ -40,8 +40,14 @@ _DEPENDENCY = [
 _ABSOLUTE = [
     (re.compile(r"\bexactly\b", re.IGNORECASE), "'exactly'"),
     (re.compile(r"\bonly\b", re.IGNORECASE), "'only'"),
+    # "no row FOR 'X'" names the entry the test itself added or removed: that is
+    # the relative absence the remedy below asks for, not a count. Bare "no rows"
+    # / "no other rows" still claim the whole page. (Validation story SCRUM-187:
+    # the model followed the remedy twice and was rejected twice.)
     (re.compile(r"\b(?:a\s+)?single\s+rows?\b|\bone\s+row\b|\b\d+\s+rows?\b|\bzero\s+rows?\b"
-                r"|\bno\s+(?:other\s+)?rows?\b", re.IGNORECASE), "a row count"),
+                r"|\bno\s+other\s+rows?\b"
+                r"|\bno\s+rows?\b(?!\s+(?:for|of|with|containing|named|matching|showing|labell?ed)\b)",
+                re.IGNORECASE), "a row count"),
     (re.compile(r"\b(?:is|are|be|remains?|becomes?|left)\s+empty\b", re.IGNORECASE), "'empty'"),
     (re.compile(r"\brather\s+than\s+(?:two|three|\d+|a\s+second)\b", re.IGNORECASE),
      "a count comparison"),
@@ -163,7 +169,8 @@ def test_case_problems(tc, persistent: dict[str, list[str]] | None = None) -> li
                             f"'{title}': states {what} about the {page} page (\"{_short(sentence)}\"). "
                             f"That page keeps its state between runs, so an absolute count or "
                             f"emptiness cannot be relied on. State the outcome relative to what "
-                            f"this test did: what it added is present, or what it removed is gone.")
+                            f"this test did: what it added is present, or what it removed is gone "
+                            f"(for example: \"no row for '<item>' is present\").")
                         break
     return list(dict.fromkeys(problems))
 

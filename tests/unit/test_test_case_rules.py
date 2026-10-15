@@ -206,3 +206,40 @@ def test_impact_aware_draft_bad_twice_raises():
          pytest.raises(ValueError, match="rejected twice"):
         agent1_impact._draft(llm, "p", {"X-11"}, set())
     assert "previous scenario" in llm.invoke_structured.call_args_list[1].kwargs["user_prompt"]
+
+
+# ─────────────────────────────────────────────────────────────
+# The rule must accept its own remedy
+# ─────────────────────────────────────────────────────────────
+# The rejection tells the model: "what it added is present, or what it removed
+# is gone". A rule that then rejects that very phrasing can never be satisfied:
+# validation story SCRUM-187 was rejected twice for "No row for '<item>' is
+# present in the cart" - the relative absence the remedy asked for.
+
+@pytest.mark.parametrize("text", [
+    "No row for 'Blue Widget' is present in saved items",
+    "No rows for 'Blue Widget' remain in saved items",
+    "Saved items shows no row named 'Blue Widget'",
+    "Saved items has no row containing 'Blue Widget' afterward",
+    "The 'Blue Widget' row is gone from saved items",
+    "Saved items still shows a row for 'Blue Widget'",
+])
+def test_named_presence_or_absence_is_relative_and_accepted(text):
+    assert test_case_problems(_tc(expected=text), PERSISTENT) == []
+
+
+@pytest.mark.parametrize("text", [
+    "Saved items has no rows",
+    "No rows are shown in saved items",
+    "No other rows appear in saved items",
+    "No other row for 'Blue Widget' appears in saved items",
+])
+def test_whole_page_absence_is_still_absolute(text):
+    assert test_case_problems(_tc(expected=text), PERSISTENT)
+
+
+def test_the_example_in_the_remedy_passes_the_rule():
+    [p] = test_case_problems(BAD_ABSOLUTE, PERSISTENT)
+    example = p.split("(for example: \"", 1)[1].split("\")", 1)[0]
+    sentence = example.replace("<item>", "Blue Widget") + " in saved items"
+    assert test_case_problems(_tc(expected=sentence), PERSISTENT) == []
