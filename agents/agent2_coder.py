@@ -71,6 +71,7 @@ from validators.method_resolution_validator import (
     validate_fills_confirm_their_page,
     validate_step_parameter_types,
     validate_step_claims_are_verified,
+    validate_reused_steps_keep_their_meaning,
     validate_readiness_probe,
     validate_predicates_wait,
     validate_absence_not_asserted_with_waiting_probe,
@@ -2657,6 +2658,10 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     errors.extend(validate_confirm_arrival_targets_this_page(
         generated_files, PROJECT_ROOT))
     errors.extend(validate_step_claims_are_verified(generated_files, PROJECT_ROOT))
+    # A phrase defined for another feature means the same here: a re-definition
+    # that asserts an extra, unstated state passes this module's own scenarios
+    # only by luck and breaks the first one where that state does not hold.
+    errors.extend(validate_reused_steps_keep_their_meaning(generated_files, PROJECT_ROOT))
     errors.extend(validate_feature_file_structure(generated_files))
     # Coverage, unused decorators and the drift between them are one question
     # asked three ways, so they are combined where they live rather than here.
@@ -3092,6 +3097,19 @@ def greedy_title_pairing(titles: dict, test_cases: list[dict]) -> tuple[dict, se
     return chosen, claimed
 
 
+def _bare_key_comment_above(lines: list, scenario_idx: int, key: str):
+    """Index of a hash-less "# JIRA: <key>" comment in the scenario's preamble
+    (tags, comments, blank lines above it), else None."""
+    bare = re.compile(rf"^\s*#\s*JIRA:\s*{re.escape(key)}\s*$", re.IGNORECASE)
+    keyword_indent = _indent_of(lines[scenario_idx])
+    j = scenario_idx - 1
+    while j >= 0 and (lines[j].strip() == "" or _is_preamble_line(lines[j], keyword_indent)):
+        if bare.match(lines[j]):
+            return j
+        j -= 1
+    return None
+
+
 def _inject_markers_into_feature(content: str, test_cases: list[dict]) -> str:
     """Add/refresh JIRA markers above each scenario. Returns new content.
 
@@ -3213,6 +3231,13 @@ def _inject_markers_into_feature(content: str, test_cases: list[dict]) -> str:
         indent = scenario_line[: len(scenario_line) - len(scenario_line.lstrip())]
         new_marker = format_marker(tc["key"], tc.get("description", ""),
                                    owner=tc.get("owner"), impacted_by=tc.get("impacted_by", ()))
+        # The model sometimes writes a bare "# JIRA: KEY" itself. It is not a
+        # marker (no hash), so inserting beside it left two JIRA lines on the
+        # scenario. Complete that line in place instead.
+        bare = _bare_key_comment_above(lines, scenario_idx, tc["key"])
+        if bare is not None:
+            refreshes.append((bare, f"{indent}{new_marker}\n"))
+            continue
         inserts.append((scenario_idx, f"{indent}{new_marker}\n"))
 
     # Apply edits. Refreshes don't shift indices.
