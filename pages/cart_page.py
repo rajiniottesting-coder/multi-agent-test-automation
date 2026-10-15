@@ -85,6 +85,18 @@ class CartPage(BasePage):
         self.wait_for_row(self.sel("cart_rows"), product_name, present=True)
         return True
 
+    def is_product_absent(self, product_name: str) -> bool:
+        """True once no row for `product_name` remains. WAITS while one is
+        still shown, so it is safe to call right after a removal.
+
+        The removal asserter: it waits for the row to disappear rather than
+        timing out on an absence that is the EXPECTED answer. Negating
+        has_product() here would wait the full timeout on every passing run,
+        because has_product() waits for presence; this waits for absence.
+        """
+        self.wait_for_row(self.sel("cart_rows"), product_name, present=False)
+        return True
+
     def quantity_for(self, product_name: str) -> int:
         """Return the quantity shown in `product_name`'s row, as an int.
 
