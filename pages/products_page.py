@@ -152,3 +152,21 @@ class ProductsPage(BasePage):
         """
         self.wait_for_any(self.sel("product_cards"), present=False)
         return True
+
+    def has_product_card_for(self, product_name: str, timeout_ms: Optional[int] = None) -> bool:
+        """True once a product card containing `product_name` is rendered. WAITS.
+
+        Scopes the wait to the CARD family and the named product, so an
+        assertion that a known product appears in the search results reads the
+        settled page rather than racing the search response. Call this only
+        where the product IS expected — it times out instead of returning False
+        when the card never appears.
+        """
+        self.require_own_page()
+        self.wait_for_row(
+            self.sel("product_cards"),
+            product_name,
+            present=True,
+            timeout_ms=timeout_ms,
+        )
+        return True
