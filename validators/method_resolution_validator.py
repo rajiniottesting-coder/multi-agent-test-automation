@@ -4661,3 +4661,100 @@ def validate_step_parameter_types(generated_files: list, project_root=None) -> l
                     f"or change the reader's return type."
                 )
     return errors
+
+# ─────────────────────────────────────────────────────────────
+# A step phrase means the same thing in every file
+# ─────────────────────────────────────────────────────────────
+# pytest-bdd binds steps per module, so a phrase already defined for another
+# feature is written again for a new one. The new body must check what the
+# old one checks and nothing else: the sentence is the contract, and a reader
+# of either feature reads the same words. Validation story SCRUM-187: "the
+# search results should include X" was defined elsewhere as a containment
+# check; the new copy ALSO asserted that the search-results view was shown,
+# and its own scenario - an empty search, which keeps the unsearched view -
+# failed on that extra, unstated check while every older test passed.
+
+def _phrase_template(text: str) -> str:
+    """A step phrase with its placeholders blanked, whatever parser wrote it:
+    'x "{name}"', r'x "(?P<name>[^"]*)"' and 'x "{name:w}"' are one phrase."""
+    t = re.sub(r"\(\?P<\w+>(?:[^()]|\([^()]*\))*\)", "{}", text)
+    t = re.sub(r"\{\w*(?::[^}]*)?\}", "{}", t)
+    t = t.replace("\\", "").strip("^$ ")
+    return " ".join(t.lower().split())
+
+
+def _asserted_page_calls(func: ast.AST) -> set:
+    """Method names a step asserts on its fixtures: `assert fx.m(...)`, also
+    negated or compared. Calls made to ACT (not inside an assert) are not claims."""
+    params = {a.arg for a in getattr(func, "args", ast.arguments()).args}
+    out: set = set()
+    for node in ast.walk(func):
+        if not isinstance(node, ast.Assert):
+            continue
+        for call in ast.walk(node.test):
+            if (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+                    and isinstance(call.func.value, ast.Name) and call.func.value.id in params):
+                out.add(call.func.attr)
+    return out
+
+
+def _committed_then_steps(project_root: Path, skip: set) -> dict:
+    """{phrase template: (file, asserted calls)} for every committed @then."""
+    out: dict = {}
+    steps_dir = Path(project_root) / "tests" / "step_defs"
+    for path in sorted(steps_dir.glob("*.py")) if steps_dir.is_dir() else []:
+        rel = path.relative_to(project_root).as_posix()
+        if rel in skip:
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (SyntaxError, OSError, UnicodeDecodeError):
+            continue
+        for func in ast.walk(tree):
+            if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if "then" not in _step_keywords(func):
+                continue
+            calls = _asserted_page_calls(func)
+            for text in _step_texts(func):
+                out.setdefault(_phrase_template(text), (rel, calls))
+    return out
+
+
+def validate_reused_steps_keep_their_meaning(
+        generated_files: list, project_root=None) -> list[str]:
+    """Fail a @then that re-defines a committed phrase but asserts more."""
+    project_root = Path(project_root or ".")
+    generated = {getattr(f, "file_path", "") for f in generated_files or []}
+    committed = None
+    errors: list[str] = []
+    for f in generated_files or []:
+        path = getattr(f, "file_path", "") or ""
+        if not path.startswith("tests/step_defs/") or not path.endswith(".py"):
+            continue
+        try:
+            tree = ast.parse(getattr(f, "content", "") or "")
+        except SyntaxError:
+            continue
+        for func in ast.walk(tree):
+            if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if "then" not in _step_keywords(func):
+                continue
+            if committed is None:
+                committed = _committed_then_steps(project_root, generated)
+            for text in _step_texts(func):
+                hit = committed.get(_phrase_template(text))
+                if not hit or not hit[1]:
+                    continue
+                extra = sorted(_asserted_page_calls(func) - hit[1])
+                if extra:
+                    errors.append(
+                        f"{path}: step '{text}' ({func.name}) is already defined in {hit[0]}, "
+                        f"where it checks only {', '.join(m + '()' for m in sorted(hit[1]))}. "
+                        f"Here it also asserts {', '.join(m + '()' for m in extra)}, which the "
+                        f"sentence does not say. A step means the same in every feature: check "
+                        f"only what the sentence states. If a scenario needs that other state, "
+                        f"give it its own Then step.")
+                break
+    return errors
