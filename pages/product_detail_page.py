@@ -86,6 +86,15 @@ class ProductDetailPage(BasePage):
         """The current value typed in the quantity field (DOM value, not text)."""
         return self.get_input_value(self.sel("quantity_input"))
 
+    def has_added_modal(self) -> bool:
+        """True once the add-to-cart confirmation modal is on screen. WAITS.
+
+        A waiting predicate for a step asserting the confirmation appeared.
+        Call it only where the modal is expected; asserting its ABSENCE would
+        time out instead of returning False.
+        """
+        return self.is_showing(self.sel("added_modal"))
+
     # ── actions ──────────────────────────────────────────────
     def set_quantity(self, quantity: int) -> None:
         """Set the quantity BEFORE adding to cart.
