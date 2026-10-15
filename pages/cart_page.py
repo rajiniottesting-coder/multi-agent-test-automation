@@ -47,13 +47,15 @@ class CartPage(BasePage):
 
         Scopes to the row containing the product name rather than indexing a
         delete-button family, so the correct row is removed even if the rows
-        and the delete controls are not in lockstep.
+        and the delete controls are not in lockstep. Waits for the row to
+        disappear so callers observe the settled state.
         """
         self.click_in_row(
             self.sel("cart_rows"),
             product_name,
             self.sel("cart_delete_buttons"),
         )
+        self.wait_for_row(self.sel("cart_rows"), product_name, present=False)
 
     # ── queries ──────────────────────────────────────────────
     def is_loaded(self, timeout_ms: Optional[int] = None) -> bool:
@@ -79,10 +81,21 @@ class CartPage(BasePage):
 
         Call this only where the product is EXPECTED to be present — it waits
         and times out if it never appears. To assert a product is ABSENT, use
-        wait_for_product(product_name, present=False) instead, which waits for
-        the row to disappear rather than timing out on absence.
+        is_product_absent(product_name) instead, which waits for the row to
+        disappear rather than timing out on absence.
         """
         self.wait_for_row(self.sel("cart_rows"), product_name, present=True)
+        return True
+
+    def is_product_absent(self, product_name: str) -> bool:
+        """True once no row for `product_name` is present. WAITS while one is.
+
+        The absence counterpart to has_product(): it re-checks until the row
+        for `product_name` is gone, then returns True. The right way to assert
+        a removal took effect, since negating the waiting presence reader would
+        pay the full timeout on every passing run.
+        """
+        self.wait_for_row(self.sel("cart_rows"), product_name, present=False)
         return True
 
     def quantity_for(self, product_name: str) -> int:
