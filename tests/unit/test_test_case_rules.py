@@ -208,33 +208,51 @@ def test_impact_aware_draft_bad_twice_raises():
     assert "previous scenario" in llm.invoke_structured.call_args_list[1].kwargs["user_prompt"]
 
 
+
 # ─────────────────────────────────────────────────────────────
-# The rule must accept its own remedy
+# Absence: relative when it names the test's own entry, by meaning
 # ─────────────────────────────────────────────────────────────
 # The rejection tells the model: "what it added is present, or what it removed
-# is gone". A rule that then rejects that very phrasing can never be satisfied:
-# validation story SCRUM-187 was rejected twice for "No row for '<item>' is
-# present in the cart" - the relative absence the remedy asked for.
+# is gone". A rule that rejects that phrasing can never be satisfied (validation
+# story SCRUM-187 was rejected twice for "No row for '<item>' is present"). The
+# rule decides by MEANING - does the clause name an entry this test handles? -
+# not by a list of neighbouring words, so any word order and any wording works.
+
+def _with_data(expected, data):
+    tc = _tc(expected=expected)
+    tc.test_data = data
+    return tc
+
 
 @pytest.mark.parametrize("text", [
     "No row for 'Blue Widget' is present in saved items",
     "No rows for 'Blue Widget' remain in saved items",
-    "Saved items shows no row named 'Blue Widget'",
-    "Saved items has no row containing 'Blue Widget' afterward",
+    "Saved items shows no 'Blue Widget' row",
+    "In saved items there is no row any more for 'Blue Widget'",
+    "Saved items has no row named \u201cBlue Widget\u201d",
     "The 'Blue Widget' row is gone from saved items",
     "Saved items still shows a row for 'Blue Widget'",
 ])
-def test_named_presence_or_absence_is_relative_and_accepted(text):
+def test_named_presence_or_absence_is_relative_in_any_wording(text):
     assert test_case_problems(_tc(expected=text), PERSISTENT) == []
+
+
+def test_an_unquoted_entry_from_the_test_data_counts_as_named():
+    tc = _with_data("Saved items shows no row for Blue Widget", {"item": "Blue Widget"})
+    assert test_case_problems(tc, PERSISTENT) == []
 
 
 @pytest.mark.parametrize("text", [
     "Saved items has no rows",
     "No rows are shown in saved items",
+    "Saved items shows zero rows",
     "No other rows appear in saved items",
     "No other row for 'Blue Widget' appears in saved items",
+    "'Blue Widget' was removed and saved items has no rows",
+    "Saved items has no rows; 'Blue Widget' was removed",
+    "The user's saved items has no rows and the shopper's list is clear",
 ])
-def test_whole_page_absence_is_still_absolute(text):
+def test_absence_about_the_whole_page_is_still_absolute(text):
     assert test_case_problems(_tc(expected=text), PERSISTENT)
 
 

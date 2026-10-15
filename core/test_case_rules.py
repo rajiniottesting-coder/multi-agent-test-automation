@@ -36,18 +36,19 @@ _DEPENDENCY = [
      "it relies on state another test left behind"),
 ]
 
+# "No row(s)": absolute when it speaks of the page's rows as a whole, relative
+# when its clause names an entry this test added or removed - decided by
+# _absence_of_a_named_entry(), by meaning, not by the words around it.
+_NONE_PATTERN = re.compile(r"\bno\s+rows?\b|\bzero\s+rows?\b|\bnone\s+of\s+the\s+rows\b",
+                           re.IGNORECASE)
+
 # Absolute claims. Checked only in sentences that mention a persistent page.
 _ABSOLUTE = [
     (re.compile(r"\bexactly\b", re.IGNORECASE), "'exactly'"),
     (re.compile(r"\bonly\b", re.IGNORECASE), "'only'"),
-    # "no row FOR 'X'" names the entry the test itself added or removed: that is
-    # the relative absence the remedy below asks for, not a count. Bare "no rows"
-    # / "no other rows" still claim the whole page. (Validation story SCRUM-187:
-    # the model followed the remedy twice and was rejected twice.)
-    (re.compile(r"\b(?:a\s+)?single\s+rows?\b|\bone\s+row\b|\b\d+\s+rows?\b|\bzero\s+rows?\b"
-                r"|\bno\s+other\s+rows?\b"
-                r"|\bno\s+rows?\b(?!\s+(?:for|of|with|containing|named|matching|showing|labell?ed)\b)",
-                re.IGNORECASE), "a row count"),
+    (re.compile(r"\b(?:a\s+)?single\s+rows?\b|\bone\s+row\b|\b\d+\s+rows?\b"
+                r"|\bno\s+other\s+rows?\b", re.IGNORECASE), "a row count"),
+    (_NONE_PATTERN, "a row count"),
     (re.compile(r"\b(?:is|are|be|remains?|becomes?|left)\s+empty\b", re.IGNORECASE), "'empty'"),
     (re.compile(r"\brather\s+than\s+(?:two|three|\d+|a\s+second)\b", re.IGNORECASE),
      "a count comparison"),
@@ -55,6 +56,39 @@ _ABSOLUTE = [
 ]
 
 _SENTENCE = re.compile(r"(?<=[.!?])\s+|\n+")
+_CLAUSE = re.compile(r"[;,()]|\s+(?:and|but|while|whereas)\s+", re.IGNORECASE)
+# A quoted value: the quote may not sit inside a word, so the apostrophes in
+# "the user's cart ... the shopper's list" never pair up into a fake name.
+_QUOTED = re.compile(r"(?<![A-Za-z])['\"\u2018\u2019\u201c\u201d]([^'\"\u2018\u2019\u201c\u201d]{2,}?)"
+                     r"['\"\u2018\u2019\u201c\u201d](?![A-Za-z])")
+
+
+def _named_entries(tc) -> set[str]:
+    """The entries this test case names: every quoted value in its text and
+    every string in its test data. A claim about one of them is about what this
+    test did - never about the page as a whole."""
+    names = {m.group(1).strip().lower() for t in _texts(tc) for m in _QUOTED.finditer(t)}
+    data = getattr(tc, "test_data", None)
+    if isinstance(data, dict):
+        names |= {str(v).strip().lower() for v in data.values()
+                  if isinstance(v, (str, int, float)) and len(str(v).strip()) >= 2}
+    return {n for n in names if n}
+
+
+def _absence_of_a_named_entry(sentence: str, match: re.Match, names: set[str]) -> bool:
+    """True when "no row(s)" sits in a clause that names one of the test's
+    entries: the relative absence the remedy asks for ("what it removed is
+    gone"), whatever the word order. Without a named entry the clause is about
+    the page's rows as a whole, which a page that keeps its state cannot promise."""
+    start = 0
+    for cut in _CLAUSE.finditer(sentence):
+        if cut.start() >= match.end():
+            break
+        if cut.end() <= match.start():
+            start = cut.end()
+    nxt = _CLAUSE.search(sentence, match.end())
+    clause = sentence[start:nxt.start() if nxt else len(sentence)].lower()
+    return bool(_QUOTED.search(clause)) or any(n in clause for n in names)
 
 
 def persistent_pages(inventory: dict) -> dict[str, list[str]]:
@@ -158,13 +192,18 @@ def test_case_problems(tc, persistent: dict[str, list[str]] | None = None) -> li
                     f"in a fresh browser session, in any order: create every state it needs "
                     f"in its own steps and never refer to another test case.")
                 break
+    names = _named_entries(tc)
     for page, aliases in sorted((persistent or {}).items()):
         for text in _expected_texts(tc):
             for sentence in _SENTENCE.split(text):
                 if not sentence.strip() or not _mentions(sentence, aliases):
                     continue
                 for pattern, what in _ABSOLUTE:
-                    if pattern.search(sentence):
+                    m = pattern.search(sentence)
+                    if m and pattern is _NONE_PATTERN and _absence_of_a_named_entry(
+                            sentence, m, names):
+                        continue
+                    if m:
                         problems.append(
                             f"'{title}': states {what} about the {page} page (\"{_short(sentence)}\"). "
                             f"That page keeps its state between runs, so an absolute count or "
