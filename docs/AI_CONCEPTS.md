@@ -169,6 +169,7 @@ prompts look the way they do.
 | 31 | A3 retry PR | The change story's own new test failed with 'resolved to 2 elements' | The control was drawn twice inside one card (card + hover overlay); click_in_row clicked the pair | click_in_row clicks the visible copy | `BasePage.click_in_row()` |
 | 32 | A3 retry PR | Agent 1 followed the story over the context notes only by luck of wording | No rule said which wins; the notes describe the app before the change | Both Agent 1 prompts: the story is the intended behaviour | `prompts/agent1_*.md` |
 | 33 | Agent 0 quality PR | A journey story put 10 existing test cases up for review | The model listed every element the story USES as a change seed, and "review" accepted overlap | Using is not changing: a new_behaviour story seeds nothing (in code); review must name what becomes different | `validate_requirement_seeds()`, `prompts/agent0_seeds.md`, `prompts/agent0_adjudicate.md` |
+| 34 | Agent 1 rule PR | Agent 1 rejected a draft twice for following the rule's own advice | The persistent-state rule counted "no row for '<item>'" as a row count, while its remedy asked for exactly that relative absence | Absence of a NAMED entry is relative; bare "no rows" / "no other rows" stay absolute; a test proves the remedy's example passes the rule | `core/test_case_rules.py` |
 
 ### Gates must agree with each other
 
