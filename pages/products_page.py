@@ -71,6 +71,18 @@ class ProductsPage(BasePage):
         self.fill(self.sel("search_input"), term)
         self.click(self.sel("search_button"))
 
+    def submit_empty_search(self) -> None:
+        """Submit the search form with NO term entered.
+
+        Clears the box first in case residual text is present, then submits.
+        An empty submission does not run a search — the full catalogue and the
+        unsearched All Products heading remain in place. Confirms it is on the
+        listing first, for the same fail-fast reason as search_for.
+        """
+        self.require_own_page()
+        self.clear(self.sel("search_input"))
+        self.click(self.sel("search_button"))
+
     # ── queries ──────────────────────────────────────────────
     def is_loaded(self, timeout_ms: Optional[int] = None) -> bool:
         """True once the All Products heading is on screen. WAITS for it.
@@ -152,3 +164,13 @@ class ProductsPage(BasePage):
         """
         self.wait_for_any(self.sel("product_cards"), present=False)
         return True
+
+    def wait_for_product(self, product_name: str) -> None:
+        """Wait until a result card whose name contains `product_name` appears.
+
+        For asserting a search returned a specific product right after
+        submitting it — reading the name list once would race the search
+        response. Scopes to the card family (product_cards is NOT doubled) and
+        re-checks until the timeout.
+        """
+        self.wait_for_row(self.sel("product_cards"), product_name, present=True)
