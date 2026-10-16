@@ -1,0 +1,52 @@
+# Artifact cleanup - keeps Actions storage inside the plan's quota.
+#
+# Daily, and on demand. Deletes artifacts older than 2 days (Agent 5 reads its
+# report within minutes; a person debugging a failure has two days). Artifacts
+# of runs still queued or in progress are never touched.
+#
+# Manual run: Actions -> Artifact cleanup -> Run workflow. Choose "dry run" to
+# see what would go first.
+name: Artifact cleanup
+
+on:
+  schedule:
+    - cron: "30 20 * * *"          # 02:00 IST daily
+  workflow_dispatch:
+    inputs:
+      older_than_days:
+        description: "Delete artifacts at least this many days old"
+        required: false
+        default: "2"
+      dry_run:
+        description: "List only; delete nothing"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  actions: write                     # list and delete artifacts
+  contents: read
+
+concurrency:
+  group: artifact-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install "requests>=2.32" --quiet
+      - name: Delete old artifacts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPO: ${{ github.repository }}
+        run: |
+          YES="--yes"
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then YES=""; fi
+          python -m scripts.cleanup_artifacts \
+            --older-than-days "${{ github.event.inputs.older_than_days || '2' }}" $YES
