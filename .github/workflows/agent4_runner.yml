@@ -378,10 +378,18 @@ jobs:
         # job summary below already names the failing tests.
         if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory != 'false')
         uses: actions/upload-artifact@v4
+        # Only what someone reads: junit for Agent 5, the HTML report, the
+        # one-file Allure report and the failure evidence. The multi-file
+        # allure-report is the same report again, and allure-results is its raw
+        # input - together they doubled every upload. 3 days: Agent 5 reads this
+        # within minutes; the daily artifact_cleanup workflow is the backstop.
         with:
           name: pytest-report-${{ github.run_id }}
-          path: reports/
-          retention-days: 14
+          path: |
+            reports/
+            !reports/allure-report/
+            !reports/allure-results/
+          retention-days: 3
 
       - name: Write test summary to Agent 4's run page
         # Inline Python that parses the junit report(s) and writes a markdown
