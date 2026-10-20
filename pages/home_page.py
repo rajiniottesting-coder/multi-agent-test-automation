@@ -64,6 +64,17 @@ class HomePage(BasePage):
         """
         return self.is_showing(self.sel("site_logo"), timeout_ms=timeout_ms)
 
+    def wait_until_home_loaded(self, timeout_ms: Optional[int] = None) -> bool:
+        """True once the home page has been reached after login. WAITS.
+
+        A successful login on this site REDIRECTS to '/', so this is the
+        readiness helper a post-login step asserts on: it waits for the site
+        logo — present in every state of the home page — rather than racing the
+        redirect. Returns True only when the logo is showing within the
+        timeout; a step asserting arrival here should assert this is True.
+        """
+        return self.is_showing(self.sel("site_logo"), timeout_ms=timeout_ms)
+
     def get_subscription_success(self) -> str:
         """The 'successfully subscribed' confirmation text. WAITS for it.
 
