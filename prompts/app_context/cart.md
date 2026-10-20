@@ -15,7 +15,7 @@ line items are different behaviours and a scenario should not conflate them.
 
 ## Adding to cart opens a modal
 
-Clicking "Add to cart" does NOT navigate. A modal appears reading "Added! Your
+Clicking "Add to basket" does NOT navigate. A modal appears reading "Added! Your
 product has been added to cart." with two choices:
 
 - **View Cart** — navigates to `/view_cart`
