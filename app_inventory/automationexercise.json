@@ -128,7 +128,7 @@
         "search_button": "#submit_search",
         "product_cards": ".product-image-wrapper",
         "product_names": ".productinfo p",
-        "add_to_cart_buttons": "text=Add to cart",
+        "add_to_cart_buttons": "text=Add to basket",
         "view_product_links": "a[href^='/product_details/']",
         "added_modal": "text=Your product has been added to cart.",
         "view_cart_link_in_modal": "role=link[name='View Cart']",
@@ -143,7 +143,7 @@
       ],
       "multi_match_note": "Keys whose selector matches SEVERAL elements. Read them with get_all_texts / get_count / get_nth_text; to act on ONE member, scope to the row containing its text with click_in_row(); never click, fill or assert on the family as a whole. Enforced by validators/method_resolution_validator.py at generation time.",
       "elements_notes": {
-        "add_to_cart_buttons": "MULTI-MATCH, and worse than it looks: every product card renders its Add to cart control TWICE (once in the card, once in the hover overlay), so this matches 68 elements on the all-products page, not 34. Never click it directly - scope to one product's card, or open the product via its View Product link.",
+        "add_to_cart_buttons": "MULTI-MATCH, and worse than it looks: every product card renders its Add to basket control TWICE (once in the card, once in the hover overlay), so this matches 68 elements on the all-products page, not 34. Never click it directly - scope to one product's card, or open the product via its View Product link.",
         "product_names": "MULTI-MATCH and also doubled per card for the same reason. Use get_all_texts() to assert a product IS present rather than indexing into it.",
         "view_product_links": "MULTI-MATCH - one per product card. Matched by href PREFIX, not by accessible name: role=link[name='View Product'] resolved to ZERO against the live page (2 Aug 2026). The href is exact, carries the product id, and cannot be affected by icon markup inside the link.",
         "added_modal": "Adding to cart opens a MODAL rather than navigating. It blocks the page underneath, so a scenario adding two products must dismiss it between them or the second click fails with 'intercepts pointer events'.",
@@ -248,7 +248,7 @@
         "continue_shopping_button",
         "review_success"
       ],
-      "conditional_note": "The add-to-cart modal does not exist until Add to cart is clicked, and review_success not until a review is submitted. A tool that only navigates always reads these as absent - that is its reach, not a broken selector.",
+      "conditional_note": "The add-to-cart modal does not exist until Add to basket is clicked, and review_success not until a review is submitted. A tool that only navigates always reads these as absent - that is its reach, not a broken selector.",
       "elements_notes": {
         "_url": "TEMPLATE, not an address: one page per product. Open it with page_url(product_id=...), or better, reach it by clicking a product's View Product link on the listing - that href already carries the id, so the test never invents one.",
         "add_to_cart_button": "The single add-to-cart control for THIS product. Unlike the listing page's family of 68, this one is unique - which is why a cart scenario should add a product from here rather than from the listing.",
@@ -256,7 +256,7 @@
         "added_modal": "Adding to cart opens a MODAL rather than navigating, and it blocks the page underneath. A scenario adding two products must dismiss it between them or the second click lands on the overlay.",
         "product_price": "Rendered as 'Rs. 500'. Assert on the number, not the format.",
         "_naming": "No page object exists for this page yet. Agent 2 chooses its method names, guided by the naming rule in the generation prompt: a bare verb such as open() or submit() collides with the first specific method that shares it, so a method must say WHAT it acts on - open_product(), not open(). Every later story reads the real signatures back from the file, so the names are chosen once. Do not fill key_methods back in.",
-        "view_cart_link_in_modal": "INSIDE the add-to-cart modal, which appears only after Add to cart is clicked on this page. Navigates to the cart.",
+        "view_cart_link_in_modal": "INSIDE the add-to-cart modal, which appears only after Add to basket is clicked on this page. Navigates to the cart.",
         "continue_shopping_button": "INSIDE the add-to-cart modal. Dismisses it and stays on this product. Needed before any further interaction with the page underneath, because the modal blocks it.",
         "review_success": "Appears only after a review is submitted successfully. A review needs a name, an email and review text; submitting an incomplete form is blocked by the browser's own validation, so nothing app-authored appears and this element never renders."
       },
