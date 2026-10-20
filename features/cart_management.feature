@@ -15,7 +15,7 @@ Feature: Automation Exercise cart management
     Then the cart should contain "Blue Top" with quantity 1
 
   @cart
-  # JIRA: SCRUM-213 (hash: a8208888) owner: SCRUM-111
+  # JIRA: SCRUM-213 (hash: 64be015e) owner: SCRUM-111 impacted-by: SCRUM-203
   Scenario: Adding a second, different product keeps both products in the cart
     When I open the product details page for "Blue Top"
     And I add the product to the cart and continue shopping
@@ -38,7 +38,7 @@ Feature: Automation Exercise cart management
     And the cart should contain "Blue Top" with quantity 1
 
   @edge @cart
-  # JIRA: SCRUM-215 (hash: efe4088b) owner: SCRUM-111
+  # JIRA: SCRUM-215 (hash: 9aaa7e50) owner: SCRUM-111 impacted-by: SCRUM-203
   Scenario: Adding the same product twice shows its quantity increased to 2
     When I open the product details page for "Sleeveless Dress"
     And I add the product to the cart and continue shopping
