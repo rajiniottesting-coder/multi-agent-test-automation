@@ -72,6 +72,7 @@ from validators.method_resolution_validator import (
     validate_step_parameter_types,
     validate_step_claims_are_verified,
     validate_reused_steps_keep_their_meaning,
+    committed_then_definitions,
     validate_readiness_probe,
     validate_predicates_wait,
     validate_absence_not_asserted_with_waiting_probe,
@@ -1861,6 +1862,44 @@ def _split_prompt_for_cache(template: str) -> tuple:
 
 
 
+def _build_reused_then_steps_block(file_plan, already_generated,
+                                  project_root=None, limit: int = 12) -> str:
+    """The committed definitions of the Then steps this feature reuses.
+
+    pytest-bdd binds steps per module, so a phrase another feature already
+    defines is written again here. The prompt said "assert what that
+    definition asserts" but never showed it, and the model guessed: SCRUM-187
+    re-defined a committed Then with an extra check, twice (20 Oct 2026).
+    validate_reused_steps_keep_their_meaning() rejects that; this shows the
+    definition first, so the rule is met when the file is written.
+    """
+    if getattr(file_plan, "file_type", "") != "step_definitions":
+        return ""
+    features = [f for f in (already_generated or []) if f.file_path.endswith(".feature")]
+    phrases, seen = [], set()
+    for feature in features:
+        for keyword, phrase in _extract_feature_steps(feature.content):
+            if keyword == "then" and phrase.strip() and phrase not in seen:
+                seen.add(phrase)
+                phrases.append(phrase)
+    if not phrases:
+        return ""
+    skip = {f.file_path for f in already_generated or ()} | {file_plan.file_path}
+    hits = committed_then_definitions(phrases, project_root or PROJECT_ROOT, skip)
+    if not hits:
+        return ""
+    lines = ["## THEN STEPS ALREADY DEFINED IN COMMITTED STEP FILES",
+             "",
+             "This feature reuses these sentences. Define each again in this module",
+             "(pytest-bdd needs it) and assert EXACTLY what the committed definition",
+             "asserts - the same page calls, nothing added. A scenario that needs",
+             "another state gets its own Then step.",
+             ""]
+    for phrase, path, source in hits[:limit]:
+        lines += [f'- "{phrase}" - {path}:', "```python", source, "```", ""]
+    return "\n".join(lines).rstrip()
+
+
 def _build_authoritative_steps_block(file_plan, already_generated) -> str:
     """Authoritative step list for a step-def file, from the batch's feature.
 
@@ -2121,6 +2160,13 @@ def generate_file_content(
     if file_plan.file_type == "step_definitions" and already_generated:
         authoritative_steps_block = _build_authoritative_steps_block(
             file_plan, already_generated)
+        reused_block = _build_reused_then_steps_block(file_plan, already_generated)
+        if reused_block:
+            authoritative_steps_block = (authoritative_steps_block + "\n\n"
+                                         + reused_block).strip()
+            logger.info(
+                "Stage 2: injecting %d committed Then definition(s) the feature "
+                "reuses, so each keeps its meaning.", reused_block.count("\n- \""))
         if authoritative_steps_block:
             logger.info(
                 "Stage 2: injecting authoritative step list from the batch's "
@@ -2685,7 +2731,37 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
             generated_files, PROJECT_ROOT, repair_format=True
         )
     )
-    return errors
+    return _route_to_generated_file(errors, generated_files)
+
+
+_ROUTABLE = (re.compile(r"error in '([^']+)'(?: line \d+)?:"),
+             re.compile(r"^[^'\n]*?\bin '([^']+)'(?: line \d+)?:"))
+
+
+def _route_to_generated_file(errors: list, generated_files) -> list:
+    """Make every repairable error name the file it is about, in the form the
+    repair loop reads.
+
+    The grouper routes an error by `<rule> in '<path>':`. An error worded any
+    other way was dropped there: the model never saw it, and the story died at
+    the final gate on feedback no repair was given (SCRUM-187, 20 Oct 2026 -
+    a rule worded `<path>: step ...`). A format convention per validator has
+    failed more than once, so the routing is guaranteed here instead: an error
+    already in the routable form is kept as it is; otherwise the generated
+    file it names first is put in front of it. A message that names no
+    generated file is left as it is - there is no file to repair, and the
+    final gate still reports it.
+    """
+    paths = [f.file_path for f in generated_files or ()]
+    routed = []
+    for err in errors:
+        text = str(err)
+        if any(r.search(text) for r in _ROUTABLE):
+            routed.append(text)
+            continue
+        named = sorted((text.find(p), -len(p), p) for p in paths if p and p in text)
+        routed.append(f"Validator error in '{named[0][2]}': {text}" if named else text)
+    return routed
 
 
 def _attempt_step_coverage_repair(

@@ -4721,6 +4721,46 @@ def _committed_then_steps(project_root: Path, skip: set) -> dict:
     return out
 
 
+def committed_then_definitions(phrases, project_root, skip=()) -> list:
+    """The committed @then definitions that concrete Then phrases resolve to.
+
+    `phrases` are step texts as a feature writes them ('the list should
+    include "Item A"'). Returns [(phrase, file, source)] in the order given,
+    one per phrase with a committed definition: what a re-definition of it
+    must keep asserting (validate_reused_steps_keep_their_meaning). Shown to
+    the model before it writes the step, so the rule is met by construction
+    rather than by repair."""
+    project_root = Path(project_root)
+    steps_dir = project_root / "tests" / "step_defs"
+    known: list = []                                   # (regex, file, source)
+    for path in sorted(steps_dir.glob("*.py")) if steps_dir.is_dir() else []:
+        rel = path.relative_to(project_root).as_posix()
+        if rel in set(skip):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+            tree = ast.parse(text)
+        except (SyntaxError, OSError, UnicodeDecodeError):
+            continue
+        for func in ast.walk(tree):
+            if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)) \
+                    or "then" not in _step_keywords(func):
+                continue
+            first = min([d.lineno for d in func.decorator_list] + [func.lineno])
+            source = "\n".join(text.splitlines()[first - 1:func.end_lineno])
+            for step in _step_texts(func):
+                parts = _phrase_template(step).split("{}")
+                rx = re.compile("^" + "(.+?)".join(re.escape(x) for x in parts) + "$")
+                known.append((rx, rel, source))
+    out = []
+    for phrase in phrases:
+        norm = " ".join(str(phrase).lower().split())
+        hit = next(((f, s) for rx, f, s in known if rx.match(norm)), None)
+        if hit:
+            out.append((phrase, hit[0], hit[1]))
+    return out
+
+
 def validate_reused_steps_keep_their_meaning(
         generated_files: list, project_root=None) -> list[str]:
     """Fail a @then that re-defines a committed phrase but asserts more."""
@@ -4750,7 +4790,8 @@ def validate_reused_steps_keep_their_meaning(
                 extra = sorted(_asserted_page_calls(func) - hit[1])
                 if extra:
                     errors.append(
-                        f"{path}: step '{text}' ({func.name}) is already defined in {hit[0]}, "
+                        f"Reused step meaning error in '{path}': step '{text}' ({func.name}) "
+                        f"is already defined in {hit[0]}, "
                         f"where it checks only {', '.join(m + '()' for m in sorted(hit[1]))}. "
                         f"Here it also asserts {', '.join(m + '()' for m in extra)}, which the "
                         f"sentence does not say. A step means the same in every feature: check "
