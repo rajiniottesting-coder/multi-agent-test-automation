@@ -86,6 +86,14 @@ class ProductDetailPage(BasePage):
         """The current value typed in the quantity field (DOM value, not text)."""
         return self.get_input_value(self.sel("quantity_input"))
 
+    def has_added_confirmation(self) -> bool:
+        """True once the add-to-cart confirmation modal is on screen. WAITS.
+
+        Call this only where the modal is expected (right after add_to_cart()).
+        The modal is conditional: it exists only after Add to cart is clicked.
+        """
+        return self.is_showing(self.sel("added_modal"))
+
     # ── actions ──────────────────────────────────────────────
     def set_quantity(self, quantity: int) -> None:
         """Set the quantity BEFORE adding to cart.
@@ -102,6 +110,17 @@ class ProductDetailPage(BasePage):
         The add-to-cart control is unique on this page (unlike the listing's
         family of 68), so clicking it directly is safe. Waiting for the modal
         proves the addition registered before the caller moves on.
+        """
+        self.require_own_page()
+        self.click(self.sel("add_to_cart_button"))
+        self.wait_visible(self.sel("added_modal"))
+
+    def add_to_cart_with_default_quantity(self) -> None:
+        """Add this product to the cart leaving the quantity at its default.
+
+        Does NOT touch the quantity field, so the page's own default (1) is
+        used. Clicks Add to cart and waits for the confirmation modal, which
+        proves the addition registered.
         """
         self.require_own_page()
         self.click(self.sel("add_to_cart_button"))
