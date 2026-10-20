@@ -141,7 +141,7 @@ SHOWN, not what it says.
 - **Adding to cart opens a MODAL**, it does not navigate. The modal offers
   "View Cart" and "Continue Shopping"; one must be taken before the page is
   usable again.
-- **Product cards render "Add to cart" TWICE** — once in the card and once in
+- **Product cards render "Add to basket" TWICE** — once in the card and once in
   the hover overlay. Any selector for it matches at least two elements per
   product, so it is a family: see `multi_match` on the products page.
 - The site carries third-party ads, which shift layout and occasionally overlay
