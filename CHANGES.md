@@ -4,6 +4,30 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## October 2026 (second half) — validation fixes after A3
+
+All generic, each pinned by unit tests (suite: ~2,900 tests).
+
+**Agent 0**
+- #175 a change story undone by reconcile can be retried as a new attempt; docs no longer claim Agent 0 posts a cost ledger (it does not)
+- #185 a context-update marker blocks a new proposal only while its PR is open; a closed PR no longer suppresses the retry's update
+- #186 *using is not changing*: a story classified `new_behaviour` (new functionality, or a new journey through existing behaviour) keeps no seeds, and adjudication needs a named difference, not overlap
+
+**Agent 1**
+- #185 the story wins over the app notes where they disagree
+- #187 → #188 "no row / zero rows" is judged by the entry it names (quoted or test-data value): absence of a named entry is relative, not a row count. #188 replaces #187's word list
+
+**Agent 2**
+- #181, #182 orphan step clean-up, Agent 4 visibility of failures, and an absence predicate every gate accepts
+- #185 `click_in_row` clicks the visible copy when a row holds two of one control
+- #190 new validator `validate_reused_steps_keep_their_meaning` (29 checks): a Then step re-defined for another feature may not assert more than the committed definition; a bare `# JIRA: KEY` marker is completed in place
+- #193 every repairable error reaches the repair loop, whatever its wording (`_route_to_generated_file`); the step-definition prompt shows the committed body of every Then step the feature reuses (`committed_then_definitions`)
+
+**CI**
+- #192 Actions storage kept inside the quota: `artifact_cleanup.yml` (daily, deletes artifacts older than 2 days, `scripts/cleanup_artifacts.py`); Agent 4 uploads only what Agent 5 needs, kept 3 days
+
+---
+
 ## October 2026 — Agent 0 (impact analysis) and the change-story pipeline
 
 A sixth agent, Agent 0 (Impact Analyst), runs before Agent 1 for a story that
