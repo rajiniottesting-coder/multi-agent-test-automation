@@ -123,6 +123,10 @@ jobs:
     name: Run Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # 'false' only when a pull request changes nothing a test run reads (see
+    # the pr_changes step); the report job then has no E2E result to post.
+    outputs:
+      e2e: ${{ steps.pr_changes.outputs.e2e }}
     # Serialise test runs per PR (or per branch on push) - two runs of one PR
     # must not drive the live application at the same time.
     #
@@ -169,8 +173,9 @@ jobs:
       # gets generated next time and cannot alter code that already exists, so
       # running a browser would prove nothing.
       #
-      # Consulted on push only. pull_request and workflow_dispatch run the E2E
-      # unconditionally.
+      # Consulted on push only. A pull request has its own check (pr_changes,
+      # below): it skips the E2E only when nothing changed is read at test
+      # runtime. workflow_dispatch runs the E2E unconditionally.
       - name: Detect runtime-affecting changes
         id: changes
         if: github.event_name == 'push'
@@ -218,6 +223,52 @@ jobs:
             echo "inventory=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # ── CAN THIS PULL REQUEST CHANGE A TEST RESULT? ───────────────
+      # A pull request that changes only agent inputs and prose - prompts/
+      # (agent prompts and the app-context notes), docs/, Markdown - cannot
+      # change what any existing test does: nothing in it is read while a test
+      # runs. Running the browser then proves nothing, and a live-site flake
+      # turns such a PR red for a reason it cannot have caused. A context-
+      # update PR that rewrites notes only is the case that hit this.
+      #
+      # Anything else - features, step definitions, page objects, the
+      # inventory, config, conftest, requirements, workflows, an unknown path -
+      # runs the E2E. The rule is core/test_runtime.py (stdlib only, so it runs
+      # before dependencies are installed); Agent 3 uses the same rule so a
+      # unit-only green run is never read as evidence about app tests. The
+      # unit suite always runs.
+      #
+      # Fails open like the push detector: an API error or an empty file list
+      # runs the E2E. Over-running costs minutes; under-running ships an
+      # untested change behind a green tick.
+      - name: Detect whether this pull request can change a test result
+        id: pr_changes
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          if ! FILES=$(gh api "repos/$REPO/pulls/$PR_NUMBER/files" --paginate --jq '.[].filename'); then
+            echo "could not list the pull request's files; running the E2E to be safe"
+            echo "e2e=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "changed files:"
+          echo "$FILES" | sed 's/^/    /'
+          if ! VERDICT=$(printf '%s\n' "$FILES" | python3 core/test_runtime.py); then
+            echo "the runtime rule failed; running the E2E to be safe"
+            VERDICT=true
+          fi
+          if [ "$VERDICT" = "false" ]; then
+            echo "only prompts, docs or Markdown changed - unit tests only"
+          else
+            echo "a file read at test runtime changed (or none listed) - the E2E will run"
+            VERDICT=true
+          fi
+          echo "e2e=$VERDICT" >> "$GITHUB_OUTPUT"
+
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
@@ -247,7 +298,7 @@ jobs:
         # Over-running costs three minutes. Under-running ships an untested
         # change behind a green tick. Same reasoning as the fallbacks inside
         # the detector itself.
-        if: github.event_name != 'push' || steps.changes.outputs.inventory != 'false'
+        if: (github.event_name != 'push' || steps.changes.outputs.inventory != 'false') && steps.pr_changes.outputs.e2e != 'false'
         id: playwright-cache
         uses: actions/cache@v4
         with:
@@ -259,7 +310,7 @@ jobs:
         # The browser binary itself is restored from cache when the key matches.
         # OS-level apt packages are NOT cached and need to be reinstalled fresh.
         # Skipped on push — saves ~2-3 min on every framework commit.
-        if: github.event_name != 'push' || steps.changes.outputs.inventory != 'false'
+        if: (github.event_name != 'push' || steps.changes.outputs.inventory != 'false') && steps.pr_changes.outputs.e2e != 'false'
         run: playwright install --with-deps chromium
 
       - name: Framework self-test (unit tests)
@@ -291,7 +342,7 @@ jobs:
         # always() so a failed unit gate still yields E2E signal on a PR.
         # Never on push: no browser is installed, and the app secrets this
         # step needs are irrelevant to a framework change.
-        if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory != 'false')
+        if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory != 'false') && steps.pr_changes.outputs.e2e != 'false'
         # Application credentials. Feature files log in by ROLE; the
         # `credentials` fixture (tests/step_defs/conftest.py) resolves the role
         # from these variables at runtime. Nothing authenticating is ever
@@ -405,7 +456,7 @@ jobs:
           # One line on purpose: a folded scalar would keep the newlines of an
           # indented continuation inside the ${{ }}, and the expression would
           # not evaluate.
-          SUMMARY_REPORTS: ${{ github.event_name == 'push' && 'reports/junit-unit.xml|Framework Unit Tests' || 'reports/junit-unit.xml|Framework Unit Tests;reports/junit.xml|App Tests (E2E)' }}
+          SUMMARY_REPORTS: ${{ (github.event_name == 'push' || steps.pr_changes.outputs.e2e == 'false') && 'reports/junit-unit.xml|Framework Unit Tests' || 'reports/junit-unit.xml|Framework Unit Tests;reports/junit.xml|App Tests (E2E)' }}
           # Why the E2E did or did not run, so a green tick cannot mean less
           # than it appears to. A summary reading "All 635 tests passed" with
           # no mention of the browser invites the reader to assume the app
@@ -413,6 +464,7 @@ jobs:
           E2E_EVENT: ${{ github.event_name }}
           E2E_DETECTOR: ${{ steps.changes.outputs.inventory }}
           E2E_DETECTOR_OUTCOME: ${{ steps.changes.outcome }}
+          E2E_PR_VERDICT: ${{ steps.pr_changes.outputs.e2e }}
         run: |
           python3 << 'PYEOF'
           """Parse the junit report(s) and write a markdown summary to the GitHub
@@ -600,6 +652,13 @@ jobs:
                   out += ["> ⚠️ **The change detector produced no verdict**, so "
                           "the app E2E was run rather than skipped.", ""]
 
+          if event == "pull_request" and (os.environ.get("E2E_PR_VERDICT") or "").strip() == "false":
+              out += ["> ℹ️ **App E2E not run.** This pull request changes only "
+                      "prompts, docs or Markdown - nothing a test reads while it "
+                      "runs - so only the unit suite ran, and no result is "
+                      "posted to Jira. Any other changed file runs the browser.",
+                      ""]
+
           out += ["---", "_Generated by Agent 4 (Runner)._"]
 
           with open(summary_path, "a", encoding="utf-8") as f:
@@ -615,10 +674,13 @@ jobs:
   #   - Skip on workflow_dispatch (no PR context, no story key to find)
   #
   # Visible on PR as: "Agent 4 - Runner / Post Results to Jira"
+  # Also skipped when the test job ran no E2E (a prompts/docs-only PR):
+  # there is no app result to report, and such a branch has no story to
+  # report to.
   report:
     name: Post Results to Jira
     needs: test
-    if: always() && github.event_name == 'pull_request'
+    if: always() && github.event_name == 'pull_request' && needs.test.outputs.e2e != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 5
 

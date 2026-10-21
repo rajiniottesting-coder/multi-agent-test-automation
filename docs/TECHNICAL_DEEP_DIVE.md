@@ -619,7 +619,7 @@ No Python agent file. The "intelligence" is the test code Agent 2 wrote; Agent 4
      --html=reports/pytest-report.html --self-contained-html \
      --junit-xml=reports/junit.xml                                 # app E2E (Playwright BDD)
    ```
-   The E2E step runs `if: always()`, so a failed unit gate still yields E2E signal on a PR. On a framework-only `push` to `main`, the unit step is the whole job. Only `reports/junit.xml` (the app tests) reaches Agent 5.
+   The E2E step runs `if: always()`, so a failed unit gate still yields E2E signal on a PR. On a framework-only `push` to `main`, the unit step is the whole job. On a pull request, the `pr_changes` step skips the browser (and the report job) when every changed file is one no test reads — `prompts/`, `docs/`, Markdown (`core/test_runtime.py`, fail-open); Agent 3 then takes no runner result as evidence. Only `reports/junit.xml` (the app tests) reaches Agent 5.
 5. **Upload artifacts** via `actions/upload-artifact@v4`: pytest-html, junit XML, Allure results
 6. **Inline Python step** parses `junit.xml` and writes a markdown table to `$GITHUB_STEP_SUMMARY` — appears on the PR check page
 7. **Job 2: Agent 5** — the `report` job in the same workflow, with `needs: test`

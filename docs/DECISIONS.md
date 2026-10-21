@@ -47,7 +47,7 @@ does this change touch?" without letting a model rewrite tests on its own.
 6. **Undo by snapshot.** Agent 1 snapshots each test before revising it.
    Reconcile restores a snapshot only where the text is still what the change
    wrote; a test edited since is left for a person. A closed PR is acted on
-   only when the same close is seen on two scans, and reconcile is its own
+   only when the same close is seen on two scans (`reconcile.closed_scans`, default 2), and reconcile is its own
    job, because the sweeper restarts stalled PRs by closing and reopening them
    and two concurrent runs must not count as two scans.
 7. **Leave an undone story ready to retry** (since #173): its own unshipped

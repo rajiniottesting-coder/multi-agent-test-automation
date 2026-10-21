@@ -82,7 +82,7 @@ For more diagrams — component view, Agent 2 sequence, and the labels-as-state-
 
 | # | Agent | Implementation | Trigger | Model calls |
 |:-:|---|---|---|---|
-| 0 | Impact Analyst | `agents/agent0_impact.py` + `core/impact_*.py` | `impact-check` scan (weekdays 10:45 IST), PRs touching `pages/` or `app_inventory/`, nightly drift | 2 to analyse (more only past 300 candidates); 2 at hand-over |
+| 0 | Impact Analyst | `agents/agent0_impact.py` + `core/impact_*.py` | `impact-check` scan (weekdays 10:45 IST), PRs touching `pages/` or `app_inventory/`, nightly drift (or on demand, `mode` = `drift`) | 2 to analyse (more only past 300 candidates); 2 at hand-over |
 | 1 | Test Designer | `agents/agent1_analyst.py`, `agents/agent1_impact.py` | cron, every 30 min, weekdays 10:00–19:00 IST | 1 (+1 if a rule fails) |
 | 2 | Coder | `agents/agent2_coder.py`, `agents/agent2_impact.py` | cron, same window | 1 plan + 1 per file (+ repairs) |
 | 3 | Reviewer | `agents/agent3_reviewer.py` | PR opened / synchronize / reopened | 1 |
@@ -745,8 +745,23 @@ when a test runs, so a browser would spend three minutes proving nothing.
 > ⚠️ **The change detector produced no verdict**, so the app E2E was run rather
 > than skipped.
 
-Only on a push. A pull request and a manual dispatch always run the E2E, so a
-note there would be noise.
+Only on a push. A manual dispatch always runs the E2E.
+
+**A pull request** has its own check (*Detect whether this pull request can
+change a test result*). It skips the browser only when every changed file is
+one no test reads — `prompts/` (agent prompts and the app-context notes),
+`docs/`, Markdown; the rule is `core/test_runtime.py`. The typical case is a
+context-update PR that rewrites notes only: it used to go red on a live-site
+flake it could not have caused. The unit suite still runs, the report job
+(Agent 5) is skipped, and the summary says:
+
+> ℹ️ **App E2E not run.** This pull request changes only prompts, docs or
+> Markdown - nothing a test reads while it runs - so only the unit suite ran,
+> and no result is posted to Jira. Any other file runs the browser.
+
+Any other file, an unknown path, an API error or an empty file list runs the
+E2E (fail open). Agent 3 uses the same rule: on such a PR a green Agent 4 run
+is not taken as evidence against a predicted test failure.
 
 A detector failure is most often a **force-push**: `github.event.before` then
 points at a commit that no longer exists, and `git diff` cannot resolve it.
