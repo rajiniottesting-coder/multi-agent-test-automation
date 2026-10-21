@@ -651,7 +651,9 @@ def classify_against_index(test_cases: list[dict], index: MarkerIndex) -> dict:
             cls = "unchanged" if entry.hash == current else "modified"
             result[cls].append({"test_case": tc, "file": entry.file, "scenario": entry.title})
             continue
-        norm = normalize_scenario_name(tc.get("summary", "") or "")
+        # The summary carries `[<test_type>]` tags the scenario title does not;
+        # compared raw, no test case the pipeline created could ever match.
+        norm = normalize_scenario_name(plain_test_case_title(tc.get("summary", "") or ""))
         if norm and norm in unmarked_by_title:
             filename, title = unmarked_by_title[norm]
             result["legacy"].append({"test_case": tc, "file": filename, "scenario": title})
@@ -3891,6 +3893,18 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
         logger.error(f"Could not read {feature_file_path} from main: {e}")
         raise
 
+    # IN FLIGHT (core/in_flight.py): the update rewrites this feature file and
+    # its step definitions from main's copy. If another open pull request is
+    # changing either, wait - before any model call - rather than conflict.
+    from core import in_flight
+    flight = in_flight.snapshot(gh, story_id)
+    if flight:
+        stem = feature_file_path.split("/")[-1].rsplit(".", 1)[0]
+        clashes = in_flight.file_conflicts(
+            {feature_file_path, f"tests/step_defs/test_{stem}.py"}, flight)
+        if clashes:
+            return _wait_for_in_flight(jira, story_id, dry_run, files=clashes)
+
     # A key marked in another file is not new here: appending it would
     # write a second copy of that scenario into this file.
     target_name = feature_file_path.split("/")[-1]
@@ -4124,6 +4138,13 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
         step_defs_path, feature_file_path, story_id,
         [tc["key"] for tc in classification["modified"]] + list(classification["orphan_keys"]),
     )
+
+    # A page object the orphan cleanup comments methods out of is written
+    # whole too; the same in-flight rule applies.
+    if flight and modified_page_files:
+        clashes = in_flight.file_conflicts(modified_page_files, flight)
+        if clashes:
+            return _wait_for_in_flight(jira, story_id, dry_run, files=clashes)
 
     generated_files = [
         GeneratedFile(
@@ -4410,6 +4431,18 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
             f"{len(skipped_test_cases)} skipped as duplicates."
         )
 
+    # 1c. IN FLIGHT (core/in_flight.py). Another open pull request may already
+    # add a scenario this story would generate; neither is on main yet, so the
+    # duplicate check above cannot see it. Wait instead of duplicating it -
+    # checked BEFORE the plan, so a waiting story costs no model call.
+    from core import in_flight
+    flight = in_flight.snapshot(get_repo_host(), story_id)
+    if flight:
+        dupes = in_flight.duplicate_scenarios(new_test_cases, flight, _feature_titles,
+                                              case_title=plain_test_case_title)
+        if dupes:
+            return _wait_for_in_flight(jira, story_id, dry_run, scenarios=dupes)
+
     # 2. CONTEXT — read references and inventory once
     references = ctx.load_reference_files()
     # Backlog 2.2 — inject only the pages relevant to this story's Jira
@@ -4427,6 +4460,19 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
         agent2_impact.drop_owner_files(plan, owner_files, new_test_cases)
         validate_paths_against_policy(
             plan, ctx, protected_files=agent2_impact.protected_paths(owner_files))
+
+    # 3b. IN FLIGHT, files. Agent 2 writes whole files from main's copy, so a
+    # file another open pull request is changing would conflict on merge -
+    # or, worse, the second merge would silently drop the first one's
+    # methods. The plan names every file this run writes; the owners' files a
+    # change story splices are added. Checked before any file is generated.
+    if flight:
+        writes = {fp.file_path for fp in plan.files_to_create}
+        for path, owner_file in owner_files.items():
+            writes |= {path, owner_file.step_defs_path}
+        clashes = in_flight.file_conflicts(writes, flight)
+        if clashes:
+            return _wait_for_in_flight(jira, story_id, dry_run, files=clashes)
 
     # 4. STAGE 2: GENERATE PER-FILE CONTENT
     # Order page objects BEFORE step definitions so the step-def prompt
@@ -4873,12 +4919,46 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     return result
 
 
+def _feature_titles(content: str) -> list[str]:
+    """Scenario titles of a feature file - the parser core/in_flight.py uses."""
+    _h, blocks = parse_feature_file(content)
+    return [t for t in (_scenario_title(b) for b in blocks) if t]
+
+
+def _wait_for_in_flight(jira, story_id: str, dry_run: bool, files=(), scenarios=()) -> dict:
+    """Stop this story for now: another open pull request is changing what it
+    needs (core/in_flight.py). Nothing is generated or committed and no label
+    changes, so the next scan retries it. One Jira comment says why - posted
+    once per reason, not on every 30-minute scan. Any model call already made
+    (the plan) is recorded and the counter reset, so it never lands in the
+    next story's numbers."""
+    from core.in_flight import post_wait_once
+    from core.llm_client import log_usage_summary, reset_usage
+    files, scenarios = list(files), list(scenarios)
+    prs = sorted({c["pr"] for c in files} | {s["pr"] for s in scenarios})
+    for c in files:
+        logger.warning(f"{story_id} waits: {c['path']} is being changed by open PR #{c['pr']}")
+    for s in scenarios:
+        logger.warning(f"{story_id} waits: {s['key']} ('{s['scenario']}') is already "
+                       f"added by open PR #{s['pr']}")
+    usage = log_usage_summary(f"story {story_id} (waiting)")
+    reset_usage()
+    if not dry_run:
+        post_wait_once(jira, story_id, files, scenarios)
+        if usage.get("llm_calls"):
+            from core.usage_ledger import post_usage_to_story
+            post_usage_to_story(story_id, "Agent 2 (Coder, waiting)", usage, jira=jira)
+    return {"story_id": story_id, "status": "waiting_for_open_pr", "waiting_for": prs,
+            "files_generated": 0}
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 _SCAN_MARKERS = {
     "pr_opened": "OK",
     "skipped_all_duplicates": "SKIP",
+    "waiting_for_open_pr": "WAIT",
     "failed": "FAIL",
 }
 

@@ -122,7 +122,9 @@ jobs:
   test:
     name: Run Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 15 for the run itself + up to 15 waiting for earlier pull requests'
+    # browser runs (the wait-for-turn step below).
+    timeout-minutes: 30
     # 'false' only when a pull request changes nothing a test run reads (see
     # the pr_changes step); the report job then has no E2E result to post.
     outputs:
@@ -332,6 +334,48 @@ jobs:
           pytest tests/unit/ \
             --junit-xml=reports/junit-unit.xml \
             -v
+
+      # ── WAIT FOR EARLIER PULL REQUESTS' BROWSER RUNS ──────────────
+      # Every PR's E2E drives the same live application with the same test
+      # accounts, and some of what a test does persists - so two PRs testing
+      # at once change each other's results. First come, first served: wait
+      # while a run of another PR that started earlier has not finished
+      # (scripts/e2e_turn.py explains why a shared concurrency group cannot
+      # do this). Bounded and fail-open: after MAX_WAIT_SECONDS, or if the
+      # runs cannot be read, the tests run anyway - a possible overlap is
+      # better than a stuck pipeline.
+      - name: Wait for earlier pull requests' browser runs
+        # always(): the E2E runs even when the unit gate failed, so the wait must too.
+        if: always() && github.event_name == 'pull_request' && steps.pr_changes.outputs.e2e != 'false'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          BRANCH: ${{ github.head_ref }}
+          MAX_WAIT_SECONDS: "900"
+        run: |
+          deadline=$(( $(date +%s) + MAX_WAIT_SECONDS ))
+          while :; do
+            if ! RUNS=$(gh api "repos/$REPO/actions/workflows/agent4_runner.yml/runs?event=pull_request&per_page=100" --jq '.workflow_runs'); then
+              echo "could not list the runs - not waiting"
+              break
+            fi
+            if ! AHEAD=$(printf '%s' "$RUNS" | python3 scripts/e2e_turn.py --me "$RUN_ID" --branch "$BRANCH"); then
+              echo "the turn rule failed - not waiting"
+              break
+            fi
+            if [ -z "$AHEAD" ]; then
+              echo "no earlier pull request is testing - our turn"
+              break
+            fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::warning::Waited ${MAX_WAIT_SECONDS}s for run(s) $AHEAD; running the tests anyway."
+              break
+            fi
+            echo "waiting for earlier run(s): $AHEAD"
+            sleep 30
+          done
 
       - name: Run app tests (generated E2E)
         # CI=true is auto-set by GitHub Actions, which our conftest.py uses
