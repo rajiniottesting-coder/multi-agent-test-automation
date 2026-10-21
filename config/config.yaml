@@ -195,7 +195,8 @@ base_url: https://automationexercise.com
 # Credentials are NEVER stored here. Features log in by ROLE
 # ("When I log in as \"standard\""); the `credentials` fixture in
 # tests/step_defs/conftest.py resolves the role at runtime from
-# APP_USERS / APP_PASSWORD (.env locally, GitHub Secrets in CI).
+# APP_USER_<ROLE> and APP_PASSWORD_<ROLE>, else APP_PASSWORD
+# (.env locally, GitHub Secrets in CI).
 #
 # The behaviour of each role is documented in prompts/app_context/
 # and app_inventory/<app>.json, which is where the LLM reads it.
@@ -293,7 +294,7 @@ agents:
         - "ai-regenerate"
       excluded_labels:
         - "ai-skip"
-        - "ai-update"      # if both set, ai-regenerate wins (full regen)
+        - "ai-update"      # exclusive - if both are set, neither mode runs
       sprint: "auto"
 
     # INCREMENTAL UPDATE (ai-update label):

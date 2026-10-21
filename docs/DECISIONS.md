@@ -2,6 +2,11 @@
 
 Consolidated ADRs, newest first. Each section is an immutable decision record; later notes are appended, history is not rewritten.
 
+ADR-001 to ADR-007 were recorded before this file existed and were not carried
+over. Where a record below cites one, the current description is in GUIDE.md:
+ADR-004 (choreography over orchestration) under [Architecture](./GUIDE.md#architecture),
+ADR-005 (the Jira label state machine) under [State management deep-dive](./GUIDE.md#state-management-deep-dive).
+
 ---
 
 ## ADR-013 — Agent 0: graph-first impact analysis, a human Impact Review, undo by snapshot
@@ -51,7 +56,9 @@ does this change touch?" without letting a model rewrite tests on its own.
 8. **Reference material changes through a separate PR.** Wording the story
    replaces and passages it makes untrue are proposed for the inventory and
    `prompts/app_context/` as a context-update PR whose branch carries no issue
-   key. Selectors are never edited, and it is merged after deployment.
+   key. A wording change is applied wherever the old text appears, a selector
+   that matches on it included; a passage rewrite never touches a selector. It
+   is merged after deployment.
 
 ### Alternatives considered
 
@@ -81,6 +88,14 @@ new attempt, and the context marker outlived the attempt. Since then the undo
 renames the review `[undone PR #N] …`, reconcile only settles PRs opened after
 Agent 1's `Change applied at:` stamp, and the context marker carries the story
 hash and counts only after the latest undo.
+
+**Note (2026-10-15).** Two refinements from the validation stories. A
+context-update marker that opened a pull request stands only while that PR is
+open (#185), so a closed proposal no longer suppresses a retry's update.
+Decision 1's seeds now distinguish using from changing (#186): a story the
+model classifies `new_behaviour` keeps no element seeds and no changed
+behaviours (enforced in `validate_requirement_seeds()`), and a *review* verdict
+must name what the scenario does that the change makes different.
 
 ---
 
@@ -172,6 +187,27 @@ explicitly built to prevent (the PR #9 scenario).
 - `agents/gherkin_analyzer.py` — "CROSS-FILE STEP REUSE" block (now superseded)
 - REUSE_FOR_NEW_PROJECT.md → Change 5
 
+**Note (2026-10) — superseded in part.** The code moved on from the decision
+above; the record is kept as it was.
+
+- **Step definitions are self-contained.** Every generated step-definition
+  module declares every step its own feature uses (generation prompt, rule 14).
+  Declaring a phrase another module also declares is safe: each module resolves
+  its own copy. This is the first alternative above, chosen after all.
+- **`tests/step_defs/conftest.py` holds fixtures only** and is app-agnostic:
+  one fixture per `BasePage` subclass in `pages/` is registered automatically
+  (`SearchResultsPage` → `search_results_page`), and `credentials` resolves a
+  login role from `APP_USER_<ROLE>` / `APP_PASSWORD_<ROLE>` (else
+  `APP_PASSWORD`). It is reused unchanged for a new application.
+- **The duplicate-step guard flags only the same phrase twice in ONE file**
+  (`validate_no_duplicate_step_definitions()`): there the second definition
+  silently shadows the first. Cross-module duplicates are harmless.
+- **A re-defined Then step keeps its meaning** (#190): it may not assert more
+  than the committed definition of the same phrase, and since #193 the
+  generation prompt shows that definition.
+- The **open follow-up** above is still open: `validate_step_definitions_complete()`
+  still counts decorators in sibling on-disk step-definition files as available.
+
 ---
 
 ## ADR-011 — App-agnostic inventory tooling, page-level errors, and component filtering
@@ -244,7 +280,7 @@ applications:
 
 - `inventory_tools/introspect.py`, `inventory_tools/browser.py`
 - `scripts/generate_inventory.py`, `scripts/check_inventory_staleness.py`
-- `agents/app_context.py :: filter_inventory_by_components`
+- `agents/app_context.py :: filter_inventory_by_components` (now `core/app_context.py`)
 - REUSE_FOR_NEW_PROJECT.md → App inventory JSON schema
 
 ---
@@ -693,6 +729,15 @@ These are deferred until concrete user feedback shows they're needed.
 - PR #7: The failed PR that triggered this design effort
 - `prompts/agent2_coder_plan.md`: Updated to enforce snake_case for files
 - `agents/gherkin_analyzer.py`: Implementation of all dedup primitives
+
+**Note (2026-10).** `gherkin_analyzer.py` now lives in `validators/`. Agent 2's
+dedup classifies by scenario marker first and title second
+(`classify_against_index()` in `agents/agent2_coder.py`), so a renamed test
+case whose scenario carries its marker is no longer treated as new.
+Alternatives B and C were later built as the `ai-update` flow: the
+`# JIRA: KEY (hash: h)` marker holds the hash, and `run_update()` splices only
+the scenarios whose test case changed.
+
 ---
 
 ## ADR-008 — GitHub PAT for cross-workflow cascade

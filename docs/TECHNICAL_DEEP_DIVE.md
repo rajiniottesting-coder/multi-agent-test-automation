@@ -2,7 +2,7 @@
 
 **Audience:** Senior engineer / SDET / architect peer
 **Goal:** Be able to explain, debug, and extend this framework at code level
-**Source as of:** main at `e89fd4a` (October 2026). Line numbers below are the
+**Source as of:** main at `3289394` (21 October 2026). Line numbers below are the
 `def` lines at that commit; they drift as the code changes, so search by name.
 
 ---
@@ -48,89 +48,89 @@ No central orchestrator. Each agent is an independent Python entry point invoked
 
 ```
 agents/
-  agent0_impact.py                     681 lines
-  agent1_analyst.py                    579 lines
-  agent1_impact.py                     242 lines
-  agent2_coder.py                     5025 lines
-  agent2_impact.py                     237 lines
-  agent3_reviewer.py                   924 lines
-  agent5_reporter.py                   749 lines
+  agent0_impact.py                    685 lines
+  agent1_analyst.py                   579 lines
+  agent1_impact.py                    248 lines
+  agent2_coder.py                    5127 lines
+  agent2_impact.py                    246 lines
+  agent3_reviewer.py                  924 lines
+  agent5_reporter.py                  749 lines
 
 core/
-  allure_meta.py                       281 lines
-  allure_steps.py                      157 lines
-  app_context.py                       394 lines
-  board_status.py                      184 lines
-  context_update.py                    422 lines
-  failure_diagnosis.py                 629 lines
-  impact_analysis.py                   539 lines
-  impact_graph.py                      520 lines
-  impact_handover.py                   144 lines
-  impact_reconcile.py                  226 lines
-  impact_results.py                    162 lines
-  impact_review.py                     122 lines
-  impact_settings.py                    71 lines
-  impact_trace.py                      120 lines
-  inventory_proposals.py               106 lines
-  json_block.py                         46 lines
-  llm_client.py                        829 lines
-  onboarding.py                        248 lines
-  schemas.py                           359 lines
-  test_case_rules.py                   176 lines
-  usage_ledger.py                      284 lines
+  allure_meta.py                      281 lines
+  allure_steps.py                     157 lines
+  app_context.py                      394 lines
+  board_status.py                     184 lines
+  context_update.py                   485 lines
+  failure_diagnosis.py                652 lines
+  impact_analysis.py                  556 lines
+  impact_graph.py                     520 lines
+  impact_handover.py                  144 lines
+  impact_reconcile.py                 275 lines
+  impact_results.py                   162 lines
+  impact_review.py                    122 lines
+  impact_settings.py                   71 lines
+  impact_trace.py                     149 lines
+  inventory_proposals.py              106 lines
+  json_block.py                        46 lines
+  llm_client.py                       829 lines
+  onboarding.py                       248 lines
+  schemas.py                          361 lines
+  test_case_rules.py                  222 lines
+  usage_ledger.py                     284 lines
 
 integrations/
-  github_client.py                     360 lines
-  jira_client.py                       733 lines
-  jira_markup.py                        86 lines
-  repo_host.py                         220 lines
-  tracker.py                           342 lines
+  github_client.py                    361 lines
+  jira_client.py                      733 lines
+  jira_markup.py                       86 lines
+  repo_host.py                        222 lines
+  tracker.py                          342 lines
 
 validators/
-  gherkin_analyzer.py                 1898 lines
-  import_validator.py                  274 lines
-  method_resolution_validator.py      4627 lines
-  orphan_cleanup.py                    594 lines
-  page_object_contract.py              108 lines
+  gherkin_analyzer.py                1908 lines
+  import_validator.py                 274 lines
+  method_resolution_validator.py     4801 lines
+  orphan_cleanup.py                   710 lines
+  page_object_contract.py             108 lines
 
 inventory_tools/
-  browser.py                           683 lines
-  introspect.py                       1562 lines
+  browser.py                          683 lines
+  introspect.py                      1562 lines
 
 config/
-  __init__.py                           197 lines
-  paths.py                              53 lines
+  __init__.py                         198 lines
+  paths.py                             53 lines
 
 scripts/
-  agent0_backtest.py                   186 lines
-  apply_inventory_proposals.py          84 lines
-  backfill_markers.py                  343 lines
-  check_inventory_staleness.py         273 lines
-  close_merged_story.py                113 lines
-  gateway_probe.py                     252 lines
-  generate_inventory.py                325 lines
-  impact_handover.py                    86 lines
-  impact_reconcile.py                   50 lines
-  onboarding_check.py                   70 lines
-  promote_draft.py                     220 lines
-  smoke_test.py                        145 lines
-  sweep_stalled_prs.py                 181 lines
-  verify_locators.py                   629 lines
+  agent0_backtest.py                  186 lines
+  apply_inventory_proposals.py         84 lines
+  backfill_markers.py                 343 lines
+  check_inventory_staleness.py        273 lines
+  cleanup_artifacts.py                126 lines
+  close_merged_story.py               113 lines
+  gateway_probe.py                    252 lines
+  generate_inventory.py               325 lines
+  impact_handover.py                   86 lines
+  impact_reconcile.py                  50 lines
+  onboarding_check.py                  70 lines
+  promote_draft.py                    220 lines
+  smoke_test.py                       145 lines
+  sweep_stalled_prs.py                181 lines
+  verify_locators.py                  629 lines
 
 prompts/
-  agent0_adjudicate.md                  20 lines
-  agent0_context_notes.md               21 lines
-  agent0_seeds.md                       19 lines
-  agent0_wording.md                     14 lines
-  agent1_analyst.md                     48 lines
-  agent1_impact_aware.md                36 lines
-  agent2_coder_generate.md            1121 lines
-  agent2_coder_plan.md                 182 lines
-  agent3_reviewer.md                   214 lines
-  agent5_reporter.md                    66 lines
+  agent0_adjudicate.md                 24 lines
+  agent0_context_notes.md              21 lines
+  agent0_seeds.md                      21 lines
+  agent0_wording.md                    14 lines
+  agent1_analyst.md                    49 lines
+  agent1_impact_aware.md               37 lines
+  agent2_coder_generate.md           1145 lines
+  agent2_coder_plan.md                182 lines
+  agent3_reviewer.md                  214 lines
+  agent5_reporter.md                   66 lines
 
-
-pages/base_page.py                   1520 lines  ← BasePage: 85 public helpers injected into the prompt
+pages/base_page.py                 1654 lines  ← BasePage: 86 public helpers injected into the prompt
 features/  tests/step_defs/                      — generated and reference tests
 tests/unit/                                      — ~2,900 offline framework tests
 app_inventory/<app>.json                         — APP-SPECIFIC (pages, selectors, notes, components)
@@ -138,7 +138,8 @@ config/config.yaml                               — app config, agent selection
 .github/workflows/                               — 9 workflows: agents 0–5 (Agent 4 + 5 share one), artifact cleanup, inventory health, story-done-on-merge, sweeper
 ```
 
-**Total Python:** 179 tracked files, about 60,800 lines — about 23,700 in `agents/`, `core/`, `integrations/` and `validators/`, and about 29,400 in `tests/`.
+**Total Python:** 194 tracked files, about 63,200 lines — about 24,400 in `agents/`, `core/`, `integrations/` and `validators/`, and about 30,900 in `tests/`.
+
 ---
 
 ## 3. The end-to-end flow
@@ -183,7 +184,8 @@ config/config.yaml                               — app config, agent selection
               ↓
 [Agent 4 — Runner (pure CI, no Python agent file)]
   - sets up Python 3.13 + Playwright + Chromium
-  - runs `pytest tests/ --junit-xml --html` (unit suite + BDD; Allure results)
+  - runs `pytest tests/unit/` (→ reports/junit-unit.xml), then
+    `pytest tests/step_defs/` (→ reports/junit.xml, HTML report, Allure results)
   - uploads artifacts
               ↓
 [Same workflow, second job: Agent 5]
@@ -208,7 +210,7 @@ config/config.yaml                               — app config, agent selection
 
 ## 4. Agent 1 — Test Designer (deep)
 
-**File:** `agents/agent1_analyst.py` (579 lines); impact-aware mode in `agents/agent1_impact.py` (§19)
+**File:** `agents/agent1_analyst.py` (578 lines); impact-aware mode in `agents/agent1_impact.py` (§19)
 **Workflow:** `.github/workflows/agent1_analyst.yml`
 **Trigger:** Cron every 30 min, weekdays 10:00–19:00 IST (04:30–13:30 UTC), or manual `workflow_dispatch`
 
@@ -219,15 +221,17 @@ config/config.yaml                               — app config, agent selection
 The single-story entry point. Steps:
 
 1. **Validate config** — `validate_required_env()` from `config/__init__.py` raises `MissingEnvVarError` naming every missing variable (`JIRA_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, …). Then the **duplicate guard**: if the story already owns linked Test Cases, the run refuses and says whether the last run finished or was interrupted.
-2. **Fetch story** — `JiraClient().get_story(story_id)` returns dict with `summary`, `description`, `acceptance_criteria`, `labels`.
+2. **Fetch story** — `JiraClient().get_story(story_id)` returns a dict with `key`, `summary`, `description`, `status`, `labels` and `components` (acceptance criteria live in the description).
 3. **Build prompt** — concatenates:
-   - System: `prompts/agent1_analyst.md` (39 lines, generic)
+   - System: `prompts/agent1_analyst.md` (48 lines, generic)
    - App context: `prompts/app_context/core.md` plus the module for each of the story's Jira Components (all modules when none match)
    - Story content
 4. **Invoke LLM with structured schema** — `LLMClient().invoke_structured(system_prompt, user_prompt, output_schema=TestCaseList)`. This injects the Pydantic JSON schema into the prompt and validates the reply (provider-agnostic structured output) to force JSON conforming to `TestCaseList` (defined in `core/schemas.py`, line 32) which contains:
    ```python
    class TestCaseList(BaseModel):
-       test_cases: list[TestCase]   # each has summary, description, steps, category
+       story_summary: str
+       test_cases: list[TestCase]   # each: title, description, priority, test_type,
+                                    # preconditions, steps, expected_outcome, test_data
    ```
    No string parsing. If the LLM returns invalid JSON, it gets one repair attempt with the error fed back, then `ValueError`. The draft is then checked against `core/test_case_rules.py`; a failing draft goes back once with the problems listed, and a second failure writes nothing.
 5. **Create Jira Test Cases** — for each TC: `JiraClient().create_test_case(tc, parent_story_key=story_id)` which calls `_format_test_case_description()` to format it as Jira wiki markup and then `_link_to_story()` to add the ownership link (`link_types.owns` in config).
@@ -238,7 +242,8 @@ The single-story entry point. Steps:
 Calls `JiraClient().find_stories_to_process(selection_config)` which JQL-queries Jira:
 ```
 project = SCRUM AND issuetype = Story AND status in ("To Do", "In Progress")
-  AND labels = "ai-ready" AND labels NOT IN ("ai-processed", "ai-skip")
+  AND labels = "ai-ready" AND labels NOT IN ("ai-processed", "ai-skip",
+  "impact-check", "impact-proposed") [AND sprint scope, when configured]
 ```
 
 Then loops over results, calling `run(story_id)` for each. Capped at `max_stories_per_run: 2` (from config) so a mislabel disaster is bounded.
@@ -246,7 +251,7 @@ Then loops over results, calling `run(story_id)` for each. Capped at `max_storie
 ### Why a Pydantic schema, not free text
 
 - Eliminates JSON parsing brittleness
-- Forces consistent Test Case structure (each TC has exactly: summary, description, ordered steps, category)
+- Forces consistent Test Case structure (each TC has exactly: title, description, priority, type, preconditions, ordered steps, expected outcome, optional test data)
 - LLM can't "forget" the schema mid-output
 - A schema violation is a hard error (LLMClient raises), not a silent bug
 
@@ -254,7 +259,7 @@ Then loops over results, calling `run(story_id)` for each. Capped at `max_storie
 
 ## 5. Agent 2 — Coder (deep, longest section)
 
-**File:** `agents/agent2_coder.py` (5025 lines — the heaviest); change-story splice in `agents/agent2_impact.py` (§19)
+**File:** `agents/agent2_coder.py` (5127 lines — the heaviest); change-story splice in `agents/agent2_impact.py` (§19)
 **Workflow:** `.github/workflows/agent2_coder.yml`
 **Trigger:** Cron (same schedule as Agent 1) or `workflow_dispatch`
 
@@ -262,33 +267,38 @@ This is where the framework's complexity lives. Three entry points based on Jira
 
 | Mode | Entry function (line) | When |
 |---|---|---|
-| Normal (first-time) | `run(is_regenerate=False)` (4165) | First time a story is coded |
-| Regenerate (full rewrite) | `run(is_regenerate=True)` (4165) | Story has `ai-regenerate` label |
-| Update (surgical splice) | `run_update()` (3739) | Story has `ai-update` label |
+| Normal (first-time) | `run(is_regenerate=False)` (4267) | First time a story is coded |
+| Regenerate (full rewrite) | `run(is_regenerate=True)` (4267) | Story has `ai-regenerate` label |
+| Update (surgical splice) | `run_update()` (3841) | Story has `ai-update` label |
 
 `main()` (line 4929) dispatches to the correct entry based on labels found during `--scan`.
 
-### 5.1 Feature-file parsing primitives (from line 147)
+### 5.1 Feature-file parsing primitives (from line 145)
 
 These are the foundations everything else builds on.
 
 #### `_JIRA_MARKER_RE` (line 149)
 
 ```python
+_KEY = r"[A-Z][A-Z0-9_]*-\d+"
 _JIRA_MARKER_RE = re.compile(
-    r"^\s*#\s*JIRA:\s*([A-Z][A-Z0-9_]*-\d+)\s*\(hash:\s*([0-9a-f]{8})\s*\)\s*$"
+    rf"^\s*#\s*JIRA:\s*({_KEY})\s*\(hash:\s*([0-9a-f]{{8}})\s*\)"
+    rf"(?:\s+owner:\s*({_KEY}))?"
+    rf"(?:\s+impacted-by:\s*({_KEY}(?:\s*,\s*{_KEY})*))?\s*$",
+    re.IGNORECASE,
 )
 ```
 
-Parses marker comments like `# JIRA: SCRUM-29 (hash: a4f9c2e1)`. Strict 8-char hex hash, strict Jira key format. Strict to prevent false matches.
+Parses marker comments like `# JIRA: PROJ-29 (hash: a4f9c2e1)`, optionally followed by `owner: PROJ-12` and `impacted-by: PROJ-40,PROJ-41` (Agent 0 change stories). Strict 8-char hex hash and Jira key format, to prevent false matches; markers without the optional parts parse exactly as before. `format_marker()` writes them.
 
 #### `compute_description_hash(description: str) -> str` (line 166)
 
 ```python
-return hashlib.sha256(description.encode()).hexdigest()[:8]
+normalized = re.sub(r"\s+", " ", description).strip()
+return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:8]
 ```
 
-First 8 chars of SHA-256. Used to detect when a Jira Test Case description has been edited. Stored in the feature file marker so we can compare without calling Jira again.
+First 8 chars of SHA-256 of the whitespace-normalised description, so extra blank lines or trailing spaces in Jira do not count as an edit. Used to detect when a Jira Test Case description has been edited. Stored in the feature file marker so we can compare without calling Jira again.
 
 #### `class ScenarioBlock` (line 223)
 
@@ -298,6 +308,9 @@ class ScenarioBlock:
     lines: list[str]        # raw lines including newlines
     jira_key: Optional[str] # parsed from preceding marker comment
     jira_hash: Optional[str]
+    marker_line_index: Optional[int]
+    owner: Optional[str]    # optional marker field (change stories)
+    impacted_by: tuple      # optional marker field (change stories)
     def text(self) -> str:  # rejoin lines into a string
 ```
 
@@ -311,7 +324,7 @@ The most critical parser in the file. Walks the content line by line:
 2. For each new block start (`Background:` or `Scenario:`), looks at the previous lines for `# JIRA:` marker
 3. Builds `ScenarioBlock` objects with `jira_key`, `jira_hash` populated if marker found
 
-Used by `classify_test_cases`, `splice_scenario`, `_regenerate_step_defs_whole`, and the orphan cleanup module.
+Used by `classify_test_cases`, `splice_scenario`, the step-def splice in `run_update`, and the orphan cleanup module.
 
 #### `splice_scenario(original, jira_key, new_scenario_text, new_hash)` (line 394)
 
@@ -336,23 +349,23 @@ return {
 
 `orphan_keys` is what drives both feature-file removal AND orphan code cleanup.
 
-### 5.2 Path policy validator (line 680)
+### 5.2 Path policy validator
 
-#### `validate_paths_against_policy(plan: CodePlan, ctx: AppContext)` (line 682)
+#### `validate_paths_against_policy(plan, ctx, protected_files=None)` (line 682)
 
 Two-tier file rule enforced post-Stage-1:
 
 | Tier | Definition | Plan rule |
 |---|---|---|
 | **Reserved** | `app_under_test.reserved_paths` (reference files) | NEVER appear in plan |
-| **Extendable** | `app_under_test.extendable_paths` (page objects + base_page) | May appear, MUST have `is_new_file=False` |
+| **Extendable** | `app_under_test.extendable_paths` plus every committed page object found under `pages/` (`auto_extend_page_objects: true`, the default) | May appear, MUST have `is_new_file=False` |
 | **New** | Everything else | May appear, `is_new_file=True` for fresh files |
 
-Raises `ValueError` with explicit guidance if the LLM hallucinates "let me rewrite login_page.py from scratch." This is the gate that protects your gold-standard reference files from being overwritten.
+A change-story run also passes `protected_files` — feature and step-definition files other stories own — and the plan may not generate those (they are edited only by splicing). Raises `ValueError` with explicit guidance if the LLM hallucinates "let me rewrite login_page.py from scratch." This is the gate that protects your gold-standard reference files from being overwritten.
 
-### 5.3 Cross-file context injection (line 1208)
+### 5.3 Cross-file context injection
 
-#### `_build_sibling_page_object_context(target_file, already_generated)` (line 1210)
+#### `_build_sibling_page_object_context(already_generated)` (line 1210)
 
 Critical for cross-file consistency. When generating a step-def file (e.g. `tests/step_defs/test_product_sorting.py`), the page object `inventory_page.py` has typically already been generated in the same run. This function:
 
@@ -390,19 +403,20 @@ class CodePlan(BaseModel):
 
 class FilePlan(BaseModel):
     file_path: str
-    file_type: str             # 'feature' | 'step_definitions' | 'page_object'
+    file_type: str             # 'feature' | 'step_definitions' | 'page_object' | 'other'
     purpose: str               # human-readable
     is_new_file: bool
+    related_test_cases: list[str]  # Jira keys this file addresses
 ```
 
 The plan is a contract. Path policy validation runs immediately after this.
 
-#### Stage 2 — `generate_file_content(llm, file_plan, plan, test_cases, references, page_inventory, ctx, already_generated)` (line 2004)
+#### Stage 2 — `generate_file_content(llm, file_plan, plan, test_cases, references, page_inventory, ctx, validator_feedback, previous_attempt, already_generated, existing_page_objects)` (line 2004)
 
 Called once per file in the plan. Returns the file's content as a string. Internally:
 
 1. Loads the right prompt template (`agent2_coder_generate.md`)
-2. Fills placeholders: `{app_name}`, `{file_path}`, `{purpose}`, `{reference_block}`, `{page_inventory_block}`, `{sibling_context_block}`, `{reserved_block}`, `{extendable_block}`, `{test_cases_block}`, `{plan_notes}`
+2. Fills placeholders with `str.replace` (not `.format()`, so braces in code samples are safe): `{app_name}`, `{file_path}`, `{file_type}`, `{file_purpose}`, `{feature_name}`, `{existing_file_block}`, `{validator_feedback_block}`, `{sibling_page_objects_block}`, `{authoritative_steps_block}`, `{base_page_helpers_block}`, `{starting_state_block}`, the three reference paths and contents, `{page_inventory_json}` and `{test_cases_text}` (only this file's related Test Cases)
 3. For extendable files, reads the existing content from disk so the LLM can ADD methods without losing existing ones
 4. Calls `LLMClient.invoke_text(system, user)` — text mode (not structured) because output is Python/Gherkin source
 5. `extract_code_from_response()` (line 764) strips markdown fences. Includes the v12e fix:
@@ -411,24 +425,25 @@ Called once per file in the plan. Returns the file's content as a string. Intern
    ```
    Pro occasionally emits 6-backtick fences; this normalizes to 3 so the code-extraction regex doesn't fail.
 
-### 5.5 The repair loop (line 2685)
+### 5.5 The repair loop
 
 #### `_attempt_step_coverage_repair(generated_files, llm, plan, ...)` (line 2767)
 
-After Stage 2 finishes, validators run. If `validate_step_definitions_complete` reports missing decorators, this function gives the LLM up to 4 retries:
+After Stage 2 finishes, the repairable checks run. The name is historical: the loop covers 25 repairable checks (step coverage, imports, method resolution, selectors, duplicate steps and the other rules in `_collect_repairable_errors()`, line 2647), not only step coverage. Up to `max_retries=4` attempts:
 
-1. Run validators on `generated_files`
-2. Collect step-coverage errors via `_collect_repairable_errors()`
-3. If errors exist:
-   - Build a feedback prompt: "your output had these specific issues, fix them"
-   - Call `generate_file_content()` AGAIN — only for the broken file
-   - Replace the broken file in `generated_files` with the new output
-   - Run validators again
-4. Cap at `max_retries=4` (default)
+1. Collect errors via `_collect_repairable_errors(generated_files)`
+2. Route each error to the generated file it names — `_route_to_generated_file()` (line 2741). An error that names no file in the batch is never dropped silently (#193); `tests/unit/test_every_repairable_error_is_routed.py` checks every rule's message format routes
+3. For each broken file: call `generate_file_content()` again with `validator_feedback` and `previous_attempt`; keep the new content unless `_is_degraded_regeneration()` says it is a truncated stub
+4. Loop
 
-The repair loop is cheap because only the broken file is regenerated, not the full plan. It catches Pro's occasional miss on `parsers.parse` placement or And/But inheritance.
+Early stops, so a non-converging model does not burn tokens:
+- **No progress** — the error set comes back verbatim
+- **Not converging** — from attempt 3, the count did not fall *and* the same rule is still firing (a different rule at the same count is progress)
+- Quota or truncation errors re-raise rather than being retried
 
-### 5.6 JIRA marker injection (line 2982)
+The repair loop is cheap because only the broken file is regenerated, not the full plan. Whatever remains goes to the final gate (§14).
+
+### 5.6 JIRA marker injection
 
 #### `_ensure_jira_markers_on_feature_files(generated_files, test_cases)` (line 3064)
 
@@ -459,6 +474,8 @@ def run(story_id, dry_run=False, is_regenerate=False) -> dict:
     #    - generate_file_content() per file with already_generated context
     # 4b. SELF-CORRECTING REPAIR — _attempt_step_coverage_repair() up to 4 retries
     # 4d. INJECT JIRA MARKERS — _ensure_jira_markers_on_feature_files()
+    # 4d-bis. CHANGE-STORY SPLICE — approved scenarios spliced into the
+    #         owners' feature files (change stories only, §19)
     # 4e. ORPHAN CLEANUP (regenerate mode only) — cleanup_orphans_after_removal()
     # 4c. FINAL VALIDATION — _validate_generated_files()
     # 5. ACT:
@@ -483,12 +500,15 @@ def run_update(story_id, dry_run=False) -> dict:
     #    - For each orphan_key: remove_scenario()
     #    - For each modified TC: _generate_single_scenario() then splice_scenario()
     #    - For each new TC: _generate_single_scenario() then append_scenario()
-    # 6. Regenerate the step_def file whole: _regenerate_step_defs_whole()
-    #    - Builds a CodePlan with just the step_def file
-    #    - Calls generate_file_content() with the spliced feature
+    # 6. Update the step_def file: _splice_step_defs_incremental()
+    #    - "unchanged": existing functions already cover the feature (0 calls)
+    #    - "spliced": only the new step functions are written and appended,
+    #      checked against the real page objects
+    #    - "regenerated": falls back to _regenerate_step_defs_whole() on any
+    #      ambiguity
     # 7. Orphan cleanup: cleanup_orphans_after_removal()
     #    - Reads all step_def files via gh.list_files_in_directory()
-    #    - Reads page object files from extendable_paths
+    #    - Reads page object files from extendable_paths (incl. auto-discovered)
     #    - Comments out dead page methods with # AI-ORPHAN: banners
     # 8. Validate, branch (-updateN suffix via _find_unused_update_branch),
     #    commit, open PR
@@ -499,29 +519,30 @@ def run_update(story_id, dry_run=False) -> dict:
 
 | Function | Line | Purpose |
 |---|---|---|
-| `_find_unused_update_branch()` | 3254 | Walks `auto/<story>-<feat>-update1`, `-update2`, etc. until finding one that doesn't exist on GitHub |
-| `_resolve_unused_revision_branch()` | 2967 | Same logic but for `-rev2`, `-rev3` (regenerate mode). Preserves the original PR as historical record. |
-| `_locate_feature_file_for_story()` | 3262 | For update mode: scans `features/` for a file whose markers reference the Jira keys. Returns the file path. |
-| `_generate_single_scenario()` | 3289 | Smaller-scoped LLM call for `run_update`'s modified/new scenarios. Returns ONE scenario block's text with marker. |
-| `_regenerate_step_defs_whole()` | 3338 | The whole step-def file is regenerated from scratch based on the spliced feature. This is why orphan step-def FUNCTIONS naturally disappear (LLM doesn't see them in the new feature). |
-| `_print_dry_run_preview()` | 2932 | Prints planned actions without committing. Used by `--dry-run` flag. |
+| `_find_unused_update_branch()` | 3356 | Walks `auto/<story>-<feat>-update1`, `-update2`, etc. until finding one that doesn't exist on GitHub |
+| `_resolve_unused_revision_branch()` | 3049 | Same logic but for `-rev2`, `-rev3` (regenerate mode). Preserves the original PR as historical record. |
+| `_locate_feature_file_for_story()` | 3364 | For update mode: scans `features/` for a file whose markers reference the Jira keys. Returns the file path. |
+| `_generate_single_scenario()` | 3391 | Smaller-scoped LLM call for `run_update`'s modified/new scenarios. Returns ONE scenario block's text with marker. |
+| `_splice_step_defs_incremental()` | 3696 | `run_update`'s step-def update: appends only the new step functions, keeping passing ones byte-for-byte; returns `(content, mode)` |
+| `_regenerate_step_defs_whole()` | 3440 | Fallback when the splice is ambiguous: the whole step-def file is regenerated from the spliced feature. |
+| `_print_dry_run_preview()` | 3014 | Prints planned actions without committing. Used by `--dry-run` flag. |
 
 ### 5.10 Tests for Agent 2
 
 | Test file | Tests | Covers |
 |---|---|---|
 | `tests/unit/test_incremental_update.py` | 38 | All ScenarioBlock parsing, splice/append/remove, classify_test_cases, marker injection, v12e backtick normalization |
-| `tests/unit/test_repair_loop.py` | 34 | The repair loop logic with mocked validators |
+| `tests/unit/test_repair_loop.py` | 37 | The repair loop logic with mocked validators |
 | `tests/unit/test_orphan_cleanup.py` | 20 | Orphan detection across banking + CMS domains |
-| `tests/unit/test_validators.py` | 105 | All validators (filename consistency, feature structure, step completeness, imports, method resolution) |
+| `tests/unit/test_validators.py` | 120 | All validators (filename consistency, feature structure, step completeness, imports, method resolution) |
 
-197 tests in these four files. The whole unit suite (~2,900 tests, about 2 minutes, fully offline) covers much more — splice grounding (`test_splice_grounding.py`), the validator gate, Agent 0 and the Protocols among them.
+215 tests in these four files. The whole unit suite (~2,900 tests, about 2 minutes, fully offline) covers much more — splice grounding (`test_splice_grounding.py`), the validator gate, Agent 0 and the Protocols among them.
 
 ---
 
 ## 6. Agent 3 — Reviewer (deep)
 
-**File:** `agents/agent3_reviewer.py` (924 lines)
+**File:** `agents/agent3_reviewer.py` (923 lines)
 **Workflow:** `.github/workflows/agent3-reviewer.yml`
 **Trigger:** GitHub `pull_request` event (opened, synchronize, reopened) — NOT Jira-driven. The workflow checks out the BASE branch, so the reviewer code, prompt and references are always those on `main`.
 
@@ -529,9 +550,9 @@ def run_update(story_id, dry_run=False) -> dict:
 
 #### `run(pr_number: int, dry_run: bool = False) -> dict` (line 745)
 
-1. **Fetch PR metadata** via `gh.get_pr_metadata(pr_number)`: returns dict with `title`, `body`, `head_branch`, `base_branch`, `author`
-2. **Fetch changed files** via `gh.get_pr_changed_files(pr_number)`: list of dicts with `filename`, `status` (added/modified/removed), `patch` (unified diff), `additions`, `deletions`
-3. **Filter** — keep only `.py` and `.feature` files. Skip removed files, generated artifacts, lockfiles.
+1. **Fetch PR metadata** via `gh.get_pr_metadata(pr_number)`: returns dict with `number`, `title`, `body`, `state`, `head_branch`, `base_branch`, `author`, `url`
+2. **Fetch changed files** via `gh.get_pr_changed_files(pr_number)`: list of dicts with `filename`, `status` (added/modified/removed/renamed), `additions`, `deletions`, `patch` (unified diff) and `content` (full file, fetched for every file not removed)
+3. **No type filter** — every changed file goes to the model, with its full content and its patch.
 4. **Build prompt** — concatenates:
    - System: `prompts/agent3_reviewer.md`
    - PR metadata
@@ -541,19 +562,23 @@ def run_update(story_id, dry_run=False) -> dict:
    ```python
    report = llm.invoke_structured(prompt, schema=ReviewReport)
    ```
-   `ReviewReport` (`core/schemas.py`, line 242) contains:
+   `ReviewReport` (`core/schemas.py`, line 244) contains:
    ```python
    class ReviewReport(BaseModel):
        pr_number: int
        overall_verdict: Literal["approve", "request_changes", "comment"]
        summary: str
-       issues: list[ReviewIssue]   # severity, file, line, description, suggestion, failure scenario
+       issues: list[ReviewIssue]   # severity, file_path, line_number, issue_type, description,
+                                   # suggested_fix, failure_scenario, test_outcome
        style_compliance: bool
-       ...
+       type_hints_present: bool
+       no_hardcoded_waits: bool
+       pom_compliant: bool
+       coverage_complete: bool
    ```
 6. **Post-process** via `postprocess_review()`: `dedupe_and_cap_issues(report, max_issues=MAX_ISSUES)` (line 124, `MAX_ISSUES = 10`) normalizes and deduplicates descriptions and caps the list; unsubstantiated findings are withdrawn; findings on lines this PR did not change are lowered to advice; the verdict is derived from what remains. A blocking finding needs a named failure scenario. When the only blocker is a predicted test failure, the review waits (up to 8 minutes) for Agent 4's result on the same commit, and a green run lowers the block.
-7. **Format as markdown** via `format_review_as_markdown(report)` (line 665). Issues grouped by severity (high/medium/low/info), each with file:line link.
-8. **Post comment** via `gh.post_pr_comment(pr_number, markdown)`. Idempotent: if a comment with the same header already exists, edit it in place (not duplicate).
+7. **Format as markdown** via `format_review_as_markdown(report)` (line 665). Issues grouped by severity (blocking/major/minor/info), each with file:line link.
+8. **Post comment** via `gh.post_pr_comment(pr_number, markdown)`. Each run posts a new conversation comment; a new push re-runs the review, so the latest comment is the current one.
 
 ### Why structured output
 
@@ -585,18 +610,17 @@ No Python agent file. The "intelligence" is the test code Agent 2 wrote; Agent 4
 1. **Checkout PR branch** via `actions/checkout@v4`
 2. **Setup Python 3.13** via `actions/setup-python@v5`
 3. **Install deps**: `pip install -r requirements.txt && playwright install --with-deps chromium`
-4. **Run tests**:
+4. **Run tests** — two steps:
    ```bash
-   pytest tests/ -v \
-     --html=reports/pytest-report.html \
-     --self-contained-html \
-     --junit-xml=reports/junit.xml \
-     --tb=short
+   pytest tests/unit/ --junit-xml=reports/junit-unit.xml -v        # framework gate, no browser
+   pytest tests/step_defs/ -v \
+     --html=reports/pytest-report.html --self-contained-html \
+     --junit-xml=reports/junit.xml                                 # app E2E (Playwright BDD)
    ```
-   Note: `tests/` includes BOTH `tests/unit/` (no browser) AND `tests/step_defs/` (Playwright BDD)
-5. **Upload artifacts** via `actions/upload-artifact@v4`: pytest-html + junit.xml
+   The E2E step runs `if: always()`, so a failed unit gate still yields E2E signal on a PR. On a framework-only `push` to `main`, the unit step is the whole job. Only `reports/junit.xml` (the app tests) reaches Agent 5.
+5. **Upload artifacts** via `actions/upload-artifact@v4`: pytest-html, junit XML, Allure results
 6. **Inline Python step** parses `junit.xml` and writes a markdown table to `$GITHUB_STEP_SUMMARY` — appears on the PR check page
-7. **Job 2: Agent 5** — separate job in same workflow, with `needs: run-tests`
+7. **Job 2: Agent 5** — the `report` job in the same workflow, with `needs: test`
 
 ### Why combined Agent 4 + Agent 5 in one workflow
 
@@ -606,27 +630,29 @@ Performance: Agent 5 needs Agent 4's JUnit XML. Combining them avoids artifact u
 
 ## 8. Agent 5 — Reporter (deep)
 
-**File:** `agents/agent5_reporter.py` (749 lines)
+**File:** `agents/agent5_reporter.py` (748 lines)
 **Workflow:** Same as Agent 4 (second job)
-**Trigger:** `needs: run-tests` in `agent4_runner.yml`
+**Trigger:** `needs: test` in `agent4_runner.yml` (job `report`)
 
 ### Key functions
 
 #### `parse_junit_xml(junit_path: Path) -> RunReport` (line 74)
 
-Parses pytest's JUnit XML output. Returns a `RunReport` (`core/schemas.py`, line 319):
+Parses pytest's JUnit XML output. Returns a `RunReport` (`core/schemas.py`, line 321):
 
 ```python
 class RunReport(BaseModel):
     total: int
     passed: int
     failed: int
-    skipped: int
     errors: int
+    skipped: int
     duration_seconds: float
-    tests: list[TestResult]   # name, status, duration, failure_message
+    results: list[TestResult]  # name, classname, status, duration_seconds, failure_message
     pr_number: Optional[int]
-    pr_branch: Optional[str]
+    pr_url: Optional[str]
+    workflow_run_url: Optional[str]
+    html_report_url: Optional[str]
     commit_sha: Optional[str]
 ```
 
@@ -634,11 +660,11 @@ Handles classic xunit format AND pytest's extension (skipped, errors as separate
 
 #### `gather_ci_context(report, cli_pr)` (line 171)
 
-Fills in `pr_number`, `pr_branch`, `commit_sha` from env vars set by the workflow (`GITHUB_REF`, `GITHUB_HEAD_REF`, `GITHUB_SHA`).
+Fills in `pr_number`, `pr_url`, `workflow_run_url`, `html_report_url` and `commit_sha` from the workflow's env vars (`GITHUB_REPOSITORY`, `GITHUB_RUN_ID`, `GITHUB_SHA`, the PR from `GITHUB_EVENT_PATH` or `PR_NUMBER`), keeping any value the report already has.
 
 #### `resolve_story_key(cli_arg, pr_branch)` (line 431)
 
-Extracts the Jira key from the PR branch name. Branch format: `auto/<KEY>-<feature>-<suffix?>`. Regex: `r"auto/([A-Z][A-Z0-9_]*-\d+)-"`. Falls back to CLI arg.
+Priority: the `--story` CLI arg, then `JIRA_STORY_KEY`, then the first Jira key in the PR branch name (`config.extract_jira_key`, any prefix). A key that turns out to be a Test Case is escalated to its parent Story. Raises if nothing resolves.
 
 #### `run(story_key, reports_dir, dry_run, cli_pr)` (line 502)
 
@@ -646,20 +672,20 @@ Extracts the Jira key from the PR branch name. Branch format: `auto/<KEY>-<featu
 2. Gather CI context
 3. Load `prompts/agent5_reporter.md`
 4. Scope the report to the step-def modules this PR added or changed; failures outside that scope are kept and listed separately, and the verdict is `failed` unless everything on the branch passed, so the comment agrees with the PR check.
-5. Invoke LLM with structured schema `JiraCommentDraft` (`core/schemas.py`, line 340) — `title` and `body_markdown` — for the prose about the story's own tests only.
+5. Invoke LLM with structured schema `JiraCommentDraft` (`core/schemas.py`, line 342) — `title` and `body_markdown` — for the prose about the story's own tests only.
 6. Compose final comment via `build_final_comment(prose_body, report)` (line 239). Appends the deterministic test-result table, the outside failures and the end-to-end cost table.
-7. Post to Jira parent story via `jira.add_comment(story_key, comment)` and add `tests-run`. Idempotent: checks existing comments for matching header signature.
+7. Post to Jira parent story via `jira.add_comment(story_key, comment)` and add `tests-run`. No duplicate check: a re-run posts another comment.
 8. Change story: `core.impact_results.post_owner_results()` puts one result line on each story owning a revised test, and `record_prediction_outcome()` scores Agent 0's prediction against what changed and failed (shadow mode too).
 
 ### Idempotency design
 
-A workflow can rerun multiple times (manual rerun, retry on transient failures). Agent 5 detects its own previous comment by a unique header signature: `🤖 Agent 5 — Test Run Report (PR #<N>)`. If found, it skips (doesn't post a duplicate).
+There is none, by design (see the module docstring): a re-run of the workflow posts a second report. Each report is tied to its run and commit, so a duplicate is visible and harmless, and a skipped report on a real re-run would be worse. `add_label` itself is idempotent.
 
 ---
 
 ## 9. Cross-cutting modules
 
-### 9.1 `core/app_context.py` (394 lines) — the reuse enabler
+### 9.1 `core/app_context.py` (393 lines) — the reuse enabler
 
 #### `class AppContext` (line 189)
 
@@ -688,13 +714,13 @@ class AppContext:
 - `load_reference_files()` (line 316) — reads all three reference files, returns `{'feature': str, 'step_def': str, 'page_object': str}`
 - `load_page_inventory_json()` (line 338) — reads inventory JSON file, returns raw string for prompt injection
 
-This is the single point where app config is loaded. Every agent calls `AppContext.load()` once.
+`extendable_paths` holds the configured list plus every committed page object discovered under `pages/` (unless `auto_extend_page_objects: false`), minus reserved files. This is the single point where app config is loaded. Every agent calls `AppContext.load()` once.
 
-### 9.2 `validators/gherkin_analyzer.py` (1898 lines) — feature/step matching engine (renamed from test_inventory.py)
+### 9.2 `validators/gherkin_analyzer.py` (1907 lines) — feature/step matching engine (renamed from test_inventory.py)
 
 The hardest computation in the codebase. Used by:
 - Agent 2's repair loop and final validation
-- Agent 2's deduplication (`filter_duplicate_test_cases`)
+- `filter_duplicate_test_cases` (title-overlap helper). Agent 2's own dedup is marker first, title second: `classify_against_index()` in `agents/agent2_coder.py`
 - Orphan cleanup's step matching
 
 #### `_extract_feature_steps(feature_content) -> list[tuple[str, str]]` (line 603)
@@ -729,7 +755,7 @@ This closes the gap that caused PR #9: an earlier validator was permissive about
 
 The cross-file step coverage validator. For every step in every generated feature file:
 1. Is there a matching `@given/@when/@then` decorator in the paired step def file?
-2. If not, is there one in any OTHER pre-existing step def file? (pytest-bdd allows cross-file step reuse)
+2. If not, it still accepts a match in another committed step-def file. That is more permissive than runtime — pytest-bdd step definitions are module-scoped, and generated step files are self-contained — and is the open follow-up recorded under ADR-012
 3. If still not, return an error string with diagnostic info (which file, which step, what decorator was almost-matching)
 
 Returns `list[str]` of errors. Empty list = all good.
@@ -744,7 +770,7 @@ Includes `_try_autocorrect_feature_name()` (line 484) which can fix simple misma
 
 Catches orphan Given/When/Then lines outside any Scenario block. pytest-bdd would fail at collection time with a cryptic error; this validator catches it pre-commit with a clear message.
 
-### 9.3 `validators/orphan_cleanup.py` (594 lines) — dead code detection
+### 9.3 `validators/orphan_cleanup.py` (710 lines) — dead code detection
 
 Implements the cleanup described in §5.8/§5.7. Detailed earlier; key functions:
 
@@ -754,15 +780,17 @@ Implements the cleanup described in §5.8/§5.7. Detailed earlier; key functions
 | `find_orphan_step_defs()` | 114 | AST walks each step def file. For each function with a step decorator: matches a removed step? matches a surviving step? → returns OrphanStepDef list |
 | `find_orphan_page_methods()` | 293 | Two-pass AST walk. Pass 1: collect method names called from orphan step defs. Pass 2: collect method names called from surviving step defs. Orphans = pass1 \ pass2. Excludes private methods (`_*`), excludes reserved files (`pages/base_page.py`). |
 | `comment_out_orphan_page_methods()` | 420 | Walks file lines, prefixes orphan func lines with `# `, prepends `# AI-ORPHAN:` banner with the removed Jira keys |
+| `comment_out_orphan_step_defs()` | 399 | Same banner approach for step functions no surviving scenario uses |
 | `cleanup_orphans_after_removal()` | 502 | Top-level orchestrator. Called from `run_update()`, `run()` regenerate mode and the change-story owner splice (`agents/agent2_impact.py`); a file the cleanup changed is committed even when no step was added. Both wrapped in try/except so cleanup failure doesn't block the PR. |
+| `comment_out_step_defs_unused_by()` | 615 | Comments out step functions that a given feature no longer uses, matching with the same parser backends as runtime |
 
 Tests: 20 unit tests in `tests/unit/test_orphan_cleanup.py` using banking AND CMS fixtures (no content from any real application) to prove app-agnosticism.
 
-### 9.4 `core/llm_client.py` (829 lines)
+### 9.4 `core/llm_client.py` (828 lines)
 
 #### `class LLMClient` (line 549)
 
-Wraps any OpenAI-compatible LLM API via `langchain-openai`. Configuration from env vars: `OPENAI_API_KEY`, `OPENAI_API_BASE`, `LLM_MODEL`.
+Wraps any OpenAI-compatible LLM API via `langchain-openai`. Configuration from env vars: `OPENAI_API_KEY`, `OPENAI_API_BASE`, `LLM_MODEL`; `LLM_MODEL_LIGHT` (optional) is a cheaper model the workflows give Agents 1 and 5.
 
 #### Key methods
 
@@ -774,13 +802,13 @@ Wraps any OpenAI-compatible LLM API via `langchain-openai`. Configuration from e
 
 Returns the output-token cap for code generation: `LLM_CODE_GEN_MAX_TOKENS` if set, else 16,384. A reply that hits the cap raises `OutputTruncatedError` rather than committing half a file.
 
-### 9.5 `integrations/jira_client.py` (733 lines) — the Jira adapter of the `Tracker` Protocol
+### 9.5 `integrations/jira_client.py` (732 lines) — the Jira adapter of the `Tracker` Protocol
 
 Wraps the `jira` Python SDK. Methods:
 
 | Method | Line | Purpose |
 |---|---|---|
-| `get_story(issue_key)` | 133 | Returns dict with summary, description, AC, labels |
+| `get_story(issue_key)` | 133 | Returns dict with key, summary, description, status, labels, components |
 | `find_stories_to_process(selection_config)` | 152 | Builds JQL from config dict, returns matching stories |
 | `create_test_case(test_case, parent_story_key)` | 252 | Creates a `Test Case` issue. Uses `_format_test_case_description` to render Jira wiki markup |
 | `_link_to_story(test_case_key, story_key)` | 287 | Adds the ownership link (`link_types.owns` in config); a failed link is re-raised, because Agent 2 finds test cases by link |
@@ -796,31 +824,38 @@ Wraps PyGithub. Methods used across agents:
 | Method | Line | Purpose |
 |---|---|---|
 | `create_branch(name, from_branch)` | 46 | Creates from main, idempotent (logs if exists) |
-| `branch_exists(name)` | 191 | Used by `_find_unused_update_branch` and `_resolve_unused_revision_branch` |
-| `create_or_update_file()` | 214 | Single-file commit. Detects new vs existing via try/except. Used in commit loops. |
-| `get_file_content(path, branch)` | 244 | Reads file content for incremental update flow |
-| `list_files_in_directory(path, branch)` | 249 | NEW — for orphan cleanup to find sibling step_def files. Returns repo-relative paths, empty list on failure (defensive). |
-| `open_pull_request()` | 269 | Idempotent — if a PR exists for the branch, returns its URL instead of erroring |
-| `get_pr_metadata(pr_number)` | 299 | Used by Agent 3 |
-| `get_pr_changed_files(pr_number)` | 313 | Used by Agent 3 — includes the unified diff patches |
-| `post_pr_comment(pr_number, body)` | 349 | Idempotent via header signature matching |
+| `branch_exists(name)` | 192 | Used by `_find_unused_update_branch` and `_resolve_unused_revision_branch` |
+| `create_or_update_file()` | 215 | Single-file commit. Detects new vs existing via try/except. Used in commit loops. |
+| `get_file_content(path, branch)` | 245 | Reads file content for incremental update flow |
+| `list_files_in_directory(path, branch)` | 250 | For orphan cleanup to find sibling step_def files. Returns repo-relative paths, empty list on failure (defensive). |
+| `open_pull_request()` | 270 | Idempotent — if a PR exists for the branch, returns its URL instead of erroring |
+| `get_pr_metadata(pr_number)` | 300 | Used by Agent 3 |
+| `get_pr_changed_files(pr_number)` | 314 | Used by Agent 3 — unified diff patches plus full content |
+| `post_pr_comment(pr_number, body)` | 350 | Posts a new conversation comment each call |
 
-### 9.7 `core/schemas.py` (359 lines) — every Pydantic model
+### 9.7 `core/schemas.py` (360 lines) — every Pydantic model (21 classes)
 
 | Class | Used by | Purpose |
 |---|---|---|
 | `TestStep` | Agent 1 | One step inside a Test Case (Given/When/Then text) |
-| `TestCase` | Agent 1 | Single test case (summary, description, steps, category) |
-| `TestCaseList` | Agent 1 | Wrapper — the LLM returns a list of these |
-| `FilePlan` | Agent 2 | One file in the plan (path, type, is_new_file, purpose) |
+| `TestCase` | Agent 1 | Single test case (title, description, priority, test_type, preconditions, steps, expected_outcome, test_data) |
+| `TestCaseList` | Agent 1 | Wrapper — story_summary plus the list of test cases |
+| `TestCaseRevision` | Agent 1 (impact-aware) | A revised existing test case with a one-line change note |
+| `ImpactAwareDraft` | Agent 1 (impact-aware) | Revisions plus new test cases for a change story |
+| `ChangeSeeds` | Agent 0 | change_type, behaviours, element_keys, components extracted from the story |
+| `WordingChange` / `WordingChanges` | Agent 0 | Inventory wording updates proposed by the context update |
+| `NoteRewrite` / `NoteRewrites` | Agent 0 | Inventory note rewrites proposed by the context update |
+| `CandidateAssessment` | Agent 0 | The model's verdict on one candidate test |
+| `ImpactAssessment` | Agent 0 | The batch of candidate assessments |
+| `FilePlan` | Agent 2 | One file in the plan (path, type, is_new_file, purpose, related_test_cases) |
 | `CodePlan` | Agent 2 | Stage 1 output — list of FilePlans + branch/PR metadata |
 | `GeneratedFile` | Agent 2 | A generated file (path, content, is_new_file, purpose) — runtime, not from LLM |
 | `CodeGenerationOutput` | Agent 2 | Container for final generated files + plan metadata |
-| `ReviewIssue` | Agent 3 | One issue in the review (severity, file, line, description, suggestion) |
+| `ReviewIssue` | Agent 3 | One issue (severity, file_path, line_number, issue_type, description, suggested_fix, failure_scenario, test_outcome) |
 | `ReviewReport` | Agent 3 | Container for issues + summary |
 | `TestResult` | Agent 5 | One test result from JUnit |
 | `RunReport` | Agent 5 | Container — totals + tests + CI context |
-| `JiraCommentDraft` | Agent 5 | LLM-drafted comment (summary, prose, severity) |
+| `JiraCommentDraft` | Agent 5 | LLM-drafted comment (title, body_markdown) |
 
 ### 9.8 `inventory_tools/` + `scripts/` inventory & sweeper tooling
 
@@ -828,14 +863,15 @@ Two capabilities added in Tier 3, both app-agnostic (no assumptions about any on
 
 **Inventory generation + staleness (3.1).** `inventory_tools/introspect.py` holds
 the pure, browser-free logic and is fully unit-tested: `rank_selector` (test-id
-attr → stable id → name → aria/placeholder → role+text → css), `derive_element_name`,
+attr → role + name → label → aria-label → placeholder → alt → title → stable id/name →
+nameless role → text → css path; never XPath), `derive_element_name`,
 `collapse_repeated_families` (buckets repeated test-ids like `buy-item-*` into one
 `[<attr>^='buy-item-']`, preserving whichever attribute the app uses),
 `build_page_entry` (assembles a draft page; fills machine-knowable fields, stubs the
 human ones), and `diff_page`/`summarize_drift` (staleness). The test-id attribute set
 is the configurable `TEST_ID_ATTRS` constant. `inventory_tools/browser.py` is a thin
 Playwright layer (lazy import): `collect_descriptors`, `resolve_selectors`, and a
-generic `do_login` that takes explicit selectors (type-based defaults). Two CLIs wrap
+generic `do_login` that takes explicit selectors (type-based defaults). Four CLIs wrap
 it: `scripts/generate_inventory.py` (crawl → draft), `scripts/promote_draft.py`
 (merge drafts, strip third-party embeds), `scripts/verify_locators.py` (measure
 every selector against the live page) and `scripts/check_inventory_staleness.py`
@@ -853,7 +889,7 @@ link role. The page is open at that moment, so the guess is now a measurement.
 
 **Sweeper (3.4).** `scripts/sweep_stalled_prs.py` has a pure core —
 `workflow_settled(runs)` and `classify_pr(...)` — plus a PyGithub I/O shell reusing
-`GitHubClient`. `.github/workflows/sweeper.yml` runs it hourly. It reopens `auto/*`
+`GitHubClient`. `.github/workflows/sweeper.yml` runs it hourly on weekdays, 10:05–19:05 IST. It reopens `auto/*`
 PRs whose Agent-3/Agent-4 workflow has no settled run for the head commit, using the
 PAT so the reopen re-fires the `pull_request` chain (see ADR-010). Loop-safe via a
 commit-SHA marker comment.
@@ -908,7 +944,7 @@ If a Test Case description was edited in Jira AFTER initial coding:
        │
        │  Agent 2 runs run_update():
        │  - surgical splice of feature file
-       │  - regenerates step_def file
+       │  - splices new step functions into the step_def file
        │  - orphan cleanup on page objects
        │  - opens NEW PR on -update1 branch
        │  - removes 'ai-update' (one-shot)
@@ -957,7 +993,7 @@ To opt out a story permanently:
 
 ## 11. `ai-update` — what it does, scenario by scenario
 
-**Entry point:** `agents/agent2_coder.py::run_update()` at line 3739
+**Entry point:** `agents/agent2_coder.py::run_update()` at line 3841
 
 **Selection (from `config.yaml`):**
 ```yaml
@@ -985,32 +1021,33 @@ update_selection:
 - `classify_test_cases()` finds the hash mismatch
 - `modified` contains that TC
 - Flow: `_generate_single_scenario()` creates the new scenario text → `splice_scenario()` replaces just that block
-- The step_def file is regenerated WHOLE (the LLM sees the new scenario, omits old step defs if they're only used by removed/modified content)
+- The step_def file goes through `_splice_step_defs_incremental()`: unchanged if existing functions already cover the edited scenario (0 LLM calls), otherwise only the missing step functions are written and appended; any ambiguity falls back to whole regeneration
 - Other scenarios in the feature: byte-for-byte preserved (whitespace, comments, indentation untouched)
-- PR body: `**Modified scenarios:** SCRUM-29`
+- PR body: `**Modified scenarios:** PROJ-29`
 - Branch: `auto/<story>-<feat>-update1` (or `-update2` if `-update1` already exists)
 
 ### Scenario C — A new Test Case was added to the story
 
 - `classify_test_cases()` puts it in `new`
 - Flow: `_generate_single_scenario()` → `append_scenario()` appends to end of feature file
-- Step_def file regenerated whole
+- Step_def file: only the new step functions are spliced in
 - Orphan cleanup: no orphans (nothing was removed)
-- PR body: `**New scenarios:** SCRUM-32`
+- PR body: `**New scenarios:** PROJ-32`
 
 ### Scenario D — A Test Case was DELETED in Jira
 
 - `classify_test_cases()` puts its key in `orphan_keys`
 - Flow:
   1. `remove_scenario()` deletes the block + its marker
-  2. Step_def file regenerated whole (LLM doesn't see the deleted scenario → omits its step defs)
+  2. Step_def file goes through the splice. Nothing new to define, so the file is kept as it is — including any step function only the deleted scenario used
   3. **Orphan cleanup runs:**
-     - `cleanup_orphans_after_removal()` reads all step_def files + extendable page objects
-     - Detects step def functions only referenced by removed scenarios → reported but NOT physically commented out (because the step_def file was regenerated anyway)
-     - Detects page-object methods only called from those orphan step defs → commented out with `# AI-ORPHAN: this page-object method appears to no longer be used after scenario(s) SCRUM-31 were removed from Jira. Review before deleting.`
+     - `cleanup_orphans_after_removal()` reads all step_def files + extendable page objects (including auto-discovered ones)
+     - Detects step def functions only referenced by removed scenarios → listed in the PR body, but `run_update` does not comment them out
+     - Detects page-object methods only called from those orphan step defs → commented out with `# AI-ORPHAN: this page-object method appears to no longer be used after scenario(s) PROJ-31 were removed from Jira. Review before deleting.`
+  4. **Known gap:** a step function left behind in step 2 is then rejected by the final gate's unused-step check (`validate_no_unused_step_definitions`), so this case can fail the run. The change-story splice already handles it with `comment_out_step_defs_unused_by()`; `run_update` does not yet. Until it does, use `ai-regenerate` when deleting a scenario with steps no other scenario uses
 - PR body:
   ```
-  **Removed scenarios (no longer in Jira):** SCRUM-31
+  **Removed scenarios (no longer in Jira):** PROJ-31
   **Orphan step definitions detected and removed by regeneration:** `click_recovery_email`, `verify_recovery_sent`
   **Orphan page methods (commented out for human review):** `LoginPage.click_forgot_password`, `LoginPage.is_recovery_email_visible`
 
@@ -1023,7 +1060,7 @@ All three operations applied in sequence within a single `run_update()` executio
 1. Removals first (so they don't confuse the LLM about which steps exist)
 2. Modifications (in-place splices)
 3. Additions (appends)
-4. Step_def regeneration once (operates on the fully-spliced feature)
+4. Step_def splice once (operates on the fully-spliced feature)
 5. Orphan cleanup once
 
 Single PR with all three sections in the body.
@@ -1032,10 +1069,10 @@ Single PR with all three sections in the body.
 
 - `modified` contains the TC
 - New scenario is generated with the new step
-- Step_def file is regenerated → has a new `@when/@then` for the new step
-- **BUT page object files are NOT regenerated in `ai-update` mode**
-- Result: the new step def will call a page method that doesn't exist
-- The final validator (`validate_method_calls_resolvable`) catches this and the PR fails final validation
+- The splice writes a new `@when/@then` for the new step, grounded in the real page objects; a call to a method that does not exist is corrected once with the validator's feedback, then falls back to whole regeneration against the same page objects
+- **BUT page object files are NOT extended in `ai-update` mode**
+- Result: if the step genuinely needs a new page method, nothing can supply it
+- The final validator (`validate_method_resolution`) catches this and the PR fails final validation
 - **Workaround:** use `ai-regenerate` instead — that DOES regenerate page objects
 
 This is a known limitation. Documented in the PR body: *"If new page-object methods are needed for surviving scenarios, use the `ai-regenerate` label for a full regeneration."*
@@ -1044,13 +1081,13 @@ This is a known limitation. Documented in the PR body: *"If new page-object meth
 
 ## 12. `ai-regenerate` — what it does, scenario by scenario
 
-**Entry point:** `agents/agent2_coder.py::run()` with `is_regenerate=True` at line 4165
+**Entry point:** `agents/agent2_coder.py::run()` with `is_regenerate=True` at line 4267
 
 **Selection:**
 ```yaml
 regenerate_selection:
   required_labels: ['ai-processed', 'human-approved', 'ai-regenerate']
-  excluded_labels: ['ai-skip', 'ai-update']   # if both set, ai-regenerate wins
+  excluded_labels: ['ai-skip', 'ai-update']   # if both set, neither runs
 ```
 
 **Differences from normal mode:**
@@ -1096,20 +1133,11 @@ regenerate_selection:
 
 ### Scenario E — Both `ai-update` and `ai-regenerate` set
 
-- Config rule: `update_selection.excluded_labels: ['ai-regenerate']` means update mode won't pick this up
-- `regenerate_selection.excluded_labels: ['ai-update']` means regen WILL pick this up (excluded_labels only prevents triggering when ai-update is the ONLY mode — but with regenerate present, regenerate wins)
+The two selections exclude each other:
+- `update_selection.excluded_labels` contains `ai-regenerate`, so update mode skips the story
+- `regenerate_selection.excluded_labels` contains `ai-update`, so regenerate mode skips it too
 
-Wait, let me re-read config:
-```yaml
-regenerate_selection:
-  excluded_labels: [..., 'ai-update']
-```
-Actually this is the OPPOSITE — regenerate ALSO excludes ai-update. So if both are set:
-- `update_selection` excludes the story (ai-regenerate present)
-- `regenerate_selection` excludes the story (ai-update present)
-- Story is processed by NEITHER mode
-
-**Correct behavior: if you set both, neither runs.** Remove one of them first. This is a config-driven safety against ambiguous intent. (I misstated this in earlier conversation; this is the accurate read of `config.yaml`.)
+**If you set both, neither runs.** Remove one of them first. This is a config-driven safety against ambiguous intent.
 
 ### Scenario F — Story has multiple feature files (multi-feature story)
 
@@ -1177,6 +1205,8 @@ schedule:
 
 # .github/workflows/inventory_health.yml
   - cron: '30 2 * * *'          # 08:00 IST
+# .github/workflows/artifact_cleanup.yml
+  - cron: "30 20 * * *"         # 02:00 IST daily
 # .github/workflows/sweeper.yml
   - cron: "35 4-12 * * 1-5"     # 10:05 - 18:05 IST
   - cron: "35 13 * * 1-5"       # 19:05 IST
@@ -1232,7 +1262,7 @@ checks.
 | 29 | `validate_reused_steps_keep_their_meaning` | `validators/method_resolution_validator.py:4764` | repair |
 
 Repairable failures go to the repair loop (`_attempt_step_coverage_repair`),
-grouped by the file they name; only the broken files are regenerated, with the
+routed to the file they name (`_route_to_generated_file()`); only the broken files are regenerated, with the
 validator's words as feedback (`_ERROR_TYPE_RULES` adds targeted guidance per
 error type). What survives four attempts, or a non-repairable failure, stops
 the run before a branch exists. What each check catches is described in
@@ -1250,7 +1280,7 @@ The single biggest design decision in this codebase. **All app-specific knowledg
 
 ### Layer 2 — Prompts with placeholders
 
-Agent prompts (`prompts/agent2_coder_plan.md`, `prompts/agent2_coder_generate.md`, etc.) use placeholders like `{app_name}`, `{reference_block}`, `{page_inventory_block}`, `{reserved_block}`, `{extendable_block}`. These are substituted at runtime via Python's `.format()` against the AppContext.
+Agent prompts (`prompts/agent2_coder_plan.md`, `prompts/agent2_coder_generate.md`, etc.) use placeholders like `{app_name}`, `{reserved_paths_block}`, `{extendable_paths_block}`, `{reference_feature_content}`, `{page_inventory_json}`, `{test_cases_text}`. They are substituted at runtime with chained `str.replace()` calls (not `.format()`, so literal braces in code samples are safe), using values from the AppContext.
 
 ### Layer 3 — App-specific files
 
@@ -1290,14 +1320,14 @@ This isolation is enforced by code, not just convention:
 ### LLM hallucinated a non-existent page in the plan
 
 - `validate_paths_against_policy()` doesn't catch this (it only knows reserved/extendable)
-- `validate_imports_resolvable` catches it post-Stage-2
-- No automatic repair; final validation fails with clear error
+- `validate_imports_resolvable` catches it post-Stage-2; it is repairable, so the repair loop regenerates the file with the error as feedback
+- If it survives the repair attempts, final validation fails with a clear error
 
 ### Step coverage validator finds missing decorators
 
-- Repair loop kicks in (up to 4 retries)
-- Each retry regenerates ONLY the broken step_def file
-- If still failing after 4: PR fails final validation, human debugs
+- Repair loop kicks in (up to 4 attempts, with the early stops in §5.5)
+- Each attempt regenerates ONLY the broken file
+- If still failing: the run stops at final validation before a branch exists; a human debugs
 
 ### GitHub branch creation fails (e.g., branch already exists from a manual push)
 
@@ -1368,7 +1398,7 @@ and can never fail a run; missing pricing flags totals as a lower bound
 
 ## 18. Agent 0 — Impact Analyst (deep)
 
-**Files:** `agents/agent0_impact.py` (681 lines) and `core/impact_*.py`, `core/context_update.py`, `core/json_block.py`
+**Files:** `agents/agent0_impact.py` (685 lines) and `core/impact_*.py`, `core/context_update.py`, `core/json_block.py`
 **Workflow:** `.github/workflows/agent0_impact.yml` — four jobs: scan, reconcile, code change (PR), nightly drift. A `gate` job reads `agents.agent0_impact.enabled`; reconcile is not gated (it only acts on `impact-applied` stories).
 **CLI:** `python -m agents.agent0_impact --scan | --story KEY | --code-change --base DIR --head DIR --pr N | --drift-report FILE [--dry-run]`
 
@@ -1387,9 +1417,9 @@ Agent 0 off). Key settings: `enabled`, `shadow_mode`, `selection`, `labels`,
 `agents/agent0_impact.analyse_and_publish(tracker, story_key, llm, settings, root, host)` drives `core/impact_analysis.py`:
 
 1. **Repeat check** — the story's requirement hash is compared with the last report; an unchanged story is skipped. A changed one is re-analysed and the review updated in place (`_post_delta` says when nothing changed in the affected tests or tiers).
-2. **Seeds** — `ChangeSeeds` (one structured call, `prompts/agent0_seeds.md`): elements, methods, pages, components, behaviours. Element keys not in the inventory are dropped and reported.
-3. **Candidates** — `core/impact_graph.py` builds scenario → step → method → selector edges from `# JIRA:` markers, step decorators and page-object ASTs; structural candidates come from the graph, semantic ones from scenario text, component ones from the inventory's `components`.
-4. **Adjudication** — `ImpactAssessment` (one call per batch of `max_candidates`, `prompts/agent0_adjudicate.md`). A verdict that cites no real graph path or verbatim step is dropped.
+2. **Seeds** — `ChangeSeeds` (one structured call, `prompts/agent0_seeds.md`): `change_type` (`new_behaviour`, `changed_behaviour`, `removed_behaviour`, `mixed`), `behaviours`, `element_keys`, `components`. `validate_requirement_seeds()` drops element keys not in the inventory (reported), and a `new_behaviour` story keeps no element seeds and no changed behaviours (#186) — using an element is not changing it.
+3. **Candidates** — `core/impact_graph.py` builds scenario → step → method → selector edges from `# JIRA:` markers, step decorators and page-object ASTs. Layer 1 (`structural_candidates()`) is every scenario the graph connects to a seed; layer 2 (`semantic_candidates()`) is the scenarios in the story's components. `shortlist()` always judges layer 1 and fills the rest of `max_candidates` (300) from layer 2 by text relevance; anything left over is reported as not judged, never hidden.
+4. **Adjudication** — `ImpactAssessment` (one call per batch of `max_candidates`, so normally one call, `prompts/agent0_adjudicate.md`). `checked_assessments()` drops a verdict that cites no real graph path or verbatim step; a *review* verdict must name what the scenario does that the change makes different.
 5. **Rank** — `rank()` combines the weights; the tier is the score's tier capped by the model's verdict (`_TIER_ORDER`). `short_evidence()` (in `agents/agent0_impact.py`) gives each row its reason and the elements involved.
 6. **Publish** — shadow: a report comment (`(shadow mode)` in the title). Live: nothing to review → `ai-ready` plus the context update; otherwise an Impact Review sub-task (`core/impact_review.py`) and `impact-proposed`.
 
@@ -1411,12 +1441,15 @@ undecided review) leaves the story waiting.
 `extract_changes()` (`WordingChanges`, `prompts/agent0_wording.md`) and
 `extract_note_rewrites()` (`NoteRewrites`, `prompts/agent0_context_notes.md`).
 `propose()` applies exact wording replacements to the inventory's string values
+— which can include a text-based selector, flagged "verify after deployment" —
 and the context notes, then `_apply_rewrites()` replaces each untrue passage
-found verbatim; anything not found is dropped and reported, and selectors are
-never offered for rewriting. Code mentioning the old text is listed, not
+found verbatim; anything not found is dropped and reported. Note rewrites touch
+NOTE values only, so a selector is never rewritten by them. Code mentioning the old text is listed, not
 edited. `open_pull_request()` uses `branch_for()` — the story key in lower case,
 or a hash, so the branch never carries an issue key — and the
-`[agent0:context-update]` marker makes it idempotent.
+`[agent0:context-update]` marker makes it idempotent. A marker that opened a
+pull request stands only while that PR is open (#185), so a closed proposal
+does not suppress a retry's update.
 
 ### 18.5 Reconcile (`core/impact_reconcile.py`, `scripts/impact_reconcile.py`)
 
@@ -1440,7 +1473,7 @@ maintenance story (label `inventory-drift`).
 ## 19. Change stories in Agents 1, 2 and 5
 
 - **Agent 1 — `agents/agent1_impact.py`.** `run_impact_aware()` runs instead of the normal draft when the story has approved impacted cases. One `ImpactAwareDraft` call (`prompts/agent1_impact_aware.md`); `validate_draft()` requires every approved key revised exactly once and no new case repeating a revised case or an existing scenario, and flags a revision near an existing scenario (`PURPOSE_KEPT`). A snapshot comment holds each old text and the old/new hashes before `update_test_case`. Labels: `ai-processed`, `impact-applied` on; `ai-ready` off. Re-running is safe.
-- **Agent 2 — `agents/agent2_impact.py`.** `splice_owner_files()` splices each revised scenario into its owner's feature (marker placed below the tags), comments out retired ones, and regenerates only the step functions the owner file is missing via `_splice_step_defs_incremental()`, which receives this run's page objects (`batch_files`), checks method resolution and corrects once with the validator's words. After the splice, every step function the revisions and retirements left unused is commented out (`comment_out_step_defs_unused_by()`, the unused-step check's own rule, applied deterministically), and files the cleanup changed are committed.
+- **Agent 2 — `agents/agent2_impact.py`.** `splice_owner_files()` splices each revised scenario into its owner's feature (marker placed below the tags), removes retired ones (their marker and block, not commented out), and regenerates only the step functions the owner file is missing via `_splice_step_defs_incremental()`, which receives this run's page objects (`batch_files`), checks method resolution and corrects once with the validator's words. After the splice, every step function the revisions and retirements left unused is commented out (`comment_out_step_defs_unused_by()`, the unused-step check's own rule, applied deterministically), and files the cleanup changed are committed.
 - **Agent 5.** `post_owner_results()` and `record_prediction_outcome()` (§8).
 
 ## 20. The Protocols — Tracker and RepoHost

@@ -63,11 +63,11 @@ Impact Review adds a gate before any existing test is revised.
 | Concept | Why not here |
 |---|---|
 | **LangGraph / CrewAI / agent frameworks** | Our "graph" is the Jira label machine (`ai-ready` -> `ai-processed` -> `human-approved` -> `ai-coded` -> `tests-run`), which is externally observable, survives process death, and costs zero tokens to coordinate — an in-memory graph does none of those. Raw API + custom orchestration also means no framework churn. **LangChain itself IS used**, but only as a provider-agnostic HTTP client (`ChatOpenAI` + message types, two imports in `llm_client.py`) — no chains, agents, tools or memory. Structured output is Pydantic, not LangChain. |
-| **Vector DB / embeddings / semantic RAG** | Dedup is exact-title matching on ~dozens of scenarios; page-object retrieval is AST-based and exact; Agent 0's candidates come from a code graph plus lexical relevance within the story's Components. Embeddings would add infra and fuzziness where we need precision. |
+| **Vector DB / embeddings / semantic RAG** | Dedup matches a scenario by its Jira marker first and its normalised title second; page-object retrieval is AST-based and exact; Agent 0's candidates come from a code graph plus lexical relevance within the story's Components. Embeddings would add infra and fuzziness where we need precision. |
 | **LangSmith / hosted tracing** | Token and cost tracking is `core/usage_ledger.py`, which posts `[LLM-USAGE]` directly onto the Jira story — the number lands on the work item, and no third party holds our prompts. LangSmith is present in `pip list` only as a transitive dependency of `langchain-core`; nothing imports it. |
 | **Fine-tuning** | Failure modes were fixable with prompt rules (see the "Lessons learned" section below); fine-tuning freezes behavior into an uninspectable artifact. |
 | **Runtime memory / learning loop** | Lessons are curated into prompts at development time — zero marginal token cost. see "Why not runtime learning" in the Lessons learned section below. |
-| **Multi-model routing** | One model keeps behavior predictable; the LLM client is a single swap point if we ever route (e.g., cheap model for Agent 5 summaries). |
+| **Per-call model routing** | Not used. Routing is per agent and set in CI: the optional `LLM_MODEL_LIGHT` variable gives Agents 1 and 5 a cheaper model, while Agents 0, 2 and 3 always use `LLM_MODEL`. Routing per call would make one agent's behaviour depend on which model answered. |
 | **Evals / benchmark harness** | Partially covered: the unit suite pins validator behaviour; the real "eval" is Agent 4 running the generated tests; Agent 0 has a backtest and per-story prediction scoring. A dedicated prompt-regression eval set for Agents 1–3 is a fair future item. |
 
 ## 4. Demo Q&A — questions you should expect
@@ -88,7 +88,7 @@ A: Repairable failures go through the Reflexion loop — the exact validator err
 A: Path policy validator. Reserved paths (reference files) can never appear in a plan; extendable paths can be appended to but never recreated. This is checked on the PLAN, before any generation happens.
 
 **Q: How does it handle a Test Case being edited or deleted after code exists?**
-A: Hash markers. Every scenario carries `# JIRA: KEY (hash: 8char)` — SHA-256 of the Jira description. Edited → hash mismatch → surgical regeneration of just that scenario (`ai-update`). Deleted → orphan key → scenario removed, dead page-object methods detected via AST and commented out with `# AI-ORPHAN:` banners.
+A: Hash markers. Every scenario carries `# JIRA: KEY (hash: 8char)` — the first 8 hex characters of the SHA-256 of the Jira description, whitespace-normalised. Edited → hash mismatch → surgical regeneration of just that scenario (`ai-update`). Deleted → orphan key → scenario removed, dead page-object methods detected via AST and commented out with `# AI-ORPHAN:` banners.
 
 **Q: A story changes behaviour that existing tests check. How do you find them?**
 A: Agent 0. One call names the elements the story changes; a code graph (scenario → step → method → selector) finds the scenarios that reach them; a second call judges each with evidence; a weighted score ranks them, capped by the model's verdict. A person then approves, rejects or retires each test in an Impact Review — nothing is revised before that. Agent 5 later scores the prediction against what the PR actually changed and failed.
@@ -112,7 +112,7 @@ A: Measured, not estimated — and tokens and cost are tracked separately. Every
 A: Raise the per-run cap, or parallelize — each story is independent (own branch, own PR, no shared state). The bottleneck becomes human review of PRs, which is by design.
 
 **Q: What's the weakest part of the system?**
-A: Honest answers impress: (1) dedup is title-based, so a reworded duplicate slips through, (2) no dedicated prompt-regression eval suite for Agents 1–3 yet, (3) Agent 0 is only as good as the scenario markers and inventory `components` it reads — gaps are reported as unknown, not as unaffected.
+A: Honest answers impress: (1) dedup of a scenario that has no marker is title-based, so a reworded duplicate slips through, (2) no dedicated prompt-regression eval suite for Agents 1–3 yet, (3) Agent 0 is only as good as the scenario markers and inventory `components` it reads — gaps are reported as unknown, not as unaffected.
 
 ---
 
@@ -147,10 +147,10 @@ prompts look the way they do.
 | 9 | v17 | Invented `.active_option` CSS class on native `<select>` → selector never matched | LLM hallucinated framework-specific DOM patterns | Locator discipline prompt rule (`input_value()` / `evaluate()`) | prompts/agent2_coder_generate.md §Locator discipline |
 | 10 | v18 | `@then("I should be on the inventory page")` vs feature's "redirected to the inventory page" → StepDefinitionNotFoundError | LLM paraphrased instead of exact-matching | Exact phrase matching rule with examples | prompts/agent2_coder_generate.md §Step 2 |
 | 11 | v18 | `parsers.parse('sort by {key}')` captured quotes into the variable → comparisons always failed | Quote-placement subtlety in `parse` templates | parsers.parse quote-handling rule (`"{value}"` vs `{value}`) | prompts/agent2_coder_generate.md §Step 3 |
-| 12 | v18 | LLM re-invented dropdown/wait patterns differently every run → inconsistent, sometimes broken | No shared primitives to call | Generic BasePage helpers (10 at v18, 85 today); prompt lists them | pages/base_page.py + prompt §BasePage helpers |
+| 12 | v18 | LLM re-invented dropdown/wait patterns differently every run → inconsistent, sometimes broken | No shared primitives to call | Generic BasePage helpers (10 at v18, 86 today); prompt lists them | pages/base_page.py + prompt §BasePage helpers |
 | 13 | May 2026 | Deleted Jira Test Cases left dead page-object methods forever | ai-update preserves page objects by design | Orphan detection: AST analysis, comment-out with `# AI-ORPHAN:` banners | validators/orphan_cleanup.py |
 | 14 | May 2026 | Scan picked up stories from old sprints | JQL had no sprint clause | Sprint scoping: `sprint: "auto"` resolves active sprint via JIRA_BOARD_ID | integrations/jira_client.py `get_active_sprint_name()` |
-| 15 | SCRUM-54 | A new login-adjacent feature re-declared `@given("I am on the OrangeHRM login page")`, already defined in the reference `test_login.py` → pytest-bdd registers steps globally across the package, so the duplicate collides at collection time (Agent 3 flagged it) | LLM re-declares common steps (navigation, login) in the new file instead of reusing the reference's existing ones — it doesn't know they're already registered package-wide | (a) prompt rule: reuse existing steps, never re-declare; (b) cross-file duplicate validator — narrowly flags only genuine (keyword, parser_type, phrase) collisions across step-def files incl. the reference | `validate_no_duplicate_step_definitions()` in gherkin_analyzer.py + prompts/agent2_coder_generate.md §rule 13 |
+| 15 | SCRUM-54 | A new login-adjacent feature re-declared `@given("I am on the OrangeHRM login page")`, already defined in the reference `test_login.py` (Agent 3 flagged it) | Believed at the time to be a package-wide collision. Later shown false: pytest-bdd steps are module-scoped fixtures, so modules never collide - the real hazard is the same phrase twice in ONE file, where the second silently shadows the first | Each generated step-def module declares every step its feature uses (self-contained); the duplicate guard flags only same-file duplicates | `validate_no_duplicate_step_definitions()` in validators/gherkin_analyzer.py + prompts/agent2_coder_generate.md rule 14 |
 | 16 | PR #149 / #162 | Agent 3 turned PRs red for failures no test showed, and for lines the PR never changed | A predicted failure was treated as a fact | Blocking needs a named failure scenario; a green Agent 4 run on the same commit refutes it; unchanged lines only advise | `postprocess_review()` in agents/agent3_reviewer.py |
 | 17 | PR #151 | Re-running an old check replayed an outdated reviewer copied onto the PR branch | The workflow checked out the PR head | Agent 3 checks out the base branch | `.github/workflows/agent3-reviewer.yml` |
 | 18 | PR #164 | An Impact Review table could read as empty | Jira turned test keys into links | Keys read in every link form; an unreadable or empty review refuses to hand over | `core/impact_review.py`, `core/impact_handover.py` |
@@ -165,14 +165,15 @@ prompts look the way they do.
 | 27 | PR #181 | The PR said "All checks have passed" while Agent 4 had not run the newest commit | A workflow-level concurrency group hides a queued run: GitHub shows no check for it | The group moved to the test job, so the waiting run is listed as pending | `.github/workflows/agent4_runner.yml` |
 | 28 | PR #181 | A hidden confirmation blamed signed-in state, then a blocked font | Nothing recorded whether the action's request was made or answered; the first fix counted static resources | Failures list the page's action requests (XHR, fetch, navigation) and their outcome | `watch_network()` in pages/base_page.py, core/failure_diagnosis.py |
 | 29 | PR #182 | Agent 2's repair loop stalled on an `is_<x>_absent()` predicate and the run failed | Two gates disagreed: the predicate rule demanded a presence wait (is_showing) for an absence question, which the absence rule rejects | `BasePage.is_gone()` - the absence wait; predicate rule, absence rule, repair hint and prompt all name it | `pages/base_page.py`, validators/method_resolution_validator.py |
-| 30 | A3 retry PR | A retry's context update was skipped silently | The 'already proposed' check trusted comment history; a clean-up deleted the undo comment and kept the closed PR's marker | A marker that opened a PR stands only while that PR is open | `_already_proposed()` in core/context_update.py |
-| 31 | A3 retry PR | The change story's own new test failed with 'resolved to 2 elements' | The control was drawn twice inside one card (card + hover overlay); click_in_row clicked the pair | click_in_row clicks the visible copy | `BasePage.click_in_row()` |
-| 32 | A3 retry PR | Agent 1 followed the story over the context notes only by luck of wording | No rule said which wins; the notes describe the app before the change | Both Agent 1 prompts: the story is the intended behaviour | `prompts/agent1_*.md` |
-| 33 | Agent 0 quality PR | A journey story put 10 existing test cases up for review | The model listed every element the story USES as a change seed, and "review" accepted overlap | Using is not changing: a new_behaviour story seeds nothing (in code); review must name what becomes different | `validate_requirement_seeds()`, `prompts/agent0_seeds.md`, `prompts/agent0_adjudicate.md` |
-| 34 | Agent 1 rule PR | Agent 1 rejected a draft twice for following the rule's own advice | The persistent-state rule counted "no row for '<item>'" as a row count, while its remedy asked for exactly that relative absence | Absence of a NAMED entry is relative; bare "no rows" / "no other rows" stay absolute; a test proves the remedy's example passes the rule | `core/test_case_rules.py` |
-| 35 | Agent 1 rule, generic | #187 accepted named absence only after listed words (for, of, named ...) | A word list judges phrasing, not meaning: "no row any more for 'X'" was still rejected | "No row(s)" is relative when its clause names an entry the test itself uses (a quoted value or a test-data value), in any wording | `_absence_of_a_named_entry()` in core/test_case_rules.py |
-| 36 | Agent 2 step meaning PR | A new story's Then step failed in the browser while every older test passed | A re-defined step phrase asserted an extra, unstated state (the search-results view) that its own empty-search scenario does not have | A phrase already defined elsewhere must assert no more than that definition; a Then step asserts exactly its sentence | `validate_reused_steps_keep_their_meaning()`, prompt rule 5 |
-| 37 | Agent 2 markers | Two JIRA lines on every generated scenario | The model's bare `# JIRA: KEY` is not a marker (no hash), so the real one was inserted beside it | Complete the bare line in place | `_bare_key_comment_above()` |
+| 30 | PR #185 | A retry's context update was skipped silently | The 'already proposed' check trusted comment history; a clean-up deleted the undo comment and kept the closed PR's marker | A marker that opened a PR stands only while that PR is open | `_already_proposed()` in core/context_update.py |
+| 31 | PR #185 | The change story's own new test failed with 'resolved to 2 elements' | The control was drawn twice inside one card (card + hover overlay); click_in_row clicked the pair | click_in_row clicks the visible copy | `BasePage.click_in_row()` |
+| 32 | PR #185 | Agent 1 followed the story over the context notes only by luck of wording | No rule said which wins; the notes describe the app before the change | Both Agent 1 prompts: the story is the intended behaviour | `prompts/agent1_*.md` |
+| 33 | PR #186 | A journey story put 10 existing test cases up for review | The model listed every element the story USES as a change seed, and "review" accepted overlap | Using is not changing: a new_behaviour story seeds nothing (in code); review must name what becomes different | `validate_requirement_seeds()`, `prompts/agent0_seeds.md`, `prompts/agent0_adjudicate.md` |
+| 34 | PR #187 | Agent 1 rejected a draft twice for following the rule's own advice | The persistent-state rule counted "no row for '<item>'" as a row count, while its remedy asked for exactly that relative absence | Absence of a NAMED entry is relative; bare "no rows" / "no other rows" stay absolute; a test proves the remedy's example passes the rule | `core/test_case_rules.py` |
+| 35 | PR #188 | #187 accepted named absence only after listed words (for, of, named ...) | A word list judges phrasing, not meaning: "no row any more for 'X'" was still rejected | "No row(s)" is relative when its clause names an entry the test itself uses (a quoted value or a test-data value), in any wording | `_absence_of_a_named_entry()` in core/test_case_rules.py |
+| 36 | PR #190 | A new story's Then step failed in the browser while every older test passed | A re-defined step phrase asserted an extra, unstated state (the search-results view) that its own empty-search scenario does not have | A phrase already defined elsewhere must assert no more than that definition; a Then step asserts exactly its sentence | `validate_reused_steps_keep_their_meaning()`, prompt rule 5 |
+| 37 | PR #190 | Two JIRA lines on every generated scenario | The model's bare `# JIRA: KEY` is not a marker (no hash), so the real one was inserted beside it | Complete the bare line in place | `_bare_key_comment_above()` |
+| 38 | PR #193 | Agent 2 failed a story at the final gate without a single repair attempt | The rule from #36 worded its errors `<file>: step ...`; the repair loop routed only `<rule> in '<file>':`, so it dropped them | Every repairable error is routed to the generated file it names, whatever its wording; the step-definition prompt shows the committed body of every Then step the feature reuses | `_route_to_generated_file()`, `_build_reused_then_steps_block()`, `tests/unit/test_every_repairable_error_is_routed.py` |
 
 ### Gates must agree with each other
 
@@ -180,8 +181,9 @@ Each validator is tested on its own, and that is not enough: in A3 two of them
 gave the model opposite instructions for one absence check, so no rewrite
 could pass and Agent 2 failed with every individual test green.
 `tests/unit/test_gate_remedies_agree.py` runs the real Agent 2 gate on the
-canonical shape of each common concern (presence check, absence check) and on
-each known wrong shape, and requires every remedy a gate names to pass the
+canonical shape of each common concern (presence, absence, a waiting reader,
+readiness, a row listed or gone, an exact count, "are there any") and on each
+known wrong shape, and requires every remedy a gate names to pass the
 whole gate. **When you add a validator or change a remedy, add its canonical
 shape and its wrong-to-right pair there.**
 
@@ -195,7 +197,7 @@ Considered and deliberately rejected for now:
 2. **Fine-tuning** requires training data volume we don't have and freezes
    lessons into a model we can't inspect or diff.
 3. **A vector DB of failures** adds infrastructure for what is currently a
-   25-row table.
+   table of under 40 rows.
 
 The validator + repair-loop combination gives *runtime* self-correction within
 a single run (the LLM sees its own errors and fixes them), while this catalog +

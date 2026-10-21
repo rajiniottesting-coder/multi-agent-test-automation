@@ -23,8 +23,15 @@ All generic, each pinned by unit tests (suite: ~2,900 tests).
 - #190 new validator `validate_reused_steps_keep_their_meaning` (29 checks): a Then step re-defined for another feature may not assert more than the committed definition; a bare `# JIRA: KEY` marker is completed in place
 - #193 every repairable error reaches the repair loop, whatever its wording (`_route_to_generated_file`); the step-definition prompt shows the committed body of every Then step the feature reuses (`committed_then_definitions`)
 
+**Step definitions (supersedes the two Phase 2 entries below)**
+- Generated step-definition modules are self-contained: each declares every step its own feature uses. `tests/step_defs/conftest.py` holds fixtures only (page-object fixtures registered automatically, `credentials` by login role from `APP_USER_<ROLE>` / `APP_PASSWORD_<ROLE>`). The duplicate-step check is same-file. Details: ADR-012's 2026-10 note in [DECISIONS.md](./docs/DECISIONS.md)
+
 **CI**
 - #192 Actions storage kept inside the quota: `artifact_cleanup.yml` (daily, deletes artifacts older than 2 days, `scripts/cleanup_artifacts.py`); Agent 4 uploads only what Agent 5 needs, kept 3 days
+
+**Docs**
+- #197 README and docs brought in line with `main` after #193
+- Line-by-line audit of `docs/` against `main` (`3289394`): the change-story selector wording rule (wording changes may update a selector; note rewrites never do), self-contained step files, login roles, the `main` rulesets, Agent 5 posting a new report on every re-run, `ai-update`'s step-definition splice, current line numbers and counts
 
 ---
 
@@ -62,7 +69,9 @@ operator guide: [GUIDE.md → Change stories — Agent 0](./docs/GUIDE.md#change
 
 ---
 
-## Phase 2 — Shared step definitions moved to `tests/step_defs/conftest.py`
+## Phase 2 — Shared step definitions moved to `tests/step_defs/conftest.py` (superseded)
+
+> Superseded in October 2026: step-definition modules are now self-contained and `conftest.py` holds fixtures only. See the top entry and ADR-012's note.
 
 Fixes a runtime failure that every validator passed. Agent 2 generated a feature
 reusing `Given I am on the SauceDemo login page` (defined in the reference module
@@ -286,7 +295,9 @@ defaults, minify round-trip / malformed-fallback / missing-file). Suite: 151 →
 
 ---
 
-## Phase 2 — Cross-file duplicate step-definition guard (SCRUM-54 lesson)
+## Phase 2 — Cross-file duplicate step-definition guard (SCRUM-54 lesson) (superseded)
+
+> Superseded in October 2026: the duplicate-step check is now same-file, because self-contained modules each resolve their own copy of a step. See the top entry and ADR-012's note.
 
 **The failure.** A new login-adjacent feature (`test_login_edge_and_validation.py`)
 re-declared `@given("I am on the SauceDemo login page")`, a step the reference
