@@ -13,6 +13,7 @@ This document records substantive changes to the framework in reverse-chronologi
 - Agent 0's model cost is posted to the story ledger; Agent 1 no longer treats Agent 0's entries as a previous run, and a genuine new attempt still resets
 - The drift job can be run on demand (`Run workflow`, `mode` = `drift`)
 - Test cases carry their story's Jira Components; a project that rejects them still gets the test case
+- A pull request that changes only `prompts/`, `docs/` or Markdown (e.g. a notes-only context update) runs the unit suite but no browser, and posts no Jira report; any other file runs the E2E, and the check fails open. Agent 3 does not read that unit-only green as evidence against a predicted failure. One rule for both: `core/test_runtime.py`
 
 All generic, each pinned by unit tests (suite: ~2,900 tests).
 

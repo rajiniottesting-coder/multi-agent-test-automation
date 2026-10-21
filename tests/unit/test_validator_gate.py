@@ -402,6 +402,8 @@ def test_every_output_value_resolves_correctly(output_value, should_run):
             .replace("github.event_name != 'push'", "False")   # a push
             .replace("steps.changes.outputs.inventory != 'false'",
                      str(output_value != "false"))
+            # The pull-request check does not run on a push: empty output.
+            .replace("steps.pr_changes.outputs.e2e != 'false'", "True")
             .replace("always()", "True")
             .replace("||", " or ").replace("&&", " and "))
     assert eval(expr) is should_run, (
@@ -409,17 +411,26 @@ def test_every_output_value_resolves_correctly(output_value, should_run):
     )
 
 
-def test_a_pull_request_always_runs_the_e2e():
-    """The detector is push-only, so on a PR its output is empty. The event
-    check must satisfy the condition on its own - otherwise an inventory change
-    on a fix/ branch would skip the browser exactly where it matters most."""
+@pytest.mark.parametrize("pr_verdict,should_run", [
+    ("true",  True),   # a file read at test runtime changed (an inventory edit)
+    ("false", False),  # only prompts/docs/Markdown - the ONLY skip on a PR
+    ("",      True),   # the PR check crashed before writing its output
+    (None,    True),   # the PR check was skipped
+])
+def test_a_pull_request_runs_the_e2e_unless_nothing_runtime_changed(pr_verdict, should_run):
+    """The push detector's output is empty on a PR, so the event check
+    satisfies that half on its own - an inventory change on a fix/ branch can
+    never skip the browser. The PR's own check (pr_changes, core/test_runtime.py)
+    may skip it only with an explicit 'false', for a PR changing nothing a test
+    reads. Every other outcome fails open."""
     cond = str(_step("Run app tests").get("if"))
     expr = (cond
             .replace("github.event_name != 'push'", "True")
             .replace("steps.changes.outputs.inventory != 'false'", "True")
+            .replace("steps.pr_changes.outputs.e2e != 'false'", str(pr_verdict != "false"))
             .replace("always()", "True")
             .replace("||", " or ").replace("&&", " and "))
-    assert eval(expr) is True
+    assert eval(expr) is should_run
 
 
 def test_detection_pattern_is_anchored_and_exact():

@@ -805,9 +805,15 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
     )
 
     # 3b. POST-PROCESS: dedupe and cap (handles LLM repetition collapse)
+    # A green runner is evidence about app tests only if it ran them. Agent 4
+    # skips the browser when this PR changes nothing a test reads (same rule,
+    # core/test_runtime.py); its green then says nothing about a predicted
+    # failure, so no runner result is offered.
+    from core.test_runtime import runs_app_tests
+    runner_ran_app_tests = runs_app_tests([f.get("filename", "") for f in changed_files])
     report, withdrawn = postprocess_review(
         report,
-        None if dry_run else
+        None if dry_run or not runner_ran_app_tests else
         (lambda: runner_result_for_head(gh, pr_number, pr_metadata["head_branch"])),
         changed_lines=changed_line_map(changed_files))
 
