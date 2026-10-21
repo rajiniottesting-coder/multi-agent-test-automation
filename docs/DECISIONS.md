@@ -51,7 +51,9 @@ does this change touch?" without letting a model rewrite tests on its own.
 8. **Reference material changes through a separate PR.** Wording the story
    replaces and passages it makes untrue are proposed for the inventory and
    `prompts/app_context/` as a context-update PR whose branch carries no issue
-   key. Selectors are never edited, and it is merged after deployment.
+   key. A wording change is applied wherever the old text appears, a selector
+   that matches on it included; a passage rewrite never touches a selector. It
+   is merged after deployment.
 
 ### Alternatives considered
 
