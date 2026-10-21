@@ -6,6 +6,11 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ## October 2026 (second half) — validation fixes after A3
 
+**Stories in flight at the same time**
+- Agent 2 never writes a file another open pull request is changing, and never generates a scenario another open PR already adds: the story waits (`waiting_for_open_pr`, `[WAIT]` in the scan summary), labels unchanged, one `[agent2:waiting]` comment per reason, retried on the next scan. Covers normal, regenerate, change-story owner files and `ai-update`. Fails open (`core/in_flight.py`)
+- Duplicate detection compares a test case's title without its `[type]` tag (the stored summary is `[Positive] <title>`, the scenario is `<title>`, so the title fallback could never match a case the pipeline created)
+- Agent 4's browser runs take turns across pull requests (first come, first served, bounded at 15 minutes, fail-open; `scripts/e2e_turn.py`): every PR tests the same live application with the same accounts
+
 **A-series open items (closed)**
 - `reconcile.closed_scans` is honoured: an undo happens after that many scans see the same close (default 2, as before; 1 = immediately)
 - `config.yaml`'s `context_update` comment describes both wording changes and note rewrites

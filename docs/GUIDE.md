@@ -119,7 +119,7 @@ Agent 0 is described in its own chapter, [Change stories — Agent 0](#change-st
 
 **What it does:**
 1. Reads approved Test Cases from Jira (filtered by `ai-processed` AND `human-approved` labels).
-2. Optional dedup check: if any test cases are already covered by existing scenarios, skip them. (`ai-regenerate` label bypasses this.)
+2. Optional dedup check: if any test cases are already covered by existing scenarios, skip them — by marker first, then by title without the `[type]` tag. (`ai-regenerate` label bypasses this.) If another open PR already adds one of the scenarios, or (after the plan) changes a file this story would write, the story **waits** for the next scan instead — see *Two stories on one page object*.
 3. **Stage 1 (Plan):** Calls the LLM with a Pydantic schema (`CodePlan`) — gets file paths, types, branch name, PR title. NO code yet.
 4. **Stage 2 (Generate):** For EACH file in the plan, calls the LLM in text mode to generate the file's content.
 5. **Validators:** 29 static checks run before a branch is created — see **The validator gate** below. Repairable failures go through the repair loop; anything still failing aborts the run.
@@ -326,8 +326,9 @@ Pydantic's `max_length=10` translates to JSON Schema `maxItems`, which some prov
 1. Checks out the PR branch
 2. Installs Python deps and Playwright (with browser caching for speed)
 3. Runs `pytest` — the offline unit suite and the BDD tests — with JUnit XML, HTML and Allure output; a failed test keeps its screenshot, video and Playwright trace
-4. Uploads `reports/` as a workflow artifact (so Agent 5 can read it in the next job)
-5. Writes a markdown test summary to the GitHub Actions job summary page
+4. On a pull request, before the browser run: waits while a run of another PR that started earlier has not finished (first come, first served, `scripts/e2e_turn.py`). Every PR tests the same live application with the same accounts, and saved state such as a cart would otherwise leak between them. Capped at 15 minutes, then it runs anyway; if the runs cannot be read it does not wait.
+5. Uploads `reports/` as a workflow artifact (so Agent 5 can read it in the next job)
+6. Writes a markdown test summary to the GitHub Actions job summary page
 
 **Triggers:** PR opened, synchronized (new commits), reopened. Plus manual `workflow_dispatch`.
 
@@ -809,17 +810,36 @@ inventing new ones. It reads the story's OWN branch first, falling back to
 `main` — a re-run, or an `ai-update` on a story already coded, therefore sees
 the methods that run wrote instead of renaming its own work.
 
-What it cannot see is ANOTHER story's open branch. Two stories touching one
-page object both branch from `main`, so if one adds `filter_by_brand()` and the
-other adds `filter_products_by_brand()`, and the additions land far enough
-apart, git merges both cleanly. Nothing fails; the page object simply grows two
-methods for one behaviour.
+It does not read ANOTHER story's open branch, and does not need to: Agent 2
+never writes a file another open pull request is changing (`core/in_flight.py`).
+Two stories both branch from `main` and Agent 2 writes whole files, so if both
+rewrote one page object the second merge would conflict, or silently drop the
+first one's methods. Instead the second story **waits**:
 
-Three things address this, in order:
+- before the plan: if another open PR already adds a scenario with the same
+  title as one of this story's test cases (compared without the `[type]` tag),
+  the story waits — no model call is spent;
+- after the plan: if any file the plan writes (feature, step definitions, page
+  object, an owner's file for a change story) is changed by another open PR,
+  the story waits — only the plan call is spent, and it is recorded on the
+  story's cost ledger as `Agent 2 (Coder, waiting)`;
+- `ai-update` checks its feature file and step definitions before any model
+  call, and any page object its orphan cleanup would edit.
+
+Waiting means: nothing is generated or committed, labels are unchanged, and one
+comment on the story says which PR and which file or scenario
+(`[agent2:waiting] …`, posted once per reason, not on every scan). The scan
+summary shows `[WAIT]`, not `[FAIL]`. The next scan retries; once the other PR
+merges, `main` holds its work and the story extends it (or skips the duplicate
+scenario); once it is closed unmerged, nothing stands in the way. If the open
+PRs cannot be read, the story proceeds as before (fail open). Your own story's
+earlier PRs, and its context-update PR, never make it wait.
+
+What still guards a page object:
 
 | | |
 |---|---|
-| **Sequence them** | Dispatch the second story only after the first MERGES. Costs nothing and removes the window entirely. |
+| **In-flight wait** | Two open PRs never write the same file. |
 | **Branch-aware read** | Handles the common case — the same story generated more than once. |
 | **`validate_no_duplicate_page_object_methods`** | Fails the gate when one page object gains two methods meaning the same thing, comparing names by their meaning-bearing words so word order and filler do not hide it. |
 

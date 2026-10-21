@@ -466,9 +466,13 @@ The matching algorithm:
 def run(story_id, dry_run=False, is_regenerate=False) -> dict:
     # 1. INPUT — load Jira story + Test Cases
     # 1b. DEDUP — skipped in regenerate mode
+    # 1c. IN FLIGHT — core/in_flight.snapshot(); a scenario another open PR
+    #     already adds → _wait_for_in_flight() (status waiting_for_open_pr)
     # 2. CONTEXT — load reference files, page inventory, prompts
     # 3. STAGE 1: PLAN — build_plan() → CodePlan
     # 3b. PATH POLICY — validate_paths_against_policy()
+    #     IN FLIGHT, files — a file the plan writes that another open PR
+    #     changes → _wait_for_in_flight(); nothing generated, labels kept
     # 4. STAGE 2: GENERATE — loop over plan.files_to_create
     #    - _sort_files_for_generation() orders page_objects before step_defs
     #    - generate_file_content() per file with already_generated context
@@ -612,6 +616,7 @@ No Python agent file. The "intelligence" is the test code Agent 2 wrote; Agent 4
 1. **Checkout PR branch** via `actions/checkout@v4`
 2. **Setup Python 3.13** via `actions/setup-python@v5`
 3. **Install deps**: `pip install -r requirements.txt && playwright install --with-deps chromium`
+3b. **Wait for earlier PRs' browser runs** (pull request only): `scripts/e2e_turn.py` lists unfinished runs of OTHER PRs with a lower run id; the step polls every 30 s, up to `MAX_WAIT_SECONDS` (900), then proceeds; it never waits if the runs cannot be read. A shared concurrency group is not used because GitHub cancels a pending run when a newer one queues, and the sweeper reads a cancelled run as a stalled PR. The job's timeout is 30 minutes to allow for the wait.
 4. **Run tests** — two steps:
    ```bash
    pytest tests/unit/ --junit-xml=reports/junit-unit.xml -v        # framework gate, no browser
