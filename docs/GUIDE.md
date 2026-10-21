@@ -74,7 +74,7 @@ For more diagrams — component view, Agent 2 sequence, and the labels-as-state-
 - **Idempotency via Jira labels.** `ai-processed` (Agent 1 done), `ai-coded` (Agent 2 done), `tests-run` (Agent 5 done). Re-running an agent against an already-processed story is a no-op.
 - **Config-driven, not code-driven.** App-specific knowledge (URL, reference files, page inventory, module notes) lives in `config.yaml`, `app_inventory/` and `prompts/app_context/`. Agent code is app-agnostic.
 - **Tools behind Protocols.** Agents talk to `Tracker` (23 operations) and `RepoHost` (16 operations) in `integrations/`, never to Jira or GitHub directly; the Jira and GitHub adapters are the only implementations today.
-- **Defensive validators.** Between Agent 2's model output and the PR, 28 static checks run: the path policy on the plan, 10 hard gates in `_validate_generated_files()` and 24 validator calls in `_collect_repairable_errors()` (7 of them also hard gates). Repairable failures feed a repair loop that regenerates only the broken files; the rest abort before a branch exists.
+- **Defensive validators.** Between Agent 2's model output and the PR, 29 static checks run: the path policy on the plan, 10 hard gates in `_validate_generated_files()` and 25 validator calls in `_collect_repairable_errors()` (7 of them also hard gates). Repairable failures feed a repair loop that regenerates only the broken files; the rest abort before a branch exists.
 
 ---
 
@@ -122,7 +122,7 @@ Agent 0 is described in its own chapter, [Change stories — Agent 0](#change-st
 2. Optional dedup check: if any test cases are already covered by existing scenarios, skip them. (`ai-regenerate` label bypasses this.)
 3. **Stage 1 (Plan):** Calls the LLM with a Pydantic schema (`CodePlan`) — gets file paths, types, branch name, PR title. NO code yet.
 4. **Stage 2 (Generate):** For EACH file in the plan, calls the LLM in text mode to generate the file's content.
-5. **Validators:** 28 static checks run before a branch is created — see **The validator gate** below. Repairable failures go through the repair loop; anything still failing aborts the run.
+5. **Validators:** 29 static checks run before a branch is created — see **The validator gate** below. Repairable failures go through the repair loop; anything still failing aborts the run.
 6. Creates a branch (`auto/<JIRA-KEY>-<feature-name>`), commits files, opens a PR.
 7. Tags the parent story with `ai-coded`.
 
@@ -243,14 +243,17 @@ its trigger label was never consumed.
 
 **The validator gate:**
 
-Twenty-eight checks guard the generated batch: `validate_paths_against_policy`
+Twenty-nine checks guard the generated batch: `validate_paths_against_policy`
 on the plan, then the 10 hard gates below in `_validate_generated_files()`, run
 in order, cheapest first, so an expensive AST walk only runs if the basic checks
-pass. `_collect_repairable_errors()` makes 24 validator calls - the set the
-repair loop uses, 7 of which are also hard gates. Path policy + 10 + 24 − 7 = 28
-distinct checks. The newest, `validate_absence_not_asserted_with_waiting_probe`,
-rejects a "not shown" assertion made with a probe that waits for the element to
-appear.
+pass. `_collect_repairable_errors()` makes 25 validator calls - the set the
+repair loop uses, 7 of which are also hard gates. Path policy + 10 + 25 − 7 = 29
+distinct checks. The newest, `validate_reused_steps_keep_their_meaning`,
+rejects a Then step that re-defines a phrase another feature already defines
+but asserts more than that definition does. Every repairable error is routed to
+the generated file it names, whatever its wording
+(`_route_to_generated_file()`), so none reaches the final gate without a repair
+attempt.
 
 | # | Validator | Catches |
 |---|---|---|
@@ -1153,7 +1156,7 @@ Three distinct test layers exist; they have different triggers and purposes:
 
 | Suite | Trigger | Touches network? | Purpose |
 |---|---|---|---|
-| `tests/unit/` (~2,780 tests, about 70 s) | Every PR — Agent 4 runs `pytest tests/`, which includes them. Also run manually (`python -m pytest tests/unit/ -q`) before committing any framework change. | No — fully offline (no Jira/GitHub/LLM) | Framework correctness: validators, markers, orphan cleanup, usage tracking, ledger, component filtering, repair routing, step-def splicing, splice grounding, inventory tooling, sweeper, Agent 0 (graph, ranking, review, hand-over, context update, reconcile), and the whole pipeline against a fake tracker and repo host |
+| `tests/unit/` (~2,900 tests, about 2 minutes) | Every PR — Agent 4 runs `pytest tests/`, which includes them. Also run manually (`python -m pytest tests/unit/ -q`) before committing any framework change. | No — fully offline (no Jira/GitHub/LLM) | Framework correctness: validators, markers, orphan cleanup, usage tracking, ledger, component filtering, repair routing, step-def splicing, splice grounding, inventory tooling, sweeper, Agent 0 (graph, ranking, review, hand-over, context update, reconcile), and the whole pipeline against a fake tracker and repo host |
 | `tests/step_defs/` (generated E2E) | Every PR — same Agent 4 run | Yes — drives a real browser against the app under test | Does the application work |
 | `scripts/smoke_test.py` | **Manual only** — run on first setup, after credential/`.env` changes, on a new machine, or when onboarding a new app | Yes — live Jira login, one real LLM call, one browser hit on the app's `base_url` (config-driven) | Is the *environment* wired correctly |
 
@@ -1772,7 +1775,7 @@ sequenceDiagram
 | `validate_no_reserved_paths` | Aborts if the plan targets a reserved file, so the model cannot overwrite your gold-standard reference |
 | **Stage 2 — Per-file** | One text-mode call per file. Each prompt carries the filtered inventory, the reference trio, the AST-extracted BasePage helpers, and any page object generated earlier in this same run |
 | `extract from markdown fences` | Strips the ```` ```python ```` wrapper the model adds even when told not to |
-| **Hard validators** | The 28 checks above - the 10 hard gates in order, plus `_collect_repairable_errors()`. Repairable failures go to the repair loop; the rest abort |
+| **Hard validators** | The 29 checks above - the 10 hard gates in order, plus `_collect_repairable_errors()`. Repairable failures go to the repair loop; the rest abort |
 | `create branch / commit / open PR` | `auto/<KEY>-<feature>`, then `ai-coded` on the parent story |
 
 Why two stages: asking for structure AND large code bodies in one call

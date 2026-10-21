@@ -132,10 +132,10 @@ prompts/
 
 pages/base_page.py                   1520 lines  ← BasePage: 85 public helpers injected into the prompt
 features/  tests/step_defs/                      — generated and reference tests
-tests/unit/                                      — ~2,780 offline framework tests
+tests/unit/                                      — ~2,900 offline framework tests
 app_inventory/<app>.json                         — APP-SPECIFIC (pages, selectors, notes, components)
 config/config.yaml                               — app config, agent selection rules, Agent 0, board
-.github/workflows/                               — 8 workflows: agents 0–5 (Agent 4 + 5 share one), inventory health, story-done-on-merge, sweeper
+.github/workflows/                               — 9 workflows: agents 0–5 (Agent 4 + 5 share one), artifact cleanup, inventory health, story-done-on-merge, sweeper
 ```
 
 **Total Python:** 179 tracked files, about 60,800 lines — about 23,700 in `agents/`, `core/`, `integrations/` and `validators/`, and about 29,400 in `tests/`.
@@ -165,7 +165,7 @@ config/config.yaml                               — app config, agent selection
   - Stage 1: LLM plans which files to create (CodePlan JSON)
   - Validates plan against path policy (reserved/extendable)
   - Stage 2: LLM generates each file (feature → page objects → step defs)
-  - 28 static checks; the repair loop regenerates only broken files (up to 4 attempts)
+  - 29 static checks; the repair loop regenerates only broken files (up to 4 attempts)
   - Injects JIRA marker comments above each scenario
   - Branch: auto/<STORY-KEY>-<feature-name>
   - Commits files, opens PR, adds 'ai-coded' label
@@ -266,13 +266,13 @@ This is where the framework's complexity lives. Three entry points based on Jira
 | Regenerate (full rewrite) | `run(is_regenerate=True)` (4165) | Story has `ai-regenerate` label |
 | Update (surgical splice) | `run_update()` (3739) | Story has `ai-update` label |
 
-`main()` (line 4827) dispatches to the correct entry based on labels found during `--scan`.
+`main()` (line 4929) dispatches to the correct entry based on labels found during `--scan`.
 
 ### 5.1 Feature-file parsing primitives (from line 147)
 
 These are the foundations everything else builds on.
 
-#### `_JIRA_MARKER_RE` (line 147)
+#### `_JIRA_MARKER_RE` (line 149)
 
 ```python
 _JIRA_MARKER_RE = re.compile(
@@ -282,7 +282,7 @@ _JIRA_MARKER_RE = re.compile(
 
 Parses marker comments like `# JIRA: SCRUM-29 (hash: a4f9c2e1)`. Strict 8-char hex hash, strict Jira key format. Strict to prevent false matches.
 
-#### `compute_description_hash(description: str) -> str` (line 164)
+#### `compute_description_hash(description: str) -> str` (line 166)
 
 ```python
 return hashlib.sha256(description.encode()).hexdigest()[:8]
@@ -290,7 +290,7 @@ return hashlib.sha256(description.encode()).hexdigest()[:8]
 
 First 8 chars of SHA-256. Used to detect when a Jira Test Case description has been edited. Stored in the feature file marker so we can compare without calling Jira again.
 
-#### `class ScenarioBlock` (line 221)
+#### `class ScenarioBlock` (line 223)
 
 ```python
 class ScenarioBlock:
@@ -303,7 +303,7 @@ class ScenarioBlock:
 
 The atomic unit of feature-file surgery. Each scenario block remembers its Jira identity.
 
-#### `parse_feature_file(content: str) -> tuple[list[str], list[ScenarioBlock]]` (line 356)
+#### `parse_feature_file(content: str) -> tuple[list[str], list[ScenarioBlock]]` (line 358)
 
 The most critical parser in the file. Walks the content line by line:
 
@@ -313,15 +313,15 @@ The most critical parser in the file. Walks the content line by line:
 
 Used by `classify_test_cases`, `splice_scenario`, `_regenerate_step_defs_whole`, and the orphan cleanup module.
 
-#### `splice_scenario(original, jira_key, new_scenario_text, new_hash)` (line 392)
+#### `splice_scenario(original, jira_key, new_scenario_text, new_hash)` (line 394)
 
 Surgical replacement. Finds the block whose `jira_key` matches; replaces its text with `new_scenario_text` (which must itself contain a marker for the same key); raises if the new text claims a different key (defense against LLM scrambling identities). All OTHER blocks are preserved byte-for-byte (newlines, indentation, comments, blank lines).
 
-#### `remove_scenario(content, jira_key)` (line 472)
+#### `remove_scenario(content, jira_key)` (line 474)
 
 Removes the block AND its preceding marker comment in one pass. Returns content with the gap closed.
 
-#### `classify_test_cases(test_cases, feature_content)` (line 488)
+#### `classify_test_cases(test_cases, feature_content)` (line 490)
 
 The brain of the `ai-update` flow. For each Jira Test Case and each scenario block:
 
@@ -338,7 +338,7 @@ return {
 
 ### 5.2 Path policy validator (line 680)
 
-#### `validate_paths_against_policy(plan: CodePlan, ctx: AppContext)` (line 680)
+#### `validate_paths_against_policy(plan: CodePlan, ctx: AppContext)` (line 682)
 
 Two-tier file rule enforced post-Stage-1:
 
@@ -352,7 +352,7 @@ Raises `ValueError` with explicit guidance if the LLM hallucinates "let me rewri
 
 ### 5.3 Cross-file context injection (line 1208)
 
-#### `_build_sibling_page_object_context(target_file, already_generated)` (line 1208)
+#### `_build_sibling_page_object_context(target_file, already_generated)` (line 1210)
 
 Critical for cross-file consistency. When generating a step-def file (e.g. `tests/step_defs/test_product_sorting.py`), the page object `inventory_page.py` has typically already been generated in the same run. This function:
 
@@ -363,13 +363,13 @@ Critical for cross-file consistency. When generating a step-def file (e.g. `test
 
 Injected into the Stage 2 prompt as "the following page-object classes were generated earlier in this run." Without this, the LLM hallucinates method names — `click_logout()` when the page object actually defined `click_logout_link()`.
 
-#### `_sort_files_for_generation(files_to_create)` (line 1288)
+#### `_sort_files_for_generation(files_to_create)` (line 1290)
 
 Reorders the plan so page objects come BEFORE step definitions. Sequence matters because of the context injection above. New feature files come first too.
 
 ### 5.4 The two-stage LLM design
 
-#### Stage 1 — `build_plan(test_cases, ctx, references, page_inventory)` (line 1708)
+#### Stage 1 — `build_plan(test_cases, ctx, references, page_inventory)` (line 1711)
 
 Inputs:
 - `test_cases` — the Jira Test Cases (from `load_test_cases_for_story`)
@@ -377,7 +377,7 @@ Inputs:
 - `references` — dict of reference file contents (loaded once)
 - `page_inventory` — raw JSON string from `app_inventory/<app>.json`
 
-Calls `LLMClient.invoke_structured(prompt, schema=CodePlan)`. Returns a `CodePlan` (defined in `schemas.py:57`):
+Calls `LLMClient.invoke_structured(prompt, schema=CodePlan)`. Returns a `CodePlan` (defined in `schemas.py:134`):
 
 ```python
 class CodePlan(BaseModel):
@@ -397,7 +397,7 @@ class FilePlan(BaseModel):
 
 The plan is a contract. Path policy validation runs immediately after this.
 
-#### Stage 2 — `generate_file_content(llm, file_plan, plan, test_cases, references, page_inventory, ctx, already_generated)` (line 1963)
+#### Stage 2 — `generate_file_content(llm, file_plan, plan, test_cases, references, page_inventory, ctx, already_generated)` (line 2004)
 
 Called once per file in the plan. Returns the file's content as a string. Internally:
 
@@ -405,7 +405,7 @@ Called once per file in the plan. Returns the file's content as a string. Intern
 2. Fills placeholders: `{app_name}`, `{file_path}`, `{purpose}`, `{reference_block}`, `{page_inventory_block}`, `{sibling_context_block}`, `{reserved_block}`, `{extendable_block}`, `{test_cases_block}`, `{plan_notes}`
 3. For extendable files, reads the existing content from disk so the LLM can ADD methods without losing existing ones
 4. Calls `LLMClient.invoke_text(system, user)` — text mode (not structured) because output is Python/Gherkin source
-5. `extract_code_from_response()` (line 762) strips markdown fences. Includes the v12e fix:
+5. `extract_code_from_response()` (line 764) strips markdown fences. Includes the v12e fix:
    ```python
    response_text = re.sub(r"`{4,}", "```", response_text)
    ```
@@ -413,7 +413,7 @@ Called once per file in the plan. Returns the file's content as a string. Intern
 
 ### 5.5 The repair loop (line 2685)
 
-#### `_attempt_step_coverage_repair(generated_files, llm, plan, ...)` (line 2685)
+#### `_attempt_step_coverage_repair(generated_files, llm, plan, ...)` (line 2767)
 
 After Stage 2 finishes, validators run. If `validate_step_definitions_complete` reports missing decorators, this function gives the LLM up to 4 retries:
 
@@ -430,11 +430,11 @@ The repair loop is cheap because only the broken file is regenerated, not the fu
 
 ### 5.6 JIRA marker injection (line 2982)
 
-#### `_ensure_jira_markers_on_feature_files(generated_files, test_cases)` (line 2982)
+#### `_ensure_jira_markers_on_feature_files(generated_files, test_cases)` (line 3064)
 
 Runs after Stage 2 completes. The LLM is unreliable at consistent comment placement, so markers are inserted post-hoc.
 
-#### `_inject_markers_into_feature(content, test_cases)` (line 3094)
+#### `_inject_markers_into_feature(content, test_cases)` (line 3189)
 
 The matching algorithm:
 
@@ -445,7 +445,7 @@ The matching algorithm:
 3. Insert `# JIRA: KEY (hash: 8char)` comment line on top of each matched scenario, preserving indentation
 4. Idempotent: if a marker already exists for that key, skip
 
-### 5.7 The `run()` flow (line 4165) — normal + regenerate mode
+### 5.7 The `run()` flow (line 4267) — normal + regenerate mode
 
 ```python
 def run(story_id, dry_run=False, is_regenerate=False) -> dict:
@@ -470,7 +470,7 @@ def run(story_id, dry_run=False, is_regenerate=False) -> dict:
     #    - if regenerate: jira.remove_label('ai-regenerate')  # one-shot
 ```
 
-### 5.8 The `run_update()` flow (line 3739) — surgical splice
+### 5.8 The `run_update()` flow (line 3841) — surgical splice
 
 ```python
 def run_update(story_id, dry_run=False) -> dict:
@@ -515,7 +515,7 @@ def run_update(story_id, dry_run=False) -> dict:
 | `tests/unit/test_orphan_cleanup.py` | 20 | Orphan detection across banking + CMS domains |
 | `tests/unit/test_validators.py` | 105 | All validators (filename consistency, feature structure, step completeness, imports, method resolution) |
 
-197 tests in these four files. The whole unit suite (~2,780 tests, about 70 seconds, fully offline) covers much more — splice grounding (`test_splice_grounding.py`), the validator gate, Agent 0 and the Protocols among them.
+197 tests in these four files. The whole unit suite (~2,900 tests, about 2 minutes, fully offline) covers much more — splice grounding (`test_splice_grounding.py`), the validator gate, Agent 0 and the Protocols among them.
 
 ---
 
@@ -697,7 +697,7 @@ The hardest computation in the codebase. Used by:
 - Agent 2's deduplication (`filter_duplicate_test_cases`)
 - Orphan cleanup's step matching
 
-#### `_extract_feature_steps(feature_content) -> list[tuple[str, str]]` (line 601)
+#### `_extract_feature_steps(feature_content) -> list[tuple[str, str]]` (line 603)
 
 Walks a Gherkin file and returns `[(keyword, phrase), ...]` for every step. Handles:
 
@@ -706,7 +706,7 @@ Walks a Gherkin file and returns `[(keyword, phrase), ...]` for every step. Hand
 - Scenario Outline `Examples:` tables stripped (they're data, not steps)
 - Comments and blank lines skipped
 
-#### `_extract_decorator_phrases(step_def_content) -> list[tuple[str, str, str]]` (line 658)
+#### `_extract_decorator_phrases(step_def_content) -> list[tuple[str, str, str]]` (line 660)
 
 Walks a Python step-def file and returns `[(kind, phrase, parser_type), ...]`:
 
@@ -715,7 +715,7 @@ Walks a Python step-def file and returns `[(kind, phrase, parser_type), ...]`:
 
 Uses regex `_DECORATOR_PARSER_PATTERN` and `_DECORATOR_STRING_PATTERN`. Critical: when a `parsers.parse(...)` is found, the bare-string pattern is skipped at that location (so the same decorator isn't counted twice).
 
-#### `_phrase_matches(feature_phrase, decorator_phrase, parser_type) -> bool` (line 698)
+#### `_phrase_matches(feature_phrase, decorator_phrase, parser_type) -> bool` (line 708)
 
 THE matching function. Uses pytest-bdd's actual runtime backends:
 
@@ -725,7 +725,7 @@ THE matching function. Uses pytest-bdd's actual runtime backends:
 
 This closes the gap that caused PR #9: an earlier validator was permissive about empty quoted values, but the `parse` library refuses to match them at runtime. By using the SAME backend pytest-bdd uses, the validator's verdict matches runtime behavior exactly.
 
-#### `validate_step_definitions_complete(generated_files, project_root=None)` (line 1114)
+#### `validate_step_definitions_complete(generated_files, project_root=None)` (line 1124)
 
 The cross-file step coverage validator. For every step in every generated feature file:
 1. Is there a matching `@given/@when/@then` decorator in the paired step def file?
@@ -740,7 +740,7 @@ Catches the PR #7 regression: `features/sort-products.feature` paired with `test
 
 Includes `_try_autocorrect_feature_name()` (line 484) which can fix simple mismatches automatically in-flight.
 
-#### `validate_feature_file_structure(generated_files)` (line 1009)
+#### `validate_feature_file_structure(generated_files)` (line 1019)
 
 Catches orphan Given/When/Then lines outside any Scenario block. pytest-bdd would fail at collection time with a cryptic error; this validator catches it pre-commit with a clear message.
 
@@ -1192,43 +1192,44 @@ pushes to main conflicted with branch protection (GH013).
 
 ## 14. Validators — the safety net
 
-28 distinct checks: `validate_paths_against_policy` on the plan, 10 hard gates in
-`_validate_generated_files()` (line 2276, run in order, cheapest first, so an
-expensive AST walk only runs if the basic checks pass), and 24 validator calls
+29 distinct checks: `validate_paths_against_policy` on the plan, 10 hard gates in
+`_validate_generated_files()` (line 2324, run in order, cheapest first, so an
+expensive AST walk only runs if the basic checks pass), and 25 validator calls
 in `_collect_repairable_errors()` — the set the repair loop uses — of which 7
 are also hard gates. `validate_page_object_methods()` wraps further page-object
 checks.
 
 | # | Validator | Defined at | Runs in |
 |---|---|---|---|
-| 1 | `validate_paths_against_policy` | `agents/agent2_coder.py:680` | plan |
+| 1 | `validate_paths_against_policy` | `agents/agent2_coder.py:682` | plan |
 | 2 | `validate_filename_consistency` | `validators/gherkin_analyzer.py:334` | gate |
-| 3 | `validate_feature_file_structure` | `validators/gherkin_analyzer.py:1009` | gate + repair |
+| 3 | `validate_feature_file_structure` | `validators/gherkin_analyzer.py:1019` | gate + repair |
 | 4 | `validate_extended_page_objects_keep_methods` | `validators/page_object_contract.py:78` | gate + repair |
-| 5 | `validate_step_definitions_complete` | `validators/gherkin_analyzer.py:1114` | gate |
-| 6 | `validate_no_duplicate_step_definitions` | `validators/gherkin_analyzer.py:766` | gate + repair |
+| 5 | `validate_step_definitions_complete` | `validators/gherkin_analyzer.py:1124` | gate |
+| 6 | `validate_no_duplicate_step_definitions` | `validators/gherkin_analyzer.py:776` | gate + repair |
 | 7 | `validate_imports_resolvable` | `validators/import_validator.py:194` | gate + repair |
 | 8 | `validate_method_resolution` | `validators/method_resolution_validator.py:603` | gate + repair |
 | 9 | `validate_page_object_selectors` | `validators/method_resolution_validator.py:1444` | gate + repair |
-| 10 | `validate_no_unused_step_definitions` | `validators/gherkin_analyzer.py:1405` | gate |
-| 11 | `validate_fixtures_exist` | `validators/gherkin_analyzer.py:1545` | gate + repair |
-| 12 | `validate_row_scoped_selectors` | `validators/method_resolution_validator.py:3900` | repair |
-| 13 | `validate_helper_return_types_are_respected` | `validators/method_resolution_validator.py:3799` | repair |
-| 14 | `validate_row_index_is_not_a_cell_index` | `validators/method_resolution_validator.py:3673` | repair |
-| 15 | `validate_examples_hold_data_not_placeholders` | `validators/gherkin_analyzer.py:948` | repair |
-| 16 | `validate_fills_confirm_their_page` | `validators/method_resolution_validator.py:3583` | repair |
-| 17 | `validate_page_object_methods` | `validators/method_resolution_validator.py:4338` | repair |
-| 18 | `validate_absence_not_asserted_with_waiting_probe` | `validators/method_resolution_validator.py:2232` | repair |
+| 10 | `validate_no_unused_step_definitions` | `validators/gherkin_analyzer.py:1415` | gate |
+| 11 | `validate_fixtures_exist` | `validators/gherkin_analyzer.py:1555` | gate + repair |
+| 12 | `validate_row_scoped_selectors` | `validators/method_resolution_validator.py:3936` | repair |
+| 13 | `validate_helper_return_types_are_respected` | `validators/method_resolution_validator.py:3835` | repair |
+| 14 | `validate_row_index_is_not_a_cell_index` | `validators/method_resolution_validator.py:3709` | repair |
+| 15 | `validate_examples_hold_data_not_placeholders` | `validators/gherkin_analyzer.py:958` | repair |
+| 16 | `validate_fills_confirm_their_page` | `validators/method_resolution_validator.py:3619` | repair |
+| 17 | `validate_page_object_methods` | `validators/method_resolution_validator.py:4374` | repair |
+| 18 | `validate_absence_not_asserted_with_waiting_probe` | `validators/method_resolution_validator.py:2268` | repair |
 | 19 | `validate_readiness_probe` | `validators/method_resolution_validator.py:1814` | repair |
-| 20 | `validate_no_selectors_in_step_defs` | `validators/method_resolution_validator.py:2315` | repair |
-| 21 | `validate_persistent_state_assertions` | `validators/method_resolution_validator.py:2948` | repair |
-| 22 | `validate_step_parameter_types` | `validators/method_resolution_validator.py:4496` | repair |
-| 23 | `validate_persistent_pages_can_be_cleared` | `validators/method_resolution_validator.py:3447` | repair |
-| 24 | `validate_readers_return_what_they_name` | `validators/method_resolution_validator.py:4059` | repair |
+| 20 | `validate_no_selectors_in_step_defs` | `validators/method_resolution_validator.py:2351` | repair |
+| 21 | `validate_persistent_state_assertions` | `validators/method_resolution_validator.py:2984` | repair |
+| 22 | `validate_step_parameter_types` | `validators/method_resolution_validator.py:4532` | repair |
+| 23 | `validate_persistent_pages_can_be_cleared` | `validators/method_resolution_validator.py:3483` | repair |
+| 24 | `validate_readers_return_what_they_name` | `validators/method_resolution_validator.py:4095` | repair |
 | 25 | `validate_annotated_returns_are_reachable` | `validators/method_resolution_validator.py:1885` | repair |
-| 26 | `validate_confirm_arrival_targets_this_page` | `validators/method_resolution_validator.py:4193` | repair |
-| 27 | `validate_step_claims_are_verified` | `validators/method_resolution_validator.py:3319` | repair |
-| 28 | `validate_step_coverage` | `validators/gherkin_analyzer.py:1857` | repair |
+| 26 | `validate_confirm_arrival_targets_this_page` | `validators/method_resolution_validator.py:4229` | repair |
+| 27 | `validate_step_claims_are_verified` | `validators/method_resolution_validator.py:3355` | repair |
+| 28 | `validate_step_coverage` | `validators/gherkin_analyzer.py:1867` | repair |
+| 29 | `validate_reused_steps_keep_their_meaning` | `validators/method_resolution_validator.py:4764` | repair |
 
 Repairable failures go to the repair loop (`_attempt_step_coverage_repair`),
 grouped by the file they name; only the broken files are regenerated, with the
@@ -1269,7 +1270,7 @@ Agent prompts (`prompts/agent2_coder_plan.md`, `prompts/agent2_coder_generate.md
 | `prompts/agent*.md` (10 files) | NO |
 | `pages/base_page.py` | NO (universal helpers) |
 | `tests/unit/*.py` | NO |
-| `.github/workflows/*.yml` (8 workflows) | NO |
+| `.github/workflows/*.yml` (9 workflows) | NO |
 
 This isolation is enforced by code, not just convention:
 - Path policy validator rejects plans touching reserved files

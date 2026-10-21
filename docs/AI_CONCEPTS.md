@@ -16,7 +16,7 @@ unsafe/invalid output. This project enforces them at four layers:
 |---|---|---|
 | **Input** | Label state machine — LLM only ever sees stories a human explicitly marked `ai-ready` / `human-approved` / `impact-check`. No arbitrary input reaches the model. | config.yaml selection blocks + JQL |
 | **Output schema** | Structured outputs via Pydantic: the JSON schema goes into the prompt and the reply is parsed back through it (provider-agnostic — no tool-calling needed). One repair attempt, then it raises before any side effect. 21 schemas. | `LLMClient.invoke_structured()` + `core/schemas.py` |
-| **Output content** | 28 static checks on generated code (filename consistency, Gherkin structure, step coverage, path policy, imports, method resolution, selector boundaries, waiting predicates, …); test-case rules on Agent 1's drafts; Agent 0's evidence check (a verdict citing no real graph path or verbatim step is dropped, invented element keys are dropped). Invalid output never reaches a commit or a ticket. | `validators/`, `agents/agent2_coder.py`, `core/test_case_rules.py`, `core/impact_analysis.py` |
+| **Output content** | 29 static checks on generated code (filename consistency, Gherkin structure, step coverage, path policy, imports, method resolution, selector boundaries, waiting predicates, …); test-case rules on Agent 1's drafts; Agent 0's evidence check (a verdict citing no real graph path or verbatim step is dropped, invented element keys are dropped). Invalid output never reaches a commit or a ticket. | `validators/`, `agents/agent2_coder.py`, `core/test_case_rules.py`, `core/impact_analysis.py` |
 | **Action / blast radius** | Path policy (reserved files can NEVER be written; extendable files can never be wiped), `max_stories_per_run` caps, human gates before any test-case revision (Impact Review), before code gen and before any merge, one-shot label consumption, Agent 0 shadow mode, Agent 3 blocking only for a named failure, context updates as PRs (never auto-merged). | `validate_paths_against_policy()`, config caps, GitHub branch rules |
 
 What we do NOT have (and why that's fine at current scope):
@@ -79,7 +79,7 @@ A: Context-window economics, natural human checkpoints (approve test cases befor
 A: They don't talk to each other at all. Each reads state from Jira/GitHub and writes state back. The Jira label set IS the message. This makes the whole pipeline observable from the Jira board and recoverable from any point.
 
 **Q: What stops the LLM from hallucinating code that doesn't run?**
-A: 28 static checks + a repair loop before any commit — the model is also handed the real method signatures, so it has less to invent — then Agent 4 actually executes the tests, then a human reviews the PR. Three independent nets.
+A: 29 static checks + a repair loop before any commit — the model is also handed the real method signatures, so it has less to invent — then Agent 4 actually executes the tests, then a human reviews the PR. Three independent nets.
 
 **Q: What happens when the LLM output fails validation?**
 A: Repairable failures go through the Reflexion loop — the exact validator errors are fed back and only the broken file is regenerated, up to 4 times. Non-repairable failures abort the run with the LLM output logged; no partial commits, no PR.

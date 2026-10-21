@@ -14,13 +14,13 @@ Porting to a new tool means adding ONE file under `integrations/` and changing
 one line in `config/config.yaml`. Nothing in `agents/` changes.
 
 > **Verification status (Oct 2026, main `e89fd4a`):** the full unit suite
-> passes (~2,780 offline tests). Deployed: v17/v18 prompt hardening, orphan
+> passes (~2,900 offline tests). Deployed: v17/v18 prompt hardening, orphan
 > cleanup (`ai-update` AND `ai-regenerate`), dynamic sprint scoping
 > (`sprint: "auto"` via JIRA_BOARD_ID), end-to-end LLM token & cost
 > instrumentation, module-wise app context (`prompts/app_context/`), inventory
 > JSON minification, duplicate step-definition guard, per-story ledger reset
 > marker, light-model routing (`LLM_MODEL_LIGHT` for Agents 1 and 5), the
-> 28-check validator gate, board automation, and **Agent 0** (impact analysis,
+> 29-check validator gate, board automation, and **Agent 0** (impact analysis,
 > Impact Review, hand-over, context update, reconcile). Framework code, agent
 > prompts and unit-test logic carry no application-specific references.
 
@@ -65,13 +65,13 @@ These files contain zero project-specific knowledge. Reuse as-is:
 - `pages/base_page.py` — 85 generic Playwright-native helpers. Universal across projects.
 
 ### Unit tests (the test suite is project-agnostic)
-- everything under `tests/unit/` (~2,780 offline tests) — synthetic fixtures (banking, CMS, a fake tracker and repo host), for example:
+- everything under `tests/unit/` (~2,900 offline tests) — synthetic fixtures (banking, CMS, a fake tracker and repo host), for example:
 - `tests/unit/test_orphan_cleanup.py` — uses banking + CMS fixtures
 - `tests/unit/test_pipeline_tool_agnostic.py` — the pipeline against an in-memory tracker
 - `tests/unit/test_validators.py` — a fixture uses "Admin" as a generic role placeholder, not tied to any app
 
 ### Infrastructure
-- `.github/workflows/*.yml` — all eight workflows
+- `.github/workflows/*.yml` — all nine workflows
 - `requirements.txt`
 - `pytest.ini`
 - `config/__init__.py`, `config/paths.py`
