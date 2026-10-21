@@ -4108,6 +4108,23 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
             orphan_page_methods_found = []
             modified_page_files = {}
 
+    # STEP DEFINITIONS THIS UPDATE LEFT UNUSED. A removed scenario - or a
+    # modified one - can take the last use of a step with it. The step-def
+    # splice keeps every existing function (that is its job), so without this
+    # the final unused-step check rejects the run on code no model wrote. The
+    # change-story splice (agents/agent2_impact.py) had the same defect and the
+    # same cure: the unused-step check's own rule, applied deterministically,
+    # touching only decorators the feature used before this update. Runs AFTER
+    # the orphan cleanup above, which reads these functions to find the page
+    # methods only they call. A whole regeneration has already dropped them,
+    # so this finds nothing there.
+    from validators.orphan_cleanup import comment_out_step_defs_unused_by
+    new_step_defs_content, unused_step_defs = comment_out_step_defs_unused_by(
+        existing_content, spliced_content, new_step_defs_content,
+        step_defs_path, feature_file_path, story_id,
+        [tc["key"] for tc in classification["modified"]] + list(classification["orphan_keys"]),
+    )
+
     generated_files = [
         GeneratedFile(
             file_path=feature_file_path,
@@ -4147,12 +4164,19 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
             f"\n**Removed scenarios (no longer in Jira):** "
             f"{', '.join(classification['orphan_keys'])}"
         )
-    if orphan_step_defs_found:
+    if unused_step_defs:
+        pr_body_parts.append(
+            "\n**Step definitions left unused (commented out for review):** "
+            + ", ".join(f"`{d.function_name}`" for d in unused_step_defs)
+        )
+    if orphan_step_defs_found and step_defs_mode == "regenerated":
+        # Only a whole regeneration actually drops them; otherwise the
+        # comment-out above is the accurate record.
         orphan_func_names = ", ".join(
             f"`{o.function_name}`" for o in orphan_step_defs_found
         )
         pr_body_parts.append(
-            f"\n**Orphan step definitions detected and removed by regeneration:** "
+            f"\n**Orphan step definitions removed by regeneration:** "
             f"{orphan_func_names}"
         )
     if orphan_page_methods_found:

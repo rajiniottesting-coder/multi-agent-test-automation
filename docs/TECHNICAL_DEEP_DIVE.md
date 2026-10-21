@@ -510,6 +510,8 @@ def run_update(story_id, dry_run=False) -> dict:
     #    - Reads all step_def files via gh.list_files_in_directory()
     #    - Reads page object files from extendable_paths (incl. auto-discovered)
     #    - Comments out dead page methods with # AI-ORPHAN: banners
+    # 7b. comment_out_step_defs_unused_by() — step functions this update
+    #    left unused (removed or modified scenarios)
     # 8. Validate, branch (-updateN suffix via _find_unused_update_branch),
     #    commit, open PR
     # 9. jira.remove_label('ai-update')  # one-shot consumed
@@ -755,7 +757,7 @@ This closes the gap that caused PR #9: an earlier validator was permissive about
 
 The cross-file step coverage validator. For every step in every generated feature file:
 1. Is there a matching `@given/@when/@then` decorator in the paired step def file?
-2. If not, it still accepts a match in another committed step-def file. That is more permissive than runtime — pytest-bdd step definitions are module-scoped, and generated step files are self-contained — and is the open follow-up recorded under ADR-012
+2. If not, it accepts a match only in a `conftest.py` that applies to the module (`tests/step_defs/conftest.py`, `tests/conftest.py`; the batch's copy wins over disk). Sibling step-def modules — committed or in the same batch — never count, because pytest-bdd step definitions are module-scoped: exactly what runtime resolves
 3. If still not, return an error string with diagnostic info (which file, which step, what decorator was almost-matching)
 
 Returns `list[str]` of errors. Empty list = all good.
@@ -1042,13 +1044,13 @@ update_selection:
   2. Step_def file goes through the splice. Nothing new to define, so the file is kept as it is — including any step function only the deleted scenario used
   3. **Orphan cleanup runs:**
      - `cleanup_orphans_after_removal()` reads all step_def files + extendable page objects (including auto-discovered ones)
-     - Detects step def functions only referenced by removed scenarios → listed in the PR body, but `run_update` does not comment them out
+     - Detects step def functions only referenced by removed scenarios (used to find their page methods)
      - Detects page-object methods only called from those orphan step defs → commented out with `# AI-ORPHAN: this page-object method appears to no longer be used after scenario(s) PROJ-31 were removed from Jira. Review before deleting.`
-  4. **Known gap:** a step function left behind in step 2 is then rejected by the final gate's unused-step check (`validate_no_unused_step_definitions`), so this case can fail the run. The change-story splice already handles it with `comment_out_step_defs_unused_by()`; `run_update` does not yet. Until it does, use `ai-regenerate` when deleting a scenario with steps no other scenario uses
+  4. **Unused step functions commented out:** `comment_out_step_defs_unused_by()` comments out every step decorator the feature used before this update and no longer uses (a removal or a modification can take a step's last use), with an `# AI-ORPHAN:` banner. Same rule as the final unused-step check, applied deterministically, so the gate passes. A function that keeps one used decorator loses only the unused lines. Runs after the orphan cleanup, which still needs those functions to find their page methods
 - PR body:
   ```
   **Removed scenarios (no longer in Jira):** PROJ-31
-  **Orphan step definitions detected and removed by regeneration:** `click_recovery_email`, `verify_recovery_sent`
+  **Step definitions left unused (commented out for review):** `click_recovery_email`, `verify_recovery_sent`
   **Orphan page methods (commented out for human review):** `LoginPage.click_forgot_password`, `LoginPage.is_recovery_email_visible`
 
   > ⚠️ Review the page object diffs — if a method might be useful for upcoming scenarios, uncomment it. Otherwise delete in a follow-up commit.
@@ -1061,7 +1063,7 @@ All three operations applied in sequence within a single `run_update()` executio
 2. Modifications (in-place splices)
 3. Additions (appends)
 4. Step_def splice once (operates on the fully-spliced feature)
-5. Orphan cleanup once
+5. Orphan cleanup once, then unused step functions commented out once
 
 Single PR with all three sections in the body.
 

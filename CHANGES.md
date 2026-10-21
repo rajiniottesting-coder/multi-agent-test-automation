@@ -29,6 +29,9 @@ All generic, each pinned by unit tests (suite: ~2,900 tests).
 **CI**
 - #192 Actions storage kept inside the quota: `artifact_cleanup.yml` (daily, deletes artifacts older than 2 days, `scripts/cleanup_artifacts.py`); Agent 4 uploads only what Agent 5 needs, kept 3 days
 
+- `ai-update` comments out step functions a removed or modified scenario left unused (`comment_out_step_defs_unused_by()`, as the change-story splice does), so the unused-step gate no longer fails the run; the PR body lists them instead of claiming they were "removed by regeneration"
+- The step-coverage check counts only the paired module and applicable `conftest.py` files; a sibling module generated in the same batch no longer counts (runtime cannot see it). Closes ADR-012's follow-up
+
 **Docs**
 - #197 README and docs brought in line with `main` after #193
 - Line-by-line audit of `docs/` against `main` (`3289394`): the change-story selector wording rule (wording changes may update a selector; note rewrites never do), self-contained step files, login roles, the `main` rulesets, Agent 5 posting a new report on every re-run, `ai-update`'s step-definition splice, current line numbers and counts
@@ -108,9 +111,8 @@ that cannot run — the PR #9 class of defect. Verified empirically: sibling mod
   app); DECISIONS.md gains **ADR-012**.
 - Suite: **270 passing**, unchanged.
 
-**Open follow-up:** the step-coverage validator still treats decorators in
-arbitrary sibling step-def files as available. It should count only `conftest.py`
-plus the paired module.
+**Open follow-up (closed October 2026):** the step-coverage validator treated decorators in
+sibling step-def files as available. It now counts only `conftest.py` plus the paired module.
 
 
 ## Phase 2 — Tier 3 follow-up: complex-locator support in the inventory tooling

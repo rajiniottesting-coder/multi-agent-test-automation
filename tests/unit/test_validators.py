@@ -299,12 +299,12 @@ class TestStepCoverage:
         """).strip())
         assert validate_step_definitions_complete([feature, step_def]) == []
 
-    def test_steps_from_sibling_step_def_in_batch_pooled(self):
-        """When the LLM splits steps across two generated step-def files
-        (e.g. shared steps in test_shared.py, feature-specific steps in
-        test_x.py), both files should be pooled when checking coverage —
-        otherwise we get false positives. Regresses the SCRUM-20 family
-        of bugs where the validator only inspected the paired file."""
+    def test_steps_from_sibling_step_def_in_batch_are_NOT_pooled(self):
+        """A step declared in a sibling step-def module generated in the SAME
+        batch is no more visible at runtime than a committed sibling's:
+        pytest-bdd steps are module-scoped. Pooling batch siblings let a
+        file pass here and fail at collection with
+        StepDefinitionNotFoundError (ADR-012 follow-up)."""
         feature = gf("features/x.feature", textwrap.dedent("""
             Feature: x
               Scenario: y
@@ -324,9 +324,46 @@ class TestStepCoverage:
         # project_root=None disables on-disk scan so we test the batch-pool
         # path in isolation.
         errors = validate_step_definitions_complete(
-            [feature, paired, sibling], project_root=None
+            [feature, paired, sibling], project_root="/nonexistent"
         )
-        assert errors == [], errors
+        assert len(errors) == 1, errors
+        assert "common setup step" in errors[0]
+        assert "tests/step_defs/test_x.py" in errors[0]
+
+    def test_conftest_in_batch_is_pooled(self):
+        """A conftest.py in the batch IS shared by pytest, so its steps count."""
+        feature = gf("features/x.feature", textwrap.dedent("""
+            Feature: x
+              Scenario: y
+                Given common setup step
+                When specific action happens
+        """).strip())
+        paired = gf("tests/step_defs/test_x.py", textwrap.dedent("""
+            from pytest_bdd import when
+            @when("specific action happens")
+            def s1(): pass
+        """).strip())
+        conftest = gf("tests/step_defs/conftest.py", textwrap.dedent("""
+            from pytest_bdd import given
+            @given("common setup step")
+            def s2(): pass
+        """).strip())
+        assert validate_step_definitions_complete(
+            [feature, paired, conftest], project_root="/nonexistent") == []
+
+    def test_root_tests_conftest_is_pooled(self, tmp_path):
+        """tests/conftest.py applies to tests/step_defs/ too."""
+        (tmp_path / "tests" / "step_defs").mkdir(parents=True)
+        (tmp_path / "tests" / "conftest.py").write_text(textwrap.dedent("""
+            from pytest_bdd import given
+            @given("the app is reset")
+            def s1(): pass
+        """).strip())
+        feature = gf("features/x.feature",
+                     "Feature: x\n  Scenario: y\n    Given the app is reset\n")
+        paired = gf("tests/step_defs/test_x.py", "from pytest_bdd import given\n")
+        assert validate_step_definitions_complete(
+            [feature, paired], project_root=str(tmp_path)) == []
 
     def test_steps_in_sibling_module_are_NOT_pooled(self, tmp_path):
         """ADR-013: a step declared in a SIBLING step-def module is not

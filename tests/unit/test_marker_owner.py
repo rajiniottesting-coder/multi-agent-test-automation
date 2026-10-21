@@ -162,3 +162,60 @@ def test_repeated_refreshes_never_grow_the_marker():
     assert _inject_markers_into_feature(_inject_markers_into_feature(once, [tc]), [tc]) == once
     line = next(l for l in once.splitlines() if "JIRA" in l)
     assert line.strip() == format_marker("AB-3", "new", "AB-1", ["AB-9"])
+
+
+class TestUpdateLeavesNoUnusedStepDefinitions:
+    """ai-update removing (or revising) a scenario can take the last use of a
+    step with it. The step-def splice keeps existing functions, so run_update
+    must comment those out - otherwise the final unused-step check rejects a
+    run on code no model wrote."""
+
+    def _update_keeping_step_defs(self, jira, root):
+        import agents.agent2_coder as a2
+        gh = FakeRepoHost(repo_files(root))
+        sd = (root / "tests" / "step_defs" / "test_sandbox_login.py").read_text()
+        with patch.object(a2, "get_tracker", return_value=jira), \
+             patch.object(a2, "get_repo_host", return_value=gh), \
+             patch.object(a2, "LLMClient"), \
+             patch.object(a2, "_splice_step_defs_incremental",
+                          side_effect=lambda *a, **k: (sd, "unchanged")), \
+             patch.object(a2, "_validate_generated_files"):
+            a2.run_update("SBX-1")
+        return gh
+
+    def test_a_removed_scenarios_only_step_is_commented_out(self, world):
+        from validators.gherkin_analyzer import validate_no_unused_step_definitions
+        from types import SimpleNamespace
+        fake, jira, root = world
+        feature = root / "features" / "sandbox_login.feature"
+        feature.write_text(feature.read_text() + "\n  " + format_marker("SBX-77", "x")
+                           + "\n  Scenario: Retired panel\n    When I open the retired panel\n")
+        sd_path = root / "tests" / "step_defs" / "test_sandbox_login.py"
+        sd_path.write_text(sd_path.read_text()
+                           + '\n\n@when("I open the retired panel")\ndef open_retired_panel():\n    pass\n')
+
+        gh = self._update_keeping_step_defs(jira, root)
+
+        pr = gh.prs[0]
+        files = gh.branches[pr["head_ref"]]
+        new_sd = files["tests/step_defs/test_sandbox_login.py"]
+        assert '# @when("I open the retired panel")' in new_sd
+        assert "AI-ORPHAN" in new_sd and "SBX-77" in new_sd
+        assert "`open_retired_panel`" in pr["body"]
+        assert "removed by regeneration" not in pr["body"]
+        errors = validate_no_unused_step_definitions([
+            SimpleNamespace(file_path="features/sandbox_login.feature",
+                            content=files["features/sandbox_login.feature"]),
+            SimpleNamespace(file_path="tests/step_defs/test_sandbox_login.py", content=new_sd)])
+        assert not any("retired panel" in e for e in errors), errors
+
+    def test_steps_other_scenarios_still_use_are_kept(self, world):
+        fake, jira, root = world
+        feature = root / "features" / "sandbox_login.feature"
+        feature.write_text(feature.read_text() + "\n  " + format_marker("SBX-77", "x")
+                           + "\n  Scenario: Retired copy\n"
+                           "    When I log in as a \"registered\" user\n")
+        gh = self._update_keeping_step_defs(jira, root)
+        files = gh.branches[gh.prs[0]["head_ref"]]
+        assert files["tests/step_defs/test_sandbox_login.py"] == \
+            (root / "tests" / "step_defs" / "test_sandbox_login.py").read_text()
