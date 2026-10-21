@@ -205,8 +205,9 @@ above; the record is kept as it was.
 - **A re-defined Then step keeps its meaning** (#190): it may not assert more
   than the committed definition of the same phrase, and since #193 the
   generation prompt shows that definition.
-- The **open follow-up** above is still open: `validate_step_definitions_complete()`
-  still counts decorators in sibling on-disk step-definition files as available.
+- The **open follow-up** above is closed: `validate_step_definitions_complete()`
+  counts only the paired module and the applicable `conftest.py` files
+  (batch or disk). Sibling modules — committed or in the same batch — never count.
 
 ---
 

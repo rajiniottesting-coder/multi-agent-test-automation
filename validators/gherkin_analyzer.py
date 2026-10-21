@@ -1123,30 +1123,31 @@ def validate_feature_file_structure(generated_files: list) -> list:
 
 def validate_step_definitions_complete(generated_files: list, project_root=None) -> list:
     """Verify every step phrase in generated .feature files has a matching
-    @given/@when/@then decorator — either in the corresponding generated step
-    def file, OR in pre-existing step def files already on disk.
+    @given/@when/@then decorator that pytest-bdd will actually find at runtime.
 
     PAIRING CONVENTION:
         features/X.feature  pairs with  tests/step_defs/test_X.py
         (This is enforced by the Phase 4 filename consistency validator.)
 
-    CROSS-FILE STEP REUSE (added 2026-05-10):
-        pytest-bdd allows the same step decorator to be defined in any module
-        that pytest collects. NOTE: this belief was INCORRECT (ADR-013) —
-        the test session. So a feature step like "Given I am on the login
-        page" defined in tests/step_defs/test_login.py works for any other
-        feature in the same session, no import or conftest required.
+    WHAT COUNTS AS AVAILABLE - exactly what pytest-bdd resolves:
+        pytest-bdd step definitions are MODULE-SCOPED fixtures. A feature's
+        steps resolve against its own step-def module plus the conftest.py
+        files pytest applies to that module (tests/step_defs/conftest.py and
+        tests/conftest.py) - nothing else. A step declared in a SIBLING
+        module, whether committed or generated in the same batch, is NOT
+        visible and fails at collection with StepDefinitionNotFoundError.
 
-        Earlier versions of this validator only inspected the paired step
-        def file, which produced false-positive errors any time the LLM
-        correctly omitted re-defining a shared step (e.g. login). Now we
-        also scan pre-existing step def files on disk and treat any
-        decorator we find there as available.
+        Earlier versions pooled every step-def file (first on disk, later
+        still in the batch), on the belief that steps are session-wide. That
+        let a file relying on a sibling's step pass here and fail in Agent 4
+        - the "validator green, runtime red" defect this check exists to
+        prevent (ADR-012 follow-up, ADR-013). Generated modules are
+        self-contained instead: each declares every step its feature uses.
 
     HARD-FAIL BEHAVIOR:
         Returns a list of error strings — one per genuinely missing step.
-        Empty list means every feature step has a matching decorator
-        somewhere (paired file, sibling step def file, or generated batch).
+        Empty list means every feature step has a matching decorator in the
+        paired file or an applicable conftest.py (batch or on disk).
 
     REUSABLE FOR ANY PROJECT:
         Makes no assumptions about domain (works for login, cart, checkout,
@@ -1160,7 +1161,8 @@ def validate_step_definitions_complete(generated_files: list, project_root=None)
                         `generated_files`). Both .feature files and
                         step def .py files should be in the list.
         project_root:   Optional Path to the repository root. When provided,
-                        decorators in `<project_root>/tests/step_defs/*.py`
+                        decorators in the committed conftest.py files
+                        (`tests/step_defs/conftest.py`, `tests/conftest.py`)
                         are also treated as available. Defaults to the
                         PROJECT_ROOT computed in config.paths. Pass `None`
                         explicitly (or a non-existent path) to skip the
@@ -1183,27 +1185,21 @@ def validate_step_definitions_complete(generated_files: list, project_root=None)
         content = getattr(gf, "content", "") or ""
         by_path[path] = content
 
-    # === Cross-file decorator pool ===
-    # Collect decorators that are available repo-wide (not just in the
-    # paired file). Sources, in order:
-    #   1. Every step def file in the generated batch (LLM might have put
-    #      shared steps in conftest.py or another step def file).
-    #   2. Every step def file already on disk (pre-existing tests).
-    # Using a function-scoped default so the closure doesn't recompute
-    # the file list per feature.
+    # === Shared decorator pool: conftest.py only ===
+    # pytest applies a conftest.py to every module beneath it, so its steps
+    # are genuinely shared. Sibling step-def modules are NOT (module-scoped
+    # fixtures) - they are never pooled, from the batch or from disk. The
+    # paired module's own decorators are added per feature below.
+    _CONFTESTS = ("tests/step_defs/conftest.py", "tests/conftest.py")
     extra_decorators: list[tuple[str, str, str]] = []
 
-    # 1. From the generated batch: any step def file other than the one
-    #    being paired below. We add the paired file's decorators in the
-    #    inner loop, so here we just include all of them; duplication is
-    #    harmless because the matching loop is "first hit wins".
-    for batch_path, batch_content in by_path.items():
-        if batch_path.startswith("tests/step_defs/") and batch_path.endswith(".py"):
-            extra_decorators.extend(_extract_decorator_phrases(batch_content))
+    # 1. A conftest.py in the generated batch (its new content wins over disk).
+    for conftest_path in _CONFTESTS:
+        if conftest_path in by_path:
+            extra_decorators.extend(_extract_decorator_phrases(by_path[conftest_path]))
 
-    # 2. From disk. Default to the project's real step_defs dir; opt-out
-    #    by passing project_root=None or a path that doesn't exist
-    #    (useful in unit tests).
+    # 2. Committed conftest.py files not in the batch. Default to the
+    #    project's root; opt out with a path that doesn't exist.
     if project_root is None:
         try:
             from config.paths import PROJECT_ROOT as _PR
@@ -1213,26 +1209,12 @@ def validate_step_definitions_complete(generated_files: list, project_root=None)
 
     if project_root is not None:
         from pathlib import Path as _Path
-        step_defs_dir = _Path(project_root) / "tests" / "step_defs"
-        if step_defs_dir.is_dir():
-            # ADR-013: pool ONLY conftest.py. pytest-bdd step definitions are
-            # MODULE-SCOPED fixtures, so a step declared in a sibling step-def
-            # module is NOT visible to the module under validation. Pooling
-            # siblings made this validator pass files that fail at collection
-            # with StepDefinitionNotFoundError - the exact "validator green,
-            # runtime red" defect it exists to prevent. conftest.py IS shared
-            # by pytest, so it is the only file that may be pooled.
-            batch_step_def_paths = {
-                p for p in by_path
-                if p.startswith("tests/step_defs/") and p.endswith(".py")
-            }
-            conftest = step_defs_dir / "conftest.py"
-            if (conftest.is_file()
-                    and "tests/step_defs/conftest.py" not in batch_step_def_paths):
+        for conftest_path in _CONFTESTS:
+            conftest = _Path(project_root) / conftest_path
+            if conftest_path not in by_path and conftest.is_file():
                 try:
                     extra_decorators.extend(
-                        _extract_decorator_phrases(
-                            conftest.read_text(encoding="utf-8")))
+                        _extract_decorator_phrases(conftest.read_text(encoding="utf-8")))
                 except OSError:
                     pass
 
@@ -1255,7 +1237,7 @@ def validate_step_definitions_complete(generated_files: list, project_root=None)
 
         # Extract steps from feature and decorators from step def
         feature_steps = _extract_feature_steps(content)
-        # Pool: paired file + cross-file (batch siblings + on-disk).
+        # Pool: the paired module + applicable conftest.py files.
         decorators = _extract_decorator_phrases(step_def_content) + extra_decorators
 
         # Track unique missing steps (avoid duplicate errors when the same
