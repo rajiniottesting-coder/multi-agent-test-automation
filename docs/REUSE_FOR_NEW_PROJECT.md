@@ -13,7 +13,7 @@
 Porting to a new tool means adding ONE file under `integrations/` and changing
 one line in `config/config.yaml`. Nothing in `agents/` changes.
 
-> **Verification status (Oct 2026, main `e89fd4a`):** the full unit suite
+> **Verification status (21 Oct 2026, main `3289394`):** the full unit suite
 > passes (~2,900 offline tests). Deployed: v17/v18 prompt hardening, orphan
 > cleanup (`ai-update` AND `ai-regenerate`), dynamic sprint scoping
 > (`sprint: "auto"` via JIRA_BOARD_ID), end-to-end LLM token & cost
@@ -52,6 +52,7 @@ These files contain zero project-specific knowledge. Reuse as-is:
 - `validators/gherkin_analyzer.py` — Gherkin / step-def matching primitives (renamed from test_inventory.py)
 - `validators/import_validator.py`, `validators/method_resolution_validator.py`, `validators/page_object_contract.py` — generic validators
 - `core/schemas.py` — Pydantic models
+- `tests/conftest.py`, `tests/step_defs/conftest.py` — browser lifecycle, auto-registered page-object fixtures, role-based `credentials` (see Change 5)
 
 ### Agent prompts (templated, read app info from config at runtime)
 - `prompts/agent0_seeds.md`, `prompts/agent0_adjudicate.md`, `prompts/agent0_wording.md`, `prompts/agent0_context_notes.md`
@@ -62,7 +63,7 @@ These files contain zero project-specific knowledge. Reuse as-is:
 - `prompts/agent5_reporter.md`
 
 ### Universal page-object helpers
-- `pages/base_page.py` — 85 generic Playwright-native helpers. Universal across projects.
+- `pages/base_page.py` — 86 generic Playwright-native helpers. Universal across projects.
 
 ### Unit tests (the test suite is project-agnostic)
 - everything under `tests/unit/` (~2,900 offline tests) — synthetic fixtures (banking, CMS, a fake tracker and repo host), for example:
@@ -101,10 +102,13 @@ app_under_test:
     - "features/login.feature"
     - "tests/step_defs/test_login.py"
     - "pages/login_page.py"
+    - "pages/base_page.py"        # universal helpers — never edited by an agent
 
-  extendable_paths:
-    - "pages/account_page.py"
-    - "pages/base_page.py"        # NEVER remove — universal helpers
+  # Every page object already committed under pages/ is extendable
+  # automatically (new methods only, none removed). List a file here only for
+  # something the automatic rule cannot see - see GUIDE.md, "extendable_paths".
+  extendable_paths: []
+  auto_extend_page_objects: true
 ```
 
 ALSO update the legacy top-level `base_url:` alias:
@@ -113,7 +117,8 @@ ALSO update the legacy top-level `base_url:` alias:
 base_url: https://bank.acme.example.com   # was: the previous app's base URL
 ```
 
-ALSO update or REMOVE the `test_users:` block - it holds the previous app's roles.
+Login roles are NOT in `config.yaml`: rename the `APP_USER_<ROLE>` variables in
+`.env` and GitHub Secrets to the new app's roles (Change 5).
 
 > **⚠️ Credentials — read before onboarding a REAL application.**
 >
@@ -127,26 +132,26 @@ ALSO update or REMOVE the `test_users:` block - it holds the previous app's role
 > 2. **Sent to the LLM on every Agent 1 call** — the `app_context/` modules are
 >    injected into the prompt. Most client security policies prohibit exactly this.
 >
-> **The correct pattern — keep the knowledge, move the secret:**
+> **The pattern the framework uses — keep the knowledge, move the secret:**
 >
-> ```yaml
-> # config.yaml — usernames and ROLE BEHAVIOUR are fine; passwords are not
-> test_users:
->   admin:  { username: "admin_user",  password_env: "TEST_ADMIN_PASSWORD" }
->   viewer: { username: "viewer_user", password_env: "TEST_VIEWER_PASSWORD" }
->   locked: { username: "locked_user", password_env: "TEST_LOCKED_PASSWORD" }
+> ```bash
+> # .env (gitignored) and GitHub Secrets — one username per ROLE
+> APP_USER_ADMIN=admin_user
+> APP_USER_LOCKED=locked_user
+> APP_PASSWORD=...            # shared, or APP_PASSWORD_<ROLE> per role
 > ```
 >
 > ```markdown
 > <!-- prompts/app_context/login.md — behavioural knowledge, no secrets -->
-> | Username | Password | Notes |
-> |---|---|---|
-> | `admin_user`  | *(env: TEST_ADMIN_PASSWORD)*  | Full permissions; can approve |
-> | `locked_user` | *(env: TEST_LOCKED_PASSWORD)* | Receives lockout error on login |
+> | Role | Notes |
+> |---|---|
+> | `admin`  | Full permissions; can approve |
+> | `locked` | Receives lockout error on login |
 > ```
 >
-> Step definitions read the real value at runtime: `os.getenv("TEST_ADMIN_PASSWORD")`.
-> Passwords live in GitHub Secrets (CI) and `.env` (local, gitignored).
+> Features log in by role (`When I log in as "admin"`); the `credentials`
+> fixture in `tests/step_defs/conftest.py` reads `APP_USER_ADMIN` and the
+> password at runtime. Nothing secret is in a committed file or a prompt.
 >
 > Agent 1 still learns everything it needs — *that* a locked user exists and *what*
 > happens when it logs in — which is what drives good test-case design. It never
@@ -162,7 +167,7 @@ The `agents:` section (label selection rules, completion labels) **stays exactly
 
 Delete the previous app's inventory. Create a new JSON file describing your app's pages, selectors, and methods. See `the "App inventory JSON schema" section below` for the schema.
 
-This file is what Agent 2's planner uses to understand what page objects exist and what methods they expose. Get it right or Agent 2 will hallucinate methods.
+Agents 2 and 3 read it for every page and selector; an element missing here is an element Agent 2 cannot use. (The methods a page object exposes are read from the page objects themselves, by AST - not from this file.)
 
 **Bootstrap it, don't start from scratch.** The `scripts/generate_inventory.py` tool crawls your live app and emits a first-draft inventory with selectors already ranked and page objects guessed:
 
@@ -237,99 +242,57 @@ Make this test:
 
 This is the only file the LLM "studies" before generating code. Quality matters here more than anywhere else.
 
-### Change 5 — `tests/step_defs/conftest.py` (MANDATORY)
+### Change 5 — Login roles and `.env` (MANDATORY if the app has a login)
 
-**This file is required for every application.** Without it, the SECOND feature
-file Agent 2 generates will fail at collection with
-`pytest_bdd.exceptions.StepDefinitionNotFoundError`.
+`tests/step_defs/conftest.py` is **app-agnostic and reused unchanged** — do not
+rewrite it. It holds fixtures only:
 
-#### Why it is mandatory
+- **One fixture per page object, registered automatically.** Every `BasePage`
+  subclass in `pages/` becomes a fixture named after its class
+  (`SearchResultsPage` → `search_results_page`). A new page object needs no
+  conftest edit.
+- **`credentials`** resolves a login ROLE to a username and password from the
+  environment: role `"admin"` → `APP_USER_ADMIN`, and `APP_PASSWORD_ADMIN`,
+  else `APP_PASSWORD`. Features log in by role (`When I log in as "admin"`),
+  never with a literal credential.
+- `run_id` / `unique_username` for data a run creates on a shared application.
 
-pytest-bdd implements step definitions as **pytest fixtures**, and fixtures are
-**module-scoped**. A step defined in `tests/step_defs/test_login.py` is visible
-only inside that module — it is NOT available to `test_checkout.py` or to any
-generated step-def file. The only supported cross-module sharing mechanism is
-`conftest.py`, whose fixtures are shared with every test module in that
-directory and below.
+So the per-app work is in the environment, not in Python: define one
+`APP_USER_<ROLE>` per role (and `APP_PASSWORD` or `APP_PASSWORD_<ROLE>`) in
+`.env` locally and in GitHub Secrets for CI, and describe what each role can do
+in `prompts/app_context/`.
 
-So any step or page-object fixture that **more than one feature needs** must
-live in `tests/step_defs/conftest.py`. Steps specific to a single feature stay
-in that feature's paired module.
+#### Step definitions are self-contained
 
-> Proven empirically: a step defined in a sibling step-def module raises
-> `StepDefinitionNotFoundError`; the same step moved to `conftest.py` passes.
+pytest-bdd implements step definitions as **pytest fixtures**, which are
+**module-scoped**: a step defined in `tests/step_defs/test_login.py` is not
+visible to another step-def module. Every generated step-def module therefore
+declares **every** step its own feature uses — even when another module already
+declares the same text. That duplication is safe (each module resolves its own
+copy); the duplicate-step guard flags only the same phrase twice in ONE file,
+where the second silently shadows the first. Since #190 a phrase another
+feature already defines must also assert no more than that definition does.
 
-#### Why it must be in `tests/step_defs/`, not `tests/`
-
-Both validators discover on-disk step definitions with
-`tests/step_defs/*.py`. Shared steps placed in `tests/conftest.py` would work at
-runtime but be **invisible to the step-coverage validator**, so Agent 2 would
-report phantom "missing decorator" errors. `tests/step_defs/conftest.py` is the
-one location that satisfies both pytest and the validators.
-
-#### The two conftest files — division of labour
-
-The project has two `conftest.py` files, split along the same engine/app
-boundary as the rest of the framework:
+The two conftest files split along the engine/app boundary, and both are
+reused unchanged:
 
 | | `tests/conftest.py` | `tests/step_defs/conftest.py` |
 |---|---|---|
-| **Contains** | `browser`, `page`, `base_url`, `config`, screenshot-on-failure hook | Page-object fixtures + shared step definitions |
-| **Concern** | Playwright lifecycle & CI plumbing | Your application's step vocabulary |
-| **New project** | **Reuse unchanged** — app-agnostic | **Rewrite** — app-specific |
-| **Scope** | everything under `tests/` (incl. `tests/unit/`) | `tests/step_defs/` and below |
+| **Contains** | `browser`, `page`, `base_url`, `config`, failure-evidence capture | auto-registered page-object fixtures, `credentials`, `run_id` |
+| **Concern** | Playwright lifecycle & CI plumbing | the page objects and login roles of whatever app is configured |
+| **Scope** | everything under `tests/` | `tests/step_defs/` and below |
 
-pytest merges conftest files hierarchically, so the step-def conftest
-automatically inherits `page` and `base_url` from the parent — it never
-redefines them.
-
-Both belong in `reserved_paths`: they are human-owned foundations.
-
-#### What to put in it
-
-```python
-"""Shared page-object fixtures and shared step definitions."""
-import pytest
-from pytest_bdd import given, when, then, parsers
-
-from pages.login_page import LoginPage
-
-
-@pytest.fixture
-def login_page(page):          # `page` comes from tests/conftest.py
-    return LoginPage(page)
-
-
-@given("I am on the <your app> login page")
-def open_login_page(login_page, base_url):
-    login_page.open(base_url)
-
-
-# One single-quoted line. parsers.re + [^"]* so empty values still match.
-@when(parsers.re(r'I log in with username "(?P<username>[^"]*)" and password "(?P<password>[^"]*)"'))
-def login_with_credentials(login_page, username, password):
-    login_page.login_as(username, password)
-```
-
-#### Two rules the file must follow
+Two rules still apply to the reference step definitions you write in Change 4:
 
 1. **`parsers.re`, not `parsers.parse`, for quoted values.** Validation
    scenarios pass empty values (`When I log in with username "" and password ""`).
    The `parse` library's default placeholder requires at least one character, so
    `parsers.parse` fails at runtime with `StepDefinitionNotFoundError` even
    though the decorator looks correct. `parsers.re(r'... "(?P<u>[^"]*)" ...')`
-   matches both `"alice"` and `""`; named groups bind to arguments identically.
-
+   matches both `"alice"` and `""`.
 2. **Keep each decorator pattern on ONE single-quoted line.** The step-coverage
-   validator extracts decorators with a regex that reads from the first quote to
-   the last quote. Splitting a pattern across lines with implicit string
-   concatenation corrupts the captured pattern, and **every** step using it
-   silently stops matching.
-
-#### Rule of thumb
-
-> Needed by more than one feature → `conftest.py`.
-> Specific to one feature → that feature's paired step-def module.
+   validator reads a decorator from its first quote to its last, so a pattern
+   split across lines by implicit string concatenation stops matching.
 
 ### Change 6 - Clean up the previous app's leftovers (RECOMMENDED)
 
@@ -348,6 +311,8 @@ Delete:
 - every module under `prompts/app_context/` except your own - they
 
   describe the OLD app's behaviour and will mislead Agent 1 if left.
+
+- the previous app's `APP_USER_<ROLE>` variables in `.env` and GitHub Secrets
 
 ### Change 7 - Turn on Agent 0 (OPTIONAL)
 
@@ -390,18 +355,20 @@ is: Gherkin is language-neutral. Rewrite the step-definition module and the
 reference page object in JS, using Cucumber-JS's `Given/When/Then`. Everything
 Agent 2 generates copies this style, so it shapes every later file.
 
-**2 · `pages/base_page.py` → `base_page.js`.** 75 helpers. Keep every method
-NAME: the inventory's `key_methods` and the validators both reference them.
+**2 · `pages/base_page.py` → `base_page.js`.** 86 public helpers. Keep every
+method NAME: the generation prompt lists them and the validators reference them.
 Mechanical, but not small.
 
 **3 · The runner.** `pytest.ini` becomes `cucumber.js`; Agent 4's workflow runs
 `npx cucumber-js` instead of `pytest tests/step_defs/`. It must still emit
 **junit.xml**, or Agent 5 has nothing to parse.
 
-**4 · Five validators need a JavaScript parser — the real work.**
+**4 · The code readers need a JavaScript parser — the real work.**
 `agents/agent2_coder.py`, `validators/method_resolution_validator.py`,
-`gherkin_analyzer.py`, `import_validator.py` and `orphan_cleanup.py` all use
-Python's `ast` module, which cannot read JS. Swap for `@babel/parser` or
+`gherkin_analyzer.py`, `import_validator.py`, `orphan_cleanup.py` and
+`page_object_contract.py` all use Python's `ast` module, which cannot read JS.
+So does Agent 0's layer-1 graph builder (`core/impact_graph.py`); a new stack
+registers its own builder (AGENT0_ONBOARDING.md, step 3). Swap for `@babel/parser` or
 `ts-morph`. **The RULES survive; the tree-walking code is rewritten.** This also
 covers the AST extraction that injects BasePage's method signatures into the
 generation prompt.
@@ -469,7 +436,7 @@ means.
 | `always` | `true` for shared chrome (navigation) | set on the nav page |
 | `elements` | key → selector | trim to what tests need |
 | `elements_notes` | per-key traps — crawler leaves EMPTY | **write this.** Highest-value field |
-| `key_methods` | methods the page object should expose — EMPTY | **write this** |
+| `key_methods` | legacy — no agent reads it; Agent 2 reads the real page objects by AST | **leave empty** |
 | `multi_match` | keys matching several elements; enforced at generation time | verify |
 | `conditional` | elements that exist only after an interaction | verify |
 | `async_family` | a family the app fills asynchronously; an index pin is never valid | add where relevant |

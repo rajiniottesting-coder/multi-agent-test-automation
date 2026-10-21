@@ -80,7 +80,7 @@ the builder is taught the new layout. The check reports each missing directory.
 
 The inventory is the element catalogue the page objects select from. Name it
 with `--inventory` (relative to `--root`), or in `config/config.yaml` under
-`app_under_test.inventory_file`. Every page should carry `Components`: layer 2
+`app_under_test.inventory_file`. Every page should carry `components`: layer 2
 uses them to pre-filter candidates, and a page without them makes layer 2
 consider the whole suite.
 

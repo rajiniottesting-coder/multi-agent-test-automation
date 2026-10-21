@@ -158,7 +158,7 @@ something real to read:
 |---|---|
 | feature file | `_build_readable_values_block()` - what the inventory can actually show |
 | page object | `_build_base_page_helpers_block()` + `_build_promised_values_block()` + sibling signatures |
-| step definitions | `_build_sibling_page_object_context()` + `_build_authoritative_steps_block()` - real method signatures and the feature's exact step text |
+| step definitions | `_build_sibling_page_object_context()` + `_build_authoritative_steps_block()` + `_build_reused_then_steps_block()` - real method signatures, the feature's exact step text, and the committed body of every Then step the feature reuses |
 
 All of these are substituted ABOVE the cache marker, into the user message.
 
@@ -188,10 +188,12 @@ targeted instructions.
 
 Five guards matter:
 
-- **Errors are routed to the file they belong to.**
-  `_group_validator_errors_by_file()` reads the path each error names. An error
-  naming no file gets no targeted retry - it is not sent to every file, which
-  would waste attempts rewriting correct code - but the final gate still
+- **Errors are routed to the file they belong to.** First
+  `_route_to_generated_file()` makes every error name its generated file in the
+  form `<rule> in '<file>':`, whatever wording the rule used (#193); then
+  `_group_validator_errors_by_file()` groups them by that file. An error naming
+  no generated file gets no targeted retry - it is not sent to every file,
+  which would waste attempts rewriting correct code - but the final gate still
   reports it. If no error can be routed at all, repair is skipped.
 - **No-progress stop.** If an attempt leaves the set of errors exactly as it
   was, the model is not converging and the loop stops, letting the final gate
@@ -261,7 +263,7 @@ attempt.
 | 2 | `validate_feature_file_structure` | Malformed Gherkin — a Scenario with no Feature, a stray Background |
 | 3 | `validate_extended_page_objects_keep_methods` | An extended page object that drops a method or changes a parameter list |
 | 4 | `validate_step_definitions_complete` | A Gherkin step with no matching `@given/@when/@then` |
-| 5 | `validate_no_duplicate_step_definitions` | The same step phrase defined twice, which pytest-bdd resolves unpredictably |
+| 5 | `validate_no_duplicate_step_definitions` | The same step phrase defined twice in ONE file - the second silently shadows the first. Across files a repeat is safe: steps are module-scoped |
 | 6 | `validate_imports_resolvable` | An import of a module or symbol that does not exist |
 | 7 | `validate_method_resolution` | A step def calling `page.method()` that the page object never defines, or with arguments that do not fit its signature. Also protects tests already on `main`: a regenerated page object may not drop a method a committed step definition calls, nor change a signature so a committed call no longer binds - only breakage this batch caused is reported |
 | 8 | `validate_page_object_selectors` | A literal selector in a page object, an invented inventory key, or a `multi_match` key used strictly |
@@ -281,8 +283,9 @@ Add label `ai-regenerate` to a parent story. Agent 2 will:
 
 **Change stories (`agents/agent2_impact.py`).** For a story with approved
 impacted test cases, Agent 2 also splices each REVISED scenario into the file
-that owns it (another story's feature and step definitions) and comments out a
-retired one, leaving every other scenario byte-identical. The splice writers
+that owns it (another story's feature and step definitions) and removes a
+retired one, leaving every other scenario byte-identical; step functions the
+change left unused are commented out. The splice writers
 get the same grounding as the full-file writers — what the application can
 show, and the real page-object method signatures — and a spliced step that
 calls an unknown method is corrected once, with the validator's words, before
@@ -474,17 +477,17 @@ hands a person the decision.
 
 | Trigger | When | Model? | Output |
 |---|---|---|---|
-| Story scan | stories labelled `impact-check`; weekdays 10:45 IST or dispatch (optionally one `story_key`) | 2 calls | report, or Impact Review; the same scan hands over decided reviews |
+| Story scan | stories labelled `impact-check`; weekdays 10:45 IST or dispatch (optionally one `story_key`) | 2 calls | report, or Impact Review. A full scan (`story_key` blank) also hands over decided reviews; a one-story run does not |
 | Code change | any PR touching `pages/**` or `app_inventory/**` | none | methods and selectors changed or removed → the affected tests, posted on the PR |
 | Nightly drift | 07:15 IST, after the inventory staleness check | none | a selector that stopped matching → the affected tests; live mode opens one maintenance story |
-| Reconcile | its own job, same schedule as the scan | none | settles stories labelled `impact-applied` |
+| Reconcile | its own job: weekdays 10:45 IST and every manual run, whatever the mode | none | settles stories labelled `impact-applied` |
 
 ### How a story is analysed (`core/impact_analysis.py`)
 
 1. **Repeat check** — a story whose text hash has not changed since the last analysis is skipped. A re-analysis after an edit updates the report in place and says whether anything changed.
-2. **Seeds** — one `ChangeSeeds` call names the elements, methods, pages and behaviours the story changes (`prompts/agent0_seeds.md`). An element key that is not in the inventory is dropped and reported.
-3. **Candidates** — the impact graph (`core/impact_graph.py`: scenario → step → method → selector, built from `# JIRA:` markers and the code) gives structural candidates; scenario text gives semantic ones. Owners and open PRs are attached (the in-flight guard).
-4. **Judgement** — one `ImpactAssessment` call judges each candidate with evidence (`prompts/agent0_adjudicate.md`), batched at 300 candidates. A verdict that cites no real graph path or verbatim step is dropped.
+2. **Seeds** — one `ChangeSeeds` call classifies the change (`change_type`) and names the inventory elements, behaviours and components it changes (`prompts/agent0_seeds.md`). An element key that is not in the inventory is dropped and reported. A story classified `new_behaviour` keeps no seeds at all: using a behaviour is not changing it (#186).
+3. **Candidates** — the impact graph (`core/impact_graph.py`: scenario → step → method → selector, built from `# JIRA:` markers and the code) gives structural candidates (layer 1); the story's Component, or the whole suite when it has none, gives the rest (layer 2), ordered by word overlap with the story. At most `max_candidates` (300) are judged: layer 1 always, layer 2 fills the remaining places, and the others are listed as *not judged*, never as unaffected. Owners and open PRs are attached (the in-flight guard).
+4. **Judgement** — one `ImpactAssessment` call judges each candidate with evidence (`prompts/agent0_adjudicate.md`); a second call is needed only when layer 1 alone exceeds 300. A verdict that cites no real graph path or verbatim step is dropped.
 5. **Rank** — a weighted score (structural 0.45, component 0.15, semantic 0.15, adjudicated 0.25) sets the tier: **must-update ≥ 0.6, review ≥ 0.3**, otherwise unaffected. The model's verdict is the ceiling: structure alone never promotes a test the model judged *review* or *unaffected*. Each row shows a short reason and the elements involved.
 6. **Publish** — shadow: a report. Live: nothing to review → `ai-ready` (and the context update); otherwise an Impact Review sub-task (`core/impact_review.py`) and `impact-proposed`.
 
@@ -512,7 +515,7 @@ selector and its notes) and `prompts/app_context/`. A change story makes it
 stale. At hand-over Agent 0 proposes the update as a pull request:
 
 - **Wording** the story replaces (a label, a message) — one model call lists old → new (`prompts/agent0_wording.md`); the replacement is applied exactly to the inventory's values and the notes. A change whose old text appears nowhere is dropped and reported.
-- **Passages the story makes untrue** — behaviour, rules, removed elements. One more call rewrites each such passage (`prompts/agent0_context_notes.md`). A passage not found verbatim is dropped and reported. **Selectors are never edited**: the element is live until the change is deployed.
+- **Passages the story makes untrue** — behaviour, rules, removed elements. One more call rewrites each such passage (`prompts/agent0_context_notes.md`). A passage not found verbatim is dropped and reported. **A rewrite never touches a selector**: the element is live until the change is deployed. (A *wording* change, above, does update a selector that matches on the old text - which is why the PR waits for deployment.)
 - Code mentioning the old text is listed, not edited — code changes go through the story's own PR.
 
 The branch is `context-update/<story key in lower case>`, which no tool reads as
@@ -576,8 +579,8 @@ and a PR is the only thing that runs them.
 
 | You changed | Route | Why |
 |---|---|---|
-| `agents/`, `core/`, `validators/`, `integrations/`, `inventory_tools/`, `scripts/`, `config/`, `prompts/`, `tests/unit/` | **Push to `main`** | The unit suite covers these. It runs on push, and a broken validator or a bad prompt template fails in about a minute. |
-| `app_inventory/` | **Push to `main`** | Also fine — but this one runs the unit suite **and** the E2E, because page objects read the inventory at runtime. Expect ~3 minutes, not one. A push touching `pages/` or `app_inventory/` through a PR also gets Agent 0's code-change report. |
+| `agents/`, `core/`, `validators/`, `integrations/`, `inventory_tools/`, `scripts/`, `config/`, `prompts/`, `tests/unit/` | **Branch + PR** (a repository admin may push to `main` as a ruleset bypass) | The unit suite covers these. It runs on the PR, and on a push to `main`; a broken validator or a bad prompt template fails in about two minutes. |
+| `app_inventory/` | **Branch + PR** (admin bypass possible, as above) | This one runs the unit suite **and** the E2E, because page objects read the inventory at runtime. A PR touching `pages/` or `app_inventory/` also gets Agent 0's code-change report. |
 | `pages/`, `features/`, `tests/step_defs/` | **Branch + PR** | The E2E suite is SKIPPED on push. Nothing executes this code before it lands. |
 | Both in one commit | **Branch + PR** | The stricter rule wins. |
 | Agent 2's output, on a story that already has a PR | **That PR's existing branch** | It is already open; a commit re-runs Agents 3 and 4 on your fix. |
@@ -634,7 +637,10 @@ during someone else's story run.
 
 ### Route 4 — Framework changes
 
-Push straight to `main`. This is fine and expected.
+`main` is protected by a ruleset that requires a pull request, so the normal
+route is a `fix/` or `chore/` branch and a PR, exactly as in Route 3. A
+repository admin can still push to `main` - GitHub records it as a bypass - and
+the push gate below then runs after the fact:
 
 ```bash
 # ...edit validators/, core/, app_inventory/, prompts/...
@@ -642,8 +648,8 @@ git commit -am "fix: scope the search selector to the filter panel"
 git push
 ```
 
-Agent 4 fires on push, runs the full unit suite in about a minute, and skips
-the browser entirely. No PR, no ceremony.
+Agent 4 fires on push, runs the full unit suite in about two minutes, and skips
+the browser unless a runtime file changed.
 
 **What that costs, honestly:** the gate reports *after* the merge rather than
 preventing it, and every agent workflow checks out `main` — so a broken change
@@ -813,7 +819,7 @@ A one-off correction belongs on the story's branch (Route 2). A *systemic* one
 `app_inventory/` or `prompts/`:
 
 1. fix the inventory note or the prompt rule
-2. push it to `main` (Route 4)
+2. merge it to `main` (Route 4)
 3. add `ai-regenerate` to the story and dispatch Agent 2
 
 Agent 2 branches fresh as `…-rev2` and leaves the old PR intact as a record.
@@ -852,13 +858,18 @@ run that fails on the same thing.
 
 ### Branch protection
 
-Once the flow is habitual, require the `Agent 4 - Runner / Run Tests` check on
-`main`. That converts the gate from a report into an actual gate.
+`main` is protected by a repository ruleset: changes arrive through a pull
+request, and force-pushes and deletion are blocked. Repository admins are on the
+bypass list, so the agents - which push with the owner's `GH_PAT` - and an admin
+can still create branches and, if needed, push directly; GitHub records each
+bypass. A second ruleset on every branch restricts creating, updating and
+deleting branches to the bypass list as well, so a collaborator who is not on it
+cannot push a branch at all - widen it before adding one.
 
-Two caveats. Do it only **after** the pipeline has produced a green run, or the
-requirement blocks the work needed to reach one. And be aware it removes Route
-4: with the check required, `main` becomes PR-only and framework changes need a
-branch like everything else. That is a deliberate trade, not a free win.
+No status check is required yet. Requiring `Agent 4 - Runner / Run Tests` would
+turn the gate from a report into a block; do it only once the pipeline is
+reliably green, and remember that a change story's PR is expected to fail its
+E2E until the change is deployed.
 
 ## Branch naming
 
@@ -907,7 +918,7 @@ For ad-hoc human branches without a key (e.g., `feature/foo`): Agent 5 detects t
 | `OPENAI_API_KEY` | yes | All agents (LLM) | Your LLM provider's API key |
 | `OPENAI_API_BASE` | yes | Same | Base URL of your OpenAI-compatible API endpoint |
 | `LLM_MODEL` | no | Same | Model name sent to the endpoint. Set it explicitly; the code's fallback is only a placeholder |
-| `GITHUB_TOKEN` | yes | Agents 2, 3 | PAT with `repo` scope |
+| `GITHUB_TOKEN` | yes | Agents 0, 2, 3, 5 and the sweeper | PAT with `repo` scope (CI passes `GH_PAT` for Agents 0 and 2 and the sweeper, so the PRs they open trigger workflows) |
 | `GITHUB_REPO` | yes | Same | `<owner>/<repo>` format |
 | `BASE_URL` | no | Tests at runtime | Override `config.yaml`'s base_url |
 | `PLAYWRIGHT_HEADLESS` | no | conftest | `true`/`false` — overrides config.yaml |
@@ -929,13 +940,15 @@ app_under_test:        # The application being tested (the SINGLE decoupling poi
     page_object: ...
   reserved_paths:      # files Agent 2 must NEVER overwrite
     - ...
-  extendable_paths: [] # existing page objects Agent 2 may EXTEND, never recreate
+  extendable_paths: [] # extra files Agent 2 may EXTEND, never recreate
+  auto_extend_page_objects: true   # committed page objects are extendable automatically
 
 browser:               # Playwright settings (headless, viewport, timeout, slow_mo)
 
 base_url: ...          # Legacy alias for tests/conftest.py
 
-test_users: ...        # App-specific test data (update when swapping apps)
+# Login roles are not configured here: APP_USER_<ROLE> / APP_PASSWORD[_<ROLE>]
+# in .env and GitHub Secrets, resolved by the `credentials` fixture.
 
 agents:
   agent1_analyst:
@@ -1036,7 +1049,7 @@ nothing is protected — a board id and a project key appear in every Jira URL.
 | Tab | Names |
 |---|---|
 | **Secrets** | `JIRA_API_TOKEN`, `JIRA_EMAIL`, `OPENAI_API_KEY`, `GH_PAT`, `APP_USER_REGISTERED`, `APP_PASSWORD` |
-| **Variables** | `JIRA_URL`, `JIRA_PROJECT_KEY`, `JIRA_BOARD_ID`, `GH_REPO`, `LLM_MODEL`, `LLM_MODEL_LIGHT` (optional: a cheaper model for Agents 1 and 5), both `LLM_PRICE_*` |
+| **Variables** | `JIRA_URL`, `JIRA_PROJECT_KEY`, `JIRA_BOARD_ID`, `GH_REPO`, `OPENAI_API_BASE`, `LLM_MODEL`, `LLM_MODEL_LIGHT` (optional: a cheaper model for Agents 1 and 5), both `LLM_PRICE_*` |
 
 The workflows reference them as `${{ secrets.NAME }}` and `${{ vars.NAME }}`
 respectively; `tests/unit/test_workflow_secrets.py` fails if an identifier is
@@ -1156,17 +1169,15 @@ Three distinct test layers exist; they have different triggers and purposes:
 
 | Suite | Trigger | Touches network? | Purpose |
 |---|---|---|---|
-| `tests/unit/` (~2,900 tests, about 2 minutes) | Every PR — Agent 4 runs `pytest tests/`, which includes them. Also run manually (`python -m pytest tests/unit/ -q`) before committing any framework change. | No — fully offline (no Jira/GitHub/LLM) | Framework correctness: validators, markers, orphan cleanup, usage tracking, ledger, component filtering, repair routing, step-def splicing, splice grounding, inventory tooling, sweeper, Agent 0 (graph, ranking, review, hand-over, context update, reconcile), and the whole pipeline against a fake tracker and repo host |
+| `tests/unit/` (~2,900 tests, about 2 minutes) | Every PR and every framework push to `main` — Agent 4's "Framework self-test" step runs `pytest tests/unit/` before the E2E. Also run manually (`python -m pytest tests/unit/ -q`) before committing any framework change. | No — fully offline (no Jira/GitHub/LLM) | Framework correctness: validators, markers, orphan cleanup, usage tracking, ledger, component filtering, repair routing, step-def splicing, splice grounding, inventory tooling, sweeper, Agent 0 (graph, ranking, review, hand-over, context update, reconcile), and the whole pipeline against a fake tracker and repo host |
 | `tests/step_defs/` (generated E2E) | Every PR — same Agent 4 run | Yes — drives a real browser against the app under test | Does the application work |
 | `scripts/smoke_test.py` | **Manual only** — run on first setup, after credential/`.env` changes, on a new machine, or when onboarding a new app | Yes — live Jira login, one real LLM call, one browser hit on the app's `base_url` (config-driven) | Is the *environment* wired correctly |
 
 Notes:
-- Because Agent 4 runs the whole `tests/` tree, framework unit tests execute
-  on every pipeline pass — the framework self-tests on every PR, and a broken
-  unit test turns Agent 4's check red just like an app-test failure would.
-  (If you ever prefer PR reports to show only app tests, narrow the workflow
-  command to `pytest tests/step_defs/` and keep unit tests as the manual
-  pre-commit gate.)
+- Agent 4 runs `pytest tests/unit/` and then `pytest tests/step_defs/` as two
+  steps, so the framework self-tests on every PR, and a broken unit test turns
+  Agent 4's check red just like an app-test failure would. Agent 5 reports only
+  the E2E results (`reports/junit.xml`); the unit results are a separate file.
 - The `smoke:` marker in `pytest.ini` is unrelated to `scripts/smoke_test.py`
   — it's a tag for flagging individual generated tests as quick health checks
   (`pytest -m smoke`).
@@ -1372,7 +1383,7 @@ built-in token won't re-fire workflows, and Agent 5's report is gated on
 `pull_request`, so a `workflow_dispatch` re-run would skip the report). Loop-safe:
 a real pass/fail is left alone, and a commit-SHA marker comment prevents
 double-nudging. Trigger a report-only pass anytime from the Actions tab (the
-`dry_run` input). Needs the `GH_PAT` / `GH_REPO` secrets already used by Agent 2.
+`dry_run` input). Needs the `GH_PAT` secret and the `GH_REPO` variable already used by Agent 2.
 
 ---
 
@@ -1424,7 +1435,6 @@ If you want a pristine repo for your app:
   `features/<old>.feature`, `tests/step_defs/test_<old>.py`, `pages/<old>_page.py`
 - Rewrite `prompts/app_context/` — those modules describe the OLD app's
   behaviour and will actively mislead the agents if left in place
-- Update `config.yaml`'s `test_users:` block (or remove it)
 - Update `config.yaml`'s `base_url:` legacy alias
 - Rename the `APP_USER_<ROLE>` variables in `.env` and in GitHub Secrets to
   match the new app's roles
@@ -1552,8 +1562,10 @@ Check the schema for any constraints beyond the basics (Literal, default, min_le
 
 ### An Impact Review was marked Done but nothing was handed over
 
-The hand-over happens on the next scan (or a manual run of Agent 0). If the
-review data cannot be read, or has no decided rows, the hand-over refuses and
+The hand-over happens on the next full scan: the weekday schedule, or a manual
+run of Agent 0 with `story_key` left blank. A run with `story_key` set analyses
+that one story and does not hand over. If the review data cannot be read, or has
+no decided rows, the hand-over refuses and
 the run logs the story as `waiting` with the reason — fix the Decision column
 and run Agent 0 again.
 
@@ -1665,7 +1677,8 @@ flowchart LR
     end
 
     subgraph PROMPTS["📝 Prompts Layer<br/>(templated)"]
-        P1["agent1_analyst.md"]
+        P0["agent0_seeds.md · agent0_adjudicate.md<br/>agent0_wording.md · agent0_context_notes.md"]
+        P1["agent1_analyst.md · agent1_impact_aware.md"]
         P2P["agent2_coder_plan.md"]
         P2G["agent2_coder_generate.md"]
         P3["agent3_reviewer.md"]
@@ -1673,6 +1686,7 @@ flowchart LR
     end
 
     subgraph AGENTS["🤖 Agents Layer"]
+        AG0["agent0_impact.py<br/>+ core/impact_*.py"]
         AG1["agent1_analyst.py"]
         AG2["agent2_coder.py"]
         AG3["agent3_reviewer.py"]
@@ -1685,6 +1699,7 @@ flowchart LR
         LC["core/llm_client.py<br/>retry + quota"]
     end
 
+    AC --> AG0
     AC --> AG1
     AC --> AG2
     AC --> AG3
@@ -1692,12 +1707,16 @@ flowchart LR
     REF -.uses.-> AC
     ACMD -.uses.-> AG1
 
+    AG0 --> P0
     AG1 --> P1
     AG2 --> P2P
     AG2 --> P2G
     AG3 --> P3
     AG5 --> P5
 
+    AG0 --> JC
+    AG0 --> GC
+    AG0 --> LC
     AG1 --> JC
     AG1 --> LC
     AG2 --> JC
@@ -1716,8 +1735,8 @@ flowchart LR
 
     class CY,ENV,AC cfg
     class INV,REF,ACMD data
-    class P1,P2P,P2G,P3,P5 prompt
-    class AG1,AG2,AG3,AG5 agent
+    class P0,P1,P2P,P2G,P3,P5 prompt
+    class AG0,AG1,AG2,AG3,AG5 agent
     class JC,GC,LC client
 ```
 
@@ -1741,7 +1760,7 @@ sequenceDiagram
     Note over A2,L: STAGE 1 — Plan
     A2->>L: prompt + CodePlan schema
     L-->>A2: CodePlan (file paths,<br/>branch name, PR title)
-    A2->>A2: validate_no_reserved_paths
+    A2->>A2: validate_paths_against_policy
 
     Note over A2,L: STAGE 2 — Per-file generation
     loop for each file in plan
@@ -1772,8 +1791,8 @@ sequenceDiagram
 | `get linked Test Cases` | Jira, filtered on `ai-processed` + `human-approved` |
 | `dedup against existing scenarios` | Skips test cases already covered by a scenario in the repo. `ai-regenerate` bypasses this |
 | **Stage 1 — Plan** | ONE structured LLM call against the `CodePlan` schema: file paths, file types, branch name, PR title. No code yet |
-| `validate_no_reserved_paths` | Aborts if the plan targets a reserved file, so the model cannot overwrite your gold-standard reference |
-| **Stage 2 — Per-file** | One text-mode call per file. Each prompt carries the filtered inventory, the reference trio, the AST-extracted BasePage helpers, and any page object generated earlier in this same run |
+| `validate_paths_against_policy` | Aborts if the plan targets a reserved file, or would recreate an extendable one, so the model cannot overwrite your gold-standard reference |
+| **Stage 2 — Per-file** | One text-mode call per file. Each prompt carries the filtered inventory, the reference trio, the AST-extracted BasePage helpers, the page objects already written (this run, the story's branch, or `main`) and, for step definitions, the committed body of every Then step the feature reuses |
 | `extract from markdown fences` | Strips the ```` ```python ```` wrapper the model adds even when told not to |
 | **Hard validators** | The 29 checks above - the 10 hard gates in order, plus `_collect_repairable_errors()`. Repairable failures go to the repair loop; the rest abort |
 | `create branch / commit / open PR` | `auto/<KEY>-<feature>`, then `ai-coded` on the parent story |
@@ -1904,7 +1923,7 @@ No agent decides "what's next" for the pipeline. Each agent independently
 answers one question — "is there work matching MY selection rules?" — via a
 JQL query built from config.yaml:
 
-- **Agent 1**: `labels = ai-ready AND labels != ai-processed AND labels != ai-skip`
+- **Agent 1**: `labels = ai-ready AND labels != ai-processed AND labels != ai-skip AND labels != impact-check AND labels != impact-proposed`
 - **Agent 2 normal**: `labels = ai-processed AND labels = human-approved AND labels != ai-coded ...`
 - **Agent 2 regen**: `... AND labels = ai-regenerate`
 - **Agent 2 update**: `... AND labels = ai-update`
@@ -1944,7 +1963,7 @@ Scenario: Verify default sort order
 | Did a TC change since coding? | Hash in marker vs live Jira description |
 | Was the PR reviewed? | GitHub: Agent 3's PR comment exists |
 | Did tests pass? | GitHub: Agent 4 check status + JUnit artifact |
-| Was the result reported? | Jira: Agent 5's comment (header-signature idempotency) |
+| Was the result reported? | Jira: Agent 5's comment and the `tests-run` label (a re-run posts another comment) |
 | What did a change revise, and how to undo it? | Jira: snapshot comments on each test case + trace comments on owners |
 | Has a closed PR been seen once already? | Jira: `[agent0:reconcile] closed-unmerged` comment on the change story |
 
@@ -1963,5 +1982,6 @@ Because every step persists before the next begins, recovery is trivial:
   unchanged, so the next scan repeats the hand-over; links, labels and trace
   comments are checked before they are added.
 - The runner workflow re-runs (Agent 5 is job 2 of `agent4_runner.yml`, not a
-  workflow of its own) → Agent 5 finds its own comment header and skips.
+  workflow of its own) → Agent 5 posts a second, timestamped report; it has no
+  duplicate check, by design.
 - Quota exhaustion mid-run → labels not consumed → automatic retry next tick.
