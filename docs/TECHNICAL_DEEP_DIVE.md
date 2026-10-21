@@ -234,7 +234,7 @@ The single-story entry point. Steps:
                                     # preconditions, steps, expected_outcome, test_data
    ```
    No string parsing. If the LLM returns invalid JSON, it gets one repair attempt with the error fed back, then `ValueError`. The draft is then checked against `core/test_case_rules.py`; a failing draft goes back once with the problems listed, and a second failure writes nothing.
-5. **Create Jira Test Cases** — for each TC: `JiraClient().create_test_case(tc, parent_story_key=story_id)` which calls `_format_test_case_description()` to format it as Jira wiki markup and then `_link_to_story()` to add the ownership link (`link_types.owns` in config).
+5. **Create Jira Test Cases** — for each TC: `JiraClient().create_test_case(tc, parent_story_key=story_id, components=...)` — the story's Jira Components carried over when it has some (a project that rejects them still gets the test case, created without them) — which calls `_format_test_case_description()` to format it as Jira wiki markup and then `_link_to_story()` to add the ownership link (`link_types.owns` in config).
 6. **Label transitions** — `jira.add_label(story_id, "ai-processed")` then `jira.remove_label(story_id, "ai-ready")`. Order matters: add first (so even if remove fails, the idempotency marker is set).
 
 #### `--scan` mode (in `main()`, line 471)
@@ -1390,7 +1390,8 @@ config value > no filter. Zero config edits at sprint boundaries.
 story run ends with two separate log lines — `LLM TOKEN USAGE [...]` (exact)
 and `LLM COST [...]` (derived from the `LLM_PRICE_INPUT_PER_1M` /
 `LLM_PRICE_OUTPUT_PER_1M` repo variables). Cross-agent story cost:
-`core/usage_ledger.py` — each LLM-using agent posts a machine-parseable
+`core/usage_ledger.py` — each LLM-using agent (Agent 0 included, for a change
+story) posts a machine-parseable
 `[LLM-USAGE]` comment on the story (Agent 3 derives the key from the
 `auto/<KEY>-` branch); Agent 5 reads them back (`JiraClient.get_comments`),
 adds its own usage, and appends an "End-to-end LLM usage & cost" table
@@ -1411,7 +1412,7 @@ Agent 0 off). Key settings: `enabled`, `shadow_mode`, `selection`, `labels`,
 `review` (sub-task type, summary prefix, done status), `weights`
 (`structural 0.45, component 0.15, semantic 0.15, adjudicated 0.25`),
 `thresholds` (`must_update 0.6, review 0.3`), `max_candidates` (300),
-`reconcile` (`no_pr_days`, `reset_labels`) and `context_update` (`enabled`,
+`reconcile` (`closed_scans`, `no_pr_days`, `reset_labels`) and `context_update` (`enabled`,
 `branch_prefix`).
 
 ### 18.2 The analysis
@@ -1457,8 +1458,9 @@ does not suppress a retry's update.
 
 `reconcile_all()` → `reconcile_story()` per `impact-applied` story: open PR →
 wait; merged → *merged* trace on owners, label off; closed unmerged → a
-`closed-unmerged pr: N updated: …` marker on the first scan, and on the next
-scan with the same close `_revert()`: snapshot restore where the current hash
+`closed-unmerged pr: N updated: …` marker on each scan that sees the close
+until `reconcile.closed_scans` scans have (default 2, so one marker), then
+`_revert()`: snapshot restore where the current hash
 equals the snapshot's new hash, un-retire, unlink, *restored* trace on owners,
 `impact-reverted`; then `_settle_story()` retires the story's own test cases not
 on `main` (`_unautomated()`, which never guesses when `main` cannot be read),
@@ -1467,9 +1469,14 @@ the retry steps. No PR after `no_pr_days` → one *ask-a-person* comment.
 
 ### 18.6 Code change and drift
 
+Usage: `_post_usage()` puts each story's analysis and context-update cost on
+its ledger as `Agent 0 (Impact Analyst)`; when entries from later agents are
+already there (a new attempt), it posts a ledger reset first. Agent 1 ignores
+Agent 0's entries when deciding whether to reset.
+
 `--code-change` compares the page objects and inventory of base and head
 checkouts (no model) and posts the affected tests on the PR. `--drift-report`
-takes the staleness check's JSON and, in live mode, opens or updates one
+(nightly, or on demand: dispatch with `mode` = `drift`) takes the staleness check's JSON and, in live mode, opens or updates one
 maintenance story (label `inventory-drift`).
 
 ## 19. Change stories in Agents 1, 2 and 5

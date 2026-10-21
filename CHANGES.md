@@ -6,6 +6,14 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ## October 2026 (second half) — validation fixes after A3
 
+**A-series open items (closed)**
+- `reconcile.closed_scans` is honoured: an undo happens after that many scans see the same close (default 2, as before; 1 = immediately)
+- `config.yaml`'s `context_update` comment describes both wording changes and note rewrites
+- The golden-rule test scans every `prompts/agent*.md` (a glob, so new prompts are covered); `agent0_*.md` and `agent1_impact_aware.md` were missed
+- Agent 0's model cost is posted to the story ledger; Agent 1 no longer treats Agent 0's entries as a previous run, and a genuine new attempt still resets
+- The drift job can be run on demand (`Run workflow`, `mode` = `drift`)
+- Test cases carry their story's Jira Components; a project that rejects them still gets the test case
+
 All generic, each pinned by unit tests (suite: ~2,900 tests).
 
 **Agent 0**

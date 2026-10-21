@@ -94,8 +94,13 @@ class Tracker(Protocol):
         ...
 
     # ── test cases ───────────────────────────────────────────
-    def create_test_case(self, test_case: Any, parent_story_key: str) -> Any:
+    def create_test_case(self, test_case: Any, parent_story_key: str,
+                         components: list[str] | None = None) -> Any:
         """Create a test case and link it to the parent story.
+
+        `components` (optional): the story's components, to carry over to the
+        test case. An adapter whose tool has no such concept ignores it; agents
+        pass it only when the story has components.
 
         NOTE the argument ORDER: test_case first. agent1_analyst calls this as
         `create_test_case(tc, parent_story_key=story_id)` - a keyword - so both

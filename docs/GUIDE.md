@@ -534,7 +534,7 @@ Every story labelled `impact-applied` is settled on each scan:
 | open | nothing |
 | merged | a *merged* trace on each owner; `impact-applied` removed |
 | closed unmerged, first scan | a `[agent0:reconcile] closed-unmerged` comment (a sweeper close-and-reopen is not mistaken for a rejection) |
-| closed unmerged, same close on the next scan | **undo**: each revised test whose text is still what the change wrote gets its snapshot back (one edited since is left for a person and named); tests are un-retired; Impacts links removed; a *restored* trace on each owner; `impact-reverted` |
+| closed unmerged, same close seen on `closed_scans` scans (default 2: the next scan) | **undo**: each revised test whose text is still what the change wrote gets its snapshot back (one edited since is left for a person and named); tests are un-retired; Impacts links removed; a *restored* trace on each owner; `impact-reverted` |
 | no PR after `no_pr_days` (14) | one comment asking a person to decide |
 
 After an undo the story is left ready to retry or drop, not half-done: its own
@@ -967,6 +967,7 @@ agents:
     enabled: ...
     shadow_mode: ...
     reconcile:
+      closed_scans: 2           # scans that must see a close before the undo
       no_pr_days: 14
       reset_labels: [ai-processed, human-approved, ai-coded, tests-run]
     context_update: { enabled: ..., branch_prefix: "context-update/" }
@@ -1064,7 +1065,7 @@ exact (reported by the API per call); cost is derived from the
 - **Per run:** every LLM call logs its own tokens plus running totals; each
   story run ends with two lines in the Actions log — `LLM TOKEN USAGE [...]`
   and `LLM COST [...]` (input + output cost shown separately).
-- **Per story, end to end:** each LLM-using agent (1, 2, 3, 5) posts a
+- **Per story, end to end:** each LLM-using agent (0, 1, 2, 3, 5) posts a
   machine-parseable `[LLM-USAGE]` comment on the Jira story after it
   finishes. Agent 5 aggregates every entry and appends an
   **"End-to-end LLM usage & cost"** table to its final test report — one
@@ -1083,7 +1084,8 @@ For a fresh story (e.g. SCRUM-25) the lifecycle looks like this:
 
 | Stage | You do | Tracked automatically |
 |---|---|---|
-| 1. Create story, add `ai-ready` | manual | — |
+| 1. Create story, add `ai-ready` (or `impact-check` for a change story) | manual | — |
+| 1b. Change story only: Agent 0 analyses it | nothing | posts `[LLM-USAGE] agent="Agent 0 (Impact Analyst)"` (analysis, and the context update at hand-over). A new attempt after downstream agents ran starts with a `[LEDGER-RESET]`; Agent 1 keeps Agent 0's entries rather than resetting over them |
 | 2. Agent 1 picks it up (cron) | nothing | Actions log: per-call tokens + `LLM TOKEN USAGE` / `LLM COST` summaries; posts `[LLM-USAGE] agent="Agent 1 (Test Designer)" ...` comment on the story |
 | 3. Review TCs, add `human-approved` | manual | — |
 | 4. Agent 2 generates code, opens PR | nothing | Summary lines + `[LLM-USAGE] agent="Agent 2 (Coder, initial)"` comment |
@@ -1149,8 +1151,8 @@ Selection rules come from `config.yaml`'s `agents.<name>.selection` block.
 | Workflow | Schedule (IST) | Also |
 |---|---|---|
 | Agent 1, Agent 2 | every 30 min, weekdays 10:00–19:00 | Run workflow |
-| Agent 0 scan + reconcile | weekdays 10:45 | Run workflow (optional `story_key`, `dry_run`) |
-| Agent 0 nightly drift | daily 07:15 | — |
+| Agent 0 scan + reconcile | weekdays 10:45 | Run workflow (`mode` = `scan`, the default; optional `story_key`, `dry_run`) |
+| Agent 0 nightly drift | daily 07:15 | Run workflow with `mode` = `drift` (optional `dry_run`) |
 | Agent 0 code change | on PRs touching `pages/**`, `app_inventory/**` | — |
 | Agents 3, 4 + 5 | on PR opened / synchronize / reopened | Run workflow |
 | Inventory Health | daily 08:00 (02:30 UTC) | Run workflow |

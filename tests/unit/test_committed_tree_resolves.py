@@ -236,10 +236,12 @@ _FRAMEWORK_PATHS = (
     "agents", "core", "validators", "integrations", "inventory_tools",
     "scripts", "pages/base_page.py", "tests/unit", "tests/conftest.py",
     "tests/step_defs/conftest.py",
-    "prompts/agent1_analyst.md", "prompts/agent2_coder_generate.md",
-    "prompts/agent2_coder_plan.md", "prompts/agent3_reviewer.md",
-    "prompts/agent5_reporter.md",
 )
+# Every agent prompt is framework, whichever agent it belongs to. A glob, not
+# a list: a list missed agent0_*.md and agent1_impact_aware.md when they were
+# added, and would miss the next prompt the same way. prompts/app_context/ is
+# the application's own notes and is deliberately not matched.
+_FRAMEWORK_PROMPT_GLOB = "agent*.md"
 
 
 def _coined_by_the_application() -> dict:
@@ -335,7 +337,18 @@ def _framework_files() -> list:
         elif path.is_dir():
             files += [f for f in path.rglob("*")
                       if f.suffix in (".py", ".md") and "__pycache__" not in f.parts]
+    files += sorted((_PROJECT / "prompts").glob(_FRAMEWORK_PROMPT_GLOB))
     return files
+
+
+def test_every_agent_prompt_is_scanned_by_the_golden_rule():
+    """The scan covers each prompt an agent loads, and no application notes."""
+    scanned = {f.relative_to(_PROJECT).as_posix() for f in _framework_files()}
+    prompts = {f"prompts/{p.name}" for p in (_PROJECT / "prompts").glob("*.md")
+               if p.name.startswith("agent")}
+    assert prompts and prompts <= scanned, sorted(prompts - scanned)
+    assert {"prompts/agent0_seeds.md", "prompts/agent1_impact_aware.md"} <= scanned
+    assert not any(s.startswith("prompts/app_context/") for s in scanned)
 
 
 def test_no_framework_file_names_anything_the_application_coins():

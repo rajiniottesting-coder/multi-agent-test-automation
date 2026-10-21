@@ -178,6 +178,7 @@ def analyse_and_publish(tracker, story_key: str, llm, settings: dict, root: Path
     `uncovered` (the nightly uncovered-element snapshot) feeds the optional
     hint. It is not part of the stage-0 hash: a new snapshot alone does not
     re-analyse a story, because that would cost model calls every night."""
+    _start_usage()
     story = tracker.get_story(story_key)
     if _already_analysed(tracker, story_key, requirement_hash(story), settings):
         if not dry_run:
@@ -190,7 +191,45 @@ def analyse_and_publish(tracker, story_key: str, llm, settings: dict, root: Path
         # Released straight to ai-ready: no hand-over will follow, so the
         # context update is proposed now.
         result.update(_propose_context(tracker, host, llm, story_key, settings, root))
+    if not dry_run:
+        _post_usage(tracker, story_key)
     return result
+
+
+def _start_usage() -> None:
+    """Per-story numbers: nothing from an earlier story in this process counts."""
+    from core.llm_client import reset_usage
+    reset_usage()
+
+
+def _post_usage(tracker, story_key: str) -> None:
+    """Put this story's Agent 0 model cost on the story's ledger, so Agent 5's
+    end-to-end table includes the analysis. Best-effort; never raises.
+
+    Agent 0 opens a change story's attempt. If the ledger (after the last
+    reset) already holds entries from agents that run AFTER it, those belong
+    to an earlier attempt - a retry after an undo, or a story re-analysed
+    once drafted - so a reset boundary goes first. Agent 0's own entries from
+    re-analyses within one attempt accumulate, as rework on an attempt does."""
+    from core.llm_client import log_usage_summary, reset_usage
+    from core.usage_ledger import (
+        IMPACT_ANALYST,
+        has_usage_comments,
+        post_reset_to_story,
+        post_usage_to_story,
+    )
+    try:
+        usage = log_usage_summary(f"story {story_key} (impact analysis)")
+        reset_usage()
+        if not usage.get("llm_calls"):
+            return                       # stage 0 or nothing judged: no cost to record
+        if has_usage_comments(tracker.get_comments(story_key),
+                              ignore_agents=(IMPACT_ANALYST,)):
+            post_reset_to_story(story_key, reason="change story analysed again",
+                                jira=tracker)
+        post_usage_to_story(story_key, IMPACT_ANALYST, usage, jira=tracker)
+    except Exception as e:                                     # noqa: BLE001
+        logger.warning("Usage ledger for %s not posted: %s", story_key, e)
 
 
 def _propose_context(tracker, host, llm, story_key: str, settings: dict, root: Path) -> dict:
@@ -506,6 +545,7 @@ def hand_over_decided(tracker, settings: dict, host=None, llm=None,
     for s in tracker.find_stories_to_process(
             {"issue_type": "Story", "required_labels": [settings["labels"]["proposed"]]},
             max_results=50):
+        _start_usage()
         try:
             review_key, decisions = decisions_from_review(tracker, s["key"], settings)
             handover(tracker, s["key"], decisions, review_key=review_key, settings=settings)
@@ -515,6 +555,7 @@ def hand_over_decided(tracker, settings: dict, host=None, llm=None,
             continue
         if root is not None:
             result.update(_propose_context(tracker, host, llm, s["key"], settings, root))
+        _post_usage(tracker, s["key"])           # the context update's model calls
         out.append(result)
     return out
 

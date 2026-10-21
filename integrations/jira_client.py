@@ -249,8 +249,15 @@ class JiraClient:
     # Test case creation
     # ─────────────────────────────────────────────────────────────
 
-    def create_test_case(self, test_case: TestCase, parent_story_key: str) -> Issue:
-        """Create a 'Test Case' issue in Jira, linked to the parent story."""
+    def create_test_case(self, test_case: TestCase, parent_story_key: str,
+                         components: list[str] | None = None) -> Issue:
+        """Create a 'Test Case' issue in Jira, linked to the parent story.
+
+        `components`: the story's Jira Components, so a test case can be found
+        by component like its story. Best-effort: a project that rejects the
+        field (no such component, or the field is not on the create screen)
+        still gets the test case, created without components and logged.
+        """
         description = self._format_test_case_description(test_case)
         summary = self._format_test_case_summary(test_case)
 
@@ -260,8 +267,20 @@ class JiraClient:
             "description": description,
             "issuetype": {"name": "Test Case"},
         }
+        if components:
+            issue_dict["components"] = [{"name": c} for c in components]
 
-        new_issue = self.client.create_issue(fields=issue_dict)
+        try:
+            new_issue = self.client.create_issue(fields=issue_dict)
+        except Exception as e:
+            # Only a rejection OF THE COMPONENTS is retried: a create that
+            # failed for any other reason created nothing and must surface.
+            if not components or "component" not in str(e).lower():
+                raise
+            logger.warning(f"Jira rejected components {components} on a Test Case "
+                           f"for {parent_story_key} ({e}); creating it without them.")
+            issue_dict.pop("components")
+            new_issue = self.client.create_issue(fields=issue_dict)
         logger.info(f"Created Test Case: {new_issue.key} — {test_case.title}")
 
         self._link_to_story(new_issue.key, parent_story_key)

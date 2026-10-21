@@ -8,7 +8,7 @@
 #   pull_request          a change to pages/ or app_inventory/ is analysed
 #                         structurally and reported on the pull request
 #   schedule (nightly)    the inventory staleness check, then its drift
-#                         analysed
+#                         analysed (on demand: dispatch with mode = drift)
 #
 # SWITCHED OFF BY DEFAULT. The `gate` job reads agents.agent0_impact.enabled
 # from config.yaml; while it is false every analysis job is skipped. The
@@ -30,6 +30,12 @@ on:
         required: false
         type: boolean
         default: false
+      mode:
+        description: "scan = analyse stories and reconcile (default); drift = run the nightly inventory check and its impact now"
+        required: false
+        type: choice
+        options: [scan, drift]
+        default: scan
   schedule:
     - cron: "15 5 * * 1-5"         # scan, 10:45 IST, weekdays
     - cron: "45 1 * * *"           # nightly drift, 07:15 IST
@@ -75,7 +81,7 @@ jobs:
   scan:
     name: Analyse, hand over, reconcile
     needs: gate
-    if: needs.gate.outputs.enabled == 'true' && (github.event_name == 'workflow_dispatch' || github.event.schedule == '15 5 * * 1-5')
+    if: needs.gate.outputs.enabled == 'true' && ((github.event_name == 'workflow_dispatch' && github.event.inputs.mode != 'drift') || github.event.schedule == '15 5 * * 1-5')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # Job permissions replace the workflow's, so contents is restated.
@@ -142,7 +148,7 @@ jobs:
     # undone either way. This is the ONLY place reconcile runs, so the
     # two-scan rule counts real, separate scans.
     name: Reconcile change stories (C7)
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '15 5 * * 1-5'
+    if: (github.event_name == 'workflow_dispatch' && github.event.inputs.mode != 'drift') || github.event.schedule == '15 5 * * 1-5'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -207,7 +213,8 @@ jobs:
   drift:
     name: Impact of nightly inventory drift
     needs: gate
-    if: needs.gate.outputs.enabled == 'true' && github.event.schedule == '45 1 * * *'
+    # Nightly, or on demand: Run workflow with mode = drift.
+    if: needs.gate.outputs.enabled == 'true' && (github.event.schedule == '45 1 * * *' || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'drift'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -240,8 +247,10 @@ jobs:
           # --compare adds the elements no inventory selector covers. Report
           # only: it never changes drift, and the drift analysis ignores it.
           python -m scripts.check_inventory_staleness --compare --json reports/drift.json || true
+          DRY=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then DRY="--dry-run"; fi
           if [ -f reports/drift.json ]; then
-            python -m agents.agent0_impact --drift-report reports/drift.json
+            python -m agents.agent0_impact --drift-report reports/drift.json $DRY
           fi
       - name: Keep the report for the next scan
         # The weekday scan reads the newest of these for the uncovered-element

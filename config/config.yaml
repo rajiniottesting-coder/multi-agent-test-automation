@@ -389,9 +389,11 @@ agents:
       # On undo: labels the closed PR made untrue, removed so a retry is just
       # "remove impact-reverted, add impact-check".
       reset_labels: ["ai-processed", "human-approved", "ai-coded", "tests-run"]
-    # Live mode: at hand-over, propose the wording a story changes in the
-    # inventory and prompts/app_context as a pull request (never merged by an
-    # agent; merge it after deployment). See core/context_update.py.
+    # Live mode: at hand-over, propose the inventory and prompts/app_context
+    # changes a story implies, as a pull request (never merged by an agent;
+    # merge it after deployment): wording it replaces (which can update a
+    # text-based selector), and note passages it makes untrue, rewritten.
+    # See core/context_update.py.
     context_update:
       enabled: true
       branch_prefix: "context-update/"   # must not contain an issue key
