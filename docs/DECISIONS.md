@@ -77,7 +77,7 @@ does this change touch?" without letting a model rewrite tests on its own.
   `components`; `scripts/onboarding_check.py` and `scripts/backfill_markers.py`
   exist for that.
 - A change story can produce two PRs. Only the story's own PR closes it.
-- An undo takes two scans — the next weekday's scheduled run, or two manual
+- An undo takes two scans (`reconcile.closed_scans`, default 2) — the next weekday's scheduled run, or two manual
   runs.
 - The graph builder is per test-stack language (`register_graph_builder`); the
   rest of Agent 0 carries over to another stack unchanged.

@@ -112,12 +112,20 @@ def reconcile_story(tracker, host, story: str, settings: dict | None = None, now
 
     if prs:                                      # newest first: the latest close
         pr = prs[0]
-        seen = {(int(n), u) for n, u in _CLOSED.findall("\n".join(comments))}
-        if (pr["number"], pr["updated_at"]) not in seen:
+        # A close is acted on only after `reconcile.closed_scans` scans have seen
+        # it (default 2), so a close the sweeper reopens, or a person undoes,
+        # is absorbed. Each earlier sighting leaves one marker for THIS close
+        # (number + updated_at); a reopen and re-close is a new close.
+        needed = max(1, int(settings["reconcile"].get("closed_scans", 2)))
+        sightings = sum(1 for n, u in _CLOSED.findall("\n".join(comments))
+                        if (int(n), u) == (pr["number"], pr["updated_at"]))
+        if sightings + 1 < needed:
+            remaining = needed - sightings - 1
+            when = "on the next scan" if remaining == 1 else f"after {remaining} more scans"
             tracker.add_comment(story, f"{MARK} closed-unmerged pr: {pr['number']} "
                                        f"updated: {pr['updated_at']}\n"
                                        f"Pull request #{pr['number']} is closed without merging. "
-                                       "If it is still closed on the next scan, the revised test "
+                                       f"If it is still closed {when}, the revised test "
                                        "cases are restored to their earlier text.")
             return {"story": story, "action": "pending-close", "pr": pr["number"]}
         return _revert(tracker, story, pr, cases, owners, labels, settings)

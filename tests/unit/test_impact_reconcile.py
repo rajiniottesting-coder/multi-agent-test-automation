@@ -77,6 +77,25 @@ class TestReconcile:
         assert "Retirement withdrawn - these stay active: SBX-12" in restored[0]
         assert _impact_labels(fake) == ["impact-reverted"]
 
+    @pytest.mark.parametrize("needed, pending", [(1, 0), (3, 2)])
+    def test_closed_scans_setting_is_honoured(self, opened, needed, pending):
+        """reconcile.closed_scans decides how many scans must see the close
+        before the undo (the default 2 is the test above)."""
+        from core.impact_settings import impact_settings
+        fake, jira, gh, original = opened
+        settings = impact_settings({"reconcile": {"closed_scans": needed}})
+        gh.close(1)
+        for i in range(pending):
+            assert reconcile_story(jira, gh, "SBX-5", settings, now=NOW)["action"] == "pending-close"
+            assert fake.issues["SBX-11"]["description"] != original["description"]
+        r = reconcile_story(jira, gh, "SBX-5", settings, now=NOW)
+        assert r["action"] == "reverted"
+        assert fake.issues["SBX-11"]["description"] == original["description"]
+        notes = [c for c in fake.comments["SBX-5"] if "closed-unmerged pr: 1" in c]
+        assert len(notes) == pending
+        if pending == 2:
+            assert "after 2 more scans" in notes[0] and "on the next scan" in notes[1]
+
     def test_the_sweepers_close_and_reopen_is_absorbed(self, opened):
         fake, jira, gh, original = opened
         gh.close(1)

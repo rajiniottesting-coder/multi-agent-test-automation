@@ -206,8 +206,10 @@ def run_impact_aware(tracker, story_id: str, story: dict, prompt_header: dict,
         revised.append(rev.key)
 
     if not dry_run:                       # a dry run creates and posts nothing, like normal mode
+        comps = {"components": story["components"]} if story.get("components") else {}
         for tc in draft.new_test_cases:
-            created.append(tracker.create_test_case(tc, parent_story_key=story_id).key)
+            created.append(tracker.create_test_case(tc, parent_story_key=story_id,
+                                                    **comps).key)
 
         body = [f"{GATE} Impact-aware draft for {story_id}",
                 f"Revised {len(revised)}, skipped {len(skipped)} (already revised), "

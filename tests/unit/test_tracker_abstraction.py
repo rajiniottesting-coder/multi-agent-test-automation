@@ -85,7 +85,7 @@ def test_a_new_adapter_needs_no_agent_changes():
         def find_stories_to_process(self, selection_config, max_results=5,
                                     sprint_override=None): return []
         def get_parent_story_key(self, issue_key): return None
-        def create_test_case(self, test_case, parent_story_key):
+        def create_test_case(self, test_case, parent_story_key, components=None):
             return MagicMock(key="T-1")
         def get_linked_test_cases(self, story_key): return []
         def count_linked_test_cases(self, story_key): return 0

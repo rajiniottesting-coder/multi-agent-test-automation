@@ -118,7 +118,7 @@ Agent 0 answers *"which existing tests does this change touch?"* before any test
 |---|---|---|
 | Story label `impact-check` | Weekdays 10:45 IST, or a manual run | Two model calls (seeds, then judgement); a report, or an Impact Review |
 | Pull request | Any PR touching `pages/` or `app_inventory/` | Compares page-object methods and selectors with `main`, no model; posts the affected tests on the PR |
-| Nightly drift | After the inventory staleness check (07:15 IST) | A selector that stopped matching is traced to the affected tests, no model; live mode opens one maintenance story |
+| Nightly drift | After the inventory staleness check (07:15 IST), or on demand (`mode` = `drift`) | A selector that stopped matching is traced to the affected tests, no model; live mode opens one maintenance story |
 
 Two more jobs run on the scheduled scan and on **every** manual run: the **hand-over** of decided Impact Reviews (only in a full scan — a run with `story_key` set analyses that story and does not hand over) and **reconcile**, in its own job (below).
 

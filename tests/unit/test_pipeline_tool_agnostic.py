@@ -60,7 +60,7 @@ class MemoryTracker:
                 return story
         return None
 
-    def create_test_case(self, test_case, parent_story_key):
+    def create_test_case(self, test_case, parent_story_key, components=None):
         self._n += 1
         key = f"ACME-T{self._n}"
         self.test_cases[key] = {"key": key,

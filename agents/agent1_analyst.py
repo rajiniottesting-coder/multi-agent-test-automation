@@ -290,9 +290,16 @@ def run(story_id: str, dry_run: bool = False) -> dict:
     # the same costed story, and their usage SHOULD accumulate.
     # Best-effort — never fails the run.
     if not dry_run:
-        from core.usage_ledger import has_usage_comments, post_reset_to_story
+        from core.usage_ledger import (
+            IMPACT_ANALYST,
+            has_usage_comments,
+            post_reset_to_story,
+        )
         try:
-            if has_usage_comments(jira.get_comments(story_id)):
+            # Agent 0's entries belong to THIS attempt of a change story (it
+            # runs first), so they do not make the story "already costed".
+            if has_usage_comments(jira.get_comments(story_id),
+                                  ignore_agents=(IMPACT_ANALYST,)):
                 logger.info(
                     f"{story_id} already has usage entries from a previous run — "
                     "posting ledger reset boundary."
@@ -370,8 +377,11 @@ def run(story_id: str, dry_run: bool = False) -> dict:
     if dry_run:
         logger.warning("DRY RUN — skipping Jira ticket creation")
     else:
+        # The story's components travel to its test cases (traceability);
+        # passed only when there are some.
+        comps = {"components": story["components"]} if story.get("components") else {}
         for tc in test_case_list.test_cases:
-            issue = jira.create_test_case(tc, parent_story_key=story_id)
+            issue = jira.create_test_case(tc, parent_story_key=story_id, **comps)
             created_keys.append(issue.key)
 
         # IDEMPOTENCY MARKER: tag parent story so the next --scan run skips it.

@@ -43,6 +43,11 @@ USAGE_MARKER = "[LLM-USAGE]"
 # SAME costed story, and their tokens SHOULD accumulate into the lifetime total.
 RESET_MARKER = "[LEDGER-RESET]"
 
+# The agent that STARTS a change story's attempt. Its entries are the first
+# cost of an attempt, so they never make a later agent think the story was
+# costed before: has_usage_comments() is told to ignore them by Agent 1.
+IMPACT_ANALYST = "Agent 0 (Impact Analyst)"
+
 # Parses the machine-readable comment line. cost fields may be a float or "n/a".
 _USAGE_RE = re.compile(
     r"\[LLM-USAGE\]\s+"
@@ -146,15 +151,21 @@ def post_reset_to_story(story_key: str, reason: str = "", jira=None) -> bool:
         return False
 
 
-def has_usage_comments(comment_bodies: list[str]) -> bool:
-    """True if any comment after the last reset is a usage entry.
+def has_usage_comments(comment_bodies: list[str], ignore_agents=()) -> bool:
+    """True if any comment after the last reset is a usage entry from an agent
+    not in `ignore_agents`.
 
-    Used by Agent 1 to decide whether a story has already been costed and
-    therefore needs a reset boundary before it is processed again.
+    Used to decide whether a story has already been costed and therefore
+    needs a reset boundary before it is processed again. The agent that opens
+    an attempt passes the agents that run BEFORE it in that same attempt, so
+    their entries are kept rather than discarded as a "previous run".
     """
-    return any(
-        parse_usage_comment(b) for b in _comments_after_last_reset(comment_bodies or [])
-    )
+    ignore = set(ignore_agents or ())
+    for b in _comments_after_last_reset(comment_bodies or []):
+        parsed = parse_usage_comment(b)
+        if parsed and parsed["agent"] not in ignore:
+            return True
+    return False
 
 
 def _comments_after_last_reset(comment_bodies: list[str]) -> list[str]:
