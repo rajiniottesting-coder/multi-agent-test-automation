@@ -13,15 +13,18 @@
 Porting to a new tool means adding ONE file under `integrations/` and changing
 one line in `config/config.yaml`. Nothing in `agents/` changes.
 
-> **Verification status (21 Oct 2026, main `3289394`):** the full unit suite
-> passes (~2,900 offline tests). Deployed: v17/v18 prompt hardening, orphan
+> **Verification status (22 Oct 2026):** the full unit suite
+> passes (~3,000 offline tests). Deployed: v17/v18 prompt hardening, orphan
 > cleanup (`ai-update` AND `ai-regenerate`), dynamic sprint scoping
 > (`sprint: "auto"` via JIRA_BOARD_ID), end-to-end LLM token & cost
 > instrumentation, module-wise app context (`prompts/app_context/`), inventory
 > JSON minification, duplicate step-definition guard, per-story ledger reset
 > marker, light-model routing (`LLM_MODEL_LIGHT` for Agents 1 and 5), the
 > 29-check validator gate, board automation, and **Agent 0** (impact analysis,
-> Impact Review, hand-over, context update, reconcile). Framework code, agent
+> Impact Review, hand-over, context update, reconcile), protection for stories
+> in flight at the same time (Agent 2 waits on open PRs; Agent 4's browser runs
+> take turns) and a pull-request gate that skips the browser when only prompts,
+> docs or Markdown change. Framework code, agent
 > prompts and unit-test logic carry no application-specific references.
 
 This guide explains exactly what to change to point this framework at a different application (e.g., banking app, CMS, internal portal, anything with a web UI testable by Playwright + pytest-bdd).
@@ -42,6 +45,7 @@ These files contain zero project-specific knowledge. Reuse as-is:
 - `agents/agent5_reporter.py` — results and cost to Jira; scores Agent 0
 - `core/impact_*.py`, `core/context_update.py`, `core/json_block.py` — Agent 0's graph, analysis, review, hand-over, reconcile, context update
 - `core/board_status.py`, `core/test_case_rules.py`, `core/failure_diagnosis.py`, `core/allure_*.py`
+- `core/in_flight.py` (stories in flight), `core/test_runtime.py` (what a test reads), `scripts/e2e_turn.py` (browser runs take turns)
 - `validators/orphan_cleanup.py` — dead-code detection (purely AST + Gherkin)
 - `core/app_context.py` — loads app_under_test from config
 - `integrations/tracker.py`, `integrations/repo_host.py` — the Protocols
@@ -66,7 +70,7 @@ These files contain zero project-specific knowledge. Reuse as-is:
 - `pages/base_page.py` — 86 generic Playwright-native helpers. Universal across projects.
 
 ### Unit tests (the test suite is project-agnostic)
-- everything under `tests/unit/` (~2,900 offline tests) — synthetic fixtures (banking, CMS, a fake tracker and repo host), for example:
+- everything under `tests/unit/` (~3,000 offline tests) — synthetic fixtures (banking, CMS, a fake tracker and repo host), for example:
 - `tests/unit/test_orphan_cleanup.py` — uses banking + CMS fixtures
 - `tests/unit/test_pipeline_tool_agnostic.py` — the pipeline against an in-memory tracker
 - `tests/unit/test_validators.py` — a fixture uses "Admin" as a generic role placeholder, not tied to any app
