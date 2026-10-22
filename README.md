@@ -43,14 +43,21 @@ The pipeline never merges its own code. Agents propose; people decide.
 
 | # | Agent | Role | Implementation | Model calls |
 |:-:|---|---|---|---|
-| 0️⃣ | **Impact Analyst** | Change story → the tests it affects, ranked, in an Impact Review | `agents/agent0_impact.py` + `core/impact_*.py` | 2 to analyse; 2 more at hand-over (context update) |
-| 1️⃣ | **Test Designer** | Story → Test Case issues; impact-aware mode revises approved tests | `agents/agent1_analyst.py`, `agents/agent1_impact.py` | 1 (+1 if a rule fails) |
-| 2️⃣ | **Coder** | Test cases → plan → code per file → validated PR; splices change-story scenarios | `agents/agent2_coder.py`, `agents/agent2_impact.py` | 1 plan + 1 per file (+ repairs) |
+| 0️⃣ | **Impact Analyst** | Change story → the tests it affects, ranked, in an Impact Review | `agents/agent0_impact.py` + `core/impact_*.py` | 2 to analyse (+1 per extra batch past 300 candidates); up to 2 for the context update; 0 on PR code-change and drift runs |
+| 1️⃣ | **Test Designer** | Story → Test Case issues carrying the story's Components; impact-aware mode revises approved tests | `agents/agent1_analyst.py`, `agents/agent1_impact.py` | 1 (+1 if a rule fails) |
+| 2️⃣ | **Coder** | Test cases → plan → code per file → validated PR; splices change-story scenarios | `agents/agent2_coder.py`, `agents/agent2_impact.py` | 1 plan + 1 per file (+ repairs); a change story adds 1 per revised scenario and up to 1 per owner step file |
 | 3️⃣ | **Reviewer** | AI code review of the PR's changed lines | `agents/agent3_reviewer.py` | 1 |
-| 4️⃣ | **Runner** | Unit suite, then pytest-bdd + Playwright on the PR | `.github/workflows/agent4_runner.yml` | 0 |
+| 4️⃣ | **Runner** | Unit suite, then pytest-bdd + Playwright on the PR; browser runs take turns across PRs, and a PR changing only prompts, docs or Markdown runs the unit suite only | `.github/workflows/agent4_runner.yml` | 0 |
 | 5️⃣ | **Reporter** | Results and cost to Jira; scores Agent 0 on change stories | `agents/agent5_reporter.py` | 1 |
 
-A new story with no repairs takes **7 model calls**: 1 to draft, 1 to plan, 1 per generated file (typically 3), 1 to review, 1 to report.
+**Model calls per story, with no repairs:**
+
+| Story | Calls | Breakdown |
+|---|---|---|
+| New story (`ai-ready`) | **7** | Agent 1: 1 draft · Agent 2: 1 plan + 1 per generated file (typically 3) · Agent 3: 1 review · Agent 5: 1 report |
+| Change story (`impact-check`), e.g. A3 | **about 14–15** | Agent 0: 2 to analyse + 2 for the context update · Agent 1: 1 impact-aware draft · Agent 2: 1 plan + 1 per new file (typically 3) + 1 per revised scenario (2) + 0–1 for the owner's step file · Agent 3: 1 on the story PR + 1 on the context-update PR · Agent 5: 1 (none for the context-update PR, which runs no browser) |
+
+Add one call per repair attempt and per corrective retry. Every push to an open PR runs Agents 3 and 5 again (one call each). A story that waits for another open PR (see below) has spent its plan call and spends it again on the retry. The measured total is on the story, in Agent 5's end-to-end cost table - except Agent 3's review of the context-update PR, whose branch carries no story key, so its cost appears only in that run's log.
 
 > **Why is Agent 4 only a workflow?** It is pure CI: run pytest, collect junit.xml, screenshots, videos and traces, upload the reports. No model calls and no decisions. Agents 4 and 5 share one workflow. See [GUIDE.md → Agent 4](./docs/GUIDE.md#agent-4-runner).
 
@@ -116,11 +123,11 @@ Agent 0 answers *"which existing tests does this change touch?"* before any test
 
 | Trigger | When | What happens |
 |---|---|---|
-| Story label `impact-check` | Weekdays 10:45 IST, or a manual run | Two model calls (seeds, then judgement); a report, or an Impact Review |
+| Story label `impact-check` | Weekdays 10:45 IST, or a manual run | Two model calls (seeds, then judgement; one more per batch past 300 candidates); a report, or an Impact Review |
 | Pull request | Any PR touching `pages/` or `app_inventory/` | Compares page-object methods and selectors with `main`, no model; posts the affected tests on the PR |
 | Nightly drift | After the inventory staleness check (07:15 IST), or on demand (`mode` = `drift`) | A selector that stopped matching is traced to the affected tests, no model; live mode opens one maintenance story |
 
-Two more jobs run on the scheduled scan and on **every** manual run: the **hand-over** of decided Impact Reviews (only in a full scan — a run with `story_key` set analyses that story and does not hand over) and **reconcile**, in its own job (below).
+Two more jobs run on the scheduled scan and on **every** manual run in `scan` mode (a run with `mode` = `drift` runs the drift job only): the **hand-over** of decided Impact Reviews (only in a full scan — a run with `story_key` set analyses that story and does not hand over) and **reconcile**, in its own job (below).
 
 **What a seed is — by trigger**
 
@@ -162,7 +169,8 @@ Attaching Agent 0 to another application: [docs/AGENT0_ONBOARDING.md](./docs/AGE
 - **A 29-check static validator gate before any branch exists.** A failure becomes a targeted repair prompt naming the file and the rule; only the broken files are regenerated (up to 4 attempts), and the loop stops early when an attempt changes nothing, when the same rules keep failing, or when a regeneration comes back worse. Every repairable error is routed to the generated file it names, however a rule words it, so no error reaches the final gate without a repair attempt.
 - **Real signatures, not guesses.** BasePage's 86 helpers and every sibling page object's methods are read from source by AST and handed to the next file's prompt. A Then step another feature already defines is shown with its committed body, so it keeps the same meaning in every feature. The change-story splice writers get the same grounding plus one corrected retry, and a contract test fails any new model writer without it.
 - **Typed model boundaries.** 21 Pydantic schemas (TestCaseList, CodePlan, ReviewReport, ChangeSeeds, ImpactAssessment and more); a malformed reply gets one repair attempt, then fails.
-- **Reviewer that must name a failure.** Agent 3 is checked out from main, flags only changed lines, blocks only for a named failure scenario, and a green Agent 4 run on the same commit refutes a block.
+- **Reviewer that must name a failure.** Agent 3 is checked out from main, flags only changed lines, blocks only for a named failure scenario, and a green Agent 4 run on the same commit refutes a block - when that run executed the app tests (a PR changing only prompts, docs or Markdown runs none, so it refutes nothing).
+- **Stories in flight do not collide.** Agent 2 never writes a file another open PR is changing, and never generates a scenario another open PR already adds: the story waits and the next scan retries (`core/in_flight.py`). Agent 4's browser runs take turns across PRs, because every PR tests the same live application with the same accounts (`scripts/e2e_turn.py`).
 - **Prompt caching.** The static rule text of the generation prompt is sent as a cacheable prefix; per-file content goes in the user message.
 - **Failure evidence.** A failed test carries a plain-English cause and remedy plus its screenshot, video and Playwright trace in the Allure report.
 - **Cost on the story.** Every agent posts its token and cost ledger to the Jira story; Agent 5 totals it. Reprocessing posts a ledger boundary, so a rerun is not double-counted.
@@ -209,6 +217,8 @@ multi-agent-test-automation/
 │   ├── app_context.py               # AUT config loader + component-wise inventory filtering
 │   ├── test_case_rules.py           # Rules every drafted test case must follow
 │   ├── board_status.py              # Board column automation
+│   ├── in_flight.py                 # Files and scenarios other open PRs are changing (Agent 2 waits)
+│   ├── test_runtime.py              # Can a change alter a test result? (Agent 4 PR gate, Agent 3)
 │   ├── failure_diagnosis.py         # Raw failure → plain-English cause + remedy
 │   ├── allure_meta.py, allure_steps.py
 │   ├── impact_graph.py              # Agent 0: scenario → step → method → selector graph
@@ -253,6 +263,7 @@ multi-agent-test-automation/
 │   ├── sweep_stalled_prs.py, close_merged_story.py, cleanup_artifacts.py
 │   ├── impact_handover.py, impact_reconcile.py, backfill_markers.py
 │   ├── agent0_backtest.py, onboarding_check.py, gateway_probe.py
+│   ├── e2e_turn.py                  # Agent 4: wait for earlier PRs' browser runs
 │
 ├── .github/workflows/
 │   ├── agent0_impact.yml            # Scan, reconcile, PR code change, nightly drift
@@ -376,7 +387,7 @@ The framework was moved from an Angular HR system to this e-commerce application
 ## 🧪 The framework's own unit tests
 
 ```bash
-pytest tests/unit/ -q   # ~2,900 offline tests, about 2 minutes; no Jira, GitHub or LLM needed
+pytest tests/unit/ -q   # ~3,000 offline tests, about 2 minutes; no Jira, GitHub or LLM needed
 ```
 
 They cover the agents' logic, every validator, Agent 0's graph, ranking, hand-over and reconcile, the inventory tooling, the sweeper, the Protocol contracts (the whole pipeline against a fake tracker and repo host) and the golden-rule guard that keeps application names out of framework files (`test_committed_tree_resolves.py`). Agent 4 runs them on every PR before the BDD tests.
@@ -405,6 +416,8 @@ More in [GUIDE.md → Troubleshooting](./docs/GUIDE.md#troubleshooting). The mos
 - **Jira `enhanced_search_issues` not found** → upgrade to `jira>=3.10.5`
 - **`StepDefinitionNotFoundError` at collection** → the validators should catch this; check the repair-loop log in the Agent 2 run
 - **A PR never got Agents 3–5** → the hourly sweeper re-triggers it, or re-run the workflow manually
+- **Agent 2 shows `[WAIT]` for a story** → another open PR is changing one of its files or adds one of its scenarios; the story's `[agent2:waiting]` comment names it. It continues on the first scan after that PR merges or closes
+- **No Agent 5 report on a PR** → expected when the PR changes only prompts, docs or Markdown (no browser run); otherwise check the branch carries the story key
 - **Agent 0 did nothing for a story** → check the mode in `config.yaml` (off by default) and that the story carries `impact-check`; an unchanged story is skipped on purpose
 - **A decided Impact Review was not handed over** → run Agent 0 with `story_key` blank; a one-story run does not hand over
 - **Actions blocked: storage quota** → artifacts count against the account's storage; `artifact_cleanup.yml` (or `python -m scripts.cleanup_artifacts --yes`) deletes artifacts older than 2 days

@@ -9,6 +9,65 @@ ADR-005 (the Jira label state machine) under [State management deep-dive](./GUID
 
 ---
 
+## ADR-014 — Stories in flight: wait for the other pull request, and take turns on the live app
+
+### Status
+
+Accepted (2026-10, PR #201; the pull-request browser gate it relies on is #200).
+
+### Context
+
+Every story branches from `main`, and Agent 2 writes whole files. Two stories
+whose pull requests are open at the same time cannot see each other's work:
+both may rewrite one page object (a merge conflict, or the second merge silently
+drops the first one's methods), create one new file, or generate one scenario
+(duplicate detection reads `main`, where neither is yet). Their E2E runs also
+share one live application and its accounts, so persistent state such as a cart
+leaked between them and produced flaky failures.
+
+### Decision
+
+1. **Wait, never merge or rebase.** A story whose plan writes a file another
+   open PR changes, or whose test cases another open PR already adds as
+   scenarios, waits: nothing is generated or committed, labels are unchanged,
+   one `[agent2:waiting]` comment says why, and the next scan retries
+   (`core/in_flight.py`). The scenario check runs before the plan, so it costs
+   no model call; the file check needs the plan. `ai-update` checks its files
+   before any model call.
+2. **The story's own branches never count** (`auto/KEY-…`, `-updateN`,
+   `context-update/key`), so a re-run is never blocked by itself.
+3. **Fail open.** If the open PRs cannot be read, the story proceeds as before:
+   the guard prevents a conflict, and must not stop work on an API hiccup.
+4. **Browser runs take turns**, first come first served by run id
+   (`scripts/e2e_turn.py`), polled every 30 s and capped at 900 s, then the run
+   proceeds. A shared concurrency group was rejected: GitHub cancels a pending
+   run when a newer one queues, and the sweeper reads a cancelled run as a
+   stalled PR.
+
+### Why not the alternatives
+
+- **Generate onto the other PR's branch** (stacked PRs): couples two stories'
+  review and merge, and a rejection of the first strands the second.
+- **Rebase and regenerate after the other PR merges**: what waiting achieves,
+  without generating code that is thrown away.
+- **A lock in Jira**: another state store to keep consistent; the open PRs
+  already are the lock.
+
+### Consequences
+
+- One story at a time remains the path validated end to end. Several stories
+  per scan have open gaps, recorded for a later change: a failed story's model
+  cost is charged to the next story in the same scan (Agents 1 and 2 reset the
+  usage counter only after a success); Agent 2's 10-minute job timeout does not
+  allow for `max_stories_per_run` applying to each of its three passes; Agent 3
+  waits 8 minutes for a runner result that can take longer behind the browser
+  queue (a predicted failure then stays blocking - safe, less accurate); and the
+  900 s turn cap covers about four queued PRs before runs overlap again.
+- A waiting story spends its plan call again on the retry; it is posted as
+  `Agent 2 (Coder, waiting)`.
+
+---
+
 ## ADR-013 — Agent 0: graph-first impact analysis, a human Impact Review, undo by snapshot
 
 ### Status

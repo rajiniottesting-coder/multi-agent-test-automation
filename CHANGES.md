@@ -6,6 +6,12 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ## October 2026 (second half) — validation fixes after A3
 
+**Documentation audit (completeness, not only truth)**
+- Model calls per story are stated for a change story as well as a new one (README, GUIDE): Agent 0's context update, Agent 2's per-scenario splices and Agent 3's review of the context-update PR were missing from every count
+- Docs describe the stories-in-flight guards, the pull-request browser gate and Agent 0 on the cost ledger everywhere they apply (README, GUIDE, TECHNICAL_DEEP_DIVE, AI_CONCEPTS, REUSE_FOR_NEW_PROJECT); "stories are independent, no shared state" corrected, with the open multi-story gaps listed
+- TECHNICAL_DEEP_DIVE no longer carries source line numbers or file sizes, which went stale with every pull request; every function is named with its file
+- New ADR-014 (stories in flight)
+
 **Stories in flight at the same time**
 - Agent 2 never writes a file another open pull request is changing, and never generates a scenario another open PR already adds: the story waits (`waiting_for_open_pr`, `[WAIT]` in the scan summary), labels unchanged, one `[agent2:waiting]` comment per reason, retried on the next scan. Covers normal, regenerate, change-story owner files and `ai-update`. Fails open (`core/in_flight.py`)
 - Duplicate detection compares a test case's title without its `[type]` tag (the stored summary is `[Positive] <title>`, the scenario is `<title>`, so the title fallback could never match a case the pipeline created)
@@ -23,7 +29,7 @@ This document records substantive changes to the framework in reverse-chronologi
 All generic, each pinned by unit tests (suite: ~2,900 tests).
 
 **Agent 0**
-- #175 a change story undone by reconcile can be retried as a new attempt; docs no longer claim Agent 0 posts a cost ledger (it does not)
+- #175 a change story undone by reconcile can be retried as a new attempt; docs no longer claimed Agent 0 posts a cost ledger (it did not then; it does since the A-series items above)
 - #185 a context-update marker blocks a new proposal only while its PR is open; a closed PR no longer suppresses the retry's update
 - #186 *using is not changing*: a story classified `new_behaviour` (new functionality, or a new journey through existing behaviour) keeps no seeds, and adjudication needs a named difference, not overlap
 
