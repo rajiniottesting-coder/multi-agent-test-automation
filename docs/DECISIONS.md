@@ -65,6 +65,10 @@ leaked between them and produced flaky failures.
   900 s turn cap covers about four queued PRs before runs overlap again.
 - A waiting story spends its plan call again on the retry; it is posted as
   `Agent 2 (Coder, waiting)`.
+- The limits of a file-level guard (two different scenarios of one file wait;
+  reworded duplicates; a person's PR opened later; clashes across different
+  files) and the gaps found later are tracked in
+  [VALIDATION_AND_KNOWN_GAPS.md](./VALIDATION_AND_KNOWN_GAPS.md).
 
 ---
 
