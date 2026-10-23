@@ -41,6 +41,11 @@ register_adapter("xray", XrayTracker)     # the name you pass as --tracker
 The readiness check reports `FAIL` with the missing operations if the class is
 incomplete, and `WARN` if it cannot be constructed without credentials.
 
+The tracker project also needs an `Impacts` issue link type (outward "impacts",
+inward "is impacted by") and a sub-task type for the Impact Review. Their names
+are configuration: `link_types` and `agents.agent0_impact.review` in
+`config/config.yaml`.
+
 ### 2. Repository-host adapter
 
 The same pattern for the code host (`integrations/repo_host.py`, `RepoHost`,
