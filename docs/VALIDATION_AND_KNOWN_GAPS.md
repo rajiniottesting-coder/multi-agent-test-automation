@@ -162,6 +162,20 @@ code, the scenario markers and the inventory, not the notes.
 | L22 | Flaky or outage-hit tests (I8, L14) | No retry, no flake history, no quarantine | Fix planned |
 | L23 | A production bug needs a regression test | Every selection uses `issue_type: "Story"`; another type is possible in config but untested, and the prompts are written for stories | Fix planned |
 
+### 3.10 Operating the pipeline continuously
+
+| ID | Situation | What happens today | Status |
+|---|---|---|---|
+| N1 | **The application regresses with no PR open** (another team deploys) | `agent4_runner.yml` runs on pull requests, framework pushes to `main` and manual dispatch only - it has **no schedule**. The nightly Inventory Health run checks that selectors resolve, not behaviour. A broken feature is found only when someone opens a PR | Fix planned (critical) |
+| N2 | **A test fails on `main` or in a scheduled run** | Nothing raises a defect: Agent 5 comments only on the story of a PR. The failure diagnosis and evidence exist but are not routed to a bug or a triage queue | Fix planned (critical) |
+| N3 | **A scheduled agent keeps failing, or a credential expires** (`GH_PAT`, Jira token, LLM key) | Each run fails red in Actions and nobody is told; the smoke test is manual. The pipeline can stop quietly | Fix planned |
+| N4 | **Model spend runs away** (a bad prompt, repeated retries, a mislabelled batch) | `max_stories_per_run` caps the number of stories, not the cost; no budget per story or per day, no alert | Fix planned |
+| N5 | **An agent's PR goes stale or conflicts** because `main` moved (e.g. a person's PR merged first) | No rebase or regeneration; the sweeper re-triggers only PRs whose checks never ran. The PR waits for a person | Fix planned |
+| N6 | **A red PR is merged** | No required status check (a decision recorded in GUIDE → Branch protection), so a story PR with failing tests can be merged and moved to Done | Decision pending |
+| N7 | **Test data and isolation** | Every run shares the live application's accounts and saved state; tests run one at a time (no parallel execution). Browser turn-taking avoids collisions but rules out parallelism; no per-run data set-up and tear-down | Fix planned |
+| N8 | **More than one environment or browser** | One `base_url` (an environment variable can override it) and Chromium only; no staging/production profiles, no browser matrix | Fix planned |
+| N9 | **"How healthy is our testing?"** | Results, cost and Agent 0 recall/precision are posted to Jira per story but never aggregated: no pass-rate, flake-rate, coverage, cost-per-story or Agent 0 accuracy trend | Fix planned |
+
 ---
 
 ## 4. Fix backlog
@@ -188,8 +202,17 @@ code, the scenario markers and the inventory, not the notes.
 | F-18 | L21 | On a PR, run the tests Agent 0's graph links to the change (plus a smoke set); the full suite nightly and before merge |
 | F-19 | L22 | Retry a failed test once; record flakes over time; quarantine a test with a review step (extends F-7) |
 | F-20 | L23 | A configured bug flow (issue type, prompt template for a regression test), validated live before use |
+| F-21 | N1 | A scheduled full app-test run on `main` (outside business hours) with a run summary; no story report. Its failures feed F-22 |
+| F-22 | N2 | Failure-to-defect triage: a test failing on `main` or in the scheduled run raises one Jira bug per failing test (deduplicated by test and cause, updated on a repeat, suggested for closing when it passes again), carrying the diagnosed cause, the evidence link and the owning story. Outages (F-7) and known flakes (F-19) are kept out |
+| F-23 | N3 | A health check: an alert when a scheduled agent fails several runs in a row, and a scheduled credential check of the tracker, repo host and model endpoint (with an expiry warning where the API gives one) |
+| F-24 | N4 | A spend budget per story and per day (config); a run stops before the next model call once it is reached and says why. The ledger already holds the numbers |
+| F-25 | N5 | Detect agent PRs that conflict with or fall behind `main`; comment with the cause and suggest `ai-update` or `ai-regenerate`; never force-push silently |
+| F-26 | N6 | Decide on requiring Agent 4's Run Tests check once the pipeline is reliably green, with F-17's expected-failure marking so a change story is not blocked before deployment |
+| F-27 | N7 | Per-run test data (accounts and fixtures seeded per run or per worker) and then parallel execution; browser turn-taking becomes optional |
+| F-28 | N8 | Environment profiles in config (base URL and credentials per environment) and an optional browser matrix in Agent 4 |
+| F-29 | N9 | A scheduled metrics report built from the ledger, Agent 5's results and Agent 0's outcomes: pass and flake rates, coverage per story, cost per story, Agent 0 recall and precision over time |
 
-Order: F-1 to F-7 (then run UC-5); then correctness - F-13, F-16, F-14, F-15; then the notes lifecycle together - F-8 with F-9 and F-10; then F-11, F-12; then scale and operations - F-17 to F-20. Each fix gets a validation run added to section 2 when it is built.
+Order: F-1 to F-7 (then run UC-5) with the correctness fixes F-13 and F-16; then continuous running - F-21 and F-22; then operational safety - F-23, F-24, F-25; then change detection - F-14, F-15; then the notes lifecycle together - F-8 with F-9 and F-10, then F-11, F-12; then scale - F-17, F-18, F-19, F-27, F-29, F-28, F-20; F-26 when the pipeline is reliably green. Each fix gets a validation run added to section 2 when it is built.
 
 ---
 

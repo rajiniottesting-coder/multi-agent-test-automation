@@ -13,7 +13,7 @@ This document records substantive changes to the framework in reverse-chronologi
 - Inputs reach the reconcile shell as environment variables, not pasted into the script
 
 **Test-lifecycle gaps recorded**
-- `docs/VALIDATION_AND_KNOWN_GAPS.md` sections 3.5–3.9 and fixes F-8 to F-20: notes never gain shipped knowledge (L15), size, scope and cleanup of the notes (L16–L18), tests before deployment (L19), an approved test case silently not automated (G5), requirement or test-case edits after coding go unnoticed (G6, G7), a rejected new-story PR leaves the story looking coded (G8), and deployment, suite size, flakes and bug stories (L20–L23)
+- `docs/VALIDATION_AND_KNOWN_GAPS.md` sections 3.5–3.9 and fixes F-8 to F-20: notes never gain shipped knowledge (L15), size, scope and cleanup of the notes (L16–L18), tests before deployment (L19), an approved test case silently not automated (G5), requirement or test-case edits after coding go unnoticed (G6, G7), a rejected new-story PR leaves the story looking coded (G8), and deployment, suite size, flakes and bug stories (L20–L23); operating the pipeline continuously (N1–N9, fixes F-21 to F-29): no scheduled app-test run on `main`, no failure-to-defect triage, no alert on failing schedules or expiring credentials, no spend budget, stale agent PRs, merging a red PR, shared test data, one environment and browser, no health metrics
 
 **One file for validation and known gaps**
 - `docs/VALIDATION_AND_KNOWN_GAPS.md`: what has been validated live, the clubbed validation runs still to do (A4–A6, B, C, held-out stories, the new behaviour from #199–#201), and every known gap (stories in flight, several stories per scan, Agent 0, generation) with its status and planned fix
