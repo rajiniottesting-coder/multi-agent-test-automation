@@ -152,3 +152,6 @@ Gaps found earlier and fixed, for reference (details in [AI_CONCEPTS.md → fail
 | Step coverage accepting steps from a sibling module | #199 |
 | Two open stories conflicting on files, duplicating scenarios, or flaking each other's browser tests | #201 |
 | Title-based duplicate detection never matching a pipeline test case | #201 |
+| G3: Agent 0 "write nothing" ignored by the full scan (hand-over ran live) and by reconcile | #205 |
+| G4: a one-story manual run reconciled every `impact-applied` story | #205 |
+| L13: `mode` = `drift` silently ignoring a `story_key` (now refused) | #205 |

@@ -98,7 +98,7 @@ def test_scan_hands_the_snapshot_to_every_story(monkeypatch):
     tracker = type("T", (), {"find_stories_to_process":
                              lambda self, sel, max_results: [{"key": "X-1"}, {"key": "X-2"}]})()
     monkeypatch.setattr(a0, "analyse_and_publish",
-                        lambda tr, key, llm, s, root, host, uncovered=None:
+                        lambda tr, key, llm, s, root, host, dry_run=False, uncovered=None:
                         seen.append((key, uncovered)) or {"story": key})
     settings = impact_settings({"enabled": True, "shadow_mode": True})
     a0.scan(tracker, None, None, settings, ".", uncovered=PAGES)
@@ -149,4 +149,6 @@ def test_the_scan_fetches_it_without_ever_failing_on_it():
 
 def test_the_scan_passes_the_snapshot_to_both_modes():
     run = next(s for s in _jobs()["scan"]["steps"] if s.get("name") == "Run Agent 0")["run"]
-    assert "--scan $SNAP" in run and "$DRY $SNAP" in run
+    calls = [line for line in run.splitlines() if "python -m agents.agent0_impact" in line]
+    assert len(calls) == 2                       # --story and --scan
+    assert all(line.rstrip().endswith("$SNAP") for line in calls)

@@ -1190,6 +1190,8 @@ python -m agents.agent1_analyst --scan        # processes all stories with ai-re
 python -m agents.agent2_coder --scan          # processes all approved stories
 python -m agents.agent0_impact --scan         # impact-check stories + hand-overs
 python -m scripts.impact_reconcile            # settle impact-applied stories
+# Both take --dry-run: the real code runs against a tracker and repo host that
+# perform no writes (core/dry_run.py) and prints every write it would make.
 ```
 
 Selection rules come from `config.yaml`'s `agents.<name>.selection` block.
@@ -1199,8 +1201,8 @@ Selection rules come from `config.yaml`'s `agents.<name>.selection` block.
 | Workflow | Schedule (IST) | Also |
 |---|---|---|
 | Agent 1, Agent 2 | every 30 min, weekdays 10:00–19:00 | Run workflow |
-| Agent 0 scan + reconcile | weekdays 10:45 | Run workflow (`mode` = `scan`, the default; optional `story_key`, `dry_run`) |
-| Agent 0 nightly drift | daily 07:15 | Run workflow with `mode` = `drift` (optional `dry_run`) |
+| Agent 0 scan + reconcile | weekdays 10:45 | Run workflow (`mode` = `scan`, the default; optional `story_key` - analyse and reconcile that story only; `dry_run` - every job prints its writes and makes none) |
+| Agent 0 nightly drift | daily 07:15 | Run workflow with `mode` = `drift` (optional `dry_run`; a `story_key` stops the run with an error, since drift analyses the inventory, not a story) |
 | Agent 0 code change | on PRs touching `pages/**`, `app_inventory/**` | — |
 | Agents 3, 4 + 5 | on PR opened / synchronize / reopened | Run workflow |
 | Inventory Health | daily 08:00 (02:30 UTC) | Run workflow |

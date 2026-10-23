@@ -137,7 +137,9 @@ Agent 0 answers *"which existing tests does this change touch?"* before any test
 | Pull request | Any PR touching `pages/` or `app_inventory/` | Compares page-object methods and selectors with `main`, no model; posts the affected tests on the PR |
 | Nightly drift | After the inventory staleness check (07:15 IST), or on demand (`mode` = `drift`) | A selector that stopped matching is traced to the affected tests, no model; live mode opens one maintenance story (label `inventory-drift`) and updates it on later nights |
 
-Two more jobs run on the scheduled scan and on **every** manual run in `scan` mode (a run with `mode` = `drift` runs the drift job only): the **hand-over** of decided Impact Reviews (only in a full scan — a run with `story_key` set analyses that story and does not hand over) and **reconcile**, in its own job (below).
+**Manual run inputs** (Run workflow): `story_key` analyses and reconciles that one story (blank = everything); `dry_run` makes **every** job print what it would write and write nothing - analysis, hand-over, reconcile and drift; `mode` = `drift` runs the drift job only and refuses a `story_key`.
+
+Two more jobs run on the scheduled scan and on **every** manual run in `scan` mode: the **hand-over** of decided Impact Reviews (only in a full scan — a run with `story_key` set analyses that story and does not hand over) and **reconcile**, in its own job (below).
 
 **What a seed is — by trigger**
 
@@ -230,6 +232,7 @@ multi-agent-test-automation/
 │   ├── app_context.py               # AUT config loader + component-wise inventory filtering
 │   ├── test_case_rules.py           # Rules every drafted test case must follow
 │   ├── board_status.py              # Board column automation
+│   ├── dry_run.py                   # Dry run: real code, adapters that make no writes
 │   ├── in_flight.py                 # Files and scenarios other open PRs are changing (Agent 2 waits)
 │   ├── test_runtime.py              # Can a change alter a test result? (Agent 4 PR gate, Agent 3)
 │   ├── failure_diagnosis.py         # Raw failure → plain-English cause + remedy
@@ -359,10 +362,10 @@ Runs the five login scenarios in Chromium.
 ```bash
 # Agent 0: analyse one change story (labelled impact-check)
 python -m agents.agent0_impact --story SCRUM-3 --dry-run
-# Agent 0: full scan - analyses, then hands over decided Impact Reviews
+# Agent 0: full scan - analyses, then hands over decided Impact Reviews (dry run prints the writes)
 python -m agents.agent0_impact --scan --dry-run
 # Agent 0: reconcile (finish or undo) stories labelled impact-applied
-python -m scripts.impact_reconcile --story SCRUM-3
+python -m scripts.impact_reconcile --story SCRUM-3 --dry-run
 
 # Agent 1: test cases for one story
 python -m agents.agent1_analyst --story SCRUM-3 --dry-run

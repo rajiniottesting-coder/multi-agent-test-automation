@@ -22,11 +22,11 @@ on:
   workflow_dispatch:
     inputs:
       story_key:
-        description: "Optional: analyse one story (e.g. SCRUM-210). Blank = full scan."
+        description: "Optional: analyse and reconcile one story (e.g. SCRUM-210). Blank = full scan. Not used with mode = drift."
         required: false
         default: ""
       dry_run:
-        description: "Print the report; write nothing"
+        description: "Print the reports and the writes; write nothing (every job)"
         required: false
         type: boolean
         default: false
@@ -138,7 +138,7 @@ jobs:
           if [ -n "${{ github.event.inputs.story_key }}" ]; then
             python -m agents.agent0_impact --story "${{ github.event.inputs.story_key }}" $DRY $SNAP
           else
-            python -m agents.agent0_impact --scan $SNAP
+            python -m agents.agent0_impact --scan $DRY $SNAP
           fi
 
   reconcile:
@@ -171,7 +171,14 @@ jobs:
           JIRA_BOARD_ID: ${{ vars.JIRA_BOARD_ID }}
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           GITHUB_REPO: ${{ vars.GH_REPO }}
-        run: python -m scripts.impact_reconcile
+          # Inputs reach the shell as variables, never pasted into the script.
+          STORY_KEY: ${{ github.event.inputs.story_key }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          set --
+          if [ "$DRY_RUN" = "true" ]; then set -- "$@" --dry-run; fi
+          if [ -n "$STORY_KEY" ]; then set -- "$@" --story "$STORY_KEY"; fi
+          python -m scripts.impact_reconcile "$@"
 
   code-change:
     name: Impact of this pull request
@@ -218,6 +225,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      # The drift job analyses the inventory, not a story. A story key here
+      # would be silently ignored, so the run stops and says so instead.
+      - name: Refuse a story key in drift mode
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.story_key != ''
+        env:
+          STORY_KEY: ${{ github.event.inputs.story_key }}
+        run: |
+          echo "::error::story_key '$STORY_KEY' cannot be used with mode = drift: the drift job analyses the inventory, not a story. Run again with story_key blank, or with mode = scan to analyse that story."
+          exit 1
       - uses: actions/checkout@v4
         with:
           ref: main
