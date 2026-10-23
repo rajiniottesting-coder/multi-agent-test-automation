@@ -10,7 +10,7 @@ A reusable framework where **six AI agents** turn a Jira story into a reviewed, 
 
 | Doc | Purpose |
 |---|---|
-| **[docs/GUIDE.md](./docs/GUIDE.md)** | Architecture (with Mermaid diagrams), Agents 1–5 in depth, configuration, sprint scoping, branch naming, human-approval gates, label state machine, onboarding a new app |
+| **[docs/GUIDE.md](./docs/GUIDE.md)** | Architecture (with Mermaid diagrams), Agents 1–5 in depth, change stories (Agent 0), which route a change takes, stories in flight, configuration, sprint scoping, branch naming, human-approval gates, label state machine, onboarding a new app, troubleshooting |
 | [docs/AGENT0_ONBOARDING.md](./docs/AGENT0_ONBOARDING.md) | Attaching Agent 0 (impact analysis) to an application, with the readiness check |
 | [docs/AI_CONCEPTS.md](./docs/AI_CONCEPTS.md) | AI/LLM concepts used (and deliberately not used), guardrails, demo Q&A, the failure catalogue |
 | [docs/DECISIONS.md](./docs/DECISIONS.md) | Architecture Decision Records |
@@ -27,11 +27,15 @@ A reusable framework where **six AI agents** turn a Jira story into a reviewed, 
 
 1. **Agent 1** reads the story and its module context and drafts the fewest test cases that cover it, as Jira Test Case issues
 2. 🛑 **A person approves** the test cases (label `human-approved`)
-3. **Agent 2** plans the code, writes it one file at a time, runs the static validators, repairs what fails, and opens a pull request
-4. **Agent 3** reviews the diff; **Agent 4** runs the unit suite and the BDD tests on the PR; **Agent 5** posts the verdict and the cost back to Jira
+3. **Agent 2** plans the code, writes it one file at a time, runs the static validators, repairs what fails, and opens a pull request (it waits instead if another open PR is changing a file it would write)
+4. **Agent 3** reviews the diff; **Agent 4** runs the unit suite and the BDD tests on the PR (browser runs take turns across PRs); **Agent 5** posts the verdict and the cost back to Jira
 5. 🛑 **A person merges** the pull request — only a merge moves the story to Done
 
-**A change story** (label `impact-check`) goes through **Agent 0** first: it traces the change to the existing tests it affects, ranks them with evidence and opens an **Impact Review**. 🛑 A person decides each test (approve, reject or retire). Agent 1 then revises the approved tests in place and adds only uncovered cases, Agent 2 splices the revised scenarios into the files that own them, and Agent 5 scores how well Agent 0 predicted the impact.
+**A change story** (label `impact-check`) goes through **Agent 0** first: it traces the change to the existing tests it affects, ranks them with evidence and opens an **Impact Review**. 🛑 A person decides each test (approve, reject or retire). At the next scan Agent 0 hands the decisions over and opens a separate **context-update PR** for the reference material the change makes stale. Agent 1 then revises the approved tests in place and adds only uncovered cases, Agent 2 splices the revised scenarios into the files that own them, and Agent 5 scores how well Agent 0 predicted the impact. If the story's PR is closed without merging, Agent 0's **reconcile** undoes every revision.
+
+**Agent 0 also watches the code and the live app:** every PR touching `pages/` or `app_inventory/` gets a comment listing the tests its changes affect, and a nightly drift check turns a selector that stopped matching into the list of affected tests.
+
+**Reworking a coded story:** `ai-update` splices only the scenarios whose test cases changed, were added or were deleted; `ai-regenerate` rewrites the story's code on a fresh `-revN` branch.
 
 The pipeline never merges its own code. Agents propose; people decide.
 
@@ -43,7 +47,7 @@ The pipeline never merges its own code. Agents propose; people decide.
 
 | # | Agent | Role | Implementation | Model calls |
 |:-:|---|---|---|---|
-| 0️⃣ | **Impact Analyst** | Change story → the tests it affects, ranked, in an Impact Review | `agents/agent0_impact.py` + `core/impact_*.py` | 2 to analyse (+1 per extra batch past 300 candidates); up to 2 for the context update; 0 on PR code-change and drift runs |
+| 0️⃣ | **Impact Analyst** | Change story → the tests it affects, ranked, in an Impact Review; hand-over, context-update PR and reconcile (finish or undo); PR code-change and nightly drift checks | `agents/agent0_impact.py` + `core/impact_*.py`, `core/context_update.py` | 2 to analyse (+1 per extra batch past 300 candidates); up to 2 for the context update; 0 on PR code-change and drift runs |
 | 1️⃣ | **Test Designer** | Story → Test Case issues carrying the story's Components; impact-aware mode revises approved tests | `agents/agent1_analyst.py`, `agents/agent1_impact.py` | 1 (+1 if a rule fails) |
 | 2️⃣ | **Coder** | Test cases → plan → code per file → validated PR; splices change-story scenarios | `agents/agent2_coder.py`, `agents/agent2_impact.py` | 1 plan + 1 per file (+ repairs); a change story adds 1 per revised scenario and up to 1 per owner step file |
 | 3️⃣ | **Reviewer** | AI code review of the PR's changed lines | `agents/agent3_reviewer.py` | 1 |
@@ -97,6 +101,10 @@ flowchart TB
     A5 --> H2
     H2 --> Done
 
+    H0 -.->|"hand-over:<br/>context-update PR"| CTX["🔀 Context-update PR<br/>merge after deployment"]
+    PR -.->|"pages/ or app_inventory/ changed:<br/>affected tests on the PR"| A0
+    H2 -.->|"change story closed unmerged:<br/>reconcile undoes the revisions"| A0
+
     classDef agent fill:#4a90e2,stroke:#2c5aa0,color:#fff
     classDef human fill:#f5a623,stroke:#b07415,color:#fff
     class A0,A1,A2,A3,A4,A5 agent
@@ -104,10 +112,11 @@ flowchart TB
 ```
 
 **Key points**
-- **Labels are the state machine:** `ai-ready → ai-processed → human-approved → ai-coded → tests-run`. Idempotency labels stop a story being processed twice.
-- **The board follows the work** (`status_workflow` in config): `ai-processed` → In Progress, `ai-coded` → In Review, a merged PR → Done (`story_done_on_merge.yml`). No label maps to Done.
-- **Agents 1 and 2 run on a business-hours cron** (every 30 min, weekdays 10:00–19:00 IST); Agent 0 scans weekdays at 10:45 IST; Agents 3–5 run on PR events; a **sweeper** re-triggers, hourly in business hours, PRs whose CI never started.
+- **Labels are the state machine:** `ai-ready → ai-processed → human-approved → ai-coded → tests-run`. A change story enters earlier: `impact-check → impact-proposed →` (Impact Review Done, hand-over) `→ ai-ready`, then `impact-applied` until its PR merges or closes (`impact-reverted` after an undo); retired test cases carry `ai-retired`; the drift job's maintenance story carries `inventory-drift`. `ai-update` and `ai-regenerate` are one-shot triggers, removed when the run succeeds; `ai-skip` hides a story from every agent. Idempotency labels stop a story being processed twice, and Agent 0 skips a story whose text it has already analysed.
+- **The board follows the work** (`status_workflow` in config): `ai-processed` → In Progress, `ai-coded` → In Review, `impact-reverted` → To Do (an undone change story, ready to retry), a merged PR → Done (`story_done_on_merge.yml`). No label maps to Done.
+- **Agents 1 and 2 run on a business-hours cron** (every 30 min, weekdays 10:00–19:00 IST); Agent 0 scans weekdays at 10:45 IST (analysis, hand-over and reconcile), checks every PR touching `pages/` or `app_inventory/`, and runs a nightly drift check at 07:15 IST; Agents 3–5 run on PR events; a **sweeper** re-triggers, hourly in business hours, PRs whose CI never started.
 - **CI storage stays inside the free quota:** Agent 4 uploads only the files Agent 5 needs, kept 3 days, and `artifact_cleanup.yml` deletes artifacts older than 2 days, daily.
+- **A change story's state is in Jira too:** Agent 0's report and Impact Review sub-task, Agent 1's snapshot of each revised test, trace comments on the owning stories and reconcile's markers are all issues or comments, so an undo needs no database. Every such comment starts with a marker (`[agent0:report]`, `[agent0:snapshot]`, `[LLM-USAGE]`, …): [GUIDE.md → Marker comments](./docs/GUIDE.md#marker-comments).
 - **Two Protocols keep the tools swappable:** `Tracker` (23 operations, Jira adapter today) and `RepoHost` (16 operations, GitHub adapter today). Nothing in `agents/` talks to Jira or GitHub directly, and a unit test runs the whole pipeline against fakes of both.
 - Secrets stay in `.env` (never committed) and CI secrets; placeholders live in `.env.example`.
 
@@ -125,7 +134,7 @@ Agent 0 answers *"which existing tests does this change touch?"* before any test
 |---|---|---|
 | Story label `impact-check` | Weekdays 10:45 IST, or a manual run | Two model calls (seeds, then judgement; one more per batch past 300 candidates); a report, or an Impact Review |
 | Pull request | Any PR touching `pages/` or `app_inventory/` | Compares page-object methods and selectors with `main`, no model; posts the affected tests on the PR |
-| Nightly drift | After the inventory staleness check (07:15 IST), or on demand (`mode` = `drift`) | A selector that stopped matching is traced to the affected tests, no model; live mode opens one maintenance story |
+| Nightly drift | After the inventory staleness check (07:15 IST), or on demand (`mode` = `drift`) | A selector that stopped matching is traced to the affected tests, no model; live mode opens one maintenance story (label `inventory-drift`) and updates it on later nights |
 
 Two more jobs run on the scheduled scan and on **every** manual run in `scan` mode (a run with `mode` = `drift` runs the drift job only): the **hand-over** of decided Impact Reviews (only in a full scan — a run with `story_key` set analyses that story and does not hand over) and **reconcile**, in its own job (below).
 
@@ -146,7 +155,7 @@ Anything only **added** is never a seed: new code cannot break an existing test.
 4. **Judgement** (`ImpactAssessment`): the model judges each candidate against the changed behaviours, citing a graph path or a verbatim step; a verdict citing neither is dropped.
 5. **Rank:** `0.45·structural + 0.15·component + 0.15·semantic + 0.25·verdict` — **must-update ≥ 0.6, review ≥ 0.3** — never above the model's own verdict.
 
-**Modes** (`agents.agent0_impact` in `config.yaml`): **off** (`enabled: false`, the framework default), **shadow** (`shadow_mode: true` — a report comment only, no label, so Agent 0 can be scored before it writes anything) and **live** (an Impact Review sub-task and `impact-proposed`). This repository runs **live** for validation stories. To stop everything at once, disable the workflow in GitHub Actions.
+**Modes** (`agents.agent0_impact` in `config.yaml`): **off** (`enabled: false`, the framework default), **shadow** (`shadow_mode: true` — a report comment only: `impact-check` is removed and no label added, so Agent 0 can be scored before it writes anything) and **live** (an Impact Review sub-task and `impact-proposed`). This repository runs **live** for validation stories. To stop everything at once, disable the workflow in GitHub Actions. An optional `uncovered_hint` (off by default) adds a page whose element the story names but no selector covers, as a review-tier candidate.
 
 **Lifecycle of a change story**
 
@@ -154,11 +163,12 @@ Anything only **added** is never a seed: new code cannot break an existing test.
 impact-check → impact-proposed → Impact Review Done → ai-ready → impact-applied → merged | impact-reverted
 ```
 
-- **Hand-over** (next full scan after the review is Done and every row decided): Impacts links to the approved tests and their owners, `ai-retired` on retired tests, a trace comment on each owning story, then `ai-ready`. If nothing needs review, the story goes straight to `ai-ready`.
-- **Agent 1, impact-aware:** snapshots each approved test, revises it in place, adds only uncovered cases, flags a revision that repeats an existing scenario, and labels the story `impact-applied`.
-- **Context update:** at hand-over Agent 0 opens a separate PR that updates the inventory and the app notes — wording the story replaces, and passages the story makes untrue (behaviour, rules, removed elements). A wording change can update a text-based selector (flagged to verify after deployment); a note rewrite never touches a selector. Merge it after the change is deployed. Its branch carries no story key, so it never closes the story.
+- **Hand-over** (next full scan after the review is Done and every row decided): Impacts links to the approved tests and their owners, `ai-retired` on retired tests, a trace comment on each owning story, then `ai-ready`. If nothing needs review, the story goes straight to `ai-ready` (and the context update runs then).
+- **Agent 1, impact-aware:** snapshots each approved test, revises it in place, adds only uncovered cases, flags a revision that repeats an existing scenario, records `Change applied at: <UTC>`, and labels the story `impact-applied`.
+- **Agent 2:** splices each revised scenario into the feature file that owns it and removes retired ones, leaving every other scenario byte-identical; the owners' files are never generated whole, and step functions the change left unused are commented out.
+- **Context update:** at hand-over (up to two model calls) Agent 0 opens a separate PR that updates the inventory and the app notes — wording the story replaces, and passages the story makes untrue (behaviour, rules, removed elements). A wording change can update a text-based selector (flagged to verify after deployment); a note rewrite never touches a selector. Merge it after the change is deployed. Its branch carries no story key, so it never closes the story. No PR is opened when nothing is stale; a PR that changes only notes runs the unit suite but no browser.
 - **Outcome:** Agent 5 scores the prediction on the story — **recall** (of the tests the PR actually changed, how many Agent 0 flagged) and **precision** (of the tests flagged, how many really changed).
-- **Reconcile** (runs whatever the mode, only on stories labelled `impact-applied`): a merged PR closes the loop. A PR closed without merging is noted on one scan and undone on the next if it is still closed: each revised test's earlier text is restored, retired tests are un-retired, the links are removed, the story's own tests that never reached main are retired, the pipeline labels are reset, the review is marked undone, the card moves back to To Do and the retry steps are posted. A story labelled `impact-applied` with no PR for 14 days gets an ask-a-person comment.
+- **Reconcile** (runs whatever the mode, only on stories labelled `impact-applied`): a merged PR closes the loop. A PR closed without merging is undone once `reconcile.closed_scans` scans (default 2) have seen it still closed, so a sweeper close-and-reopen is never mistaken for a rejection: each revised test's earlier text is restored, retired tests are un-retired, the links are removed, the story's own tests that never reached main are retired, the pipeline labels are reset, the review is marked undone, the card moves back to To Do and the retry steps are posted. A story labelled `impact-applied` with no PR for 14 days (`no_pr_days`) gets an ask-a-person comment. Only PRs opened after `Change applied at` count, so to retry an undone story you remove `impact-reverted` and add `impact-check`: it is analysed afresh as a new attempt.
 
 Attaching Agent 0 to another application: [docs/AGENT0_ONBOARDING.md](./docs/AGENT0_ONBOARDING.md) and `python -m scripts.onboarding_check`.
 
@@ -171,9 +181,11 @@ Attaching Agent 0 to another application: [docs/AGENT0_ONBOARDING.md](./docs/AGE
 - **Typed model boundaries.** 21 Pydantic schemas (TestCaseList, CodePlan, ReviewReport, ChangeSeeds, ImpactAssessment and more); a malformed reply gets one repair attempt, then fails.
 - **Reviewer that must name a failure.** Agent 3 is checked out from main, flags only changed lines, blocks only for a named failure scenario, and a green Agent 4 run on the same commit refutes a block - when that run executed the app tests (a PR changing only prompts, docs or Markdown runs none, so it refutes nothing).
 - **Stories in flight do not collide.** Agent 2 never writes a file another open PR is changing, and never generates a scenario another open PR already adds: the story waits and the next scan retries (`core/in_flight.py`). Agent 4's browser runs take turns across PRs, because every PR tests the same live application with the same accounts (`scripts/e2e_turn.py`).
+- **Agent 0 proves its verdicts.** A verdict that cites no real graph path or verbatim step is dropped, an element the inventory does not have is dropped, and the score can never rank a test above the model's own verdict. A person approves every revision, and every revision can be undone from its snapshot.
+- **No duplicates.** Agent 1 refuses a story that already owns test cases; Agent 2 skips a test case a scenario already covers (marker first, then title without the `[type]` tag).
 - **Prompt caching.** The static rule text of the generation prompt is sent as a cacheable prefix; per-file content goes in the user message.
 - **Failure evidence.** A failed test carries a plain-English cause and remedy plus its screenshot, video and Playwright trace in the Allure report.
-- **Cost on the story.** Every agent posts its token and cost ledger to the Jira story; Agent 5 totals it. Reprocessing posts a ledger boundary, so a rerun is not double-counted.
+- **Cost on the story.** Every model-using agent, Agent 0 included, posts its token and cost ledger to the Jira story; Agent 5 totals it. Reprocessing posts a ledger boundary, so a rerun is not double-counted.
 - **Business-level stories.** Acceptance criteria state outcomes; Agent 1 takes concrete test data from `core.md` and is forbidden to invent any.
 
 ---
@@ -320,7 +332,7 @@ Full reference: [GUIDE.md → Configuration](./docs/GUIDE.md#configuration).
 ### 4. Set up Jira
 
 1. Create a Jira project (Scrum template) and note its key (e.g. `SCRUM`)
-2. Add a `Test Case` work type
+2. Add a `Test Case` work type. For Agent 0 also: an `Impacts` issue link type (outward "impacts", inward "is impacted by") and the `Subtask` type for the Impact Review (names in `config.yaml`: `link_types`, `agents.agent0_impact.review`)
 3. Create Components matching `prompts/app_context/*.md` (e.g. Login, Cart) — the story's Component selects the module context and the inventory pages
 4. Create a Story and add the label `ai-ready`
    (to rework an already-coded story: `ai-update` = surgical sync after Test Case changes, `ai-regenerate` = full rewrite; for a change story: `impact-check` — see [GUIDE.md → Label semantics](./docs/GUIDE.md#label-semantics))
@@ -346,6 +358,10 @@ Runs the five login scenarios in Chromium.
 ```bash
 # Agent 0: analyse one change story (labelled impact-check)
 python -m agents.agent0_impact --story SCRUM-3 --dry-run
+# Agent 0: full scan - analyses, then hands over decided Impact Reviews
+python -m agents.agent0_impact --scan --dry-run
+# Agent 0: reconcile (finish or undo) stories labelled impact-applied
+python -m scripts.impact_reconcile --story SCRUM-3
 
 # Agent 1: test cases for one story
 python -m agents.agent1_analyst --story SCRUM-3 --dry-run
@@ -375,6 +391,7 @@ No Python changes are needed to point the framework at a new app:
 2. **`app_inventory/<your-app>.json`** — pages and selectors ([schema](./docs/REUSE_FOR_NEW_PROJECT.md#app-inventory-json-schema)). Build it with the tooling — crawl, merge, measure, then curate ([full sequence](./docs/GUIDE.md#inventory-tooling--the-full-sequence)). Curation cannot be automated: a crawler records what a page contains, never what it means.
 3. **`prompts/app_context/`** — `core.md` (users by role, known data, page flow, business phrases → real values) plus one `<component>.md` per Jira Component. Agent 1 reads only these modules, never the inventory.
 4. **The reference trio** — replace `features/login.feature`, `tests/step_defs/test_login.py` and `pages/login_page.py` with one well-written test for your app; the model uses them as its style baseline.
+5. **Agent 0 (optional)** — `components` on every inventory page, a `# JIRA:` marker above every scenario (`scripts.backfill_markers` proposes them), the `Impacts` link type, then shadow mode before live. `python -m scripts.onboarding_check` reports what is missing ([docs/AGENT0_ONBOARDING.md](./docs/AGENT0_ONBOARDING.md)).
 
 The framework was moved from an Angular HR system to this e-commerce application without editing a single agent.
 
@@ -390,7 +407,7 @@ The framework was moved from an Angular HR system to this e-commerce application
 pytest tests/unit/ -q   # ~3,000 offline tests, about 2 minutes; no Jira, GitHub or LLM needed
 ```
 
-They cover the agents' logic, every validator, Agent 0's graph, ranking, hand-over and reconcile, the inventory tooling, the sweeper, the Protocol contracts (the whole pipeline against a fake tracker and repo host) and the golden-rule guard that keeps application names out of framework files (`test_committed_tree_resolves.py`). Agent 4 runs them on every PR before the BDD tests.
+They cover the agents' logic, every validator, Agent 0's graph, ranking, review, hand-over, context update and reconcile, the stories-in-flight guards, the inventory tooling, the sweeper, the Protocol contracts (the whole pipeline against a fake tracker and repo host) and the golden-rule guard that keeps application names out of framework files (`test_committed_tree_resolves.py`). Agent 4 runs them on every PR before the BDD tests.
 
 ---
 
@@ -419,7 +436,9 @@ More in [GUIDE.md → Troubleshooting](./docs/GUIDE.md#troubleshooting). The mos
 - **Agent 2 shows `[WAIT]` for a story** → another open PR is changing one of its files or adds one of its scenarios; the story's `[agent2:waiting]` comment names it. It continues on the first scan after that PR merges or closes
 - **No Agent 5 report on a PR** → expected when the PR changes only prompts, docs or Markdown (no browser run); otherwise check the branch carries the story key
 - **Agent 0 did nothing for a story** → check the mode in `config.yaml` (off by default) and that the story carries `impact-check`; an unchanged story is skipped on purpose
-- **A decided Impact Review was not handed over** → run Agent 0 with `story_key` blank; a one-story run does not hand over
+- **A decided Impact Review was not handed over** → run Agent 0 with `story_key` blank; a one-story run does not hand over. An unreadable or undecided review leaves the story waiting, with the reason in the log
+- **A change story's PR was closed but the tests still show the revised text** → reconcile undoes it once `closed_scans` scans (default 2) have seen the close; the first scan only posts `[agent0:reconcile] closed-unmerged`
+- **Agent 4's log says "waiting for earlier run(s)"** → another PR's browser run started first; runs take turns (capped at 15 minutes)
 - **Actions blocked: storage quota** → artifacts count against the account's storage; `artifact_cleanup.yml` (or `python -m scripts.cleanup_artifacts --yes`) deletes artifacts older than 2 days
 
 ---
@@ -433,6 +452,7 @@ The framework has been hardened through real failures, each fixed generically an
 - **Validators between the model and the PR** — prompts ask, validators enforce
 - **State in labels and comments, not memory** — any run can die and the next one carries on
 - **A person at every gate** — the model finds what needs changing; a human approves the list
+- **Every change reversible** — snapshots before revising, so a rejected change story is undone, not hand-repaired
 - **Config-driven everything** — no application-specific code in the framework
 
 Contributions welcome via PR. The unit suite must pass; new validators are welcome.

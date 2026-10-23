@@ -54,6 +54,10 @@ flowchart TB
     A5 --> H2
     H2 --> Done
 
+    H0 -.->|"hand-over:<br/>context-update PR"| CTX["🔀 Context-update PR<br/>merge after deployment"]
+    PR -.->|"pages/ or app_inventory/ changed:<br/>affected tests on the PR"| A0
+    H2 -.->|"change story closed unmerged:<br/>reconcile undoes the revisions"| A0
+
     classDef agent fill:#4a90e2,stroke:#2c5aa0,color:#fff
     classDef human fill:#f5a623,stroke:#b07415,color:#fff
     class A0,A1,A2,A3,A4,A5 agent
@@ -71,7 +75,7 @@ For more diagrams — component view, Agent 2 sequence, and the labels-as-state-
 - **No orchestrator.** Each agent runs in its own CI job, minutes or hours apart. All state lives in Jira labels, marker comments and the pull request — see [State management deep-dive](#state-management-deep-dive).
 - **Model output is typed.** Every structured model reply is parsed through a Pydantic schema (21 of them, in `core/schemas.py`); a malformed reply gets one repair attempt, then fails.
 - **Each agent stops at a checkpoint.** A human reviews before the next agent runs. See [the human-approval gate](#the-human-approval-gate).
-- **Idempotency via Jira labels.** `ai-processed` (Agent 1 done), `ai-coded` (Agent 2 done), `tests-run` (Agent 5 done). Re-running an agent against an already-processed story is a no-op.
+- **Idempotency via Jira labels.** `ai-processed` (Agent 1 done), `ai-coded` (Agent 2 done), `tests-run` (Agent 5 done); for a change story `impact-proposed` (Agent 0 done, review open) and `impact-applied` (tests revised). Re-running an agent against an already-processed story is a no-op, and Agent 0 skips a story whose text it has already analysed.
 - **Config-driven, not code-driven.** App-specific knowledge (URL, reference files, page inventory, module notes) lives in `config.yaml`, `app_inventory/` and `prompts/app_context/`. Agent code is app-agnostic.
 - **Tools behind Protocols.** Agents talk to `Tracker` (23 operations) and `RepoHost` (16 operations) in `integrations/`, never to Jira or GitHub directly; the Jira and GitHub adapters are the only implementations today.
 - **Defensive validators.** Between Agent 2's model output and the PR, 29 static checks run: the path policy on the plan, 10 hard gates in `_validate_generated_files()` and 25 validator calls in `_collect_repairable_errors()` (7 of them also hard gates). Repairable failures feed a repair loop that regenerates only the broken files; the rest abort before a branch exists.
@@ -431,6 +435,7 @@ The gate is between Agents 1 and 2 specifically because that's the highest-lever
 | `impact-applied` | "Approved tests were revised; waiting for the PR to merge or close" | Agent 1 (impact-aware) |
 | `impact-reverted` | "The PR closed unmerged; the revisions were undone" | Agent 0 reconcile |
 | `ai-retired` | (on a Test Case) "Retired by a change; not run" | Agent 0 hand-over / reconcile |
+| `inventory-drift` | (on the drift maintenance story) "Selectors stopped matching; these tests are affected" | Agent 0 drift job |
 
 For the full lifecycle view (sticky vs one-shot semantics, who removes what),
 see the "Label semantics table" in the State management deep-dive below.
@@ -1499,7 +1504,9 @@ If the dry-run output looks good for your app, you're ready to go.
 ### Step 7: Optional — Agent 0
 
 Leave `agents.agent0_impact.enabled: false` until the inventory pages carry
-`components` and the scenarios carry `# JIRA:` markers. Then run
+`components` and the scenarios carry `# JIRA:` markers, and the tracker has an
+`Impacts` link type and a sub-task type for the Impact Review (`link_types` and
+`agents.agent0_impact.review` in `config.yaml`). Then run
 `python -m scripts.onboarding_check`, switch to shadow mode, and go live once
 the shadow reports are trusted. See [AGENT0_ONBOARDING.md](./AGENT0_ONBOARDING.md).
 
@@ -1978,6 +1985,7 @@ A change story enters before `ai-ready`:
 | `impact-applied` | sticky marker | Agent 1 impact-aware | reconcile (merged or undone) | "approved tests were revised" |
 | `impact-reverted` | terminal marker | reconcile | human (to retry) | "the change was undone" |
 | `ai-retired` | test-case marker | hand-over / reconcile | reconcile on undo | "this test case is retired" |
+| `inventory-drift` | sticky marker | Agent 0 drift (live) | never (the story keeps it for life) | "the nightly drift maintenance story" - the next night reuses it |
 
 `ai-processed`, `human-approved` and `ai-coded` are also removed by reconcile
 when it undoes a change story (`reconcile.reset_labels`), so a retry starts
@@ -2042,6 +2050,26 @@ A marker may also carry `owner: <KEY>` (the story that owns the test case) and
 | Was the result reported? | Jira: Agent 5's comment and the `tests-run` label (a re-run posts another comment) |
 | What did a change revise, and how to undo it? | Jira: snapshot comments on each test case + trace comments on owners |
 | Has a closed PR been seen once already? | Jira: `[agent0:reconcile] closed-unmerged` comment on the change story |
+
+### Marker comments
+
+Every comment an agent writes for its own later use starts with a marker, so
+any run can find it again. All are plain Jira comments.
+
+| Marker | On | Written by | Meaning |
+|---|---|---|---|
+| `[LLM-USAGE]` | story | Agents 0, 1, 2, 3, 5 | One run's tokens and cost; Agent 5 totals them |
+| `[LEDGER-RESET]` | story | Agents 0, 1 | Entries above it belong to an earlier attempt and are not totalled |
+| `[agent0:report]` | story | Agent 0 | The analysis report (shadow or live) |
+| `[agent0:delta]` | story | Agent 0 | A re-analysis after the story changed: what moved |
+| `[agent0:no-component]` | story | Agent 0 | Posted once: no Component, so the whole suite was considered |
+| `[agent0:context-update]` | story | Agent 0 | The context-update PR link, or "No context update needed"; carries the story-text hash |
+| `[agent0:trace]` `will-revise` / `result` / `merged` / `restored` | owning story | Agent 0 hand-over, Agent 5, reconcile | What a change story did to this story's tests |
+| `[agent0:snapshot]` | test case | Agent 1 impact-aware | The text before revision: the undo source |
+| `[agent0:reconcile]` `closed-unmerged` / `reverted` / `no-pr` / `ask-a-person` | story | reconcile | Reconcile's memory between scans |
+| `[agent0:outcome]` | story | Agent 5 | Agent 0's prediction scored against what the PR changed and failed |
+| `[agent1:impact-draft]` | story | Agent 1 impact-aware | Before/after of each revision, new tests, `Change applied at: <UTC>` |
+| `[agent2:waiting]` | story | Agent 2 | Why the story is waiting for another open PR (once per reason) |
 
 ### Failure recovery
 
