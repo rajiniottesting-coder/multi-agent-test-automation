@@ -7,6 +7,7 @@ labels removed, story labelled impact-reverted. See core/impact_reconcile.py.
 
     python -m scripts.impact_reconcile
     python -m scripts.impact_reconcile --story SCRUM-210
+    python -m scripts.impact_reconcile --dry-run     # print the writes; make none
 
 Runs whatever agents.agent0_impact.enabled and shadow_mode say: it acts only
 on stories labelled impact-applied, which exist only after a hand-over - by a
@@ -35,14 +36,22 @@ def main(argv=None) -> int:
 
     ap = argparse.ArgumentParser(prog="python -m scripts.impact_reconcile")
     ap.add_argument("--story", help="settle one change story only")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="run the real reconcile, print every write it would make, make none")
     args = ap.parse_args(argv)
 
     settings = impact_settings()
     tracker, host = get_tracker(), get_repo_host()
+    if args.dry_run:
+        from core import dry_run
+        tracker, host = dry_run.tracker(tracker), dry_run.repo_host(host)
     results = ([reconcile_story(tracker, host, args.story.upper(), settings)] if args.story
                else reconcile_all(tracker, host, settings))
     for r in results:
         print(f"{r['story']}: {r['action']}" + (f" ({r.get('error')})" if r.get("error") else ""))
+    if args.dry_run:
+        for line in tracker.describe() + host.describe():
+            print(line)
     return 1 if any(r["action"] == "error" for r in results) else 0
 
 

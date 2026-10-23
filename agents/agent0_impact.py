@@ -539,7 +539,12 @@ def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool
 # ─────────────────────────────────────────────────────────────
 
 def hand_over_decided(tracker, settings: dict, host=None, llm=None,
-                      root: Path | None = None) -> list:
+                      root: Path | None = None, dry_run: bool = False) -> list:
+    """Hand over every story whose Impact Review is Done and fully decided.
+
+    dry_run: the real hand-over runs against a tracker that performs no
+    writes (core.dry_run) and prints the writes it would make; the context
+    update is not proposed, so a dry run costs no model call."""
     from core.impact_handover import HandoverRefused, decisions_from_review, handover
     out = []
     for s in tracker.find_stories_to_process(
@@ -548,6 +553,15 @@ def hand_over_decided(tracker, settings: dict, host=None, llm=None,
         _start_usage()
         try:
             review_key, decisions = decisions_from_review(tracker, s["key"], settings)
+            if dry_run:
+                from core import dry_run as dry
+                recorder = dry.tracker(tracker)
+                handover(recorder, s["key"], decisions, review_key=review_key, settings=settings)
+                for line in recorder.describe():
+                    print(line)
+                out.append({"story": s["key"], "action": "would-hand-over", "review": review_key,
+                            "writes": len(recorder.writes)})
+                continue
             handover(tracker, s["key"], decisions, review_key=review_key, settings=settings)
             result = {"story": s["key"], "action": "handed-over", "review": review_key}
         except HandoverRefused as e:
@@ -580,18 +594,21 @@ def record_outcome(tracker, story_key: str, settings: dict, changed, failed,
 
 
 def scan(tracker, host, llm, settings: dict | None = None, root: Path | None = None,
-         uncovered: dict | None = None) -> list:
+         uncovered: dict | None = None, dry_run: bool = False) -> list:
+    """The scheduled scan: analyse every impact-check story, then hand over
+    decided reviews. dry_run reaches both: reports are printed, not posted,
+    and the hand-over prints the writes it would make (no context update)."""
     from config.paths import PROJECT_ROOT
     settings = settings or impact_settings()
     root = Path(root or PROJECT_ROOT)
-    if not settings["enabled"]:
+    if not settings["enabled"] and not dry_run:
         logger.info("agents.agent0_impact.enabled is false - nothing to do.")
         return []
     results = []
     for s in tracker.find_stories_to_process(settings["selection"], max_results=10):
         try:
             results.append(analyse_and_publish(tracker, s["key"], llm, settings, root, host,
-                                               uncovered=uncovered))
+                                               dry_run=dry_run, uncovered=uncovered))
         except Exception as e:                                 # noqa: BLE001
             logger.error("Agent 0 failed on %s: %s", s["key"], e, exc_info=True)
             results.append({"story": s["key"], "action": "error", "error": str(e)})
@@ -601,7 +618,8 @@ def scan(tracker, host, llm, settings: dict | None = None, root: Path | None = N
     # (scripts.impact_reconcile), which also covers hand-overs a person made
     # and shadow mode. Running it in two places would let two concurrent
     # runs count as the two scans that trigger an undo.
-    results += hand_over_decided(tracker, settings, host=host, llm=llm, root=root)
+    results += hand_over_decided(tracker, settings, host=host, llm=llm, root=root,
+                                 dry_run=dry_run)
     return results
 
 
@@ -641,7 +659,7 @@ def main(argv=None) -> int:
     uncovered = _uncovered_for(args.uncovered_snapshot, settings)
     if args.scan:
         for r in scan(tracker, host, LLMClient(temperature=0.0), settings, PROJECT_ROOT,
-                      uncovered=uncovered):
+                      uncovered=uncovered, dry_run=args.dry_run):
             print(r)
         return 0
     if args.story:

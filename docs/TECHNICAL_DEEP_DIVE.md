@@ -62,6 +62,7 @@ core/
   app_context.py
   board_status.py
   context_update.py
+  dry_run.py
   failure_diagnosis.py
   impact_analysis.py
   impact_graph.py
@@ -1437,7 +1438,7 @@ and can never fail a run; missing pricing flags totals as a lower bound
 
 **Files:** `agents/agent0_impact.py` and `core/impact_*.py`, `core/context_update.py`, `core/json_block.py`
 **Workflow:** `.github/workflows/agent0_impact.yml` — four jobs: scan, reconcile, code change (PR), nightly drift. A `gate` job reads `agents.agent0_impact.enabled`; reconcile is not gated (it only acts on `impact-applied` stories).
-**CLI:** `python -m agents.agent0_impact --scan | --story KEY | --code-change --base DIR --head DIR --pr N | --drift-report FILE [--dry-run]`
+**CLI:** `python -m agents.agent0_impact --scan | --story KEY | --code-change --base DIR --head DIR --pr N | --drift-report FILE [--dry-run]`; reconcile: `python -m scripts.impact_reconcile [--story KEY] [--dry-run]`. `--dry-run` reaches every path: the analysis prints its report, and the hand-over and reconcile run their real code against `core/dry_run.py` adapters (reads pass through; every other operation is recorded, printed and not sent; an operation no one has classified is treated as a write). The workflow passes `dry_run` and `story_key` to every job a manual run starts and refuses a `story_key` with `mode` = `drift`.
 
 ### 18.1 Settings (`core/impact_settings.py`)
 

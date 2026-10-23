@@ -6,6 +6,12 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ## October 2026 (second half) — validation fixes after A3
 
+**Agent 0's manual-run inputs mean what they say**
+- "Print the report; write nothing" now reaches every job: the full scan (analysis and hand-over), reconcile and drift. The real code runs against tracker and repo-host wrappers that perform no writes and print each one (`core/dry_run.py`; reads are allow-listed, so a new operation is intercepted until classified). Before, a full-scan dry run handed reviews over for real and reconcile always ran live
+- A `story_key` scopes reconcile to that story too (it settled every `impact-applied` story)
+- `mode` = `drift` with a `story_key` stops with an error instead of ignoring the key
+- Inputs reach the reconcile shell as environment variables, not pasted into the script
+
 **One file for validation and known gaps**
 - `docs/VALIDATION_AND_KNOWN_GAPS.md`: what has been validated live, the clubbed validation runs still to do (A4–A6, B, C, held-out stories, the new behaviour from #199–#201), and every known gap (stories in flight, several stories per scan, Agent 0, generation) with its status and planned fix
 
