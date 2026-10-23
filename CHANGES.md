@@ -6,6 +6,9 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ## October 2026 (second half) — validation fixes after A3
 
+**One file for validation and known gaps**
+- `docs/VALIDATION_AND_KNOWN_GAPS.md`: what has been validated live, the clubbed validation runs still to do (A4–A6, B, C, held-out stories, the new behaviour from #199–#201), and every known gap (stories in flight, several stories per scan, Agent 0, generation) with its status and planned fix
+
 **Documentation audit (completeness, not only truth)**
 - Model calls per story are stated for a change story as well as a new one (README, GUIDE): Agent 0's context update, Agent 2's per-scenario splices and Agent 3's review of the context-update PR were missing from every count
 - Docs describe the stories-in-flight guards, the pull-request browser gate and Agent 0 on the cost ledger everywhere they apply (README, GUIDE, TECHNICAL_DEEP_DIVE, AI_CONCEPTS, REUSE_FOR_NEW_PROJECT); "stories are independent, no shared state" corrected, with the open multi-story gaps listed

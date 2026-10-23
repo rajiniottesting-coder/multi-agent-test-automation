@@ -17,6 +17,7 @@ A reusable framework where **six AI agents** turn a Jira story into a reviewed, 
 | [docs/REUSE_FOR_NEW_PROJECT.md](./docs/REUSE_FOR_NEW_PROJECT.md) | Checklist for pointing the framework at a new application, incl. the app-inventory JSON schema |
 | [docs/TECHNICAL_DEEP_DIVE.md](./docs/TECHNICAL_DEEP_DIVE.md) | Function-level walkthrough of the agents and mechanisms |
 | [inventory_tools/inventory_readme.md](./inventory_tools/inventory_readme.md) | Building and maintaining the app inventory (crawl, merge, measure, curate) |
+| [docs/VALIDATION_AND_KNOWN_GAPS.md](./docs/VALIDATION_AND_KNOWN_GAPS.md) | What has been validated live, the validation runs still to do, and every known gap with its status and planned fix |
 | [CHANGES.md](./CHANGES.md) | Changelog — what changed, why, how to adapt |
 
 ---
