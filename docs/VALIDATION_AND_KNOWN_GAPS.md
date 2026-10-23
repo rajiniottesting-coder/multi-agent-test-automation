@@ -120,6 +120,48 @@ yet known.
 | L14 | The application under test is briefly unavailable (HTTP 5xx on navigation) | `BasePage.navigate()` fails the test at once with a clear message ("the site is down"), but the run still goes red for something the change did not cause; a re-run passes. Seen on PR #205 (23 Oct 2026): `/login` returned HTTP 520 on one run, the same code passed minutes earlier | Fix planned |
 | L12 | Prompt changes for Agents 1–3 | No dedicated prompt-regression eval set; the unit suite pins validators, Agent 4 runs the generated tests | Limit |
 
+### 3.5 Knowledge lifecycle: the app notes and the inventory
+
+Agent 1 learns the application from `prompts/app_context/` (`core.md` plus the
+story's Component modules); Agents 2 and 3 from the inventory. Agent 0 reads the
+code, the scenario markers and the inventory, not the notes.
+
+| ID | Situation | What happens today | Status |
+|---|---|---|---|
+| L15 | A **new feature** ships, or a change story **adds** a rule rather than changing one | The context update can only replace wording (`propose()`) or rewrite a passage the story makes untrue (`_apply_rewrites()`); it never adds text. The shipped behaviour, rules and test data never reach the notes, so the next story on that feature is drafted from the story alone (e.g. a wishlist with a 10-item limit: a later story changing it to 20 finds no passage to rewrite, "No context update needed") | Fix planned |
+| L16 | The notes grow over months | Nothing measures a module's size or finds near-duplicate passages; the modules total about 24 KB (≈ 6k tokens) and `core.md` goes into every Agent 1 call | Fix planned |
+| L17 | A change story on one Component | Model call 2 of the context update (`extract_note_rewrites()`) sends every module and all inventory notes (`_notes_block()`), not the story's Components | Fix planned |
+| L18 | A feature or element is removed | Its note is prefixed `REMOVED by KEY:` and its inventory element stays; nothing deletes them after deployment | Fix planned |
+| L19 | Tests are wanted **before** a feature is deployed | The inventory comes from crawling the live application, so an undeployed page or element is not in it, and Agent 2 may use inventory keys only (generation prompt rule 15: omit the behaviour) | Fix planned |
+
+### 3.6 Traceability: every approved test case becomes a test
+
+| ID | Situation | What happens today | Status |
+|---|---|---|---|
+| G5 | Agent 2 **cannot automate** an approved test case (e.g. an element is missing from the inventory) | The prompt says to omit it and name it in `notes`, but the plan's notes are printed only in a dry run - not in the PR body, not on Jira; marker injection only logs a warning when scenarios and test cases do not pair. The story still gets `ai-coded`. (A change story's splice does check coverage, `check_coverage()`; a new story's run does not) | Fix planned |
+
+### 3.7 Change detection after coding
+
+| ID | Situation | What happens today | Status |
+|---|---|---|---|
+| G6 | The **story's own requirement is edited** after Agent 1 drafted it or Agent 2 coded it (a new story, not a change story) | Agent 1's duplicate guard refuses a re-run; Agent 0's repeat check covers `impact-check` stories only. Nothing notices, and the tests keep describing the old requirement | Fix planned |
+| G7 | A **test case is edited or deleted in Jira** after coding | The scenario marker carries the test case's hash, but only a manual `ai-update` label compares them | Fix planned |
+
+### 3.8 End of a story's pull request
+
+| ID | Situation | What happens today | Status |
+|---|---|---|---|
+| G8 | A **new story's PR is closed without merging** | Reconcile acts only on `impact-applied` stories, Story Done on merge ignores a close, and the sweeper handles open PRs only. The story keeps `ai-coded` and In Review, and its test cases stay active | Fix planned |
+
+### 3.9 Running the suite over time
+
+| ID | Situation | What happens today | Status |
+|---|---|---|---|
+| L20 | A change story's PR before the change is deployed | Its app tests are expected to fail until deployment, and merging the context-update PR after deployment is left to a person; no deployment signal tells expected from real failures | Fix planned |
+| L21 | The suite grows | Agent 4 runs the whole suite on every PR; only Agent 5's report is scoped to the story | Fix planned |
+| L22 | Flaky or outage-hit tests (I8, L14) | No retry, no flake history, no quarantine | Fix planned |
+| L23 | A production bug needs a regression test | Every selection uses `issue_type: "Story"`; another type is possible in config but untested, and the prompts are written for stories | Fix planned |
+
 ---
 
 ## 4. Fix backlog
@@ -133,8 +175,21 @@ yet known.
 | F-5 | M3, M4 | Agent 3's runner wait sized to Agent 4's turn cap; the burst size documented |
 | F-6 | L11 | Validator for snapshot-count and snapshot-membership assertions |
 | F-7 | L14 | `BasePage.navigate()` retries once, after a short wait, when the response is HTTP 5xx; if it fails again the test is reported as an **outage of the application under test** - separate from test failures in the run summary and Agent 5's report, and never taken by Agent 3 as evidence either way. A 4xx still fails at once (that is a real error or a blocked runner) |
+| F-8 | L15 | When a new-feature story's PR merges (and for a change story that adds a rule), Agent 0 proposes a **notes addition** for the story's Component module: facts only (rules, limits, test data, flow), a few lines in the module's style, written from the story **and** its merged scenarios, checked against existing text so it repeats nothing; the same reviewed context-update PR, merged after deployment. Later change stories then have a passage to rewrite |
+| F-9 | L16 | A size budget per module (config), checked by the unit suite and `scripts.onboarding_check`, with a near-duplicate check; over budget, the update proposes a **condensed** module for review instead of appending |
+| F-10 | L17 | Call 2 of the context update reads only the story's Component modules and those pages' inventory notes, as Agent 1 does (all modules when the story has no Component) |
+| F-11 | L18 | When the nightly drift check confirms a removed element is gone from the live site, propose deleting its `REMOVED by` note and its inventory entry |
+| F-12 | L19 | "Planned" inventory entries a person adds from the design, marked unverified (usable by Agent 2, flagged in its PR); the nightly drift check confirms them after deployment, or reports them still missing |
+| F-13 | G5 | After generation, check that every approved test case has a markered scenario (new stories too, not only the splice); each missing one, with its reason, goes in the PR body and a Jira comment, and the story is not reported as fully coded |
+| F-14 | G6 | Agent 1 records a hash of the story text when it drafts; a scan compares it: edited before coding → suggest a re-draft; edited after coding → suggest `impact-check`. A comment, never an automatic action |
+| F-15 | G7 | A scheduled comparison of each scenario marker's hash with its Jira test case (edited, deleted, retired): a comment on the owning story suggesting `ai-update`, never applied automatically |
+| F-16 | G8 | Reconcile covers every pipeline story PR, not only `impact-applied`: a close seen on `closed_scans` scans resets the pipeline labels and the card and posts the retry steps |
+| F-17 | L20 | An optional deployment signal (config or webhook) that marks a change story's failures as expected until deployment and reminds a person to merge its context-update PR |
+| F-18 | L21 | On a PR, run the tests Agent 0's graph links to the change (plus a smoke set); the full suite nightly and before merge |
+| F-19 | L22 | Retry a failed test once; record flakes over time; quarantine a test with a review step (extends F-7) |
+| F-20 | L23 | A configured bug flow (issue type, prompt template for a regression test), validated live before use |
 
-Then run UC-5.
+Order: F-1 to F-7 (then run UC-5); then correctness - F-13, F-16, F-14, F-15; then the notes lifecycle together - F-8 with F-9 and F-10; then F-11, F-12; then scale and operations - F-17 to F-20. Each fix gets a validation run added to section 2 when it is built.
 
 ---
 
