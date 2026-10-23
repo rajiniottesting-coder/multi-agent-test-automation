@@ -117,6 +117,7 @@ yet known.
 |---|---|---|---|
 | L11 | Persistent-state assertions shaped as a snapshot count or snapshot membership | Not yet rejected by the Agent 2 gate (noted 13 Oct) | Fix planned (validator) |
 | I8 | Add-to-cart on the live site occasionally fails | Root cause unknown; failure messages now list the page's action requests. Check whether browser turn-taking removed it (UC-2) | Open |
+| L14 | The application under test is briefly unavailable (HTTP 5xx on navigation) | `BasePage.navigate()` fails the test at once with a clear message ("the site is down"), but the run still goes red for something the change did not cause; a re-run passes. Seen on PR #205 (23 Oct 2026): `/login` returned HTTP 520 on one run, the same code passed minutes earlier | Fix planned |
 | L12 | Prompt changes for Agents 1–3 | No dedicated prompt-regression eval set; the unit suite pins validators, Agent 4 runs the generated tests | Limit |
 
 ---
@@ -131,6 +132,7 @@ yet known.
 | F-4 | M2 | `max_stories_per_run` across all three passes; a deadline-aware scan loop; Agent 2 job timeout sized for it |
 | F-5 | M3, M4 | Agent 3's runner wait sized to Agent 4's turn cap; the burst size documented |
 | F-6 | L11 | Validator for snapshot-count and snapshot-membership assertions |
+| F-7 | L14 | `BasePage.navigate()` retries once, after a short wait, when the response is HTTP 5xx; if it fails again the test is reported as an **outage of the application under test** - separate from test failures in the run summary and Agent 5's report, and never taken by Agent 3 as evidence either way. A 4xx still fails at once (that is a real error or a blocked runner) |
 
 Then run UC-5.
 
