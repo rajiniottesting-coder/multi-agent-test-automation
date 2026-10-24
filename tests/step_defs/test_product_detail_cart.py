@@ -29,9 +29,10 @@ def view_product(products_page, product_name):
     products_page.open_product_details(product_name)
 
 
-@when(parsers.parse("I set the quantity to {quantity:d}"))
-def set_quantity(product_detail_page, quantity):
-    product_detail_page.set_quantity(quantity)
+# AI-ORPHAN: no scenario in features/product_detail_cart.feature uses this step after SCRUM-206 revised or retired SCRUM-221, SCRUM-220, SCRUM-222. Review before deleting.
+# @when(parsers.parse("I set the quantity to {quantity:d}"))
+# def set_quantity(product_detail_page, quantity):
+    # product_detail_page.set_quantity(quantity)
 
 
 @when("I add the product to the cart")
