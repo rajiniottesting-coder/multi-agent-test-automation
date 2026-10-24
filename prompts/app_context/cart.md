@@ -8,9 +8,11 @@ asserted on, because the assertion has nothing to compare against.
 
 Add a named product by opening its detail page first. On the listing the
 add-to-cart control matches 68 elements and clicking it is rejected at
-generation time; on the detail page it is unique. Adding two DIFFERENT products
-means two different names, not the same one twice — quantity and distinct
-line items are different behaviours and a scenario should not conflate them.
+generation time; on the detail page it is unique. Each add puts exactly one
+item in the cart, so to raise a product's quantity, add it repeatedly. Adding
+two DIFFERENT products means two different names, not the same one twice —
+distinct line items and a raised quantity are different behaviours and a
+scenario should not conflate them.
 
 
 ## Adding to cart opens a modal
@@ -40,9 +42,9 @@ clean up - the one way in this application to own the cart's starting state
 without a clearing step.
 
 Use it whenever a scenario depends on a quantity. As a logged-out shopper, add
-3 of `Men Tshirt` and the cart shows `Men Tshirt` with quantity 3. Signed in as
-the shared `registered` account, the same scenario can find a quantity left
-behind by an earlier run.
+`Men Tshirt` three times and the cart shows `Men Tshirt` with quantity 3 - each
+add raises the quantity by one. Signed in as the shared `registered` account,
+the same scenario can find a quantity left behind by an earlier run.
 
 Even so, phrase cart outcomes RELATIVELY - "the cart contains `Men Tshirt` with
 quantity 3" - never "the cart contains only...", "exactly...", or "the cart is
