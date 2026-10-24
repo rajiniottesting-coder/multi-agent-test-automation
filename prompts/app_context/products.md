@@ -20,10 +20,11 @@ scenario should carry. Reach the page by clicking that product's `View Product`
 link on the listing — the href already holds the right id, so the test works
 whatever the catalogue contains and never hardcodes a number.
 
-The same applies to adding one product to the cart. On the listing, the
+Adding one product to the cart puts exactly one item in it. On the listing, the
 add-to-cart control is a FAMILY of 68 and clicking it is rejected at generation
-time; on the product detail page it is unique. So a scenario that adds a
-NAMED product should open its detail page first.
+time; it adds one item of that product without opening the detail page. On the
+product detail page the control is unique. So a scenario that adds a NAMED
+product should open its detail page first.
 
 ## The product detail page
 
@@ -37,9 +38,9 @@ product's name, its price, and three labelled facts: `Availability:`,
 - **Availability, Condition and Brand** are shown as labels. A scenario can
   check that each label is present. Do not assert a particular VALUE for them:
   nothing here records those values, and an invented one fails in the browser.
-- **Quantity** has its own input. Set it BEFORE clicking Add to cart - changing
-  it afterwards does not update the cart. "Add 3 of a product" means: set the
-  quantity to 3, then add.
+- **Quantity** has no input: the product detail page no longer offers a
+  quantity field. Each Add to cart puts exactly one item in the cart, so
+  "Add 3 of a product" means: add it three times.
 - **Add to cart** here is a single control for this product, and it opens the
   same confirmation modal as the listing - see `cart.md`.
 
