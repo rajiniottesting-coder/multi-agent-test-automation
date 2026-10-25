@@ -82,6 +82,14 @@ from validators.method_resolution_validator import (
 )
 from core.llm_client import QuotaExhaustedError, LLMClient, OutputTruncatedError
 from core.schemas import CodePlan, GeneratedFile, CodeGenerationOutput
+from validators.absence_claims import (
+    absence_claims,
+    absence_claims_missing,
+    assertion_steps,
+    negated_step,
+    validate_absence_predicates_prove_their_page,
+    validate_absence_steps_assert_absence,
+)
 from validators.gherkin_analyzer import (
     validate_step_coverage,
     validate_no_duplicate_step_definitions,
@@ -2326,6 +2334,7 @@ def _select_new_test_cases(
 def _validate_generated_files(
     generated_files: list[GeneratedFile],
     story_id: str,
+    test_cases: list | None = None,
 ) -> None:
     """Run all final validators.
 
@@ -2528,7 +2537,8 @@ def _validate_generated_files(
     #
     # Reported LAST so the specific messages above keep their own wording and
     # their own remediation advice; this is the backstop for the rest.
-    remaining = _collect_repairable_errors(generated_files)
+    remaining = (_collect_repairable_errors(generated_files)
+                 + _absence_claim_errors(generated_files, test_cases))
     if remaining:
         logger.error(
             f"Final gate FAILED with {len(remaining)} unrepaired error(s):"
@@ -2646,6 +2656,35 @@ def _not_converging_hint(persisting: list) -> str:
     )
 
 
+def _absence_claim_errors(generated_files: list, test_cases: list | None) -> list[str]:
+    """validators.absence_claims.absence_claims_missing over this batch.
+
+    Pairs each scenario with its test case by its `# JIRA:` marker. Before the
+    markers are injected (inside the repair loop) the pairing is the one the
+    marker injector itself would make, computed on a copy, so the same test
+    case is judged against the same scenario at every stage.
+    """
+    if not test_cases:
+        return []
+    scenarios: dict = {}
+    for gf in generated_files or []:
+        path = getattr(gf, "file_path", "") or ""
+        if not path.endswith(".feature"):
+            continue
+        content = getattr(gf, "content", "") or ""
+        _h, blocks = parse_feature_file(content)
+        if not any(b.jira_key for b in blocks if b.kind == "scenario"):
+            try:
+                _h, blocks = parse_feature_file(_inject_markers_into_feature(content, test_cases))
+            except Exception as e:                                 # noqa: BLE001
+                logger.warning("Absence-claim pairing skipped for %s: %s", path, e)
+                continue
+        for b in blocks:
+            if b.kind == "scenario" and b.jira_key:
+                scenarios.setdefault(b.jira_key, (path, b.text()))
+    return absence_claims_missing(test_cases, scenarios)
+
+
 def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str]:
     """Aggregate errors from all validators that the repair loop can act on.
 
@@ -2686,6 +2725,14 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     # flaky in exactly the case the step expects (found by Agent 3 in validation).
     errors.extend(validate_absence_not_asserted_with_waiting_probe(
         generated_files, PROJECT_ROOT))
+    # What a story removes must be watched being gone, all the way to the
+    # browser (validators.absence_claims): a step worded as absence asserts
+    # absence, and absence of a permanent element is checked on a page proven
+    # loaded. The third check - an approved test case's "is not shown" stays in
+    # its scenario - needs the test cases, so _absence_claim_errors runs beside
+    # this collector wherever they are known (repair loop, final gate).
+    errors.extend(validate_absence_steps_assert_absence(generated_files, PROJECT_ROOT))
+    errors.extend(validate_absence_predicates_prove_their_page(generated_files, PROJECT_ROOT))
     # A readiness probe must hold in every state the page can be in. The
     # generator cannot know which element does; a human who has seen the page
     # in each state declares it, and this makes that declaration binding.
@@ -2799,7 +2846,8 @@ def _attempt_step_coverage_repair(
     previous_errors: set[str] | None = None
     previous_count: int | None = None
     for attempt in range(1, max_retries + 1):
-        all_errors = _collect_repairable_errors(generated_files)
+        all_errors = (_collect_repairable_errors(generated_files)
+                      + _absence_claim_errors(generated_files, test_cases))
 
         # NO-PROGRESS ABORT. A run on 31 Jul 2026 spent all four attempts on
         # one unused step definition, produced near-identical output each
@@ -3004,7 +3052,8 @@ def _attempt_step_coverage_repair(
                 )
 
     # Hit max_retries without full success — final validator will raise.
-    final_errors = _collect_repairable_errors(generated_files)
+    final_errors = (_collect_repairable_errors(generated_files)
+                    + _absence_claim_errors(generated_files, test_cases))
     if final_errors:
         logger.warning(
             f"Validator repair exhausted {max_retries} retry attempt(s); "
@@ -3435,8 +3484,26 @@ def _generate_single_scenario(
         "scenario's purpose and assert what IS listed instead.\n"
     )
     user += _build_readable_values_block()
+    claims = absence_claims(description)
+    if claims:
+        user += (
+            "\n  7. The test case asserts that something is NOT there: "
+            + "; ".join(f'"{c}"' for c in claims)
+            + ". Keep each as its own Then/And step worded as absence (\"... should not be "
+              "shown ...\"). Dropping it, or folding it into a step about something else, "
+              "leaves a scenario that passes whether or not the change happened.\n")
     response = llm.invoke_text(system_prompt=system, user_prompt=user)
-    return extract_code_from_response(response)
+    text = extract_code_from_response(response)
+    if claims and not any(negated_step(s) for s in assertion_steps(text)):
+        # One corrected retry, as the other model writers get; the final gate
+        # (_absence_claim_errors) reports it if the retry drops it too.
+        logger.warning("Scenario for %s dropped its absence step; asking once more.", jira_key)
+        response = llm.invoke_text(system_prompt=system, user_prompt=user + (
+            "\n\nYour previous answer was rejected: it has no Then/And step saying that "
+            + "; ".join(f'"{c}"' for c in claims)
+            + ". Return the complete Scenario block again with that step included.\n"))
+        text = extract_code_from_response(response)
+    return text
 
 
 def _regenerate_step_defs_whole(
@@ -4168,7 +4235,8 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
             purpose="Incremental update: orphan method(s) commented out",
         ))
 
-    _validate_generated_files(generated_files, story_id)
+    _validate_generated_files(generated_files, story_id,
+                              list(classification["modified"]) + list(classification["new"]))
 
     base_branch = f"auto/{story_id}-{feature_stem.replace('_', '-')}"
     update_branch = _find_unused_update_branch(gh, base_branch)
@@ -4755,8 +4823,11 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
             orphan_regen_step_defs = []
             orphan_regen_page_methods = []
 
-    # 4c. FINAL VALIDATION (after any repair attempts)
-    _validate_generated_files(generated_files, story_id)
+    # 4c. FINAL VALIDATION (after any repair attempts). The scenarios this run
+    # wrote are judged against their approved test cases: the story's new ones
+    # and, for a change story, the revisions it spliced into owners' files.
+    _validate_generated_files(generated_files, story_id,
+                              list(new_test_cases) + list(revisions))
 
     # 5. ACT
     if dry_run:
