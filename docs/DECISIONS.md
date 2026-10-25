@@ -9,6 +9,72 @@ ADR-005 (the Jira label state machine) under [State management deep-dive](./GUID
 
 ---
 
+## ADR-015 — Every acceptance criterion is verified by a test that can fail
+
+### Status
+
+Accepted (2026-10, after validation story SCRUM-206).
+
+### Context
+
+A change story removed a field. Agent 0 found the three tests that used it, a
+person approved two and retired one, and Agent 1 revised the two so that they
+stopped using the field. It added one new test for the story's other new
+behaviour. No test asserted the field was gone, so every test passed against an
+application that still had it: a green run that proved nothing about the first
+criterion. Agent 1 had been told to add tests "only for criteria no revised
+test covers", but nothing made it say which criterion each test covers, and
+nothing checked the answer. A removal is the easiest criterion to skip: once the
+old tests stop using the thing, they all look as if they cover the story.
+
+### Decision
+
+1. **The criteria are read from the story, not from the model**
+   (`core/acceptance_coverage.py`). A criterion the model forgets would never be
+   checked.
+2. **Agent 1 returns a coverage map** (`coverage` on `TestCaseList` and
+   `ImpactAwareDraft`): every criterion with the test case(s) of the answer that
+   verify it. A missing criterion or an unknown citation sends the draft back
+   once, then writes nothing - the existing test-case rule mechanism.
+3. **Some criteria can only be verified by watching something not happen**, and
+   carry an obligation: removed, replaced, renamed, hidden or "no longer" -> a
+   step asserting the old thing is absent, naming it; only X can / Y cannot -> a
+   step showing the refusal; a limit or validation rule -> a step showing the
+   violation rejected. In impact-aware mode a revision counts only if it carries
+   that step; an unchanged existing scenario may be cited only for a criterion
+   without an obligation.
+4. **One definition of "states absence"** (`validators/absence_claims.py`), used
+   by Agent 1 to accept the step and by Agent 2 to keep it: a scenario must carry
+   its test case's absence step, a Then step worded as absence must assert
+   absence, and an absence predicate on a permanent element (not `conditional`
+   in the inventory) proves its page is loaded first.
+5. **The removed element's inventory key stays**: it is how the absence test
+   finds what must be gone (F-11 marks it instead of deleting it).
+
+### Why not the alternatives
+
+- **A prompt rule alone**: the prompt already said to cover the criteria; the
+  model satisfied it by impression. A rule nothing checks is a suggestion.
+- **Let the model list the criteria**: the criterion it skips is exactly the one
+  it would also leave out of its own list.
+- **A model call to judge coverage**: a second model checking the first can
+  share its blind spot, costs a call per story, and cannot be pinned by a unit
+  test the way a deterministic check is.
+- **Check Agent 2's code only**: by then the approved test case has no absence
+  step to carry; the gap starts in the test design.
+
+### Consequences
+
+- A change story's absence test fails until the change is deployed - the
+  correct red, tracked with the other pre-deployment failures (L20, F-17).
+- The obligation is read from the wording; a criterion phrased without the
+  usual words is checked only for being mapped (L24). The `[agent1:coverage]`
+  comment shows the map at the approval gate.
+- A draft that misses an obligation costs one more Agent 1 call; a scenario
+  that drops an absence step costs one more scenario call or a repair attempt.
+
+---
+
 ## ADR-014 — Stories in flight: wait for the other pull request, and take turns on the live app
 
 ### Status

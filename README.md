@@ -26,7 +26,7 @@ A reusable framework where **six AI agents** turn a Jira story into a reviewed, 
 
 **A new story** (label `ai-ready`):
 
-1. **Agent 1** reads the story and its module context and drafts the fewest test cases that cover it, as Jira Test Case issues
+1. **Agent 1** reads the story and its module context and drafts the fewest test cases that cover it, as Jira Test Case issues, with a coverage map naming the test that verifies each acceptance criterion
 2. 🛑 **A person approves** the test cases (label `human-approved`)
 3. **Agent 2** plans the code, writes it one file at a time, runs the static validators, repairs what fails, and opens a pull request (it waits instead if another open PR is changing a file it would write)
 4. **Agent 3** reviews the diff; **Agent 4** runs the unit suite and the BDD tests on the PR (browser runs take turns across PRs); **Agent 5** posts the verdict and the cost back to Jira
@@ -49,7 +49,7 @@ The pipeline never merges its own code. Agents propose; people decide.
 | # | Agent | Role | Implementation | Model calls |
 |:-:|---|---|---|---|
 | 0️⃣ | **Impact Analyst** | Change story → the tests it affects, ranked, in an Impact Review; hand-over, context-update PR and reconcile (finish or undo); PR code-change and nightly drift checks | `agents/agent0_impact.py` + `core/impact_*.py`, `core/context_update.py` | 2 to analyse (+1 per extra batch past 300 candidates); up to 2 for the context update; 0 on PR code-change and drift runs |
-| 1️⃣ | **Test Designer** | Story → Test Case issues carrying the story's Components; impact-aware mode revises approved tests | `agents/agent1_analyst.py`, `agents/agent1_impact.py` | 1 (+1 if a rule fails) |
+| 1️⃣ | **Test Designer** | Story → Test Case issues carrying the story's Components, every acceptance criterion mapped to the test that verifies it; impact-aware mode revises approved tests | `agents/agent1_analyst.py`, `agents/agent1_impact.py` | 1 (+1 if a rule fails) |
 | 2️⃣ | **Coder** | Test cases → plan → code per file → validated PR; splices change-story scenarios | `agents/agent2_coder.py`, `agents/agent2_impact.py` | 1 plan + 1 per file (+ repairs); a change story adds 1 per revised scenario and up to 1 per owner step file |
 | 3️⃣ | **Reviewer** | AI code review of the PR's changed lines | `agents/agent3_reviewer.py` | 1 |
 | 4️⃣ | **Runner** | Unit suite, then pytest-bdd + Playwright on the PR; browser runs take turns across PRs, and a PR changing only prompts, docs or Markdown runs the unit suite only | `.github/workflows/agent4_runner.yml` | 0 |
@@ -167,7 +167,7 @@ impact-check → impact-proposed → Impact Review Done → ai-ready → impact-
 ```
 
 - **Hand-over** (next full scan after the review is Done and every row decided): Impacts links to the approved tests and their owners, `ai-retired` on retired tests, a trace comment on each owning story, then `ai-ready`. If nothing needs review, the story goes straight to `ai-ready` (and the context update runs then).
-- **Agent 1, impact-aware:** snapshots each approved test, revises it in place, adds only uncovered cases, flags a revision that repeats an existing scenario, records `Change applied at: <UTC>`, and labels the story `impact-applied`.
+- **Agent 1, impact-aware:** snapshots each approved test, revises it in place, adds only the cases its coverage map shows are missing (a criterion that removes something is covered only by a step asserting it is gone), flags a revision that repeats an existing scenario, records `Change applied at: <UTC>`, and labels the story `impact-applied`.
 - **Agent 2:** splices each revised scenario into the feature file that owns it and removes retired ones, leaving every other scenario byte-identical; the owners' files are never generated whole, and step functions the change left unused are commented out.
 - **Context update:** at hand-over (up to two model calls) Agent 0 opens a separate PR that updates the inventory and the app notes — wording the story replaces, and passages the story makes untrue (behaviour, rules, removed elements). A wording change can update a text-based selector (flagged to verify after deployment); a note rewrite never touches a selector. Merge it after the change is deployed. Its branch carries no story key, so it never closes the story. No PR is opened when nothing is stale; a PR that changes only notes runs the unit suite but no browser.
 - **Outcome:** Agent 5 scores the prediction on the story — **recall** (of the tests the PR actually changed, how many Agent 0 flagged) and **precision** (of the tests flagged, how many really changed).
@@ -179,9 +179,10 @@ Attaching Agent 0 to another application: [docs/AGENT0_ONBOARDING.md](./docs/AGE
 
 ## 🛡️ What keeps it honest
 
-- **A 29-check static validator gate before any branch exists.** A failure becomes a targeted repair prompt naming the file and the rule; only the broken files are regenerated (up to 4 attempts), and the loop stops early when an attempt changes nothing, when the same rules keep failing, or when a regeneration comes back worse. Every repairable error is routed to the generated file it names, however a rule words it, so no error reaches the final gate without a repair attempt.
+- **Every acceptance criterion is verified by a test that can fail.** Agent 1 reads the criteria from the story itself and must map each one to the test that verifies it; a criterion that removes, renames, hides or restricts something, or sets a limit, needs a step asserting the old thing is gone, the refusal or the rejection - a test that merely stops using a removed field passes whether or not it was removed. Agent 2 must keep that step in the scenario, assert it in the step definition, and check a removed element's absence on a page proven loaded (`core/acceptance_coverage.py`, `validators/absence_claims.py`).
+- **A 32-check static validator gate before any branch exists.** A failure becomes a targeted repair prompt naming the file and the rule; only the broken files are regenerated (up to 4 attempts), and the loop stops early when an attempt changes nothing, when the same rules keep failing, or when a regeneration comes back worse. Every repairable error is routed to the generated file it names, however a rule words it, so no error reaches the final gate without a repair attempt.
 - **Real signatures, not guesses.** BasePage's 86 helpers and every sibling page object's methods are read from source by AST and handed to the next file's prompt. A Then step another feature already defines is shown with its committed body, so it keeps the same meaning in every feature. The change-story splice writers get the same grounding plus one corrected retry, and a contract test fails any new model writer without it.
-- **Typed model boundaries.** 21 Pydantic schemas (TestCaseList, CodePlan, ReviewReport, ChangeSeeds, ImpactAssessment and more); a malformed reply gets one repair attempt, then fails.
+- **Typed model boundaries.** 22 Pydantic schemas (TestCaseList, CodePlan, ReviewReport, ChangeSeeds, ImpactAssessment and more); a malformed reply gets one repair attempt, then fails.
 - **Reviewer that must name a failure.** Agent 3 is checked out from main, flags only changed lines, blocks only for a named failure scenario, and a green Agent 4 run on the same commit refutes a block - when that run executed the app tests (a PR changing only prompts, docs or Markdown runs none, so it refutes nothing).
 - **Stories in flight do not collide.** Agent 2 never writes a file another open PR is changing, and never generates a scenario another open PR already adds: the story waits and the next scan retries (`core/in_flight.py`). Agent 4's browser runs take turns across PRs, because every PR tests the same live application with the same accounts (`scripts/e2e_turn.py`).
 - **Agent 0 proves its verdicts.** A verdict that cites no real graph path or verbatim step is dropped, an element the inventory does not have is dropped, and the score can never rank a test above the model's own verdict. A person approves every revision, and every revision can be undone from its snapshot.
@@ -231,6 +232,7 @@ multi-agent-test-automation/
 │   ├── usage_ledger.py              # Token and cost ledger per story
 │   ├── app_context.py               # AUT config loader + component-wise inventory filtering
 │   ├── test_case_rules.py           # Rules every drafted test case must follow
+│   ├── acceptance_coverage.py       # Every acceptance criterion verified; removals need an absence step
 │   ├── board_status.py              # Board column automation
 │   ├── dry_run.py                   # Dry run: real code, adapters that make no writes
 │   ├── in_flight.py                 # Files and scenarios other open PRs are changing (Agent 2 waits)
@@ -258,7 +260,8 @@ multi-agent-test-automation/
 │   ├── import_validator.py          # Imports resolve to real modules and symbols
 │   ├── method_resolution_validator.py  # Page-object methods, selectors, waits, probes
 │   ├── page_object_contract.py      # An extended page object keeps its methods
-│   └── orphan_cleanup.py            # Step defs and methods left behind by an edit
+│   ├── orphan_cleanup.py            # Step defs and methods left behind by an edit
+│   └── absence_claims.py            # An absence step is kept, asserted, and checked on a loaded page
 │
 ├── inventory_tools/                 # App-agnostic inventory generation + staleness
 ├── pages/                           # Page objects (base_page.py = shared helpers)

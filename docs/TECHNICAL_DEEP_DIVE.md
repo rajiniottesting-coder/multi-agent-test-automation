@@ -170,7 +170,7 @@ File sizes change with almost every pull request, so they are not listed here; `
   - another open PR changes a planned file → waits (plan call spent); next scan retries
   - Validates plan against path policy (reserved/extendable)
   - Stage 2: LLM generates each file (feature → page objects → step defs)
-  - 29 static checks; the repair loop regenerates only broken files (up to 4 attempts)
+  - 32 static checks; the repair loop regenerates only broken files (up to 4 attempts)
   - Injects JIRA marker comments above each scenario
   - Branch: auto/<STORY-KEY>-<feature-name>
   - Commits files, opens PR, adds 'ai-coded' label
@@ -239,8 +239,11 @@ The single-story entry point. Steps:
        story_summary: str
        test_cases: list[TestCase]   # each: title, description, priority, test_type,
                                     # preconditions, steps, expected_outcome, test_data
+       coverage: list[CriterionCoverage]   # per criterion: covered_by, how_verified
    ```
-   No string parsing. If the LLM returns invalid JSON, it gets one repair attempt with the error fed back, then `ValueError`. The draft is then checked against `core/test_case_rules.py`; a failing draft goes back once with the problems listed, and a second failure writes nothing.
+   No string parsing. If the LLM returns invalid JSON, it gets one repair attempt with the error fed back, then `ValueError`. The draft is then checked against `core/test_case_rules.py` and the coverage rule (below); a failing draft goes back once with the problems listed, and a second failure writes nothing.
+
+   **Acceptance-criteria coverage (`core/acceptance_coverage.py`).** Before the call, `extract_criteria()` reads the criteria from the story text (`parse_acceptance_criteria()`: the list under an "Acceptance criteria" heading, numbered, bulleted, checklist or Given/When/Then, wiki markup or markdown; without one, the title and any sentence announcing a removal) and `obligation()` classifies each: `STRICT` (removed, replaced, renamed, hidden, "no longer", "no X is shown"), `LENIENT` (only X can / Y cannot) or `RULE` (at most N, required, valid format). `criteria_block()` lists them, marked, at the end of the prompt. After the call, `coverage_problems()` requires a coverage entry per criterion citing real test cases of the draft, and for an obligation a cited test with an evidence step (`evidence_steps()`): for `STRICT` an expected result stating absence or unreachability that names what was removed (`removed_object()`, or a concrete entry the test names); for `LENIENT` and `RULE` a refusal or rejection. What counts as stating absence is decided by `validators/absence_claims.py`, the module Agent 2 uses to keep that step, so the two agents agree by construction. The map is posted on the story as `[agent1:coverage]`.
 5. **Create Jira Test Cases** — for each TC: `JiraClient().create_test_case(tc, parent_story_key=story_id, components=...)` — the story's Jira Components carried over when it has some (a project that rejects them still gets the test case, created without them) — which calls `_format_test_case_description()` to format it as Jira wiki markup and then `_link_to_story()` to add the ownership link (`link_types.owns` in config).
 6. **Label transitions** — `jira.add_label(story_id, "ai-processed")` then `jira.remove_label(story_id, "ai-ready")`. Order matters: add first (so even if remove fails, the idempotency marker is set).
 
@@ -1259,11 +1262,12 @@ pushes to main conflicted with branch protection (GH013).
 
 ## 14. Validators — the safety net
 
-29 distinct checks: `validate_paths_against_policy` on the plan, 10 hard gates in
+32 distinct checks: `validate_paths_against_policy` on the plan, 10 hard gates in
 `_validate_generated_files()` (run in order, cheapest first, so an
-expensive AST walk only runs if the basic checks pass), and 25 validator calls
+expensive AST walk only runs if the basic checks pass), 27 validator calls
 in `_collect_repairable_errors()` — the set the repair loop uses — of which 7
-are also hard gates. `validate_page_object_methods()` wraps further page-object
+are also hard gates, and `_absence_claim_errors()`, which needs the approved
+test cases and so runs beside the collector in the repair loop and the final gate. `validate_page_object_methods()` wraps further page-object
 checks.
 
 | # | Validator | Defined at | Runs in |
@@ -1297,6 +1301,9 @@ checks.
 | 27 | `validate_step_claims_are_verified` | `validators/method_resolution_validator.py` | repair |
 | 28 | `validate_step_coverage` | `validators/gherkin_analyzer.py` | repair |
 | 29 | `validate_reused_steps_keep_their_meaning` | `validators/method_resolution_validator.py` | repair |
+| 30 | `validate_absence_steps_assert_absence` | `validators/absence_claims.py` | repair |
+| 31 | `validate_absence_predicates_prove_their_page` | `validators/absence_claims.py` | repair |
+| 32 | `absence_claims_missing` (via `_absence_claim_errors()`) | `validators/absence_claims.py` | repair + gate |
 
 Repairable failures go to the repair loop (`_attempt_step_coverage_repair`),
 routed to the file they name (`_route_to_generated_file()`); only the broken files are regenerated, with the
@@ -1516,8 +1523,8 @@ maintenance story (label `inventory-drift`).
 
 ## 19. Change stories in Agents 1, 2 and 5
 
-- **Agent 1 — `agents/agent1_impact.py`.** `run_impact_aware()` runs instead of the normal draft when the story has approved impacted cases. One `ImpactAwareDraft` call (`prompts/agent1_impact_aware.md`); `validate_draft()` requires every approved key revised exactly once and no new case repeating a revised case or an existing scenario, and flags a revision near an existing scenario (`PURPOSE_KEPT`). A snapshot comment holds each old text and the old/new hashes before `update_test_case`. Labels: `ai-processed`, `impact-applied` on; `ai-ready` off. Re-running is safe.
-- **Agent 2 — `agents/agent2_impact.py`.** `splice_owner_files()` splices each revised scenario into its owner's feature (marker placed below the tags), removes retired ones (their marker and block, not commented out), and regenerates only the step functions the owner file is missing via `_splice_step_defs_incremental()`, which receives this run's page objects (`batch_files`), checks method resolution and corrects once with the validator's words. After the splice, every step function the revisions and retirements left unused is commented out (`comment_out_step_defs_unused_by()`, the unused-step check's own rule, applied deterministically), and files the cleanup changed are committed. Before generation, `drop_owner_files()` removes the owners' feature and step-definition files from the plan, and `validate_paths_against_policy()` rejects them, both from one definition (`protected_paths()`): those files change only by splicing. Model calls on top of the normal run: 1 per revised scenario (`_generate_single_scenario()`), plus at most 1 per owner step file (0 when its existing step functions already cover the revision).
+- **Agent 1 — `agents/agent1_impact.py`.** `run_impact_aware()` runs instead of the normal draft when the story has approved impacted cases. One `ImpactAwareDraft` call (`prompts/agent1_impact_aware.md`); `validate_draft()` requires every approved key revised exactly once, no new case repeating a revised case or an existing scenario, and every acceptance criterion covered (`coverage_problems()`, §4: revisions cited by key, new cases by title, an unchanged existing scenario by title only for a criterion without an obligation), and flags a revision near an existing scenario (`PURPOSE_KEPT`). A snapshot comment holds each old text and the old/new hashes before `update_test_case`. Labels: `ai-processed`, `impact-applied` on; `ai-ready` off. Re-running is safe.
+- **Agent 2 — `agents/agent2_impact.py`.** `splice_owner_files()` splices each revised scenario into its owner's feature (marker placed below the tags), removes retired ones (their marker and block, not commented out), and regenerates only the step functions the owner file is missing via `_splice_step_defs_incremental()`, which receives this run's page objects (`batch_files`), checks method resolution and corrects once with the validator's words. After the splice, every step function the revisions and retirements left unused is commented out (`comment_out_step_defs_unused_by()`, the unused-step check's own rule, applied deterministically), and files the cleanup changed are committed. Before generation, `drop_owner_files()` removes the owners' feature and step-definition files from the plan, and `validate_paths_against_policy()` rejects them, both from one definition (`protected_paths()`): those files change only by splicing. A test case whose expected result states an absence gets it named in `_generate_single_scenario()`'s prompt and one corrected retry if the scenario drops it. Model calls on top of the normal run: 1 per revised scenario (`_generate_single_scenario()`, +1 when that retry is needed), plus at most 1 per owner step file (0 when its existing step functions already cover the revision).
 - **Agent 5.** `post_owner_results()` and `record_prediction_outcome()` (§8).
 
 ## 20. The Protocols — Tracker and RepoHost

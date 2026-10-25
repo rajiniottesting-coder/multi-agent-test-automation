@@ -73,12 +73,12 @@ For more diagrams — component view, Agent 2 sequence, and the labels-as-state-
 ### Key principles
 
 - **No orchestrator.** Each agent runs in its own CI job, minutes or hours apart. All state lives in Jira labels, marker comments and the pull request — see [State management deep-dive](#state-management-deep-dive).
-- **Model output is typed.** Every structured model reply is parsed through a Pydantic schema (21 of them, in `core/schemas.py`); a malformed reply gets one repair attempt, then fails.
+- **Model output is typed.** Every structured model reply is parsed through a Pydantic schema (22 of them, in `core/schemas.py`); a malformed reply gets one repair attempt, then fails.
 - **Each agent stops at a checkpoint.** A human reviews before the next agent runs. See [the human-approval gate](#the-human-approval-gate).
 - **Idempotency via Jira labels.** `ai-processed` (Agent 1 done), `ai-coded` (Agent 2 done), `tests-run` (Agent 5 done); for a change story `impact-proposed` (Agent 0 done, review open) and `impact-applied` (tests revised). Re-running an agent against an already-processed story is a no-op, and Agent 0 skips a story whose text it has already analysed.
 - **Config-driven, not code-driven.** App-specific knowledge (URL, reference files, page inventory, module notes) lives in `config.yaml`, `app_inventory/` and `prompts/app_context/`. Agent code is app-agnostic.
 - **Tools behind Protocols.** Agents talk to `Tracker` (23 operations) and `RepoHost` (16 operations) in `integrations/`, never to Jira or GitHub directly; the Jira and GitHub adapters are the only implementations today.
-- **Defensive validators.** Between Agent 2's model output and the PR, 29 static checks run: the path policy on the plan, 10 hard gates in `_validate_generated_files()` and 25 validator calls in `_collect_repairable_errors()` (7 of them also hard gates). Repairable failures feed a repair loop that regenerates only the broken files; the rest abort before a branch exists.
+- **Defensive validators.** Between Agent 2's model output and the PR, 32 static checks run: the path policy on the plan, 10 hard gates in `_validate_generated_files()`, 27 validator calls in `_collect_repairable_errors()` (7 of them also hard gates), and the absence-claim check against the approved test cases (`_absence_claim_errors()`, in the repair loop and the final gate). Repairable failures feed a repair loop that regenerates only the broken files; the rest abort before a branch exists.
 
 ---
 
@@ -105,11 +105,12 @@ Agent 0 is described in its own chapter, [Change stories — Agent 0](#change-st
 1. Reads a Jira story (description + acceptance criteria) — manual mode (`--story KEY`) or scan mode (`--scan` reads selection criteria from config).
 2. **Duplicate guard.** Refuses a story that already has linked Test Cases it owns, and says whether the last run finished or was interrupted (a partial set). The run turns red and a person decides. Test cases the story only *impacts* (Impacts links from Agent 0) do not count.
 3. Calls the LLM with a prompt template (`prompts/agent1_analyst.md` + the `prompts/app_context/` modules, or a single `prompts/app_context.md`) and a Pydantic schema (`TestCaseList`). It drafts the FEWEST cases that cover the story, grouped by behaviour, not by input value.
-4. Checks the draft against `core/test_case_rules.py` (each case runs on its own, no invented data). A failing draft is sent back once with the problems listed; a second failure writes nothing.
-5. For each test case, creates a "Test Case" issue in Jira linked to the parent story, carrying the story's Jira Components when it has some (a project that rejects them still gets the test case).
-6. Tags the parent story with `ai-processed` (idempotency) and posts its token/cost ledger.
+4. Checks the draft against `core/test_case_rules.py` (each case runs on its own, no invented data) and `core/acceptance_coverage.py`: the acceptance criteria are read from the story text itself (numbered, bulleted or Given/When/Then lists under an "Acceptance criteria" heading, wiki markup or markdown) and numbered AC1, AC2, ...; the draft's coverage map must name, for every one, a test case of the draft that verifies it. A criterion that removes, replaces, renames, hides or no longer offers something needs a step whose expected result says it is absent and names it; one that restricts (only X can, Y cannot) a step showing the refusal; one that sets a limit or validation rule (at most N, required, a valid format) a step showing a violation rejected. A failing draft is sent back once with the problems listed; a second failure writes nothing.
+5. Posts the coverage map on the story (`[agent1:coverage]`), so the reviewer sees which test verifies each criterion before adding `human-approved`.
+6. For each test case, creates a "Test Case" issue in Jira linked to the parent story, carrying the story's Jira Components when it has some (a project that rejects them still gets the test case).
+7. Tags the parent story with `ai-processed` (idempotency) and posts its token/cost ledger.
 
-**Impact-aware mode (`agents/agent1_impact.py`).** When a story carries APPROVED impacted test cases (Impacts links made by Agent 0's hand-over), Agent 1 runs this mode instead: one `ImpactAwareDraft` call revises each approved case and adds new cases only for uncovered criteria. Before revising, it posts a snapshot of the old text on the test case (the undo source for reconcile); a revision that repeats an existing scenario is flagged in the gate comment. It labels the story `ai-processed` and `impact-applied`.
+**Impact-aware mode (`agents/agent1_impact.py`).** When a story carries APPROVED impacted test cases (Impacts links made by Agent 0's hand-over), Agent 1 runs this mode instead: one `ImpactAwareDraft` call revises each approved case and adds new cases only for criteria its coverage map shows uncovered - the same coverage rule as above, where a revision counts only if it carries the step the criterion needs (a revised test that merely stopped using a removed field does not cover the removal), and an unchanged existing scenario may be cited for a criterion with no such obligation. The map is part of the gate comment. Before revising, it posts a snapshot of the old text on the test case (the undo source for reconcile); a revision that repeats an existing scenario is flagged in the gate comment. It labels the story `ai-processed` and `impact-applied`.
 
 **Inputs:** Jira story key, or JQL-driven scan.
 **Outputs:** Jira "Test Case" issues + `ai-processed` label on parent.
@@ -128,7 +129,7 @@ Agent 0 is described in its own chapter, [Change stories — Agent 0](#change-st
 2. Optional dedup check: if any test cases are already covered by existing scenarios, skip them — by marker first, then by title without the `[type]` tag. (`ai-regenerate` label bypasses this.) If another open PR already adds one of the scenarios, or (after the plan) changes a file this story would write, the story **waits** for the next scan instead — see *Two stories on one page object*.
 3. **Stage 1 (Plan):** Calls the LLM with a Pydantic schema (`CodePlan`) — gets file paths, types, branch name, PR title. NO code yet.
 4. **Stage 2 (Generate):** For EACH file in the plan, calls the LLM in text mode to generate the file's content.
-5. **Validators:** 29 static checks run before a branch is created — see **The validator gate** below. Repairable failures go through the repair loop; anything still failing aborts the run.
+5. **Validators:** 32 static checks run before a branch is created — see **The validator gate** below. Repairable failures go through the repair loop; anything still failing aborts the run.
 6. Creates a branch (`auto/<JIRA-KEY>-<feature-name>`), commits files, opens a PR.
 7. Tags the parent story with `ai-coded` (the card moves to In Review) and posts its cost.
 
@@ -251,14 +252,20 @@ its trigger label was never consumed.
 
 **The validator gate:**
 
-Twenty-nine checks guard the generated batch: `validate_paths_against_policy`
+Thirty-two checks guard the generated batch: `validate_paths_against_policy`
 on the plan, then the 10 hard gates below in `_validate_generated_files()`, run
 in order, cheapest first, so an expensive AST walk only runs if the basic checks
-pass. `_collect_repairable_errors()` makes 25 validator calls - the set the
-repair loop uses, 7 of which are also hard gates. Path policy + 10 + 25 − 7 = 29
-distinct checks. The newest, `validate_reused_steps_keep_their_meaning`,
-rejects a Then step that re-defines a phrase another feature already defines
-but asserts more than that definition does. Every repairable error is routed to
+pass. `_collect_repairable_errors()` makes 27 validator calls - the set the
+repair loop uses, 7 of which are also hard gates - and `_absence_claim_errors()`
+runs beside it wherever the approved test cases are known (the repair loop and
+the final gate). Path policy + 10 + 27 − 7 + 1 = 32 distinct checks. The newest
+three (`validators/absence_claims.py`) keep a removal verified all the way to the
+browser: a test case's "is not shown" step stays in its scenario, a Then step
+worded as absence asserts absence, and an absence predicate on a permanent
+element (one the inventory does not list as `conditional`) proves its page is
+loaded first - otherwise it also passes before the page has rendered.
+`validate_reused_steps_keep_their_meaning` rejects a Then step that re-defines a
+phrase another feature already defines but asserts more than that definition does. Every repairable error is routed to
 the generated file it names, whatever its wording
 (`_route_to_generated_file()`), so none reaches the final gate without a repair
 attempt.
@@ -1875,7 +1882,7 @@ sequenceDiagram
 | `validate_paths_against_policy` | Aborts if the plan targets a reserved file, or would recreate an extendable one, so the model cannot overwrite your gold-standard reference |
 | **Stage 2 — Per-file** | One text-mode call per file. Each prompt carries the filtered inventory, the reference trio, the AST-extracted BasePage helpers, the page objects already written (this run, the story's branch, or `main`) and, for step definitions, the committed body of every Then step the feature reuses |
 | `extract from markdown fences` | Strips the ```` ```python ```` wrapper the model adds even when told not to |
-| **Hard validators** | The 29 checks above - the 10 hard gates in order, plus `_collect_repairable_errors()`. Repairable failures go to the repair loop; the rest abort |
+| **Hard validators** | The 32 checks above - the 10 hard gates in order, plus `_collect_repairable_errors()` and `_absence_claim_errors()`. Repairable failures go to the repair loop; the rest abort |
 | `create branch / commit / open PR` | `auto/<KEY>-<feature>`, then `ai-coded` on the parent story |
 
 Why two stages: asking for structure AND large code bodies in one call
@@ -2070,7 +2077,8 @@ any run can find it again. All are plain Jira comments.
 | `[agent0:snapshot]` | test case | Agent 1 impact-aware | The text before revision: the undo source |
 | `[agent0:reconcile]` `closed-unmerged` / `reverted` / `no-pr` / `ask-a-person` | story | reconcile | Reconcile's memory between scans |
 | `[agent0:outcome]` | story | Agent 5 | Agent 0's prediction scored against what the PR changed and failed |
-| `[agent1:impact-draft]` | story | Agent 1 impact-aware | Before/after of each revision, new tests, `Change applied at: <UTC>` |
+| `[agent1:coverage]` | story | Agent 1 | Each acceptance criterion and the test case(s) that verify it, with the step that proves it |
+| `[agent1:impact-draft]` | story | Agent 1 impact-aware | Before/after of each revision, new tests, the coverage map, `Change applied at: <UTC>` |
 | `[agent2:waiting]` | story | Agent 2 | Why the story is waiting for another open PR (once per reason) |
 
 ### Failure recovery
