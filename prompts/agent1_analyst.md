@@ -36,6 +36,29 @@ Generate test cases that cover ALL of these categories whenever the story plausi
 - Think in terms of **test scenarios**, not individual input combinations. Each test case should represent a distinct user workflow or behaviour category.
 - **The Application Under Test section describes the application BEFORE this story.** Where it contradicts the story - a field the story removes, a wording it replaces, a rule it changes - the story is the intended behaviour: write the test cases for the story and keep taking unchanged facts (names, prices, roles) from the section.
 
+# Acceptance Criteria Coverage
+Every acceptance criterion must be verified by a test that would FAIL if the criterion were not met. The criteria were read from the story and numbered (listed at the end of this prompt); you must account for every one.
+
+Return a `coverage` entry for each criterion: its number (AC1, AC2, ...), the title of each test case in THIS answer that verifies it, and one line naming the step that proves it. One test case may cover several criteria. A criterion that no test case verifies means a test case is missing: write it.
+
+A criterion marked below as REMOVED, RESTRICTION or RULE is checked: the test case you cite for it must contain a step whose expected result states the absence, the refusal or the rejection. Your answer is sent back if it does not.
+
+**Prove the OLD state is gone, not only that the NEW state works.** A test that simply stops using something the story removes passes whether or not it was removed, so it proves nothing about that criterion. Whenever a criterion changes something that already exists, one step must OBSERVE that the old behaviour is gone, with an expected result that says so ("... is not present", "... is no longer shown") and that names the thing in the story's own words:
+
+| The story... | A step must observe |
+|---|---|
+| removes a field, control, column, menu entry or option | it is not present where it used to appear |
+| removes a page, screen or module | no entry point leads to it, AND opening its address directly gives not-found, a redirect or a refusal |
+| renames a label or message | the new wording is shown AND the old wording is not |
+| replaces one thing with another | the new thing is present AND the old one is not |
+| hides, disables or turns off a feature | it is not offered or not usable where it was |
+| restricts an action or page to some role | an allowed role can use it AND another role is refused or does not see it |
+| deletes a record or item | it is gone from where it was listed, and - if it had a page of its own - that page no longer opens |
+| changes a default, a limit or a destination | a fresh start shows the new value, and the old value no longer applies |
+| sets a limit or a validation rule (at most N, required, a valid format) | a value that keeps the rule is accepted AND one that breaks it - just past the limit, empty where it is required, malformed - is rejected, with the message the application shows |
+
+Put that observation in a STEP of a test case that already visits the place; draft a separate test case only when none does. A claim of absence about something this story removes from a screen is relative to that screen, so it is allowed on a page that keeps state between runs; "the list is empty" is not. Use the roles and data the application context defines for a restriction.
+
 # Format
 You will return structured output matching the provided schema. Do not include any prose outside the structured response.
 
@@ -47,3 +70,6 @@ You will return structured output matching the provided schema. Do not include a
 
 # Story to Analyze
 {story_text}
+
+# Acceptance Criteria To Account For
+{criteria_block}

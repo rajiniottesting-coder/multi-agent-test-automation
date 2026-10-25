@@ -11,9 +11,12 @@ What it does, in order:
               approved key, plus new cases only for uncovered criteria.
   3. Validate every approved key revised exactly once, no unknown key, no
               new case repeating a revised case or an existing scenario (by
-              normalised title), and every case follows core.test_case_rules. A failing draft is sent back once with the
-              problems listed; a second failure stops the run before any write.
-              Near matches are flagged in the gate comment, not rejected.
+              normalised title), every case follows core.test_case_rules, and
+              every acceptance criterion is verified (core.acceptance_coverage:
+              a removal by a step asserting the old thing is absent). A failing
+              draft is sent back once with the problems listed; a second
+              failure stops the run before any write. Near matches are flagged
+              in the gate comment, not rejected.
   4. Snapshot before each revision, a comment on the test case holding its old
               text and the old and new hashes - the undo source for C7.
   5. Write    update_test_case per revision, create_test_case per new case.
@@ -32,6 +35,8 @@ import logging
 from agents.agent2_coder import (build_marker_index, compute_description_hash,
                                  plain_test_case_title, _title_similarity)
 from core import impact_review, impact_trace
+from core.acceptance_coverage import (coverage_problems, criteria_block, extract_criteria,
+                                      index_cases, render_coverage)
 from core.impact_settings import impact_settings
 from core.schemas import ImpactAwareDraft
 from core.test_case_rules import draft_problems, load_persistent_pages
@@ -52,7 +57,8 @@ def _norm(title: str) -> str:
 
 def validate_draft(draft: ImpactAwareDraft, approved_keys: set, existing_titles: set,
                    persistent: dict | None = None,
-                   approved_titles: dict | None = None) -> tuple:
+                   approved_titles: dict | None = None,
+                   criteria: list | None = None) -> tuple:
     """(errors, near_matches). Errors reject the draft; near matches are shown.
 
     Revised and new test cases also follow core.test_case_rules: each runs on
@@ -68,6 +74,17 @@ def validate_draft(draft: ImpactAwareDraft, approved_keys: set, existing_titles:
     errors, near = [], []
     errors.extend(draft_problems([r.revised for r in draft.revisions], persistent))
     errors.extend(draft_problems(draft.new_test_cases, persistent))
+    # Every acceptance criterion accounted for, and anything the story removes or
+    # replaces verified by a step asserting it is gone. A revised test counts
+    # only if it carries such a step: one that merely stopped using the removed
+    # thing passes whether or not it was removed.
+    # An unchanged existing scenario may be cited for a criterion it already
+    # verifies, but never for one with an obligation: its steps are not read
+    # here, so it cannot prove the old state is gone.
+    errors.extend(coverage_problems(
+        criteria or [], list(getattr(draft, "coverage", None) or []),
+        index_cases([(r.key, r.revised) for r in draft.revisions], draft.new_test_cases,
+                    existing_titles)))
     seen: dict = {}
     for rev in draft.revisions:
         seen[rev.key] = seen.get(rev.key, 0) + 1
@@ -124,13 +141,13 @@ def _review_rows(tracker, story_id: str, settings: dict) -> dict:
 
 
 def _draft(llm, prompt: str, approved_keys: set, existing_titles: set,
-           approved_titles: dict | None = None) -> tuple:
+           approved_titles: dict | None = None, criteria: list | None = None) -> tuple:
     system = "You are a meticulous, expert QA test analyst."
     persistent = load_persistent_pages()
     draft = llm.invoke_structured(system_prompt=system, user_prompt=prompt,
                                   output_schema=ImpactAwareDraft)
     errors, near = validate_draft(draft, approved_keys, existing_titles, persistent,
-                                  approved_titles)
+                                  approved_titles, criteria)
     if not errors:
         return draft, near
     logger.warning("Impact-aware draft rejected, asking once more: %s", errors)
@@ -139,7 +156,7 @@ def _draft(llm, prompt: str, approved_keys: set, existing_titles: set,
     draft = llm.invoke_structured(system_prompt=system, user_prompt=retry,
                                   output_schema=ImpactAwareDraft)
     errors, near = validate_draft(draft, approved_keys, existing_titles, persistent,
-                                  approved_titles)
+                                  approved_titles, criteria)
     if errors:
         raise ValueError("impact-aware draft rejected twice; nothing was written: "
                          + "; ".join(errors))
@@ -169,7 +186,9 @@ def run_impact_aware(tracker, story_id: str, story: dict, prompt_header: dict,
     prompt = (PROMPTS_DIR / "agent1_impact_aware.md").read_text(encoding="utf-8")
     for name, value in prompt_header.items():
         prompt = prompt.replace("{" + name + "}", value)
+    criteria = extract_criteria(story.get("summary"), story.get("description"))
     prompt = (prompt
+              .replace("{criteria_block}", criteria_block(criteria))
               .replace("{approved_block}", _block(list(approved.values()), reasons))
               .replace("{retired_block}", "\n".join(f"- {c['key']} - {c['summary']}"
                                                     for c in retired) or "(none)")
@@ -177,7 +196,7 @@ def run_impact_aware(tracker, story_id: str, story: dict, prompt_header: dict,
                                                             sorted(existing_titles)) or "(none)"))
 
     draft, near = _draft(llm, prompt, set(approved), existing_titles,
-                         {k: c.get("summary", "") for k, c in approved.items()})
+                         {k: c.get("summary", "") for k, c in approved.items()}, criteria)
     logger.info("Impact-aware draft for %s: %d revision(s), %d new test case(s)",
                 story_id, len(draft.revisions), len(draft.new_test_cases))
 
@@ -217,6 +236,11 @@ def run_impact_aware(tracker, story_id: str, story: dict, prompt_header: dict,
         body += ["", "*Revised test cases*"] + (gate or ["(none)"])
         body += ["", "*New test cases*"] + ([f"{k} - {tc.title}" for k, tc in
                                             zip(created, draft.new_test_cases)] or ["(none)"])
+        cover = render_coverage(criteria, list(getattr(draft, "coverage", None) or []),
+                                index_cases([(r.key, r.revised) for r in draft.revisions],
+                                            draft.new_test_cases, existing_titles))
+        if cover:
+            body += ["", "*Acceptance criteria and what verifies them*"] + cover
         if near:
             body += ["", "*Close to an existing test - check these*"] + [f"- {n}" for n in near]
         if retired:

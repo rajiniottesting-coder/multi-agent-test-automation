@@ -29,10 +29,34 @@ class TestCase(BaseModel):
     test_data: Optional[dict] = Field(default=None, description="Test data like usernames/passwords")
 
 
+class CriterionCoverage(BaseModel):
+    """Which test case(s) of THIS answer verify one acceptance criterion.
+
+    core.acceptance_coverage checks the map: every listed criterion present,
+    every cited test case real, and a criterion about something removed,
+    replaced, restricted or limited verified by a step that asserts the
+    absence, the refusal or the rejection.
+    """
+    criterion: str = Field(
+        ..., description="The criterion's number exactly as listed in the prompt "
+                         "(AC1, AC2, ...). If none were listed, C1, C2, ... for the ones you derived")
+    covered_by: list[str] = Field(
+        default_factory=list,
+        description="Title (or, for a revised test case, its key) of each test case in THIS "
+                    "answer that verifies the criterion; in impact-aware mode also the title of "
+                    "an existing scenario that verifies it unchanged")
+    how_verified: str = Field(
+        default="", description="One line: the step that proves it. For something removed or "
+                                "replaced, the step whose expected result says it is absent")
+
+
 class TestCaseList(BaseModel):
     """A collection of test cases generated from one story."""
     story_summary: str = Field(..., description="Brief summary of the story analyzed")
     test_cases: list[TestCase] = Field(..., min_length=1, description="At least one test case")
+    coverage: list[CriterionCoverage] = Field(
+        default_factory=list,
+        description="One entry per acceptance criterion: the test case(s) that verify it")
 
 
 class TestCaseRevision(BaseModel):
@@ -50,6 +74,10 @@ class ImpactAwareDraft(BaseModel):
     new_test_cases: list[TestCase] = Field(
         default_factory=list,
         description="Only for acceptance criteria no revised test case covers")
+    coverage: list[CriterionCoverage] = Field(
+        default_factory=list,
+        description="One entry per acceptance criterion: the revised (by key) or new (by title) "
+                    "test case(s) that verify it")
 
 
 class ChangeSeeds(BaseModel):

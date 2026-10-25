@@ -173,8 +173,12 @@ def load_agent_config(agent_key: str = "agent1_analyst") -> dict:
 # ─────────────────────────────────────────────────────────────
 # Core agent workflow (Read → Reason → Act → Return)
 # ─────────────────────────────────────────────────────────────
-def _draft_test_cases(llm, user_prompt: str) -> TestCaseList:
+def _draft_test_cases(llm, user_prompt: str, criteria=None) -> TestCaseList:
     """Draft, check against core.test_case_rules, send back once, then stop.
+
+    `criteria` are the story's acceptance criteria (core.acceptance_coverage):
+    the draft must also carry a coverage map that accounts for each of them,
+    with a step asserting absence for anything the story removes or replaces.
 
     The draft used to go straight into the tracker, so a test case that leaned
     on another one, or claimed an absolute count on a page that keeps state
@@ -182,28 +186,41 @@ def _draft_test_cases(llm, user_prompt: str) -> TestCaseList:
     in the browser. A draft that still breaks a rule after one correction raises
     BEFORE any test case is created, so nothing partial is written.
     """
+    from core.acceptance_coverage import coverage_problems, index_cases
     from core.test_case_rules import (
         draft_problems,
         load_persistent_pages,
         rejection_note,
     )
 
+    def check(d) -> list:
+        return (draft_problems(d.test_cases, persistent)
+                + coverage_problems(criteria or [], list(getattr(d, "coverage", None) or []),
+                                    index_cases([], d.test_cases)))
+
     system ="You are a meticulous, expert QA test analyst."
     persistent = load_persistent_pages()
     draft: TestCaseList = llm.invoke_structured(
         system_prompt=system, user_prompt=user_prompt, output_schema=TestCaseList)
-    problems = draft_problems(draft.test_cases, persistent)
+    problems = check(draft)
     if not problems:
         return draft
     logger.warning("Test case draft rejected, asking once more: %s", problems)
     draft = llm.invoke_structured(
         system_prompt=system, user_prompt=user_prompt + rejection_note(problems),
         output_schema=TestCaseList)
-    problems = draft_problems(draft.test_cases, persistent)
+    problems = check(draft)
     if problems:
         raise ValueError("test case draft rejected twice; nothing was written: "
                          + "; ".join(problems))
     return draft
+
+
+def _coverage_lines(criteria, draft) -> list[str]:
+    """The draft's coverage map as readable lines, [] when it carries none."""
+    from core.acceptance_coverage import index_cases, render_coverage
+    coverage = list(getattr(draft, "coverage", None) or [])
+    return render_coverage(criteria, coverage, index_cases([], draft.test_cases)) if coverage else []
 
 
 def run(story_id: str, dry_run: bool = False) -> dict:
@@ -347,11 +364,16 @@ def run(story_id: str, dry_run: bool = False) -> dict:
     # injects only the relevant module files. Harmless in single-file mode — the
     # components arg is simply ignored there.
     app_context_block = load_app_context_block(story.get("components"))
+    # The acceptance criteria are read from the story text here, not left to the
+    # model: a criterion it forgot to list would never be checked.
+    from core.acceptance_coverage import criteria_block, extract_criteria
+    criteria = extract_criteria(story["summary"], story.get("description"))
     user_prompt = (
         prompt_template
         .replace("{app_name}", ctx.name)
         .replace("{app_base_url}", ctx.base_url)
         .replace("{app_context}", app_context_block)
+        .replace("{criteria_block}", criteria_block(criteria))
         .replace("{story_text}", story_text)
     )
 
@@ -364,13 +386,16 @@ def run(story_id: str, dry_run: bool = False) -> dict:
     # NOTE: if you raise the "3-7 test cases" target in
     # prompts/agent1_analyst.md, revisit this cap in the same commit.
     llm = LLMClient(temperature=0.3, max_output_tokens=12288)
-    test_case_list = _draft_test_cases(llm, user_prompt)
+    test_case_list = _draft_test_cases(llm, user_prompt, criteria)
 
     logger.info(f"LLM generated {len(test_case_list.test_cases)} test cases:")
     for i, tc in enumerate(test_case_list.test_cases, 1):
         prefix = f"[{tc.test_type}]"
         label = tc.title if tc.title.startswith(prefix) else f"{prefix} {tc.title}"
         logger.info(f"  {i}. {label}")
+    coverage_lines = _coverage_lines(criteria, test_case_list)
+    for line in coverage_lines:
+        logger.info(f"  coverage {line}")
 
     # 3. ACT: create Jira tickets (unless dry-run)
     created_keys = []
@@ -383,6 +408,16 @@ def run(story_id: str, dry_run: bool = False) -> dict:
         for tc in test_case_list.test_cases:
             issue = jira.create_test_case(tc, parent_story_key=story_id, **comps)
             created_keys.append(issue.key)
+
+        # What verifies each acceptance criterion, where the reviewer reads it.
+        # Best-effort: the test cases are already written, so a failed comment
+        # must not fail the run.
+        if coverage_lines:
+            try:
+                jira.add_comment(story_id, "[agent1:coverage] Acceptance criteria and the test "
+                                 "cases that verify them\n" + "\n".join(coverage_lines))
+            except Exception as e:                                 # noqa: BLE001
+                logger.warning(f"Could not post the coverage comment on {story_id}: {e}")
 
         # IDEMPOTENCY MARKER: tag parent story so the next --scan run skips it.
         agent_config = load_agent_config()
