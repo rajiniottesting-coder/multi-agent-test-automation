@@ -4,6 +4,28 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## October 2026 (end) — every acceptance criterion verified by a test that can fail
+
+**Why:** validation story SCRUM-206 removed a field; the revised tests stopped using it, nothing asserted it was gone, and every test passed against an application that still had the field (ADR-015).
+
+**Agent 1 (both modes)**
+- The acceptance criteria are read from the story text (`core/acceptance_coverage.py`: numbered, bulleted, checklist or Given/When/Then lists under an "Acceptance criteria" heading, wiki markup or markdown) and listed in the prompt as AC1, AC2, ...
+- The draft returns a coverage map (`CriterionCoverage`, schema 22): every criterion with the test case(s) that verify it. A missing criterion or an unknown citation sends the draft back once; a second miss writes nothing
+- Obligations, from the criterion's wording: removed / replaced / renamed / hidden / "no longer" / "no X is shown" needs a step asserting the old thing is absent, naming it; only X can / Y cannot needs the refusal; a limit or validation rule (at most N, required, valid format) needs the violation rejected
+- Impact-aware: a revision counts only if it carries that step; an unchanged existing scenario may be cited for a criterion without an obligation (no duplicate drafted)
+- The map is posted on the story (`[agent1:coverage]`) and in the impact-aware gate comment; both prompts carry the obligation table, now with a limit/rule row
+
+**Agent 2**
+- Three checks (`validators/absence_claims.py`, gate now 32 checks): a scenario keeps its test case's "is not shown" step; a Then step worded as absence asserts absence (a page-object method that answers absence counts, whatever its name); a new or changed absence predicate on a permanent element proves its page is loaded first (`return self.is_loaded() and self.is_gone(...)`). Committed code is not re-judged
+- The single-scenario writer (`ai-update`, change-story splice) is told the test case's absence claims and retries once if it drops one
+- Generation prompt: the feature-file rule, a section on proving something was removed, and rule 17 / the absence rule extended for permanent elements
+
+**Docs:** README, GUIDE, TECHNICAL_DEEP_DIVE §4/§14/§19, AI_CONCEPTS (#48), REUSE, ADR-015, VALIDATION_AND_KNOWN_GAPS (E11–E13, UC-6, L24, L18/F-11 amended: keep and mark a removed element instead of deleting it).
+
+All generic, pinned by `tests/unit/test_acceptance_coverage.py` and `tests/unit/test_absence_claims.py` (written for a library application; every guard has a break-it proof). Suite: ~3,080 tests.
+
+---
+
 ## October 2026 (second half) — validation fixes after A3
 
 **Agent 0's manual-run inputs mean what they say**

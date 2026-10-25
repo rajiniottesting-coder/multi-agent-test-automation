@@ -20,7 +20,8 @@ one line in `config/config.yaml`. Nothing in `agents/` changes.
 > instrumentation, module-wise app context (`prompts/app_context/`), inventory
 > JSON minification, duplicate step-definition guard, per-story ledger reset
 > marker, light-model routing (`LLM_MODEL_LIGHT` for Agents 1 and 5), the
-> 29-check validator gate, board automation, and **Agent 0** (impact analysis,
+> 32-check validator gate, acceptance-criteria coverage (every criterion mapped
+> to the test that verifies it), board automation, and **Agent 0** (impact analysis,
 > Impact Review, hand-over, context update, reconcile), protection for stories
 > in flight at the same time (Agent 2 waits on open PRs; Agent 4's browser runs
 > take turns) and a pull-request gate that skips the browser when only prompts,

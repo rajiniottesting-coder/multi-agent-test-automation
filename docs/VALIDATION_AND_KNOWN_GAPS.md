@@ -59,6 +59,9 @@ has not yet run live: section 2.
 | E10 | `ai-update` while another open PR changes its feature or step file → waits before any model call | #201 |
 | I8 | The live-site add-to-cart flake: still seen with turn-taking? failure messages now list the action requests | Open defect |
 | P6 | SCRUM-187 re-analysed by Agent 0 after #186: expect no false "review" rows | Re-check |
+| E11 | A change story that removes a field (SCRUM-206, retried): Agent 1's map covers AC1 with a step asserting the field is not present; the revised tests alone are rejected | Coverage fix |
+| E12 | The same story's PR: the scenario carries the absence step, its step definition asserts `is_<field>_absent()` built on `is_loaded() and is_gone(...)`; against the undeployed application that step FAILS (L20) and nothing else does | Coverage fix |
+| E13 | A new story with a limit or a restriction (held-out H2 fits): the coverage comment lists a rejection step for it | Coverage fix |
 
 ### 2.2 The runs
 
@@ -69,8 +72,9 @@ has not yet run live: section 2.
 | **UC-3** Two new stories in flight | P1 (labelled `impact-check`), P2 (same page object as P1) | H4, E3, E4, E6, E7, E8, E9 | P1: Agent 0 finds nothing → `ai-ready` (H4), its cost on the table (E3); test cases carry Components (E4); one test case titled as an unmarked scenario on `main` → skipped (E9). While P1's PR is open: P2 with a duplicate test case waits before the plan (E7); remove it → waits after the plan (E6); merge P1 → P2 extends the page object. P2's PR opened next to another PR → its browser run waits (E8). |
 | **UC-4** Runs B and C together | a hand-made PR; a manual run with `mode` = `drift` | B, C | The PR's Agent 0 comment lists the tests the changed method and selector reach; the browser runs (runtime file changed). The drift run opens or updates the maintenance story; scan and reconcile skip. |
 | **UC-5** After the section 4 fixes | two stories in one Agent 1/2 scan, the first set up to fail | M1–M4, G1, G2 | Each story's cost lands on its own story; the scan finishes inside its timeouts; Agent 3 waits long enough for Agent 4; a cleanup-only page-object edit that another open PR changes makes the story wait (G1); a test case already approved by another change in progress is blocked in the second review (G2). |
+| **UC-6** Retry the removal story | SCRUM-206 after its PR and context-update PR are closed and reconcile has undone it | E11, E12 (E13 with H2 in UC-1) | Remove `impact-reverted`, add `impact-check`; approve the review as before. Agent 1's `[agent1:coverage]` lines name the test asserting the quantity field is gone. Agent 2's PR: that step present and asserted on a loaded page; its browser run fails on exactly that step while the field is still deployed - the expected red (L20). |
 
-Order: UC-1 → UC-2 → UC-3 → UC-4 → section 4 fixes → UC-5.
+Order: UC-1 → UC-2 → UC-3 → UC-4 → UC-6 → section 4 fixes → UC-5.
 
 ---
 
@@ -119,6 +123,7 @@ yet known.
 | I8 | Add-to-cart on the live site occasionally fails | Root cause unknown; failure messages now list the page's action requests. Check whether browser turn-taking removed it (UC-2) | Open |
 | L14 | The application under test is briefly unavailable (HTTP 5xx on navigation) | `BasePage.navigate()` fails the test at once with a clear message ("the site is down"), but the run still goes red for something the change did not cause; a re-run passes. Seen on PR #205 (23 Oct 2026): `/login` returned HTTP 520 on one run, the same code passed minutes earlier | Fix planned |
 | L12 | Prompt changes for Agents 1–3 | No dedicated prompt-regression eval set; the unit suite pins validators, Agent 4 runs the generated tests | Limit |
+| L24 | An acceptance criterion that removes or restricts something without saying so in plain words ("the field goes away", "members lose renewals") | Every criterion must still be mapped to a test that verifies it, but the absence / refusal / rejection obligation is read from the wording (`obligation()` in `core/acceptance_coverage.py`), so such a criterion is checked only for being mapped. Writing criteria in the plain form ("no longer offers", "only X can", "at most N") makes them checked; the reviewer reads the `[agent1:coverage]` comment for the rest | Limit |
 
 ### 3.5 Knowledge lifecycle: the app notes and the inventory
 
@@ -131,7 +136,7 @@ code, the scenario markers and the inventory, not the notes.
 | L15 | A **new feature** ships, or a change story **adds** a rule rather than changing one | The context update can only replace wording (`propose()`) or rewrite a passage the story makes untrue (`_apply_rewrites()`); it never adds text. The shipped behaviour, rules and test data never reach the notes, so the next story on that feature is drafted from the story alone (e.g. a wishlist with a 10-item limit: a later story changing it to 20 finds no passage to rewrite, "No context update needed") | Fix planned |
 | L16 | The notes grow over months | Nothing measures a module's size or finds near-duplicate passages; the modules total about 24 KB (≈ 6k tokens) and `core.md` goes into every Agent 1 call | Fix planned |
 | L17 | A change story on one Component | Model call 2 of the context update (`extract_note_rewrites()`) sends every module and all inventory notes (`_notes_block()`), not the story's Components | Fix planned |
-| L18 | A feature or element is removed | Its note is prefixed `REMOVED by KEY:` and its inventory element stays; nothing deletes them after deployment | Fix planned |
+| L18 | A feature or element is removed | Its note is prefixed `REMOVED by KEY:` and its inventory element stays - it must: the story's absence test finds what must be gone through that key. After deployment the nightly inventory check reports the element missing, and the drift job raises the absence test as "affected", although missing is now the expected state | Fix planned |
 | L19 | Tests are wanted **before** a feature is deployed | The inventory comes from crawling the live application, so an undeployed page or element is not in it, and Agent 2 may use inventory keys only (generation prompt rule 15: omit the behaviour) | Fix planned |
 
 ### 3.6 Traceability: every approved test case becomes a test
@@ -192,7 +197,7 @@ code, the scenario markers and the inventory, not the notes.
 | F-8 | L15 | When a new-feature story's PR merges (and for a change story that adds a rule), Agent 0 proposes a **notes addition** for the story's Component module: facts only (rules, limits, test data, flow), a few lines in the module's style, written from the story **and** its merged scenarios, checked against existing text so it repeats nothing; the same reviewed context-update PR, merged after deployment. Later change stories then have a passage to rewrite |
 | F-9 | L16 | A size budget per module (config), checked by the unit suite and `scripts.onboarding_check`, with a near-duplicate check; over budget, the update proposes a **condensed** module for review instead of appending |
 | F-10 | L17 | Call 2 of the context update reads only the story's Component modules and those pages' inventory notes, as Agent 1 does (all modules when the story has no Component) |
-| F-11 | L18 | When the nightly drift check confirms a removed element is gone from the live site, propose deleting its `REMOVED by` note and its inventory entry |
+| F-11 | L18 | Mark a removed element in the inventory (`removed: [key]`, proposed by the context update) instead of deleting it while a test asserts its absence: the nightly check reads "missing" as healthy and "present again" as drift, and Agent 0 seeds nothing from it. Delete the note and the key only when no scenario uses the key any more |
 | F-12 | L19 | "Planned" inventory entries a person adds from the design, marked unverified (usable by Agent 2, flagged in its PR); the nightly drift check confirms them after deployment, or reports them still missing |
 | F-13 | G5 | After generation, check that every approved test case has a markered scenario (new stories too, not only the splice); each missing one, with its reason, goes in the PR body and a Jira comment, and the story is not reported as fully coded |
 | F-14 | G6 | Agent 1 records a hash of the story text when it drafts; a scan compares it: edited before coding → suggest a re-draft; edited after coding → suggest `impact-check`. A comment, never an automatic action |
