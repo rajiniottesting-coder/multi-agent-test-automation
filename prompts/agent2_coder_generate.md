@@ -434,6 +434,33 @@ and reported the product still present. Only the reading was early.
 If the entry is still wrong after waiting, it is starting state and no wait
 helps - see the rule above about state the application keeps.
 
+## Proving something was REMOVED from a page
+
+A story that removes a field, control or option is verified by asserting it is
+gone - on a page proven to be there. A permanent element (one the inventory does
+NOT list under `conditional`) is just as absent before the page has rendered,
+or on any other page, so an absence check alone passes on a blank screen:
+
+    # rejected - also True before the page has rendered
+    def is_<thing>_absent(self) -> bool:
+        return self.is_gone(self.sel("<a permanent element>"))
+
+    # correct - prove the page, then that the element is not on it
+    def is_<thing>_absent(self) -> bool:
+        return self.is_loaded() and self.is_gone(self.sel("<a permanent element>"))
+
+The step definition asserts the predicate:
+
+    @then("the <thing> should not be shown on the <page>")
+    def assert_thing_absent(<page>) -> None:
+        assert <page>.is_<thing>_absent(), "<thing> is still shown"
+
+The selector key stays in the inventory after the change - it is how the test
+finds what must be gone. An element that comes and goes (an error, a modal, a
+conditional link) needs no page proof. A Then step worded as absence ("should
+not", "no ... should be shown") whose body asserts nothing that answers absence
+is rejected: it passes whether or not the thing is there.
+
 ## Counting after something changed the count
 
 To ASSERT how many things are on screen, use `wait_for_count`:
@@ -700,7 +727,7 @@ The braces that DO appear below are literals inside code examples
 
 16. **A row-level selector matches the WHOLE row, not one cell:** A selector that resolves to a table row / card (a repeated container) returns the CONCATENATED text of every column in that row — id, name, status, action labels and all. Never compare it with `==` against a single field value; that assertion can never pass. Assert containment (`expected in row_text`) or use a cell-scoped selector if the inventory has one. If you need a specific column and no cell-scoped key exists, request it in `notes` (see rule 15) rather than asserting on the blob.
 
-17. **Presence and absence need DIFFERENT readers - getting this backwards is how a passing app looks broken:** To assert something APPEARED, use the WAITING reader (`wait_visible(...)` then read, or the page object's `get_<thing>_text()`). A non-waiting probe called straight after the action that triggers it races the request and reports False while the app is working correctly. To assert something is ABSENT, the waiting reader is equally wrong:** A getter that waits for visibility (`wait_visible(...)` then read) raises a timeout when the element never appears — so a "no error is shown" / "no success message" assertion written on top of it can never be reached, it just fails after the timeout. it raises a timeout when the element never appears, so the assertion is never reached. For absence use a page-object `is_<thing>_absent()` built on `self.is_gone(...)` (True at once when the element is absent, waiting only while it is still shown) and assert it is True; add one next to the waiting getter if the page object has none. Only for an element the inventory lists under `conditional` may a `has_<thing>()` built on `is_visible` be negated instead. Never assert absence by catching the timeout, and never assert presence with `has_*()`. One more thing: a missing success message is usually a symptom, not the bug - if the form was rejected client-side nothing was ever submitted, so check for field errors before assuming a timing problem.
+17. **Presence and absence need DIFFERENT readers - getting this backwards is how a passing app looks broken:** To assert something APPEARED, use the WAITING reader (`wait_visible(...)` then read, or the page object's `get_<thing>_text()`). A non-waiting probe called straight after the action that triggers it races the request and reports False while the app is working correctly. To assert something is ABSENT, the waiting reader is equally wrong:** A getter that waits for visibility (`wait_visible(...)` then read) raises a timeout when the element never appears — so a "no error is shown" / "no success message" assertion written on top of it can never be reached, it just fails after the timeout. it raises a timeout when the element never appears, so the assertion is never reached. For absence use a page-object `is_<thing>_absent()` built on `self.is_gone(...)` (True at once when the element is absent, waiting only while it is still shown) and assert it is True; add one next to the waiting getter if the page object has none. For a PERMANENT element - one a story removed, which the inventory does not list as `conditional` - prove the page first: `return self.is_loaded() and self.is_gone(...)`, or the check also passes before the page has rendered. Only for an element the inventory lists under `conditional` may a `has_<thing>()` built on `is_visible` be negated instead. Never assert absence by catching the timeout, and never assert presence with `has_*()`. One more thing: a missing success message is usually a symptom, not the bug - if the form was rejected client-side nothing was ever submitted, so check for field errors before assuming a timing problem.
 
 18. **Gherkin tags: lowercase single words only.** Tags become pytest markers via `getattr(pytest.mark, tag)`, so a hyphenated tag like `@admin-user-management` produces a marker that cannot be selected with `-m` and warns on every run. Use short single words: `@smoke`, `@negative`, `@validation`, `@regression`, plus at most ONE theme word for the feature (`@admin`, `@login`). Do not turn the story title into a tag.
 
@@ -717,6 +744,7 @@ The braces that DO appear below are literals inside code examples
 - Include `Background:` if all scenarios share setup
 - Each scenario gets a `@tag` line
 - Use parameterized values in steps where appropriate (e.g., `username "X" and password "Y"`)
+- **An expected result that says something is NOT there is a step of its own.** When a test case's expected result says something is not shown, not present, no longer offered, gone or hidden, its scenario carries it as a Then/And step worded as absence - `Then the <thing> should not be shown on the <page>`. Never drop it and never fold it into a step about something else: a scenario that only stops using a removed thing passes whether or not it was removed. A validator rejects a scenario whose test case states an absence that none of its steps checks.
 - **CRITICAL — exactly one Scenario per input test case.** The "Test Cases This File Should Address" section lists N test cases. Your feature file MUST have exactly N `Scenario:` blocks (or `Scenario Outline:` blocks) — one for each test case. Do NOT add extra scenarios for "completeness," edge cases, or related flows that aren't in the test cases. Do NOT skip any test case.
 - **Keep step phrases minimal.** Use the SAME step phrases across scenarios when the action is the same — that way one decorator covers multiple scenarios. If three scenarios all begin with the same Given step, write that exact phrase three times verbatim. Do NOT vary phrasing for the same underlying action (e.g., "Given I am logged in" vs "Given I have logged in" vs "Given the user is signed in" — those would need three separate decorators even though they describe the same step). Variation in phrasing multiplies decorator count and increases the chance of missing one.
 
@@ -1071,6 +1099,15 @@ is still shown - and assert it is True:
 ```python
 def is_<thing>_absent(self) -> bool:
     return self.is_gone(self.sel("<key>"))
+```
+
+When `<key>` is a PERMANENT element of the page - not listed under
+`conditional`, typically something a story removed - an absent element is also
+what a page that has not rendered looks like. Prove the page first:
+
+```python
+def is_<thing>_absent(self) -> bool:
+    return self.is_loaded() and self.is_gone(self.sel("<key>"))
 ```
 
 Never `return not self.is_visible(...)` (a glance taken while the element is
