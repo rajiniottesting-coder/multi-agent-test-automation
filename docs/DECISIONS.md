@@ -13,7 +13,7 @@ ADR-005 (the Jira label state machine) under [State management deep-dive](./GUID
 
 ### Status
 
-Accepted (2026-10, after validation story SCRUM-206).
+Accepted (2026-10, PR #209, after validation story SCRUM-206).
 
 ### Context
 

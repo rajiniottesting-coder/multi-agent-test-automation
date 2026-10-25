@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## October 2026 (end) — every acceptance criterion verified by a test that can fail
+## October 2026 (end) — every acceptance criterion verified by a test that can fail (#209)
 
 **Why:** validation story SCRUM-206 removed a field; the revised tests stopped using it, nothing asserted it was gone, and every test passed against an application that still had the field (ADR-015).
 

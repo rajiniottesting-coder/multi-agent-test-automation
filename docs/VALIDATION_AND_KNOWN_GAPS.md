@@ -240,3 +240,4 @@ Gaps found earlier and fixed, for reference (details in [AI_CONCEPTS.md → fail
 | G3: Agent 0 "write nothing" ignored by the full scan (hand-over ran live) and by reconcile | #205 |
 | G4: a one-story manual run reconciled every `impact-applied` story | #205 |
 | L13: `mode` = `drift` silently ignoring a `story_key` (now refused) | #205 |
+| G9: an acceptance criterion verified by no test - a change story removing a field went green against an application that still had it (SCRUM-206, PR #208) | #209 |
