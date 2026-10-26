@@ -1,9 +1,7 @@
 """Step definitions for features/newsletter_subscription.feature.
 
-Binds the newsletter subscription scenario to the HomePage page object.
-Presence is asserted with the waiting reader (get_subscription_success);
-page readiness is asserted with is_loaded. No selectors live here — every
-UI interaction goes through a HomePage method.
+Binds the newsletter subscription scenario to HomePage (and NavPage for the
+'remain on the home page' check). Page-object methods only — no selectors here.
 """
 from pytest_bdd import given, when, then, parsers, scenarios
 
@@ -25,7 +23,7 @@ def open_home_page(home_page, base_url):
 # When
 # ─────────────────────────────────────────────────────────────
 
-@when(parsers.parse('I subscribe to the newsletter with the email "{email}"'))
+@when(parsers.parse('I subscribe to the newsletter with email "{email}"'))
 def subscribe_to_newsletter(home_page, email):
     home_page.subscribe_to_newsletter(email)
 
