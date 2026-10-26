@@ -63,6 +63,7 @@ has not yet run live: section 2.
 | E12 | The same story's PR: the scenario carries the absence step, its step definition asserts `is_<field>_absent()` built on `is_loaded() and is_gone(...)`; against the undeployed application that step FAILS (L20) and nothing else does | Coverage fix |
 | E13 | A new story with a limit or a restriction (held-out H2 fits): the coverage comment lists a rejection step for it | Coverage fix |
 | E14 | PR #211 re-reviewed after #212 (push a commit or re-run Agent 3): the run is red on the absence step only; the card-click finding is lowered with "scenario ... passed", and the review is advisory | #212 |
+| E15 | Any PR run while the site refuses some CI requests: retried page loads log `succeeded on attempt N`; a re-run test is listed by the `Keep only the final attempt` step; Agent 5's table counts each test once | #213 |
 
 ### 2.2 The runs
 
@@ -122,7 +123,7 @@ yet known.
 |---|---|---|---|
 | L11 | Persistent-state assertions shaped as a snapshot count or snapshot membership | Not yet rejected by the Agent 2 gate (noted 13 Oct) | Fix planned (validator) |
 | I8 | Add-to-cart on the live site occasionally fails | Root cause unknown; failure messages now list the page's action requests. Check whether browser turn-taking removed it (UC-2) | Open |
-| L14 | The application under test is briefly unavailable (HTTP 5xx on navigation) | `BasePage.navigate()` fails the test at once with a clear message ("the site is down"), but the run still goes red for something the change did not cause; a re-run passes. Seen on PR #205 (23 Oct 2026): `/login` returned HTTP 520 on one run, the same code passed minutes earlier | Fix planned |
+| L14 | The application under test is briefly unavailable (HTTP 5xx / 429) | Since #213 a page load is retried twice (3 s, 8 s) and a test whose failure names a 5xx/429 - including an action's own request - is re-run twice, 20 s apart; only an outage longer than that still fails the test, with the attempts named. Not yet: reporting such a failure as an outage apart from test failures (F-7). Seen on PR #205 (`/login` HTTP 520) and on #211/#212 (26 Oct 2026: five of seventeen tests, four page loads and one add-to-cart request, HTTP 503, while the site loaded in a browser) | Partly fixed |
 | L12 | Prompt changes for Agents 1–3 | No dedicated prompt-regression eval set; the unit suite pins validators, Agent 4 runs the generated tests | Limit |
 | L24 | An acceptance criterion that removes or restricts something without saying so in plain words ("the field goes away", "members lose renewals") | Every criterion must still be mapped to a test that verifies it, but the absence / refusal / rejection obligation is read from the wording (`obligation()` in `core/acceptance_coverage.py`), so such a criterion is checked only for being mapped. Writing criteria in the plain form ("no longer offers", "only X can", "at most N") makes them checked; the reviewer reads the `[agent1:coverage]` comment for the rest | Limit |
 
@@ -165,7 +166,7 @@ code, the scenario markers and the inventory, not the notes.
 |---|---|---|---|
 | L20 | A change story's PR before the change is deployed | Its app tests are expected to fail until deployment, and merging the context-update PR after deployment is left to a person; no deployment signal tells expected from real failures | Fix planned |
 | L21 | The suite grows | Agent 4 runs the whole suite on every PR; only Agent 5's report is scoped to the story | Fix planned |
-| L22 | Flaky or outage-hit tests (I8, L14) | No retry, no flake history, no quarantine | Fix planned |
+| L22 | Flaky or outage-hit tests (I8, L14) | Only a failure naming a temporary HTTP error is re-run (#213); other flakes are not, and there is no flake history or quarantine | Fix planned |
 | L23 | A production bug needs a regression test | Every selection uses `issue_type: "Story"`; another type is possible in config but untested, and the prompts are written for stories | Fix planned |
 
 ### 3.10 Operating the pipeline continuously
@@ -194,7 +195,7 @@ code, the scenario markers and the inventory, not the notes.
 | F-4 | M2 | `max_stories_per_run` across all three passes; a deadline-aware scan loop; Agent 2 job timeout sized for it |
 | F-5 | M3, M4 | Agent 3's runner wait sized to Agent 4's turn cap; the burst size documented |
 | F-6 | L11 | Validator for snapshot-count and snapshot-membership assertions |
-| F-7 | L14 | `BasePage.navigate()` retries once, after a short wait, when the response is HTTP 5xx; if it fails again the test is reported as an **outage of the application under test** - separate from test failures in the run summary and Agent 5's report, and never taken by Agent 3 as evidence either way. A 4xx still fails at once (that is a real error or a blocked runner) |
+| F-7 | L14 | Retry: done in #213 (page loads in `BasePage.navigate()`, tests whose failure names a 5xx/429 re-run by Agent 4; a 4xx still fails at once). Still to do: a failure that outlasts the retries is reported as an **outage of the application under test** - separate from test failures in the run summary and Agent 5's report, and never taken by Agent 3 as evidence either way |
 | F-8 | L15 | When a new-feature story's PR merges (and for a change story that adds a rule), Agent 0 proposes a **notes addition** for the story's Component module: facts only (rules, limits, test data, flow), a few lines in the module's style, written from the story **and** its merged scenarios, checked against existing text so it repeats nothing; the same reviewed context-update PR, merged after deployment. Later change stories then have a passage to rewrite |
 | F-9 | L16 | A size budget per module (config), checked by the unit suite and `scripts.onboarding_check`, with a near-duplicate check; over budget, the update proposes a **condensed** module for review instead of appending |
 | F-10 | L17 | Call 2 of the context update reads only the story's Component modules and those pages' inventory notes, as Agent 1 does (all modules when the story has no Component) |
