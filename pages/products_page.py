@@ -152,3 +152,45 @@ class ProductsPage(BasePage):
         """
         self.wait_for_any(self.sel("product_cards"), present=False)
         return True
+
+    # ── search result helpers ────────────────────────────────
+    def search_results_include(self, product_name: str) -> bool:
+        """True once the search results list a product CONTAINING `product_name`.
+
+        WAITS for the search to execute (the Searched Products heading) before
+        reading the name family, so it does not race the search response and
+        report False while the request is still in flight. Call this only where
+        a run search is expected to return matches; for an empty result set it
+        times out on the heading. Containment, not equality — a card name may
+        carry extra words.
+        """
+        self.is_search_results_shown()
+        return self.has_product(product_name)
+
+    def view_product_from_results(self, product_name: str) -> None:
+        """Open the detail page for the named product from the search results.
+
+        Confirms the search executed first (the Searched Products heading),
+        then scopes to the result CARD containing the name and clicks its View
+        Product link — so the multi-match link family is never addressed as a
+        whole. Confirms it is on the listing before acting, so a scenario that
+        reached here without searching fails fast rather than blaming the link
+        selector after a full timeout.
+        """
+        self.require_own_page()
+        self.is_search_results_shown()
+        self.click_in_row(
+            self.sel("product_cards"),
+            product_name,
+            self.sel("view_product_links"),
+        )
+
+    def result_card_count(self) -> int:
+        """Number of product result cards currently rendered on the listing.
+
+        Reads the product_cards family (one per card — NOT doubled, unlike the
+        names/buttons families). A plain snapshot: use it to READ a count, not
+        to assert one. For asserting zero cards after a search, prefer
+        has_no_product_cards, which WAITS for the family to empty.
+        """
+        return self.get_count(self.sel("product_cards"))
