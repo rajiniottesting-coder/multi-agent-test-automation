@@ -54,10 +54,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: agent2-review-fix-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number }}
-  cancel-in-progress: false
-
 jobs:
   fix:
     name: Fix what the reviewer asked
@@ -73,6 +69,15 @@ jobs:
         && github.event.comment.user.type != 'Bot'
         && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
       || github.event_name == 'workflow_dispatch'
+    # One fix at a time per pull request - at JOB level, not workflow level.
+    # Every event this workflow receives (each of Agent 2's own thread replies
+    # arrives as a "review submitted") would otherwise enter the group even
+    # when the `if` above skips it, and GitHub keeps only one waiting run per
+    # group: Agent 2's replies would cancel a person's `/fix` that was waiting
+    # behind the running fix. A skipped job never enters a job-level group.
+    concurrency:
+      group: agent2-review-fix-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
