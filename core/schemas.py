@@ -267,6 +267,16 @@ class ReviewIssue(BaseModel):
                     "application is wrong (a vacuous or missing assertion). null when "
                     "there is no failure_scenario."
     )
+    # Which scenario the prediction is about, so the runner's result for THAT
+    # scenario can confirm or refute it - one unrelated red test (a site outage,
+    # a change story's expected pre-deployment failure) must not keep a wrong
+    # prediction blocking. Defaulted: a finding without it is judged as before.
+    scenario: str | None = Field(
+        default=None,
+        description="With test_outcome 'fails': the exact title of the Gherkin Scenario "
+                    "the failure happens in, copied from the feature file (without the "
+                    "'Scenario:' keyword). null when the finding is not about one scenario."
+    )
 
 
 class ReviewReport(BaseModel):
