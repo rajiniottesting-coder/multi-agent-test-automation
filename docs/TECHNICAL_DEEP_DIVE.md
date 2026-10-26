@@ -567,10 +567,15 @@ OWNER, MEMBER or COLLABORATOR and who is not a bot. The workflow checks out
    (`RepoHost.get_review_comments(pr, review_id)`, bot authors dropped) then its
    text; `/fix <text>` the text alone; a bare `/fix` every inline comment whose id
    no earlier summary lists (`handled_comment_ids()`).
-3. **Files** — `classify_files(get_pr_changed_files())`: editable = code files the
-   PR added, and page objects it adds or extends; protected = reserved paths,
-   `pages/base_page.py` and the conftests, and feature / step-definition files
-   the PR only modified (another story's, spliced by a change story).
+3. **Files** — `classify_files(get_pr_changed_files(), reserved, owned)`:
+   editable = code files the PR added, page objects it adds or extends, and
+   `owned` - from `owned_by_story()`: each modified feature file whose every
+   marker (`feature_owned_by()`) is one of the story's test cases and names no
+   other owner, plus its step file `tests/step_defs/test_<stem>.py` (an
+   `ai-regenerate` / `ai-update` PR modifies the story's existing files);
+   protected = reserved paths, `pages/base_page.py` and the conftests, and any
+   other modified feature / step-definition file (another story's, spliced by a
+   change story). An unreadable file is not owned.
 4. **Decide** — `decide()`: one `invoke_structured(ReviewFixPlan)` with the story,
    its test cases, both file lists and the numbered comments
    (`prompts/agent2_review_triage.md`); `enforce()` drops non-editable files,

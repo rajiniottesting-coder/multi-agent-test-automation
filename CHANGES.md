@@ -4,6 +4,17 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## October 2026 (end) — the review fix edits a regenerated story's own files
+
+**Why:** the review fix took "added by this pull request" to mean "this story's file". An `ai-regenerate` or `ai-update` pull request rewrites the story's existing feature and step files, so they arrive as "modified" - and every comment on them would have been declined as "another story's file", leaving only page objects fixable.
+
+- `agents/agent2_review_fix.py`: `feature_owned_by()` - a feature file is the story's own when every `# JIRA:` marker in it is one of the story's test cases and names no other owner; `owned_by_story()` - such modified feature files and their step files (`tests/step_defs/test_<stem>.py`) become editable. A file holding any other story's scenario (a change story's splice) stays protected; an unreadable file is not owned. Ownership is read from the markers on the PR's branch, never from the file status or a story name
+- Docs: GUIDE (Agent 2, Route 2b, troubleshooting), TECHNICAL_DEEP_DIVE §5.10, DECISIONS ADR-017, README troubleshooting. They also note that GitHub does not let a pull request's author request changes: with `GH_PAT` as the reviewer's own account, Agent 2's pull requests are the reviewer's, so `/fix` is the route
+
+Pinned by `tests/unit/test_agent2_review_fix.py` (32 tests; new: a regenerated story's modified files are editable, a feature holding another story's scenario or another owner's marker is not, a step file follows its feature, a comment on a regenerated feature is fixed and pushed).
+
+---
+
 ## October 2026 (end) — Agent 2 fixes what a pull request's reviewer asks for
 
 **Why:** no agent read a review comment. A reviewer who wanted one line changed on an Agent 2 pull request fixed it by hand - unchecked by the validators until Agent 4 ran - or added `ai-regenerate` and threw the whole pull request away.

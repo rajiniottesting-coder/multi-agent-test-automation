@@ -190,6 +190,58 @@ def test_editable_files_are_the_storys_own_and_the_page_objects_it_extends():
     assert "docs/notes.md" not in editable and "docs/notes.md" not in protected
 
 
+def _regen_host() -> FakeHost:
+    """An ai-regenerate / ai-update pull request: the story's own files already
+    existed on main, so they arrive as "modified"."""
+    host = FakeHost()
+    host.changed = [{"filename": "features/checkout.feature", "status": "modified"},
+                    {"filename": "tests/step_defs/test_checkout.py", "status": "modified"},
+                    {"filename": "features/cart.feature", "status": "modified"}]
+    return host
+
+
+def test_a_regenerated_storys_own_modified_files_are_editable():
+    host = _regen_host()
+    owned = rf.owned_by_story(host.changed, lambda p: host.files[p], "S-7", {"S-8", "S-9"})
+    assert owned == {"features/checkout.feature", "tests/step_defs/test_checkout.py"}
+    editable, protected = rf.classify_files(host.changed, set(), owned)
+    assert set(editable) == {"features/checkout.feature", "tests/step_defs/test_checkout.py"}
+    assert "another story" in protected["features/cart.feature"]
+
+
+def test_a_feature_holding_any_other_storys_scenario_is_not_owned():
+    mixed = FEATURE + "\n  # JIRA: S-2 (hash: bbbbbbbb)\n  Scenario: Another story's\n    Given x\n"
+    assert rf.feature_owned_by(FEATURE, "S-7", {"S-8", "S-9"})
+    assert not rf.feature_owned_by(mixed, "S-7", {"S-8", "S-9"})
+    assert not rf.feature_owned_by("Feature: X\n  Scenario: no marker\n    Given x\n", "S-7", {"S-8"})
+    # this story's test case, but the marker says another story owns it now
+    assert not rf.feature_owned_by(
+        "  # JIRA: S-8 (hash: aaaaaaaa) owner: S-2\n  Scenario: a\n", "S-7", {"S-8"})
+    assert rf.feature_owned_by(
+        "  # JIRA: S-8 (hash: aaaaaaaa) owner: S-7\n  Scenario: a\n", "S-7", {"S-8"})
+
+
+def test_a_step_file_follows_its_feature_and_an_unreadable_file_is_not_owned():
+    changed = [{"filename": "tests/step_defs/test_checkout.py", "status": "modified"},
+               {"filename": "tests/step_defs/test_cart.py", "status": "modified"}]
+    files = {"features/checkout.feature": FEATURE}            # cart's feature cannot be read
+    owned = rf.owned_by_story(changed, lambda p: files[p], "S-7", {"S-8", "S-9"})
+    assert owned == {"tests/step_defs/test_checkout.py"}
+
+
+def test_a_comment_on_a_regenerated_storys_feature_is_fixed(wired):
+    host = _regen_host()
+    own = FEATURE.split("\n  # JIRA: S-9")[0] + "\n"           # only S-8, the tracker's test case
+    host.files["features/checkout.feature"] = own
+    wired["new"]["features/checkout.feature"] = own.replace(
+        "When I pay with my saved card", "When I pay with the saved card")
+    host.inline = [_inline(path="features/checkout.feature", body="Say 'the saved card'.")]
+    llm = FakeLLM([{"comment": 1, "action": "fix", "files": ["features/checkout.feature"],
+                    "reason": "rewording"}])
+    out = _run(host, llm)
+    assert out["status"] == "fixed" and list(host.pushed) == ["features/checkout.feature"]
+
+
 # ── the fix itself ──────────────────────────────────────────────────────
 
 def test_a_requested_fix_is_pushed_to_the_same_branch_and_answered(wired):
