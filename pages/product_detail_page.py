@@ -86,6 +86,15 @@ class ProductDetailPage(BasePage):
         """The current value typed in the quantity field (DOM value, not text)."""
         return self.get_input_value(self.sel("quantity_input"))
 
+    def has_add_to_cart_control(self) -> bool:
+        """True once the Add to cart control is on screen. WAITS for it.
+
+        A waiting predicate: call it only where the control is expected to be
+        present. Lets a scenario prove the detail page offers add-to-cart
+        before acting on it.
+        """
+        return self.is_showing(self.sel("add_to_cart_button"))
+
     # ── actions ──────────────────────────────────────────────
     def set_quantity(self, quantity: int) -> None:
         """Set the quantity BEFORE adding to cart.
