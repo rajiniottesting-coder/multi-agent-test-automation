@@ -41,7 +41,7 @@ These files contain zero project-specific knowledge. Reuse as-is:
 ### Agents (the orchestration brains)
 - `agents/agent0_impact.py` — change story → affected tests, Impact Review (Agent 0)
 - `agents/agent1_analyst.py` — Jira → Test Cases; `agents/agent1_impact.py` — revise approved tests
-- `agents/agent2_coder.py` — Test Cases → Playwright code + PR; `agents/agent2_impact.py` — change-story splice
+- `agents/agent2_coder.py` — Test Cases → Playwright code + PR; `agents/agent2_impact.py` — change-story splice; `agents/agent2_review_fix.py` — fixes what a PR's reviewer asks for
 - `agents/agent3_reviewer.py` — PR review
 - `agents/agent5_reporter.py` — results and cost to Jira; scores Agent 0
 - `core/impact_*.py`, `core/context_update.py`, `core/json_block.py` — Agent 0's graph, analysis, review, hand-over, reconcile, context update
@@ -64,6 +64,7 @@ These files contain zero project-specific knowledge. Reuse as-is:
 - `prompts/agent1_analyst.md`, `prompts/agent1_impact_aware.md`
 - `prompts/agent2_coder_plan.md`
 - `prompts/agent2_coder_generate.md` — all generation rules + BasePage helpers section
+- `prompts/agent2_review_triage.md` — Agent 2's review fix: fix / decline / no_change per review comment
 - `prompts/agent3_reviewer.md`
 - `prompts/agent5_reporter.md`
 
@@ -77,7 +78,7 @@ These files contain zero project-specific knowledge. Reuse as-is:
 - `tests/unit/test_validators.py` — a fixture uses "Admin" as a generic role placeholder, not tied to any app
 
 ### Infrastructure
-- `.github/workflows/*.yml` — all nine workflows
+- `.github/workflows/*.yml` — all ten workflows
 - `requirements.txt`
 - `pytest.ini`
 - `config/__init__.py`, `config/paths.py`
@@ -348,7 +349,7 @@ projects" tested against something harder than an app swap.
 |---|---|
 | All six agents' orchestration | They read a tracker, call an LLM, write text files, open a PR. None of them knows what language the text is in. |
 | `core/llm_client.py`, `core/schemas.py` | Schema-in-prompt and Pydantic validation; provider- and language-agnostic. |
-| `integrations/` — Tracker (23 ops), RepoHost (17 ops) | Nothing to do with the test stack. |
+| `integrations/` — Tracker (23 ops), RepoHost (19 ops) | Nothing to do with the test stack. |
 | **`app_inventory/*.json`** | `role=`, `text=` and `label=` are PLAYWRIGHT concepts, not Python ones. `page.getByRole('button', {name:'Save'})` in JS resolves the identical locator, so **the whole inventory carries over unchanged**. |
 | `inventory_tools/` — crawler, ranking, staleness | Produces selectors, not code. |
 | CI workflow structure, the label state machine, the sweeper | Unchanged. |

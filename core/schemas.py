@@ -397,3 +397,33 @@ class JiraCommentDraft(BaseModel):
                     "Should include: pass/fail summary, link to PR, link to test report, "
                     "and (if any) brief notes on what failed."
     )
+
+# ─────────────────────────────────────────────────────────────
+# Schemas for Agent 2's review fix (a person's PR review → a fix)
+# ─────────────────────────────────────────────────────────────
+
+class ReviewFixDecision(BaseModel):
+    """What Agent 2 will do about ONE review comment.
+
+    The approved test cases are the specification: a comment about HOW the
+    code verifies them is fixed; a comment asking to verify something else is
+    declined and pointed at the test case, because the code must not drift
+    from what was approved.
+    """
+    comment: int = Field(..., description="The comment's number exactly as listed in the prompt (1, 2, ...)")
+    action: Literal["fix", "decline", "no_change"] = Field(
+        ...,
+        description="fix: change the code as asked. decline: the comment asks to test something the "
+                    "approved test cases do not state, or to change a file listed as not editable. "
+                    "no_change: a question, praise or a remark that needs no code change")
+    files: list[str] = Field(
+        default_factory=list,
+        description="With action fix: the editable file path(s), exactly as listed, that must change")
+    reason: str = Field(
+        ...,
+        description="One sentence for the reviewer: what will change, or why nothing will")
+
+
+class ReviewFixPlan(BaseModel):
+    """One decision per review comment, in the order the comments were listed."""
+    decisions: list[ReviewFixDecision] = Field(..., description="One entry per listed comment")

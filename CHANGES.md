@@ -4,6 +4,19 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## October 2026 (end) — Agent 2 fixes what a pull request's reviewer asks for
+
+**Why:** no agent read a review comment. A reviewer who wanted one line changed on an Agent 2 pull request fixed it by hand - unchecked by the validators until Agent 4 ran - or added `ai-regenerate` and threw the whole pull request away.
+
+- `agents/agent2_review_fix.py` and `.github/workflows/agent2_review_fix.yml`: a "Request changes" review on an `auto/*` pull request, or a `/fix` comment (`/fix <what to change>`, or a bare `/fix` for every inline comment not handled yet), from a person with write access - never a bot. One model call (`ReviewFixPlan`) decides fix / decline / no_change per comment; Stage 2's generator rewrites each named file in a new review mode (`generate_file_content(review_feedback=...)`: the current file shown whole, whatever its format); the repair loop and the final gate run over every code file of the pull request; the result is pushed to the same branch, so Agents 3, 4 and 5 run again. Each comment gets a reply in its thread and the pull request one `[agent2:review-fix]` summary, which also stops a second run on the same review
+- Safeguards: only files the pull request added and page objects it extends (never another story's spliced files, reserved or framework files); a feature file keeps its scenarios, titles and markers; a comment asking to test something the approved test cases do not state is declined with the way to get it (update the test case, then `ai-regenerate`); a degraded regeneration is discarded; a gate failure, or a repair reaching a file that is not editable, pushes nothing; `review_fix.max_files` (6) caps one review
+- `RepoHost` gains `get_review_comments` and `reply_to_review_comment` (19 operations; classified for dry runs); schemas `ReviewFixDecision`, `ReviewFixPlan` (24); config `agents.agent2_coder.review_fix`; prompt `prompts/agent2_review_triage.md`; ADR-017
+- Docs: README, GUIDE (Agent 2, workflows, events, markers, config, troubleshooting), TECHNICAL_DEEP_DIVE, REUSE_FOR_NEW_PROJECT, VALIDATION_AND_KNOWN_GAPS (E18)
+
+Pinned by `tests/unit/test_agent2_review_fix.py` (27 tests: every safeguard above, the workflow's guards, the generator's review mode).
+
+---
+
 ## October 2026 (end) — the two gates agree on a quantity; a refused story stops retrying
 
 **Why:** SCRUM-187's approved test case expected "a row for '<item>' with quantity 1" after signing in as the inventory's shared account. Agent 1's check let it through (it looked for "exactly", "only", a row count and "empty"); Agent 2's gate refuses an exact value read from a persistent page whenever the scenario signs in, because a run that stopped before cleaning up leaves the same entry behind and the next run reads 2. Four repair attempts failed on the same rule (about $2.50), nothing was written to Jira, and the scheduled scan retried the story every 30 minutes.

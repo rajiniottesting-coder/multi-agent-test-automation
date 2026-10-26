@@ -1,0 +1,125 @@
+# Agent 2 - review fix: change an open auto/* pull request the way its
+# reviewer asked (agents/agent2_review_fix.py).
+#
+# Fires on:
+#   - a submitted review with "Request changes" on an auto/* pull request;
+#   - a pull request comment starting with `/fix` (config: review_fix.command):
+#       `/fix <what to change>`  -> that text
+#       `/fix`                   -> every inline review comment not handled yet;
+#   - a manual run (pull request + review or comment id, optional dry run).
+#
+# Only people with write access trigger it (author association OWNER, MEMBER
+# or COLLABORATOR), and never a bot - so no agent can start it, and Agent 2's
+# own summary comment cannot start it again.
+#
+# The fixer is checked out from main, like Agent 3: a pull request cannot
+# change the code that edits it. It reads and writes the pull request's branch
+# through the RepoHost adapter. It pushes with GH_PAT, so the push fires the
+# pull request's normal events and Agents 3, 4 and 5 run again on it.
+#
+# The review's or comment's text reaches the script as an environment
+# variable, never pasted into a shell command.
+
+name: Agent 2 - Review fix
+
+on:
+  pull_request_review:
+    types: [submitted]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number"
+        required: true
+      review_id:
+        description: "Review id (its inline comments and text) - or leave blank and give a comment id"
+        required: false
+        default: ""
+      comment_id:
+        description: "Id of a /fix comment (used when review_id is blank)"
+        required: false
+        default: ""
+      text:
+        description: "Optional: what to change (used like the text after /fix)"
+        required: false
+        default: ""
+      dry_run:
+        description: "Decide and generate, print the writes, make none"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent2-review-fix-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    name: Fix what the reviewer asked
+    if: >-
+      (github.event_name == 'pull_request_review'
+        && github.event.review.state == 'changes_requested'
+        && startsWith(github.event.pull_request.head.ref, 'auto/')
+        && github.event.review.user.type != 'Bot'
+        && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.review.author_association))
+      || (github.event_name == 'issue_comment'
+        && github.event.issue.pull_request
+        && startsWith(github.event.comment.body, '/fix')
+        && github.event.comment.user.type != 'Bot'
+        && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+      || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Agent 2 (review fix)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'claude-opus-4-6' }}
+          LLM_PRICE_INPUT_PER_1M: ${{ vars.LLM_PRICE_INPUT_PER_1M }}
+          LLM_PRICE_OUTPUT_PER_1M: ${{ vars.LLM_PRICE_OUTPUT_PER_1M }}
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          JIRA_BOARD_ID: ${{ vars.JIRA_BOARD_ID }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_REPO: ${{ vars.GH_REPO }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number }}
+          REVIEW_ID: ${{ github.event.review.id || github.event.inputs.review_id }}
+          COMMENT_ID: ${{ github.event.comment.id || github.event.inputs.comment_id }}
+          REVIEW_FIX_TEXT: ${{ github.event.review.body || github.event.comment.body || github.event.inputs.text }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          set --
+          if [ "$DRY_RUN" = "true" ]; then set -- "$@" --dry-run; fi
+          if [ -z "$REVIEW_ID" ] && [ -z "$COMMENT_ID" ]; then
+            echo "::error::Give a review id or a /fix comment id."
+            exit 1
+          fi
+          if [ -n "$REVIEW_ID" ]; then
+            python -m agents.agent2_review_fix --pr "$PR_NUMBER" --review-id "$REVIEW_ID" "$@"
+          else
+            python -m agents.agent2_review_fix --pr "$PR_NUMBER" --comment-id "$COMMENT_ID" "$@"
+          fi

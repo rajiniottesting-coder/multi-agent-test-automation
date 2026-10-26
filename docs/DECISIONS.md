@@ -9,6 +9,65 @@ ADR-005 (the Jira label state machine) under [State management deep-dive](./GUID
 
 ---
 
+## ADR-017 — Agent 2 fixes what a pull request's reviewer asks for
+
+### Status
+
+Accepted (2026-10).
+
+### Context
+
+No workflow listened to pull request reviews or comments, so a person's review
+comment on an Agent 2 pull request was read by no agent. The reviewer either
+fixed the code by hand - and the validators that every generated file passes
+never saw the edit until Agent 4's run - or added `ai-regenerate`, which throws
+away the whole pull request for a one-line change.
+
+### Decision
+
+1. **Agent 2 owns the fix, not Agent 3.** Agent 2 has the prompt context, the
+   repair loop and the final gate; Agent 3 stays an independent reviewer and
+   never grades its own fix.
+2. **Explicit trigger only:** a "Request changes" review on an `auto/*` pull
+   request, or a comment starting with `/fix`. Ordinary comments and approvals
+   are conversation, not instructions.
+3. **Only people with write access, never a bot** (author association in the
+   workflow), so no agent can start it - Agent 2's own summary comment
+   included.
+4. **The approved test cases are the specification.** One model call decides
+   fix / decline / no_change per comment; a comment asking to verify something
+   the test cases do not state is declined and pointed at the test case and
+   `ai-regenerate`. A feature file must keep its scenarios, titles and markers.
+5. **Only the story's own files** - those the pull request added, and page
+   objects it extends. Files another story owns (a change story splices them)
+   and reserved or framework files are never regenerated.
+6. **The same gate as a new pull request:** the repair loop, then
+   `_validate_generated_files()`. Anything failing, or a repair reaching a file
+   that is not editable: nothing is pushed and the reviewer is told why.
+7. **Push to the same branch**, so Agents 3, 4 and 5 run again; reply in each
+   comment's thread; one `[agent2:review-fix] <review|comment> <id>` summary
+   that also stops a second run on the same review.
+
+### Why not the alternatives
+
+- **Act on every comment:** questions and praise would trigger model calls and
+  pushes; a reviewer could not discuss without changing the code.
+- **Open a new pull request per fix:** the review thread and Agent 4's history
+  would split across pull requests for a one-line change.
+- **Let Agent 3 apply its own suggested fixes:** a reviewer that edits what it
+  reviews loses its independence, and its findings are not instructions.
+
+### Consequences
+
+- Two more `RepoHost` operations (19): `get_review_comments` (read) and
+  `reply_to_review_comment` (write); a new adapter implements both.
+- Two more schemas (24): `ReviewFixDecision`, `ReviewFixPlan`.
+- A tenth workflow, `agent2_review_fix.yml`, checked out from `main` like
+  Agent 3, pushing with `GH_PAT`.
+- The fix's cost is posted to the story as "Agent 2 (Coder, review fix)".
+
+---
+
 ## ADR-016 — Agent 3: a predicted failure is judged on its own scenario
 
 ### Status
