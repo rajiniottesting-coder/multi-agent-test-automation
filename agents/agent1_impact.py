@@ -39,7 +39,7 @@ from core.acceptance_coverage import (coverage_problems, criteria_block, extract
                                       index_cases, render_coverage)
 from core.impact_settings import impact_settings
 from core.schemas import ImpactAwareDraft
-from core.test_case_rules import draft_problems, load_persistent_pages
+from core.test_case_rules import draft_problems, load_persistent_pages, load_shared_accounts
 from validators.gherkin_analyzer import normalize_scenario_name
 
 logger = logging.getLogger("agent1_impact")
@@ -58,7 +58,8 @@ def _norm(title: str) -> str:
 def validate_draft(draft: ImpactAwareDraft, approved_keys: set, existing_titles: set,
                    persistent: dict | None = None,
                    approved_titles: dict | None = None,
-                   criteria: list | None = None) -> tuple:
+                   criteria: list | None = None,
+                   accounts: list | None = None) -> tuple:
     """(errors, near_matches). Errors reject the draft; near matches are shown.
 
     Revised and new test cases also follow core.test_case_rules: each runs on
@@ -72,8 +73,8 @@ def validate_draft(draft: ImpactAwareDraft, approved_keys: set, existing_titles:
     change removed was rewritten into a copy of another existing test.)
     """
     errors, near = [], []
-    errors.extend(draft_problems([r.revised for r in draft.revisions], persistent))
-    errors.extend(draft_problems(draft.new_test_cases, persistent))
+    errors.extend(draft_problems([r.revised for r in draft.revisions], persistent, accounts))
+    errors.extend(draft_problems(draft.new_test_cases, persistent, accounts))
     # Every acceptance criterion accounted for, and anything the story removes or
     # replaces verified by a step asserting it is gone. A revised test counts
     # only if it carries such a step: one that merely stopped using the removed
@@ -144,10 +145,11 @@ def _draft(llm, prompt: str, approved_keys: set, existing_titles: set,
            approved_titles: dict | None = None, criteria: list | None = None) -> tuple:
     system = "You are a meticulous, expert QA test analyst."
     persistent = load_persistent_pages()
+    accounts = load_shared_accounts()
     draft = llm.invoke_structured(system_prompt=system, user_prompt=prompt,
                                   output_schema=ImpactAwareDraft)
     errors, near = validate_draft(draft, approved_keys, existing_titles, persistent,
-                                  approved_titles, criteria)
+                                  approved_titles, criteria, accounts)
     if not errors:
         return draft, near
     logger.warning("Impact-aware draft rejected, asking once more: %s", errors)
@@ -156,7 +158,7 @@ def _draft(llm, prompt: str, approved_keys: set, existing_titles: set,
     draft = llm.invoke_structured(system_prompt=system, user_prompt=retry,
                                   output_schema=ImpactAwareDraft)
     errors, near = validate_draft(draft, approved_keys, existing_titles, persistent,
-                                  approved_titles, criteria)
+                                  approved_titles, criteria, accounts)
     if errors:
         raise ValueError("impact-aware draft rejected twice; nothing was written: "
                          + "; ".join(errors))

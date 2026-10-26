@@ -64,6 +64,7 @@ has not yet run live: section 2.
 | E13 | A new story with a limit or a restriction (held-out H2 fits): the coverage comment lists a rejection step for it | Coverage fix |
 | E14 | PR #211 re-reviewed after #212 (push a commit or re-run Agent 3): the run is red on the absence step only; the card-click finding is lowered with "scenario ... passed", and the review is advisory | #212 |
 | E15 | Any PR run while the site refuses some CI requests: retried page loads log `succeeded on attempt N`; a re-run test is listed by the `Keep only the final attempt` step; Agent 5's table counts each test once | #213 |
+| E16 | SCRUM-187 on the next scan: one `[agent2:blocked]` comment naming the persistent-state rule, then `[BLOCK]` with no model call on later scans. After SCRUM-260's step 7 drops "with quantity 1", the next scan codes the story. A new signed-in draft stating a cart quantity is sent back by Agent 1 | Gates agree |
 
 ### 2.2 The runs
 
@@ -176,7 +177,7 @@ code, the scenario markers and the inventory, not the notes.
 | N1 | **The application regresses with no PR open** (another team deploys) | `agent4_runner.yml` runs on pull requests, framework pushes to `main` and manual dispatch only - it has **no schedule**. The nightly Inventory Health run checks that selectors resolve, not behaviour. A broken feature is found only when someone opens a PR | Fix planned (critical) |
 | N2 | **A test fails on `main` or in a scheduled run** | Nothing raises a defect: Agent 5 comments only on the story of a PR. The failure diagnosis and evidence exist but are not routed to a bug or a triage queue | Fix planned (critical) |
 | N3 | **A scheduled agent keeps failing, or a credential expires** (`GH_PAT`, Jira token, LLM key) | Each run fails red in Actions and nobody is told; the smoke test is manual. The pipeline can stop quietly | Fix planned |
-| N4 | **Model spend runs away** (a bad prompt, repeated retries, a mislabelled batch) | `max_stories_per_run` caps the number of stories, not the cost; no budget per story or per day, no alert | Fix planned |
+| N4 | **Model spend runs away** (a bad prompt, repeated retries, a mislabelled batch) | `max_stories_per_run` caps the number of stories, not the cost; no budget per story or per day, no alert. A story Agent 2's gate refused is no longer retried every scan on unchanged input (`[agent2:blocked]`); other failures still are | Fix planned |
 | N5 | **An agent's PR goes stale or conflicts** because `main` moved (e.g. a person's PR merged first) | No rebase or regeneration; the sweeper re-triggers only PRs whose checks never ran. The PR waits for a person | Fix planned |
 | N6 | **A red PR is merged** | No required status check (a decision recorded in GUIDE → Branch protection), so a story PR with failing tests can be merged and moved to Done | Decision pending |
 | N7 | **Test data and isolation** | Every run shares the live application's accounts and saved state; tests run one at a time (no parallel execution). Browser turn-taking avoids collisions but rules out parallelism; no per-run data set-up and tear-down | Fix planned |
@@ -244,3 +245,4 @@ Gaps found earlier and fixed, for reference (details in [AI_CONCEPTS.md → fail
 | L13: `mode` = `drift` silently ignoring a `story_key` (now refused) | #205 |
 | G9: an acceptance criterion verified by no test - a change story removing a field went green against an application that still had it (SCRUM-206, PR #208) | #209 |
 | G10: a reviewer's predicted failure kept blocking after its own scenario passed, because another test was red (an HTTP 503 from the site; a change story's expected pre-deployment failure) - PR #211 | #212 |
+| G11: Agent 1 approved an exact cart quantity in a signed-in test case that Agent 2's gate then refused on every attempt, and the scan retried the story every 30 minutes (SCRUM-187) | this change |

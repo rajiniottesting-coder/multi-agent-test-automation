@@ -2331,6 +2331,16 @@ def _select_new_test_cases(
     return new_cases, skipped
 
 
+class GateFailure(ValueError):
+    """The final gate refused the batch. A ValueError, as every gate refusal
+    always was, carrying the errors that remain so run() can tell the person
+    which rules the story could not satisfy (core.blocked)."""
+
+    def __init__(self, message: str, errors=None):
+        super().__init__(message)
+        self.errors = list(errors or [])
+
+
 def _validate_generated_files(
     generated_files: list[GeneratedFile],
     story_id: str,
@@ -2545,13 +2555,14 @@ def _validate_generated_files(
         )
         for err in remaining:
             logger.error(f"  - {err}")
-        raise ValueError(
+        raise GateFailure(
             f"Validation failed for {story_id}: {len(remaining)} error(s) "
             f"remain after the repair loop exhausted its attempts. These were "
             f"detected and the model was given the feedback; it could not "
             f"satisfy them. Shipping anyway would open a pull request "
             f"containing a defect this framework had already named. "
-            f"See logs for each error and the file it belongs to."
+            f"See logs for each error and the file it belongs to.",
+            errors=remaining,
         )
 
 def _group_validator_errors_by_file(
@@ -4377,7 +4388,8 @@ def title_for_story(title: str, story_id: str) -> str:
     return text
 
 
-def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> dict:
+def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
+        skip_if_blocked: bool = False) -> dict:
     """Main agent flow — Stage 1 plan, then Stage 2 per-file generation.
 
     Args:
@@ -4386,6 +4398,10 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
         is_regenerate: If True, this is a REGENERATION run triggered by the
             `ai-regenerate` label. Skips dedup, uses -revN branch suffix,
             removes the regenerate label after success.
+        skip_if_blocked: The scheduled scan's normal pass sets it: a story the
+            final gate already refused, with its story and test-case text
+            unchanged since, is skipped before any model call (core.blocked).
+            A manual run leaves it False and always runs.
     """
     mode_label = "REGENERATE" if is_regenerate else "normal"
     logger.info(
@@ -4452,6 +4468,24 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     revisions, retirements = ([], []) if is_regenerate else \
         agent2_impact.impacted_for_run(jira, story_id)
     impact_work = bool(revisions or retirements)
+
+    # REFUSED BEFORE, NOTHING CHANGED SINCE (core.blocked). The scan used to
+    # retry such a story every 30 minutes, paying for a full generation and
+    # repair loop each time to fail on the same rule. Jira reads only, before
+    # any model call; fails open.
+    from core import blocked
+    input_fp = blocked.fingerprint(story, test_cases, revisions)
+    if skip_if_blocked:
+        try:
+            if blocked.blocked_on(jira.get_comments(story_id), input_fp):
+                logger.warning(
+                    f"{story_id}: the final gate refused this story and neither it nor "
+                    f"its test cases have changed since ({blocked.BLOCKED_MARKER} "
+                    f"inputs: {input_fp}). Skipped - no model call. Edit a test case or "
+                    f"the story, or run Agent 2 with its key, to try again.")
+                return {"story_id": story_id, "status": "blocked", "files_generated": 0}
+        except Exception as e:                                 # noqa: BLE001
+            logger.warning(f"Could not read {story_id}'s comments ({e}); running it.")
 
     if not test_cases and not impact_work:
         logger.warning(f"No Test Cases linked to {story_id}. Run Agent 1 first.")
@@ -4826,8 +4860,17 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False) -> di
     # 4c. FINAL VALIDATION (after any repair attempts). The scenarios this run
     # wrote are judged against their approved test cases: the story's new ones
     # and, for a change story, the revisions it spliced into owners' files.
-    _validate_generated_files(generated_files, story_id,
-                              list(new_test_cases) + list(revisions))
+    try:
+        _validate_generated_files(generated_files, story_id,
+                                  list(new_test_cases) + list(revisions))
+    except ValueError as e:
+        # Tell the person once which rules could not be met, so the story stops
+        # being retried on unchanged input (core.blocked). Every gate refusal is
+        # a ValueError; the final gate's carries the remaining errors.
+        if not dry_run:
+            blocked.post_blocked_once(jira, story_id, input_fp,
+                                      getattr(e, "errors", None) or [str(e)])
+        raise
 
     # 5. ACT
     if dry_run:
@@ -5030,6 +5073,7 @@ _SCAN_MARKERS = {
     "pr_opened": "OK",
     "skipped_all_duplicates": "SKIP",
     "waiting_for_open_pr": "WAIT",
+    "blocked": "BLOCK",
     "failed": "FAIL",
 }
 
@@ -5227,7 +5271,8 @@ def main():
         results = []
         for story in normal_stories:
             try:
-                result = run(story["key"], dry_run=args.dry_run, is_regenerate=False)
+                result = run(story["key"], dry_run=args.dry_run, is_regenerate=False,
+                             skip_if_blocked=True)
                 results.append(result)
             except Exception as e:
                 logger.error(f"Failed processing {story['key']} (normal): {e}", exc_info=True)

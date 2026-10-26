@@ -13,11 +13,22 @@ the browser:
    anything there, and the code-generation gate refuses these claims anyway, so
    the approved text and the code then disagree.
 
-Both are found here, deterministically, so the draft goes back to the model with
+3. An exact quantity on such a page in a test case that signs in with a SHARED
+   account: "a row for '<item>' with quantity 1". The state is kept against the
+   account, so a run that died before removing '<item>' leaves it there and the
+   next run reads 2. The code-generation gate refuses an exact value read from a
+   persistent page whenever the scenario signs in, so a test case asking for one
+   reaches human approval and then cannot be coded - every repair attempt fails
+   the same rule. A test case that never signs in starts from a fresh, empty
+   session and may state a quantity: the two gates draw the line in the same
+   place. Shared accounts come from the inventory's `test_users`.
+
+All are found here, deterministically, so the draft goes back to the model with
 the problems listed instead of reaching a reviewer.
 
 Generic on purpose: the dependency phrases are plain English about tests, and the
-persistent pages come from the inventory, so nothing here names an application.
+persistent pages and shared accounts come from the inventory, so nothing here
+names an application.
 """
 from __future__ import annotations
 
@@ -54,6 +65,15 @@ _ABSOLUTE = [
      "a count comparison"),
     (re.compile(r"\bno\s+other\b", re.IGNORECASE), "'no other'"),
 ]
+
+# An exact quantity: absolute only when the test case signs in with a shared
+# account (see test_case_problems). "quantity 1", "a quantity of 2", "qty: 3",
+# "3 items", "a total of 1500".
+_EXACT_QUANTITY = re.compile(
+    r"\b(?:quantity|qty)\b(?:\s*(?:of|is|shows?|showing|reads?|set\s+to|at|=|:))*\s*\(?\d"
+    r"|\b\d+\s+(?:items?|units?|pieces?|copies)\b"
+    r"|\btotal\b(?:\s*(?:of|is|shows?|showing|reads?|=|:))*\s*\D{0,6}\d",
+    re.IGNORECASE)
 
 _SENTENCE = re.compile(r"(?<=[.!?])\s+|\n+")
 _CLAUSE = re.compile(r"[;,()]|\s+(?:and|but|while|whereas)\s+", re.IGNORECASE)
@@ -130,6 +150,54 @@ def load_persistent_pages() -> dict[str, list[str]]:
         return {}
 
 
+def shared_accounts(inventory: dict) -> list[str]:
+    """The accounts the inventory declares under `test_users`. They are SHARED:
+    every run that signs in as one inherits what earlier runs left behind."""
+    users = (inventory or {}).get("test_users") or {}
+    return sorted(str(k) for k in users) if isinstance(users, dict) else []
+
+
+def load_shared_accounts() -> list[str]:
+    """shared_accounts() of the configured inventory; [] when it cannot be read
+    (the signed-in quantity rule then has nothing to check against)."""
+    import json
+    import logging
+
+    from core.app_context import AppContext
+    try:
+        path = AppContext.load().inventory_path()
+        return shared_accounts(json.loads(path.read_text(encoding="utf-8")))
+    except Exception as e:  # noqa: BLE001 - a missing inventory must not stop drafting
+        logging.getLogger("test_case_rules").warning(
+            "Shared accounts unavailable (%s: %s); quantities are not checked.",
+            type(e).__name__, e)
+        return []
+
+
+def _signs_in_as(tc, accounts) -> str | None:
+    """The shared account this test case signs in with, or None.
+
+    Evidence, not wording: the account's NAME quoted in the text (the way a
+    test case names a role - `registered`), or a test-data value equal to it.
+    "Shopper is not logged in" names no account, so an anonymous test case is
+    never read as signing in."""
+    if not accounts:
+        return None
+    data = getattr(tc, "test_data", None)
+    values = ({str(v).strip().lower() for v in data.values() if isinstance(v, (str, int))}
+              if isinstance(data, dict) else set())
+    texts = _texts(tc)
+    for account in accounts:
+        low = account.lower()
+        if low in values:
+            return account
+        quoted = re.compile(r"[`'\"\u2018\u2019\u201c\u201d]" + re.escape(low)
+                            + r"[`'\"\u2018\u2019\u201c\u201d]", re.IGNORECASE)
+        if any(quoted.search(t) for t in texts):
+            return account
+    return None
+
+
 def rejection_note(problems: list[str]) -> str:
     """The text appended to the prompt when a draft is sent back."""
     return ("\n\n# Your previous answer was rejected\n"
@@ -179,8 +247,12 @@ def _short(text: str, limit: int = 120) -> str:
     return text if len(text) <= limit else text[:limit - 3] + "..."
 
 
-def test_case_problems(tc, persistent: dict[str, list[str]] | None = None) -> list[str]:
-    """Why one drafted test case cannot be accepted. Empty when it is fine."""
+def test_case_problems(tc, persistent: dict[str, list[str]] | None = None,
+                       accounts=None) -> list[str]:
+    """Why one drafted test case cannot be accepted. Empty when it is fine.
+
+    `accounts` - the shared accounts (load_shared_accounts()). Without them the
+    signed-in quantity rule is off, exactly as before it existed."""
     title = getattr(tc, "title", "") if isinstance(getattr(tc, "title", ""), str) else ""
     problems: list[str] = []
     for text in _texts(tc):
@@ -193,11 +265,24 @@ def test_case_problems(tc, persistent: dict[str, list[str]] | None = None) -> li
                     f"in its own steps and never refer to another test case.")
                 break
     names = _named_entries(tc)
+    account = _signs_in_as(tc, accounts) if persistent else None
     for page, aliases in sorted((persistent or {}).items()):
         for text in _expected_texts(tc):
             for sentence in _SENTENCE.split(text):
                 if not sentence.strip() or not _mentions(sentence, aliases):
                     continue
+                if account and _EXACT_QUANTITY.search(sentence):
+                    problems.append(
+                        f"'{title}': states an exact quantity about the {page} page "
+                        f"(\"{_short(sentence)}\") while signing in as the shared "
+                        f"'{account}' account. That page keeps its state against the "
+                        f"account between runs, so a run that stopped before cleaning up "
+                        f"leaves the same entry there and the quantity read is not what "
+                        f"this test added - the code-generation gate refuses it. Either "
+                        f"state only that the entry this test added is present (or that "
+                        f"what it removed is gone), without a number; or, if this test "
+                        f"does not need an account, do not sign in - a fresh session "
+                        f"starts empty and may state a quantity.")
                 for pattern, what in _ABSOLUTE:
                     m = pattern.search(sentence)
                     if m and pattern is _NONE_PATTERN and _absence_of_a_named_entry(
@@ -214,9 +299,10 @@ def test_case_problems(tc, persistent: dict[str, list[str]] | None = None) -> li
     return list(dict.fromkeys(problems))
 
 
-def draft_problems(test_cases, persistent: dict[str, list[str]] | None = None) -> list[str]:
+def draft_problems(test_cases, persistent: dict[str, list[str]] | None = None,
+                   accounts=None) -> list[str]:
     """Every problem across a drafted set, in order."""
     out: list[str] = []
     for tc in test_cases or []:
-        out.extend(test_case_problems(tc, persistent))
+        out.extend(test_case_problems(tc, persistent, accounts))
     return out

@@ -1616,6 +1616,17 @@ the story's `[agent2:waiting]` comment names the PR and the file or scenario.
 Merge or close that PR: the next scan continues. See *Two stories on one page
 object*.
 
+### Agent 2 shows `[BLOCK]` for a story, or the story has an `[agent2:blocked]` comment
+
+The final gate refused the story: the generated code still broke a rule after
+every repair attempt, so no pull request was opened. The comment lists the
+rules. A rule that survives every repair usually means a test case asks for
+something the application cannot show as written - for example an exact
+quantity on state the application keeps against a shared account. Change that
+test case (or the story): the next scheduled scan then tries again by itself.
+Until then the scan skips the story and spends nothing. To retry without an
+edit - after a framework fix, say - run Agent 2 with the story's key.
+
 ### Agent 4 log says "waiting for earlier run(s)"
 
 Another pull request's browser run started earlier and has not finished; the
@@ -2094,6 +2105,7 @@ any run can find it again. All are plain Jira comments.
 | `[agent1:coverage]` | story | Agent 1 | Each acceptance criterion and the test case(s) that verify it, with the step that proves it |
 | `[agent1:impact-draft]` | story | Agent 1 impact-aware | Before/after of each revision, new tests, the coverage map, `Change applied at: <UTC>` |
 | `[agent2:waiting]` | story | Agent 2 | Why the story is waiting for another open PR (once per reason) |
+| `[agent2:blocked] inputs: <fingerprint>` | story | Agent 2 | The final gate refused the story; the rules still broken. The scan skips it until the story or a test case changes |
 
 ### Failure recovery
 
@@ -2107,6 +2119,9 @@ Because every step persists before the next begins, recovery is trivial:
   one of its scenarios → nothing generated, labels unchanged, one
   `[agent2:waiting]` comment → the first scan after that PR merges or closes
   continues.
+- Agent 2's final gate refuses the story → one `[agent2:blocked]` comment
+  names the rules → the scan skips it until the story or a test case is edited;
+  a manual run retries at once.
 - Agent 2 dies before opening the PR → `ai-coded` not added → next cron
   retries; a partial branch with no PR is discarded and rebuilt, and an open PR
   means the work landed, so only the label is repaired.

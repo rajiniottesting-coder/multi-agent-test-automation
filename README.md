@@ -441,6 +441,7 @@ More in [GUIDE.md → Troubleshooting](./docs/GUIDE.md#troubleshooting). The mos
 - **`StepDefinitionNotFoundError` at collection** → the validators should catch this; check the repair-loop log in the Agent 2 run
 - **A PR never got Agents 3–5** → the hourly sweeper re-triggers it, or re-run the workflow manually
 - **Agent 2 shows `[WAIT]` for a story** → another open PR is changing one of its files or adds one of its scenarios; the story's `[agent2:waiting]` comment names it. It continues on the first scan after that PR merges or closes
+- **Agent 2 shows `[BLOCK]` for a story** → its final gate refused the story earlier and nothing has changed since; the `[agent2:blocked]` comment lists the rules. Edit the test case it names (the next scan retries) or run Agent 2 with the story key
 - **No Agent 5 report on a PR** → expected when the PR changes only prompts, docs or Markdown (no browser run); otherwise check the branch carries the story key
 - **Agent 0 did nothing for a story** → check the mode in `config.yaml` (off by default) and that the story carries `impact-check`; an unchanged story is skipped on purpose
 - **A decided Impact Review was not handed over** → run Agent 0 with `story_key` blank; a one-story run does not hand over. An unreadable or undecided review leaves the story waiting, with the reason in the log
