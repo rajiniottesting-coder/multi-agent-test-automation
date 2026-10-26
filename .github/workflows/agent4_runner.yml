@@ -399,12 +399,27 @@ jobs:
           # roles - a deliberate trade: an explicit, greppable mapping that
           # matches the GitHub Secrets page one-to-one.
           APP_USER_REGISTERED: ${{ secrets.APP_USER_REGISTERED }}
+        # Re-run a test ONLY when its failure names a temporary HTTP error from
+        # the application under test (5xx, 429): from CI the site answers some
+        # requests with 503 in short bursts while it loads fine in a browser
+        # (L14). BasePage.navigate() already retries a page load; this covers
+        # an action's own request (an add-to-cart call) failing that way. A
+        # real assertion failure, a 404 or a timeout is never re-run.
         run: |
           pytest tests/step_defs/ \
             --html=reports/pytest-report.html \
             --self-contained-html \
             --junit-xml=reports/junit.xml \
+            --reruns 2 --reruns-delay 20 \
+            --only-rerun "HTTP (5[0-9][0-9]|429)\b" \
             -v
+
+      - name: Keep only the final attempt of re-run tests in the report
+        # pytest-rerunfailures writes every attempt as its own testcase, and a
+        # re-run attempt has no <failure> - Agent 5, the run summary and Agent 3
+        # would count it as a pass. Never fails the job.
+        if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory != 'false') && steps.pr_changes.outputs.e2e != 'false'
+        run: python -m scripts.collapse_junit_reruns reports/junit.xml
 
       # ── Allure ────────────────────────────────────────────────────────
       #

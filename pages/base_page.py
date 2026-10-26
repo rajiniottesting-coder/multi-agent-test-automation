@@ -198,6 +198,11 @@ class BasePage:
 
     # Resolved browser.timeout, read once per process. None = not yet read.
     _TIMEOUT_CACHE: Optional[int] = None
+    # Waits before each retry of a navigation the server answered with a
+    # temporary error (5xx, 429). `browser.navigation_retry_delays_ms` in
+    # config.yaml; an empty list turns the retry off.
+    DEFAULT_NAVIGATION_RETRY_DELAYS_MS = (3000, 8000)
+    _NAV_RETRY_CACHE: Optional[tuple] = None
 
     # Subclasses set this to the key of the page they implement in
     # app_inventory/<app>.json. Left None only by BasePage itself.
@@ -390,6 +395,37 @@ class BasePage:
     def _timeout(self, timeout_ms: Optional[int]) -> int:
         return timeout_ms if timeout_ms is not None else self._default_timeout_ms()
 
+    @classmethod
+    def _navigation_retry_delays_ms(cls) -> tuple:
+        """`browser.navigation_retry_delays_ms` from config.yaml, or the default.
+
+        Never raises: anything unreadable falls back to the default, so a
+        page object never fails to construct over this setting.
+        """
+        if BasePage._NAV_RETRY_CACHE is None:
+            value = BasePage.DEFAULT_NAVIGATION_RETRY_DELAYS_MS
+            try:
+                import yaml
+                from config.paths import CONFIG_YAML
+                cfg = yaml.safe_load(CONFIG_YAML.read_text(encoding="utf-8")) or {}
+                raw = (cfg.get("browser") or {}).get("navigation_retry_delays_ms")
+                if raw is not None:
+                    if not isinstance(raw, list) or any(
+                            isinstance(v, bool) or int(v) < 0 for v in raw):
+                        raise TypeError("a list of non-negative milliseconds")
+                    value = tuple(int(v) for v in raw)
+            except Exception as exc:                      # noqa: BLE001
+                logger.debug("browser.navigation_retry_delays_ms unreadable (%s); "
+                             "using %s.", exc, BasePage.DEFAULT_NAVIGATION_RETRY_DELAYS_MS)
+            BasePage._NAV_RETRY_CACHE = value
+        return BasePage._NAV_RETRY_CACHE
+
+    @staticmethod
+    def _temporary_status(status: int) -> bool:
+        """A server error or a rate limit: the next attempt may well succeed.
+        A 4xx other than 429 is an answer, and retrying does not change it."""
+        return status >= 500 or status == 429
+
     # ============================================================
     # Navigation and page state
     # ============================================================
@@ -411,16 +447,37 @@ class BasePage:
 
         A bad status is raised immediately, naming the code and the URL, so the
         failure says what actually happened.
+
+        A TEMPORARY error (5xx, 429) is retried first, after the waits in
+        `browser.navigation_retry_delays_ms` (default 3 s, then 8 s). From CI
+        the application under test answers some requests with 503 in short
+        bursts while it loads fine in a browser (L14): a run failed five
+        tests that way, none of them for anything the change did. A 4xx is
+        an answer, not an outage, and fails at once as before.
         """
-        response = self.page.goto(url)
-        if response is not None and not response.ok:
-            raise AssertionError(
-                f"Navigation to {url} returned HTTP {response.status} "
-                f"({response.status_text}). The page did not load, so every "
-                f"selector on it will time out. From CI this usually means the "
-                f"host is blocking the runner's IP range, or the site is down "
-                f"- check whether the same URL loads from a browser."
-            )
+        delays = self._navigation_retry_delays_ms()
+        attempt = 0
+        while True:
+            response = self.page.goto(url)
+            if response is None or response.ok:
+                if attempt:
+                    logger.warning("Navigation to %s succeeded on attempt %d.", url, attempt + 1)
+                return
+            if not self._temporary_status(response.status) or attempt >= len(delays):
+                break
+            logger.warning("Navigation to %s returned HTTP %s (%s); retrying in %d ms "
+                           "(attempt %d of %d).", url, response.status, response.status_text,
+                           delays[attempt], attempt + 2, len(delays) + 1)
+            self.page.wait_for_timeout(delays[attempt])
+            attempt += 1
+        tried = f" after {attempt + 1} attempts" if attempt else ""
+        raise AssertionError(
+            f"Navigation to {url} returned HTTP {response.status} "
+            f"({response.status_text}){tried}. The page did not load, so every "
+            f"selector on it will time out. From CI this usually means the "
+            f"host is blocking the runner's IP range, or the site is down "
+            f"- check whether the same URL loads from a browser."
+        )
 
     def click_nth(self, locator: str, index: int) -> None:
         """Click one member of a family, addressed by position.

@@ -34,10 +34,14 @@ class _Page:
     def __init__(self, response):
         self._response = response
         self.went_to = None
+        self.waits = []
 
     def goto(self, url):
         self.went_to = url
         return self._response
+
+    def wait_for_timeout(self, ms):
+        self.waits.append(ms)
 
 
 def _page_object(response):
@@ -52,14 +56,17 @@ def test_a_good_response_navigates_silently():
     assert obj.page.went_to == "https://app.test/login"
 
 
-@pytest.mark.parametrize("status,label", [
-    (403, "blocked - the usual shape of a datacentre IP being refused"),
-    (404, "wrong path"),
-    (429, "rate limited"),
-    (500, "server error"),
-    (503, "unavailable"),
+@pytest.mark.parametrize("status,label,retried", [
+    (403, "blocked - the usual shape of a datacentre IP being refused", False),
+    (404, "wrong path", False),
+    # A temporary error is retried first (test_outage_retry.py, L14), then
+    # fails with the same message, plus how many attempts were made.
+    (429, "rate limited", True),
+    (500, "server error", True),
+    (503, "unavailable", True),
 ])
-def test_a_bad_response_fails_immediately(status, label):
+def test_a_bad_response_fails_without_reaching_a_locator(status, label, retried, monkeypatch):
+    monkeypatch.setattr(BasePage, "_NAV_RETRY_CACHE", (1, 1))
     obj = _page_object(_Response(status))
     with pytest.raises(AssertionError) as excinfo:
         obj.navigate("https://app.test/login")
@@ -67,6 +74,8 @@ def test_a_bad_response_fails_immediately(status, label):
     assert str(status) in message, "the status code must be in the message"
     assert "did not load" in message
     assert "https://app.test/login" in message, "name the URL that failed"
+    assert obj.page.waits == ([1, 1] if retried else []), label
+    assert ("after 3 attempts" in message) is retried
 
 
 def test_the_message_points_at_the_likely_CI_cause():

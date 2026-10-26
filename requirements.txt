@@ -41,6 +41,10 @@ allure-pytest==2.13.5
 # Used by Agent 4 (Runner) for human-readable artifact uploaded to GitHub Actions.
 # Read by Agent 5 (Reporter) is via junit.xml, not this HTML.
 pytest-html==4.1.1
+# pytest-rerunfailures - Agent 4 re-runs a test ONLY when its failure names a
+# temporary HTTP error from the application under test (--only-rerun in
+# agent4_runner.yml); scripts/collapse_junit_reruns.py keeps the final attempt.
+pytest-rerunfailures==16.1
 
 
 # ─────────────────────────────────────────────────────────────────────────────
