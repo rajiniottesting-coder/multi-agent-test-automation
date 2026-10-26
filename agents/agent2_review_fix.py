@@ -48,6 +48,7 @@ variable (the workflow passes the event's text there, never on a command line).
 from __future__ import annotations
 
 import argparse
+import ast
 import logging
 import os
 import re
@@ -200,7 +201,6 @@ def degraded(new: str, prior: str, path: str) -> bool:
     if path.endswith(".feature"):
         return "Feature:" not in new or not re.search(r"Scenario( Outline)?:", new)
     try:
-        import ast
         ast.parse(new)
     except SyntaxError:
         return True
@@ -464,7 +464,9 @@ def main(argv=None) -> int:
     ap.add_argument("--dry-run", action="store_true", help="decide and generate, print the writes, make none")
     args = ap.parse_args(argv)
     try:
-        result = run(args.pr, args.review_id, args.comment_id, os.getenv("REVIEW_FIX_TEXT", ""),
+        result = run(pr_number=args.pr, review_id=args.review_id,
+                     comment_id=args.comment_id,
+                     text=os.getenv("REVIEW_FIX_TEXT", ""),
                      dry_run=args.dry_run)
     except Exception as e:                                         # noqa: BLE001
         logger.error("Review fix failed on PR #%s: %s", args.pr, e, exc_info=True)
