@@ -446,6 +446,7 @@ More in [GUIDE.md → Troubleshooting](./docs/GUIDE.md#troubleshooting). The mos
 - **A decided Impact Review was not handed over** → run Agent 0 with `story_key` blank; a one-story run does not hand over. An unreadable or undecided review leaves the story waiting, with the reason in the log
 - **A change story's PR was closed but the tests still show the revised text** → reconcile undoes it once `closed_scans` scans (default 2) have seen the close; the first scan only posts `[agent0:reconcile] closed-unmerged`
 - **Agent 4's log says "waiting for earlier run(s)"** → another PR's browser run started first; runs take turns (capped at 15 minutes)
+- **A test failed with `HTTP 503` (or another 5xx / 429) from the application** → the site refused the CI runner for a moment while it loads fine in a browser. Page loads are already retried (`browser.navigation_retry_delays_ms`, 3 s then 8 s) and Agent 4 re-runs a test whose failure names a 5xx/429 up to twice, 20 s apart; still failing means the outage lasted longer - re-run the job
 - **Actions blocked: storage quota** → artifacts count against the account's storage; `artifact_cleanup.yml` (or `python -m scripts.cleanup_artifacts --yes`) deletes artifacts older than 2 days
 
 ---

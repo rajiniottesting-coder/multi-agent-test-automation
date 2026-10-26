@@ -4,6 +4,19 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## October 2026 (end) — a temporary HTTP error from the application is retried (#213)
+
+**Why:** from CI the application under test answered some requests with HTTP 503 in short bursts while it loaded fine in a browser. One run failed five of seventeen tests that way - four page loads and one add-to-cart request - none for anything the change did (L14).
+
+- `BasePage.navigate()` retries a page load the server answered with a 5xx or 429, after the waits in `browser.navigation_retry_delays_ms` (config, default 3 s then 8 s; `[]` turns it off). A 4xx fails at once, as before; the final message names the attempts
+- Agent 4 re-runs a BDD test whose failure names a 5xx or 429 - which covers an action's own request - up to twice, 20 s apart (`pytest-rerunfailures`, pinned; `--only-rerun`). An assertion, a 404 or a timeout is never re-run
+- `scripts/collapse_junit_reruns.py` (Agent 4 step, always runs, never fails) keeps only each test's final attempt in `junit.xml`, so Agent 5's counts and Agent 3's per-scenario evidence see one result per test
+- Docs: README and GUIDE troubleshooting, GUIDE Agent 4 and config, TECHNICAL_DEEP_DIVE §7, AI_CONCEPTS (#51), VALIDATION_AND_KNOWN_GAPS (L14 partly fixed, F-7 and L22 updated, E15)
+
+Pinned by `tests/unit/test_outage_retry.py` (library application; 7 break-it proofs) and the updated `test_navigation_guard.py`.
+
+---
+
 ## October 2026 (end) — Agent 3 judges a prediction on its own scenario (#212)
 
 **Why:** PR #211 (SCRUM-206) stayed blocked on a finding that the add-from-card click would hit two controls in one card. That scenario passed on the commit; the run was red only because another test hit an HTTP 503 from the site - and a change story's PR is red by design before deployment. The helper the finding was about (`click_in_row`) documents that it clicks the visible copy, but the reviewer never saw its docstring.
