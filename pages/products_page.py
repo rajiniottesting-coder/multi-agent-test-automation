@@ -152,3 +152,16 @@ class ProductsPage(BasePage):
         """
         self.wait_for_any(self.sel("product_cards"), present=False)
         return True
+
+    def search_results_include(self, product_name: str, timeout_ms: Optional[int] = None) -> bool:
+        """True once a product whose name CONTAINS `product_name` is in the results.
+
+        WAITS for the search response: a search submits and reloads the listing,
+        so a snapshot taken immediately races the response and reports absence
+        while the app is working correctly. This waits for at least one result
+        card to render, then checks containment against the name family. Call
+        this only where the product is EXPECTED in the results — for a term that
+        matches nothing it would time out waiting for a card.
+        """
+        self.wait_for_any(self.sel("product_cards"), timeout_ms=timeout_ms)
+        return self.has_product(product_name)
