@@ -4,7 +4,8 @@
 # Fires on:
 #   - a submitted review with "Request changes" on an auto/* pull request;
 #   - a pull request comment starting with `/fix` (config: review_fix.command):
-#       `/fix <what to change>`  -> that text
+#       `/fix <what to change>`  -> every inline review comment not handled
+#                                   yet, plus that text
 #       `/fix`                   -> every inline review comment not handled yet;
 #   - a manual run (pull request + review or comment id, optional dry run).
 #

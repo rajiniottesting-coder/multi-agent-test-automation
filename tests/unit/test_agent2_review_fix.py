@@ -417,10 +417,13 @@ def test_comments_from_bots_are_ignored(wired):
 
 # ── what a /fix comment means ───────────────────────────────────────────
 
-def test_fix_with_text_acts_on_the_text_alone():
-    host = FakeHost(inline=[_inline()])
-    items = rf.collect_items(host, 5, None, rf.strip_command("/fix shorten the wait", "/fix"), set())
-    assert [(i.body, i.path) for i in items] == [("shorten the wait", None)] and host.inline_reads == []
+def test_fix_with_text_takes_the_open_inline_comments_and_the_text():
+    """`/fix please address these` must not hide the comments it refers to."""
+    host = FakeHost(inline=[_inline(cid=11), _inline(cid=12, review_id=100)])
+    handled = rf.handled_comment_ids([f"{rf.MARKER} review 99 comments: 11\n"])
+    items = rf.collect_items(host, 5, None, rf.strip_command("/fix shorten the wait", "/fix"), handled)
+    assert [(i.comment_id, i.path) for i in items] == [(12, "pages/checkout_page.py"), (None, None)]
+    assert items[-1].body == "shorten the wait" and host.inline_reads == [None]
 
 
 def test_bare_fix_takes_every_inline_comment_not_handled_before():

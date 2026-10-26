@@ -6,8 +6,8 @@ agent: the reviewer made the fix by hand, or regenerated the whole story.
 
 Trigger (.github/workflows/agent2_review_fix.yml): a person with write access
 submits a "Request changes" review on an `auto/*` pull request, or comments
-`/fix <what to change>` on it (`/fix` alone: every inline review comment not
-handled yet). Bots never trigger it, so agents cannot loop on each other.
+`/fix <what to change>` on it - that text plus every inline review comment not
+handled yet (`/fix` alone: those inline comments). Bots never trigger it, so agents cannot loop on each other.
 
 What it does, in order:
   1. Guard    the PR is open and on `<branch_prefix><STORY>-...`; this review
@@ -214,10 +214,13 @@ def strip_command(text: str, command: str) -> str:
 
 def collect_items(host, pr_number: int, review_id: int | None, text: str,
                   already: set) -> list[Item]:
-    """A review: its inline comments, then its own text. A `/fix <text>` comment:
-    the text alone. A bare `/fix`: every inline comment not handled before."""
-    inline = [] if review_id is None and text.strip() else \
-        host.get_review_comments(pr_number, review_id)
+    """A review: its inline comments, then its own text. A `/fix` comment: every
+    inline comment not handled before, then the comment's own text, if any.
+
+    A reviewer leaves comments on the lines and then writes `/fix please address
+    these`: the text must not hide the comments it refers to.
+    """
+    inline = host.get_review_comments(pr_number, review_id)
     items: list[Item] = []
     for c in inline:
         if (c.get("author") or "").endswith("[bot]") or not (c.get("body") or "").strip():

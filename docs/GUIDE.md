@@ -136,8 +136,8 @@ Agent 0 is described in its own chapter, [Change stories — Agent 0](#change-st
 **Review fix (`agents/agent2_review_fix.py`, `agent2_review_fix.yml`, ADR-017).**
 A person with write access asks for a change on Agent 2's open pull request - a
 **"Request changes" review** (its inline comments and text), or a comment
-**`/fix <what to change>`** (a bare `/fix` takes every inline comment not handled
-yet). Bots never trigger it.
+**`/fix <what to change>`** - every inline comment not handled yet, plus that
+text (a bare `/fix` takes the inline comments alone). Bots never trigger it.
 1. One structured call (`ReviewFixPlan`, `prompts/agent2_review_triage.md`)
    decides per comment: **fix**, **decline** or **no_change**. The approved test
    cases are the specification: a comment about how the code checks them is
