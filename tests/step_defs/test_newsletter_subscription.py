@@ -1,7 +1,8 @@
 """Step definitions for features/newsletter_subscription.feature.
 
-Binds the newsletter subscription scenario to HomePage (and NavPage for the
-'remain on the home page' check). Page-object methods only — no selectors here.
+Binds the newsletter subscription scenario to HomePage. The 'remain on the
+home page' check calls home_page.is_loaded() — no NavPage involved.
+Page-object methods only — no selectors here.
 """
 from pytest_bdd import given, when, then, parsers, scenarios
 
