@@ -4,6 +4,20 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## October 2026 (end) — Agent 3 judges a prediction on its own scenario (#212)
+
+**Why:** PR #211 (SCRUM-206) stayed blocked on a finding that the add-from-card click would hit two controls in one card. That scenario passed on the commit; the run was red only because another test hit an HTTP 503 from the site - and a change story's PR is red by design before deployment. The helper the finding was about (`click_in_row`) documents that it clicks the visible copy, but the reviewer never saw its docstring.
+
+- A red runner result now refutes each prediction whose own scenario passed: Agent 3 reads the run's `junit.xml` (artifact `pytest-report-<run id>`) and maps the finding to its scenario - the new optional `scenario` field on `ReviewIssue`, or a scenario quoted in its failure scenario. A green run refutes every prediction, as before. No scenario, no match, an unreadable report: the whole run decides, exactly as before. Security and "passes wrongly" findings are never refuted by a pass
+- An outline's prediction is refuted only when every example passed
+- `RepoHost.get_run_artifact_file()` (17 operations): one file from an artifact a run uploaded; `get_workflow_runs()` dicts carry the run `id`. Classified as a read for dry runs; GitHub adapter fails soft
+- Agent 3's prompt lists every BasePage helper the PR's added page-object lines call, with its signature and docstring; a finding about a helper's behaviour must agree with it
+- Docs: README, GUIDE, TECHNICAL_DEEP_DIVE (Agent 3, §9.6 adapter table, §9.7 schema table - 22 classes, missed in #209), REUSE, AI_CONCEPTS (#16 updated, #50 new; duplicate #48 from #209 renumbered to #49), ADR-016, VALIDATION_AND_KNOWN_GAPS (E14, G10 closed)
+
+Pinned by `tests/unit/test_review_scenario_evidence.py` (library application; replay of the PR #211 shape; 7 break-it proofs).
+
+---
+
 ## October 2026 (end) — every acceptance criterion verified by a test that can fail (#209)
 
 **Why:** validation story SCRUM-206 removed a field; the revised tests stopped using it, nothing asserted it was gone, and every test passed against an application that still had the field (ADR-015).
@@ -20,7 +34,7 @@ This document records substantive changes to the framework in reverse-chronologi
 - The single-scenario writer (`ai-update`, change-story splice) is told the test case's absence claims and retries once if it drops one
 - Generation prompt: the feature-file rule, a section on proving something was removed, and rule 17 / the absence rule extended for permanent elements
 
-**Docs:** README, GUIDE, TECHNICAL_DEEP_DIVE §4/§14/§19, AI_CONCEPTS (#48), REUSE, ADR-015, VALIDATION_AND_KNOWN_GAPS (E11–E13, UC-6, L24, L18/F-11 amended: keep and mark a removed element instead of deleting it).
+**Docs:** README, GUIDE, TECHNICAL_DEEP_DIVE §4/§14/§19, AI_CONCEPTS (#49), REUSE, ADR-015, VALIDATION_AND_KNOWN_GAPS (E11–E13, UC-6, L24, L18/F-11 amended: keep and mark a removed element instead of deleting it).
 
 All generic, pinned by `tests/unit/test_acceptance_coverage.py` and `tests/unit/test_absence_claims.py` (written for a library application; every guard has a break-it proof). Suite: ~3,080 tests.
 

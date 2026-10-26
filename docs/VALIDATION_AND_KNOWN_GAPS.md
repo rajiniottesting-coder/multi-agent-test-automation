@@ -62,6 +62,7 @@ has not yet run live: section 2.
 | E11 | A change story that removes a field (SCRUM-206, retried): Agent 1's map covers AC1 with a step asserting the field is not present; the revised tests alone are rejected | Coverage fix |
 | E12 | The same story's PR: the scenario carries the absence step, its step definition asserts `is_<field>_absent()` built on `is_loaded() and is_gone(...)`; against the undeployed application that step FAILS (L20) and nothing else does | Coverage fix |
 | E13 | A new story with a limit or a restriction (held-out H2 fits): the coverage comment lists a rejection step for it | Coverage fix |
+| E14 | PR #211 re-reviewed after #212 (push a commit or re-run Agent 3): the run is red on the absence step only; the card-click finding is lowered with "scenario ... passed", and the review is advisory | #212 |
 
 ### 2.2 The runs
 
@@ -241,3 +242,4 @@ Gaps found earlier and fixed, for reference (details in [AI_CONCEPTS.md → fail
 | G4: a one-story manual run reconciled every `impact-applied` story | #205 |
 | L13: `mode` = `drift` silently ignoring a `story_key` (now refused) | #205 |
 | G9: an acceptance criterion verified by no test - a change story removing a field went green against an application that still had it (SCRUM-206, PR #208) | #209 |
+| G10: a reviewer's predicted failure kept blocking after its own scenario passed, because another test was red (an HTTP 503 from the site; a change story's expected pre-deployment failure) - PR #211 | #212 |
