@@ -181,7 +181,7 @@ File sizes change with almost every pull request, so they are not listed here; `
   - fetches PR changed files
   - LLM compares each against reference baseline → ReviewReport
   - dedupes/caps at 10 issues; findings on unchanged lines only advise
-  - blocks only for a named failure scenario; a green Agent 4 run refutes it
+  - blocks only for a named failure scenario; Agent 4's run refutes it - a green run every prediction, a red run each one whose own scenario passed
     when the PR changes a file read at test runtime (core/test_runtime.py)
   - posts review comment on PR
               ↓
@@ -596,7 +596,7 @@ def run_update(story_id, dry_run=False) -> dict:
        pom_compliant: bool
        coverage_complete: bool
    ```
-6. **Post-process** via `postprocess_review()`: `dedupe_and_cap_issues(report, max_issues=MAX_ISSUES)` (`MAX_ISSUES = 10`) normalizes and deduplicates descriptions and caps the list; unsubstantiated findings are withdrawn; findings on lines this PR did not change are lowered to advice; the verdict is derived from what remains. A blocking finding needs a named failure scenario. When the only blocker is a predicted test failure, the review waits (up to 8 minutes) for Agent 4's result on the same commit, and a green run lowers the block - only when the PR changes a file read at test runtime (`runs_app_tests()` in `core/test_runtime.py`); on any other PR no runner result is offered.
+6. **Post-process** via `postprocess_review()`: `dedupe_and_cap_issues(report, max_issues=MAX_ISSUES)` (`MAX_ISSUES = 10`) normalizes and deduplicates descriptions and caps the list; unsubstantiated findings are withdrawn; findings on lines this PR did not change are lowered to advice; the verdict is derived from what remains. A blocking finding needs a named failure scenario. When the only blocker is a predicted test failure, the review waits (up to 8 minutes) for Agent 4's result on the same commit, and a green run lowers the block. A red run lowers each prediction whose own scenario passed: `runner_evidence_for_head()` returns a `RunnerEvidence` (the conclusion plus, for a red run, `parse_junit_scenarios()` of the `junit.xml` in the run's `pytest-report-<run id>` artifact, fetched with `RepoHost.get_run_artifact_file()`); `apply_runner_evidence()` maps the finding's `scenario` (or a scenario quoted in its failure scenario, `_predicted_scenario()`) to the generated test with `scenario_key()` and lowers it only when every run of that scenario passed. No scenario, no match or no report: the whole run decides, as before. Only when the PR changes a file read at test runtime (`runs_app_tests()` in `core/test_runtime.py`); on any other PR no runner result is offered. The prompt's "BasePage Helpers Called" section (`base_page_helpers_called()`) gives the signature and docstring of each `pages/base_page.py` helper the PR's added page-object lines call.
 7. **Format as markdown** via `format_review_as_markdown(report)`. Issues grouped by severity (blocking/major/minor/info), each with file:line link.
 8. **Post comment** via `gh.post_pr_comment(pr_number, markdown)`. Each run posts a new conversation comment; a new push re-runs the review, so the latest comment is the current one.
 
@@ -853,16 +853,19 @@ Wraps PyGithub. Methods used across agents:
 | `get_pr_metadata(pr_number)` | Used by Agent 3 |
 | `get_pr_changed_files(pr_number)` | Used by Agent 3 — unified diff patches plus full content |
 | `post_pr_comment(pr_number, body)` | Posts a new conversation comment each call |
+| `get_workflow_runs(workflow_file, branch)` | Recent runs (`id`, status, conclusion, head_sha); Agent 3 finds Agent 4's run on the PR's head commit |
+| `get_run_artifact_file(run_id, artifact_prefix, filename)` | One file from a run's artifact zip (Agent 3: `junit.xml` from `pytest-report-<run id>`); None on any failure |
 
-### 9.7 `core/schemas.py` — every Pydantic model (21 classes)
+### 9.7 `core/schemas.py` — every Pydantic model (22 classes)
 
 | Class | Used by | Purpose |
 |---|---|---|
 | `TestStep` | Agent 1 | One step inside a Test Case (Given/When/Then text) |
 | `TestCase` | Agent 1 | Single test case (title, description, priority, test_type, preconditions, steps, expected_outcome, test_data) |
-| `TestCaseList` | Agent 1 | Wrapper — story_summary plus the list of test cases |
+| `CriterionCoverage` | Agent 1 (both modes) | One acceptance criterion and the test case(s) that verify it (covered_by, how_verified) |
+| `TestCaseList` | Agent 1 | Wrapper — story_summary, the list of test cases and the coverage map |
 | `TestCaseRevision` | Agent 1 (impact-aware) | A revised existing test case with a one-line change note |
-| `ImpactAwareDraft` | Agent 1 (impact-aware) | Revisions plus new test cases for a change story |
+| `ImpactAwareDraft` | Agent 1 (impact-aware) | Revisions plus new test cases for a change story, and the coverage map |
 | `ChangeSeeds` | Agent 0 | change_type, behaviours, element_keys, components extracted from the story |
 | `WordingChange` / `WordingChanges` | Agent 0 | Inventory wording updates proposed by the context update |
 | `NoteRewrite` / `NoteRewrites` | Agent 0 | Inventory note rewrites proposed by the context update |
@@ -872,7 +875,7 @@ Wraps PyGithub. Methods used across agents:
 | `CodePlan` | Agent 2 | Stage 1 output — list of FilePlans + branch/PR metadata |
 | `GeneratedFile` | Agent 2 | A generated file (path, content, is_new_file, purpose) — runtime, not from LLM |
 | `CodeGenerationOutput` | Agent 2 | Container for final generated files + plan metadata |
-| `ReviewIssue` | Agent 3 | One issue (severity, file_path, line_number, issue_type, description, suggested_fix, failure_scenario, test_outcome) |
+| `ReviewIssue` | Agent 3 | One issue (severity, file_path, line_number, issue_type, description, suggested_fix, failure_scenario, test_outcome, scenario) |
 | `ReviewReport` | Agent 3 | Container for issues + summary |
 | `TestResult` | Agent 5 | One test result from JUnit |
 | `RunReport` | Agent 5 | Container — totals + tests + CI context |
@@ -1530,7 +1533,7 @@ maintenance story (label `inventory-drift`).
 ## 20. The Protocols — Tracker and RepoHost
 
 `integrations/tracker.py` declares `Tracker` (23 members, including
-`project_key`) and `integrations/repo_host.py` declares `RepoHost` (16). Agents
+`project_key`) and `integrations/repo_host.py` declares `RepoHost` (17). Agents
 receive an adapter from `get_tracker()` / `get_repo_host()` (new ones are added with `register_adapter()`) and never import Jira
 or GitHub directly. `tests/unit/test_pipeline_tool_agnostic.py` runs the agents'
 real `run()` functions against an in-memory tracker that has no JQL and no issue

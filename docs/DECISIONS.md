@@ -9,6 +9,52 @@ ADR-005 (the Jira label state machine) under [State management deep-dive](./GUID
 
 ---
 
+## ADR-016 — Agent 3: a predicted failure is judged on its own scenario
+
+### Status
+
+Accepted (2026-10, PR #212).
+
+### Context
+
+Agent 3 blocks only for a named failure, and a green Agent 4 run on the same
+commit refutes a predicted failure (PR #149/#162, #200). The rule was whole-run:
+any red test kept every prediction blocking. On PR #211 one test failed on an
+HTTP 503 from the application, and a change story's PR is red by design until
+the change is deployed (its absence test fails, ADR-015). The finding that
+blocked predicted a failure in a scenario that passed. It was also about a
+BasePage helper whose docstring says it handles the case - a file the reviewer
+is told not to speculate about, but was never shown.
+
+### Decision
+
+1. A finding names the scenario it predicts a failure in (`scenario`, optional;
+   or quoted in its failure scenario).
+2. For a red run, Agent 3 reads the run's junit report and refutes a prediction
+   whose scenario passed - every run of it, for an outline. A green run refutes
+   every prediction, as before.
+3. No scenario, no match, or no readable report: the whole run decides, exactly
+   as before. No evidence is never treated as good evidence.
+4. The prompt shows the signature and docstring of every BasePage helper the
+   pull request's added page-object lines call.
+
+### Why not the alternatives
+
+- **Ignore red runs caused by outages only**: covers the 503, not a change
+  story's expected red before deployment.
+- **Let Agent 5 re-judge Agent 3's findings**: two agents would own one verdict.
+- **Show all of BasePage**: ~90 helpers of docstrings in every review, for the
+  handful a diff calls.
+
+### Consequences
+
+- One more read operation on `RepoHost` (17); a new adapter implements it or
+  returns None (Agent 3 then judges the whole run).
+- A finding that names no scenario, or names it wrongly, keeps blocking on a red
+  run: a false block costs a person a look; a false refute would hide a defect.
+
+---
+
 ## ADR-015 — Every acceptance criterion is verified by a test that can fail
 
 ### Status
