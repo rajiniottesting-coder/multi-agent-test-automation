@@ -156,6 +156,12 @@ browser:
     width: 1280
     height: 720
   timeout: 30000        # 30 seconds default
+  # Waits before retrying a page load the server answered with a temporary
+  # error (HTTP 5xx or 429): one retry per entry. [] turns the retry off.
+  # A 4xx is never retried. Agent 4 also re-runs a test whose failure names an
+  # HTTP 5xx/429 (agent4_runner.yml, --only-rerun), which covers an action's
+  # own request - an add-to-cart call - failing that way.
+  navigation_retry_delays_ms: [3000, 8000]
 
   # Third-party hosts to refuse at the browser.
   #
