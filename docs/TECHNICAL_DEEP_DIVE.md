@@ -53,6 +53,7 @@ agents/
   agent1_impact.py
   agent2_coder.py
   agent2_impact.py
+  agent2_review_fix.py
   agent3_reviewer.py
   agent5_reporter.py
 
@@ -130,6 +131,7 @@ prompts/
   agent1_impact_aware.md
   agent2_coder_generate.md
   agent2_coder_plan.md
+  agent2_review_triage.md
   agent3_reviewer.md
   agent5_reporter.md
 pages/base_page.py                             ← BasePage: 86 public helpers injected into the prompt
@@ -137,7 +139,7 @@ features/  tests/step_defs/                      — generated and reference tes
 tests/unit/                                      — ~3,000 offline framework tests
 app_inventory/<app>.json                         — APP-SPECIFIC (pages, selectors, notes, components)
 config/config.yaml                               — app config, agent selection rules, Agent 0, board
-.github/workflows/                               — 9 workflows: agents 0–5 (Agent 4 + 5 share one), artifact cleanup, inventory health, story-done-on-merge, sweeper
+.github/workflows/                               — 10 workflows: agents 0–5 (Agent 4 + 5 share one), Agent 2's review fix, artifact cleanup, inventory health, story-done-on-merge, sweeper
 ```
 
 File sizes change with almost every pull request, so they are not listed here; `wc -l` gives current figures.
@@ -547,7 +549,49 @@ def run_update(story_id, dry_run=False) -> dict:
 | `_regenerate_step_defs_whole()` | Fallback when the splice is ambiguous: the whole step-def file is regenerated from the spliced feature. |
 | `_print_dry_run_preview()` | Prints planned actions without committing. Used by `--dry-run` flag. |
 
-### 5.10 Tests for Agent 2
+### 5.10 Review fix — `agents/agent2_review_fix.py`
+
+Triggered by `.github/workflows/agent2_review_fix.yml` on a submitted review in
+state `changes_requested` on an `auto/*` pull request, or a conversation comment
+starting with `review_fix.command` (`/fix`), from an author whose association is
+OWNER, MEMBER or COLLABORATOR and who is not a bot. The workflow checks out
+`main` (a pull request cannot change its fixer), passes the event's text in
+`REVIEW_FIX_TEXT` and pushes with `GH_PAT`. ADR-017.
+
+`run(pr_number, review_id, comment_id, text, dry_run)`:
+
+1. **Guards** — `review_fix.enabled`; `get_pr_metadata()`: open, head on
+   `branch_prefix`, a story key in the branch (`config.extract_jira_key`);
+   `handled()`: no `[agent2:review-fix] <review|comment> <id> comments:` summary yet.
+2. **Items** — `collect_items()`: a review's inline comments
+   (`RepoHost.get_review_comments(pr, review_id)`, bot authors dropped) then its
+   text; `/fix <text>` the text alone; a bare `/fix` every inline comment whose id
+   no earlier summary lists (`handled_comment_ids()`).
+3. **Files** — `classify_files(get_pr_changed_files())`: editable = code files the
+   PR added, and page objects it adds or extends; protected = reserved paths,
+   `pages/base_page.py` and the conftests, and feature / step-definition files
+   the PR only modified (another story's, spliced by a change story).
+4. **Decide** — `decide()`: one `invoke_structured(ReviewFixPlan)` with the story,
+   its test cases, both file lists and the numbered comments
+   (`prompts/agent2_review_triage.md`); `enforce()` drops non-editable files,
+   declines a fix anchored to a protected file or naming none, and declines any
+   comment without a decision.
+5. **Change** — per file, `generate_file_content(..., previous_attempt=<current>,
+   review_feedback=[comments])`: review mode shows the current file whole (the
+   repair path hides a previous attempt that does not parse as Python, which
+   would rewrite a feature file from scratch). `degraded()` and, for a feature,
+   `scenario_identity()` (marker key, hash, title per scenario) must hold, or the
+   comment is declined. More than `max_files` files: nothing is attempted.
+6. **Gate** — `_attempt_step_coverage_repair()` then `_validate_generated_files()`
+   over every code file of the PR; a repair that changes a protected file is
+   refused. Any failure: nothing is pushed.
+7. **Push and answer** — `create_or_update_file()` per changed file on the head
+   branch; `reply_to_review_comment()` per inline comment; `post_pr_comment()`
+   with `summary_comment()`; `post_usage_to_story(..., "Agent 2 (Coder, review
+   fix)")`. `--dry-run` wraps the host and tracker in `core.dry_run` and prints
+   the writes.
+
+### 5.11 Tests for Agent 2
 
 | Test file | Tests | Covers |
 |---|---|---|
@@ -856,8 +900,10 @@ Wraps PyGithub. Methods used across agents:
 | `post_pr_comment(pr_number, body)` | Posts a new conversation comment each call |
 | `get_workflow_runs(workflow_file, branch)` | Recent runs (`id`, status, conclusion, head_sha); Agent 3 finds Agent 4's run on the PR's head commit |
 | `get_run_artifact_file(run_id, artifact_prefix, filename)` | One file from a run's artifact zip (Agent 3: `junit.xml` from `pytest-report-<run id>`); None on any failure |
+| `get_review_comments(pr_number, review_id)` | Inline review comments (`id`, `path`, `line`, `body`, `author`, `review_id`), replies left out; raises if the PR cannot be read (Agent 2 review fix) |
+| `reply_to_review_comment(pr_number, comment_id, body)` | Answer in the comment's own thread (Agent 2 review fix) |
 
-### 9.7 `core/schemas.py` — every Pydantic model (22 classes)
+### 9.7 `core/schemas.py` — every Pydantic model (24 classes)
 
 | Class | Used by | Purpose |
 |---|---|---|
@@ -881,6 +927,8 @@ Wraps PyGithub. Methods used across agents:
 | `TestResult` | Agent 5 | One test result from JUnit |
 | `RunReport` | Agent 5 | Container — totals + tests + CI context |
 | `JiraCommentDraft` | Agent 5 | LLM-drafted comment (title, body_markdown) |
+| `ReviewFixDecision` | Agent 2 review fix | One review comment's decision: fix / decline / no_change, files, reason |
+| `ReviewFixPlan` | Agent 2 review fix | One decision per review comment |
 
 ### 9.8 `inventory_tools/` + `scripts/` inventory & sweeper tooling
 
@@ -1348,7 +1396,7 @@ Agent prompts (`prompts/agent2_coder_plan.md`, `prompts/agent2_coder_generate.md
 | `prompts/agent*.md` (10 files) | NO |
 | `pages/base_page.py` | NO (universal helpers) |
 | `tests/unit/*.py` | NO |
-| `.github/workflows/*.yml` (9 workflows) | NO |
+| `.github/workflows/*.yml` (10 workflows) | NO |
 
 This isolation is enforced by code, not just convention:
 - Path policy validator rejects plans touching reserved files
@@ -1534,7 +1582,7 @@ maintenance story (label `inventory-drift`).
 ## 20. The Protocols — Tracker and RepoHost
 
 `integrations/tracker.py` declares `Tracker` (23 members, including
-`project_key`) and `integrations/repo_host.py` declares `RepoHost` (17). Agents
+`project_key`) and `integrations/repo_host.py` declares `RepoHost` (19). Agents
 receive an adapter from `get_tracker()` / `get_repo_host()` (new ones are added with `register_adapter()`) and never import Jira
 or GitHub directly. `tests/unit/test_pipeline_tool_agnostic.py` runs the agents'
 real `run()` functions against an in-memory tracker that has no JQL and no issue

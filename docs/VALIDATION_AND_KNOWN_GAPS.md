@@ -64,6 +64,7 @@ has not yet run live: section 2.
 | E13 | A new story with a limit or a restriction (held-out H2 fits): the coverage comment lists a rejection step for it | Coverage fix |
 | E14 | PR #211 re-reviewed after #212 (push a commit or re-run Agent 3): the run is red on the absence step only; the card-click finding is lowered with "scenario ... passed", and the review is advisory | #212 |
 | E15 | Any PR run while the site refuses some CI requests: retried page loads log `succeeded on attempt N`; a re-run test is listed by the `Keep only the final attempt` step; Agent 5's table counts each test once | #213 |
+| E18 | An Agent 2 pull request with a "Request changes" review (one inline comment on a page object, one asking for an extra check): the first is fixed on the same branch and Agents 3-5 re-run; the second is declined with "update the test case, then ai-regenerate"; one `[agent2:review-fix]` summary; a second `/fix` on the same comments does nothing | review fix |
 
 ### 2.2 The runs
 
