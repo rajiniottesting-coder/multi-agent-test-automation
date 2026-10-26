@@ -38,9 +38,13 @@ away the whole pull request for a one-line change.
    fix / decline / no_change per comment; a comment asking to verify something
    the test cases do not state is declined and pointed at the test case and
    `ai-regenerate`. A feature file must keep its scenarios, titles and markers.
-5. **Only the story's own files** - those the pull request added, and page
-   objects it extends. Files another story owns (a change story splices them)
-   and reserved or framework files are never regenerated.
+5. **Only the story's own files** - those the pull request added, the feature
+   files whose every scenario marker is one of the story's test cases (with
+   their step definitions; an `ai-regenerate` or `ai-update` pull request
+   modifies files that already existed), and page objects it extends.
+   Ownership is read from the markers, not the file status. A file holding
+   another story's scenario (a change story splices them) and reserved or
+   framework files are never regenerated.
 6. **The same gate as a new pull request:** the repair loop, then
    `_validate_generated_files()`. Anything failing, or a repair reaching a file
    that is not editable: nothing is pushed and the reviewer is told why, rule by rule.

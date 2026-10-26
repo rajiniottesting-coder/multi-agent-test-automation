@@ -29,10 +29,13 @@ What it does, in order:
               again; a reply in each comment's thread; one summary comment
               carrying the marker; the cost on the story's ledger.
 
-Editable: files this PR ADDED (the story's feature, step definitions and page
-objects) and page objects it extends. A feature or step-definition file it only
-MODIFIED belongs to another story - a change story splices those - and is never
-regenerated here. Reserved reference files and framework files never are.
+Editable: the story's own files - those this PR ADDED, the feature files it
+MODIFIED whose every scenario marker is one of this story's test cases (an
+`ai-regenerate` or `ai-update` pull request rewrites files that already
+existed), their step definitions, and page objects it adds or extends. A
+feature or step-definition file holding any other story's scenario was only
+spliced into (a change story) and is never regenerated here. Reserved
+reference files and framework files never are.
 
 The approved test cases are the specification. A comment about HOW the code
 checks them is fixed; a comment asking to check something else is declined
@@ -111,8 +114,59 @@ def _file_type(path: str) -> str:
     return "other"
 
 
-def classify_files(changed: list[dict], reserved: set) -> tuple[dict, dict]:
-    """(editable, protected): {path: status} and {path: reason} for the PR's code files."""
+def feature_owned_by(content: str, story_key: str, test_case_keys: set) -> bool:
+    """True when every scenario marker in a feature file is this story's.
+
+    A marker is this story's when its key is one of the story's test cases and
+    it names no other story as owner. A file with no marker, or with one
+    marker of another story (a file this story only spliced into), is not.
+    """
+    from agents.agent2_coder import parse_marker_fields
+    markers = [m for m in (parse_marker_fields(line) for line in (content or "").splitlines()) if m]
+    keys = {k.upper() for k in test_case_keys}
+    return bool(markers) and all(
+        m["key"] in keys and (m["owner"] is None or m["owner"] == story_key.upper())
+        for m in markers)
+
+
+def owned_by_story(changed: list[dict], read, story_key: str, test_case_keys: set) -> set:
+    """The PR's modified feature and step files that belong to this story alone.
+
+    An `ai-regenerate` or `ai-update` pull request rewrites the story's own
+    existing files, so they arrive as "modified", not "added". Ownership is
+    read from the scenario markers on the PR's branch (`read(path)`); a step
+    file `tests/step_defs/test_<stem>.py` follows its feature `<stem>.feature`
+    (the pairing Agent 2 writes).
+    """
+    statuses = {_norm(f.get("filename", "")): f.get("status", "") for f in changed or []}
+
+    def owns(path: str) -> bool:
+        try:
+            return feature_owned_by(read(path), story_key, test_case_keys)
+        except Exception:                                          # noqa: BLE001
+            return False
+
+    features = {p for p, s in statuses.items() if p.endswith(".feature") and s != "removed"}
+    owned = {p for p in features if statuses[p] == "added" or owns(p)}
+    by_stem = {p.rsplit("/", 1)[-1][: -len(".feature")]: p for p in features}
+    for path, status in statuses.items():
+        if status != "modified" or _file_type(path) != "step_definitions":
+            continue
+        name = path.rsplit("/", 1)[-1]
+        if not (name.startswith("test_") and name.endswith(".py")):
+            continue
+        stem = name[len("test_"):-len(".py")]
+        feature = by_stem.get(stem)
+        if feature in owned or (feature is None and owns(f"features/{stem}.feature")):
+            owned.add(path)
+    return {p for p in owned if statuses.get(p) == "modified"}
+
+
+def classify_files(changed: list[dict], reserved: set, owned: set = frozenset()) -> tuple[dict, dict]:
+    """(editable, protected): {path: status} and {path: reason} for the PR's code files.
+
+    `owned`: modified files that are this story's own (`owned_by_story`).
+    """
     editable, protected = {}, {}
     for f in changed or []:
         path, status = _norm(f.get("filename", "")), f.get("status", "")
@@ -123,7 +177,7 @@ def classify_files(changed: list[dict], reserved: set) -> tuple[dict, dict]:
             protected[path] = "a reserved reference file"
         elif path in _FRAMEWORK_FILES:
             protected[path] = "a framework file"
-        elif _file_type(path) == "page_object" or status == "added":
+        elif _file_type(path) == "page_object" or status == "added" or path in owned:
             editable[path] = status
         else:
             protected[path] = ("another story's file - this pull request changes it only "
@@ -346,11 +400,15 @@ def run(pr_number: int, review_id: int | None = None, comment_id: int | None = N
     if ctx is None:
         from core.app_context import AppContext
         ctx = AppContext.load()
-    editable, protected = classify_files(host.get_pr_changed_files(pr_number),
-                                         {_norm(p) for p in ctx.reserved_paths_normalized()})
-    contents = {p: host.get_file_content(p, branch=head) for p in [*editable, *protected]}
     story = tracker.get_story(story_key)
     test_cases = a2.load_test_cases_for_story(tracker, story_key)
+    changed_files = host.get_pr_changed_files(pr_number)
+    owned = owned_by_story(changed_files, lambda p: host.get_file_content(p, branch=head),
+                           story_key, {tc["key"] for tc in test_cases})
+    editable, protected = classify_files(changed_files,
+                                         {_norm(p) for p in ctx.reserved_paths_normalized()},
+                                         owned)
+    contents = {p: host.get_file_content(p, branch=head) for p in [*editable, *protected]}
     llm = llm or LLMClient(temperature=0.2)
 
     outcomes = enforce(decide(llm, items, story, test_cases, editable, protected),
