@@ -856,8 +856,20 @@ class BasePage:
         changes, and with none visible the click waits as before.
         """
         row = self._locator(row_locator).filter(has_text=text)
-        count = row.count()
-        if count == 0:
+        if row.count() == 0:
+            # WAIT for the row before calling it missing. This is usually the
+            # first call after a navigation - open the listing, follow a link
+            # to it - and counting at once reads the page before its rows are
+            # drawn. A run followed "View Cart" and immediately asked for a
+            # product's row: zero, failed, while the next scenario's waiting
+            # reader found the same row on the same kind of page. A row that
+            # is really absent still fails, after the default timeout, with
+            # the message below.
+            try:
+                row.first.wait_for(state="attached", timeout=self._default_timeout_ms())
+            except Exception:                                 # noqa: BLE001
+                pass
+        if row.count() == 0:
             raise AssertionError(
                 f"No row matching `{row_locator}` contains {text!r}. Check the "
                 f"text is exact and that the row locator matches the repeating "
