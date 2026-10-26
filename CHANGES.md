@@ -4,14 +4,15 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## October 2026 (end) — `/fix <text>` also takes the open inline comments
+## October 2026 (end) — `/fix <text>` also takes the open inline comments; a skipped event cannot cancel a waiting `/fix`
 
 **Why:** found in the live E18 run on PR #221. `/fix <text>` acted on its text alone, so a reviewer who left inline comments and then wrote `/fix please address these` had every inline comment ignored - Agent 2 answered only the sentence. (In the run the text was an attribution footer the posting tool appended; a person's own words fail the same way.)
 
 - `agents/agent2_review_fix.py` `collect_items()`: a `/fix` comment takes every inline comment no earlier summary lists, then its own text if any; a bare `/fix` is unchanged. A review is unchanged (its own inline comments, then its text). No new reach: a bare `/fix` already read those comments
-- Docs: workflow header, GUIDE (Agent 2), TECHNICAL_DEEP_DIVE §5.10
+- `.github/workflows/agent2_review_fix.yml`: the concurrency group moves from the workflow to the job. In the same run, Agent 2's three thread replies each fired a "review submitted" run; at workflow level those runs entered the group although the job's `if` skips them, and each cancelled the one waiting before it. A person's `/fix` posted while a fix was running would have been cancelled by Agent 2's own replies. A skipped job never enters a job-level group (the lesson Agent 4 learned on #178). The other workflows were checked: Agent 0's and Done-on-merge's groups cannot displace a run that matters
+- Docs: workflow header, GUIDE (Agent 2), TECHNICAL_DEEP_DIVE §5.10, DECISIONS ADR-017
 
-Pinned by `tests/unit/test_agent2_review_fix.py::test_fix_with_text_takes_the_open_inline_comments_and_the_text` (replaces the text-alone test).
+Pinned by `tests/unit/test_agent2_review_fix.py::test_fix_with_text_takes_the_open_inline_comments_and_the_text` (replaces the text-alone test) and `::test_only_a_job_that_runs_waits_its_turn`.
 
 ---
 

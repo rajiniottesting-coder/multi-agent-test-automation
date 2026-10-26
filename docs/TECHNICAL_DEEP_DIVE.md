@@ -556,7 +556,10 @@ state `changes_requested` on an `auto/*` pull request, or a conversation comment
 starting with `review_fix.command` (`/fix`), from an author whose association is
 OWNER, MEMBER or COLLABORATOR and who is not a bot. The workflow checks out
 `main` (a pull request cannot change its fixer), passes the event's text in
-`REVIEW_FIX_TEXT` and pushes with `GH_PAT`. ADR-017.
+`REVIEW_FIX_TEXT` and pushes with `GH_PAT`. One fix runs at a time per pull
+request, through a JOB-level concurrency group: each of Agent 2's own thread
+replies arrives as a "review submitted" event, and at workflow level those
+skipped runs would cancel a person's `/fix` waiting in the group. ADR-017.
 
 `run(pr_number, review_id, comment_id, text, dry_run)`:
 

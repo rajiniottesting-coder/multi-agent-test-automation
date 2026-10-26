@@ -67,7 +67,9 @@ away the whole pull request for a one-line change.
   `reply_to_review_comment` (write); a new adapter implements both.
 - Two more schemas (24): `ReviewFixDecision`, `ReviewFixPlan`.
 - A tenth workflow, `agent2_review_fix.yml`, checked out from `main` like
-  Agent 3, pushing with `GH_PAT`.
+  Agent 3, pushing with `GH_PAT`; one fix at a time per pull request, at job
+  level so the events it skips (Agent 2's own replies) never cancel a waiting
+  `/fix`.
 - The fix's cost is posted to the story as "Agent 2 (Coder, review fix)".
 
 ---

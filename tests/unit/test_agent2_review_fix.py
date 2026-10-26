@@ -496,3 +496,16 @@ def test_the_reviewers_text_never_reaches_the_shell_as_code():
     step = next(s for s in wf["jobs"]["fix"]["steps"] if "agent2_review_fix" in (s.get("run") or ""))
     assert "${{" not in step["run"]
     assert "github.event.review.body" in step["env"]["REVIEW_FIX_TEXT"]
+
+
+def test_only_a_job_that_runs_waits_its_turn():
+    """Found in the live E18 run (PR #221): Agent 2's three thread replies each
+    fired a "review submitted" run. With WORKFLOW-level concurrency they entered
+    the group although the job's `if` skips them, and each cancelled the run
+    waiting before it - a person's `/fix` queued behind a running fix would be
+    cancelled by Agent 2's own replies. At JOB level a skipped job never enters."""
+    wf = yaml.safe_load((ROOT / ".github/workflows/agent2_review_fix.yml").read_text(encoding="utf-8"))
+    assert "concurrency" not in wf, "a workflow-level group lets skipped events cancel a waiting /fix"
+    c = wf["jobs"]["fix"]["concurrency"]
+    assert "pull_request.number" in c["group"] and "issue.number" in c["group"]
+    assert c["cancel-in-progress"] is False, "a running fix must never be cut off mid-push"
