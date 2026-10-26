@@ -190,16 +190,18 @@ def _draft_test_cases(llm, user_prompt: str, criteria=None) -> TestCaseList:
     from core.test_case_rules import (
         draft_problems,
         load_persistent_pages,
+        load_shared_accounts,
         rejection_note,
     )
 
     def check(d) -> list:
-        return (draft_problems(d.test_cases, persistent)
+        return (draft_problems(d.test_cases, persistent, accounts)
                 + coverage_problems(criteria or [], list(getattr(d, "coverage", None) or []),
                                     index_cases([], d.test_cases)))
 
     system ="You are a meticulous, expert QA test analyst."
     persistent = load_persistent_pages()
+    accounts = load_shared_accounts()
     draft: TestCaseList = llm.invoke_structured(
         system_prompt=system, user_prompt=user_prompt, output_schema=TestCaseList)
     problems = check(draft)

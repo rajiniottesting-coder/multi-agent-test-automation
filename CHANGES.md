@@ -4,6 +4,18 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## October 2026 (end) — the two gates agree on a quantity; a refused story stops retrying
+
+**Why:** SCRUM-187's approved test case expected "a row for '<item>' with quantity 1" after signing in as the inventory's shared account. Agent 1's check let it through (it looked for "exactly", "only", a row count and "empty"); Agent 2's gate refuses an exact value read from a persistent page whenever the scenario signs in, because a run that stopped before cleaning up leaves the same entry behind and the next run reads 2. Four repair attempts failed on the same rule (about $2.50), nothing was written to Jira, and the scheduled scan retried the story every 30 minutes.
+
+- `core/test_case_rules.py`: an exact quantity (`quantity 1`, `a quantity of 2`, `qty: 3`, `3 items`, `a total of 1500`) on a persistent page is rejected in a test case that signs in with a shared account - the inventory's `test_users`, named in the text or the test data. A test case that never signs in keeps its quantities (a fresh session starts empty), exactly where Agent 2's gate draws the line. Agent 1's normal and impact-aware drafts both apply it; without accounts the rule is off, as before
+- `core/blocked.py`, Agent 2: when the final gate refuses a story, one `[agent2:blocked] inputs: <fingerprint>` comment lists the rules still broken and what to do. The scheduled scan's normal pass skips a story whose story and test-case text still match the fingerprint - no model call, `[BLOCK]` in the summary. Any edit to them retries on the next scan; a manual run with `story_key` always runs. `GateFailure` (a `ValueError`) carries the remaining errors
+- Docs: GUIDE (troubleshooting, markers, failure recovery), README troubleshooting, TECHNICAL_DEEP_DIVE §`core/blocked.py`, VALIDATION_AND_KNOWN_GAPS (G11 closed, N4 narrowed, E16)
+
+Pinned by `tests/unit/test_signed_in_quantity.py` (both gates on one sentence, signed in and anonymous) and `tests/unit/test_blocked_story.py`.
+
+---
+
 ## October 2026 (end) — a temporary HTTP error from the application is retried (#213)
 
 **Why:** from CI the application under test answered some requests with HTTP 503 in short bursts while it loaded fine in a browser. One run failed five of seventeen tests that way - four page loads and one add-to-cart request - none for anything the change did (L14).

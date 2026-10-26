@@ -938,6 +938,16 @@ colliding: every story branches from `main` and Agent 2 writes whole files.
 
 Agent 2 calls these through `_wait_for_in_flight()` (status `waiting_for_open_pr`, `[WAIT]` in the scan summary).
 
+**`core/blocked.py`** - a story the final gate refused, reported once and not retried on unchanged input.
+
+| Function | Purpose |
+|---|---|
+| `fingerprint(story, test_cases, revisions)` | 16 hex characters over the story text and every coded or revised test case (key, summary, description); order-independent |
+| `blocked_on(comments, fp)` | An `[agent2:blocked] inputs: <fp>` comment for exactly this input exists |
+| `post_blocked_once(tracker, story_id, fp, errors)` | The comment: the rules still broken (capped) and what to do; once per input; never raises |
+
+`run()` computes the fingerprint after reading the story and its test cases, before any model call. With `skip_if_blocked=True` - the scheduled scan's normal pass only - a match returns status `blocked` (`[BLOCK]`). A `ValueError` from `_validate_generated_files()` posts the comment (not in a dry run) and is re-raised; the final gate raises `GateFailure`, a `ValueError` carrying the remaining errors.
+
 **`core/test_runtime.py`** (standard library only) holds one rule, `runs_app_tests(paths)`: False only when every
 changed path is one no test reads (`prompts/`, `docs/`, Markdown). Agent 4's `pr_changes` step runs it on a pull
 request's files to skip the browser and Agent 5; Agent 3 uses it to decide whether a green runner result is
