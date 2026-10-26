@@ -86,6 +86,16 @@ class ProductDetailPage(BasePage):
         """The current value typed in the quantity field (DOM value, not text)."""
         return self.get_input_value(self.sel("quantity_input"))
 
+    def is_quantity_input_absent(self) -> bool:
+        """True once the page is loaded AND the quantity input is gone.
+
+        SCRUM-220 removed the quantity field. `quantity_input` is a PERMANENT
+        element (not conditional), so an absence check alone would also pass
+        before the page has rendered or on any other page. Prove the detail
+        page is loaded first, then that the field is not on it.
+        """
+        return self.is_loaded() and self.is_gone(self.sel("quantity_input"))
+
     # ── actions ──────────────────────────────────────────────
     def set_quantity(self, quantity: int) -> None:
         """Set the quantity BEFORE adding to cart.
@@ -106,6 +116,14 @@ class ProductDetailPage(BasePage):
         self.require_own_page()
         self.click(self.sel("add_to_cart_button"))
         self.wait_visible(self.sel("added_modal"))
+
+    def has_added_modal(self, timeout_ms: Optional[int] = None) -> bool:
+        """True once the add-to-cart confirmation modal is on screen. WAITS.
+
+        A waiting predicate for asserting the modal appeared after Add to cart;
+        call it only where the modal is expected.
+        """
+        return self.is_showing(self.sel("added_modal"), timeout_ms=timeout_ms)
 
     def continue_shopping(self) -> None:
         """Dismiss the add-to-cart modal and stay on this product page.
