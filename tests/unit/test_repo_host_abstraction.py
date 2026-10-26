@@ -129,6 +129,7 @@ def test_a_new_host_needs_no_caller_changes():
             self.comments.setdefault(pr_number, []).append(body)
         def get_pr_comments(self, pr_number): return self.comments.get(pr_number, [])
         def get_workflow_runs(self, workflow_file, branch, limit=20): return []
+        def get_run_artifact_file(self, run_id, artifact_prefix, filename): return None
 
     register_adapter("gitlab_like", GitLabLikeHost)
     host = get_repo_host("gitlab_like", fresh=True)

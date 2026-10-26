@@ -146,10 +146,21 @@ class RepoHost(Protocol):
     # ── CI status ────────────────────────────────────────────
     def get_workflow_runs(self, workflow_file: str, branch: str,
                           limit: int = 20) -> list[dict]:
-        """Recent CI runs as [{"status","conclusion","head_sha"}, ...].
+        """Recent CI runs as [{"id","status","conclusion","head_sha"}, ...].
 
         "Workflow" is GitHub's word; a GitLab adapter maps this onto pipelines
         and an Azure adapter onto builds.
+        """
+        ...
+
+    def get_run_artifact_file(self, run_id: int, artifact_prefix: str,
+                              filename: str) -> Optional[bytes]:
+        """One file from an artifact a CI run uploaded, or None.
+
+        The artifact is the run's first whose name starts with
+        `artifact_prefix`; the file is the member whose base name is exactly
+        `filename`. None when the run, the artifact or the file cannot be read
+        - callers treat that as "no evidence", never as an error.
         """
         ...
 

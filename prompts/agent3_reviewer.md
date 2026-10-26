@@ -82,6 +82,7 @@ Each `ReviewIssue` has:
 - `suggested_fix`: how to fix it, with code snippet if applicable
 - `failure_scenario`: REQUIRED when `severity` is "blocking" or `issue_type` is "functional_bug" — the concrete scenario or step, the line that breaks, and what goes wrong (the exception raised or the wrong result). Write it before you choose the severity. If, while writing it, you conclude the code actually works, the finding is NOT blocking: lower the severity or leave the finding out. Never file a finding whose own text says it is not a problem. A blocking or functional_bug finding without a failure_scenario does not block the pull request. Assume the application behaves as the test case says: "if the app behaves differently, the assertion fails" is the test doing its job, not a bug — never file it. `null` for advisory findings.
 - `test_outcome`: with a `failure_scenario`, "fails" when the test errors or its assertion fails against an application behaving as the test case says, or "passes_wrongly" when the test passes even though the application is wrong (a vacuous or missing assertion). The tests run on this same commit: a predicted "fails" is checked against that run.
+- `scenario`: with `test_outcome` "fails", the exact title of the Scenario the failure happens in, copied from the feature file without the `Scenario:` keyword. The prediction is checked against THAT scenario's result on this commit, so name the one scenario it is about; `null` when the finding is not about one scenario.
 
 # Scope: review the CHANGE
 Judge the lines this pull request adds or modifies. A defect you notice on a line the pull request did not touch is pre-existing: report it, if at all, as `info`, say it is pre-existing, and never let it block. A finding with a `line_number` outside the changed hunks is shown as a pre-existing note whatever severity you give it.
@@ -119,6 +120,7 @@ If the diff contains `parsers.re(r'... "(?P<x>[^"]*)" ...')` and scenarios use e
   Do NOT downgrade the second one to a minor or a best-practice note, and do NOT accept a docstring or comment that calls it a temporary fallback, a "BASEPAGE-REQUEST", or a pending inventory migration. **There is no sanctioned fallback.** `tests/unit/test_page_object_selectors.py` fails the build on any such literal, so a PR carrying one cannot go green. The correct fix is always: add the element to the app inventory and call `self.sel("<key>")`.
 - A page-object class that calls `self.sel(...)` must declare `INVENTORY_PAGE`.
 - **Do NOT speculate about BasePage. `pages/base_page.py` is NOT in your diff — it is an existing, reviewed file with ~70 helpers.** Never raise a finding of the form "verify this helper exists", "this method may not exist on BasePage", or "the reference page object uses a different helper, use that instead". Those are guesses about a file you cannot see, they are almost always wrong, and a blocking or major finding built on one costs a review cycle for nothing. If a helper genuinely does not exist the run fails at import or attribute access, which is Agent 4's job to report, not yours. Review what the diff contains.
+- **What a BasePage helper DOES is written in its docstring** - the helpers the changed page objects call are listed under "BasePage Helpers Called" below. A finding that turns on a helper's behaviour (how many elements it clicks, whether it waits, what it does with duplicates) must agree with that docstring. If the docstring says the helper handles the case, do not file it.
 - Imports order
 - Naming conventions
 - Type hints on new functions
@@ -176,6 +178,10 @@ The PR body lists test case keys (e.g., SCRUM-7, SCRUM-9). Each one should have 
 ## Changed Files (THESE are the files to review)
 
 {changed_files_section}
+
+## BasePage Helpers Called (reference - not under review)
+
+{base_page_helpers_section}
 
 # Final Instructions
 

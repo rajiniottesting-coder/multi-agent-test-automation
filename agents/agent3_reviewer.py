@@ -41,6 +41,7 @@ import logging
 import os
 import re
 import sys
+from dataclasses import dataclass
 
 from core.app_context import AppContext
 from integrations.repo_host import get_repo_host
@@ -349,7 +350,20 @@ def derive_verdict(report: ReviewReport) -> ReviewReport:
 # dropped. Red, absent or still running at the deadline: the block stands -
 # no evidence is never treated as good evidence. A finding that says the test
 # PASSES WRONGLY is never refuted by a pass, and security never waits.
+#
+# PER SCENARIO, NOT PER RUN (SCRUM-206, PR #211). A red run used to keep every
+# prediction blocking, however unrelated the red test. That run had one test
+# fail on an HTTP 503 from the application, and a change story's PR is red
+# BY DESIGN until the change is deployed (its absence test fails). The
+# reviewer predicted the listing-card scenario would fail; that scenario
+# passed, and the prediction still blocked. Now the finding names its
+# scenario, the runner's junit report is read, and a prediction whose own
+# scenario passed on this commit is refuted whatever else failed. A finding
+# with no scenario, a scenario not in the report, or a report that cannot be
+# read: judged on the whole run, exactly as before.
 RUNNER_WORKFLOW = "agent4_runner.yml"
+RUNNER_ARTIFACT_PREFIX = "pytest-report-"
+RUNNER_REPORT_FILE = "junit.xml"
 RUNNER_WAIT_SECONDS = 480
 RUNNER_POLL_SECONDS = 20
 _REFUTED_NOTE = ("Refuted by the runner: this commit's scenarios were executed "
@@ -388,12 +402,10 @@ def _blocks(issue) -> bool:
                      and _waives_itself(issue)))
 
 
-def runner_result_for_head(host, pr_number: int, head_branch: str,
-                           wait_seconds: int = RUNNER_WAIT_SECONDS,
-                           poll_seconds: int = RUNNER_POLL_SECONDS,
-                           sleep=None, clock=None) -> str | None:
-    """'success' / 'failure' / ... for the runner on this PR's head commit, or
-    None when it has not concluded by the deadline or cannot be read."""
+def _completed_runner_run(host, pr_number: int, head_branch: str, wait_seconds: int,
+                          poll_seconds: int, sleep=None, clock=None) -> dict | None:
+    """The runner's completed run on this PR's head commit, waiting for it, or
+    None when there is none by the deadline or it cannot be read."""
     import time
     sleep = sleep or time.sleep
     clock = clock or time.monotonic
@@ -407,30 +419,151 @@ def runner_result_for_head(host, pr_number: int, head_branch: str,
                 if r.get("head_sha") == head_sha]
         done = [r for r in runs if r.get("status") == "completed"]
         if done:
-            return done[0].get("conclusion")
+            return done[0]
         if clock() >= deadline:
             return None
         sleep(poll_seconds)
 
 
+def runner_result_for_head(host, pr_number: int, head_branch: str,
+                           wait_seconds: int = RUNNER_WAIT_SECONDS,
+                           poll_seconds: int = RUNNER_POLL_SECONDS,
+                           sleep=None, clock=None) -> str | None:
+    """'success' / 'failure' / ... for the runner on this PR's head commit, or
+    None when it has not concluded by the deadline or cannot be read."""
+    run = _completed_runner_run(host, pr_number, head_branch, wait_seconds,
+                                poll_seconds, sleep, clock)
+    return run.get("conclusion") if run else None
+
+
+@dataclass(frozen=True)
+class RunnerEvidence:
+    """The runner's verdict on this commit, and - when its report could be
+    read - each scenario's outcome ({scenario key: [outcomes]}, see
+    scenario_key()). `scenarios` is None when the report is unavailable."""
+    conclusion: str | None
+    scenarios: dict | None = None
+
+
+def scenario_key(title: str) -> str:
+    """One spelling for a scenario title and the test pytest-bdd generates from
+    it: lower case, letters and digits only, without a leading `test` and an
+    outline's `[...]` parameters. 'Searching for a non-existent product' and
+    `test_searching_for_a_nonexistent_product` give the same key."""
+    text = re.sub(r"\[.*\]$", "", (title or "").strip())
+    text = re.sub(r"^test_", "", text.strip(), flags=re.IGNORECASE)
+    return re.sub(r"[^a-z0-9]", "", text.lower())
+
+
+def parse_junit_scenarios(xml_bytes: bytes | None) -> dict | None:
+    """{scenario key: [outcome, ...]} from a junit report, None when unreadable.
+
+    Outcome is 'passed', 'failed', 'error' or 'skipped'. A list, because two
+    features may hold a scenario of the same title, and an outline runs once
+    per example: a prediction is refuted only when EVERY run of its scenario
+    passed.
+    """
+    if not xml_bytes:
+        return None
+    import xml.etree.ElementTree as ET
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError as e:
+        logger.warning("Runner report unreadable (%s); judging the whole run.", e)
+        return None
+    out: dict = {}
+    for case in root.iter("testcase"):
+        tags = {child.tag for child in case}
+        outcome = ("failed" if "failure" in tags else "error" if "error" in tags
+                   else "skipped" if "skipped" in tags else "passed")
+        out.setdefault(scenario_key(case.get("name", "")), []).append(outcome)
+    return out
+
+
+def runner_evidence_for_head(host, pr_number: int, head_branch: str,
+                             wait_seconds: int = RUNNER_WAIT_SECONDS,
+                             poll_seconds: int = RUNNER_POLL_SECONDS,
+                             sleep=None, clock=None) -> RunnerEvidence:
+    """The runner's conclusion on this commit, plus each scenario's outcome
+    when the run is red and its report can be read. Never raises."""
+    run = _completed_runner_run(host, pr_number, head_branch, wait_seconds,
+                                poll_seconds, sleep, clock)
+    if not run:
+        return RunnerEvidence(None)
+    conclusion = run.get("conclusion")
+    if conclusion == "success" or run.get("id") is None:
+        return RunnerEvidence(conclusion)
+    try:
+        report = host.get_run_artifact_file(run["id"], RUNNER_ARTIFACT_PREFIX,
+                                            RUNNER_REPORT_FILE)
+    except Exception as e:                                       # noqa: BLE001
+        logger.warning("Runner report not read (%s); judging the whole run.", e)
+        report = None
+    return RunnerEvidence(conclusion, parse_junit_scenarios(report))
+
+
+_SCENARIO_IN_TEXT = re.compile(r"\bscenario(?:\s+outline)?\s*:?\s*['\"\u2018\u201c]([^'\"\u2019\u201d\n]{3,})"
+                               r"['\"\u2019\u201d]", re.IGNORECASE)
+
+
+def _predicted_scenario(issue) -> str | None:
+    """The scenario a prediction is about: its `scenario` field, else a quoted
+    scenario title in its failure_scenario ("Scenario 'X': at the ... step")."""
+    named = (getattr(issue, "scenario", None) or "").strip()
+    if named:
+        return re.sub(r"^\s*scenario(?:\s+outline)?\s*:\s*", "", named, flags=re.IGNORECASE)
+    m = _SCENARIO_IN_TEXT.search(getattr(issue, "failure_scenario", None) or "")
+    return m.group(1).strip() if m else None
+
+
+def _scenario_passed(issue, scenarios: dict | None) -> str | None:
+    """The scenario's title when every run of it passed in the report, else None."""
+    title = _predicted_scenario(issue)
+    if not title or not scenarios:
+        return None
+    outcomes = scenarios.get(scenario_key(title))
+    return title if outcomes and all(o == "passed" for o in outcomes) else None
+
+
 def apply_runner_evidence(report: ReviewReport, runner_result) -> ReviewReport:
-    """Lower every blocking prediction of a failing test that a green run refuted.
+    """Lower every blocking prediction of a failing test that the run refuted.
+
+    runner_result is the run's conclusion ('success', ...) or a RunnerEvidence.
+    A green run refutes every prediction. A red run refutes a prediction whose
+    own scenario passed on this commit (RunnerEvidence.scenarios); the others
+    keep blocking.
 
     Each finding is judged on its own: a refuted prediction stops blocking even
     when another, unrelated finding still stops the pull request - otherwise it
     is shown as Blocking beside the real one and the reader fixes the wrong
     thing. The verdict is re-derived by align_labels_with_verdict.
     """
-    refuted = [i for i in report.issues if _blocks(i) and _refutable_by_a_green_run(i)]
-    if not refuted:
+    candidates = [i for i in report.issues if _blocks(i) and _refutable_by_a_green_run(i)]
+    if not candidates:
         return report
-    if runner_result != "success":
-        logger.info("Runner result for this commit: %s - predicted failure(s) "
-                    "keep blocking.", runner_result or "not concluded")
-        return report
+    if isinstance(runner_result, RunnerEvidence):
+        conclusion, scenarios = runner_result.conclusion, runner_result.scenarios
+    else:
+        conclusion, scenarios = runner_result, None
+    if conclusion == "success":
+        notes = {id(i): _REFUTED_NOTE for i in candidates}
+    else:
+        notes = {}
+        for issue in candidates:
+            title = _scenario_passed(issue, scenarios)
+            if title:
+                notes[id(issue)] = (f"Refuted by the runner: scenario '{title}' was executed "
+                                    f"on this commit and passed, so the predicted failure "
+                                    f"did not happen.")
+        if not notes:
+            logger.info("Runner result for this commit: %s - predicted failure(s) "
+                        "keep blocking%s.", conclusion or "not concluded",
+                        "" if scenarios else " (no per-scenario report)")
+            return report
     issues = []
     for issue in report.issues:
-        if issue in refuted:
+        note = notes.get(id(issue))
+        if note:
             # Shown as a note, without its failure scenario: a "Fails when"
             # line under a finding the run just disproved reads as a failure.
             issue = issue.model_copy(update={
@@ -438,11 +571,12 @@ def apply_runner_evidence(report: ReviewReport, runner_result) -> ReviewReport:
                 "issue_type": "best_practice",
                 "failure_scenario": None,
                 "test_outcome": None,
-                "description": f"{issue.description} ({_REFUTED_NOTE})",
+                "description": f"{issue.description} ({note})",
             })
         issues.append(issue)
-    logger.warning("%d predicted test failure(s) REFUTED: the runner passed on "
-                   "this commit. Lowered, not dropped.", len(refuted))
+    logger.warning("%d of %d predicted test failure(s) REFUTED by the runner on this "
+                   "commit (%s). Lowered, not dropped.", len(notes), len(candidates),
+                   "the run passed" if conclusion == "success" else "their scenarios passed")
     return report.model_copy(update={"issues": issues})
 
 
@@ -640,6 +774,67 @@ def load_prompt() -> str:
     return (PROMPTS_DIR / "agent3_reviewer.md").read_text(encoding="utf-8")
 
 
+# WHAT A BASEPAGE HELPER DOES IS WRITTEN DOWN - SHOW IT.
+#
+# The prompt tells the reviewer not to speculate about pages/base_page.py, a
+# file outside the diff. It speculated anyway when a finding turned on what a
+# helper DOES: PR #211 was blocked on "click_in_row will hit two Add to cart
+# controls in one card", which the helper's docstring describes and handles
+# (it clicks the visible one) - and the scenario passed. Each helper the
+# changed page objects call is now shown with its signature and docstring, read
+# from the real file, so a claim about it can be checked against it.
+_MAX_HELPER_DOC = 1600
+
+
+def base_page_helpers_called(changed_files: list[dict], project_root=None) -> str:
+    """Signature and docstring of every BasePage helper the changed page objects
+    call on the lines this pull request added (the whole file when no diff is
+    known), as a prompt section; "" when there are none or BasePage is unreadable."""
+    import ast
+    from pathlib import Path
+
+    from config.paths import PROJECT_ROOT
+    root = Path(project_root) if project_root else PROJECT_ROOT
+    try:
+        tree = ast.parse((root / "pages" / "base_page.py").read_text(encoding="utf-8"))
+    except (OSError, SyntaxError):
+        return ""
+    base = next((n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "BasePage"), None)
+    if base is None:
+        return ""
+    helpers = {n.name: n for n in base.body
+               if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+    called: list[str] = []
+    for f in changed_files or []:
+        name = (f.get("filename") or "").replace("\\", "/")
+        if not (name.startswith("pages/") and name.endswith(".py")) or name.endswith("base_page.py"):
+            continue
+        # The lines this pull request added, when the diff is known: a helper
+        # the file called before the change is not what is under review.
+        added = "\n".join(line[1:] for line in (f.get("patch") or "").splitlines()
+                          if line.startswith("+") and not line.startswith("+++"))
+        text = added or f.get("content") or ""
+        for m in re.finditer(r"\bself\.([A-Za-z_]\w*)\s*\(", text):
+            if m.group(1) in helpers and m.group(1) not in called:
+                called.append(m.group(1))
+    if not called:
+        return ""
+
+    blocks = []
+    for helper in sorted(called):
+        node = helpers[helper]
+        args = ast.unparse(node.args).replace("self, ", "").replace("self", "").strip()
+        returns = f" -> {ast.unparse(node.returns)}" if node.returns is not None else ""
+        doc = (ast.get_docstring(node) or "(no docstring)").strip()
+        if len(doc) > _MAX_HELPER_DOC:
+            doc = doc[:_MAX_HELPER_DOC].rsplit(" ", 1)[0] + " ..."
+        blocks.append(f"### `self.{helper}({args}){returns}`\n```\n{doc}\n```")
+    return ("These are the `pages/base_page.py` helpers the changed page objects call, "
+            "read from the real file. A finding about what one of them does must agree "
+            "with its docstring here.\n\n" + "\n\n".join(blocks))
+
+
 def format_changed_files_for_prompt(files: list[dict]) -> str:
     """Format the list of changed files into a clear text block for the LLM."""
     if not files:
@@ -786,6 +981,8 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
         .replace("{pr_author}", pr_metadata["author"])
         .replace("{pr_body}", pr_metadata["body"])
         .replace("{changed_files_section}", format_changed_files_for_prompt(changed_files))
+        .replace("{base_page_helpers_section}",
+                 base_page_helpers_called(changed_files) or "(The changed page objects call no BasePage helper.)")
     )
 
     prompt_chars = len(user_prompt)
@@ -814,7 +1011,7 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
     report, withdrawn = postprocess_review(
         report,
         None if dry_run or not runner_ran_app_tests else
-        (lambda: runner_result_for_head(gh, pr_number, pr_metadata["head_branch"])),
+        (lambda: runner_evidence_for_head(gh, pr_number, pr_metadata["head_branch"])),
         changed_lines=changed_line_map(changed_files))
 
     logger.info(f"Review verdict: {report.overall_verdict}")

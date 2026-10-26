@@ -153,12 +153,48 @@ class GitHubClient:
         """
         try:
             wf = self.repo.get_workflow(workflow_file)
-            return [{"status": r.status, "conclusion": r.conclusion,
+            return [{"id": r.id, "status": r.status, "conclusion": r.conclusion,
                      "head_sha": r.head_sha}
                     for r in wf.get_runs(branch=branch)[:limit]]
         except Exception as e:
             logger.warning(f"Could not read runs for {workflow_file}: {e}")
             return []
+
+    def get_run_artifact_file(self, run_id: int, artifact_prefix: str,
+                              filename: str) -> Optional[bytes]:
+        """One file from an artifact a workflow run uploaded, or None.
+
+        GitHub serves an artifact as a zip behind a redirect to blob storage.
+        `requests` drops the Authorization header when the redirect leaves
+        api.github.com, which the storage host requires. Any failure -
+        expired artifact, missing permission (`actions: read`), no such file -
+        is logged and returns None: the caller has no evidence, not an error.
+        """
+        import io
+        import zipfile
+
+        import requests
+        try:
+            run = self.repo.get_workflow_run(run_id)
+            artifact = next((a for a in run.get_artifacts()
+                             if a.name.startswith(artifact_prefix) and not a.expired), None)
+            if artifact is None:
+                logger.info(f"Run {run_id} has no artifact starting with {artifact_prefix!r}")
+                return None
+            resp = requests.get(artifact.archive_download_url, timeout=60,
+                                headers={"Authorization": f"Bearer {self.token}",
+                                         "Accept": "application/vnd.github+json"})
+            resp.raise_for_status()
+            with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+                member = next((n for n in zf.namelist()
+                               if n.rsplit("/", 1)[-1] == filename), None)
+                if member is None:
+                    logger.info(f"Artifact {artifact.name} has no {filename}")
+                    return None
+                return zf.read(member)
+        except Exception as e:                                   # noqa: BLE001
+            logger.warning(f"Could not read {filename} from run {run_id}: {e}")
+            return None
 
     def get_pr_comments(self, pr_number: int) -> list[str]:
         """Comment bodies on a PR."""

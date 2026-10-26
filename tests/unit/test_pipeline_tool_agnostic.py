@@ -324,6 +324,7 @@ class SourceHub:
         self.pr_comments.setdefault(pr_number, []).append(body)
     def get_pr_comments(self, pr_number): return self.pr_comments.get(pr_number, [])
     def get_workflow_runs(self, workflow_file, branch, limit=20): return []
+    def get_run_artifact_file(self, run_id, artifact_prefix, filename): return None
 
 
 def test_full_pipeline_runs_on_neither_jira_nor_github(tracker, tmp_path):
