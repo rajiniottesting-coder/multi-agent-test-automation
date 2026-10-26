@@ -13,7 +13,7 @@ This document records substantive changes to the framework in reverse-chronologi
 - `RepoHost` gains `get_review_comments` and `reply_to_review_comment` (19 operations; classified for dry runs); schemas `ReviewFixDecision`, `ReviewFixPlan` (24); config `agents.agent2_coder.review_fix`; prompt `prompts/agent2_review_triage.md`; ADR-017
 - Docs: README, GUIDE (Agent 2, workflows, events, markers, config, troubleshooting), TECHNICAL_DEEP_DIVE, REUSE_FOR_NEW_PROJECT, VALIDATION_AND_KNOWN_GAPS (E18)
 
-Pinned by `tests/unit/test_agent2_review_fix.py` (27 tests: every safeguard above, the workflow's guards, the generator's review mode).
+Pinned by `tests/unit/test_agent2_review_fix.py` (28 tests: every safeguard above, the workflow's guards, the generator's review mode, and a gate refusal that names each rule still broken).
 
 ---
 

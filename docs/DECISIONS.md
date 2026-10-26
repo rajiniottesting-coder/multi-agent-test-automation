@@ -43,7 +43,7 @@ away the whole pull request for a one-line change.
    and reserved or framework files are never regenerated.
 6. **The same gate as a new pull request:** the repair loop, then
    `_validate_generated_files()`. Anything failing, or a repair reaching a file
-   that is not editable: nothing is pushed and the reviewer is told why.
+   that is not editable: nothing is pushed and the reviewer is told why, rule by rule.
 7. **Push to the same branch**, so Agents 3, 4 and 5 run again; reply in each
    comment's thread; one `[agent2:review-fix] <review|comment> <id>` summary
    that also stops a second run on the same review.
