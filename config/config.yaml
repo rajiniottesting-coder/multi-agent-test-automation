@@ -333,6 +333,18 @@ agents:
     # to close — recoverable. The human-approved label gate is still the
     # primary protection; this cap is the secondary safety net.
     max_stories_per_run: 2
+    # REVIEW FIX (agents/agent2_review_fix.py, agent2_review_fix.yml). A person
+    # with write access submits a "Request changes" review on an auto/* pull
+    # request, or comments `<command> <what to change>` on it: Agent 2 changes
+    # the files the comments point at, runs the repair loop and the final
+    # gate, and pushes to the SAME branch - Agents 3, 4 and 5 run again. A
+    # comment that asks to test something the approved test cases do not
+    # state is declined: change the test case, then add ai-regenerate.
+    review_fix:
+      enabled: true
+      command: "/fix"          # PR comment that asks for a fix
+      branch_prefix: "auto/"   # only pull requests Agent 2 opened
+      max_files: 6             # more files than this in one review: ask to split it
 
   # Agent 0 — Impact Analyst: which existing tests does a change affect?
   #

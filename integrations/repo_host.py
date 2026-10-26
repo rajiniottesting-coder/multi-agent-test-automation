@@ -143,6 +143,20 @@ class RepoHost(Protocol):
 
     def get_pr_comments(self, pr_number: int) -> list[str]: ...
 
+    def get_review_comments(self, pr_number: int,
+                            review_id: Optional[int] = None) -> list[dict]:
+        """Inline review comments on a PR - the ones anchored to a file and a
+        line - as [{"id", "path", "line", "body", "author", "review_id"}, ...],
+        oldest first. Replies to a comment are left out. With `review_id`,
+        only that review's comments. `line` may be None when the diff the
+        comment was made on has moved. Used by Agent 2's review fix."""
+        ...
+
+    def reply_to_review_comment(self, pr_number: int, comment_id: int,
+                                body: str) -> None:
+        """Answer an inline review comment in its own thread."""
+        ...
+
     # ── CI status ────────────────────────────────────────────
     def get_workflow_runs(self, workflow_file: str, branch: str,
                           limit: int = 20) -> list[dict]:

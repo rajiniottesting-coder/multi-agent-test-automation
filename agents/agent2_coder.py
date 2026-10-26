@@ -2023,6 +2023,7 @@ def generate_file_content(
     previous_attempt: str | None = None,
     already_generated: list[GeneratedFile] | None = None,
     existing_page_objects: list | None = None,
+    review_feedback: list[str] | None = None,
 ) -> str:
     """Stage 2: For ONE file in the plan, get its full content as raw text.
 
@@ -2042,6 +2043,11 @@ def generate_file_content(
         telling the LLM exactly what to fix. This is app-agnostic — the
         feedback strings come from the validator, which works on any
         feature/step pair.
+
+    Review mode (when review_feedback is provided, agents/agent2_review_fix.py):
+        A person reviewing the open pull request asked for changes. The current
+        file (`previous_attempt`) is shown WHOLE whatever its format, and the
+        model is told to apply exactly those changes and keep everything else.
     """
     related_test_cases = [
         tc for tc in test_cases if tc["key"] in file_plan.related_test_cases
@@ -2111,6 +2117,24 @@ def generate_file_content(
             f"summarized into {len(feedback_summary)} chars of feedback for "
             f"'{file_plan.file_path}'."
         )
+
+    if review_feedback:
+        # The validator-repair path above hides a previous attempt that does
+        # not parse as Python, so a feature file would be rewritten from
+        # scratch. A reviewer's change is an edit of the file as it stands.
+        feedback_block = (
+            "\n\n# CRITICAL: Apply the reviewer's requested changes\n\n"
+            "A person reviewing the open pull request asked for the changes "
+            "below. Apply exactly these to the CURRENT file and keep everything "
+            "else as it is - the same scenarios, steps, method names and order, "
+            "unless a comment asks otherwise. Do not make the file test anything "
+            "the test cases do not state.\n\n"
+            + "\n".join(f"- {c}" for c in review_feedback)
+            + "\n\n## The current file\n```\n" + (previous_attempt or "")
+            + "\n```\n\nReturn the COMPLETE corrected file.\n"
+        )
+        logger.info(f"  Review mode: {len(review_feedback)} reviewer comment(s) for "
+                    f"'{file_plan.file_path}'.")
 
     # Build the sibling page-object methods block (Hotfix v5 prevention).
     # Only relevant for step-definitions files — feature files and page

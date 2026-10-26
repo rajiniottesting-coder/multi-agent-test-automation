@@ -66,6 +66,7 @@ has not yet run live: section 2.
 | E15 | Any PR run while the site refuses some CI requests: retried page loads log `succeeded on attempt N`; a re-run test is listed by the `Keep only the final attempt` step; Agent 5's table counts each test once | #213 |
 | E16 | SCRUM-187 on the next scan: one `[agent2:blocked]` comment naming the persistent-state rule, then `[BLOCK]` with no model call on later scans. After SCRUM-260's step 7 drops "with quantity 1", the next scan codes the story. A new signed-in draft stating a cart quantity is sent back by Agent 1 | Gates agree |
 | E17 | Any PR run during a burst of 5xx from the site: a test whose add-to-cart call or followed link was refused fails as `ApplicationUnavailableError` naming the request, is listed by the `Keep only the final attempt` step as re-run, and its reading is "application temporarily unavailable"; a plain assertion failure is not re-run | #215 |
+| E18 | An Agent 2 pull request with a "Request changes" review (one inline comment on a page object, one asking for an extra check): the first is fixed on the same branch and Agents 3-5 re-run; the second is declined with "update the test case, then ai-regenerate"; one `[agent2:review-fix]` summary; a second `/fix` on the same comments does nothing | review fix |
 
 ### 2.2 The runs
 

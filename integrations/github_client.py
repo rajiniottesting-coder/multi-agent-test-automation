@@ -204,6 +204,32 @@ class GitHubClient:
             logger.warning(f"Could not read comments on PR #{pr_number}: {e}")
             return []
 
+    def get_review_comments(self, pr_number: int,
+                            review_id: Optional[int] = None) -> list[dict]:
+        """Inline review comments (file + line), replies left out, oldest first.
+        Raises when the PR cannot be read: the caller must not fix a review it
+        could not see."""
+        out = []
+        for c in self.repo.get_pull(pr_number).get_review_comments():
+            if getattr(c, "in_reply_to_id", None):
+                continue
+            if review_id is not None and getattr(c, "pull_request_review_id", None) != review_id:
+                continue
+            out.append({
+                "id": c.id,
+                "path": c.path,
+                "line": getattr(c, "line", None) or getattr(c, "original_line", None),
+                "body": c.body or "",
+                "author": getattr(getattr(c, "user", None), "login", ""),
+                "review_id": getattr(c, "pull_request_review_id", None),
+            })
+        return out
+
+    def reply_to_review_comment(self, pr_number: int, comment_id: int,
+                                body: str) -> None:
+        """Answer an inline review comment in its own thread."""
+        self.repo.get_pull(pr_number).create_review_comment_reply(comment_id, body)
+
     def delete_branch(self, branch_name: str) -> bool:
         """Delete a branch. Returns True if it was deleted, False otherwise.
 
