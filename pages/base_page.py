@@ -64,6 +64,11 @@ import weakref
 _ACTION_RESOURCE_TYPES = frozenset({"xhr", "fetch", "document"})
 _NETWORK_LOG: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
 _NETWORK_LOG_KEPT = 20
+# Per page: action requests the server answered with a TEMPORARY error (5xx,
+# 429) and never answered successfully afterwards, keyed by "METHOD url".
+# Kept apart from the bounded log above, so an early refusal is not pushed out
+# by the requests that followed it.
+_UNRECOVERED: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
 
 
 def watch_network(page: Page, ignore: Optional[Callable[[str], bool]] = None) -> None:
@@ -75,6 +80,18 @@ def watch_network(page: Page, ignore: Optional[Callable[[str], bool]] = None) ->
     """
     log: list = []
     _NETWORK_LOG[page] = log
+    unrecovered: dict = {}
+    _UNRECOVERED[page] = unrecovered
+
+    def _track(request: Any, status: int) -> None:
+        # A temporary error stays on record until the SAME request succeeds:
+        # navigate() retries a page load, and a retried load that worked is
+        # not a reason for the test's failure.
+        key = f"{request.method} {request.url}"
+        if BasePage._temporary_status(status):
+            unrecovered[key] = f"{key} - HTTP {status}"
+        elif status < 400:
+            unrecovered.pop(key, None)
 
     def _keep(request: Any, outcome: str, failed: bool) -> None:
         if getattr(request, "resource_type", None) not in _ACTION_RESOURCE_TYPES:
@@ -93,6 +110,14 @@ def watch_network(page: Page, ignore: Optional[Callable[[str], bool]] = None) ->
         # request.response() from inside a handler instead does not return
         # for every request type in the sync API, and those were lost.
         _keep(response.request, f"HTTP {response.status}", response.status >= 400)
+        request = response.request
+        if getattr(request, "resource_type", None) in _ACTION_RESOURCE_TYPES:
+            try:
+                if ignore is not None and ignore(request.url):
+                    return
+            except Exception:                                  # noqa: BLE001
+                pass
+            _track(request, response.status)
 
     def _failed(request: Any) -> None:
         _keep(request, f"no response ({request.failure or 'failed'})", True)
@@ -104,6 +129,41 @@ def watch_network(page: Page, ignore: Optional[Callable[[str], bool]] = None) ->
 def network_problems(page: Page) -> list:
     """Action requests on `page` that failed or returned an HTTP error, oldest first."""
     return [text for text, failed in _NETWORK_LOG.get(page, ()) if failed]
+
+
+def unrecovered_server_errors(page: Page) -> list:
+    """Action requests on `page` the server answered with a temporary error
+    (HTTP 5xx or 429) and never answered successfully afterwards, oldest first.
+
+    A failed test that has any is reporting the application's availability,
+    not its behaviour: tests/conftest.py names them in the failure, which is
+    what lets Agent 4 re-run the test (agent4_runner.yml, --only-rerun)."""
+    return list(_UNRECOVERED.get(page, {}).values())
+
+
+class ApplicationUnavailableError(AssertionError):
+    """A test failed while the application was refusing some of its requests
+    with a temporary error. Its message names them as `HTTP <status>`."""
+
+
+def with_server_errors(exc: BaseException, errors: list) -> Optional[BaseException]:
+    """`exc` restated so its message names the temporary server errors the
+    test met, or None when there were none.
+
+    WHY: a test whose action request the server answered with HTTP 503 fails
+    on whatever came next - a missing cart row, a page never reached - and
+    that message names no HTTP error, so Agent 4's re-run of temporary errors
+    (`--only-rerun "HTTP (5xx|429)"`, which reads only the exception message)
+    never fired. The original message is kept in full; the evidence follows."""
+    if not errors:
+        return None
+    return ApplicationUnavailableError(
+        f"{type(exc).__name__}: {exc}\n\n"
+        "While this test ran, the application answered these requests with a "
+        "temporary server error and never answered the same request "
+        "successfully afterwards: " + "; ".join(errors[-5:]) + ". The failure "
+        "above is most likely their consequence, not a defect in the test or "
+        "the application's behaviour.")
 
 
 def _network_evidence(page: Page) -> str:

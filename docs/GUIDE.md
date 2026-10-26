@@ -343,7 +343,7 @@ Pydantic's `max_length=10` translates to JSON Schema `maxItems`, which some prov
 **What the workflow does:**
 1. Checks out the PR branch
 2. Installs Python deps and Playwright (with browser caching for speed)
-3. Runs `pytest` — the offline unit suite and the BDD tests — with JUnit XML, HTML and Allure output; a failed test keeps its screenshot, video and Playwright trace. A BDD test whose failure names a temporary HTTP error from the application (5xx or 429) is re-run up to twice, 20 s apart (`pytest-rerunfailures`, `--only-rerun`); nothing else is re-run, and `scripts/collapse_junit_reruns.py` then keeps only each test's final attempt in `junit.xml`, so Agent 5's counts and Agent 3's per-scenario evidence see one result per test. Page loads are retried earlier still, inside `BasePage.navigate()`. On a pull request that changes only `prompts/`, `docs/` or Markdown the browser run and Agent 5 are skipped (see *What runs, per event*); on a push to `main` the browser runs only when a runtime file changed
+3. Runs `pytest` — the offline unit suite and the BDD tests — with JUnit XML, HTML and Allure output; a failed test keeps its screenshot, video and Playwright trace. A BDD test whose failure names a temporary HTTP error from the application (5xx or 429) is re-run up to twice, 20 s apart (`pytest-rerunfailures`, `--only-rerun`); a failure in a test whose own request the server refused that way, and never answered afterwards, is restated to name it (`tests/conftest.py`), so it is re-run too; nothing else is re-run, and `scripts/collapse_junit_reruns.py` then keeps only each test's final attempt in `junit.xml`, so Agent 5's counts and Agent 3's per-scenario evidence see one result per test. Page loads are retried earlier still, inside `BasePage.navigate()`. On a pull request that changes only `prompts/`, `docs/` or Markdown the browser run and Agent 5 are skipped (see *What runs, per event*); on a push to `main` the browser runs only when a runtime file changed
 4. On a pull request, before the browser run: waits while a run of another PR that started earlier has not finished (first come, first served, `scripts/e2e_turn.py`). Every PR tests the same live application with the same accounts, and saved state such as a cart would otherwise leak between them. Capped at 15 minutes, then it runs anyway; if the runs cannot be read it does not wait.
 5. Uploads `reports/` as a workflow artifact (so Agent 5 can read it in the next job)
 6. Writes a markdown test summary to the GitHub Actions job summary page
@@ -1639,8 +1639,12 @@ From CI the application under test can refuse requests for a moment while it
 loads fine in a browser (L14). Two retries absorb a short burst:
 `BasePage.navigate()` retries a page load after the waits in
 `browser.navigation_retry_delays_ms` (default 3 s, then 8 s; `[]` turns it off),
-and Agent 4 re-runs a test whose failure names a 5xx or 429 - covering an
-action's own request, such as an add-to-cart call - up to twice, 20 s apart.
+and Agent 4 re-runs a test whose failure names a 5xx or 429 up to twice, 20 s
+apart. An action's own request - an add-to-cart call, a link followed to a
+page - answered with one makes the next step fail on something else ("row not
+found", "element never appeared"); `tests/conftest.py` then restates that
+failure to name the request and its status, so it is re-run as well (PR #215).
+A request the server later answered successfully is not named.
 The log shows `succeeded on attempt N` for a page load and the
 `Keep only the final attempt` step lists every re-run test. A test still
 failing this way means the outage outlasted both: re-run the job. A 4xx, an

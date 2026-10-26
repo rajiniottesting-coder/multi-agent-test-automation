@@ -48,6 +48,23 @@ class Diagnosis:
 # (compiled pattern, Diagnosis) - ORDER MATTERS, most specific first.
 _SIGNATURES: list[tuple[re.Pattern, Diagnosis]] = [
     (
+        # The test met temporary server errors it never recovered from
+        # (pages/base_page.py with_server_errors, raised by tests/conftest.py).
+        # First: whatever the step then reported is a consequence of them.
+        re.compile(r"answered these requests with a temporary server error", re.I),
+        Diagnosis(
+            "application temporarily unavailable",
+            "The application answered one or more of this test's requests with "
+            "a temporary server error (HTTP 5xx or 429) and never answered the "
+            "same request successfully afterwards. The step failed because the "
+            "action never completed, not because the test or the behaviour is "
+            "wrong.",
+            "Nothing to change in the test. Agent 4 re-runs such a test up to "
+            "twice; if it still fails, the application was unavailable for the "
+            "whole run - check it, then re-run the workflow.",
+        ),
+    ),
+    (
         re.compile(r"strict mode violation.*resolved to (\d+) elements", re.I),
         Diagnosis(
             "multi-match selector",
