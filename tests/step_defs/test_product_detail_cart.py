@@ -101,3 +101,10 @@ def assert_remain_on_detail(product_detail_page, product_name):
     assert product_name in actual, (
         f"Expected to remain on {product_name!r} detail page, name was {actual!r}"
     )
+
+
+@then("the product detail page should not show the quantity input")
+def assert_quantity_input_absent(product_detail_page):
+    assert product_detail_page.is_quantity_input_absent(), (
+        "Expected the quantity input to be absent"
+    )
