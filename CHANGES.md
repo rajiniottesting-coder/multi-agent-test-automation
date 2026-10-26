@@ -4,6 +4,17 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## October 2026 (end) — `/fix <text>` also takes the open inline comments
+
+**Why:** found in the live E18 run on PR #221. `/fix <text>` acted on its text alone, so a reviewer who left inline comments and then wrote `/fix please address these` had every inline comment ignored - Agent 2 answered only the sentence. (In the run the text was an attribution footer the posting tool appended; a person's own words fail the same way.)
+
+- `agents/agent2_review_fix.py` `collect_items()`: a `/fix` comment takes every inline comment no earlier summary lists, then its own text if any; a bare `/fix` is unchanged. A review is unchanged (its own inline comments, then its text). No new reach: a bare `/fix` already read those comments
+- Docs: workflow header, GUIDE (Agent 2), TECHNICAL_DEEP_DIVE §5.10
+
+Pinned by `tests/unit/test_agent2_review_fix.py::test_fix_with_text_takes_the_open_inline_comments_and_the_text` (replaces the text-alone test).
+
+---
+
 ## October 2026 (end) — the review fix edits a regenerated story's own files
 
 **Why:** the review fix took "added by this pull request" to mean "this story's file". An `ai-regenerate` or `ai-update` pull request rewrites the story's existing feature and step files, so they arrive as "modified" - and every comment on them would have been declined as "another story's file", leaving only page objects fixable.

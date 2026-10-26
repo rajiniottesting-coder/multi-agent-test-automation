@@ -565,8 +565,9 @@ OWNER, MEMBER or COLLABORATOR and who is not a bot. The workflow checks out
    `handled()`: no `[agent2:review-fix] <review|comment> <id> comments:` summary yet.
 2. **Items** — `collect_items()`: a review's inline comments
    (`RepoHost.get_review_comments(pr, review_id)`, bot authors dropped) then its
-   text; `/fix <text>` the text alone; a bare `/fix` every inline comment whose id
-   no earlier summary lists (`handled_comment_ids()`).
+   text; a `/fix` comment every inline comment whose id no earlier summary lists
+   (`handled_comment_ids()`), then its own text if any - so `/fix please address
+   these` does not hide the comments it refers to.
 3. **Files** — `classify_files(get_pr_changed_files(), reserved, owned)`:
    editable = code files the PR added, page objects it adds or extends, and
    `owned` - from `owned_by_story()`: each modified feature file whose every
