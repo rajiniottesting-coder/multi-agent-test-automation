@@ -1,4 +1,4 @@
-@newsletter
+@home
 Feature: Automation Exercise newsletter subscription
   As a visitor
   I want to subscribe to the newsletter from the home page
@@ -7,7 +7,7 @@ Feature: Automation Exercise newsletter subscription
   Background:
     Given I am on the home page
 
-  @smoke @newsletter
+  @smoke @home
   # JIRA: SCRUM-223 (hash: 8e04a248) owner: SCRUM-202
   Scenario: Visitor subscribes to the newsletter with a valid email address
     When I subscribe to the newsletter with email "demo.subscriber@example.com"
