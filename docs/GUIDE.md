@@ -151,7 +151,7 @@ yet). Bots never trigger it.
    scenarios, titles and markers; a degraded answer is discarded.
 3. The repair loop and the final gate run over every code file of the pull
    request. Anything still failing, or a repair that reaches a file that is not
-   editable: **nothing is pushed**, and the summary says why.
+   editable: **nothing is pushed**, and the summary says why, listing each rule still broken.
 4. Otherwise the files are pushed to the **same branch**, so Agents 3, 4 and 5
    run again; each comment gets a reply in its thread, the pull request one
    `[agent2:review-fix]` summary (which also stops a second run on the same

@@ -242,6 +242,24 @@ def test_nothing_is_pushed_when_the_gate_refuses(wired):
     assert "did not pass the checks" in host.replies[0][1]
 
 
+def test_a_gate_refusal_names_each_rule_still_broken(wired, monkeypatch):
+    """The gate's own exception says "see logs"; the reviewer gets the list."""
+    errors = [f"pages/checkout_page.py: rule {i} broken" for i in range(12)]
+
+    def gate(batch, story_id, test_cases=None):
+        raise a2.GateFailure("Validation failed. See logs for each error.", errors=errors)
+
+    monkeypatch.setattr(a2, "_validate_generated_files", gate)
+    host = FakeHost(inline=[_inline()])
+    llm = FakeLLM([{"comment": 1, "action": "fix", "files": ["pages/checkout_page.py"], "reason": "x"}])
+    out = _run(host, llm)
+    assert out["status"] == "refused" and not host.pushed
+    summary = host.comments[-1]
+    assert "- pages/checkout_page.py: rule 0 broken" in summary
+    assert "- pages/checkout_page.py: rule 9 broken" in summary
+    assert "rule 10 broken" not in summary and "... and 2 more" in summary
+
+
 def test_a_repair_that_reaches_a_protected_file_is_refused(wired):
     def reach(batch):
         return [f.model_copy(update={"content": f.content + "x"}) if f.file_path == "features/cart.feature"

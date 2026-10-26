@@ -584,7 +584,8 @@ OWNER, MEMBER or COLLABORATOR and who is not a bot. The workflow checks out
    comment is declined. More than `max_files` files: nothing is attempted.
 6. **Gate** — `_attempt_step_coverage_repair()` then `_validate_generated_files()`
    over every code file of the PR; a repair that changes a protected file is
-   refused. Any failure: nothing is pushed.
+   refused. Any failure: nothing is pushed; a `GateFailure`'s `errors` (up to 10) are listed
+   in the summary.
 7. **Push and answer** — `create_or_update_file()` per changed file on the head
    branch; `reply_to_review_comment()` per inline comment; `post_pr_comment()`
    with `summary_comment()`; `post_usage_to_story(..., "Agent 2 (Coder, review

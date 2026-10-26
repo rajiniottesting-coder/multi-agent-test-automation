@@ -423,6 +423,11 @@ def run(pr_number: int, review_id: int | None = None, comment_id: int | None = N
                 a2._validate_generated_files(batch, story_key, test_cases)
             except Exception as e:                                 # noqa: BLE001
                 problem = f"The changed files did not pass the checks every pull request passes: {e}"
+                errors = getattr(e, "errors", None) or []
+                if errors:
+                    problem += "\n" + "\n".join(f"- {err}" for err in errors[:10])
+                    if len(errors) > 10:
+                        problem += f"\n- ... and {len(errors) - 10} more"
                 logger.error("Review fix for PR #%s refused: %s", pr_number, e)
             else:
                 for f in batch:
