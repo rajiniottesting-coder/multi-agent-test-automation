@@ -207,6 +207,8 @@ def page(browser, config, request) -> Page:
     # third parties excluded: those are refused on purpose).
     from pages.base_page import watch_network
     watch_network(page, ignore=lambda url: should_block_request(url, blocked_hosts))
+    # pytest_runtest_call below reads it when the test fails.
+    request.node._watched_page = page
 
     yield page
 
@@ -286,6 +288,30 @@ def pytest_bdd_step_error(request, feature, scenario, step, step_func,
     """
     from core.allure_steps import fail_step
     fail_step(request, exception)
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_call(item):
+    """Name the temporary server errors a failed test met, in its own message.
+
+    Agent 4 re-runs a test whose failure names `HTTP 5xx` or `HTTP 429`
+    (agent4_runner.yml, --only-rerun reads the exception message). A 503 on the
+    action's OWN request - an add-to-cart call, a link followed to a page -
+    surfaced as "cart row not found" or "element never appeared", named no
+    HTTP error, and was reported as a test failure (PR #215, run of 26 Oct:
+    two failures in a 503 burst). Requests the server later answered
+    successfully - navigate() retries a page load - are not counted.
+    """
+    try:
+        return (yield)
+    except Exception as exc:                                   # noqa: BLE001
+        page = getattr(item, "_watched_page", None)
+        if page is not None:
+            from pages.base_page import unrecovered_server_errors, with_server_errors
+            restated = with_server_errors(exc, unrecovered_server_errors(page))
+            if restated is not None:
+                raise restated from exc
+        raise
 
 
 @pytest.hookimpl(hookwrapper=True)
