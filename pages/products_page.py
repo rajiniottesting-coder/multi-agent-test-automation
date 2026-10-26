@@ -58,6 +58,35 @@ class ProductsPage(BasePage):
             self.sel("view_product_links"),
         )
 
+    def add_product_to_cart(self, product_name: str) -> None:
+        """Add the named product to the cart from its OWN card on the listing.
+
+        Scopes to the product CARD containing the name and clicks the Add to
+        cart control INSIDE that card, so the 68-element add-to-cart family is
+        never addressed as a whole — click_in_row disambiguates to the one
+        control belonging to this product. Confirms it is on the listing first:
+        clicking from elsewhere would pay a full timeout and blame the control
+        selector rather than the wrong page. Adding opens the confirmation
+        modal rather than navigating, so the browser stays on /products.
+        """
+        self.require_own_page()
+        self.click_in_row(
+            self.sel("product_cards"),
+            product_name,
+            self.sel("add_to_cart_buttons"),
+        )
+
+    def open_cart_from_modal(self) -> None:
+        """Click View Cart inside the add-to-cart confirmation modal.
+
+        Only valid after a product has been added — the modal (and its link)
+        exist only then. The link navigates to the cart, so the destination
+        page object confirms arrival; this method's own job ends at the click,
+        and it does NOT call confirm_arrival() for THIS page since the click
+        leaves the listing.
+        """
+        self.click(self.sel("view_cart_link_in_modal"))
+
     def search_for(self, term: str) -> None:
         """Enter a search term and submit the search form.
 
@@ -100,6 +129,15 @@ class ProductsPage(BasePage):
         Searched Products reader) for an empty-query scenario.
         """
         return self.is_showing(self.sel("all_products_heading"), timeout_ms=timeout_ms)
+
+    def is_added_modal_shown(self, timeout_ms: Optional[int] = None) -> bool:
+        """True once the 'product has been added to cart' modal is showing. WAITS.
+
+        The confirmation modal appears only after a product is added. Call this
+        only where the modal is expected — it times out instead of returning
+        False when no product was added.
+        """
+        return self.is_showing(self.sel("added_modal"), timeout_ms=timeout_ms)
 
     def product_names(self) -> list[str]:
         """Every product name shown on the listing, in DOM order.
