@@ -52,8 +52,9 @@
 #   report artifact            yes            -              yes               yes
 #   job summary                yes           yes             yes               yes
 #   Agent 5 -> Jira            yes            -               -                 -
-#   ("-" for push: unless a runtime-affecting file changed, then the E2E runs
-#   too - see "Detect runtime-affecting changes".)
+#   defect triage -> Jira       -        (if E2E ran)   (on main)             yes
+#   ("-" for push: unless a runtime-affecting file changed, then the E2E and
+#   triage run too - see "Detect runtime-affecting changes".)
 # ─────────────────────────────────────────────────────────────
 
 name: Agent 4 - Runner
@@ -117,7 +118,7 @@ on:
   # F-21: the whole app suite on main every night, outside business hours
   # (03:10 IST), so a regression the application ships with no pull request
   # open - another team's deploy - is found the next morning. No story report:
-  # the run summary and its artifact carry the result.
+  # its failures go to the defect triage (F-22, the `triage` job below).
   schedule:
     - cron: "40 21 * * *"
 
@@ -140,6 +141,9 @@ jobs:
     # the pr_changes step); the report job then has no E2E result to post.
     outputs:
       e2e: ${{ steps.pr_changes.outputs.e2e }}
+      # 'false' only on a push that changed nothing read at test runtime; the
+      # triage job then has no E2E result to read.
+      push_e2e: ${{ steps.changes.outputs.inventory }}
     # Serialise test runs per PR (or per branch on push) - two runs of one PR
     # must not drive the live application at the same time.
     #
@@ -940,3 +944,57 @@ jobs:
         run: |
           python -m agents.agent5_reporter --reports-dir reports/
 
+  # ─────────────────────────────────────────────────────────────
+  # Job 3: defect triage for runs on main (F-22)
+  # ─────────────────────────────────────────────────────────────
+  # A test failing on main reached nobody: Agent 5 reports only on a pull
+  # request's story. After a run on MAIN - the nightly schedule (F-21), a push
+  # that ran the E2E, or a manual run on main - this raises one defect per
+  # failing test and cause (core/defects.py), opens a pipeline health alert for
+  # an outage, and records flakes. Never on a pull request.
+  triage:
+    name: Raise defects for failures on main
+    needs: test
+    if: always() && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && needs.test.outputs.push_e2e != 'false'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # One triage at a time: two would both raise the same new defect.
+    concurrency:
+      group: defect-triage
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download test reports from test job
+        # A run that produced no report is itself reported by the triage
+        # (a health alert), so a missing artifact must not stop this job.
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: pytest-report-${{ github.run_id }}
+          path: reports/
+
+      - name: Triage the run
+        env:
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+        run: |
+          python -m scripts.triage_failures --reports-dir reports \
+            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

@@ -123,6 +123,25 @@ pipeline_health:
   model_check: "completion"      # completion (1-token call) | models (list, free) | off
   spend_keep_days: 35            # day-spend records kept this long
 
+# Flaky tests (F-19): a test that failed and then passed when Agent 4 retried
+# it once counts as passed and is recorded on the pipeline health issue; its
+# description lists them by count over this window.
+flaky_tests:
+  enabled: true
+  window_days: 30
+
+# Defect triage (F-22): after a run on main (nightly, a push that ran the E2E,
+# a manual run on main) each test still failing raises ONE defect per test and
+# cause; a repeat updates it, a later pass flags it (passing_label + one
+# comment) - a person closes it. Outages and flakes never raise a defect.
+defects:
+  enabled: true
+  issue_type: "Bug"
+  label: "ai-defect"                 # + "-<hash of test and cause>" finds it again
+  passing_label: "ai-defect-passing"
+  open_statuses: ["To Do", "In Progress", "In Review"]
+  max_new_per_run: 10                # more at once: one health alert instead
+
 app_under_test:
   name: "Automation Exercise"
   base_url: "https://automationexercise.com"
