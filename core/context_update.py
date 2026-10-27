@@ -794,13 +794,18 @@ def propose_additions(sources: dict, additions, offered: set, new_modules: dict,
             res.dropped.append((path, snippet, "the notes already state it"))
             continue
         block = "\n".join(kept).strip()
+        first = _HEADING.match(block.splitlines()[0])
+        if first and heading and first.group(2).strip().lower() == heading.lower():
+            # The text repeats the heading it is placed under: keep one.
+            block = "\n".join(block.splitlines()[1:]).strip()
+            first = None
         new_file = path not in current
         if new_file:
             current[path] = f"# {new_modules[path]}\n\n{block}\n"
         elif heading:
             placed = _insert_under(current[path], heading, block)
             current[path] = placed if placed is not None else _append_section(
-                current[path], f"## {heading}\n\n{block}")
+                current[path], block if first else f"## {heading}\n\n{block}")
         else:
             current[path] = _append_section(current[path], block)
         res.added.append({"path": path, "heading": heading, "text": block, "reason": reason,
@@ -869,8 +874,21 @@ def render_addition_body(story_key: str, res: Additions, notes_report: str = "")
     return "\n".join(lines).rstrip() + "\n"
 
 
-def addition_branch(story_key: str, prefix: str) -> str:
-    return branch_for(f"{story_key}-notes", prefix)
+def addition_hash(story: dict, test_cases: list) -> str:
+    """What a notes addition was proposed for: the story's text AND its test
+    cases. An `ai-update` or `ai-regenerate` that changes the test cases (the
+    story unchanged) brings new facts, so it is proposed again; the same
+    content never is."""
+    cases = sorted(f"{tc.get('key', '')}|{tc.get('summary', '')}|{tc.get('description') or ''}"
+                   for tc in test_cases or [])
+    return hashlib.sha256((_story_hash(story) + "\n" + "\n".join(cases))
+                          .encode("utf-8")).hexdigest()[:12]
+
+
+def addition_branch(story_key: str, prefix: str, digest: str = "") -> str:
+    """`<prefix><key>-notes[-<digest[:8]>]`, lower case: no issue key, so
+    merging it moves no card; one branch per content proposed."""
+    return branch_for(f"{story_key}-notes" + (f"-{digest[:8]}" if digest else ""), prefix)
 
 
 def propose_addition_for_story(tracker, host, llm, story_key: str, settings: dict, root: Path,
@@ -879,9 +897,10 @@ def propose_addition_for_story(tracker, host, llm, story_key: str, settings: dic
     cfg = settings.get("context_update") or {}
     if not cfg.get("enabled", False) or not cfg.get("additions", True):
         return {"story": story_key, "addition": "disabled"}
-    branch = addition_branch(story_key, cfg.get("branch_prefix", "context-update/"))
     story = tracker.get_story(story_key)
-    chash = _story_hash(story)
+    cases = list(tracker.get_linked_test_cases(story_key) or [])
+    chash = addition_hash(story, cases)
+    branch = addition_branch(story_key, cfg.get("branch_prefix", "context-update/"), chash)
     if any(f"{ADD_MARKER}" in (c or "") and f"(story: {chash})" in (c or "")
            for c in tracker.get_comments(story_key)) or host.branch_exists(branch):
         return {"story": story_key, "addition": "already-proposed"}
@@ -889,7 +908,6 @@ def propose_addition_for_story(tracker, host, llm, story_key: str, settings: dic
     components = story.get("components") or []
     offered, pages = scoped_sources(sources, components, root)
     new_modules = new_module_paths(components, root)
-    cases = list(tracker.get_linked_test_cases(story_key) or [])
     scenarios = story_scenarios(root, [tc.get("key", "") for tc in cases])
     additions = extract_note_additions(llm, story, story_key, cases, scenarios, offered,
                                        pages, new_modules)
