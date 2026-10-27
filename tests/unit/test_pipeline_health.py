@@ -451,6 +451,11 @@ def test_a_malformed_block_falls_back_to_defaults(monkeypatch, tmp_path):
     from core.ops_settings import section
     s = section("pipeline_health")
     assert s["consecutive_failures"] == 3 and s["label"] == "x"
+    cfg.write_text("pipeline_health:\n  consecutive_failures: true\n  enabled: false\n"
+                   "budget:\n  per_day_usd: true\n  per_story_usd: 5\n")
+    assert section("pipeline_health")["consecutive_failures"] == 3, "true is not a count"
+    assert section("pipeline_health")["enabled"] is False
+    assert section("budget")["per_day_usd"] == 12.0 and section("budget")["per_story_usd"] == 5.0
     cfg.write_text("pipeline_health: yes\n")
     assert section("pipeline_health")["label"] == "pipeline-health"
 
