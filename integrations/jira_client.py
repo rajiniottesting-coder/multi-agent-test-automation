@@ -789,6 +789,11 @@ class JiraClient:
                 return None
             raise
 
+    # The jira SDK has no public call that lists property KEYS without fetching
+    # every value, nor one that deletes a property, so these two use its
+    # request helpers (_get_json, _get_url, _session). A unit test
+    # (test_the_jira_sdk_still_offers_what_the_property_calls_use) fails on an
+    # SDK upgrade that drops them, rather than a nightly run discovering it.
     def property_keys(self, issue_key: str) -> list:
         """Every property key on the issue (one request, keys only)."""
         data = self.client._get_json(f"issue/{issue_key}/properties")
