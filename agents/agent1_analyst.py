@@ -575,7 +575,8 @@ def main():
         results = []
         for story in stories:
             try:
-                with story_usage(story["key"], "Agent 1 (Test Designer)", dry_run=args.dry_run):
+                with story_usage(story["key"], "Agent 1 (Test Designer)", jira=jira,
+                                 dry_run=args.dry_run):
                     result = run(story["key"], dry_run=args.dry_run)
                 results.append(result)
             except Exception as e:
