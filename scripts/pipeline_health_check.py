@@ -63,6 +63,15 @@ def apply(tracker, found: list) -> dict:
     return {"opened": opened, "resolved": resolved}
 
 
+def housekeeping(tracker, now: _dt.datetime) -> None:
+    """Old records go, so the issue's record list stays short. Never raises."""
+    try:
+        from core import flaky_tests
+        flaky_tests.prune(tracker, now)
+    except Exception as e:                                         # noqa: BLE001
+        logger.warning("Housekeeping skipped: %s", e)
+
+
 def main(argv=None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -98,6 +107,7 @@ def main(argv=None) -> int:
         print("[FAIL] no pipeline health issue could be found or created - see the log.")
         return 1
     result = apply(tracker, found)
+    housekeeping(tracker, now)
     ph.refresh_view(tracker, now)
     print(f"opened: {result['opened'] or 'none'}; resolved: {result['resolved'] or 'none'}")
     return 0
