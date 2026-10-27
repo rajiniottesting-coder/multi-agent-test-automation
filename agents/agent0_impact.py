@@ -47,6 +47,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import re
@@ -259,7 +260,7 @@ def _post_usage(tracker, story_key: str) -> None:
     from core.llm_client import log_usage_summary, reset_usage
     from core.usage_ledger import (
         IMPACT_ANALYST,
-        has_usage_comments,
+        has_usage,
         post_reset_to_story,
         post_usage_to_story,
     )
@@ -268,8 +269,7 @@ def _post_usage(tracker, story_key: str) -> None:
         reset_usage()
         if not usage.get("llm_calls"):
             return                       # stage 0 or nothing judged: no cost to record
-        if has_usage_comments(tracker.get_comments(story_key),
-                              ignore_agents=(IMPACT_ANALYST,)):
+        if has_usage(story_key, tracker, ignore_agents=(IMPACT_ANALYST,)):
             post_reset_to_story(story_key, reason="change story analysed again",
                                 jira=tracker)
         post_usage_to_story(story_key, IMPACT_ANALYST, usage, jira=tracker)
@@ -619,22 +619,74 @@ def hand_over_decided(tracker, settings: dict, host=None, llm=None,
     return out
 
 
+def _outcome_property(ref: str) -> str:
+    """The issue property holding the outcome of one pull request (F-31)."""
+    return f"agent0.outcome.{hashlib.sha1(str(ref).encode()).hexdigest()[:12]}"
+
+
+def outcome_recorded(tracker, story_key: str, ref: str) -> bool:
+    """The outcome of this pull request is already on the story: as an
+    `[agent0:outcome]` comment (before F-31, or a tracker without issue
+    properties) or as its hidden property."""
+    head = f"{OUTCOME} pr: {ref} "
+    if any(c.startswith(head) for c in tracker.get_comments(story_key)):
+        return True
+    from integrations.tracker import capability
+    get = capability(tracker, "get_property")
+    if get is None:
+        return False
+    try:
+        return get(story_key, _outcome_property(ref)) is not None
+    except Exception:                                              # noqa: BLE001
+        return False
+
+
+def save_outcome(tracker, story_key: str, ref: str, result: dict) -> str:
+    """Keep the outcome, once per pull request. With the property ledger
+    (core.usage_ledger.mode) it is hidden data - a person reads it as the line
+    in Agent 5's report of that run (outcome_line); otherwise it is the
+    original `[agent0:outcome]` comment. Returns where it went."""
+    from core.usage_ledger import mode
+    from integrations.tracker import capability
+    setter = capability(tracker, "set_property")
+    if setter is not None and mode(tracker) == "properties":
+        setter(story_key, _outcome_property(ref), {"ref": ref, **result})
+        return "property"
+    tracker.add_comment(story_key, f"{OUTCOME} pr: {ref} | recall: {result['recall']} "
+                                   f"precision: {result['precision']}\n{json.dumps(result)}")
+    return "comment"
+
+
+def outcome_line(result: dict) -> str:
+    """The outcome as one line of Agent 5's report (Markdown)."""
+    def share(v):
+        return "n/a" if v is None else f"{v:.0%}"
+    actual = sorted(set(result.get("actual_changed", [])) | set(result.get("actual_failed", [])))
+    return (f"**Agent 0's prediction for this pull request:** recall {share(result['recall'])}, "
+            f"precision {share(result['precision'])} - predicted "
+            f"{len(result.get('predicted', []))} existing test(s) affected "
+            f"({', '.join(result.get('predicted', [])) or 'none'}); this run changed or failed "
+            f"{len(actual)} ({', '.join(actual) or 'none'}).")
+
+
 def record_outcome(tracker, story_key: str, settings: dict, changed, failed,
-                   ref: str) -> dict | None:
+                   ref: str, save: bool = True) -> dict | None:
     """Stage 10: the prediction against what the pull request's run showed,
     once per pull request. Works in shadow mode too - measuring is what the
     shadow period is for (design section 10). Called by Agent 5
-    (core.impact_results.record_prediction_outcome)."""
-    head = f"{OUTCOME} pr: {ref} "
-    if any(c.startswith(head) for c in tracker.get_comments(story_key)):
+    (core.impact_results.record_prediction_outcome).
+
+    save=False measures without keeping it: Agent 5 puts the line in its
+    report first, then calls save_outcome - one place for the reader."""
+    if outcome_recorded(tracker, story_key, ref):
         return None
     report, _review = _previous_report(tracker, story_key, settings)
     if not report:
         return None                                   # no prediction, nothing to measure
     predicted = [r["key"] for r in report["ranked"] if r["key"]]
     result = ia.outcome(predicted, changed, failed)
-    tracker.add_comment(story_key, f"{head}| recall: {result['recall']} precision: "
-                                   f"{result['precision']}\n{json.dumps(result)}")
+    if save:
+        save_outcome(tracker, story_key, ref, result)
     return result
 
 

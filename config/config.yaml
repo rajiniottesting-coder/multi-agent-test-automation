@@ -142,6 +142,16 @@ defects:
   open_statuses: ["To Do", "In Progress", "In Review"]
   max_new_per_run: 10                # more at once: one health alert instead
 
+# A story's model-cost ledger (F-31, core/usage_ledger.py).
+#   store  auto      hidden issue properties, and ONE cost comment per attempt
+#                    edited in place after every agent run (a row per agent);
+#                    Agent 5's report links to it. Used when the tracker can
+#                    (issue properties and comment editing); otherwise comments.
+#          comments  one [LLM-USAGE] comment per agent run and the table in
+#                    every Agent 5 report - the original behaviour.
+usage_ledger:
+  store: "auto"
+
 # Model spend budgets (F-24, core/spend_budget.py). Checked before EVERY model
 # call; over a limit the call is not made and the stop says why. Values grow
 # with the repository and the stories - raise them here, nowhere else.

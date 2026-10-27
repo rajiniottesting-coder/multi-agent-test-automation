@@ -40,6 +40,7 @@ That is the authoritative list - this docstring shows only the common
 cases. --help also carries copy-pasteable examples.
 """
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -447,6 +448,53 @@ def _flaky_section(flaky: list) -> list:
     return lines
 
 
+# F-31 (D4): the report of the last run posted on the story, as a hidden issue
+# property - a re-run of Agent 5 on the same commit with the same results posts
+# nothing new (and costs no model call).
+REPORT_PROPERTY = "agent5.report"
+
+
+def report_fingerprint(story_key: str, full_report: "RunReport", verdict: str) -> str | None:
+    """What a person reads in the report, as one hash: the story, the pull
+    request, the commit, the verdict and every test's outcome. None without a
+    commit - a run that cannot be told apart is always reported."""
+    if not full_report.commit_sha:
+        return None
+    rows = sorted((r.classname, r.name, r.status, bool(r.outage), bool(r.flaky))
+                  for r in full_report.results)
+    payload = json.dumps([story_key, full_report.pr_number, full_report.commit_sha, verdict, rows])
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
+def _last_report(tracker, story_key: str) -> dict:
+    """The stored fingerprint of the last report (properties ledger only)."""
+    from core.usage_ledger import mode
+    from integrations.tracker import capability
+    get = capability(tracker, "get_property")
+    if get is None or mode(tracker) != "properties":
+        return {}
+    try:
+        return get(story_key, REPORT_PROPERTY) or {}
+    except Exception as e:                                         # noqa: BLE001
+        logger.info(f"Last report of {story_key} not read ({e}) - reporting.")
+        return {}
+
+
+def _remember_report(tracker, story_key: str, fingerprint: str | None, comment_url,
+                     report: "RunReport") -> None:
+    from core.usage_ledger import mode
+    from integrations.tracker import capability
+    setter = capability(tracker, "set_property")
+    if not fingerprint or setter is None or mode(tracker) != "properties":
+        return
+    try:
+        setter(story_key, REPORT_PROPERTY, {"fp": fingerprint, "ref": comment_url,
+                                            "commit": report.commit_sha,
+                                            "run": report.workflow_run_url})
+    except Exception as e:                                         # noqa: BLE001
+        logger.warning(f"Report fingerprint of {story_key} not kept: {e}")
+
+
 def record_flakes(tracker, results: list, run_url: str | None) -> int:
     """Every flaky test of the run on the pipeline health issue - the whole
     run, not only the story's: a flake is the suite's problem. Never raises."""
@@ -668,6 +716,22 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
     if report.workflow_run_url:
         logger.info(f"Workflow run: {report.workflow_run_url}")
 
+    # 2b. F-31 (D4): the same commit with the same results is already on the
+    # story (a re-run of this job, or of the tests with the same outcome).
+    tracker = None if dry_run else get_tracker()
+    fingerprint = report_fingerprint(story_key, full_report, verdict)
+    last = _last_report(tracker, story_key) if tracker is not None and fingerprint else {}
+    if fingerprint and last.get("fp") == fingerprint:
+        logger.info(f"Same commit and the same results as the report already on {story_key} "
+                    f"({last.get('ref')}) - not posted again, no model call.")
+        if report.workflow_run_url and report.workflow_run_url != last.get("run"):
+            # Another run of the tests that happened to agree: its flakes are new.
+            record_flakes(tracker, full_report.results, report.workflow_run_url)
+        return {"story_key": story_key, "title": "", "verdict": verdict,
+                "failing_outside_story": len(outside), "total": report.total,
+                "passed": report.passed, "failed": report.failed,
+                "comment_url": last.get("ref"), "status": "unchanged_not_reposted"}
+
     # 3. REASON: ask LLM to draft the comment
     prompt_template = load_prompt()
     user_prompt = prompt_template.replace(
@@ -711,34 +775,57 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
                                                      if scoped_whole else None),
                                      outages=outages)
 
-    # 3c. USAGE LEDGER: log this agent's own token/cost summary, then read
-    # all [LLM-USAGE] comments posted by earlier agents (1, 2, 3) and append
-    # an end-to-end usage & cost table for the whole story to the report.
+    # 3c. USAGE LEDGER: this agent's own usage, and the story's cost so far.
+    # Property ledger (F-31): one line pointing to the story's cost comment,
+    # which holds the table - not a copy of it in every report. Comment
+    # ledger: the end-to-end table appended here, as before.
     from core.llm_client import log_usage_summary, reset_usage
-    from core.usage_ledger import (
-        aggregate_story_usage, format_e2e_section, post_usage_to_story,
-    )
+    from core import usage_ledger as ul
     own_usage = log_usage_summary(f"story {story_key} (reporter)")
     reset_usage()
+    own_entry = dict(own_usage)
+    own_entry["agent"] = "Agent 5 (Reporter)"
+    properties_ledger = tracker is not None and ul.mode(tracker) == "properties"
     try:
-        if not dry_run:
-            _ledger_jira = get_tracker()
-            prior_comments = _ledger_jira.get_comments(story_key)
+        if properties_ledger:
+            line = ul.cost_line(story_key, tracker, extra_entries=[own_entry])
+            if line:
+                final_body = final_body + "\n\n---\n" + line
         else:
-            prior_comments = []
-        own_entry = dict(own_usage)
-        own_entry["agent"] = "Agent 5 (Reporter)"
-        agg = aggregate_story_usage(prior_comments, extra_entries=[own_entry])
-        e2e_section = format_e2e_section(agg, budget=spend_budget.settings())
-        if e2e_section:
-            final_body = final_body + "\n" + e2e_section
-            logger.info(
-                "E2E story usage: %d agent runs, %s tokens, cost %s",
-                agg["agent_runs"], f"{agg['total_tokens']:,}",
-                f"${agg['total_cost_usd']:.4f}" if agg["total_cost_usd"] is not None else "n/a",
-            )
+            ledger = ul.story_ledger(story_key, tracker) if tracker is not None else \
+                {"entries": [], "holds": []}
+            agg = ul.aggregate_entries(ledger["entries"], extra_entries=[own_entry])
+            budget = spend_budget.settings()
+            allowed = (ul._allowance(story_key, tracker, ledger, budget)
+                       if tracker is not None else None)
+            e2e_section = ul.format_e2e_section(agg, budget=budget, allowance=allowed)
+            if e2e_section:
+                final_body = final_body + "\n" + e2e_section
+                logger.info(
+                    "E2E story usage: %d agent runs, %s tokens, cost %s",
+                    agg["agent_runs"], f"{agg['total_tokens']:,}",
+                    f"${agg['total_cost_usd']:.4f}" if agg["total_cost_usd"] is not None else "n/a",
+                )
     except Exception as e:
         logger.warning(f"Usage ledger aggregation failed (non-fatal): {e}")
+
+    # 3d. Agent 0, stage 10, with the property ledger (F-31, D3): the
+    # prediction's outcome is measured now and shown as a line of this report,
+    # instead of a second comment posted at the same moment.
+    outcome = None
+    if properties_ledger:
+        try:
+            from config.paths import FEATURES_DIR
+            from core.impact_results import record_prediction_outcome
+            outcome = record_prediction_outcome(tracker, get_repo_host(), story_key,
+                                                report.pr_number, report.pr_url,
+                                                full_report.results, FEATURES_DIR, save=False)
+            if outcome:
+                from agents.agent0_impact import outcome_line
+                final_body = final_body + "\n\n" + outcome_line(outcome)
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning(f"Impact outcome skipped (non-fatal): {e}")
+            outcome = None
 
     # 4. ACT: post to Jira (or preview)
     if dry_run:
@@ -761,7 +848,7 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
             "status": "draft_generated_dry_run",
         }
 
-    jira = get_tracker()
+    jira = tracker
     # The comment is authored in Markdown. A tracker whose comments use another
     # markup converts it (Jira's REST v2 renders wiki markup, where a Markdown
     # table separator becomes a row of dashes and **bold** keeps its stars);
@@ -782,19 +869,25 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
         logger.warning(f"Owner result lines skipped (non-fatal): {e}")
     # Agent 0, stage 10: when Agent 0 predicted this story's impact (shadow or
     # live), record recall and precision against what this run showed. Does
-    # nothing otherwise, and never fails the report.
+    # nothing otherwise, and never fails the report. With the property ledger
+    # it was measured above and is in the report; here it is only kept.
     try:
-        from config.paths import FEATURES_DIR
-        from core.impact_results import record_prediction_outcome
-        record_prediction_outcome(jira, get_repo_host(), story_key, report.pr_number,
-                                  report.pr_url, full_report.results, FEATURES_DIR)
+        if outcome:
+            from agents.agent0_impact import save_outcome
+            save_outcome(jira, story_key, report.pr_url or f"#{report.pr_number}", outcome)
+        elif not properties_ledger:
+            from config.paths import FEATURES_DIR
+            from core.impact_results import record_prediction_outcome
+            record_prediction_outcome(jira, get_repo_host(), story_key, report.pr_number,
+                                      report.pr_url, full_report.results, FEATURES_DIR)
     except Exception as e:                                     # noqa: BLE001
         logger.warning(f"Impact outcome skipped (non-fatal): {e}")
     # F-19: flakes go on the pipeline health issue (never a defect).
     record_flakes(jira, full_report.results, report.workflow_run_url)
     # Record this agent's usage on the ledger too, so any later re-run or
-    # re-aggregation sees the full picture.
-    post_usage_to_story(story_key, "Agent 5 (Reporter)", own_usage, jira=jira)
+    # re-aggregation sees the full picture (and the cost comment shows it).
+    ul.post_usage_to_story(story_key, "Agent 5 (Reporter)", own_usage, jira=jira)
+    _remember_report(jira, story_key, fingerprint, comment_url, full_report)
 
     result = {
         "story_key": story_key,

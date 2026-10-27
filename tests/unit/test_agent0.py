@@ -604,7 +604,11 @@ class TestD5:
         assert (out["recall"], out["precision"]) == (0.5, 1.0)
         assert record_prediction_outcome(jira, host, "SBX-5", 1, url, [failed_11],
                                          branch["features"], s) is None    # once per PR
-        assert len([c for c in fake.comments["SBX-5"] if c.startswith(a0.OUTCOME)]) == 1
+        kept = ([c for c in fake.comments["SBX-5"] if c.startswith(a0.OUTCOME)]
+                + [k for k in fake.properties.get("SBX-5", {}) if k.startswith("agent0.outcome.")])
+        assert len(kept) == 1, "kept once per PR - as a comment or, with the property " \
+                               "ledger, as hidden data shown in Agent 5's report (F-31)"
+        assert a0.outcome_recorded(jira, "SBX-5", url)
 
         host.merge(1)
         assert not [r for r in a0.scan(jira, host, model, s, root)      # reconcile is not
@@ -637,6 +641,7 @@ class TestD5:
             assert record_prediction_outcome(jira, host, "SBX-5", 1, "u", [],
                                              branch["features"], s) is None
         assert not [c for c in fake.comments.get("SBX-5", []) if c.startswith(a0.OUTCOME)]
+        assert not [k for k in fake.properties.get("SBX-5", {}) if k.startswith("agent0.outcome.")]
 
     def test_cli_is_a_no_op_while_disabled(self, capsys, monkeypatch):
         # Off explicitly: a project may ship Agent 0 on; the off path must hold.

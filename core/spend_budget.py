@@ -260,21 +260,26 @@ def begin_story(story_key: str, tracker=None) -> None:
     if tracker is None:
         return
     try:
-        from core.usage_ledger import aggregate_story_usage
-        comments = tracker.get_comments(story_key)
-        prior = aggregate_story_usage(comments).get("total_cost_usd") or 0.0
+        from core.usage_ledger import aggregate_entries, story_ledger
+        ledger = story_ledger(story_key, tracker)      # either store (F-31)
+        prior = aggregate_entries(ledger["entries"]).get("total_cost_usd") or 0.0
         labels = (tracker.get_story(story_key) or {}).get("labels") or []
-        held_at, held = hold_state(comments, labels, s["hold_label"])
+        held_at = ledger["holds"][-1] if ledger["holds"] else None
+        held = s["hold_label"] in labels
     except Exception as e:                                         # noqa: BLE001
         logger.warning("Story budget of %s not read (%s); not enforced for it.", story_key, e)
         return
-    per_story = float(s["per_story_usd"])
-    if held_at is None:
-        allowance = per_story
-    else:
-        allowance = held_at + (0.0 if held else per_story)
     _state["story"] = {"key": story_key, "prior": float(prior), "base": _lifetime() or 0.0,
-                       "allowance": allowance, "tracker": tracker}
+                       "allowance": allowance(held_at, held, float(s["per_story_usd"])),
+                       "tracker": tracker}
+
+
+def allowance(held_at: float | None, held: bool, per_story: float) -> float:
+    """What a story may spend now: one per_story budget; after a hold, what it
+    had spent then - plus one more budget once a person removed the label."""
+    if held_at is None:
+        return per_story
+    return held_at + (0.0 if held else per_story)
 
 
 def end_story() -> None:
@@ -317,6 +322,8 @@ def hold_story(tracker, exc: BudgetExceeded) -> bool:
             f"${float(s['per_story_usd']):.2f} (budget.per_story_usd). To stop: nothing more "
             f"to do."))
         tracker.add_label(exc.story, s["hold_label"])
+        from core.usage_ledger import record_hold
+        record_hold(exc.story, exc.spent, exc.limit, jira=tracker)   # read back with the ledger
         return True
     except Exception as e:                                         # noqa: BLE001
         logger.warning("Budget hold on %s not recorded: %s", exc.story, e)

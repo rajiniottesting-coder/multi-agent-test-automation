@@ -46,8 +46,10 @@ def clean(monkeypatch):
     llm_client._lifetime.reset()
 
 
-@pytest.fixture
-def world(monkeypatch):
+@pytest.fixture(params=["comments", "auto"])
+def world(monkeypatch, request):
+    """Both ledger stores (F-31): [LLM-USAGE] comments, and issue properties."""
+    monkeypatch.setattr(ul, "_store_setting", lambda: request.param)
     fake = FakeJira()
     fake.add("Story", "A shopper pays", key=STORY, labels=["ai-processed", "human-approved"])
     jira = jira_client_over(fake, monkeypatch)
@@ -237,8 +239,9 @@ def test_a_story_over_its_budget_is_held_once(monkeypatch, world):
     assert "budget-hold" in fake.issues[STORY]["labels"]
     holds = [c for c in fake.comments[STORY] if c.startswith(sb.HOLD_MARKER)]
     assert len(holds) == 1 and "remove the label" in holds[0]
-    assert any('agent="Agent 2 (Coder, regenerate) (failed)" calls=1' in c
-               for c in fake.comments[STORY]), "the stopped run's cost is still on the ledger"
+    assert ("Agent 2 (Coder, regenerate) (failed)", 1) in [
+        (e["agent"], e["calls"]) for e in ul.story_ledger(STORY, jira)["entries"]], \
+        "the stopped run's cost is still on the ledger"
     with pytest.raises(sb.BudgetExceeded):
         _story_run(jira, 0.0)                                # still held: stopped at once
     assert len([c for c in fake.comments[STORY] if c.startswith(sb.HOLD_MARKER)]) == 1

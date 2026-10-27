@@ -30,13 +30,20 @@ def clean_counter():
     llm_client.reset_usage()
 
 
+def _comments_tracker():
+    """A tracker with the Protocol only (no issue properties): the comment ledger.
+    The property ledger is covered in tests/unit/test_comment_dedup.py."""
+    from integrations.tracker import Tracker
+    return MagicMock(spec=[m for m in dir(Tracker) if not m.startswith("_")])
+
+
 def _posted(jira):
     return [(c.args[0], c.args[1]) for c in jira.add_comment.call_args_list]
 
 
 def test_the_counter_starts_at_zero_for_each_story():
     _spend(3)                                   # left over from something else
-    jira = MagicMock()
+    jira = _comments_tracker()
     with ul.story_usage("AB-1", "Agent X", jira=jira):
         assert llm_client.get_usage_summary()["llm_calls"] == 0
         _spend(2)
@@ -46,7 +53,7 @@ def test_the_counter_starts_at_zero_for_each_story():
 
 
 def test_a_failed_story_posts_its_own_cost_and_the_error_is_kept():
-    jira = MagicMock()
+    jira = _comments_tracker()
     with pytest.raises(ValueError, match="gate"):
         with ul.story_usage("AB-1", "Agent X", jira=jira):
             _spend(4)
@@ -57,7 +64,7 @@ def test_a_failed_story_posts_its_own_cost_and_the_error_is_kept():
 
 
 def test_a_run_that_posted_its_own_cost_adds_nothing():
-    jira = MagicMock()
+    jira = _comments_tracker()
     with ul.story_usage("AB-1", "Agent X", jira=jira):
         _spend(2)
         llm_client.reset_usage()                # the run posted and reset itself
@@ -65,7 +72,7 @@ def test_a_run_that_posted_its_own_cost_adds_nothing():
 
 
 def test_no_model_call_no_comment_and_dry_run_posts_nothing():
-    jira = MagicMock()
+    jira = _comments_tracker()
     with ul.story_usage("AB-1", "Agent X", jira=jira):
         pass
     with pytest.raises(RuntimeError):
@@ -77,7 +84,7 @@ def test_no_model_call_no_comment_and_dry_run_posts_nothing():
 
 
 def test_bookkeeping_never_hides_the_runs_own_error():
-    jira = MagicMock()
+    jira = _comments_tracker()
     jira.add_comment.side_effect = OSError("tracker down")
     with pytest.raises(KeyError):
         with ul.story_usage("AB-1", "Agent X", jira=jira):

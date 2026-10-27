@@ -51,6 +51,13 @@ DEFAULTS: dict = {
         # one health alert, rather than a flood.
         "max_new_per_run": 10,
     },
+    # Where a story's model-cost ledger is kept (F-31, core/usage_ledger.py):
+    # "auto" - hidden issue properties and one cost comment per attempt, edited
+    # in place, when the tracker can; "comments" - one [LLM-USAGE] comment per
+    # agent run and the table in every Agent 5 report (the original behaviour).
+    "usage_ledger": {
+        "store": "auto",
+    },
     # Model spend limits (F-24). Costs need LLM_PRICE_INPUT_PER_1M and
     # LLM_PRICE_OUTPUT_PER_1M; without pricing nothing can be enforced.
     "budget": {
