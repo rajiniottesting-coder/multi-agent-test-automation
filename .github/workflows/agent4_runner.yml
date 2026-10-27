@@ -123,8 +123,9 @@ jobs:
     name: Run Tests
     runs-on: ubuntu-latest
     # 15 for the run itself + up to 15 waiting for earlier pull requests'
-    # browser runs (the wait-for-turn step below).
-    timeout-minutes: 30
+    # browser runs (the wait-for-turn step below) + up to 10 for retrying
+    # failed tests once (at most MAX_RETRIED_TESTS of them, F-19).
+    timeout-minutes: 40
     # 'false' only when a pull request changes nothing a test run reads (see
     # the pr_changes step); the report job then has no E2E result to post.
     outputs:
@@ -378,6 +379,7 @@ jobs:
           done
 
       - name: Run app tests (generated E2E)
+        id: e2e
         # CI=true is auto-set by GitHub Actions, which our conftest.py uses
         # to force headless mode (overriding config.yaml's headless: false).
         # This junit.xml contains ONLY the app-under-test E2E results — it's
@@ -404,8 +406,15 @@ jobs:
         # requests with 503 in short bursts while it loads fine in a browser
         # (L14). BasePage.navigate() already retries a page load; this covers
         # an action's own request (an add-to-cart call) failing that way. A
-        # real assertion failure, a 404 or a timeout is never re-run.
+        # real assertion failure, a 404 or a timeout is not re-run HERE; the
+        # retry step below gives every remaining failure one more try (F-19).
+        #
+        # This step never fails the job itself: pytest's exit code is kept as
+        # an output, and "Decide the E2E result" (the last step) fails the job
+        # on what is still failing after the retry - or on an interrupted run,
+        # a collection error or no tests at all.
         run: |
+          set +e
           pytest tests/step_defs/ \
             --html=reports/pytest-report.html \
             --self-contained-html \
@@ -413,6 +422,10 @@ jobs:
             --reruns 2 --reruns-delay 20 \
             --only-rerun "HTTP (5[0-9][0-9]|429)\b" \
             -v
+          code=$?
+          echo "pytest exited with $code"
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
 
       - name: Keep only the final attempt of re-run tests in the report
         # pytest-rerunfailures writes every attempt as its own testcase, and a
@@ -421,13 +434,42 @@ jobs:
         if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory != 'false') && steps.pr_changes.outputs.e2e != 'false'
         run: python -m scripts.collapse_junit_reruns reports/junit.xml
 
+      - name: Retry failed tests once
+        # F-19: a test that fails and then passes when run again is FLAKY - it
+        # counts as passed, and Agent 5 / the defect triage record it on the
+        # pipeline health issue, so it is never silently forgotten nor raised
+        # as a defect. A test that fails again is a failure. Only when pytest
+        # reported failures (exit code 1), and not when more than
+        # MAX_RETRIED_TESTS failed: that many at once is a broken build or an
+        # outage, and retrying would only double the run.
+        id: retry
+        if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory != 'false') && steps.pr_changes.outputs.e2e != 'false' && steps.e2e.outputs.exit_code == '1'
+        env:
+          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+          APP_USER_REGISTERED: ${{ secrets.APP_USER_REGISTERED }}
+          MAX_RETRIED_TESTS: "10"
+        run: |
+          FAILED=$(python -m scripts.finalise_junit --count-failed reports/junit.xml)
+          echo "failed tests: $FAILED"
+          if [ "$FAILED" -lt 1 ] || [ "$FAILED" -gt "$MAX_RETRIED_TESTS" ]; then
+            echo "not retrying ($FAILED failed; the limit is $MAX_RETRIED_TESTS)"
+            exit 0
+          fi
+          set +e
+          pytest tests/step_defs/ --last-failed --last-failed-no-failures none \
+            --junit-xml=reports/junit-retry.xml -v
+          echo "the retry exited with $?"
+          exit 0
+
       - name: Mark what the run learned about each test
-        # Writes the `outage` mark on a failure that says the application was
-        # unavailable (core/junit_marks.py), so this summary, Agent 5, Agent 3
-        # and the defect triage report it apart from test failures (F-7).
+        # Merges the retry (a test that passed on it is marked `flaky`, or
+        # `outage_recovered` when its first failure was the application's
+        # outage) and marks every failure that says the application was
+        # unavailable `outage` (core/junit_marks.py) - so this summary,
+        # Agent 5, Agent 3 and the defect triage read one answer (F-7, F-19).
         # Never fails the job.
         if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory != 'false') && steps.pr_changes.outputs.e2e != 'false'
-        run: python -m scripts.finalise_junit reports/junit.xml
+        run: python -m scripts.finalise_junit reports/junit.xml --retry reports/junit-retry.xml
 
       # ── Allure ────────────────────────────────────────────────────────
       #
@@ -594,6 +636,9 @@ jobs:
               # 503 burst never reads as N broken tests.
               outage_cases = [c for suite in suites for c in suite.findall("testcase")
                               if junit_marks is not None and junit_marks.is_outage(c)]
+              # F-19: passed only when retried once - passed, but named.
+              flaky_cases = [c for suite in suites for c in suite.findall("testcase")
+                             if junit_marks is not None and junit_marks.is_flaky(c)]
               outage_failed = sum(1 for c in outage_cases if c.find("failure") is not None)
               outage_n = len(outage_cases)
               failures -= outage_failed
@@ -605,6 +650,8 @@ jobs:
                   status_emoji, status_text = "\u26a0\ufe0f", "No tests were collected"
               elif failures == 0 and errors == 0 and outage_n == 0:
                   status_emoji, status_text = "\u2705", f"All {total} tests passed"
+                  if flaky_cases:
+                      status_text += f" ({len(flaky_cases)} only on the retry - flaky)"
               elif failures == 0 and errors == 0:
                   status_emoji = "\u26a0\ufe0f"
                   status_text = (f"No test failed, but {outage_n} of {total} could not be "
@@ -625,6 +672,9 @@ jobs:
                        f"| \u23ed\ufe0f Skipped | {skipped} |"]
               if outage_n:
                   lines.append(f"| \U0001f310 Application unavailable | {outage_n} |")
+              if flaky_cases:
+                  lines.append(f"| \u267b\ufe0f Passed on the retry (flaky, in Passed) | "
+                               f"{len(flaky_cases)} |")
               lines += [f"| **Total** | **{total}** |", ""]
 
               failed_cases = []
@@ -704,6 +754,19 @@ jobs:
                                 f"  - {msg}"]
                   lines.append("")
 
+              if flaky_cases:
+                  lines += ["### Passed only on the retry (flaky)", "",
+                            "Failed, then passed when run once more. Counted as passed and "
+                            "recorded on the pipeline health issue; a test that keeps "
+                            "appearing here is worth fixing.", ""]
+                  for case in flaky_cases:
+                      first = ""
+                      if junit_marks is not None:
+                          first = junit_marks.props(case).get("first_failure", "")
+                      lines += [f'- **`{case.get("classname", "")}::{case.get("name", "")}`**'
+                                + (f" - first failure: {first[:200]}" if first else "")]
+                  lines.append("")
+
               print(f"{scope}: {total} total, {passed} passed, {failures} failed, "
                     f"{errors} errored, {skipped} skipped, {outage_n} unavailable, "
                     f"{duration:.2f}s")
@@ -772,6 +835,15 @@ jobs:
           with open(summary_path, "a", encoding="utf-8") as f:
               f.write("\n".join(out) + "\n")
           PYEOF
+
+      - name: Decide the E2E result
+        # The run step keeps pytest's exit code instead of failing (so the
+        # retry can run). This fails the job on what is STILL failing after
+        # the retry, outages included - a test the application stopped was not
+        # tested, so the check must not go green - and on a run that was
+        # interrupted, could not collect, or produced no report or no tests.
+        if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory != 'false') && steps.pr_changes.outputs.e2e != 'false' && steps.e2e.outcome != 'skipped'
+        run: python -m scripts.finalise_junit --verdict reports/junit.xml --exit-code "${{ steps.e2e.outputs.exit_code }}"
 
   # ─────────────────────────────────────────────────────────────
   # Job 2: Agent 5 — Post test results back to Jira

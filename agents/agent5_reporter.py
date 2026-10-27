@@ -153,8 +153,11 @@ def parse_junit_xml(junit_path: Path) -> RunReport:
                 status=status,
                 duration_seconds=tc_time,
                 failure_message=failure_message,
-                # Agent 4's mark: the application was unavailable (F-7).
+                # Agent 4's marks: the application was unavailable (F-7); passed
+                # only when retried once (F-19).
                 outage=junit_marks.is_outage(tc),
+                flaky=junit_marks.is_flaky(tc),
+                first_failure=junit_marks.props(tc).get("first_failure") or None,
             ))
 
     return RunReport(
@@ -287,6 +290,10 @@ def build_final_comment(prose_body: str, report: RunReport,
     if section:
         parts.append("")
         parts.extend(section)
+    section = _flaky_section([r for r in report.results if r.flaky])
+    if section:
+        parts.append("")
+        parts.extend(section)
 
     # Build the "Run details" section ONLY with fields that are actually set.
     # Each line is conditional — no field, no line.
@@ -398,6 +405,35 @@ def _outage_section(outages: list) -> list:
     if n > _OUTSIDE_LISTED:
         lines.append(f"- ...and {n - _OUTSIDE_LISTED} more - see the HTML report.")
     return lines
+
+
+def _flaky_section(flaky: list) -> list:
+    """Markdown naming the story's tests that passed only on the retry (F-19).
+    They count as passed; a flake that is never named is never fixed."""
+    if not flaky:
+        return []
+    lines = [f"**♻ Passed only on the retry (flaky):** {len(flaky)} test"
+             f"{'' if len(flaky) == 1 else 's'} failed, then passed when run once more. "
+             "Counted as passed and recorded on the pipeline health issue.", ""]
+    for r in flaky[:_OUTSIDE_LISTED]:
+        module = r.classname.rsplit(".", 1)[-1]
+        lines.append(f"- `{module}::{r.name}`"
+                     + (f" - first failure: {r.first_failure[:160]}" if r.first_failure else ""))
+    if len(flaky) > _OUTSIDE_LISTED:
+        lines.append(f"- ...and {len(flaky) - _OUTSIDE_LISTED} more - see the run summary.")
+    return lines
+
+
+def record_flakes(tracker, results: list, run_url: str | None) -> int:
+    """Every flaky test of the run on the pipeline health issue - the whole
+    run, not only the story's: a flake is the suite's problem. Never raises."""
+    try:
+        from core import flaky_tests
+        return flaky_tests.record(tracker, [(f"{r.classname}::{r.name}", r.first_failure)
+                                            for r in results if r.flaky], run_url)
+    except Exception as e:                                         # noqa: BLE001
+        logger.warning(f"Flaky tests not recorded (non-fatal): {e}")
+        return 0
 
 
 def _without_outages(report: "RunReport") -> "RunReport":
@@ -711,6 +747,8 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
                                   report.pr_url, full_report.results, FEATURES_DIR)
     except Exception as e:                                     # noqa: BLE001
         logger.warning(f"Impact outcome skipped (non-fatal): {e}")
+    # F-19: flakes go on the pipeline health issue (never a defect).
+    record_flakes(jira, full_report.results, report.workflow_run_url)
     # Record this agent's usage on the ledger too, so any later re-run or
     # re-aggregation sees the full picture.
     post_usage_to_story(story_key, "Agent 5 (Reporter)", own_usage, jira=jira)

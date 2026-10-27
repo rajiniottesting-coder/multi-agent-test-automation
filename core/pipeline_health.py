@@ -205,7 +205,8 @@ def _title_of(body: str) -> str:
 
 def _sections() -> list:
     """(render_view argument, summary function) for each record kept here."""
-    return []
+    from core import flaky_tests
+    return [("flaky", flaky_tests.summary)]
 
 
 def render_view(alerts: dict, flaky: list | None = None, spend: dict | None = None,
@@ -217,6 +218,18 @@ def render_view(alerts: dict, flaky: list | None = None, spend: dict | None = No
         lines += [f"- `{a}` - {_title_of(b) or 'see its comment'}" for a, b in sorted(alerts.items())]
     else:
         lines.append("None.")
+    if flaky is not None:
+        window = section("flaky_tests").get("window_days", 30)
+        lines += ["", f"## Flaky tests (last {window} days)", "",
+                  "Failed, then passed when retried once. Counted as passed and kept out "
+                  "of defects. A test listed here often is worth fixing or quarantining.", ""]
+        if flaky:
+            lines += ["| Test | Times | Last seen |", "|---|---|---|"]
+            lines += [f"| `{t}` | {n} | {d} |" for t, n, d in flaky[:25]]
+            if len(flaky) > 25:
+                lines += ["", f"...and {len(flaky) - 25} more."]
+        else:
+            lines.append("None recorded.")
     now = now or _dt.datetime.now(_dt.timezone.utc)
     lines += ["", f"_Updated {now.strftime('%Y-%m-%d %H:%M')} UTC._"]
     return "\n".join(lines)

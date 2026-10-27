@@ -384,6 +384,15 @@ class TestResult(BaseModel):
         description="Failed because the application was unavailable (core/junit_marks.py, "
                     "F-7): reported apart from test failures"
     )
+    flaky: bool = Field(
+        default=False,
+        description="Passed only when retried once (core/junit_marks.py, F-19): counts as "
+                    "passed, named in the report and recorded as a flake"
+    )
+    first_failure: Optional[str] = Field(
+        default=None,
+        description="For a test that passed on the retry: its first failure's first line"
+    )
 
 
 class RunReport(BaseModel):
