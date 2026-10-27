@@ -631,12 +631,12 @@ skipped runs would cancel a person's `/fix` waiting in the group. ADR-017.
 
 1. **Fetch PR metadata** via `gh.get_pr_metadata(pr_number)`: returns dict with `number`, `title`, `body`, `state`, `head_branch`, `base_branch`, `author`, `url`
 2. **Fetch changed files** via `gh.get_pr_changed_files(pr_number)`: list of dicts with `filename`, `status` (added/modified/removed/renamed), `additions`, `deletions`, `patch` (unified diff) and `content` (full file, fetched for every file not removed)
-3. **No type filter** — every changed file goes to the model, with its full content and its patch.
+3. **No type filter** — every changed file goes to the model: test code (features, steps, page objects, Python) with its full content; a file no test reads while it runs (`prompts/`, `docs/`, Markdown - `core.test_runtime.NOT_READ_AT_RUNTIME`) as its diff only. The section has a budget (`_CHANGED_FILES_BUDGET_CHARS`, 300,000 characters): over it, the largest full contents fall back to their diffs, largest first, and each block says so. Found on PR #225, whose full guides made a ~241k-token prompt the model refused.
 4. **Build prompt** — concatenates:
    - System: `prompts/agent3_reviewer.md`
    - PR metadata
    - Reference files block (from `ctx.load_reference_files()`)
-   - `format_changed_files_for_prompt(files)` — renders each file's name, status, patch as a markdown section
+   - `format_changed_files_for_prompt(files, budget_chars)` — renders each file's name, status and full content or diff (rule and budget above) as a markdown section
 5. **Invoke LLM with structured schema**:
    ```python
    report = llm.invoke_structured(prompt, schema=ReviewReport)

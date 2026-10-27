@@ -252,3 +252,4 @@ Gaps found earlier and fixed, for reference (details in [AI_CONCEPTS.md → fail
 | G10: a reviewer's predicted failure kept blocking after its own scenario passed, because another test was red (an HTTP 503 from the site; a change story's expected pre-deployment failure) - PR #211 | #212 |
 | G11: Agent 1 approved an exact cart quantity in a signed-in test case that Agent 2's gate then refused on every attempt, and the scan retried the story every 30 minutes (SCRUM-187) | #215 |
 | G12: the pipeline never wrote the inventory - a new feature's live elements never reached it (so Agent 2 left those test cases out), dead keys stayed, a changed selector needed a person to run scripts | this change (`core/inventory_update.py`) |
+| G13: Agent 3 sent every changed file whole; a PR editing the large guides made a ~241k-token prompt and the review failed with no comment (PR #225) | this change (documentation as diffs, a changed-files budget) |
