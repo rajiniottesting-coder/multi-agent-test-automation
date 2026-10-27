@@ -499,3 +499,13 @@ def test_the_listing_check_uses_the_clients_own_default_endpoint(monkeypatch):
     hc.check_model("models")
     assert seen[-1] == "https://gateway.example/v1/models"
     assert "api.openai.com" not in (ROOT / "core/health_checks.py").read_text(encoding="utf-8")
+
+
+def test_the_jira_sdk_still_offers_what_the_property_calls_use():
+    """property_keys / delete_property use the SDK's request helpers (no public
+    call exists): an SDK upgrade that drops them must fail here, not at night."""
+    from jira import JIRA
+    for name in ("_get_json", "_get_url", "add_issue_property", "issue_property", "myself"):
+        assert callable(getattr(JIRA, name, None)), f"jira.JIRA.{name} is gone"
+    import inspect
+    assert "_session" in inspect.getsource(JIRA.__init__), "JIRA no longer keeps a _session"
