@@ -9,6 +9,63 @@ ADR-005 (the Jira label state machine) under [State management deep-dive](./GUID
 
 ---
 
+## ADR-023 — Production readiness: a watched health issue, a nightly run with defects, flakes recorded, spend budgets
+
+### Status
+
+Accepted (2026-10).
+
+### Context
+
+The pipeline could fail without anyone being told (N1-N4, L14, L22): no run
+tested `main` unless a pull request opened; a test failing on `main` reached
+nobody; a scheduled agent failing run after run, or an expired credential, was
+visible only as red runs in the Actions tab; nothing limited model spend, and
+a spent provider budget stopped every agent at once. A failure caused by the
+application being down read like a test failure, and a test that failed one run
+in ten turned PRs red with no record of it.
+
+### Decision
+
+1. **One tracker issue, watched, that only speaks on a change.** Alerts open
+   and close with one comment each; the description is the current picture.
+   People are told by the tracker's own watch notifications - no new channel
+   to configure. The one problem it cannot report, the tracker's own
+   credentials, fails the health check's run so GitHub notifies its owner.
+2. **The suite runs on `main` every night**, takes its turn on the live
+   application, and its failures become defects - one per test and cause,
+   updated on a repeat without a comment, flagged once when the test passes
+   again. A person closes a defect; the pipeline never does.
+3. **What the run learned is written into `junit.xml` once** (`outage`,
+   `flaky`, `outage_recovered`, `retried`) and every reader asks the same
+   helper, so the summary, Agent 5, Agent 3 and the triage never disagree.
+   An outage is neither a pass nor a failure; a pass only on the retry counts
+   as passed, is recorded, refutes no prediction and is not "passing again".
+4. **A failed test is retried once**, and the job's result is decided after
+   the retry; quarantine stays a person's decision.
+5. **Spend is limited before it is spent.** Every model call asks the budget
+   first; the stop is a `BaseException` so no recovery path can swallow it and
+   report a different problem. A day's total is the sum of append-only records
+   (one hidden issue property per run), so concurrent runs never overwrite each
+   other. A story over budget is held by a label a person removes.
+6. **Tracker features beyond the Protocol are optional capabilities**: an
+   adapter without them keeps every existing behaviour.
+
+### Consequences
+
+- A person watches one issue instead of the Actions tab.
+- The nightly run costs browser minutes, no model calls; the health check
+  costs one one-token call per run (or none with `model_check: models`).
+- Concurrent runs can overshoot the daily budget by what each spends (L36);
+  stopping earlier would need a lock the tracker does not offer.
+- A test failing with a new cause opens a new defect; the old one waits for a
+  person (L37). A real failure that coincides with an unrecovered 5xx reads as
+  an outage, the same rule as the re-run (L41).
+- Agent 3's runner wait may end before a run with retries (L39): the
+  prediction then keeps blocking - the safe side.
+
+---
+
 ## ADR-022 — Story state and scans: each story's cost, one scan budget, nothing revised twice, a closed PR sets the story back
 
 ### Status

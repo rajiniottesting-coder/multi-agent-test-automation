@@ -67,7 +67,10 @@ core/
   board_status.py
   context_update.py
   dry_run.py
+  defects.py
   failure_diagnosis.py
+  flaky_tests.py
+  health_checks.py
   impact_analysis.py
   impact_graph.py
   impact_handover.py
@@ -81,9 +84,13 @@ core/
   inventory_proposals.py
   inventory_update.py
   json_block.py
+  junit_marks.py
   llm_client.py
   onboarding.py
+  ops_settings.py
+  pipeline_health.py
   schemas.py
+  spend_budget.py
   test_case_rules.py
   test_runtime.py
   usage_ledger.py
@@ -118,17 +125,20 @@ scripts/
   close_merged_story.py
   collapse_junit_reruns.py
   e2e_turn.py
+  finalise_junit.py
   gateway_probe.py
   generate_inventory.py
   impact_handover.py
   impact_reconcile.py
   onboarding_check.py
+  pipeline_health_check.py
   plan_inventory.py
   promote_draft.py
   propose_context_addition.py
   propose_inventory_update.py
   smoke_test.py
   sweep_stalled_prs.py
+  triage_failures.py
   verify_locators.py
 
 prompts/
@@ -149,7 +159,7 @@ features/  tests/step_defs/                      — generated and reference tes
 tests/unit/                                      — ~3,000 offline framework tests
 app_inventory/<app>.json                         — APP-SPECIFIC (pages, selectors, notes, components)
 config/config.yaml                               — app config, agent selection rules, Agent 0, board
-.github/workflows/                               — 10 workflows: agents 0–5 (Agent 4 + 5 share one), Agent 2's review fix, artifact cleanup, inventory health, story-done-on-merge, sweeper
+.github/workflows/                               — 11 workflows: agents 0–5 (Agent 4 + 5 share one, with the nightly run and the defect triage), Agent 2's review fix, artifact cleanup, inventory health, pipeline health, story-done-on-merge, sweeper
 ```
 
 File sizes change with almost every pull request, so they are not listed here; `wc -l` gives current figures.
@@ -697,7 +707,7 @@ Looks for the PR number in this priority order:
 
 **File:** None — pure CI workflow
 **Workflow:** `.github/workflows/agent4_runner.yml`
-**Trigger:** GitHub `pull_request` event (same as Agent 3); a push to `main` touching framework paths; manual dispatch
+**Trigger:** GitHub `pull_request` event (same as Agent 3); a push to `main` touching framework paths; manual dispatch; nightly on `main` (`40 21 * * *`, 03:10 IST - F-21)
 
 No Python agent file. The "intelligence" is the test code Agent 2 wrote; Agent 4 is the proof step.
 
@@ -706,7 +716,7 @@ No Python agent file. The "intelligence" is the test code Agent 2 wrote; Agent 4
 1. **Checkout PR branch** via `actions/checkout@v4`
 2. **Setup Python 3.13** via `actions/setup-python@v5`
 3. **Install deps**: `pip install -r requirements.txt && playwright install --with-deps chromium`
-3b. **Wait for earlier PRs' browser runs** (pull request only): `scripts/e2e_turn.py` lists unfinished runs of OTHER PRs with a lower run id; the step polls every 30 s, up to `MAX_WAIT_SECONDS` (900), then proceeds; it never waits if the runs cannot be read. A shared concurrency group is not used because GitHub cancels a pending run when a newer one queues, and the sweeper reads a cancelled run as a stalled PR. The job's timeout is 30 minutes to allow for the wait.
+3b. **Wait for earlier browser runs** (pull request and the nightly run): `scripts/e2e_turn.py` lists unfinished `pull_request` and `schedule` runs (`TURN_EVENTS`) of OTHER branches with a lower run id; the step polls every 30 s, up to `MAX_WAIT_SECONDS` (900), then proceeds; it never waits if the runs cannot be read. A shared concurrency group is not used because GitHub cancels a pending run when a newer one queues, and the sweeper reads a cancelled run as a stalled PR. The nightly run has its own concurrency group (`scheduled`) so a push to `main` cannot cancel it. The job's timeout is 40 minutes: the wait, the run, and the retry.
 4. **Run tests** — two steps:
    ```bash
    pytest tests/unit/ --junit-xml=reports/junit-unit.xml -v        # framework gate, no browser
@@ -715,10 +725,15 @@ No Python agent file. The "intelligence" is the test code Agent 2 wrote; Agent 4
      --junit-xml=reports/junit.xml                                 # app E2E (Playwright BDD)
    ```
    The E2E step runs `if: always()`, so a failed unit gate still yields E2E signal on a PR. On a framework-only `push` to `main`, the unit step is the whole job. On a pull request, the `pr_changes` step skips the browser (and the report job) when every changed file is one no test reads — `prompts/`, `docs/`, Markdown (`core/test_runtime.py`, fail-open); Agent 3 then takes no runner result as evidence. Only `reports/junit.xml` (the app tests) reaches Agent 5. The E2E command adds `--reruns 2 --reruns-delay 20 --only-rerun "HTTP (5[0-9][0-9]|429)\b"`: only a failure whose exception message names a temporary HTTP error is re-run. `BasePage.navigate()`'s message names the status itself; for any other failure, `pytest_runtest_call` in `tests/conftest.py` restates the exception as `ApplicationUnavailableError` naming every 5xx/429 the test's own action requests met and never recovered from (`unrecovered_server_errors()`, `with_server_errors()` in `pages/base_page.py`) - an add-to-cart call or a link followed into a 503. The diagnosis in `core/failure_diagnosis.py` is written to the report sections, which the re-run rule never reads. `BasePage.navigate()` retries a 5xx/429 page load itself first (`_navigation_retry_delays_ms()`, `_temporary_status()`).
+   The E2E step (`id: e2e`) never fails the job itself: it records pytest's exit code as an output (`set +e`), so the retry can run.
 4b. **Keep only the final attempt** (`if: always()`): `python -m scripts.collapse_junit_reruns reports/junit.xml` keeps the last `<testcase>` per (classname, name), records earlier attempts as a `reruns` property and recomputes the suite counts. Some plugin versions write every attempt as its own testcase, and a re-run attempt has no `<failure>`, so it would be counted as a pass
+4c. **Retry failed tests once** (F-19; only when pytest exited 1 and at most `MAX_RETRIED_TESTS` = 10 failed, counted by `finalise_junit --count-failed`): `pytest tests/step_defs/ --last-failed --last-failed-no-failures none --junit-xml=reports/junit-retry.xml`, with the same application credentials.
+4d. **Mark what the run learned** (`python -m scripts.finalise_junit reports/junit.xml --retry reports/junit-retry.xml`): `merge_retry()` replaces each failed test case with its retry - a pass becomes `flaky` (or `outage_recovered` when the first failure was the application's outage), a second failure `retried` with the newest evidence; `first_failure` keeps the first failure's line and the first run's own properties are kept - then `mark_outages()` writes `outage` on every failure `core.failure_diagnosis.is_outage()` reads as the application being unavailable (F-7; failure text only, never the captured log). `core/junit_marks.py` is the one reader every consumer uses.
 5. **Upload artifacts** via `actions/upload-artifact@v4`: pytest-html, junit XML, Allure results
-6. **Inline Python step** parses `junit.xml` and writes a markdown table to `$GITHUB_STEP_SUMMARY` — appears on the PR check page
+6. **Inline Python step** parses `junit.xml` and writes a markdown table to `$GITHUB_STEP_SUMMARY` — appears on the PR check page. Outages are counted in their own row and listed under *Application unavailable (not test failures)*; flaky tests under *Passed only on the retry*.
+6b. **Decide the E2E result** (last step): `finalise_junit --verdict --exit-code <e2e exit code>` exits 1 when anything still fails after the retry (outages included), when pytest ended with 2-5, or when there is no readable report or no test.
 7. **Job 2: Agent 5** — the `report` job in the same workflow, with `needs: test`
+8. **Job 3: triage** (F-22) — after a run on `main` only (schedule, a manual run on `main`, a push that ran the E2E: `needs.test.outputs.push_e2e != 'false'`), one at a time (`defect-triage`): downloads the artifact (a missing one is reported, not a crash) and runs `python -m scripts.triage_failures`: `core/defects.py` raises or updates one defect per test and cause, flags a defect whose test passes again, opens health alerts for an outage, a flood (`max_new_per_run`) or a missing report, and records flakes.
 
 ### Why combined Agent 4 + Agent 5 in one workflow
 
@@ -770,9 +785,10 @@ Priority: the `--story` CLI arg, then `JIRA_STORY_KEY`, then the first Jira key 
 2. Gather CI context
 3. Load `prompts/agent5_reporter.md`
 4. Scope the report to the step-def modules this PR added or changed; failures outside that scope are kept and listed separately, and the verdict is `failed` unless everything on the branch passed, so the comment agrees with the PR check.
-5. Invoke LLM with structured schema `JiraCommentDraft` (`core/schemas.py`) — `title` and `body_markdown` — for the prose about the story's own tests only.
-6. Compose final comment via `build_final_comment(prose_body, report)`. Appends the deterministic test-result table, the outside failures and the end-to-end cost table.
-7. Post to Jira parent story via `jira.add_comment(story_key, comment)` and add `tests-run`. No duplicate check: a re-run posts another comment.
+4b. Outages (`TestResult.outage`, Agent 4's mark) are taken out of what the model sees (`_without_outages`), never counted as outside failures, and listed by `_outage_section()` under a *Not judged* warning; `_overall_verdict()` returns `unavailable` when nothing else failed. Flaky tests (`TestResult.flaky`, `first_failure`) are listed by `_flaky_section()` and recorded by `record_flakes()` on the pipeline health issue - every flake of the run, not only the story's.
+5. Invoke LLM with structured schema `JiraCommentDraft` (`core/schemas.py`) — `title` and `body_markdown` — for the prose about the story's own tests only. `spend_budget.begin_story()` first; when no story test could be judged (all outages), or `BudgetExceeded` stops the call, `fallback_draft()` / a fixed draft writes the prose instead.
+6. Compose final comment via `build_final_comment(prose_body, report, outside, unscoped_total, outages)`. Appends the outside failures, the outages, the flakes, the run details and the end-to-end cost table with its story-budget line (`format_e2e_section(agg, budget)`).
+7. Post to Jira parent story via `jira.add_comment(story_key, comment)` and add `tests-run`. No duplicate check: a re-run posts another comment (P4 proposes skipping a re-run with identical results).
 8. Change story: `core.impact_results.post_owner_results()` puts one result line on each story owning a revised test, and `record_prediction_outcome()` scores Agent 0's prediction against what changed and failed (shadow mode too).
 
 ### Idempotency design
@@ -894,7 +910,8 @@ Wraps any OpenAI-compatible LLM API via `langchain-openai`. Configuration from e
 
 - `invoke_structured(system, user, output_schema)` — returns an instance of `output_schema` (a Pydantic class). Provider-agnostic: the model's JSON schema is appended to the prompt and the raw reply is parsed with Pydantic — no tool-calling or `response_format` needed. One repair retry with the validation error fed back (`structured-repair:<Schema>`), then `ValueError`.
 - `invoke_text(system, user, cache_prefix=False)` — plain text generation for code. With `cache_prefix`, the static system text is sent as a cacheable prefix; `_record_usage()` logs cache writes and reads.
-- `_call_with_quota_check()` — wraps SDK calls. Detects quota-exceeded errors via `_is_quota_error()` and raises `QuotaExhaustedError` with a clear message.
+- `_call_with_quota_check()` — wraps SDK calls. Asks `core.spend_budget.check_before_call()` first (F-24: over a budget, `BudgetExceeded` before the call, nothing spent). Detects quota-exceeded errors via `_is_quota_error()` and raises `QuotaExhaustedError` with a clear message.
+- `_tracker` (reset per story) feeds `_lifetime` (never reset): `lifetime_cost_usd()` is the whole process's cost, which the day budget needs.
 
 #### `_code_gen_max_output_tokens(model_name)`
 
@@ -915,6 +932,17 @@ Wraps the `jira` Python SDK. Methods:
 | `add_comment(issue_key, body)` | Plain markdown comment |
 | `get_parent_story_key(issue_key)` | For Test Case → parent Story lookup |
 
+Optional capabilities (not in the Protocol, looked up with
+`integrations.tracker.capability()`; an adapter without one turns its feature
+off with one log line):
+
+| Method | Purpose |
+|---|---|
+| `create_issue(issue_type, summary, description, labels)` | The pipeline health issue, defects |
+| `set_property` / `get_property` / `property_keys` / `delete_property` | Hidden JSON on an issue (Jira issue properties: key ≤ 255 bytes, value ≤ 32 KB, unlimited per issue, edit permission). Append-only records: flakes, the day's spend |
+| `check_access()` | The health check: whose credentials (`myself`) |
+| `render_markdown(markdown)` | Comment markup (Agent 5, alerts, defects) |
+
 ### 9.6 `integrations/github_client.py` — the GitHub adapter of the `RepoHost` Protocol
 
 Wraps PyGithub. Methods used across agents:
@@ -930,7 +958,8 @@ Wraps PyGithub. Methods used across agents:
 | `get_pr_metadata(pr_number)` | Used by Agent 3 |
 | `get_pr_changed_files(pr_number)` | Used by Agent 3 — unified diff patches plus full content |
 | `post_pr_comment(pr_number, body)` | Posts a new conversation comment each call |
-| `get_workflow_runs(workflow_file, branch)` | Recent runs (`id`, status, conclusion, head_sha); Agent 3 finds Agent 4's run on the PR's head commit |
+| `get_workflow_runs(workflow_file, branch)` | Recent runs (`id`, status, conclusion, head_sha, and `event`, `created_at`, `url`); Agent 3 finds Agent 4's run on the PR's head commit; the health check counts failed `schedule` runs |
+| `check_access()` | Optional: the health check - the token can read the repository, and its expiry (`github-authentication-token-expiration` header) |
 | `get_run_artifact_file(run_id, artifact_prefix, filename)` | One file from a run's artifact zip (Agent 3: `junit.xml` from `pytest-report-<run id>`); None on any failure |
 | `get_review_comments(pr_number, review_id)` | Inline review comments (`id`, `path`, `line`, `body`, `author`, `review_id`), replies left out; raises if the PR cannot be read (Agent 2 review fix) |
 | `reply_to_review_comment(pr_number, comment_id, body)` | Answer in the comment's own thread (Agent 2 review fix) |
@@ -1129,6 +1158,10 @@ To opt out a story permanently:
 | `impact-applied` | Agent 1 (impact-aware) | Reconcile | Marker | Approved tests revised; reconcile watches the PR |
 | `impact-reverted` | Reconcile | Human (to retry) | Terminal marker | The change was undone; card moves to To Do |
 | `ai-retired` | Hand-over / reconcile | Reconcile on undo | Test-case marker | The test case is retired |
+| `budget-hold` | Any agent the story's budget stopped (F-24) | Human | Gate marker | Every selection excludes it; removing it allows one more `per_story_usd` |
+| `pipeline-health` | First alert / health check | Never | Identity | Finds the one pipeline health issue |
+| `ai-defect`, `ai-defect-<hash>` | Defect triage | Never | Identity | Finds a defect again by test and cause |
+| `ai-defect-passing` | Defect triage | Defect triage (fails again) | State marker | Its test passes on `main` again; a person may close it |
 
 ---
 
@@ -1358,7 +1391,15 @@ schedule:
 # .github/workflows/sweeper.yml
   - cron: "35 4-12 * * 1-5"     # 10:05 - 18:05 IST
   - cron: "35 13 * * 1-5"       # 19:05 IST
+# .github/workflows/agent4_runner.yml (F-21)
+  - cron: "40 21 * * *"         # 03:10 IST - the whole suite on main, then the triage
+# .github/workflows/pipeline_health.yml (F-23)
+  - cron: "20 3,7,11 * * *"     # 08:50, 12:50, 16:50 IST
 ```
+
+The health check reads every workflow with a schedule from the files
+(`core.health_checks.scheduled_workflows`), so a new one is watched without a
+code change.
 
 **Note on scheduler liveness:** GitHub Actions cron is "best effort" on free
 personal accounts and disables after ~60 days of repo inactivity. A daily

@@ -117,10 +117,10 @@ flowchart TB
 **Key points**
 - **Labels are the state machine:** `ai-ready → ai-processed → human-approved → ai-coded → tests-run`. A change story enters earlier: `impact-check → impact-proposed →` (Impact Review Done, hand-over) `→ ai-ready`, then `impact-applied` until its PR merges or closes (`impact-reverted` after an undo); retired test cases carry `ai-retired`; the drift job's maintenance story carries `inventory-drift`. `ai-incomplete` sits beside `ai-coded` while an approved test case has no scenario of its own (the PR and one story comment name each one, with its reason) and comes off with the run that fills the gap. `ai-update` and `ai-regenerate` are one-shot triggers, removed when the run succeeds; `ai-skip` hides a story from every agent. Idempotency labels stop a story being processed twice, and Agent 0 skips a story whose text it has already analysed.
 - **The board follows the work** (`status_workflow` in config): `ai-processed` → In Progress, `ai-coded` → In Review, `impact-reverted` → To Do (an undone change story, ready to retry), a merged PR → Done (`story_done_on_merge.yml`), a new story whose PR closed unmerged → To Do (`on_close_unmerged`, set by reconcile). No label maps to Done.
-- **Agents 1 and 2 run on a business-hours cron** (every 30 min, weekdays 10:00–19:00 IST); Agent 0 scans weekdays at 10:45 IST (analysis, hand-over and reconcile), checks every PR touching `pages/` or `app_inventory/`, and runs a nightly drift check at 07:15 IST; Agents 3–5 run on PR events, and Agent 2's review fix on a "Request changes" review or a `/fix` comment; a **sweeper** re-triggers, hourly in business hours, PRs whose CI never started.
+- **Agents 1 and 2 run on a business-hours cron** (every 30 min, weekdays 10:00–19:00 IST); Agent 0 scans weekdays at 10:45 IST (analysis, hand-over and reconcile), checks every PR touching `pages/` or `app_inventory/`, and runs a nightly drift check at 07:15 IST; Agents 3–5 run on PR events, and Agent 2's review fix on a "Request changes" review or a `/fix` comment; a **sweeper** re-triggers, hourly in business hours, PRs whose CI never started. Agent 4 also runs the whole suite on `main` every night (03:10 IST) and turns what fails there into defects; a **health check** (08:50, 12:50, 16:50 IST) watches the scheduled workflows and the credentials.
 - **CI storage stays inside the free quota:** Agent 4 uploads only the files Agent 5 needs, kept 3 days, and `artifact_cleanup.yml` deletes artifacts older than 2 days, daily.
 - **A change story's state is in Jira too:** Agent 0's report and Impact Review sub-task, Agent 1's snapshot of each revised test, trace comments on the owning stories and reconcile's markers are all issues or comments, so an undo needs no database. Every such comment starts with a marker (`[agent0:report]`, `[agent0:snapshot]`, `[LLM-USAGE]`, …): [GUIDE.md → Marker comments](./docs/GUIDE.md#marker-comments).
-- **Two Protocols keep the tools swappable:** `Tracker` (23 operations, Jira adapter today) and `RepoHost` (20 operations, GitHub adapter today). Nothing in `agents/` talks to Jira or GitHub directly, and a unit test runs the whole pipeline against fakes of both.
+- **Two Protocols keep the tools swappable:** `Tracker` (23 operations, Jira adapter today) and `RepoHost` (20 operations, GitHub adapter today). Nothing in `agents/` talks to Jira or GitHub directly, and a unit test runs the whole pipeline against fakes of both. Operations beyond them (creating any issue, hidden issue properties, a credential check) are optional capabilities: an adapter without them turns that feature off and keeps everything else.
 - Secrets stay in `.env` (never committed) and CI secrets; placeholders live in `.env.example`.
 
 Deeper breakdown: [GUIDE.md → Architecture](./docs/GUIDE.md#architecture).
@@ -192,6 +192,10 @@ Attaching Agent 0 to another application: [docs/AGENT0_ONBOARDING.md](./docs/AGE
 - **Prompt caching.** The static rule text of the generation prompt is sent as a cacheable prefix; per-file content goes in the user message.
 - **Failure evidence.** A failed test carries a plain-English cause and remedy plus its screenshot, video and Playwright trace in the Allure report.
 - **Cost on the story.** Every model-using agent, Agent 0 included, posts its token and cost ledger to the Jira story; Agent 5 totals it. Reprocessing posts a ledger boundary, so a rerun is not double-counted.
+- **Spend has limits.** A budget per story and per day (`config.yaml` `budget`), checked before every model call: a story over its budget is held by a label a person removes; a day over its budget stops the scans until the next day (F-24).
+- **Nobody watches the Actions tab.** One pipeline health issue in the tracker, watched by the team: a comment when a problem starts (a scheduled workflow failing in a row, a refused or expiring credential, an outage on `main`, the day's budget) and one when it ends - never while it persists (F-23).
+- **Main is tested every night.** A failing test raises one defect per test and cause, updated without noise and flagged when it passes again; an outage of the application is reported apart from test failures everywhere (F-7, F-21, F-22).
+- **Flaky tests are named, not hidden.** A failed test is retried once; a pass on the retry counts as passed, is named in the reports and is counted on the health issue (F-19).
 - **Business-level stories.** Acceptance criteria state outcomes; Agent 1 takes concrete test data from `core.md` and is forbidden to invent any.
 
 ---
@@ -255,7 +259,14 @@ multi-agent-test-automation/
 │   ├── inventory_planned.py         # Planned entries: tests before deployment (F-12)
 │   ├── inventory_update.py          # Agent 0 drift: the nightly inventory-update PR
 │   ├── json_block.py                # Reads JSON stored in tracker code blocks, in every format
-│   └── onboarding.py                # Agent 0 readiness for another application
+│   ├── onboarding.py                # Agent 0 readiness for another application
+│   ├── junit_marks.py               # Agent 4's marks in junit.xml: outage, flaky (one reader)
+│   ├── pipeline_health.py           # The watched health issue: alerts, records, the picture
+│   ├── health_checks.py             # Scheduled workflows failing, credentials
+│   ├── defects.py                   # A test failing on main → one defect per test and cause
+│   ├── flaky_tests.py               # Flakes counted on the health issue
+│   ├── spend_budget.py              # Per-story and per-day model spend budgets
+│   └── ops_settings.py              # The operational config blocks, with defaults
 │
 ├── integrations/                    # Tool adapters behind two Protocols
 │   ├── tracker.py, repo_host.py     # The Protocols
@@ -293,6 +304,9 @@ multi-agent-test-automation/
 │   ├── agent0_backtest.py, onboarding_check.py, gateway_probe.py
 │   ├── e2e_turn.py                  # Agent 4: wait for earlier PRs' browser runs
 │   ├── collapse_junit_reruns.py     # Agent 4: keep only a re-run test's final attempt
+│   ├── finalise_junit.py            # Agent 4: merge the retry, mark outages and flakes, the verdict
+│   ├── triage_failures.py           # After a run on main: defects, outage alert, flakes
+│   ├── pipeline_health_check.py     # The scheduled health check
 │
 ├── .github/workflows/
 │   ├── agent0_impact.yml            # Scan, reconcile, PR code change, nightly drift
@@ -300,9 +314,10 @@ multi-agent-test-automation/
 │   ├── agent2_coder.yml
 │   ├── agent2_review_fix.yml        # "Request changes" review or /fix comment → Agent 2 fixes the PR
 │   ├── agent3-reviewer.yml
-│   ├── agent4_runner.yml            # Agent 4 + Agent 5
+│   ├── agent4_runner.yml            # Agent 4 + Agent 5; nightly run on main + defect triage
 │   ├── artifact_cleanup.yml         # Daily: delete old Actions artifacts (storage quota)
 │   ├── inventory_health.yml         # Nightly selector check against the live app
+│   ├── pipeline_health.yml          # Health check: failing scheduled workflows, credentials
 │   ├── story_done_on_merge.yml      # Only a human merge moves a story to Done; then its notes addition
 │   └── sweeper.yml                  # Re-triggers stalled PRs
 │
@@ -463,6 +478,9 @@ More in [GUIDE.md → Troubleshooting](./docs/GUIDE.md#troubleshooting). The mos
 - **A change story's PR was closed but the tests still show the revised text** → reconcile undoes it once `closed_scans` scans (default 2) have seen the close; the first scan only posts `[agent0:reconcile] closed-unmerged`
 - **Agent 4's log says "waiting for earlier run(s)"** → another PR's browser run started first; runs take turns (capped at 15 minutes)
 - **A test failed with `HTTP 503` (or another 5xx / 429) from the application** → the site refused the CI runner for a moment while it loads fine in a browser. Page loads are already retried (`browser.navigation_retry_delays_ms`, 3 s then 8 s) and Agent 4 re-runs a test whose failure names a 5xx/429 - or whose own request got one and was never answered - up to twice, 20 s apart; still failing means the outage lasted longer - re-run the job
+- **A test failed, then passed on the retry** → it counts as passed and is listed as flaky (run summary, Agent 5's report, the pipeline health issue); one that keeps coming back is worth fixing
+- **A test is listed under "not judged: the application was unavailable"** → the site refused it even after the retries; it is neither a pass nor a failure of the change - re-run once the site is up
+- **`[BUDGET]` in a log, `budget-hold` on a story, or "Not reviewed: model budget reached" on a PR** → a spend budget stopped the call before it was made: remove `budget-hold` to allow the story one more budget, or wait for the next day / raise `budget.per_day_usd`
 - **Actions blocked: storage quota** → artifacts count against the account's storage; `artifact_cleanup.yml` (or `python -m scripts.cleanup_artifacts --yes`) deletes artifacts older than 2 days
 
 ---
