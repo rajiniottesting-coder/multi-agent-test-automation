@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -66,8 +67,16 @@ def apply(tracker, found: list) -> dict:
 def housekeeping(tracker, now: _dt.datetime) -> None:
     """Old records go, so the issue's record list stays short. Never raises."""
     try:
-        from core import flaky_tests
+        from core import flaky_tests, pipeline_health as ph, spend_budget
         flaky_tests.prune(tracker, now)
+        keep = int(ph.settings().get("spend_keep_days", 35))
+        ph.prune(tracker, spend_budget.SPEND_PREFIX,
+                 (now - _dt.timedelta(days=keep)).strftime("%Y%m%d"))
+        # A day's budget alerts end with the day (F-24).
+        today = spend_budget.day_of(now)
+        ph.resolve_where(tracker, lambda a: bool(re.fullmatch(r"budget-(day|warn)-\d{8}", a))
+                         and a.rsplit("-", 1)[1] < today,
+                         "A new day: the daily budget starts again.")
     except Exception as e:                                         # noqa: BLE001
         logger.warning("Housekeeping skipped: %s", e)
 

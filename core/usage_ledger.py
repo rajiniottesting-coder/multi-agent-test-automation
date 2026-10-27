@@ -266,8 +266,12 @@ def aggregate_story_usage(comment_bodies: list[str], extra_entries: list[dict] |
     }
 
 
-def format_e2e_section(agg: dict) -> str:
-    """Render the aggregate as a markdown section for Agent 5's report."""
+def format_e2e_section(agg: dict, budget: dict | None = None) -> str:
+    """Render the aggregate as a markdown section for Agent 5's report.
+
+    `budget` (config.yaml `budget`, F-24): when enabled and the cost is known,
+    one more line says how much of the story's budget is used, marked once it
+    passes `warn_at` - no separate comment."""
     if not agg["entries"]:
         return ""
     lines = [
@@ -298,6 +302,14 @@ def format_e2e_section(agg: dict) -> str:
             "_Some agent runs had no pricing configured — the cost total is a "
             "lower bound. Token totals are exact._"
         )
+    if budget and budget.get("enabled") and agg["total_cost_usd"] is not None:
+        limit = float(budget.get("per_story_usd") or 0)
+        if limit > 0:
+            share = agg["total_cost_usd"] / limit
+            mark = "⚠ " if share >= float(budget.get("warn_at", 0.5)) else ""
+            lines.append("")
+            lines.append(f"{mark}Story budget: ${agg['total_cost_usd']:.2f} of ${limit:.2f} "
+                         f"({share:.0%}, budget.per_story_usd).")
     return "\n".join(lines)
 
 
@@ -316,15 +328,26 @@ def story_usage(story_key: str, agent_name: str, *, jira=None, dry_run: bool = F
     successful run normally posts and resets, so nothing is left) - and the
     counter is reset. A dry run posts nothing. Never raises from bookkeeping;
     the run's own exception is re-raised unchanged."""
+    from core import spend_budget
     from core.llm_client import get_usage_summary, log_usage_summary, reset_usage
     reset_usage()
+    if not dry_run:
+        # F-24: the story's budget counts its ledger and this run's calls.
+        spend_budget.begin_story(story_key, jira)
     failed = False
     try:
         yield
+    except spend_budget.BudgetExceeded as stop:
+        failed = True
+        if not dry_run:
+            spend_budget.hold_story(jira if jira is not None else spend_budget.current_tracker(),
+                                    stop)
+        raise
     except BaseException:
         failed = True
         raise
     finally:
+        spend_budget.end_story()
         try:
             if (get_usage_summary() or {}).get("llm_calls"):
                 usage = log_usage_summary(

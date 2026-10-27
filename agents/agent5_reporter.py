@@ -407,6 +407,29 @@ def _outage_section(outages: list) -> list:
     return lines
 
 
+def fallback_draft(report: "RunReport", reason: BaseException) -> JiraCommentDraft:
+    """The prose the model would write, written by code: used when the model
+    cannot be called (the spend budget, F-24). Same shape as the prompt asks."""
+    bad = [r for r in report.results if r.status in ("failed", "error")]
+    if report.total and not bad and not report.failed and not report.errors:
+        head = f"✅ **All {report.total} tests passed** in {report.duration_seconds:.2f}s"
+        title = f"All {report.total} tests passed"
+    else:
+        n = len(bad) or (report.failed + report.errors)
+        head = f"❌ **{n} of {report.total} tests failed** in {report.duration_seconds:.2f}s"
+        title = f"{n} of {report.total} tests failed"
+    lines = [head]
+    if bad:
+        lines += ["", "The following tests need attention:", ""]
+        for r in bad[:_OUTSIDE_LISTED]:
+            module = r.classname.rsplit(".", 1)[-1]
+            msg = (r.failure_message or "").strip().splitlines()
+            lines.append(f"- `{module}::{r.name}` — "
+                         + ("**ERRORED**" if r.status == "error" else (msg[0][:160] if msg else "failed")))
+    lines += ["", f"_Summary written without the model: {reason}_"]
+    return JiraCommentDraft(title=title, body_markdown="\n".join(lines))
+
+
 def _flaky_section(flaky: list) -> list:
     """Markdown naming the story's tests that passed only on the retry (F-19).
     They count as passed; a flake that is never named is never fixed."""
@@ -652,12 +675,23 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
         report.model_dump_json(indent=2),
     )
 
+    from core import spend_budget
+    if not dry_run:
+        spend_budget.begin_story(story_key)          # F-24: within the story's budget
     llm = LLMClient(temperature=0.3)  # slight creativity for friendly tone
-    draft: JiraCommentDraft = llm.invoke_structured(
-        system_prompt="You are a QA Lead summarizing automated test results for a Jira story.",
-        user_prompt=user_prompt,
-        output_schema=JiraCommentDraft,
-    )
+    try:
+        draft: JiraCommentDraft = llm.invoke_structured(
+            system_prompt="You are a QA Lead summarizing automated test results for a Jira story.",
+            user_prompt=user_prompt,
+            output_schema=JiraCommentDraft,
+        )
+    except spend_budget.BudgetExceeded as stop:
+        # The results are still reported - the model only writes the prose,
+        # so code writes it instead. A story over its budget is held.
+        logger.warning(f"[BUDGET] {stop} - the summary is written without the model.")
+        if not dry_run:
+            spend_budget.hold_story(spend_budget.current_tracker(), stop)
+        draft = fallback_draft(report, stop)
 
     logger.info(f"LLM draft title: {draft.title}")
 
@@ -686,7 +720,7 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
         own_entry = dict(own_usage)
         own_entry["agent"] = "Agent 5 (Reporter)"
         agg = aggregate_story_usage(prior_comments, extra_entries=[own_entry])
-        e2e_section = format_e2e_section(agg)
+        e2e_section = format_e2e_section(agg, budget=spend_budget.settings())
         if e2e_section:
             final_body = final_body + "\n" + e2e_section
             logger.info(

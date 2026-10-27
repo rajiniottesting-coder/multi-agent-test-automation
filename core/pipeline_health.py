@@ -205,8 +205,8 @@ def _title_of(body: str) -> str:
 
 def _sections() -> list:
     """(render_view argument, summary function) for each record kept here."""
-    from core import flaky_tests
-    return [("flaky", flaky_tests.summary)]
+    from core import flaky_tests, spend_budget
+    return [("flaky", flaky_tests.summary), ("spend", spend_budget.day_summary)]
 
 
 def render_view(alerts: dict, flaky: list | None = None, spend: dict | None = None,
@@ -230,6 +230,11 @@ def render_view(alerts: dict, flaky: list | None = None, spend: dict | None = No
                 lines += ["", f"...and {len(flaky) - 25} more."]
         else:
             lines.append("None recorded.")
+    if spend:
+        lines += ["", "## Model spend", "",
+                  f"{spend['day']}: ${spend['spent']:.2f} of the ${spend['limit']:.2f} daily "
+                  "budget, recorded by runs that have finished (runs still going add theirs "
+                  "when they end)."]
     now = now or _dt.datetime.now(_dt.timezone.utc)
     lines += ["", f"_Updated {now.strftime('%Y-%m-%d %H:%M')} UTC._"]
     return "\n".join(lines)

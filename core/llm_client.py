@@ -143,9 +143,14 @@ class OutputTruncatedError(RuntimeError):
 # ─────────────────────────────────────────────────────────────
 
 class _UsageTracker:
-    """Accumulates token usage across all LLM calls in this process."""
+    """Accumulates token usage across all LLM calls in this process.
 
-    def __init__(self):
+    `lifetime`, when given, receives every call too and is never reset: the
+    spend budget (core/spend_budget.py, F-24) needs the whole process's cost,
+    while this counter is reset between stories."""
+
+    def __init__(self, lifetime: "_UsageTracker | None" = None):
+        self.lifetime = lifetime
         self.calls = 0
         self.input_tokens = 0
         self.output_tokens = 0
@@ -170,6 +175,8 @@ class _UsageTracker:
 
     def add(self, input_tokens: int, output_tokens: int,
             cache_read_tokens: int = 0, cache_write_tokens: int = 0) -> None:
+        if self.lifetime is not None:
+            self.lifetime.add(input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
         self.calls += 1
         self.input_tokens += input_tokens
         self.output_tokens += output_tokens
@@ -195,6 +202,8 @@ class _UsageTracker:
         return repeats
 
     def add_unreported(self) -> None:
+        if self.lifetime is not None:
+            self.lifetime.add_unreported()
         self.calls += 1
         self.calls_without_usage += 1
 
@@ -281,7 +290,18 @@ class _UsageTracker:
         }
 
 
-_tracker = _UsageTracker()
+# Every call this process made, never reset (F-24). `_tracker` is reset per story.
+_lifetime = _UsageTracker()
+_tracker = _UsageTracker(lifetime=_lifetime)
+
+
+def lifetime_cost_usd():
+    """This process's whole model cost so far in USD, or None without pricing."""
+    return _lifetime.cost_usd()
+
+
+def lifetime_calls() -> int:
+    return _lifetime.calls
 
 
 # finish_reason values meaning "stopped because the output budget ran out".
@@ -575,7 +595,13 @@ class LLMClient:
         )
 
     def _call_with_quota_check(self, callable_fn, *args, **kwargs):
-        """Wrap any LLM call to convert quota errors into a clear, fast failure."""
+        """Wrap any LLM call to convert quota errors into a clear, fast failure.
+
+        Every model call passes here, so the spend budget is checked here
+        first (F-24): over a limit, core.spend_budget.BudgetExceeded is raised
+        BEFORE the call is made, and nothing is spent."""
+        from core import spend_budget
+        spend_budget.check_before_call()
         try:
             return callable_fn(*args, **kwargs)
         except Exception as e:

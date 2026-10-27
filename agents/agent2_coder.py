@@ -5355,6 +5355,7 @@ def main():
         REQUIRED_JIRA_ENV_VARS + REQUIRED_LLM_ENV_VARS + REQUIRED_GITHUB_ENV_VARS
     )
 
+    from core.spend_budget import BudgetExceeded
     try:
         from core.usage_ledger import story_usage
         if args.story:
@@ -5473,6 +5474,18 @@ def main():
                                      is_regenerate=(mode == "regenerate"),
                                      skip_if_blocked=(mode == "normal"))
                 results.append(result)
+            except BudgetExceeded as stop:
+                # F-24. A story over its budget is held (labelled) and needs a
+                # person - red once; the next scan no longer selects it. A day
+                # over its budget stops the scan: the rest wait for tomorrow.
+                logger.error(f"{story['key']} ({mode}): {stop}")
+                if stop.scope != "day":
+                    results.append({"story_id": story["key"], "status": "failed",
+                                    "mode": mode, "error": str(stop)})
+                    continue
+                deferred += [(m, s_, "the daily model budget is reached")
+                             for m, s_ in to_run[i:]]
+                break
             except Exception as e:
                 logger.error(f"Failed processing {story['key']} ({mode}): {e}", exc_info=True)
                 results.append({
@@ -5503,6 +5516,10 @@ def main():
 
     except SystemExit:
         raise               # our own exit(1) above - not an unexpected error
+    except BudgetExceeded as stop:
+        # --story mode (a scan handles it per story above).
+        logger.error(f"[BUDGET] {stop}")
+        sys.exit(1)
     except Exception as e:
         logger.error(f"Agent 2 failed: {type(e).__name__}: {e}", exc_info=True)
         sys.exit(1)

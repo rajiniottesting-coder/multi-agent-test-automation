@@ -19,7 +19,7 @@ DEFAULTS: dict = {
         "issue_type": "Story",
         "allowed_statuses": ["To Do", "In Progress", "In Review"],
         "required_labels": ["impact-check"],
-        "excluded_labels": ["ai-skip"],
+        "excluded_labels": ["ai-skip", "budget-hold"],   # budget-hold: F-24
     },
     "labels": {
         "check": "impact-check",

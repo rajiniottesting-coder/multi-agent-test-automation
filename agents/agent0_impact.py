@@ -650,6 +650,7 @@ def scan(tracker, host, llm, settings: dict | None = None, root: Path | None = N
         logger.info("agents.agent0_impact.enabled is false - nothing to do.")
         return []
     results = []
+    from core.spend_budget import BudgetExceeded
     from core.usage_ledger import IMPACT_ANALYST, story_usage
     for s in tracker.find_stories_to_process(settings["selection"], max_results=10):
         try:
@@ -657,6 +658,13 @@ def scan(tracker, host, llm, settings: dict | None = None, root: Path | None = N
             with story_usage(s["key"], IMPACT_ANALYST, jira=tracker, dry_run=dry_run):
                 results.append(analyse_and_publish(tracker, s["key"], llm, settings, root,
                                                    host, dry_run=dry_run, uncovered=uncovered))
+        except BudgetExceeded as stop:
+            # F-24: a held story is reported; the daily budget stops the scan
+            # (the hand-overs below call the model too, so they wait as well).
+            logger.error("Agent 0 stopped on %s: %s", s["key"], stop)
+            results.append({"story": s["key"], "action": "budget", "error": str(stop)})
+            if stop.scope == "day":
+                return results
         except Exception as e:                                 # noqa: BLE001
             logger.error("Agent 0 failed on %s: %s", s["key"], e, exc_info=True)
             results.append({"story": s["key"], "action": "error", "error": str(e)})
@@ -700,11 +708,23 @@ def main(argv=None) -> int:
         print("agents.agent0_impact.enabled is false - nothing to do (use --dry-run to preview).")
         return 0
     from integrations.repo_host import get_repo_host
-    from core.llm_client import LLMClient
     tracker = get_tracker()
     host = get_repo_host()
 
     uncovered = _uncovered_for(args.uncovered_snapshot, settings)
+    from core.spend_budget import BudgetExceeded
+    try:
+        return _run_mode(args, ap, settings, tracker, host, uncovered)
+    except BudgetExceeded as stop:
+        # F-24: the reason, not a traceback. The daily budget is not this
+        # run's failure (the health alert is the notice); a held story is.
+        print(f"[BUDGET] {stop}")
+        return 0 if stop.scope == "day" else 1
+
+
+def _run_mode(args, ap, settings, tracker, host, uncovered) -> int:
+    from config.paths import PROJECT_ROOT
+    from core.llm_client import LLMClient
     if args.scan:
         for r in scan(tracker, host, LLMClient(temperature=0.0), settings, PROJECT_ROOT,
                       uncovered=uncovered, dry_run=args.dry_run):
