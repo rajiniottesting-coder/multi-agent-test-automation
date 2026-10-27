@@ -221,7 +221,8 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
         except Exception as e:                                     # noqa: BLE001
             logger.warning("Defect for %s not written: %s", test, e)
 
-    passed = {jm.case_id(c) for c in cases if jm.outcome(c) == "passed"}
+    # A pass only on the retry is no sign the defect is gone (F-19).
+    passed = {jm.case_id(c) for c in cases if jm.outcome(c) == "passed" and not jm.is_flaky(c)}
     for label, issue in existing.items():
         if label in failing_labels:
             continue

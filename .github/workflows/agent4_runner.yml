@@ -34,6 +34,8 @@
 #   - Push to main touching FRAMEWORK code (see `paths` below). Runs the
 #     unit-test gate ONLY: no browsers, no E2E, no Jira.
 #   - Manual trigger via Actions tab → workflow_dispatch
+#   - Every night on main (F-21): the whole app suite; a run on main is then
+#     triaged into defects (F-22, the `triage` job)
 #
 # WHY THE PUSH TRIGGER EXISTS:
 #   The framework's own unit tests used to run only as a step inside this

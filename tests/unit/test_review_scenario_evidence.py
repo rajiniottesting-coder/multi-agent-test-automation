@@ -161,14 +161,36 @@ class _Host:
         return self.report
 
 
-def test_a_red_run_reads_its_junit_report_and_a_green_run_does_not():
+def test_a_red_and_a_green_run_both_read_their_junit_report():
     red = _Host("failure", RED_ELSEWHERE)
     ev = runner_evidence_for_head(red, 7, "auto/LIB-1-x", wait_seconds=0)
     assert ev.conclusion == "failure" and ev.scenarios["borrowabookfromitscataloguecard"] == ["passed"]
     assert red.asked == [(42, "pytest-report-", "junit.xml")]
+    # F-19: a green run is read too - a scenario that passed only on the retry
+    # (flaky) must not refute a prediction that it fails.
     green = _Host("success", RED_ELSEWHERE)
-    assert runner_evidence_for_head(green, 7, "b", wait_seconds=0) == RunnerEvidence("success")
-    assert green.asked == []
+    assert runner_evidence_for_head(green, 7, "b", wait_seconds=0).conclusion == "success"
+    assert green.asked == [(42, "pytest-report-", "junit.xml")]
+
+
+FLAKY_GREEN = (b'<testsuites><testsuite>'
+               b'<testcase classname="tests.step_defs.test_loans" '
+               b'name="test_borrow_a_book_from_its_catalogue_card"><properties>'
+               b'<property name="flaky" value="1"/></properties></testcase>'
+               b'<testcase classname="tests.step_defs.test_loans" '
+               b'name="test_return_a_book_from_the_loan_page"/></testsuite></testsuites>')
+
+
+def test_a_green_run_does_not_refute_a_prediction_its_scenario_only_passed_on_retry():
+    scenarios = parse_junit_scenarios(FLAKY_GREEN)
+    assert scenarios["borrowabookfromitscataloguecard"] == ["flaky"]
+    flaky = _report(_issue("Borrow a book from its catalogue card"))
+    assert apply(flaky, RunnerEvidence("success", scenarios)).overall_verdict == "request_changes"
+    steady = _report(_issue("Return a book from the loan page"))
+    assert apply(steady, RunnerEvidence("success", scenarios)).overall_verdict != "request_changes"
+    unnamed = _report(_issue(None))
+    assert apply(unnamed, RunnerEvidence("success", scenarios)).overall_verdict != "request_changes", \
+        "a prediction naming no scenario is refuted by a green run, as before"
 
 
 def test_a_failed_read_is_no_evidence_never_an_error():

@@ -288,3 +288,27 @@ def test_the_workflow_marks_after_collapsing():
     wf = (ROOT / ".github/workflows/agent4_runner.yml").read_text(encoding="utf-8")
     assert wf.index("scripts.collapse_junit_reruns") < wf.index("scripts.finalise_junit") \
         < wf.index("Write test summary")
+
+
+def test_when_nothing_could_be_judged_the_model_is_not_asked(monkeypatch, tmp_path, capsys):
+    only_outage = JUNIT.replace(
+        '<failure message="AssertionError: Expected 1 item, got 2">tb</failure>', "") \
+        .replace('<testcase classname="tests.step_defs.test_cart" name="test_view"/>', "")
+    p = _write(tmp_path, only_outage.replace('name="test_remove"', 'name="test_remove_x"'))
+    p.write_text(p.read_text().replace(
+        '<testcase classname="tests.step_defs.test_cart" name="test_remove_x"></testcase>', ""))
+    finalise_junit.main([str(p)])
+    monkeypatch.setattr(a5, "get_repo_host", lambda: type("H", (), {
+        "get_pr_changed_files": lambda self, n: []})())
+    monkeypatch.setattr(a5, "load_prompt", lambda: "{run_report_json}")
+
+    class LLM:
+        def __init__(self, *a, **k):
+            pass
+
+        def invoke_structured(self, **k):
+            pytest.fail("nothing to summarise - the model must not be called")
+    monkeypatch.setattr(a5, "LLMClient", LLM)
+    result = a5.run("STORY-1", tmp_path, dry_run=True)
+    assert result["verdict"] == "unavailable" and result["total"] == 0
+    assert "None of this story's tests could be judged" in capsys.readouterr().out

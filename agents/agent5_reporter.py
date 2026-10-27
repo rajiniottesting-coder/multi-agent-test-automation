@@ -680,11 +680,20 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
         spend_budget.begin_story(story_key)          # F-24: within the story's budget
     llm = LLMClient(temperature=0.3)  # slight creativity for friendly tone
     try:
-        draft: JiraCommentDraft = llm.invoke_structured(
-            system_prompt="You are a QA Lead summarizing automated test results for a Jira story.",
-            user_prompt=user_prompt,
-            output_schema=JiraCommentDraft,
-        )
+        if outages and report.total == 0:
+            # F-7: none of the story's tests could be judged. Nothing for the
+            # model to summarise - code says so (the outage section follows).
+            draft = JiraCommentDraft(
+                title="Not judged: the application was unavailable",
+                body_markdown="⚠ **None of this story's tests could be judged** - the "
+                              "application was unavailable during the run.")
+        else:
+            draft = llm.invoke_structured(
+                system_prompt="You are a QA Lead summarizing automated test results for a "
+                              "Jira story.",
+                user_prompt=user_prompt,
+                output_schema=JiraCommentDraft,
+            )
     except spend_budget.BudgetExceeded as stop:
         # The results are still reported - the model only writes the prose,
         # so code writes it instead. A story over its budget is held.

@@ -89,9 +89,9 @@ def test_the_issue_is_created_once_and_then_found(world):
 
 def test_the_oldest_of_two_is_always_used(world):
     fake, jira = world
-    fake.add("Task", "Pipeline health", key="SBX-30", labels=["pipeline-health"])
-    fake.add("Task", "Pipeline health", key="SBX-7", labels=["pipeline-health"])
-    assert ph.issue_key(jira) == "SBX-7"
+    for key in ("SBX-30", "SBX-7", "SBX-12"):
+        fake.add("Task", "Pipeline health", key=key, labels=["pipeline-health"])
+    assert ph.issue_key(jira) == "SBX-7", "the lowest key, whatever order the search returns"
 
 
 def test_not_created_when_only_looking(world):
@@ -274,8 +274,9 @@ def test_expiry_warns_within_the_window(expires, problem):
     assert f.problem is problem
 
 
-def test_no_or_unreadable_expiry_is_no_finding():
-    assert hc.expiry_finding("x", "t", None, NOW, 14) is None
+def test_no_expiry_closes_a_warning_and_an_unreadable_one_changes_nothing():
+    f = hc.expiry_finding("x", "The token", None, NOW, 14)
+    assert f.problem is False and "no expiry date" in f.title, "a replaced, non-expiring token"
     assert hc.expiry_finding("x", "t", "next tuesday", NOW, 14) is None
 
 
@@ -297,7 +298,8 @@ def test_a_repo_host_token_near_expiry():
 
 def test_a_repo_host_without_the_capability_is_fine():
     found = hc.repo_host_findings(lambda: SimpleNamespace(), NOW, 14)
-    assert [(f.alert_id, f.problem) for f in found] == [("credential:repo-host", False)]
+    assert [(f.alert_id, f.problem) for f in found] == [("credential:repo-host", False),
+                                                        ("credential-expiry:repo-host", False)]
 
 
 def test_the_model_check_completion(monkeypatch):
@@ -451,3 +453,28 @@ def test_a_malformed_block_falls_back_to_defaults(monkeypatch, tmp_path):
     assert s["consecutive_failures"] == 3 and s["label"] == "x"
     cfg.write_text("pipeline_health: yes\n")
     assert section("pipeline_health")["label"] == "pipeline-health"
+
+
+def test_a_removed_workflows_alert_closes_but_an_unreadable_ones_stays(script_world, tmp_path):
+    fake, jira, state, run = script_world
+    assert run() == 0
+    (tmp_path / ".github/workflows/other.yml").write_text("on:\n  schedule:\n    - cron: '0 1 * * *'\n")
+    run()
+    key = ph.issue_key(jira)
+    assert {"workflow-failing:job.yml", "workflow-failing:other.yml"} <= set(ph.open_alerts(jira))
+    # other.yml's runs cannot be read this time: its alert is kept
+    import core.health_checks as hcm
+    real = hcm.workflow_findings
+    hcm.workflow_findings = lambda host, root, n, exclude=(): [
+        f for f in real(host, root, n, exclude) if f.alert_id != "workflow-failing:other.yml"]
+    try:
+        run()
+        assert "workflow-failing:other.yml" in ph.open_alerts(jira)
+    finally:
+        hcm.workflow_findings = real
+    (tmp_path / ".github/workflows/other.yml").unlink()
+    run()
+    assert "workflow-failing:other.yml" not in ph.open_alerts(jira)
+    assert "workflow-failing:job.yml" in ph.open_alerts(jira)
+    assert any(c.startswith("[health:resolved] workflow-failing:other.yml\nThe workflow is no "
+                            "longer scheduled") for c in fake.comments[key])

@@ -473,7 +473,9 @@ def parse_junit_scenarios(xml_bytes: bytes | None) -> dict | None:
     runs once per example: a prediction is refuted only when EVERY run of its
     scenario passed. 'outage' (Agent 4's mark, core/junit_marks.py, F-7): the
     application was unavailable, so that run is evidence neither way - it
-    never refutes a prediction and never confirms one.
+    never refutes a prediction and never confirms one. 'flaky' (F-19): failed,
+    then passed when retried - a prediction that it fails may be half right,
+    so it does not refute one either.
     """
     if not xml_bytes:
         return None
@@ -486,7 +488,8 @@ def parse_junit_scenarios(xml_bytes: bytes | None) -> dict | None:
     from core import junit_marks
     out: dict = {}
     for case in root.iter("testcase"):
-        outcome = "outage" if junit_marks.is_outage(case) else junit_marks.outcome(case)
+        outcome = ("outage" if junit_marks.is_outage(case)
+                   else "flaky" if junit_marks.is_flaky(case) else junit_marks.outcome(case))
         out.setdefault(scenario_key(case.get("name", "")), []).append(outcome)
     return out
 
@@ -502,8 +505,10 @@ def runner_evidence_for_head(host, pr_number: int, head_branch: str,
     if not run:
         return RunnerEvidence(None)
     conclusion = run.get("conclusion")
-    if conclusion == "success" or run.get("id") is None:
+    if run.get("id") is None:
         return RunnerEvidence(conclusion)
+    # A green run is read too: a scenario that passed only on the retry
+    # (flaky, F-19) does not refute a prediction that it fails.
     try:
         report = host.get_run_artifact_file(run["id"], RUNNER_ARTIFACT_PREFIX,
                                             RUNNER_REPORT_FILE)
@@ -536,6 +541,14 @@ def _scenario_passed(issue, scenarios: dict | None) -> str | None:
     return title if outcomes and all(o == "passed" for o in outcomes) else None
 
 
+def _scenario_flaky(issue, scenarios: dict | None) -> bool:
+    """True when the prediction's scenario passed only on the retry (F-19)."""
+    title = _predicted_scenario(issue)
+    if not title or not scenarios:
+        return False
+    return "flaky" in (scenarios.get(scenario_key(title)) or [])
+
+
 def apply_runner_evidence(report: ReviewReport, runner_result) -> ReviewReport:
     """Lower every blocking prediction of a failing test that the run refuted.
 
@@ -557,7 +570,12 @@ def apply_runner_evidence(report: ReviewReport, runner_result) -> ReviewReport:
     else:
         conclusion, scenarios = runner_result, None
     if conclusion == "success":
-        notes = {id(i): _REFUTED_NOTE for i in candidates}
+        notes = {id(i): _REFUTED_NOTE for i in candidates
+                 if not _scenario_flaky(i, scenarios)}
+        if not notes:
+            logger.info("The run is green, but every predicted scenario passed only on "
+                        "the retry (flaky) - the predictions keep blocking.")
+            return report
     else:
         notes = {}
         for issue in candidates:

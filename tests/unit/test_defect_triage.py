@@ -283,3 +283,11 @@ def test_the_settings_are_shipped():
     cfg = yaml.safe_load((ROOT / "config/config.yaml").read_text(encoding="utf-8"))
     for block in ("defects", "flaky_tests"):
         assert set(cfg[block]) == set(DEFAULTS[block])
+
+
+def test_a_pass_only_on_the_retry_is_not_passing_again(world, tmp_path):
+    fake, *_ = world
+    _triage(world, tmp_path, _case("test_add_an_item", "failed"))
+    out = _triage(world, tmp_path, _case("test_add_an_item", props={"flaky": "1"}), n=2)
+    assert out["passing"] == [] and not any(
+        "ai-defect-passing" in d["labels"] for d in _bugs(fake).values())

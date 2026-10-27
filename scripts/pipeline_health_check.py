@@ -51,10 +51,21 @@ def findings(tracker, host_factory, root: Path, now: _dt.datetime) -> list:
     return out
 
 
-def apply(tracker, found: list) -> dict:
-    """Open or close each alert. Returns {"opened": [...], "resolved": [...]}."""
+def apply(tracker, found: list, root: Path | None = None) -> dict:
+    """Open or close each alert. Returns {"opened": [...], "resolved": [...]}.
+
+    With `root`: a workflow alert whose workflow file is gone or no longer
+    scheduled closes too - nothing else ever would. (Decided from the files,
+    not from the findings: a workflow whose runs could not be read this time
+    keeps its alert.)"""
+    from core import health_checks as hc
     from core import pipeline_health as ph
     opened, resolved = [], []
+    if root is not None:
+        scheduled = {f"workflow-failing:{n}" for n in hc.scheduled_workflows(root)}
+        resolved += ph.resolve_where(
+            tracker, lambda a: a.startswith("workflow-failing:") and a not in scheduled,
+            "The workflow is no longer scheduled, so it is no longer watched.")
     for f in found:
         if f.problem:
             if ph.raise_alert(tracker, f.alert_id, f.title, f.detail):
@@ -115,7 +126,7 @@ def main(argv=None) -> int:
     if not ph.issue_key(tracker):
         print("[FAIL] no pipeline health issue could be found or created - see the log.")
         return 1
-    result = apply(tracker, found)
+    result = apply(tracker, found, Path(args.root))
     housekeeping(tracker, now)
     ph.refresh_view(tracker, now)
     print(f"opened: {result['opened'] or 'none'}; resolved: {result['resolved'] or 'none'}")
