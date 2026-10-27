@@ -917,6 +917,9 @@ Wraps PyGithub. Methods used across agents:
 | `get_run_artifact_file(run_id, artifact_prefix, filename)` | One file from a run's artifact zip (Agent 3: `junit.xml` from `pytest-report-<run id>`); None on any failure |
 | `get_review_comments(pr_number, review_id)` | Inline review comments (`id`, `path`, `line`, `body`, `author`, `review_id`), replies left out; raises if the PR cannot be read (Agent 2 review fix) |
 | `reply_to_review_comment(pr_number, comment_id, body)` | Answer in the comment's own thread (Agent 2 review fix) |
+| `list_open_prs(branch_prefix, strict=False)` | Open PRs (`number`, `head_ref`, `head_sha`, `url`, `title`). Best-effort by default (a read failure returns what was read: sweeper, Agent 3, in-flight); `strict=True` raises (inventory update - an unreadable list must not read as an empty one) |
+| `close_pull_request(pr_number)` | Close without merging; raises on failure (inventory update retires a superseded proposal) |
+| `delete_branch(name)` | Returns False on failure; discards a half-written branch, and best-effort a closed proposal's branch |
 
 ### 9.7 `core/schemas.py` — every Pydantic model (24 classes)
 
@@ -1532,7 +1535,7 @@ Agent 0 off). Key settings: `enabled`, `shadow_mode`, `selection`, `labels`,
 (`structural 0.45, component 0.15, semantic 0.15, adjudicated 0.25`),
 `thresholds` (`must_update 0.6, review 0.3`), `max_candidates` (300),
 `reconcile` (`closed_scans`, `no_pr_days`, `reset_labels`), `context_update` (`enabled`,
-`branch_prefix`) and `inventory_update` (`enabled`, `branch`, `max_additions_per_page`,
+`branch_prefix`) and `inventory_update` (`enabled`, `branch_prefix`, `max_additions_per_page`,
 `hold_ratio`, `code_dirs`; read by `core/inventory_update.py`, whose `DEFAULTS` are these).
 
 ### 18.2 The analysis
@@ -1600,25 +1603,41 @@ checkouts (no model) and posts the affected tests on the PR. `--drift-report`
 maintenance story (label `inventory-drift`).
 
 **Inventory update** (`core/inventory_update.py`, `scripts/propose_inventory_update.py`;
-the drift job's next step, `if: always()`). `build_update(drift, inventory, used)`
-is pure: per measured page, a stale key whose name the crawl's `new_elements`
-also produced is **replaced** (same key, new selector); else kept when
-`keys_named_in_code()` (every string literal under `code_dirs`, a parse failure
-read as quoted tokens - over-wide on purpose) holds it or it is the page's
-`row_family`; else **removed** with `elements_notes`, `multi_match` and
-`conditional` entries (`_drop_key`). Uncovered elements are **added** through
+the drift job's next step, `if: always()`). `check_inventory_staleness --compare`
+now also writes `new_element_declarations` per page: the generator's
+`multi_match`, `conditional` and `unstable` names for the uncovered elements
+(`introspect.uncovered_entry()`; `unstable` = `_unstable_selectors` plus every
+member of `_ambiguous_selectors`, i.e. css fallbacks, `>> nth=` members and
+`id-hidden` elements). `build_update(drift, inventory, used, allow_removal=...)`
+is pure: per measured page, `unstable` candidates are set aside (`fragile`); a
+stale key whose name the crawl's `new_elements` also produced is **replaced**
+(same key, new selector, the generator's declarations carried by `_declare`)
+unless another key holds that selector (then `refused`); else kept when `used`
+holds it - `keys_named_in_code()` (every string literal under `code_dirs`, a
+parse failure read as quoted tokens - over-wide on purpose) plus
+`keys_named_in_open_prs()` (quoted tokens on the added lines of every open
+PR's Python files under `code_dirs`, its own proposals skipped; None when the
+PRs cannot be read, and then `allow_removal=False` keeps every stale key) - or
+it is a `row_family` (a string or a list); else **removed** with
+`elements_notes`, `multi_match` and `conditional` entries (`_drop_key`).
+Uncovered elements are **added** with their declarations through
 `inventory_proposals.refusal_reason()` - the proposals file's rules - up to
 `max_additions_per_page`. A page with more than one stale key and a stale share
 above `hold_ratio` is held: nothing on it changes. `dump_like()` writes the
 file in its own format (indent 2, non-ASCII kept, the same final newline or
-none), so the diff is the change. `open_or_refresh()` keeps one PR: the body
-records `[inventory-update] content: <sha256[:12]>` of the file it wrote; same
-hash tonight → left alone; the branch's file hash differs from the record → a
-person edited it → never replaced, one `kept-edited` comment per new hash;
-otherwise superseded (comment, `delete_branch` closes it, fresh PR from
-`main`), or closed when nothing changes. A failed write deletes the branch.
-The script refuses a report with `pages_checked` 0, so a failed crawl neither
-proposes nor closes; `--dry-run` and Agent 0's `shadow_mode` print the body instead. RepoHost operations only; no model.
+none), so the diff is the change; the real inventory round-trips byte for
+byte. `render_body()` caps each table at 60 rows and the body at 60,000
+characters (GitHub's limit is 65,536). `open_or_refresh()` sorts the open PRs on
+`branch_prefix`: a body without `[inventory-update] content: <sha256[:12]>`, or
+a branch file whose hash differs from it → edited by a person → never touched,
+no second proposal, one `kept-edited` comment per new hash; the same hash as
+tonight → kept (a duplicate is closed); otherwise closed with a comment
+(`RepoHost.close_pull_request`, then `delete_branch` best-effort). A new
+proposal gets an unused dated branch `<prefix><date>[-n]` from `main`, so no
+deletion is ever needed; a failed write deletes that branch. The script refuses
+a report with `pages_checked` 0 or older than `uncovered_max_age_hours`, exits 1
+when it must write and the host is unreachable, and prints the body under
+`--dry-run` or `shadow_mode`. RepoHost operations only; no model.
 
 ## 19. Change stories in Agents 1, 2 and 5
 
@@ -1629,7 +1648,7 @@ proposes nor closes; `--dry-run` and Agent 0's `shadow_mode` print the body inst
 ## 20. The Protocols — Tracker and RepoHost
 
 `integrations/tracker.py` declares `Tracker` (23 members, including
-`project_key`) and `integrations/repo_host.py` declares `RepoHost` (19). Agents
+`project_key`) and `integrations/repo_host.py` declares `RepoHost` (20). Agents
 receive an adapter from `get_tracker()` / `get_repo_host()` (new ones are added with `register_adapter()`) and never import Jira
 or GitHub directly. `tests/unit/test_pipeline_tool_agnostic.py` runs the agents'
 real `run()` functions against an in-memory tracker that has no JQL and no issue

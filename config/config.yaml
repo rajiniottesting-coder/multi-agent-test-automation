@@ -415,14 +415,15 @@ agents:
     context_update:
       enabled: true
       branch_prefix: "context-update/"   # must not contain an issue key
-    # Nightly drift job: the inventory changes the crawl implies, as ONE rolling
-    # pull request for a person to merge (core/inventory_update.py): a stale
-    # selector replaced when the same element is found under a new selector,
-    # a stale key no code names removed, uncovered live elements added. Pages
-    # where most selectors are stale are never edited (outage, redesign).
+    # Nightly drift job: the inventory changes the crawl implies, as one pull
+    # request at a time for a person to merge (core/inventory_update.py): a
+    # stale selector replaced when the same element is found under a new
+    # selector, a stale key no code (main or an open PR) names removed,
+    # uncovered live elements added with their declarations. Pages where most
+    # selectors are stale are never edited (outage, redesign).
     inventory_update:
       enabled: true
-      branch: "inventory-update/nightly"   # must not contain an issue key
+      branch_prefix: "inventory-update/"   # + the date; must not contain an issue key
       max_additions_per_page: 20           # the rest are listed in the PR
       hold_ratio: 0.5                      # more than this share stale -> page left alone
       code_dirs: ["pages", "tests"]        # a key named here is never removed

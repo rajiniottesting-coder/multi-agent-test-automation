@@ -18,33 +18,47 @@ ever.
 
 WHAT IT CHANGES (each rule errs toward leaving the inventory alone)
 ------------------------------------------------------------------
-  * REPLACE  a stale key's selector when tonight's crawl found exactly the
-             element the generator names the same on that page: the element
-             is still there, its selector changed. The key, and every page
-             object using it, stays valid.
-  * REMOVE   a stale key no code refers to (no string literal in the code
-             directories names it) and that is not the page's row family.
-             Its notes and its entries in multi_match / conditional go too.
-  * KEEP     a stale key code still uses: removing it would break a page
+  * REPLACE  a stale key's selector when tonight's crawl found the element the
+             generator names the same on that page, with a durable selector:
+             the element is still there, its selector changed. The key, and
+             every page object using it, stays valid.
+  * REMOVE   a stale key no code names - no string literal in the code
+             directories on `main`, and none added by an open pull request -
+             that is not the page's row family. Its notes and its entries in
+             multi_match / conditional go too. When the open pull requests
+             could not be read, nothing is removed.
+  * KEEP     a stale key code still names: removing it would break a page
              object, and a change story may be asserting it is gone (an
              absence test needs the key). Listed for a person.
   * ADD      live elements no selector covers, named and ranked by the
-             generator's own rules (`introspect.uncovered_elements`), checked
-             by the same refusal rules as the manual proposals file, at most
-             `max_additions_per_page` per page; the rest are listed.
+             generator's own rules (`introspect.uncovered_entry`), WITH the
+             generator's declarations (a family -> multi_match, a hidden
+             element -> conditional), checked by the same refusal rules as
+             the manual proposals file, at most `max_additions_per_page` per
+             page. Elements the generator flags for review (no durable
+             handle: a css fallback, an index-pinned `>> nth=` member, an
+             element hidden when crawled) are listed, never added.
   * HOLD     a page where more than `hold_ratio` of the selectors are stale is
              not changed at all: that is a page that did not render as itself
              (an error page, an outage, a redesign) - a person decides.
-  * REPORT   ambiguous selectors, unreachable pages and pages that were not
-             measured: listed, never changed.
+  * REPORT   ambiguous selectors, unreachable pages and untracked test-ids:
+             listed, never changed.
 
 Nothing is merged here. The pull request is the review, and the normal checks
 run on it: Agent 4 runs the suite against the updated inventory, Agent 0 lists
 the tests the change touches.
 
-PURE LOGIC apart from `keys_named_in_code`, which reads the code directories.
-The repository writes are in `open_or_refresh`, through the RepoHost protocol.
-Nothing here names an application, a page or an element.
+ONE PROPOSAL AT A TIME
+----------------------
+Each proposal gets its own branch (`<branch_prefix><date>`), so a new one
+never needs an old branch deleted - a repository may forbid deletion. An
+older untouched proposal is closed (`RepoHost.close_pull_request`) and its
+branch deleted best-effort; a proposal a person committed to is never
+touched.
+
+Pure logic apart from `keys_named_in_code` (reads the code directories) and
+the RepoHost calls in `keys_named_in_open_prs` and `open_or_refresh`. Nothing
+here names an application, a page or an element.
 """
 from __future__ import annotations
 
@@ -67,6 +81,7 @@ logger = logging.getLogger(__name__)
 MARKER = "[inventory-update]"
 _RECORDED = re.compile(re.escape(MARKER) + r" content: ([0-9a-f]{12})")
 _NOTED = re.compile(re.escape(MARKER) + r" kept-edited: ([0-9a-f]{12})")
+_QUOTED = re.compile(r"[\"']([A-Za-z0-9_]+)[\"']")
 
 # One source for the defaults: Agent 0's settings (core.impact_settings), whose
 # shipped config.yaml block must equal them.
@@ -74,6 +89,11 @@ DEFAULTS = _IMPACT_DEFAULTS["inventory_update"]
 
 # Page fields that list element keys. A removed key leaves every one of them.
 _KEY_LISTS = ("multi_match", "conditional")
+
+# GitHub refuses a pull request body over 65,536 characters; each table is
+# capped well below it and the rest counted.
+_MAX_ROWS = 60
+_MAX_BODY = 60_000
 
 
 @dataclass
@@ -85,6 +105,7 @@ class InventoryUpdate:
     kept_missing: list = field(default_factory=list)  # {page, element, selector, why}
     over_cap: list = field(default_factory=list)      # {page, element, selector}
     refused: list = field(default_factory=list)       # {page, element, selector, refused}
+    fragile: list = field(default_factory=list)       # {page, element, selector}
     held_pages: list = field(default_factory=list)    # {page, stale, total}
     ambiguous: list = field(default_factory=list)     # {page, element, selector, matches}
     unreachable: list = field(default_factory=list)   # [page]
@@ -121,12 +142,66 @@ def keys_named_in_code(root: Path, code_dirs=("pages", "tests")) -> set:
             try:
                 tree = ast.parse(text)
             except SyntaxError:
-                found |= set(re.findall(r"[\"']([A-Za-z0-9_]+)[\"']", text))
+                found |= set(_QUOTED.findall(text))
                 continue
             for node in ast.walk(tree):
                 if isinstance(node, ast.Constant) and isinstance(node.value, str):
                     found.add(node.value)
     return found
+
+
+def keys_in_patches(files: list, code_dirs=("pages", "tests")) -> set:
+    """Quoted tokens on the ADDED lines of a pull request's Python files under
+    `code_dirs` (RepoHost.get_pr_changed_files shape: filename, patch)."""
+    found: set = set()
+    prefixes = tuple(f"{d.rstrip('/')}/" for d in code_dirs)
+    for f in files or []:
+        name = (f.get("filename") or "").replace("\\", "/")
+        if not (name.endswith(".py") and name.startswith(prefixes)):
+            continue
+        for line in (f.get("patch") or "").splitlines():
+            if line.startswith("+") and not line.startswith("+++"):
+                found |= set(_QUOTED.findall(line))
+    return found
+
+
+def keys_named_in_open_prs(host, code_dirs=("pages", "tests"),
+                           own_prefix: str = "") -> Optional[set]:
+    """Keys named by code an open pull request adds - code not on `main` yet.
+
+    A story pull request in flight may add a page object method using a key
+    that is stale tonight; removing the key would break that story after both
+    merge. Returns None when the open pull requests cannot be read, which the
+    caller must take as "remove nothing"."""
+    found: set = set()
+    try:
+        for pr in host.list_open_prs(strict=True):
+            if own_prefix and (pr.get("head_ref") or "").startswith(own_prefix):
+                continue
+            found |= keys_in_patches(host.get_pr_changed_files(pr["number"]), code_dirs)
+    except Exception as e:                                         # noqa: BLE001
+        logger.warning("open pull requests could not be read: %s", e)
+        return None
+    return found
+
+
+# ─────────────────────────────────────────────────────────────
+# The report's freshness
+# ─────────────────────────────────────────────────────────────
+
+def report_age_problem(drift: dict, max_hours: float, now: Optional[datetime] = None) -> str:
+    """Why a drift report is too old (or undated) to act on, or ''."""
+    stamp = drift.get("checked_at") or ""
+    try:
+        when = datetime.fromisoformat(stamp)
+    except ValueError:
+        return "the report carries no checked_at time"
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    hours = ((now or datetime.now(timezone.utc)) - when).total_seconds() / 3600
+    if hours > max_hours:
+        return f"the report is {hours:.0f} h old (limit {max_hours:g} h)"
+    return ""
 
 
 # ─────────────────────────────────────────────────────────────
@@ -136,6 +211,13 @@ def keys_named_in_code(root: Path, code_dirs=("pages", "tests")) -> set:
 def _selectors(page: dict) -> dict:
     return {k: v for k, v in (page.get("elements") or {}).items()
             if isinstance(v, str) and not k.startswith("_")}
+
+
+def _row_families(page: dict) -> set:
+    value = page.get("row_family")
+    if isinstance(value, str):
+        return {value}
+    return {v for v in value if isinstance(v, str)} if isinstance(value, list) else set()
 
 
 def _drop_key(page: dict, key: str) -> None:
@@ -150,17 +232,32 @@ def _drop_key(page: dict, key: str) -> None:
             page[name] = [v for v in values if v != key]
 
 
+def _declare(page: dict, key: str, declared: dict) -> None:
+    """Carry the generator's declarations for `key` onto the page."""
+    for name in _KEY_LISTS:
+        if key in (declared.get(name) or []):
+            values = page.get(name)
+            values = list(values) if isinstance(values, list) else []
+            if key not in values:
+                values.append(key)
+            page[name] = values
+
+
 def build_update(drift: dict, inventory: dict, used: set, *,
-                 max_additions_per_page: int = 20, hold_ratio: float = 0.5) -> InventoryUpdate:
+                 max_additions_per_page: int = 20, hold_ratio: float = 0.5,
+                 allow_removal: bool = True,
+                 no_removal_reason: str = "") -> InventoryUpdate:
     """The inventory after tonight's drift report, and what changed (pure).
 
     `drift` is check_inventory_staleness's JSON report (with --compare for
-    additions and replacements); `used` is keys_named_in_code(). The input
-    inventory is not modified."""
+    additions and replacements); `used` is every key code names (main and the
+    open pull requests). `allow_removal=False` keeps every stale key, with
+    `no_removal_reason`. The input inventory is not modified."""
     out = copy.deepcopy(inventory)
     upd = InventoryUpdate(inventory=out)
     pages = out.get("pages") or {}
     new_by_page = drift.get("new_elements") or {}
+    declared_by_page = drift.get("new_element_declarations") or {}
     upd.unreachable = list(drift.get("unreachable_pages") or [])
 
     for name in sorted(drift.get("pages") or {}):
@@ -178,19 +275,33 @@ def build_update(drift: dict, inventory: dict, used: set, *,
             upd.held_pages.append({"page": name, "stale": len(stale), "total": len(current)})
             continue
 
+        declared = declared_by_page.get(name) or {}
+        unstable = set(declared.get("unstable") or [])
         new = dict(new_by_page.get(name) or {})
+        for element in sorted(set(new) & unstable):
+            upd.fragile.append({"page": name, "element": element, "selector": new.pop(element)})
+
         for m in stale:
             key, old = m["element"], current[m["element"]]
             candidate = new.pop(key, None)
-            if candidate and candidate != old and candidate not in _selectors(page).values():
+            if candidate and candidate in _selectors(page).values():
+                upd.refused.append({"page": name, "element": key, "selector": candidate,
+                                    "refused": "replacement selector already used by "
+                                               "another element on the page"})
+                candidate = None
+            if candidate and candidate != old:
                 page["elements"][key] = candidate
+                _declare(page, key, declared)
                 upd.replaced.append({"page": name, "element": key, "old": old, "new": candidate})
             elif key in used:
                 upd.kept_missing.append({"page": name, "element": key, "selector": old,
                                          "why": "code still names it"})
-            elif page.get("row_family") == key:
+            elif key in _row_families(page):
                 upd.kept_missing.append({"page": name, "element": key, "selector": old,
                                          "why": "the page's row family"})
+            elif not allow_removal:
+                upd.kept_missing.append({"page": name, "element": key, "selector": old,
+                                         "why": no_removal_reason or "removal is off"})
             else:
                 _drop_key(page, key)
                 upd.removed.append({"page": name, "element": key, "selector": old})
@@ -205,6 +316,7 @@ def build_update(drift: dict, inventory: dict, used: set, *,
                 upd.over_cap.append(row)
             else:
                 page.setdefault("elements", {})[element] = selector
+                _declare(page, element, declared)
                 upd.added.append(row)
                 added_here += 1
     return upd
@@ -239,7 +351,9 @@ def _table(title: str, rows: list, cols: list, note: str = "") -> list:
         out += [note, ""]
     out += ["| " + " | ".join(c for c, _ in cols) + " |",
             "|" + "---|" * len(cols)]
-    out += ["| " + " | ".join(_cell(f(r)) for _, f in cols) + " |" for r in rows]
+    out += ["| " + " | ".join(_cell(f(r)) for _, f in cols) + " |" for r in rows[:_MAX_ROWS]]
+    if len(rows) > _MAX_ROWS:
+        out.append(f"\n… and {len(rows) - _MAX_ROWS} more (see the drift report artifact).")
     return out + [""]
 
 
@@ -267,7 +381,11 @@ def render_body(upd: InventoryUpdate, inventory_path: str, digest: str,
                                    ("New", lambda r: f"`{r['new']}`")])
     lines += _table("Added - live elements no selector covered", upd.added, [el, sel])
     lines += _table("Removed - no longer on the page, and no code names them",
-                    upd.removed, [el, sel])
+                    upd.removed, [el, sel],
+                    "Check each is really gone. An element shown only after a click, or "
+                    "only in the other sign-in state, should be declared `conditional` "
+                    "instead: restore it in this branch and add it to the page's "
+                    "`conditional` list.")
     lines += _table("Kept although not found - a person decides", upd.kept_missing,
                     [el, sel, ("Why kept", lambda r: r["why"])],
                     "Each is missing on the live page. If the feature was removed on "
@@ -278,8 +396,13 @@ def render_body(upd: InventoryUpdate, inventory_path: str, digest: str,
                      ("Stale", lambda r: f"{r['stale']} of {r['total']}")],
                     "A page that did not render as itself (error page, outage, redesign) "
                     "is never edited automatically.")
+    lines += _table("Not added - no durable selector", upd.fragile, [el, sel],
+                    "The generator flagged each for review: only a fragile handle (a css "
+                    "fallback), one member of a repeated widget pinned by `>> nth=`, or "
+                    "an element hidden when crawled. Add a test-id in the application, "
+                    "declare a family, or write the entry by hand.")
     lines += _table("Not added - over the per-page limit", upd.over_cap, [el, sel])
-    lines += _table("Not added - refused", upd.refused,
+    lines += _table("Not applied - refused", upd.refused,
                     [el, sel, ("Reason", lambda r: r["refused"])])
     lines += _table("Ambiguous selectors - match several elements", upd.ambiguous,
                     [el, sel, ("Matches", lambda r: r.get("matches", ""))])
@@ -287,9 +410,12 @@ def render_body(upd: InventoryUpdate, inventory_path: str, digest: str,
         lines += [f"**Unreachable pages** (not checked): "
                   f"{', '.join(f'`{p}`' for p in upd.unreachable)}", ""]
     lines += ["_Generated by `scripts.propose_inventory_update` from the nightly drift "
-              "report. A fresh check replaces this pull request while nobody has edited "
+              "report. A newer check closes this pull request while nobody has edited "
               "it; once a person commits to the branch, it is left alone._"]
-    return "\n".join(lines)
+    body = "\n".join(lines)
+    if len(body) > _MAX_BODY:
+        body = body[:_MAX_BODY] + "\n\n… (truncated: the drift report artifact has the rest)"
+    return body
 
 
 # ─────────────────────────────────────────────────────────────
@@ -297,64 +423,89 @@ def render_body(upd: InventoryUpdate, inventory_path: str, digest: str,
 # ─────────────────────────────────────────────────────────────
 
 def settings(raw: Optional[dict] = None) -> dict:
-    """The effective settings (`raw` over DEFAULTS); refuses an issue key in the branch."""
+    """The effective settings (`raw` over DEFAULTS); refuses an issue key in the prefix."""
     merged = {**copy.deepcopy(DEFAULTS), **(raw or {})}
     from config import extract_jira_key
-    if extract_jira_key(merged["branch"]):
-        raise ValueError(f"inventory_update.branch {merged['branch']!r} contains an issue "
-                         "key: merging it would close or report on that story")
+    if extract_jira_key(merged["branch_prefix"]):
+        raise ValueError(f"inventory_update.branch_prefix {merged['branch_prefix']!r} "
+                         "contains an issue key: merging it would close or report on that "
+                         "story")
     return merged
 
 
-def _open_pr(host, branch: str) -> Optional[dict]:
-    return next((p for p in host.list_open_prs(branch) if p.get("head_ref") == branch), None)
+def _unused_branch(host, prefix: str, today: str) -> str:
+    branch, n = f"{prefix}{today}", 1
+    while host.branch_exists(branch):
+        n += 1
+        branch = f"{prefix}{today}-{n}"
+    return branch
+
+
+def _retire(host, pr: dict, reason: str) -> None:
+    """Close a superseded proposal; its branch is deleted best-effort (a
+    repository may forbid deletion - the next proposal uses a new branch)."""
+    host.post_pr_comment(pr["number"], reason)
+    host.close_pull_request(pr["number"])
+    try:
+        host.delete_branch(pr["head_ref"])
+    except Exception as e:                                         # noqa: BLE001
+        logger.warning("branch %s not deleted: %s", pr["head_ref"], e)
 
 
 def open_or_refresh(host, upd: InventoryUpdate, *, inventory_path: str, original: str,
-                    branch: str, checked_at: str = "", today: str = "") -> dict:
-    """Open, replace or close the one inventory-update pull request.
+                    prefix: str, checked_at: str = "", today: str = "") -> dict:
+    """Keep at most one inventory-update pull request, and only a current one.
 
-    * Open PR untouched since we wrote it, same content tonight -> left as is.
-    * Open PR untouched, different content -> superseded: a comment, the
-      branch deleted (which closes it), and a fresh PR when there is a change.
-    * Open PR a person committed to -> never touched; one comment per new
-      finding, so the nightly run does not repeat itself.
-    * No change tonight and no open PR -> nothing.
+    * An open proposal a person committed to (or one without our marker) ->
+      never touched; one comment per new finding, no second proposal.
+    * An untouched proposal with tonight's content -> left as it is.
+    * An untouched proposal with other content -> closed with a comment; a
+      fresh proposal on a new branch when there is a change.
+    * No change and no proposal -> nothing.
     """
     today = today or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     text = dump_like(original, upd.inventory)
     digest = content_hash(text)
-    existing = _open_pr(host, branch)
+    ours = [p for p in host.list_open_prs(prefix, strict=True)
+            if (p.get("head_ref") or "").startswith(prefix)]
 
-    if existing:
-        number = existing["number"]
-        body = host.get_pr_metadata(number).get("body") or ""
-        recorded = (_RECORDED.search(body) or [None, None])[1]
+    edited, same, stale = [], [], []
+    for pr in ours:
+        body = host.get_pr_metadata(pr["number"]).get("body") or ""
+        match = _RECORDED.search(body)
         try:
-            on_branch = host.get_file_content(inventory_path, branch)
+            on_branch = host.get_file_content(inventory_path, pr["head_ref"])
         except Exception:                                      # noqa: BLE001
             on_branch = None
-        if recorded is None or on_branch is None or content_hash(on_branch) != recorded:
-            noted = {m for c in host.get_pr_comments(number) for m in _NOTED.findall(c or "")}
+        if match is None or on_branch is None or content_hash(on_branch) != match.group(1):
+            edited.append(pr)
+        elif match.group(1) == digest:
+            same.append(pr)
+        else:
+            stale.append(pr)
+
+    if edited:
+        for pr in edited:
+            noted = {m for c in host.get_pr_comments(pr["number"]) for m in _NOTED.findall(c or "")}
             if upd.changed and digest not in noted:
-                host.post_pr_comment(number, (
+                host.post_pr_comment(pr["number"], (
                     f"{MARKER} kept-edited: {digest}\n\nThe {today} check found inventory "
                     "changes, but this branch was edited by a person, so it is left as it "
-                    "is. Merge or close it; the next check proposes again from `main`."))
-            return {"status": "kept_edited", "pr": number}
-        if recorded == digest:
-            return {"status": "unchanged", "pr": number}
-        host.post_pr_comment(number, (
-            f"Superseded by the {today} check: "
-            + ("a fresh pull request replaces this one." if upd.changed
-               else "the inventory needs no change now, so this one is closed.")))
-        host.delete_branch(branch)          # deleting the head branch closes the PR
-    elif host.branch_exists(branch):
-        host.delete_branch(branch)          # left over without a PR: start clean
+                    "is and no second proposal is opened. Merge or close it; the next "
+                    "check proposes again from `main`."))
+        return {"status": "kept_edited", "prs": [p["number"] for p in edited]}
 
+    for pr in stale + same[1:]:
+        _retire(host, pr, f"Superseded by the {today} check: " + (
+            "a fresh pull request replaces this one." if upd.changed and not same
+            else "the inventory needs no change now." if not upd.changed
+            else "an identical proposal is already open."))
+    if same:
+        return {"status": "unchanged", "pr": same[0]["number"]}
     if not upd.changed:
-        return {"status": "closed" if existing else "nothing_to_change"}
+        return {"status": "closed" if stale else "nothing_to_change"}
 
+    branch = _unused_branch(host, prefix, today)
     host.create_branch(branch, "main")
     try:
         host.create_or_update_file(inventory_path, text,
@@ -365,4 +516,4 @@ def open_or_refresh(host, upd: InventoryUpdate, *, inventory_path: str, original
     except Exception:
         host.delete_branch(branch)          # never leave a half-written branch
         raise
-    return {"status": "opened", "url": url}
+    return {"status": "opened", "url": url, "branch": branch}

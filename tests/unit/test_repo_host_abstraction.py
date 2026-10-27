@@ -125,6 +125,7 @@ def test_a_new_host_needs_no_caller_changes():
         def get_pr_metadata(self, pr_number): return self.prs[pr_number]
         def get_pr_changed_files(self, pr_number): return []
         def reopen_pull_request(self, pr_number): pass
+        def close_pull_request(self, pr_number): pass
         def post_pr_comment(self, pr_number, body):
             self.comments.setdefault(pr_number, []).append(body)
         def get_pr_comments(self, pr_number): return self.comments.get(pr_number, [])

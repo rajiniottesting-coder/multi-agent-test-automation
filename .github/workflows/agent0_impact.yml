@@ -269,10 +269,10 @@ jobs:
             python -m agents.agent0_impact --drift-report reports/drift.json $DRY
           fi
       - name: Propose the inventory update as a pull request
-        # One rolling PR (core/inventory_update.py): replaced, added and removed
-        # selectors, and what is left for a person. GH_PAT, so Agents 3 and 4
-        # run on it like any PR. Never merged here. A failure here does not
-        # undo the drift analysis above.
+        # One proposal at a time on inventory-update/<date> (core/inventory_update.py):
+        # replaced, added and removed selectors, and what is left for a person.
+        # GH_PAT, so Agents 3 and 4 run on it like any PR. Never merged here. A
+        # failure here does not undo the drift analysis above.
         if: always()
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}

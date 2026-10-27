@@ -91,11 +91,13 @@ class GitHubClient:
             logger.warning(f"Could not check for an existing PR: {e}")
         return None
 
-    def list_open_prs(self, branch_prefix: str = "") -> list[dict]:
+    def list_open_prs(self, branch_prefix: str = "", strict: bool = False) -> list[dict]:
         """All open PRs as plain dicts, optionally filtered by branch prefix.
 
         Same five keys as find_open_pr_for_story. Used by the sweeper, which
-        previously iterated raw PyGithub objects.
+        previously iterated raw PyGithub objects. A read failure is logged and
+        what was read so far returned - unless `strict`, which re-raises (the
+        inventory update must not mistake an unreadable list for an empty one).
         """
         out: list[dict] = []
         try:
@@ -106,6 +108,8 @@ class GitHubClient:
                             "head_sha": pr.head.sha, "url": pr.html_url,
                             "title": pr.title})
         except Exception as e:
+            if strict:
+                raise
             logger.warning(f"Could not list open PRs: {e}")
         return out
 
@@ -143,6 +147,11 @@ class GitHubClient:
         pr = self.repo.get_pull(pr_number)
         pr.edit(state="closed")
         pr.edit(state="open")
+
+    def close_pull_request(self, pr_number: int) -> None:
+        """Close a PR without merging. Raises on failure: a caller that
+        believes a proposal was retired must not be told so falsely."""
+        self.repo.get_pull(pr_number).edit(state="closed")
 
     def get_workflow_runs(self, workflow_file: str, branch: str,
                           limit: int = 20) -> list[dict]:

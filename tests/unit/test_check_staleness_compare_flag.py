@@ -131,3 +131,25 @@ def test_every_report_records_when_the_application_was_checked(run, tmp_path):
     taken = datetime.fromisoformat(json.loads(out.read_text(encoding="utf-8"))["checked_at"])
     assert taken.tzinfo is not None
     assert abs((datetime.now(timezone.utc) - taken).total_seconds()) < 60
+
+
+def test_compare_records_the_generators_declarations_for_uncovered_elements(
+        run, tmp_path, monkeypatch):
+    """A hidden element is reported `conditional` and, with an index-pinned
+    family member, `unstable`, so the nightly inventory update never adds it
+    blindly (an undeclared hidden element would read as stale the next night)."""
+    def desc(tag, attrs, text, visible=True):
+        return {"tag": tag, "attrs": attrs, "text": text, "renderedText": text, "label": "",
+                "visible": visible, "thirdParty": False, "hasIconChild": False, "cssPath": ""}
+    descriptors = [desc("button", {"id": "cancel"}, "Cancel"),
+                   desc("button", {"id": "undo"}, "Undo", visible=False),
+                   *[desc("a", {"href": f"/item/{i}"}, f"Item {i}") for i in (1, 2)]]
+    monkeypatch.setattr(chk, "collect_uncovered",
+                        lambda page, url, sels, attrs: ("Home", descriptors))
+    out_json = tmp_path / "report.json"
+    assert run("--compare", "--json", str(out_json)) == 0
+    report = json.loads(out_json.read_text(encoding="utf-8"))
+    declared = report["new_element_declarations"]["home"]
+    assert declared["conditional"] == ["undo_button"]
+    assert {"undo_button", "item_1_link", "item_2_link"} <= set(declared["unstable"])
+    assert "cancel_button" not in declared["unstable"]

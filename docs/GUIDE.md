@@ -77,7 +77,7 @@ For more diagrams — component view, Agent 2 sequence, and the labels-as-state-
 - **Each agent stops at a checkpoint.** A human reviews before the next agent runs. See [the human-approval gate](#the-human-approval-gate).
 - **Idempotency via Jira labels.** `ai-processed` (Agent 1 done), `ai-coded` (Agent 2 done), `tests-run` (Agent 5 done); for a change story `impact-proposed` (Agent 0 done, review open) and `impact-applied` (tests revised). Re-running an agent against an already-processed story is a no-op, and Agent 0 skips a story whose text it has already analysed.
 - **Config-driven, not code-driven.** App-specific knowledge (URL, reference files, page inventory, module notes) lives in `config.yaml`, `app_inventory/` and `prompts/app_context/`. Agent code is app-agnostic.
-- **Tools behind Protocols.** Agents talk to `Tracker` (23 operations) and `RepoHost` (19 operations) in `integrations/`, never to Jira or GitHub directly; the Jira and GitHub adapters are the only implementations today.
+- **Tools behind Protocols.** Agents talk to `Tracker` (23 operations) and `RepoHost` (20 operations) in `integrations/`, never to Jira or GitHub directly; the Jira and GitHub adapters are the only implementations today.
 - **Defensive validators.** Between Agent 2's model output and the PR, 32 static checks run: the path policy on the plan, 10 hard gates in `_validate_generated_files()`, 27 validator calls in `_collect_repairable_errors()` (7 of them also hard gates), and the absence-claim check against the approved test cases (`_absence_claim_errors()`, in the repair loop and the final gate). Repairable failures feed a repair loop that regenerates only the broken files; the rest abort before a branch exists.
 
 ---
@@ -580,29 +580,38 @@ material only).
 ### Inventory update — the nightly pull request (`core/inventory_update.py`)
 
 After the drift analysis, the drift job turns the crawl's report into **one
-rolling pull request** on `inventory-update/nightly` (`scripts/propose_inventory_update.py`;
-settings `agents.agent0_impact.inventory_update`). Every rule errs toward
-leaving the inventory alone:
+pull request at a time**, on a dated branch `inventory-update/<date>`
+(`scripts/propose_inventory_update.py`; settings
+`agents.agent0_impact.inventory_update`). Every rule errs toward leaving the
+inventory alone:
 
 | Found by the crawl | What the PR does |
 |---|---|
-| A stale key, and the crawl finds the element the generator names the same | **Replaces** the selector; the key and every page object using it stay valid |
-| A stale key no code names (no string literal under `code_dirs`), not the row family | **Removes** it, with its note and its `multi_match` / `conditional` entries |
-| A stale key code still names | **Keeps** it and lists it: a page object needs a new selector, or a change story's absence test needs the key |
-| A live element no selector covers | **Adds** it - the generator's own name and selector, the proposals file's refusal rules, at most `max_additions_per_page` per page |
+| A stale key, and the crawl finds the element the generator names the same, with a durable selector | **Replaces** the selector; the key and every page object using it stay valid |
+| A stale key no code names - no string literal under `code_dirs` on `main`, none added by an **open pull request** - not the row family | **Removes** it, with its note and its `multi_match` / `conditional` entries |
+| A stale key code names (on `main` or in an open PR) | **Keeps** it and lists it: a page object needs a new selector, or a change story's absence test needs the key |
+| A live element no selector covers | **Adds** it - the generator's own name and selector **and its declarations** (a family → `multi_match`, a hidden element → `conditional`), the proposals file's refusal rules, at most `max_additions_per_page` per page |
+| An element the generator flags for review (a css fallback, an index-pinned `>> nth=` member, hidden when crawled) | Listed, **never added** |
 | More than `hold_ratio` of a page's selectors stale | **Leaves the page alone** and lists it: an error page, an outage or a redesign is a person's call |
 | Ambiguous selectors, unreachable pages, untracked test-ids | Listed only |
 
 Merge it after checking the names and Agent 4's run on it - the suite runs
 against the updated inventory, and Agent 0 lists the tests it touches. Nothing
-is merged by an agent. The next night leaves an unchanged PR alone, replaces
-one nobody edited (comment, branch deleted, fresh PR) and closes it when
-nothing needs changing; once **you commit to the branch** (a better key name,
-say) it is never replaced - it gets one comment per new finding instead. A
-crawl that measured no page proposes and closes nothing, and in Agent 0's
-shadow mode the PR body is printed, not opened. Edits are selective,
-never a regeneration, so curated notes and declarations stay. The manual
-route (`check_inventory_staleness --propose` → mark rows →
+is merged by an agent. The next night leaves an unchanged proposal alone,
+**closes** one nobody edited (a comment, then `close_pull_request`; its branch
+is deleted best-effort, since a repository may forbid deletion) and opens a
+fresh one on a new dated branch when something is left to change. Once **you
+commit to the branch** (a better key name, say), or for any PR on the prefix
+without the bot's marker, it is never touched and no second proposal is
+opened - it gets one comment per new finding instead.
+
+Nothing is proposed and nothing closed when the crawl measured no page (login
+failed, site down) or the report is older than `uncovered_max_age_hours`.
+When the open pull requests cannot be read, **no key is removed** (a story in
+flight may use it). In Agent 0's shadow mode, or with `--dry-run`, the PR body
+is printed, not opened. Edits are selective, never a regeneration, so curated
+notes and declarations stay; each table in the body shows at most 60 rows. The
+manual route (`check_inventory_staleness --propose` → mark rows →
 `apply_inventory_proposals`) still works for a one-off.
 
 ### Reconcile — finish or undo (`core/impact_reconcile.py`)
@@ -1103,7 +1112,7 @@ agents:
       no_pr_days: 14
       reset_labels: [ai-processed, human-approved, ai-coded, tests-run]
     context_update: { enabled: ..., branch_prefix: "context-update/" }
-    inventory_update: { enabled: true, branch: "inventory-update/nightly",
+    inventory_update: { enabled: true, branch_prefix: "inventory-update/",
                         max_additions_per_page: 20, hold_ratio: 0.5, code_dirs: [pages, tests] }
 
 status_workflow:                    # board columns per label, Done on merge
@@ -1694,13 +1703,16 @@ Expected when the PR changes only `prompts/`, `docs/` or Markdown: no browser ru
 
 It is opened only when something can be applied (a replaced selector, an
 added element, a removed key) and only in Agent 0 live mode with
-`inventory_update.enabled`. A crawl that measured no page (login failed, site
-down) proposes nothing and closes nothing. Not applied, and listed in the PR
-instead: a stale key code still names, every page where more than
-`hold_ratio` of the selectors were stale, elements over
+`inventory_update.enabled`. Nothing is proposed for a crawl that measured no
+page (login failed, site down) or a report older than
+`uncovered_max_age_hours`; the step fails red when the repository host is
+unreachable. Not applied, and listed in the PR instead: a stale key code
+names (on `main` or in an open PR), every stale key when the open PRs could
+not be read, every page where more than `hold_ratio` of the selectors were
+stale, elements with no durable selector, elements over
 `max_additions_per_page`, and refused names or selectors. A PR you committed
-to is never replaced - merge or close it and the next night proposes again
-from `main`.
+to is never replaced and no second one is opened - merge or close it and the
+next night proposes again from `main`.
 
 ### A review comment on Agent 2's pull request was not acted on
 

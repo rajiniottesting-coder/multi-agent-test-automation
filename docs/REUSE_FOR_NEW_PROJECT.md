@@ -350,7 +350,7 @@ projects" tested against something harder than an app swap.
 |---|---|
 | All six agents' orchestration | They read a tracker, call an LLM, write text files, open a PR. None of them knows what language the text is in. |
 | `core/llm_client.py`, `core/schemas.py` | Schema-in-prompt and Pydantic validation; provider- and language-agnostic. |
-| `integrations/` — Tracker (23 ops), RepoHost (19 ops) | Nothing to do with the test stack. |
+| `integrations/` — Tracker (23 ops), RepoHost (20 ops) | Nothing to do with the test stack. |
 | **`app_inventory/*.json`** | `role=`, `text=` and `label=` are PLAYWRIGHT concepts, not Python ones. `page.getByRole('button', {name:'Save'})` in JS resolves the identical locator, so **the whole inventory carries over unchanged**. |
 | `inventory_tools/` — crawler, ranking, staleness | Produces selectors, not code. |
 | CI workflow structure, the label state machine, the sweeper | Unchanged. |
