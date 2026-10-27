@@ -605,10 +605,13 @@ def scan(tracker, host, llm, settings: dict | None = None, root: Path | None = N
         logger.info("agents.agent0_impact.enabled is false - nothing to do.")
         return []
     results = []
+    from core.usage_ledger import IMPACT_ANALYST, story_usage
     for s in tracker.find_stories_to_process(settings["selection"], max_results=10):
         try:
-            results.append(analyse_and_publish(tracker, s["key"], llm, settings, root, host,
-                                               dry_run=dry_run, uncovered=uncovered))
+            # A story that fails part-way posts its own cost (F-3).
+            with story_usage(s["key"], IMPACT_ANALYST, jira=tracker, dry_run=dry_run):
+                results.append(analyse_and_publish(tracker, s["key"], llm, settings, root,
+                                                   host, dry_run=dry_run, uncovered=uncovered))
         except Exception as e:                                 # noqa: BLE001
             logger.error("Agent 0 failed on %s: %s", s["key"], e, exc_info=True)
             results.append({"story": s["key"], "action": "error", "error": str(e)})
@@ -663,9 +666,11 @@ def main(argv=None) -> int:
             print(r)
         return 0
     if args.story:
-        print(analyse_and_publish(tracker, args.story.upper(), LLMClient(temperature=0.0),
-                                  settings, PROJECT_ROOT, host, dry_run=args.dry_run,
-                                  uncovered=uncovered))
+        from core.usage_ledger import IMPACT_ANALYST, story_usage
+        with story_usage(args.story.upper(), IMPACT_ANALYST, jira=tracker, dry_run=args.dry_run):
+            print(analyse_and_publish(tracker, args.story.upper(), LLMClient(temperature=0.0),
+                                      settings, PROJECT_ROOT, host, dry_run=args.dry_run,
+                                      uncovered=uncovered))
         return 0
     if args.code_change:
         if not (args.base and args.head):
