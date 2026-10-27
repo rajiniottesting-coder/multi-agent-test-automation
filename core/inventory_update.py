@@ -321,7 +321,7 @@ def build_update(drift: dict, inventory: dict, used: set, *,
         # reference. Never when removal is off.
         back = {r.get("element") for r in diff.get("reappeared") or []}
         for key in list(page.get("removed") or []):
-            if not allow_removal or key in back or key in used:
+            if not allow_removal or key in back or key in used or key in _row_families(page):
                 continue
             selector = _selectors(page).get(key)
             _drop_key(page, key)

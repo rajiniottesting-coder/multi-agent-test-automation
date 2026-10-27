@@ -138,3 +138,11 @@ def test_the_change_story_call_is_scoped_end_to_end(repo, monkeypatch):
                          {"context_update": {"enabled": True}}, repo)
     assert "confirmation pop-up" in seen["prompt"]
     assert "The profile keeps one address." not in seen["prompt"]
+
+
+def test_the_single_file_layout_is_always_offered(tmp_path):
+    (tmp_path / "prompts").mkdir()
+    sources = {"prompts/app_context.md": "# Notes\nAll in one file.\n",
+               "inv/app.json": json.dumps(INVENTORY)}
+    offered, pages = cu.scoped_sources(sources, ["Basket"], tmp_path)
+    assert "prompts/app_context.md" in offered and pages == {"menu", "basket"}

@@ -143,6 +143,13 @@ def test_a_removed_key_is_kept_while(why, kwargs, drift):
     assert upd.inventory["pages"]["p"]["removed"] == ["badge"]
 
 
+def test_a_removed_key_that_is_the_row_family_is_never_retired():
+    inv = _inventory()
+    inv["pages"]["p"]["row_family"] = "badge"
+    upd = iu.build_update(_drift(), inv, set())
+    assert not upd.retired and upd.inventory["pages"]["p"]["row_family"] == "badge"
+
+
 def test_a_removed_key_on_an_unmeasured_or_held_page_is_never_retired():
     unmeasured = {"pages_checked": 1, "pages": {}}
     assert not iu.build_update(unmeasured, _inventory(), set()).retired
