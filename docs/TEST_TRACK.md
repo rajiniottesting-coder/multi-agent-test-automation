@@ -15,7 +15,7 @@ grouped sessions below**, so one story run proves as many items as possible.
    [Every merged change and where it is proven](#every-merged-change-and-where-it-is-proven).
    A unit test (`tests/unit/test_test_track.py`) fails when a fix marked
    **Done** in [VALIDATION_AND_KNOWN_GAPS.md](./VALIDATION_AND_KNOWN_GAPS.md) §4
-   has no row, a fix not done is missing from TG-9, or a PR named in
+   has no row, a fix not done is missing from TG-10, or a PR named in
    `CHANGES.md` is missing from the coverage list.
 2. Before a session, read each row's expected result; change it first if it
    no longer matches the design - never after the run.
@@ -37,13 +37,13 @@ grouped sessions below**, so one story run proves as many items as possible.
 
 | Session | Setup | Groups and rows | Notes |
 |---|---|---|---|
-| **S1** Agent 0 analysis, cheapest first | Label SCRUM-205, SCRUM-204, SCRUM-207 and new held-out stories H1, H2, H3, H5 `impact-check`; one full scan; a hand-made PR touching a page object and an inventory selector; one manual Agent 0 run with `mode` = `drift`; the manual-input runs of E33 | TG-1, TG-0 (R7) | Analysis only: no PRs merged. SCRUM-187 is checked with `python -m agents.agent0_impact --story SCRUM-187 --dry-run` |
-| **S2** A change story to the end | SCRUM-229 (2 owners) re-run from its review; then SCRUM-206 retried | TG-2, part of TG-4, TG-0 (R6) | Was UC-2 and UC-6 |
-| **S3** Two new stories in flight | P1 (labelled `impact-check`), P2 (same page object as P1) | TG-3 (E4, E9), TG-4 (E6-E8), TG-1 (H4), TG-0 (R1-R5, R10) | Was UC-3 |
+| **S1** Agent 0 analysis, cheapest first | Label SCRUM-205, SCRUM-204, SCRUM-207 and new held-out stories H1, H2, H3, H5 `impact-check`; one full scan; a hand-made PR touching a page object and an inventory selector; one manual Agent 0 run with `mode` = `drift`; the manual-input runs of E33 | TG-1, TG-0 (R7), TG-9 (E35g, E35i) | Analysis only: no PRs merged. SCRUM-187 is checked with `python -m agents.agent0_impact --story SCRUM-187 --dry-run` |
+| **S2** A change story to the end | SCRUM-229 (2 owners) re-run from its review; then SCRUM-206 retried | TG-2, part of TG-4, TG-0 (R6), TG-9 (E35c, E35d, E35f) | Was UC-2 and UC-6 |
+| **S3** Two new stories in flight | P1 (labelled `impact-check`), P2 (same page object as P1) | TG-3 (E4, E9), TG-4 (E6-E8), TG-1 (H4), TG-0 (R1-R5, R10), TG-9 (E35a, E35b, E35e) | Was UC-3 |
 | **S4** Several stories in one scan | Three stories eligible in one Agent 1/2 scan (the first set up to fail), a regeneration, two change stories touching one test case, a new story's PR closed | TG-4 (M1-M3, G1, G2), TG-3 (E26) | Was UC-5 |
-| **S5** The consolidated run | One new story whose feature is not in the inventory or the notes yet (ideally a new page too), one change story removing an element; the nights around its deployment | TG-3, TG-5, the rest of TG-2, TG-0 (R3) | Was UC-7. Runs over several days: drift nights before and after deployment |
+| **S5** The consolidated run | One new story whose feature is not in the inventory or the notes yet (ideally a new page too), one change story removing an element; the nights around its deployment | TG-3, TG-5, the rest of TG-2, TG-0 (R3), TG-9 (E35j) | Was UC-7. Runs over several days: drift nights before and after deployment |
 | **S6** Nights on `main` | Nothing to set up - the nightly run; one night with a test broken on purpose on a throw-away branch merged and reverted, or an existing failure; the induced triage cases of E31i-E31k | TG-7, TG-0 (R8) | Runs in parallel with S5's nights |
-| **S7** Operations | The health issue created by hand first; induced failures one at a time (below); the budget lowered for one story and one day, then restored | TG-8, TG-0 (R9) | Each induced failure is undone right after its row |
+| **S7** Operations | The health issue created by hand first; induced failures one at a time (below); the budget lowered for one story and one day, then restored | TG-8, TG-0 (R9), TG-9 (E35h, E35k) | Each induced failure is undone right after its row |
 | **S8** Opportunistic | Any PR or nightly run during a 5xx burst from the site, or with a flaky test | TG-6 | Checked whenever it happens; I8 watched throughout |
 
 ---
@@ -74,7 +74,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | H2 | Held-out | A new validation rule on an existing form | Matches the result written down before the run; E13 is checked on it | ⬜ | |
 | H3 | Held-out | A removed field on another page | Matches the result written down before the run | ⬜ | |
 | H4 | Held-out | A new feature on a new page (S3's P1) | Nothing affected → `ai-ready` | ⬜ | |
-| H5 | Held-out | A story with no Component | Whole-suite analysis, the no-Component comment once | ⬜ | |
+| H5 | Held-out, F-31 | A story with no Component | Whole-suite analysis; the report's *No Component* line carries the advice; no separate `[agent0:no-component]` comment | ⬜ | |
 | P6 | #186 | SCRUM-187 re-analysed (dry run) | No false "review" rows | ⬜ | |
 | B | Run B | A PR changing a page-object method and an inventory selector | Agent 0 posts the affected tests on the PR, no model call; the browser runs (runtime file changed) | ⬜ | |
 | C | Run C | Agent 0 with `mode` = `drift` | Opens or updates the maintenance story (`inventory-drift`); scan and reconcile are skipped | ⬜ | |
@@ -89,14 +89,14 @@ grouped sessions below**, so one story run proves as many items as possible.
 |---|---|---|---|---|---|
 | E1 | #199 | An owner's `ai-update` deletes a test case whose scenario held a step's last use | The step function is commented out and listed in the PR; the final gate passes | ⬜ | |
 | E2 | #200 | Close the change PR with `reconcile.closed_scans: 1` | Undone on the first scan that sees the close | ⬜ | |
-| E3 | #200 | Agent 5's cost table on the change story | An Agent 0 row (analysis and context update); Agent 1 did not reset it | ⬜ | |
+| E3 | #200, F-31 | The change story's cost (its cost comment; Agent 5's table with the comment ledger) | An Agent 0 row (analysis and context update); Agent 1 did not reset it | ⬜ | |
 | E5 | #200 | A notes-only context-update PR | Unit suite only, no Agent 5, Agent 3 offers no runner evidence | ⬜ | |
 | E10 | #201 | `ai-update` on an owner while the story PR changes its feature or step file | Waits before any model call | ⬜ | |
 | E11 | #209 | SCRUM-206 retried (removes a field) | Agent 1's coverage map covers AC1 with a step asserting the field is absent; the revised tests alone are rejected | ⬜ | |
 | E12 | #209 | SCRUM-206's PR | The scenario carries the absence step, asserted on a loaded page (`is_loaded() and is_gone(...)`); against the undeployed application exactly that step fails (L20) | ⬜ | |
 | E13 | #209 | H2 (a limit or restriction) | The coverage comment lists a rejection step for it | ⬜ | |
 | E14 | #212 | PR #211 re-reviewed (push or re-run Agent 3) | Red on the absence step only; the card-click finding lowered with "scenario ... passed"; review advisory | ⬜ | |
-| E18 | #219, #220, #222 | Agent 2's review fix: a bare `/fix` after inline comments on an `ai-regenerate` PR | Fixed on the same branch (the story's own regenerated files too), declined ones with the test-case route, a reply per thread, one summary; a re-run does nothing; `/fix <text>` also takes the inline comments; a skipped event cannot cancel a waiting `/fix` | ✅ | V7: SCRUM-202, PR #221 (26 Oct). The "Request changes" trigger waits for F-30 (TG-9) |
+| E18 | #219, #220, #222 | Agent 2's review fix: a bare `/fix` after inline comments on an `ai-regenerate` PR | Fixed on the same branch (the story's own regenerated files too), declined ones with the test-case route, a reply per thread, one summary; a re-run does nothing; `/fix <text>` also takes the inline comments; a skipped event cannot cancel a waiting `/fix` | ✅ | V7: SCRUM-202, PR #221 (26 Oct). The "Request changes" trigger waits for F-30 (TG-10) |
 | E20 | F-10, #225 | S5's change story: `[agent0:context-update]` run | Reads only `core.md`, its Component modules and their pages' notes (prompt in the run log); no rewrite of another module in the PR | ⬜ | |
 | E22 | F-11, #225 | S5's removal story | Context-update PR declares the element in `removed` (note `REMOVED by …`); after deployment the nightly check shows `GONE`, not `STALE`; Agent 0 raises no affected test for it; once the absence test is retired the next inventory-update PR deletes the key | ⬜ | |
 
@@ -202,12 +202,28 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E32a | F-24, #231 | `budget.per_story_usd` below a story's ledger total, then `ai-regenerate` | Agent 2 stops before its first model call; `budget-hold` and one `[budget:hold]` comment; not picked next scan; label removed → runs again with one more budget | ⬜ | |
 | E32b | F-24, #231 | `per_day_usd` just above today's spend | `budget-warn-<day>` at `warn_at`, then `budget-day-<day>`; scans log `[BUDGET]`, end green, defer their stories; Agent 3 posts *Not reviewed: model budget reached*; Agent 5 still reports with code-written prose | ⬜ | |
 | E32c | F-24, #231 | The next day | The health check resolves both alerts; the *Model spend* line restarts; records older than `spend_keep_days` gone | ⬜ | |
-| E32d | F-24, #231 | Any Agent 5 report with prices set | The cost table ends with the *Story budget* line | ⬜ | |
+| E32d | F-24, #231, F-31 | Any story with prices set | Its cost comment ends with the *Story budget* line (Agent 5's table, with the comment ledger) | ⬜ | |
 | E32e | F-24, #231 | A story held, then reset (`ai-regenerate` or a change-story retry resets its ledger) | Its budget restarts from the reset, not from its first run | ⬜ | |
 | E32f | F-19, F-24, #231 | Flake records older than `flaky_tests.window_days` | Pruned by the health check; the *Flaky tests* table no longer counts them | ⬜ | |
 | E32g | F-24, #231 | A scan that fails on an error (not its timeout) after model calls | Its spend is still recorded for the day (L36: a run killed by its timeout records nothing) | ⬜ | |
 
-## TG-9 · Fixes not built yet: rows to add when each is built
+## TG-9 · Story comments: each thing said once (S1-S7)
+
+| ID | Built in | Check | Expected result | Status | Evidence |
+|---|---|---|---|---|---|
+| E35a | F-31 | S3's new story, start to report | No `[LLM-USAGE]` or `[LEDGER-RESET]` comment; ONE *Model cost for this story* comment, edited after each agent run (its edit history shows it); a row per agent with modes and run counts; Agent 5's report ends with one cost line linking it, no table; the runs are issue properties `llm.usage.*` (`GET issue?properties=*all`) | ⬜ | |
+| E35b | F-31 | The edits of E35a | Watchers not emailed for them when the bot account may switch it off (a project administrator); otherwise the log says once that edits notify. Note which | ⬜ | |
+| E35c | F-31 | A new attempt: S2's SCRUM-206 retried, or a story reset to `ai-ready` and drafted again | The old cost comment gets a *Closed ...: a new attempt started (reason)* line and keeps its figures; the next run opens a new one counted from zero; the story budget restarts | ⬜ | |
+| E35d | F-31 | A story costed before F-31 (SCRUM-187 or SCRUM-202) on its next run | Its `[LLM-USAGE]` comments after the last `[LEDGER-RESET]` are in the new cost comment's total; no new `[LLM-USAGE]` comment | ⬜ | |
+| E35e | F-31 | *Post Results to Jira* re-run on the same commit; then a push | The re-run posts nothing and calls no model (log: "Same commit and the same results"); the push gets a new report | ⬜ | |
+| E35f | F-31 | S2's change story PR | Agent 0's outcome is a line of Agent 5's first report on the PR; no `[agent0:outcome]` comment; the next commit's report has no outcome line | ⬜ | |
+| E35g | F-31 | Agent 0 on a change story with an Impact Review (S1, S2) | The story's report keeps its table, has no data block and ends "...the data the agents read back, are in <review>"; a re-analysis's delta is the report's second line; S1-R still skips an unchanged story; an undone review (reconcile) still reads as never analysed | ⬜ | |
+| E35h | F-31 | A story stopped before Agent 5 (blocked, or held as in E32a) | Its cost comment shows the stopped run, `(failed)` where it raised; after the label is removed the budget line reads "raised after a budget hold" and stays under 100% (L40) | ⬜ | |
+| E35i | F-31 | The two new Jira capabilities with the bot's credentials | `properties` (one request) and `update_comment` work; a deleted cost comment is posted again by the next run | ⬜ | |
+| E35j | F-31 | S5's new story end to end | Comments on the story counted against a story before F-31 (SCRUM-202: 14 for 3 reports) - expected 3 reports + 1 cost comment; record the numbers | ⬜ | |
+| E35k | F-31 | `usage_ledger.store: comments` for one story run, then back | The original comments and Agent 5's table return; back on `auto` the story's next cost comment counts both | ⬜ | |
+
+## TG-10 · Fixes not built yet: rows to add when each is built
 
 | Planned | Rows to add when it is built |
 |---|---|
@@ -223,7 +239,6 @@ grouped sessions below**, so one story run proves as many items as possible.
 | F-28 environments and browsers | A run against a second profile; a browser matrix run |
 | F-29 metrics report | The scheduled report's pass, flake, coverage, cost and Agent 0 accuracy figures match the sources |
 | F-30 bot identity | A person requests changes on and approves an agent PR; the review fix's "Request changes" trigger fires |
-| F-31 comment de-duplication (D1-D7) | Per D-item: the comments that go away, what replaces each, every machine-read marker still working (cost table, reset, run-once checks), on a story run end to end |
 
 ---
 
@@ -270,6 +285,8 @@ proves them.
 | #230 | Story state and scans (P2) | | E26, M1-M3, G1, G2 | |
 | #231 | Production readiness (P3) | E29d ✅, E31f ✅ | E27-E32, E28b, E29e-g, E31i-k | Bool settings, SDK pin test |
 | #232 | Triage false alarm, refused defect writes | | E31g, E31h | |
+| #233 | The live test track | | | ✓ (docs and its guard test) |
+| #234 | A story says each thing once (F-31, L40) | | E35a-k, E3, E32d, H5 | |
 
 Cited in `CHANGES.md` but never merged (evidence, not changes): #178 (replaced
 by #181), #211, #214, #217, #221, #223 (story PRs used as live evidence, closed

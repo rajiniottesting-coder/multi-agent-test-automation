@@ -65,7 +65,7 @@ The pipeline never merges its own code. Agents propose; people decide.
 | New story (`ai-ready`) | **7** | Agent 1: 1 draft · Agent 2: 1 plan + 1 per generated file (typically 3) · Agent 3: 1 review · Agent 5: 1 report |
 | Change story (`impact-check`), e.g. A3 | **about 14–15** | Agent 0: 2 to analyse + 2 for the context update · Agent 1: 1 impact-aware draft · Agent 2: 1 plan + 1 per new file (typically 3) + 1 per revised scenario (2) + 0–1 for the owner's step file · Agent 3: 1 on the story PR + 1 on the context-update PR · Agent 5: 1 (none for the context-update PR, which runs no browser) |
 
-Add one call per repair attempt and per corrective retry. Every push to an open PR runs Agents 3 and 5 again (one call each). A story that waits for another open PR (see below) has spent its plan call and spends it again on the retry. The measured total is on the story, in Agent 5's end-to-end cost table - except Agent 3's review of the context-update PR, whose branch carries no story key, so its cost appears only in that run's log.
+Add one call per repair attempt and per corrective retry. Every push to an open PR runs Agents 3 and 5 again (one call each). A story that waits for another open PR (see below) has spent its plan call and spends it again on the retry. The measured total is on the story, in its cost comment - except Agent 3's review of the context-update PR, whose branch carries no story key, so its cost appears only in that run's log.
 
 > **Why is Agent 4 only a workflow?** It is pure CI: run pytest, collect junit.xml, screenshots, videos and traces, upload the reports. No model calls and no decisions. Agents 4 and 5 share one workflow. See [GUIDE.md → Agent 4](./docs/GUIDE.md#agent-4-runner).
 
@@ -121,7 +121,7 @@ flowchart TB
 - **Agents 1 and 2 run on a business-hours cron** (every 30 min, weekdays 10:00–19:00 IST); Agent 0 scans weekdays at 10:45 IST (analysis, hand-over and reconcile), checks every PR touching `pages/` or `app_inventory/`, and runs a nightly drift check at 07:15 IST; Agents 3–5 run on PR events, and Agent 2's review fix on a "Request changes" review or a `/fix` comment; a **sweeper** re-triggers, hourly in business hours, PRs whose CI never started. Agent 4 also runs the whole suite on `main` every night (03:10 IST) and turns what fails there into defects; a **health check** (08:50, 12:50, 16:50 IST) watches the scheduled workflows and the credentials.
 - **CI storage stays inside the free quota:** Agent 4 uploads only the files Agent 5 needs, kept 3 days, and `artifact_cleanup.yml` deletes artifacts older than 2 days, daily.
 - **A change story's state is in Jira too:** Agent 0's report and Impact Review sub-task, Agent 1's snapshot of each revised test, trace comments on the owning stories and reconcile's markers are all issues or comments, so an undo needs no database. Every such comment starts with a marker (`[agent0:report]`, `[agent0:snapshot]`, `[LLM-USAGE]`, …): [GUIDE.md → Marker comments](./docs/GUIDE.md#marker-comments).
-- **Two Protocols keep the tools swappable:** `Tracker` (23 operations, Jira adapter today) and `RepoHost` (20 operations, GitHub adapter today). Nothing in `agents/` talks to Jira or GitHub directly, and a unit test runs the whole pipeline against fakes of both. Operations beyond them (creating any issue, hidden issue properties, a credential check) are optional capabilities: an adapter without them turns that feature off and keeps everything else.
+- **Two Protocols keep the tools swappable:** `Tracker` (23 operations, Jira adapter today) and `RepoHost` (20 operations, GitHub adapter today). Nothing in `agents/` talks to Jira or GitHub directly, and a unit test runs the whole pipeline against fakes of both. Operations beyond them (creating any issue, hidden issue properties, editing a comment in place, a credential check) are optional capabilities: an adapter without them turns that feature off and keeps everything else.
 - Secrets stay in `.env` (never committed) and CI secrets; placeholders live in `.env.example`.
 
 Deeper breakdown: [GUIDE.md → Architecture](./docs/GUIDE.md#architecture).
@@ -192,7 +192,7 @@ Attaching Agent 0 to another application: [docs/AGENT0_ONBOARDING.md](./docs/AGE
 - **No duplicates.** Agent 1 refuses a story that already owns test cases; Agent 2 skips a test case a scenario already covers (marker first, then title without the `[type]` tag).
 - **Prompt caching.** The static rule text of the generation prompt is sent as a cacheable prefix; per-file content goes in the user message.
 - **Failure evidence.** A failed test carries a plain-English cause and remedy plus its screenshot, video and Playwright trace in the Allure report.
-- **Cost on the story.** Every model-using agent, Agent 0 included, posts its token and cost ledger to the Jira story; Agent 5 totals it. Reprocessing posts a ledger boundary, so a rerun is not double-counted.
+- **Cost on the story, said once.** Every model-using agent, Agent 0 included, records its tokens and cost on the Jira story as hidden issue properties, and the story shows one cost comment per attempt, edited after every run - a row per agent; Agent 5's report links to it. Reprocessing starts a new attempt, so a rerun is not double-counted. A re-run of Agent 5 on the same commit with the same results posts nothing. (A tracker without issue properties keeps one `[LLM-USAGE]` comment per run and the table in Agent 5's report.)
 - **Spend has limits.** A budget per story and per day (`config.yaml` `budget`), checked before every model call: a story over its budget is held by a label a person removes; a day over its budget stops the scans until the next day (F-24).
 - **Nobody watches the Actions tab.** One pipeline health issue in the tracker, watched by the team: a comment when a problem starts (a scheduled workflow failing in a row, a refused or expiring credential, an outage on `main`, the day's budget) and one when it ends - never while it persists (F-23).
 - **Main is tested every night.** A failing test raises one defect per test and cause, updated without noise and flagged when it passes again; an outage of the application is reported apart from test failures everywhere (F-7, F-21, F-22).
@@ -238,7 +238,7 @@ multi-agent-test-automation/
 ├── core/                            # Shared infrastructure
 │   ├── llm_client.py                # OpenAI-compatible client, retries, structured output
 │   ├── schemas.py                   # Pydantic contracts between agents
-│   ├── usage_ledger.py              # Token and cost ledger per story
+│   ├── usage_ledger.py              # Token and cost ledger per story; the one cost comment
 │   ├── app_context.py               # AUT config loader + component-wise inventory filtering
 │   ├── test_case_rules.py           # Rules every drafted test case must follow
 │   ├── acceptance_coverage.py       # Every acceptance criterion verified; removals need an absence step

@@ -359,6 +359,15 @@ A tracker adapter other than Jira needs the optional capabilities
 for these features; without them the features say so once in the log and stay
 off, and nothing else changes.
 
+The story's model-cost ledger (F-31) also uses issue properties, plus
+`update_comment` (and `properties` to read them in one request): with them a
+story shows one cost comment per attempt, edited in place; without them it
+keeps the original `[LLM-USAGE]` comment per run and Agent 5's table - nothing
+to configure either way. `usage_ledger.store: comments` chooses the original on
+purpose. The bot account needs to edit its own comments; switching the edit
+notification off needs a (project) administrator, and without it the edit
+notifies.
+
 ---
 
 ## Changing the test stack (e.g. Playwright + Python to Playwright + JS)

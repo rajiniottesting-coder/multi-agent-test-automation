@@ -9,6 +9,61 @@ ADR-005 (the Jira label state machine) under [State management deep-dive](./GUID
 
 ---
 
+## ADR-024 — A story says each thing once: agents' data hidden, one cost comment per attempt
+
+### Status
+
+Accepted (2026-10).
+
+### Context
+
+The story was the agents' database as well as the place people read (N11).
+Every agent run posted its machine-read cost entry as a comment, and Agent 5's
+report rendered all of them again - a table that grew by one row per run and
+was repeated in every report. On SCRUM-187, 41 of 71 comments were
+`[LLM-USAGE]` / `[LEDGER-RESET]`. Agent 0's report on a change story copied
+the Impact Review's data block onto the story; a re-analysis posted its delta
+and its report as two comments; the no-Component note repeated the report's
+own line; Agent 0's outcome was a second comment at the moment Agent 5
+reported. Watchers were emailed for each.
+
+### Decision
+
+1. **Data the agents read back is kept apart from what people read**: hidden
+   issue properties (append-only keys with the time, so two runs never
+   overwrite each other). People read each fact once.
+2. **One cost comment per attempt, edited in place** - not a comment per run,
+   and not a table in every report. It is current after every run, so a story
+   that stops early still shows its cost; Agent 5's report points to it in one
+   line. A new attempt closes the old comment with a line saying why; nothing
+   is deleted. A refused edit never becomes a new comment per run.
+3. **What happens in one event is one comment**: a re-analysis's delta is part
+   of its report; the outcome of Agent 0's prediction is a line of Agent 5's
+   report; the no-Component advice is in the report's own line.
+4. **Repeating the same thing is not reporting**: Agent 5 posts nothing for
+   the same commit with the same results.
+5. **Only duplicates go.** A note that is the only record of a check (the
+   context update's "no update needed") stays; the change story's report keeps
+   its table, because the review does not show the scenarios or the tests not
+   judged.
+6. **The tracker decides, not the code paths**: with issue properties and
+   comment editing (optional capabilities) the property ledger is used;
+   without them, or with `usage_ledger.store: comments`, everything works as
+   before. Stories costed before keep their comments, counted until their next
+   reset.
+
+### Consequences
+
+- A story's comments are its events: reports, decisions, blocks, and one cost
+  comment per attempt. SCRUM-202's 14 comments would have been 4.
+- The figures live in properties a person does not see in the issue view; the
+  cost comment, Agent 5's line and the tracker's REST API show them.
+- Editing without notifying needs a Jira project administrator; otherwise each
+  edit notifies, as each comment did. Two runs opening an attempt at the same
+  moment can post two cost comments (L43).
+
+---
+
 ## ADR-023 — Production readiness: a watched health issue, a nightly run with defects, flakes recorded, spend budgets
 
 ### Status
