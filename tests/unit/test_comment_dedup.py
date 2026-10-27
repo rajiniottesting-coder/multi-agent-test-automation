@@ -122,6 +122,7 @@ def test_the_ledger_reads_the_same_in_both_stores(world, monkeypatch):
         assert [(e["agent"], e["calls"]) for e in ledger["entries"]] == [
             ("Agent 1 (Test Designer)", 2), ("Agent 2 (Coder, initial) (failed)", 3)], store
         assert ul.aggregate_entries(ledger["entries"])["total_cost_usd"] == 1.75
+        assert set(ledger) == {"mode", "entries", "holds", "since", "reason", "comment", "keys"}
         assert ul.has_usage(STORY, jira, ignore_agents=("Agent 1 (Test Designer)",))
         assert not ul.has_usage(STORY, jira, ignore_agents=("Agent 1 (Test Designer)",
                                                             "Agent 2 (Coder, initial)"))

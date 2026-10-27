@@ -848,6 +848,8 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
             "status": "draft_generated_dry_run",
         }
 
+    # Not a dry run (that returned above), so the tracker was opened in step 2b.
+    assert tracker is not None
     jira = tracker
     # The comment is authored in Markdown. A tracker whose comments use another
     # markup converts it (Jira's REST v2 renders wiki markup, where a Markdown
