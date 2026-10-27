@@ -13,7 +13,7 @@ Sandbox: the real JiraClient over a fake Jira. Generic names only.
 import datetime as dt
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

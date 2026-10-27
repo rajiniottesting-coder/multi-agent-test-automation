@@ -158,7 +158,10 @@ def open_defects(tracker, s: dict) -> dict:
 def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | None = None,
            dry_run: bool = False) -> dict:
     """Raise, update and flag defects for one run on main. Returns what it did:
-    {"raised", "updated", "passing", "failing_again", "capped", "outages", "flaky"}."""
+    {"raised", "updated", "passing", "failing_again", "capped", "outages", "flaky",
+    "errors"} - `errors` is [(what, why)] for every write the tracker refused
+    (a required field on the defect's create screen, a permission), so the
+    caller can say so instead of a run that looks clean."""
     s = settings()
     now = now or _dt.datetime.now(_dt.timezone.utc)
     today = now.date().isoformat()
@@ -166,7 +169,7 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
     failing = [c for c in cases if jm.outcome(c) in ("failed", "error") and not jm.is_outage(c)]
     result = {"raised": [], "updated": [], "passing": [], "failing_again": [], "capped": [],
               "outages": [jm.case_id(c) for c in cases if jm.is_outage(c)],
-              "flaky": [jm.case_id(c) for c in cases if jm.is_flaky(c)]}
+              "flaky": [jm.case_id(c) for c in cases if jm.is_flaky(c)], "errors": []}
     if not s.get("enabled", True):
         logger.info("defects.enabled is false - no defect is raised.")
         return result
@@ -175,6 +178,7 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
         existing = open_defects(tracker, s)
     except Exception as e:                                         # noqa: BLE001
         logger.warning("Open defects not read (%s); none raised this run.", e)
+        result["errors"].append(("the open defects", f"{type(e).__name__}: {e}"))
         return result
     failing_labels = set()
     for case in failing:
@@ -220,6 +224,7 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
             logger.warning("Defect %s raised: %s", key, summary)
         except Exception as e:                                     # noqa: BLE001
             logger.warning("Defect for %s not written: %s", test, e)
+            result["errors"].append((test, f"{type(e).__name__}: {e}"))
 
     # A pass only on the retry is no sign the defect is gone (F-19).
     passed = {jm.case_id(c) for c in cases if jm.outcome(c) == "passed" and not jm.is_flaky(c)}
@@ -238,4 +243,5 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
             result["passing"].append(issue["key"])
         except Exception as e:                                     # noqa: BLE001
             logger.warning("Defect %s not flagged as passing: %s", issue.get("key"), e)
+            result["errors"].append((issue.get("key"), f"{type(e).__name__}: {e}"))
     return result

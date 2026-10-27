@@ -15,7 +15,6 @@ flakes (recorded) out of defects. A flood of new failures raises at most
 
 Sandbox: the real JiraClient over a fake Jira. Generic names only.
 """
-import datetime as dt
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -265,7 +264,9 @@ def test_the_nightly_run_has_its_own_group_and_no_story_report():
 def test_the_triage_runs_only_after_runs_on_main():
     triage = _wf()["jobs"]["triage"]
     cond = triage["if"]
-    assert triage["needs"] == "test" and cond.startswith("always() && github.ref == 'refs/heads/main'")
+    assert triage["needs"] == "test" and cond.startswith(
+        "always() && needs.test.result != 'cancelled' && github.ref == 'refs/heads/main'"), \
+        "a superseded (cancelled) push run is not reported as a run with no report"
     for event in ("schedule", "workflow_dispatch", "push"):
         assert f"github.event_name == '{event}'" in cond
     assert "needs.test.outputs.push_e2e != 'false'" in cond
@@ -291,3 +292,33 @@ def test_a_pass_only_on_the_retry_is_not_passing_again(world, tmp_path):
     out = _triage(world, tmp_path, _case("test_add_an_item", props={"flaky": "1"}), n=2)
     assert out["passing"] == [] and not any(
         "ai-defect-passing" in d["labels"] for d in _bugs(fake).values())
+
+
+def test_a_refused_defect_write_is_reported_and_fails_the_job(world, tmp_path, monkeypatch):
+    """A Bug create screen with a required field the pipeline does not fill:
+    the run must not look clean."""
+    fake, jira, features = world
+    real_create = jira.create_issue
+
+    def refuse(issue_type, *a, **k):
+        if issue_type == "Bug":
+            raise RuntimeError("Field 'priority' is required.")
+        return real_create(issue_type, *a, **k)
+    monkeypatch.setattr(jira, "create_issue", refuse)
+    out = _triage(world, tmp_path, _case("test_add_an_item", "failed"))
+    assert out["raised"] == [] and out["errors"][0][0].endswith("::test_add_an_item")
+    assert _health_alerts(fake) == [f"[health:open] {tf.NOT_WRITTEN}"]
+    _junit(tmp_path, _case("test_add_an_item", "failed"))
+    monkeypatch.setattr("integrations.tracker.get_tracker", lambda: jira)
+    assert tf.main(["--reports-dir", str(tmp_path), "--features-dir", str(features)]) == 1
+    monkeypatch.setattr(jira, "create_issue", real_create)
+    assert _triage(world, tmp_path, _case("test_add_an_item", "failed"), n=3)["errors"] == []
+    assert _health_alerts(fake)[-1] == f"[health:resolved] {tf.NOT_WRITTEN}"
+
+
+def test_an_unreadable_defect_list_is_an_error_too(tmp_path):
+    class Down:
+        def find_stories_to_process(self, *a, **k):
+            raise OSError("down")
+    root = ET.fromstring(f"<testsuite>{_case('test_a', 'failed')}</testsuite>")
+    assert defects.triage(Down(), root, "r", tmp_path)["errors"][0][0] == "the open defects"

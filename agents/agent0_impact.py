@@ -686,7 +686,6 @@ def scan(tracker, host, llm, settings: dict | None = None, root: Path | None = N
 def main(argv=None) -> int:
     from dotenv import load_dotenv
     load_dotenv()
-    from config.paths import PROJECT_ROOT
     ap = argparse.ArgumentParser(prog="python -m agents.agent0_impact",
                                  description="Agent 0 (Impact Analyst)")
     mode = ap.add_mutually_exclusive_group(required=True)

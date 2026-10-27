@@ -227,7 +227,6 @@ def test_the_workflow_runs_retries_merges_and_decides_in_that_order():
 
 
 def test_the_summary_names_flakes(tmp_path):
-    import yaml
     step = _named(_steps()[1], "Write test summary")
     script = textwrap.dedent(re.search(r"<<\s*'PYEOF'\n(.*?)\n\s*PYEOF", step["run"], re.S).group(1))
     p = _file(tmp_path, _junit(_case("a", props={"flaky": "1", "first_failure": "boom once"}),
