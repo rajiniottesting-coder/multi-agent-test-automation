@@ -1771,14 +1771,15 @@ stale, elements with no durable selector, elements over
 to is never replaced and no second one is opened - merge or close it and the
 next night proposes again from `main`.
 
-### Agent 3's check failed and no review was posted
+### Agent 3's check failed with "Could not review this pull request"
 
-The review call itself failed: the model gateway refused the request (an
-outage, a rate limit) or the prompt was too large. Since PR #225 the changed
-files are bounded (documentation as diffs, a 300,000-character section
-budget), so size should not recur; re-run the job, and if it fails again on the
-same PR, measure the prompt locally with a fake model (the size is logged as
-`Review prompt size`).
+The review itself failed - the model gateway refused the request (an outage,
+a rate limit, a prompt too large) or the review could not be read. Agent 3
+posts the error (secret values redacted) instead of a review, and the check is
+red for that reason, not for a finding. Since PR #225 the changed files are
+bounded (documentation as diffs, a 300,000-character section budget); re-run
+the job, and if the same error repeats, it names the cause. The prompt size is
+logged as `Review prompt size`.
 
 ### A review comment on Agent 2's pull request was not acted on
 
