@@ -672,7 +672,7 @@ skipped runs would cancel a person's `/fix` waiting in the group. ADR-017.
        pom_compliant: bool
        coverage_complete: bool
    ```
-6. **Post-process** via `postprocess_review()`: `dedupe_and_cap_issues(report, max_issues=MAX_ISSUES)` (`MAX_ISSUES = 10`) normalizes and deduplicates descriptions and caps the list; unsubstantiated findings are withdrawn; findings on lines this PR did not change are lowered to advice; the verdict is derived from what remains. A blocking finding needs a named failure scenario. When the only blocker is a predicted test failure, the review waits (up to 8 minutes) for Agent 4's result on the same commit, and a green run lowers the block. A red run lowers each prediction whose own scenario passed: `runner_evidence_for_head()` returns a `RunnerEvidence` (the conclusion plus, for a red run, `parse_junit_scenarios()` of the `junit.xml` in the run's `pytest-report-<run id>` artifact, fetched with `RepoHost.get_run_artifact_file()`); `apply_runner_evidence()` maps the finding's `scenario` (or a scenario quoted in its failure scenario, `_predicted_scenario()`) to the generated test with `scenario_key()` and lowers it only when every run of that scenario passed. No scenario, no match or no report: the whole run decides, as before. Only when the PR changes a file read at test runtime (`runs_app_tests()` in `core/test_runtime.py`); on any other PR no runner result is offered. The prompt's "BasePage Helpers Called" section (`base_page_helpers_called()`) gives the signature and docstring of each `pages/base_page.py` helper the PR's added page-object lines call.
+6. **Post-process** via `postprocess_review()`: `dedupe_and_cap_issues(report, max_issues=MAX_ISSUES)` (`MAX_ISSUES = 10`) normalizes and deduplicates descriptions and caps the list; unsubstantiated findings are withdrawn; findings on lines this PR did not change are lowered to advice; the verdict is derived from what remains. A blocking finding needs a named failure scenario. When the only blocker is a predicted test failure, the review waits (`RUNNER_WAIT_SECONDS` = `E2E_TURN_CAP_SECONDS` 900, equal to Agent 4's `MAX_WAIT_SECONDS`, + `E2E_RUN_SECONDS` 480; the job's 30-minute timeout fits it) for Agent 4's result on the same commit, and a green run lowers the block. A red run lowers each prediction whose own scenario passed: `runner_evidence_for_head()` returns a `RunnerEvidence` (the conclusion plus, for a red run, `parse_junit_scenarios()` of the `junit.xml` in the run's `pytest-report-<run id>` artifact, fetched with `RepoHost.get_run_artifact_file()`); `apply_runner_evidence()` maps the finding's `scenario` (or a scenario quoted in its failure scenario, `_predicted_scenario()`) to the generated test with `scenario_key()` and lowers it only when every run of that scenario passed. No scenario, no match or no report: the whole run decides, as before. Only when the PR changes a file read at test runtime (`runs_app_tests()` in `core/test_runtime.py`); on any other PR no runner result is offered. The prompt's "BasePage Helpers Called" section (`base_page_helpers_called()`) gives the signature and docstring of each `pages/base_page.py` helper the PR's added page-object lines call.
 7. **Format as markdown** via `format_review_as_markdown(report)`. Issues grouped by severity (blocking/major/minor/info), each with file:line link.
 8. **Post comment** via `gh.post_pr_comment(pr_number, markdown)`. Each run posts a new conversation comment; a new push re-runs the review, so the latest comment is the current one.
 
@@ -1020,7 +1020,9 @@ colliding: every story branches from `main` and Agent 2 writes whole files.
 | `duplicate_scenarios(test_cases, state, titles_of, case_title)` | Test cases another open PR already adds as a scenario (title compared without the `[type]` tag); Agent 2 passes in its parser and title rule, so the module depends on no agent |
 | `post_wait_once(tracker, story_id, files, scenarios)` | One `[agent2:waiting]` comment per reason, not one per scan |
 
-Agent 2 calls these through `_wait_for_in_flight()` (status `waiting_for_open_pr`, `[WAIT]` in the scan summary).
+Agent 2 calls these through `_wait_for_in_flight()` (status `waiting_for_open_pr`, `[WAIT]` in the scan summary). `_last_in_flight_check(gh, jira, story, files, dry_run)` (F-1) runs after the final gate in `run()` and `run_update()`: a fresh `snapshot()` against every file of the batch, whoever wrote it.
+
+**Scan budget (F-4).** `plan_scan(passes, max_stories)` takes the three passes in order (normal, regenerate, update), a story once, at most `max_stories_per_run` in all; the rest are `deferred` (`[DEFER]`, never a failure). The loop starts no story after `scan_deadline_minutes` (`_clock`, monotonic); `agent2_coder.yml` has `timeout-minutes: 25`. Each story runs inside `core.usage_ledger.story_usage()` (F-3): counter reset at the start, and whatever the run did not post is posted to that story on the way out - `<agent> (failed)` when it raised (`FAILED_SUFFIX`; `has_usage_comments()` reads it as that agent). Agents 0 and 1 wrap their runs the same way.
 
 **`core/blocked.py`** - a story the final gate refused, reported once and not retried on unchanged input.
 
@@ -1121,7 +1123,7 @@ To opt out a story permanently:
 | `ai-update` | Human | Agent 2 (on success) | One-shot trigger | Causes Agent 2 to run `run_update()` instead of `run()` |
 | `ai-regenerate` | Human | Agent 2 (on success) | One-shot trigger | Causes Agent 2 to run `run(is_regenerate=True)` |
 | `ai-skip` | Human | Human | Permanent opt-out | Excluded by ALL agents — story is invisible |
-| `tests-run` | Agent 5 | Reconcile on undo | Marker | Results reported on the story |
+| `tests-run` | Agent 5 | Reconcile (undo, or a new story's PR closed unmerged) | Marker | Results reported on the story |
 | `impact-check` | Human | Agent 0 | One-shot trigger | Agent 0 analyses the change story |
 | `impact-proposed` | Agent 0 | Hand-over | Gate marker | An Impact Review waits for a person; Agents 1/2 exclude the story |
 | `impact-applied` | Agent 1 (impact-aware) | Reconcile | Marker | Approved tests revised; reconcile watches the PR |
@@ -1566,7 +1568,7 @@ Agent 0 off). Key settings: `enabled`, `shadow_mode`, `selection`, `labels`,
 `review` (sub-task type, summary prefix, done status), `weights`
 (`structural 0.45, component 0.15, semantic 0.15, adjudicated 0.25`),
 `thresholds` (`must_update 0.6, review 0.3`), `max_candidates` (300),
-`reconcile` (`closed_scans`, `no_pr_days`, `reset_labels`), `context_update` (`enabled`,
+`reconcile` (`closed_scans`, `no_pr_days`, `reset_labels`, `story_reset_labels`), `context_update` (`enabled`,
 `branch_prefix`) and `inventory_update` (`enabled`, `branch_prefix`, `max_additions_per_page`,
 `hold_ratio`, `code_dirs`, `layout_min_pages`; read by `core/inventory_update.py`, whose `DEFAULTS` are these).
 
@@ -1675,6 +1677,25 @@ equals the snapshot's new hash, un-retire, unlink, *restored* trace on owners,
 on `main` (`_unautomated()`, which never guesses when `main` cannot be read),
 removes `reconcile.reset_labels`, moves the card via `status_workflow`, and posts
 the retry steps. No PR after `no_pr_days` → one *ask-a-person* comment.
+
+**New stories (F-16).** After the change stories, `_coded_stories()` lists
+stories with Agent 2's `completion_label`, not `impact-applied` /
+`impact-reverted`, and not in `status_workflow.on_merge` (no host call);
+`reconcile_unmerged_story()`: no PR / open / any merged / already reset
+(`story-reset pr: N updated: …`) → nothing; the newest closed unmerged → the same
+`closed-unmerged` two-scan rule, then `_reset_unmerged()`: removes
+`reconcile.story_reset_labels`, `board_status.move_card_on_close_unmerged()`
+(`status_workflow.on_close_unmerged`), and one comment naming the approval label
+(Agent 2's `selection.required_labels` among the removed) to retry. A story a
+change path settled in the same run is skipped; `reconcile_all()` returns only
+acted-on results (`_NOTHING_TO_DO`). `reconcile_one()` picks the path by label.
+
+**In-flight guard (F-2).** `agent0_impact._owners_and_blocks(..., settings)`
+blocks a candidate by every impacting story (and its owner) with an open PR or
+`impact-applied`, plus `_claimed_by_open_reviews()` - other `impact-proposed`
+stories whose `_previous_report()` ranks the test. `impact_handover.handover()`
+raises `HandoverRefused` for an approved or retired key `_revised_elsewhere()`
+(another impacting story still `impact-applied`); both fail open on read errors.
 
 ### 18.6 Code change and drift
 

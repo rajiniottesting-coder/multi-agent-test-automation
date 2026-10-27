@@ -348,7 +348,7 @@ already cover the revision).
 **What it does:**
 1. Reads PR metadata + changed files through the repo host. The workflow checks out the BASE branch, so every PR is reviewed by the reviewer code, prompt and reference files on `main` — never by a stale copy on an old story branch.
 2. Calls the LLM with a rigorous review prompt (`prompts/agent3_reviewer.md`) plus the reference files for style baseline, returning a `ReviewReport`. Test code goes in whole; documentation, prompts and Markdown - nothing a test reads while it runs - go in as their diff, and the changed-files section has a size budget (the largest full contents fall back to their diffs first), so a PR that edits the big guides still fits the model's context.
-3. Post-processes the response (`postprocess_review()`): deduplicates issues and caps at 10, withdraws unsubstantiated findings, lowers findings on lines this PR did not change to advice, and derives the verdict. **Blocking needs a named failure scenario**; when the only blocker is a predicted test failure, it waits up to 8 minutes for Agent 4's result on the same commit, and a green run refutes the block; a red run refutes each prediction whose own scenario passed on that commit (`runner_evidence_for_head()` reads the run's `junit.xml` from its `pytest-report-<run id>` artifact; the finding names its `scenario`, or quotes it in its failure scenario). A finding naming no scenario, a scenario not in the report, or a report that cannot be read is judged on the whole run, as before. All of this only when the PR changes a file read at test runtime (`core/test_runtime.py`); a unit-only green run proves nothing about a test failure. The prompt also lists every BasePage helper the changed page objects call, with its docstring (`base_page_helpers_called()`), and a finding about a helper's behaviour must agree with it.
+3. Post-processes the response (`postprocess_review()`): deduplicates issues and caps at 10, withdraws unsubstantiated findings, lowers findings on lines this PR did not change to advice, and derives the verdict. **Blocking needs a named failure scenario**; when the only blocker is a predicted test failure, it waits for Agent 4's result on the same commit - up to Agent 4's browser-turn cap (15 min) plus one run (8 min), 23 min; most reviews never wait - and a green run refutes the block; a red run refutes each prediction whose own scenario passed on that commit (`runner_evidence_for_head()` reads the run's `junit.xml` from its `pytest-report-<run id>` artifact; the finding names its `scenario`, or quotes it in its failure scenario). A finding naming no scenario, a scenario not in the report, or a report that cannot be read is judged on the whole run, as before. All of this only when the PR changes a file read at test runtime (`core/test_runtime.py`); a unit-only green run proves nothing about a test failure. The prompt also lists every BasePage helper the changed page objects call, with its docstring (`base_page_helpers_called()`), and a finding about a helper's behaviour must agree with it.
 4. Posts a markdown comment on the PR. Agent 3 never merges; its check goes red only for a finding that names a failure.
 
 **Triggers:**
@@ -502,6 +502,7 @@ merges" under Change stories); it never undoes the move to Done.
 | `ai-coded` | In Review |
 | `impact-reverted` | To Do (an undone change story, ready to retry) |
 | PR merged (`on_merge`) | Done |
+| PR closed unmerged, reset by reconcile (`on_close_unmerged`) | To Do |
 
 Column names are configuration because they differ per board. A transition the
 board does not allow is logged and ignored — a board move never fails a run
@@ -533,13 +534,13 @@ hands a person the decision.
 | Story scan | stories labelled `impact-check`; weekdays 10:45 IST or dispatch (optionally one `story_key`) | 2 calls (+1 per batch past 300 candidates); up to 2 more for the context update | report, or Impact Review. A full scan (`story_key` blank) also hands over decided reviews; a one-story run does not |
 | Code change | any PR touching `pages/**` or `app_inventory/**` | none | methods and selectors changed or removed → the affected tests, posted on the PR |
 | Nightly drift | 07:15 IST, after the inventory staleness check, or dispatch with `mode` = `drift` | none | a selector that stopped matching → the affected tests; live mode opens one maintenance story; then the inventory-update PR (below) |
-| Reconcile | its own job: weekdays 10:45 IST and every manual run in `scan` mode, whatever the Agent 0 mode (off, shadow, live) | none | settles stories labelled `impact-applied` |
+| Reconcile | its own job: weekdays 10:45 IST and every manual run in `scan` mode, whatever the Agent 0 mode (off, shadow, live) | none | settles stories labelled `impact-applied`, and sets back a coded story whose PR closed unmerged |
 
 ### How a story is analysed (`core/impact_analysis.py`)
 
 1. **Repeat check** — a story whose text hash has not changed since the last analysis is skipped. A re-analysis after an edit updates the report in place and says whether anything changed.
 2. **Seeds** — one `ChangeSeeds` call classifies the change (`change_type`) and names the inventory elements, behaviours and components it changes (`prompts/agent0_seeds.md`). An element key that is not in the inventory is dropped and reported. A story classified `new_behaviour` keeps no seeds at all: using a behaviour is not changing it (#186).
-3. **Candidates** — the impact graph (`core/impact_graph.py`: scenario → step → method → selector, built from `# JIRA:` markers and the code) gives structural candidates (layer 1); the story's Component, or the whole suite when it has none, gives the rest (layer 2), ordered by word overlap with the story. At most `max_candidates` (300) are judged: layer 1 always, layer 2 fills the remaining places, and the others are listed as *not judged*, never as unaffected. Owners and open PRs are attached (the in-flight guard).
+3. **Candidates** — the impact graph (`core/impact_graph.py`: scenario → step → method → selector, built from `# JIRA:` markers and the code) gives structural candidates (layer 1); the story's Component, or the whole suite when it has none, gives the rest (layer 2), ordered by word overlap with the story. At most `max_candidates` (300) are judged: layer 1 always, layer 2 fills the remaining places, and the others are listed as *not judged*, never as unaffected. Owners and the in-flight guard are attached: a row is **blocked** while another story that impacts the test, or its owner, has an open PR, is handed over and not finished (`impact-applied`), or has an open Impact Review listing the same test (`impact-proposed`). A blocked row cannot be handed over until a person decides it.
 4. **Judgement** — one `ImpactAssessment` call judges each candidate with evidence (`prompts/agent0_adjudicate.md`); a second call is needed only when layer 1 alone exceeds 300. A verdict that cites no real graph path or verbatim step is dropped.
 5. **Rank** — a weighted score (structural 0.45, component 0.15, semantic 0.15, adjudicated 0.25) sets the tier: **must-update ≥ 0.6, review ≥ 0.3**, otherwise unaffected. The model's verdict is the ceiling: structure alone never promotes a test the model judged *review* or *unaffected*. Each row shows a short reason and the elements involved.
 6. **Publish** — shadow: a report. Live: nothing to review → `ai-ready` (and the context update); otherwise an Impact Review sub-task (`core/impact_review.py`) and `impact-proposed`.
@@ -553,7 +554,10 @@ a JSON code block; `core/json_block.py` reads it back in every format Jira
 writes after a person edits it. An unreadable or empty review refuses to hand
 over.
 
-When the sub-task is Done, the next scan hands over (`core/impact_handover.py`):
+When the sub-task is Done, the next scan hands over (`core/impact_handover.py`).
+It refuses - and the scan keeps it waiting, retrying by itself - while an approved
+or retired test is still being revised by another change (`impact-applied`, not yet
+merged or undone); a rejected row is never refused. Then:
 
 - **Impacts** links from the change story to each approved or retired test and to its owning story
 - `ai-retired` on retired tests
@@ -684,7 +688,8 @@ key with no selector or a planned page with no planned element.
 
 ### Reconcile — finish or undo (`core/impact_reconcile.py`)
 
-Every story labelled `impact-applied` is settled on each scan:
+Every story labelled `impact-applied` is settled on each scan (a **new story**
+whose PR closed unmerged: see the next table):
 
 | PR state | Action |
 |---|---|
@@ -708,6 +713,21 @@ opened after that, so the earlier attempt's closed (or merged) PR can never
 undo (or finish) the retry. The context update is checked again too: its
 marker counts only for the story text it carries (`(story: <hash>)`) and only
 after the latest undo.
+
+**A new story whose pull request is closed without merging** (not a change
+story) is settled by the same scan. Every story carrying `ai-coded` that is not
+`impact-applied` or `impact-reverted` and not in the board's merge column (no
+GitHub call for those):
+
+| Its pull requests | Action |
+|---|---|
+| none (coded with nothing to commit), one open, or any merged (its code is on `main`) | nothing |
+| the newest closed unmerged, first scan | a `[agent0:reconcile] closed-unmerged` comment |
+| the same close seen on `closed_scans` scans | **set back**: `reconcile.story_reset_labels` (`human-approved`, `ai-coded`, `ai-incomplete`, `tests-run`) come off - approval included, so a rejected story is not coded again by itself; `ai-processed` stays, so its test cases are not drafted again; the card moves to `status_workflow.on_close_unmerged` (To Do); one `story-reset` comment: to retry, check the test cases and add `human-approved`; to drop it, nothing |
+
+Its test cases are not touched. The scan's output lists only the stories it
+acted on. `python -m scripts.impact_reconcile --story KEY` settles one story by
+whichever path its labels call for.
 
 Reconcile keeps its memory in marker comments, so it can run anywhere, any
 number of times.
@@ -995,7 +1015,12 @@ first one's methods. Instead the second story **waits**:
   the story waits — only the plan call is spent, and it is recorded on the
   story's cost ledger as `Agent 2 (Coder, waiting)`;
 - `ai-update` checks its feature file and step definitions before any model
-  call, and any page object its orphan cleanup would edit.
+  call, and any page object its orphan cleanup would edit;
+- last, right before the branch is created (`run()` and `run_update()`): a
+  **fresh** look at the open PRs against **every** file the batch commits -
+  whoever wrote it (a regeneration's or a change story's orphan cleanup edits
+  page objects no plan named) - and catching a PR opened while the story was
+  generated. The model calls already made are recorded as waiting.
 
 Waiting means: nothing is generated or committed, labels are unchanged, and one
 comment on the story says which PR and which file or scenario
@@ -1181,6 +1206,7 @@ agents:
       closed_scans: 2           # scans that must see a close before the undo
       no_pr_days: 14
       reset_labels: [ai-processed, human-approved, ai-coded, ai-incomplete, tests-run]
+      story_reset_labels: [human-approved, ai-coded, ai-incomplete, tests-run]
     context_update: { enabled: ..., branch_prefix: "context-update/",
                       additions: true, max_addition_chars: 1500,
                       module_budget_chars: 8000 }
@@ -1191,6 +1217,7 @@ agents:
 status_workflow:                    # board columns per label, Done on merge
   on_label: { ai-processed: "In Progress", ai-coded: "In Review", impact-reverted: "To Do" }
   on_merge: "Done"
+  on_close_unmerged: "To Do"     # a new story reset by reconcile (F-16)
 ```
 
 ### `extendable_paths` and `auto_extend_page_objects`
@@ -1312,6 +1339,11 @@ For a fresh story (e.g. SCRUM-25) the lifecycle looks like this:
 When the pipeline completes, the story itself carries the answer: Agent 5's
 report shows the actual measured cost of that story — total calls, exact
 input/output tokens, and dollars at the configured rates.
+
+Each story's cost is its own: every story an agent runs (Agents 0, 1 and 2,
+scan or single story) starts with the usage counter at zero, and a story that
+**fails** part-way posts what it spent as `<agent> (failed)` on that story -
+it used to land in the next story's numbers in the same scan.
 
 Rework is included in the lifetime total: a later `ai-update` or
 `ai-regenerate` run posts another ledger entry (e.g. `Agent 2 (Coder,
@@ -1838,7 +1870,31 @@ Another open pull request is changing a file this story would write, or already
 adds one of its scenarios. Nothing was generated and the labels are unchanged;
 the story's `[agent2:waiting]` comment names the PR and the file or scenario.
 Merge or close that PR: the next scan continues. See *Two stories on one page
-object*.
+object*. A wait found by the last check, right before the branch, has already
+spent the generation calls; they are on the story's ledger as waiting.
+
+### Agent 2 shows `[DEFER]` for a story
+
+The scan's budget was used: `max_stories_per_run` counts the three passes
+together (normal, `ai-regenerate`, `ai-update`, in that order), and no story
+starts after `scan_deadline_minutes` (12) so the job (25 minutes) always
+finishes what it started. Nothing was done to the story and its labels are
+unchanged: the next scan takes it.
+
+### A story's PR was closed without merging
+
+On its first scan after the close, reconcile comments that it saw the close; on
+the next (`reconcile.closed_scans`), it sets the story back: `human-approved`,
+`ai-coded`, `ai-incomplete` and `tests-run` off, the card to To Do, and a
+`story-reset` comment. To code it again, check its test cases and add
+`human-approved`. Reopening the PR before then cancels it.
+
+### The hand-over waits with "being revised by another change in progress"
+
+An approved or retired test in this story's Impact Review is still being revised
+by another change story (`impact-applied`: handed over, PR not yet merged or
+undone). Two changes never revise one test at once. The scan retries by itself
+once that change's PR merges or is undone; to go ahead now, reject that row.
 
 ### Agent 2 shows `[BLOCK]` for a story, or the story has an `[agent2:blocked]` comment
 
@@ -2254,7 +2310,7 @@ A change story enters before `ai-ready`:
 |---|---|---|---|---|
 | `ai-ready` | one-shot trigger | human | Agent 1 on success | "Agent 1, process this" |
 | `ai-processed` | sticky marker | Agent 1 | never | "Agent 1 is done" — Agent 1 excludes it (idempotency); Agent 2 requires it (prerequisite) |
-| `human-approved` | sticky gate | human | never | "a human reviewed the test cases" — Agent 2 requires it |
+| `human-approved` | sticky gate | human | reconcile (a change undone, or a story whose PR closed unmerged) | "a human reviewed the test cases" — Agent 2 requires it |
 | `ai-coded` | sticky marker | Agent 2 | never | "code exists, PR opened" — normal-mode Agent 2 excludes it |
 | `ai-incomplete` | state marker | Agent 2 | Agent 2 - the run (`ai-update`, `ai-regenerate`) that leaves no approved test case without a scenario; reconcile on undo | "an approved test case has no scenario of its own" |
 | `ai-update` | one-shot trigger | human | Agent 2 on success | "do a surgical incremental update" |
