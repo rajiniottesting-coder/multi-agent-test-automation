@@ -27,6 +27,8 @@ writes its own sections 1–2.
 | V4 | A2 – SCRUM-229: adding a product goes straight to the cart | 12 Oct 2026 | 7 of 7 must-update correct; an edited story re-analysed and its review updated in place; hand-over clean; context update "none". Run to step 3, then reset |
 | V5 | A3 – SCRUM-206: remove the quantity choice | 12–14 Oct 2026 | The full change cycle: review (approve, reject, retire), hand-over, context-update PR, Agent 1 impact-aware revision with snapshots, Agent 2 splice into the owner's files, Agents 3–5, owner traces, prediction outcome; undo after a close seen on two scans; retry as a new attempt (must-update 220/221/222 only, after #186). Reset |
 | V6 | PR #202 and PR #203 (documentation only) | 22–23 Oct 2026 | The pull-request browser gate: unit suite only, browser run and Agent 5 skipped, Agent 3 reviewed |
+| V7 | E18 - Agent 2 review fix on an `ai-regenerate` PR (SCRUM-202, PR #221) | 26 Oct 2026 | A bare `/fix` after three inline comments: two fixed on the same branch (one on the story's own regenerated feature file), one declined with the test-case route, a reply in every thread, one summary; Agents 3 and 4 green on the fix; a re-run on the same `/fix` did nothing; cost on the story. Found and fixed on the way: #220 (a regenerated story's own files), #222 (`/fix <text>` dropped the inline comments; a skipped event could cancel a waiting `/fix`). PR closed unmerged as planned |
+| V8 | SCRUM-187 regenerated after SCRUM-260 step 7 dropped "with quantity 1" (PR #223) | 26 Oct 2026 | The second half of E16: the gates now agree, the regenerated code asserts only relative cart state, Agent 3 found nothing, Agent 4 and Agent 5 green (3 of 3). PR closed unmerged on purpose |
 
 Everything added in #199–#201 (unused-step comment-out in `ai-update`, step
 coverage by runtime scope, `closed_scans`, Agent 0 on the cost ledger, test-case
@@ -38,6 +40,11 @@ has not yet run live: section 2.
 ## 2. Still to run (clubbed so one story run proves several things)
 
 ### 2.1 Items to cover
+
+New features and gap fixes from the priority plan (section 4: P1-P4) are
+validated **together, at the end**, in one consolidated run (UC-7 below), so
+one story run proves as much as possible. Each one adds its item here when it
+is built (E19 onwards) and is listed in UC-7.
 
 | ID | Item | Source |
 |---|---|---|
@@ -64,10 +71,9 @@ has not yet run live: section 2.
 | E13 | A new story with a limit or a restriction (held-out H2 fits): the coverage comment lists a rejection step for it | Coverage fix |
 | E14 | PR #211 re-reviewed after #212 (push a commit or re-run Agent 3): the run is red on the absence step only; the card-click finding is lowered with "scenario ... passed", and the review is advisory | #212 |
 | E15 | Any PR run while the site refuses some CI requests: retried page loads log `succeeded on attempt N`; a re-run test is listed by the `Keep only the final attempt` step; Agent 5's table counts each test once | #213 |
-| E16 | SCRUM-187 on the next scan: one `[agent2:blocked]` comment naming the persistent-state rule, then `[BLOCK]` with no model call on later scans. After SCRUM-260's step 7 drops "with quantity 1", the next scan codes the story. A new signed-in draft stating a cart quantity is sent back by Agent 1 | Gates agree |
+| E16 | SCRUM-187 on the next scan: one `[agent2:blocked]` comment naming the persistent-state rule, then `[BLOCK]` with no model call on later scans; a new signed-in draft stating a cart quantity is sent back by Agent 1. (The story coding once step 7 was fixed: V8) | Gates agree |
 | E17 | Any PR run during a burst of 5xx from the site: a test whose add-to-cart call or followed link was refused fails as `ApplicationUnavailableError` naming the request, is listed by the `Keep only the final attempt` step as re-run, and its reading is "application temporarily unavailable"; a plain assertion failure is not re-run | #215 |
-| E18 | An `ai-regenerate` pull request (SCRUM-202): inline comments left with **Comment** (the PR's author cannot request changes), then a bare `/fix` - one on the story's own feature or step file, one asking for an extra check. The first is fixed on the same branch (the modified file is the story's own by its markers) and Agents 3-5 re-run; the second is declined with "update the test case, then ai-regenerate"; one `[agent2:review-fix]` summary; a second `/fix` does nothing | review fix |
-| E19 | Nightly drift (or `mode` = `drift`): one `inventory-update/<date>` PR when the crawl finds something applicable - replaced / added / removed tables and the kept, held and refused lists; Agents 3 and 4 green on it. The next night with the same findings leaves it alone; after a commit by a person it is never replaced (one `kept-edited` comment); with new findings the old one is closed and a new dated PR opened; with nothing to change it is closed | Inventory update |
+| E19 | Inventory update (P1-1, PR #224), on one drift run (`mode` = `drift`, or the 07:15 IST night) and the nights after: **(a)** something applicable → one `inventory-update/<date>` PR with replaced / added / removed tables and the kept, held, no-durable-selector and refused lists; Agents 3 and 4 green on it. **(b)** Same findings next night → the PR is left alone. **(c)** New findings → the old PR closed with a comment, a new dated PR opened (old branch deleted, or left if the ruleset forbids it). **(d)** Commit to the PR's branch → never replaced, one `kept-edited` comment, no second PR. **(e)** A stale key an open story PR names → kept, not removed. **(f)** An added hidden element or family carries `conditional` / `multi_match` and is not undone the next night. **(g)** Shadow mode or `dry_run` → the body printed, no PR | Inventory update |
 
 ### 2.2 The runs
 
@@ -79,8 +85,9 @@ has not yet run live: section 2.
 | **UC-4** Runs B and C together | a hand-made PR; a manual run with `mode` = `drift` | B, C | The PR's Agent 0 comment lists the tests the changed method and selector reach; the browser runs (runtime file changed). The drift run opens or updates the maintenance story; scan and reconcile skip. |
 | **UC-5** After the section 4 fixes | two stories in one Agent 1/2 scan, the first set up to fail | M1–M4, G1, G2 | Each story's cost lands on its own story; the scan finishes inside its timeouts; Agent 3 waits long enough for Agent 4; a cleanup-only page-object edit that another open PR changes makes the story wait (G1); a test case already approved by another change in progress is blocked in the second review (G2). |
 | **UC-6** Retry the removal story | SCRUM-206 after its PR and context-update PR are closed and reconcile has undone it | E11, E12 (E13 with H2 in UC-1) | Remove `impact-reverted`, add `impact-check`; approve the review as before. Agent 1's `[agent1:coverage]` lines name the test asserting the quantity field is gone. Agent 2's PR: that step present and asserted on a loaded page; its browser run fails on exactly that step while the field is still deployed - the expected red (L20). |
+| **UC-7** Final consolidated run, after P1-P4 | One new story whose feature is not yet in the inventory or the app notes (a new element on an existing page, ideally a new page too), one change story removing an element, and a drift run | E17, E19 and every item P1-P4 add (E20 onwards) | Planned once the P1-P4 fixes are merged. The new story exercises the inventory update (its elements arrive through the nightly PR, or a planned entry - P1-4), the context-update addition for a new feature (P1-2), and no silent drop of a test case Agent 2 cannot automate (P1-3); the change story exercises removal in the notes and the inventory (P1-2, F-11); its PR closed once unmerged exercises the reset (P2, F-16); the drift run covers E19 (a)-(g) across nights; any 5xx burst during the runs covers E17. Each item's expected result is written down before the run |
 
-Order: UC-1 → UC-2 → UC-3 → UC-4 → UC-6 → section 4 fixes → UC-5.
+Order: UC-1 → UC-2 → UC-3 → UC-4 → UC-6 → section 4 fixes → UC-5 → **UC-7 last**, after the P1-P4 fixes are merged.
 
 ---
 
@@ -188,6 +195,7 @@ code, the scenario markers and the inventory, not the notes.
 | N7 | **Test data and isolation** | Every run shares the live application's accounts and saved state; tests run one at a time (no parallel execution). Browser turn-taking avoids collisions but rules out parallelism; no per-run data set-up and tear-down | Fix planned |
 | N8 | **More than one environment or browser** | One `base_url` (an environment variable can override it) and Chromium only; no staging/production profiles, no browser matrix | Fix planned |
 | N9 | **"How healthy is our testing?"** | Results, cost and Agent 0 recall/precision are posted to Jira per story but never aggregated: no pass-rate, flake-rate, coverage, cost-per-story or Agent 0 accuracy trend | Fix planned |
+| N10 | **Agent 2's pull requests are opened under the reviewer's own account** (`GH_PAT`) | GitHub lets no author request changes on or approve their own PR, so the reviewer must use `/fix` instead of "Request changes", and merging needs a ruleset bypass; a required approval or status check (N6) cannot be enforced (seen live on PR #221) | Fix planned (P4) |
 
 ---
 
@@ -224,8 +232,17 @@ code, the scenario markers and the inventory, not the notes.
 | F-27 | N7 | Per-run test data (accounts and fixtures seeded per run or per worker) and then parallel execution; browser turn-taking becomes optional |
 | F-28 | N8 | Environment profiles in config (base URL and credentials per environment) and an optional browser matrix in Agent 4 |
 | F-29 | N9 | A scheduled metrics report built from the ledger, Agent 5's results and Agent 0's outcomes: pass and flake rates, coverage per story, cost per story, Agent 0 recall and precision over time |
+| F-30 | N10 | A separate bot identity for the agents' writes - a machine user or a GitHub App token in `GH_PAT` - so a person can request changes and approve; then the review fix's "Request changes" trigger and N6 work as designed. Needs the repository owner to create the account or App |
 
-Order: F-1 to F-7 (then run UC-5) with the correctness fixes F-13 and F-16; then continuous running - F-21 and F-22; then operational safety - F-23, F-24, F-25; then change detection - F-14, F-15; then the notes lifecycle together - F-8 with F-9 and F-10, then F-11, F-12; then scale - F-17, F-18, F-19, F-27, F-29, F-28, F-20; F-26 when the pipeline is reliably green. Each fix gets a validation run added to section 2 when it is built.
+**Agreed priority (27 Oct 2026)** - fixes first that keep the agents' knowledge true, then story state, then production readiness:
+
+- **P1 - knowledge stays true:** P1-1 inventory update (G12, PR #224) → P1-2 context update for every story: additions for new features, removals, scoped and size-bounded (F-8, F-11, F-10, F-9) → P1-3 no silent drop of an approved test case (F-13) → P1-4 planned inventory entries and new pages (F-12, L25).
+- **P2 - story state and cost:** F-16 (a closed-unmerged PR resets the story), F-1, F-3.
+- **P3 - production readiness:** F-21, F-22, F-23.
+- **P4 - identity:** F-30 (needs the repository owner).
+- Then the rest in the order below. All of it is validated together in UC-7.
+
+Order of the rest (before the priority plan): F-1 to F-7 (then run UC-5) with the correctness fixes F-13 and F-16; then continuous running - F-21 and F-22; then operational safety - F-23, F-24, F-25; then change detection - F-14, F-15; then the notes lifecycle together - F-8 with F-9 and F-10, then F-11, F-12; then scale - F-17, F-18, F-19, F-27, F-29, F-28, F-20; F-26 when the pipeline is reliably green. Each fix gets a validation run added to section 2 when it is built.
 
 ---
 
