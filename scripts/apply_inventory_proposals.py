@@ -4,6 +4,10 @@
 Reads a proposals file written by `check_inventory_staleness --propose` and adds
 the rows marked `"apply": true` to the inventory. Nothing else is changed.
 
+The manual route, for a one-off. Nightly, the Agent 0 drift job proposes
+additions (and replacements and removals) as a pull request instead:
+scripts/propose_inventory_update.py, same refusal rules.
+
     python -m scripts.apply_inventory_proposals reports/inventory_proposals.json --dry-run
     python -m scripts.apply_inventory_proposals reports/inventory_proposals.json
 

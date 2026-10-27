@@ -528,7 +528,7 @@ hands a person the decision.
 |---|---|---|---|
 | Story scan | stories labelled `impact-check`; weekdays 10:45 IST or dispatch (optionally one `story_key`) | 2 calls (+1 per batch past 300 candidates); up to 2 more for the context update | report, or Impact Review. A full scan (`story_key` blank) also hands over decided reviews; a one-story run does not |
 | Code change | any PR touching `pages/**` or `app_inventory/**` | none | methods and selectors changed or removed → the affected tests, posted on the PR |
-| Nightly drift | 07:15 IST, after the inventory staleness check, or dispatch with `mode` = `drift` | none | a selector that stopped matching → the affected tests; live mode opens one maintenance story |
+| Nightly drift | 07:15 IST, after the inventory staleness check, or dispatch with `mode` = `drift` | none | a selector that stopped matching → the affected tests; live mode opens one maintenance story; then the inventory-update PR (below) |
 | Reconcile | its own job: weekdays 10:45 IST and every manual run in `scan` mode, whatever the Agent 0 mode (off, shadow, live) | none | settles stories labelled `impact-applied` |
 
 ### How a story is analysed (`core/impact_analysis.py`)
@@ -559,8 +559,11 @@ When the sub-task is Done, the next scan hands over (`core/impact_handover.py`):
 
 ### Context update (`core/context_update.py`)
 
-Agents 1 and 2 read reference material no agent writes: the inventory (every
-selector and its notes) and `prompts/app_context/`. A change story makes it
+Agents 1 and 2 read reference material that agents only propose changes to,
+through pull requests a person merges: the inventory (every selector and its
+notes) and `prompts/app_context/`. Two proposals exist - the nightly
+inventory update (next section) for what the live application shows, and this
+one for what a change story changes. A change story makes the material
 stale. At hand-over Agent 0 proposes the update as a pull request:
 
 - **Wording** the story replaces (a label, a message) — one model call lists old → new (`prompts/agent0_wording.md`); the replacement is applied exactly to the inventory's values and the notes. A change whose old text appears nowhere is dropped and reported.
@@ -573,6 +576,34 @@ deployed**; the nightly inventory check then confirms the selectors. No PR is
 opened when nothing is stale. A story can therefore have two PRs: its own code
 PR (every approved impact, of any kind) and the context-update PR (reference
 material only).
+
+### Inventory update — the nightly pull request (`core/inventory_update.py`)
+
+After the drift analysis, the drift job turns the crawl's report into **one
+rolling pull request** on `inventory-update/nightly` (`scripts/propose_inventory_update.py`;
+settings `agents.agent0_impact.inventory_update`). Every rule errs toward
+leaving the inventory alone:
+
+| Found by the crawl | What the PR does |
+|---|---|
+| A stale key, and the crawl finds the element the generator names the same | **Replaces** the selector; the key and every page object using it stay valid |
+| A stale key no code names (no string literal under `code_dirs`), not the row family | **Removes** it, with its note and its `multi_match` / `conditional` entries |
+| A stale key code still names | **Keeps** it and lists it: a page object needs a new selector, or a change story's absence test needs the key |
+| A live element no selector covers | **Adds** it - the generator's own name and selector, the proposals file's refusal rules, at most `max_additions_per_page` per page |
+| More than `hold_ratio` of a page's selectors stale | **Leaves the page alone** and lists it: an error page, an outage or a redesign is a person's call |
+| Ambiguous selectors, unreachable pages, untracked test-ids | Listed only |
+
+Merge it after checking the names and Agent 4's run on it - the suite runs
+against the updated inventory, and Agent 0 lists the tests it touches. Nothing
+is merged by an agent. The next night leaves an unchanged PR alone, replaces
+one nobody edited (comment, branch deleted, fresh PR) and closes it when
+nothing needs changing; once **you commit to the branch** (a better key name,
+say) it is never replaced - it gets one comment per new finding instead. A
+crawl that measured no page proposes and closes nothing, and in Agent 0's
+shadow mode the PR body is printed, not opened. Edits are selective,
+never a regeneration, so curated notes and declarations stay. The manual
+route (`check_inventory_staleness --propose` → mark rows →
+`apply_inventory_proposals`) still works for a one-off.
 
 ### Reconcile — finish or undo (`core/impact_reconcile.py`)
 
@@ -1072,6 +1103,8 @@ agents:
       no_pr_days: 14
       reset_labels: [ai-processed, human-approved, ai-coded, tests-run]
     context_update: { enabled: ..., branch_prefix: "context-update/" }
+    inventory_update: { enabled: true, branch: "inventory-update/nightly",
+                        max_additions_per_page: 20, hold_ratio: 0.5, code_dirs: [pages, tests] }
 
 status_workflow:                    # board columns per label, Done on merge
   on_label: { ai-processed: "In Progress", ai-coded: "In Review", impact-reverted: "To Do" }
@@ -1401,10 +1434,14 @@ python -m scripts.check_inventory_staleness --fail-on-drift
 ```
 
 Diffs the committed inventory against the live DOM: stale selectors, untracked
-test-ids, unreachable pages. Exits non-zero under `--fail-on-drift`, which is
-how the nightly `Inventory Health` workflow uses it. Both this and
-`verify_locators` honour `multi_match` and `conditional`, so a declared family
-reads as expected rather than as a fault.
+test-ids, unreachable pages; `--compare` adds the live elements no selector
+covers. Exits non-zero under `--fail-on-drift` (for a CI gate). The nightly
+**Agent 0 drift job** runs it with `--compare --json`, traces the drift to the
+affected tests and proposes the inventory update as a pull request
+(`scripts/propose_inventory_update.py`, see "Inventory update" under Change
+stories). The nightly `Inventory Health` workflow measures with
+`verify_locators` instead. Both tools honour `multi_match` and `conditional`,
+so a declared family reads as expected rather than as a fault.
 
 ### Every section of the inventory JSON, and what to do with it
 
@@ -1652,6 +1689,18 @@ Same as above — Agent 2's filename validator catches most of these. If one sli
 ### Agent 5 doesn't post a comment
 
 Expected when the PR changes only `prompts/`, `docs/` or Markdown: no browser run, so no report. Otherwise the most common cause: PR branch doesn't contain a Jira key. Agent 5 extracts the story key from the branch name (e.g., `auto/SCRUM-5-foo` → `SCRUM-5`). Branches without a key cause Agent 5 to skip cleanly with a warning log. Manual fix: pass `--story KEY` explicitly, or rename the branch.
+
+### The nightly inventory-update pull request did not appear, or left something out
+
+It is opened only when something can be applied (a replaced selector, an
+added element, a removed key) and only in Agent 0 live mode with
+`inventory_update.enabled`. A crawl that measured no page (login failed, site
+down) proposes nothing and closes nothing. Not applied, and listed in the PR
+instead: a stale key code still names, every page where more than
+`hold_ratio` of the selectors were stale, elements over
+`max_additions_per_page`, and refused names or selectors. A PR you committed
+to is never replaced - merge or close it and the next night proposes again
+from `main`.
 
 ### A review comment on Agent 2's pull request was not acted on
 
@@ -2172,6 +2221,8 @@ any run can find it again. All are plain Jira comments.
 | `[agent2:waiting]` | story | Agent 2 | Why the story is waiting for another open PR (once per reason) |
 | `[agent2:blocked] inputs: <fingerprint>` | story | Agent 2 | The final gate refused the story; the rules still broken. The scan skips it until the story or a test case changes |
 | `[agent2:review-fix] review <id>` / `comment <id>` | pull request | Agent 2 review fix | Each review comment's outcome (fix / decline / no_change) and what was pushed; the comment ids it lists are not acted on again |
+| `[inventory-update] content: <hash>` | inventory-update PR body | Agent 0 drift job | The hash of the inventory it wrote: tells an untouched PR (replaced or kept) from one a person edited (never touched) |
+| `[inventory-update] kept-edited: <hash>` | inventory-update PR comment | Agent 0 drift job | A finding noted on a PR a person edited, so the next night does not repeat it |
 
 ### Failure recovery
 

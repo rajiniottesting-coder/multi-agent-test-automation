@@ -53,6 +53,15 @@ def _refusal(inventory: dict, page: str, element: str, selector: str) -> str:
     return ""
 
 
+def refusal_reason(inventory: dict, page: str, element: str, selector: str) -> str:
+    """Why `element` / `selector` cannot be added to `page`, or '' when it can.
+
+    The one rule set for every writer of new elements: the reviewed proposals
+    file (apply_proposals) and the nightly inventory update
+    (core.inventory_update)."""
+    return _refusal(inventory, page, element, selector)
+
+
 def build_proposals(new_by_page: dict[str, dict[str, str]], inventory: dict,
                     *, inventory_path: str, base_url: str = "") -> dict[str, Any]:
     """The proposals document for `new_by_page` ({page: {element: selector}}).

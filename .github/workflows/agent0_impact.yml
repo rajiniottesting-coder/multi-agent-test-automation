@@ -268,6 +268,21 @@ jobs:
           if [ -f reports/drift.json ]; then
             python -m agents.agent0_impact --drift-report reports/drift.json $DRY
           fi
+      - name: Propose the inventory update as a pull request
+        # One rolling PR (core/inventory_update.py): replaced, added and removed
+        # selectors, and what is left for a person. GH_PAT, so Agents 3 and 4
+        # run on it like any PR. Never merged here. A failure here does not
+        # undo the drift analysis above.
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_REPO: ${{ vars.GH_REPO }}
+        run: |
+          DRY=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then DRY="--dry-run"; fi
+          if [ -f reports/drift.json ]; then
+            python -m scripts.propose_inventory_update --drift-report reports/drift.json $DRY
+          fi
       - name: Keep the report for the next scan
         # The weekday scan reads the newest of these for the uncovered-element
         # hint. Short retention: Agent 0 refuses a report older than 48h anyway.

@@ -58,9 +58,11 @@ agents/
   agent5_reporter.py
 
 core/
+  acceptance_coverage.py
   allure_meta.py
   allure_steps.py
   app_context.py
+  blocked.py
   board_status.py
   context_update.py
   dry_run.py
@@ -75,6 +77,7 @@ core/
   impact_trace.py
   in_flight.py
   inventory_proposals.py
+  inventory_update.py
   json_block.py
   llm_client.py
   onboarding.py
@@ -111,6 +114,7 @@ scripts/
   check_inventory_staleness.py
   cleanup_artifacts.py
   close_merged_story.py
+  collapse_junit_reruns.py
   e2e_turn.py
   gateway_probe.py
   generate_inventory.py
@@ -118,6 +122,7 @@ scripts/
   impact_reconcile.py
   onboarding_check.py
   promote_draft.py
+  propose_inventory_update.py
   smoke_test.py
   sweep_stalled_prs.py
   verify_locators.py
@@ -1526,8 +1531,9 @@ Agent 0 off). Key settings: `enabled`, `shadow_mode`, `selection`, `labels`,
 `review` (sub-task type, summary prefix, done status), `weights`
 (`structural 0.45, component 0.15, semantic 0.15, adjudicated 0.25`),
 `thresholds` (`must_update 0.6, review 0.3`), `max_candidates` (300),
-`reconcile` (`closed_scans`, `no_pr_days`, `reset_labels`) and `context_update` (`enabled`,
-`branch_prefix`).
+`reconcile` (`closed_scans`, `no_pr_days`, `reset_labels`), `context_update` (`enabled`,
+`branch_prefix`) and `inventory_update` (`enabled`, `branch`, `max_additions_per_page`,
+`hold_ratio`, `code_dirs`; read by `core/inventory_update.py`, whose `DEFAULTS` are these).
 
 ### 18.2 The analysis
 
@@ -1592,6 +1598,27 @@ Agent 0's entries when deciding whether to reset.
 checkouts (no model) and posts the affected tests on the PR. `--drift-report`
 (nightly, or on demand: dispatch with `mode` = `drift`) takes the staleness check's JSON and, in live mode, opens or updates one
 maintenance story (label `inventory-drift`).
+
+**Inventory update** (`core/inventory_update.py`, `scripts/propose_inventory_update.py`;
+the drift job's next step, `if: always()`). `build_update(drift, inventory, used)`
+is pure: per measured page, a stale key whose name the crawl's `new_elements`
+also produced is **replaced** (same key, new selector); else kept when
+`keys_named_in_code()` (every string literal under `code_dirs`, a parse failure
+read as quoted tokens - over-wide on purpose) holds it or it is the page's
+`row_family`; else **removed** with `elements_notes`, `multi_match` and
+`conditional` entries (`_drop_key`). Uncovered elements are **added** through
+`inventory_proposals.refusal_reason()` - the proposals file's rules - up to
+`max_additions_per_page`. A page with more than one stale key and a stale share
+above `hold_ratio` is held: nothing on it changes. `dump_like()` writes the
+file in its own format (indent 2, non-ASCII kept, the same final newline or
+none), so the diff is the change. `open_or_refresh()` keeps one PR: the body
+records `[inventory-update] content: <sha256[:12]>` of the file it wrote; same
+hash tonight → left alone; the branch's file hash differs from the record → a
+person edited it → never replaced, one `kept-edited` comment per new hash;
+otherwise superseded (comment, `delete_branch` closes it, fresh PR from
+`main`), or closed when nothing changes. A failed write deletes the branch.
+The script refuses a report with `pages_checked` 0, so a failed crawl neither
+proposes nor closes; `--dry-run` and Agent 0's `shadow_mode` print the body instead. RepoHost operations only; no model.
 
 ## 19. Change stories in Agents 1, 2 and 5
 
