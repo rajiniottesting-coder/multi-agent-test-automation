@@ -385,10 +385,11 @@ def story_ledger(story_key: str, tracker) -> dict:
 
     {"mode", "entries" (oldest first), "holds" ([spent] oldest first),
      "since" / "reason" (the last reset, if any), "comment" (the cost comment's
-     property, properties mode)}. Never raises: an unreadable store reads as
+     property, properties mode), "keys" (the usage property keys, properties
+     mode)} - every field present in either store. Never raises: an unreadable store reads as
     empty, and the caller's work goes on."""
     out = {"mode": "comments", "entries": [], "holds": [], "since": None, "reason": None,
-           "comment": None}
+           "comment": None, "keys": []}
     if tracker is None or not story_key:
         return out
     from core.spend_budget import _HOLD_RE
