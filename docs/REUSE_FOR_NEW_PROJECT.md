@@ -207,7 +207,7 @@ prompts/app_context/
   <component>.md   # one file per Jira Component (e.g. cart.md, checkout.md)
 ```
 
-**How selection works** (`agents/agent1_analyst.py :: load_app_context_block`):
+**How selection works** (`core/app_context.py :: select_note_modules` - one rule for Agent 1's draft and Agent 0's context update):
 
 - `core.md` is injected on every run.
 - For each Jira Component on the story, the matching `<component>.md` is added.

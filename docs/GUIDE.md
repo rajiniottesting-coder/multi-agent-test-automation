@@ -567,7 +567,7 @@ one for what a change story changes. A change story makes the material
 stale. At hand-over Agent 0 proposes the update as a pull request:
 
 - **Wording** the story replaces (a label, a message) — one model call lists old → new (`prompts/agent0_wording.md`); the replacement is applied exactly to the inventory's values and the notes. A change whose old text appears nowhere is dropped and reported.
-- **Passages the story makes untrue** — behaviour, rules, removed elements. One more call rewrites each such passage (`prompts/agent0_context_notes.md`). A passage not found verbatim is dropped and reported. **A rewrite never touches a selector**: the element is live until the change is deployed. (A *wording* change, above, does update a selector that matches on the old text - which is why the PR waits for deployment.)
+- **Passages the story makes untrue** — behaviour, rules, removed elements. One more call rewrites each such passage (`prompts/agent0_context_notes.md`). A passage not found verbatim is dropped and reported. **A rewrite never touches a selector**: the element is live until the change is deployed. (A *wording* change, above, does update a selector that matches on the old text - which is why the PR waits for deployment.) The call reads only what the story's Components select - `core.md`, their modules and their pages' inventory notes, by the same rule as Agent 1 (all of them when none match) - and a rewrite of a file it was not shown is dropped.
 - Code mentioning the old text is listed, not edited — code changes go through the story's own PR.
 
 The branch is `context-update/<story key in lower case>`, which no tool reads as
@@ -1567,7 +1567,7 @@ Describes the pages, selectors, and methods of your app. Use the inventory named
 
 ### Step 3: Populate `prompts/app_context/`
 
-Put your app's known users, error messages, page flow notes, and anything else the analyst should know. App context is a **module folder**: `core.md` (always injected) plus one `<component>.md` per Jira Component (matching is case/space/hyphen-insensitive). Agent 1 injects `core.md` + the module(s) for the story's component(s); a story with no components injects all modules. A single `prompts/app_context.md` file still works as a fallback if the folder is absent.
+Put your app's known users, error messages, page flow notes, and anything else the analyst should know. App context is a **module folder**: `core.md` (always injected) plus one `<component>.md` per Jira Component (matching is case/space/hyphen-insensitive). Agent 1 injects `core.md` + the module(s) for the story's component(s); a story with no components, or none that match, injects all modules. Agent 0's context update reads the notes by the same rule (`core.app_context.select_note_modules`). A single `prompts/app_context.md` file still works as a fallback if the folder is absent.
 
 ### Step 4: Author one reference test
 

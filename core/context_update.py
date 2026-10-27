@@ -100,6 +100,34 @@ def context_sources(root: Path) -> dict:
     return out
 
 
+def scoped_sources(sources: dict, components, root: Path) -> tuple[dict, set]:
+    """(sources, inventory pages) the story's Components select - what the
+    note-rewrite call reads (F-10). The notes modules follow Agent 1's rule
+    (core.app_context.select_note_modules): core.md plus the story's modules,
+    or all of them when none match; a single prompts/app_context.md is kept.
+    The inventory is kept whole here; the page names returned limit which of
+    its notes are offered (filter_inventory_by_components' rule)."""
+    from core.app_context import select_note_modules, selected_page_names
+    root = Path(root)
+    folder = root / "prompts" / "app_context"
+    wanted = ({p.relative_to(root).as_posix() for p in select_note_modules(folder, components)}
+              if folder.is_dir() else set())
+    out, pages = {}, None
+    for relpath, text in sources.items():
+        if relpath.endswith(".json"):
+            out[relpath] = text
+            try:
+                pages = selected_page_names(json.loads(text), components)
+            except ValueError:
+                pages = None
+        elif relpath.startswith("prompts/app_context/"):
+            if relpath in wanted:
+                out[relpath] = text
+        else:
+            out[relpath] = text
+    return out, pages
+
+
 def code_sources(root: Path) -> dict:
     """{relpath: text} of code that may mention the wording - listed, never edited."""
     root = Path(root)
@@ -208,7 +236,9 @@ def _apply_json_notes(text: str, old: str, new: str) -> str | None:
     return json.dumps(expected, indent=2, ensure_ascii=False) + "\n"
 
 
-def _apply_rewrites(current: dict, rewrites, prop: Proposal) -> None:
+def _apply_rewrites(current: dict, rewrites, prop: Proposal, offered=None) -> None:
+    """Apply each rewrite; `offered` (when given) is the set of files the model
+    was shown - a rewrite of any other file is dropped, never applied blind."""
     for rw in rewrites or []:
         path = (getattr(rw, "path", "") or "").strip()
         old = (getattr(rw, "old", "") or "").strip()
@@ -219,6 +249,10 @@ def _apply_rewrites(current: dict, rewrites, prop: Proposal) -> None:
             continue
         if path not in current:
             prop.dropped.append((old[:60], new[:60], f"{path or '(no path)'} is not a note file"))
+            continue
+        if offered is not None and path not in offered:
+            prop.dropped.append((old[:60], new[:60],
+                                 f"{path} was not among the notes the story's Components select"))
             continue
         text = current[path]
         if path.endswith(".json"):
@@ -232,9 +266,11 @@ def _apply_rewrites(current: dict, rewrites, prop: Proposal) -> None:
         prop.rewrites.append({"path": path, "before": old, "after": new, "reason": reason})
 
 
-def propose(sources: dict, changes, code: dict | None = None, rewrites=()) -> Proposal:
+def propose(sources: dict, changes, code: dict | None = None, rewrites=(),
+            offered=None) -> Proposal:
     """Apply each old -> new, then each passage rewrite, to the sources.
-    Pure: nothing is written."""
+    `offered`: the files the rewrite call was shown (None: all). Pure: nothing
+    is written."""
     prop = Proposal()
     current = dict(sources)
     seen: set = set()
@@ -261,7 +297,7 @@ def propose(sources: dict, changes, code: dict | None = None, rewrites=()) -> Pr
             for n, line in enumerate(text.splitlines(), 1):
                 if old in line:
                     prop.code_mentions.append({"path": relpath, "line": n, "text": line.strip()})
-    _apply_rewrites(current, rewrites, prop)
+    _apply_rewrites(current, rewrites, prop, offered)
     prop.edits = {p: t for p, t in current.items() if t != sources.get(p)}
     return prop
 
@@ -358,15 +394,18 @@ def extract_changes(llm, story: dict):
                                  user_prompt=prompt, output_schema=WordingChanges).changes
 
 
-def _notes_block(sources: dict) -> str:
+def _notes_block(sources: dict, pages=None) -> str:
     """The notes as the model sees them: each notes file whole, and the
-    inventory as its NOTE values only, so a selector is never offered."""
+    inventory as its NOTE values only, so a selector is never offered.
+    `pages` (when given) limits the inventory's page notes to those pages;
+    notes outside `pages` (test users, common errors) are always offered."""
     parts = []
     for relpath, text in sorted(sources.items()):
         if relpath.endswith(".json"):
             try:
                 notes = [(".".join(p), s) for p, s in _walk(json.loads(text))
-                         if "elements" not in p]
+                         if "elements" not in p
+                         and (pages is None or len(p) < 2 or p[0] != "pages" or p[1] in pages)]
             except ValueError:
                 continue
             if notes:
@@ -377,11 +416,12 @@ def _notes_block(sources: dict) -> str:
     return "\n\n".join(parts)
 
 
-def extract_note_rewrites(llm, story: dict, story_key: str, sources: dict) -> list:
-    """One model call: each reference passage the story makes untrue, rewritten."""
+def extract_note_rewrites(llm, story: dict, story_key: str, sources: dict, pages=None) -> list:
+    """One model call: each reference passage the story makes untrue, rewritten.
+    `sources` and `pages` are what the story's Components select (scoped_sources)."""
     from config.paths import PROMPTS_DIR
     from core.schemas import NoteRewrites
-    block = _notes_block(sources)
+    block = _notes_block(sources, pages)
     if not block:
         return []
     text = f"Title: {story['summary']}\n\nDescription:\n{story.get('description') or ''}"
@@ -403,15 +443,16 @@ def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: 
     if _already_proposed(tracker.get_comments(story_key), chash, _pr_is_open(host)):
         return {"story": story_key, "context": "already-proposed"}
     sources = context_sources(root)
+    offered, pages = scoped_sources(sources, story.get("components") or [], root)
     changes = extract_changes(llm, story)
     try:
-        rewrites = extract_note_rewrites(llm, story, story_key, sources)
+        rewrites = extract_note_rewrites(llm, story, story_key, offered, pages)
         unchecked = ""
     except Exception as e:                                         # noqa: BLE001
         # The wording update must not be lost to a failure of this step.
         logger.warning("context update for %s: behaviour notes not checked: %s", story_key, e)
         rewrites, unchecked = [], f"\nBehaviour notes were not checked ({type(e).__name__})."
-    prop = propose(sources, changes, code_sources(root), rewrites)
+    prop = propose(sources, changes, code_sources(root), rewrites, set(offered))
     if prop.empty:
         tracker.add_comment(story_key, f"{MARKER} No context update needed: the story replaces "
                             "no wording, and makes no passage untrue, in the inventory or the "
