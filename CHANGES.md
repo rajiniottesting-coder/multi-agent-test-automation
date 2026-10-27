@@ -13,7 +13,7 @@ This document records substantive changes to the framework in reverse-chronologi
 - **`run_update()`:** the same rule for the file it updates - a generated scenario that lost its marker is missing, an unmarked legacy match is listed, not appended or counted; only unmarked scenarios the update added are listed; the label is cleared when nothing is uncovered (also on a no-op)
 - Config: `agents.agent2_coder.incomplete_label: "ai-incomplete"`; `reconcile.reset_labels` adds it (config and `impact_settings.DEFAULTS`). Plan prompt: every test case left out gets a `Skipped: <KEY> -- <reason>` line. `core.blocked`'s comment names both refusals
 - Tests: the in-memory tracker of `test_pipeline_tool_agnostic.py` minted keys (`ACME-T1`) no marker can hold - now `ACME-201`; its pipeline run's fake model wrote one scenario for two test cases - now two
-- Docs: README, GUIDE (Agent 2 steps, label tables, config, troubleshooting), TECHNICAL_DEEP_DIVE (§5.7, §5.8, §5.11, labels, §11, §16), REUSE_FOR_NEW_PROJECT, DECISIONS ADR-020, VALIDATION_AND_KNOWN_GAPS (G5 closed, F-13 done, L30, E24 for UC-7; P1-1/P1-2 rows now cite #224/#225)
+- Docs: README, GUIDE (Agent 2 steps, label tables, config, troubleshooting), TECHNICAL_DEEP_DIVE (§5.7, §5.8, §5.11, labels, §11, §16), REUSE_FOR_NEW_PROJECT, DECISIONS ADR-020, VALIDATION_AND_KNOWN_GAPS (G5 closed, F-13 done, L30, L31, E24 (a)-(e) for UC-7; P1-1/P1-2 rows now cite #224/#225)
 
 Pinned by `tests/unit/test_no_silent_drop.py` (24); each rule was broken on purpose (25 mutations), and each break failed a test.
 
