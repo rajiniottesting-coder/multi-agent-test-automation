@@ -54,7 +54,8 @@ story.
   with that cause rather than shipping untraceable.
 - One scenario covering two test cases (allowed before) now lists the second as
   not automated: a marker holds one key, so it could never be maintained.
-- Limit: L30 - the reason is only as good as the plan's `Skipped:` line.
+- Limits: L30 - the reason is only as good as the plan's `Skipped:` line; L31 - a
+  marker on the wrong scenario counts as coverage (pairing is by title).
 
 ---
 
