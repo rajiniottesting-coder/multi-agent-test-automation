@@ -146,6 +146,8 @@ def post_reset_to_story(story_key: str, reason: str = "", jira=None) -> bool:
             jira = get_tracker()
         jira.add_comment(story_key, format_reset_comment(reason))
         logger.info(f"Usage ledger: posted reset marker to {story_key} ({reason}).")
+        from core import spend_budget
+        spend_budget.ledger_reset(story_key)        # F-24: the budget restarts with it
         return True
     except Exception as e:
         logger.warning(

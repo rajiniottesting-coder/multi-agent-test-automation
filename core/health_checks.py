@@ -105,7 +105,9 @@ def expiry_finding(alert_id: str, what: str, expires: str | None, now: _dt.datet
                    warn_days: int) -> Finding | None:
     """A warning when `expires` (a date the provider gave) is within `warn_days`."""
     if not expires:
-        return None
+        # The provider gave no date: the credential does not expire, so an
+        # earlier warning (a token since replaced) can close.
+        return Finding(alert_id, False, f"{what} has no expiry date")
     try:
         text = expires.replace(" UTC", "").strip()
         when = _dt.datetime.fromisoformat(text)

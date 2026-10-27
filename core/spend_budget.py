@@ -281,6 +281,15 @@ def end_story() -> None:
     _state["story"] = None
 
 
+def ledger_reset(story_key: str) -> None:
+    """The story's ledger restarts here ([LEDGER-RESET]): its budget restarts
+    too - the discarded run's cost and any hold before it no longer count."""
+    story = _state["story"]
+    if story and story["key"] == story_key:
+        story.update(prior=0.0, base=_lifetime() or 0.0,
+                     allowance=float(settings()["per_story_usd"]))
+
+
 def story_spent() -> float | None:
     """The current story's cost so far (ledger + this run), None when not counted."""
     story = _state["story"]

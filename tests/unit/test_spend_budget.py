@@ -505,3 +505,32 @@ def test_the_health_checks_model_probe_is_not_a_credential_alert_when_the_budget
             raise sb.BudgetExceeded("day", "day over")
     monkeypatch.setattr(llm_client, "LLMClient", Client)
     assert hc.check_model("completion") is None
+
+
+def test_a_ledger_reset_restarts_the_story_budget(monkeypatch, world):
+    """Agent 1 re-processes a story: the reset is posted INSIDE its run, after
+    the budget was read - the discarded run's cost must stop counting there."""
+    fake, jira = world
+    _limits(monkeypatch, per_story_usd=8.0, per_day_usd=1000.0)
+    _ledger(fake, 7.5)
+    with ul.story_usage(STORY, "Agent 1 (Test Designer)", jira=jira):
+        ul.post_reset_to_story(STORY, "story reprocessed", jira=jira)
+        spend(5.0)
+        sb.check_before_call()                           # 5 of a fresh 8, not 12.5
+    assert "budget-hold" not in fake.issues[STORY]["labels"]
+
+
+def test_a_held_story_is_not_selected_again_until_the_label_goes(monkeypatch, world):
+    """Through the real adapter's query: every Agent 2 selection skips it."""
+    from agents.agent2_coder import load_agent_config
+    fake, jira = world
+    _limits(monkeypatch, per_story_usd=8.0, per_day_usd=1000.0)
+    _ledger(fake, 9.0)
+    selection = load_agent_config()["selection"]
+    picked = lambda: [s["key"] for s in jira.find_stories_to_process(selection, max_results=50)]
+    assert STORY in picked()
+    with pytest.raises(sb.BudgetExceeded):
+        _story_run(jira, 0.0)
+    assert STORY not in picked()
+    fake.issues[STORY]["labels"].remove("budget-hold")
+    assert STORY in picked()
