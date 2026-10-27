@@ -1156,7 +1156,38 @@ def main():
             sys.exit(1)
     except Exception as e:
         logger.error(f"Agent 3 failed: {type(e).__name__}: {e}", exc_info=True)
+        if not args.dry_run:
+            post_failure_note(pr_number, e)
         sys.exit(1)
+
+
+# The environment variables whose values must never reach a PR comment.
+_SECRET_ENV = ("OPENAI_API_KEY", "GITHUB_TOKEN", "GH_PAT", "JIRA_API_TOKEN", "APP_PASSWORD")
+
+
+def failure_note(error: Exception, limit: int = 600) -> str:
+    """The PR comment for a review that could not be produced. A red check with
+    no comment left the reviewer guessing (PR #225); the error's type and
+    message say why, with every configured secret value redacted."""
+    text = f"{type(error).__name__}: {error}"
+    for name in _SECRET_ENV:
+        value = os.environ.get(name) or ""
+        if len(value) >= 8:
+            text = text.replace(value, "[redacted]")
+    text = re.sub(r"\b(sk|ghp|gho|github_pat)[-_][A-Za-z0-9_\-]{8,}", "[redacted]", text)
+    if len(text) > limit:
+        text = text[: limit - 1] + "…"
+    return ("## 🤖 Agent 3 — Code Review\n\n### ⚠️ Could not review this pull request\n\n"
+            f"```\n{text}\n```\n\nNothing was reviewed: the check is red for that reason, not "
+            "for a finding. Re-run the job; if it fails again, the error above says why.")
+
+
+def post_failure_note(pr_number: int, error: Exception) -> None:
+    """Best-effort: a failure to post the note must not hide the original error."""
+    try:
+        get_repo_host().post_pr_comment(pr_number, failure_note(error))
+    except Exception as post_error:                                # noqa: BLE001
+        logger.error(f"Could not post the failure note: {post_error}")
 
 
 if __name__ == "__main__":
