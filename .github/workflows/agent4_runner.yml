@@ -421,6 +421,14 @@ jobs:
         if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory != 'false') && steps.pr_changes.outputs.e2e != 'false'
         run: python -m scripts.collapse_junit_reruns reports/junit.xml
 
+      - name: Mark what the run learned about each test
+        # Writes the `outage` mark on a failure that says the application was
+        # unavailable (core/junit_marks.py), so this summary, Agent 5, Agent 3
+        # and the defect triage report it apart from test failures (F-7).
+        # Never fails the job.
+        if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory != 'false') && steps.pr_changes.outputs.e2e != 'false'
+        run: python -m scripts.finalise_junit reports/junit.xml
+
       # ── Allure ────────────────────────────────────────────────────────
       #
       # pytest writes reports/allure-results (raw JSON). Rendering it needs
@@ -529,8 +537,15 @@ jobs:
           """Parse the junit report(s) and write a markdown summary to the GitHub
           Actions job summary page."""
           import os
+          import sys
           import xml.etree.ElementTree as ET
           from pathlib import Path
+
+          sys.path.insert(0, ".")
+          try:
+              from core import junit_marks
+          except Exception:
+              junit_marks = None
 
           # WHICH reports to summarise comes from the step env, never from logic here,
           # so this is one code path for every event. Format: "path|Heading" entries
@@ -574,15 +589,32 @@ jobs:
               duration = sum(float(s.get("time", 0)) for s in suites)
               passed = total - failures - errors - skipped
 
+              # F-7: a failure marked `outage` (scripts/finalise_junit.py) says
+              # the application was unavailable - counted and listed apart, so a
+              # 503 burst never reads as N broken tests.
+              outage_cases = [c for suite in suites for c in suite.findall("testcase")
+                              if junit_marks is not None and junit_marks.is_outage(c)]
+              outage_failed = sum(1 for c in outage_cases if c.find("failure") is not None)
+              outage_n = len(outage_cases)
+              failures -= outage_failed
+              errors -= outage_n - outage_failed
+
               if total == 0:
                   # pytest wrote a report but collected nothing - a collection error or
                   # a bad path filter. Never report that as green.
                   status_emoji, status_text = "\u26a0\ufe0f", "No tests were collected"
-              elif failures == 0 and errors == 0:
+              elif failures == 0 and errors == 0 and outage_n == 0:
                   status_emoji, status_text = "\u2705", f"All {total} tests passed"
+              elif failures == 0 and errors == 0:
+                  status_emoji = "\u26a0\ufe0f"
+                  status_text = (f"No test failed, but {outage_n} of {total} could not be "
+                                 "judged: the application was unavailable")
               else:
                   status_emoji = "\u274c"
                   status_text = f"{failures + errors} of {total} tests failed"
+                  if outage_n:
+                      status_text += (f" ({outage_n} more could not be judged: the "
+                                      "application was unavailable)")
 
               lines = [f"## {status_emoji} {scope}", "",
                        f"**{status_text}** in {duration:.2f}s", "",
@@ -590,8 +622,10 @@ jobs:
                        f"| \u2705 Passed | {passed} |",
                        f"| \u274c Failed | {failures} |",
                        f"| \U0001f4a5 Errored | {errors} |",
-                       f"| \u23ed\ufe0f Skipped | {skipped} |",
-                       f"| **Total** | **{total}** |", ""]
+                       f"| \u23ed\ufe0f Skipped | {skipped} |"]
+              if outage_n:
+                  lines.append(f"| \U0001f310 Application unavailable | {outage_n} |")
+              lines += [f"| **Total** | **{total}** |", ""]
 
               failed_cases = []
               for suite in suites:
@@ -599,6 +633,8 @@ jobs:
                       failure = case.find("failure")
                       error = case.find("error")
                       if failure is None and error is None:
+                          continue
+                      if case in outage_cases:
                           continue
                       issue = failure if failure is not None else error
                       msg = (issue.get("message") or issue.text or "").strip()
@@ -634,8 +670,6 @@ jobs:
                   # unclassified, so every reading that is right today is
                   # unchanged and the probe class stops falling through.
                   try:
-                      import sys
-                      sys.path.insert(0, ".")
                       from core.failure_diagnosis import diagnose_with_context
                   except Exception as exc:
                       diagnose_with_context = None
@@ -656,8 +690,23 @@ jobs:
                                     f"    - **Fix:** {d.remedy}"]
                   lines.append("")
 
+              if outage_cases:
+                  lines += ["### Application unavailable (not test failures)", "",
+                            "These tests failed because the application refused or never "
+                            "answered their requests, after the retries. They say nothing "
+                            "about the change: check the application, then re-run.", ""]
+                  for case in outage_cases:
+                      issue = case.find("failure") if case.find("failure") is not None \
+                          else case.find("error")
+                      msg = ((issue.get("message") or issue.text or "").strip().splitlines()
+                             or ["(no message)"])[0][:200]
+                      lines += [f'- **`{case.get("classname", "")}::{case.get("name", "")}`**',
+                                f"  - {msg}"]
+                  lines.append("")
+
               print(f"{scope}: {total} total, {passed} passed, {failures} failed, "
-                    f"{errors} errored, {skipped} skipped, {duration:.2f}s")
+                    f"{errors} errored, {skipped} skipped, {outage_n} unavailable, "
+                    f"{duration:.2f}s")
               return lines
 
 

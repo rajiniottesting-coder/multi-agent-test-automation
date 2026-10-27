@@ -379,6 +379,11 @@ class TestResult(BaseModel):
         default=None,
         description="First line of the failure/error message; None if passed/skipped"
     )
+    outage: bool = Field(
+        default=False,
+        description="Failed because the application was unavailable (core/junit_marks.py, "
+                    "F-7): reported apart from test failures"
+    )
 
 
 class RunReport(BaseModel):

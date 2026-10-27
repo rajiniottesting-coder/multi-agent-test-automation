@@ -63,8 +63,13 @@ def outcomes_by_key(results: list, index, keys: list) -> dict:
             out[key] = "not run"
         elif all(r.status == "passed" for r in mine):
             out[key] = "passed"
+        elif all(r.status == "passed" or getattr(r, "outage", False) for r in mine):
+            # Failed only because the application was unavailable (F-7): not a
+            # result either way, and never a "failed" test for stage 10.
+            out[key] = "not judged (application unavailable)"
         else:
-            out[key] = next(r.status for r in mine if r.status != "passed")
+            out[key] = next(r.status for r in mine
+                            if r.status != "passed" and not getattr(r, "outage", False))
     return out
 
 

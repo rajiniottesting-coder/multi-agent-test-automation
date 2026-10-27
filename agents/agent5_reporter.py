@@ -48,6 +48,7 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from core import junit_marks
 from integrations.repo_host import get_repo_host
 from integrations.tracker import get_tracker
 from core.llm_client import LLMClient
@@ -152,6 +153,8 @@ def parse_junit_xml(junit_path: Path) -> RunReport:
                 status=status,
                 duration_seconds=tc_time,
                 failure_message=failure_message,
+                # Agent 4's mark: the application was unavailable (F-7).
+                outage=junit_marks.is_outage(tc),
             ))
 
     return RunReport(
@@ -237,7 +240,8 @@ def gather_ci_context(report: RunReport, cli_pr: int | None = None) -> RunReport
 # to omit. Determinism belongs in code.
 # ─────────────────────────────────────────────────────────────
 def build_final_comment(prose_body: str, report: RunReport,
-                        outside: list = (), unscoped_total: int | None = None) -> str:
+                        outside: list = (), unscoped_total: int | None = None,
+                        outages: list = ()) -> str:
     """Assemble the final Jira comment from LLM prose + deterministic links.
 
     Args:
@@ -251,6 +255,10 @@ def build_final_comment(prose_body: str, report: RunReport,
             story's own tests. The comment then says so in plain words, so a
             whole-session count is never read as the story's own.
 
+        outages: tests that failed because the application was unavailable
+            (F-7), the story's or not. Listed apart, with a warning above the
+            prose: they are neither passes nor failures of the change.
+
     Returns:
         Final markdown string ready to post to Jira.
     """
@@ -259,6 +267,12 @@ def build_final_comment(prose_body: str, report: RunReport,
         parts.append(f"_Scope: all {unscoped_total} tests in this run - the run "
                      f"could not be narrowed to this story's own tests._")
         parts.append("")
+    if outages:
+        n = len(outages)
+        parts.append(f"> ⚠ **Not judged:** {n} test{'' if n == 1 else 's'} could not "
+                     f"run {'its' if n == 1 else 'their'} checks - the application was "
+                     f"unavailable. See below; re-run once it is up.")
+        parts.append("")
     if outside:
         parts.append(f"> ⚠ **Not green:** {len(outside)} test"
                      f"{'' if len(outside) == 1 else 's'} outside this story "
@@ -266,6 +280,10 @@ def build_final_comment(prose_body: str, report: RunReport,
         parts.append("")
     parts.append(prose_body.rstrip())
     section = _outside_failures_section(outside)
+    if section:
+        parts.append("")
+        parts.extend(section)
+    section = _outage_section(outages)
     if section:
         parts.append("")
         parts.extend(section)
@@ -318,17 +336,23 @@ def _failures_outside_scope(full: "RunReport", scoped: "RunReport") -> list:
     """
     mine = {(r.classname, r.name) for r in scoped.results}
     return [r for r in full.results
-            if r.status in ("failed", "error") and (r.classname, r.name) not in mine]
+            if r.status in ("failed", "error") and not r.outage
+            and (r.classname, r.name) not in mine]
 
 
-def _overall_verdict(scoped: "RunReport", outside: list) -> str:
+def _overall_verdict(scoped: "RunReport", outside: list, outages: list = ()) -> str:
     """'passed' only when the story's tests AND everything else on the branch pass.
 
     Must agree with the PR check, which runs the whole suite: a Jira comment
     saying "passed" next to a red check is the contradiction this exists to end.
+    'unavailable' when nothing failed but some tests could not be judged
+    because the application was unavailable (F-7) - not green, not a failure.
     """
-    if scoped.failed or scoped.errors or outside:
+    real = [r for r in scoped.results if r.status in ("failed", "error") and not r.outage]
+    if (real if scoped.results else (scoped.failed or scoped.errors)) or outside:
         return "failed"
+    if outages:
+        return "unavailable"
     return "passed"
 
 
@@ -355,6 +379,40 @@ def _outside_failures_section(outside: list) -> list:
     if n > _OUTSIDE_LISTED:
         lines.append(f"- ...and {n - _OUTSIDE_LISTED} more - see the HTML report.")
     return lines
+
+
+def _outage_section(outages: list) -> list:
+    """Markdown naming the tests the application's unavailability stopped (F-7).
+    Built by code: an outage must never read as a defect in the change."""
+    if not outages:
+        return []
+    n = len(outages)
+    lines = [f"**🌐 {n} test{'' if n == 1 else 's'} not judged: the application was "
+             f"unavailable**", "",
+             "The application refused or never answered these tests' requests, even "
+             "after the retries. They are neither passes nor failures of this change.", ""]
+    for r in outages[:_OUTSIDE_LISTED]:
+        module = r.classname.rsplit(".", 1)[-1]
+        reason = (r.failure_message or "").strip().splitlines()
+        lines.append(f"- `{module}::{r.name}`" + (f" - {reason[0][:160]}" if reason else ""))
+    if n > _OUTSIDE_LISTED:
+        lines.append(f"- ...and {n - _OUTSIDE_LISTED} more - see the HTML report.")
+    return lines
+
+
+def _without_outages(report: "RunReport") -> "RunReport":
+    """The report with outage results left out and the counts made to match:
+    what the model summarises is only what the run could judge."""
+    kept = [r for r in report.results if not r.outage]
+    if len(kept) == len(report.results):
+        return report
+    counts = {"passed": 0, "failed": 0, "error": 0, "skipped": 0}
+    for r in kept:
+        counts[r.status] = counts.get(r.status, 0) + 1
+    return report.model_copy(update={
+        "results": kept, "total": len(kept), "passed": counts["passed"],
+        "failed": counts["failed"], "errors": counts["error"], "skipped": counts["skipped"],
+        "duration_seconds": round(sum(r.duration_seconds for r in kept), 3)})
 
 
 def _classname_of(path: str) -> str:
@@ -528,13 +586,22 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
     report = gather_ci_context(report, cli_pr=cli_pr)
     full_report = report
     report = _scope_to_story(full_report, cli_pr=cli_pr)
+    scoped_whole = report is full_report
     outside = _failures_outside_scope(full_report, report)
+    outages = [r for r in full_report.results if r.outage]
+    if outages:
+        logger.warning("%d test(s) not judged: the application was unavailable - "
+                       "reported apart from failures: %s", len(outages),
+                       ", ".join(f"{r.classname}::{r.name}" for r in outages[:10]))
     if outside:
         logger.warning(
             "%d test(s) outside this story fail on this branch - reported "
             "separately, and the verdict is 'failed': %s",
             len(outside), ", ".join(f"{r.classname}::{r.name}" for r in outside[:10]))
-    verdict = _overall_verdict(report, outside)
+    verdict = _overall_verdict(report, outside, outages)
+    # What the model summarises is what the run could judge; the outages are
+    # listed by code (build_final_comment).
+    report = _without_outages(report)
 
     # 2. CONTEXT: already gathered above, before scoping.
     if report.pr_number:
@@ -562,7 +629,8 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
     # This avoids the LLM rendering "View PR (None)" when fields are unavailable.
     final_body = build_final_comment(draft.body_markdown, report, outside,
                                      unscoped_total=(full_report.total
-                                                     if report is full_report else None))
+                                                     if scoped_whole else None),
+                                     outages=outages)
 
     # 3c. USAGE LEDGER: log this agent's own token/cost summary, then read
     # all [LLM-USAGE] comments posted by earlier agents (1, 2, 3) and append
