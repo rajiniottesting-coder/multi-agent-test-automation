@@ -17,7 +17,7 @@ Standard library only. Usage: the workflow-runs JSON list on stdin
 (`gh api .../runs --jq .workflow_runs`); prints the run ids still ahead of
 this one, space-separated - nothing when it is this run's turn.
 
-    python3 scripts/e2e_turn.py --me <run id> --branch <this PR's head branch>
+    python3 scripts/e2e_turn.py --me <run id> --branch <this run's branch>
 """
 import argparse
 import json
@@ -27,13 +27,19 @@ import sys
 # the live application (or is about to).
 ACTIVE = {"queued", "in_progress", "waiting", "requested", "pending"}
 
+# Runs that drive the live application in turn: pull requests, and the nightly
+# run on main (F-21). A push to main runs the unit suite and only rarely the
+# E2E; it does not hold anybody up.
+TURN_EVENTS = {"pull_request", "schedule"}
+
 
 def runs_ahead(me: int, branch: str, runs: list) -> list[int]:
-    """Unfinished runs of other pull requests that started before this one."""
+    """Unfinished runs of other pull requests (or the nightly run) that
+    started before this one."""
     return sorted(int(r["id"]) for r in runs or []
                   if r.get("id") and int(r["id"]) < me
                   and r.get("status") in ACTIVE
-                  and r.get("event", "pull_request") == "pull_request"
+                  and r.get("event", "pull_request") in TURN_EVENTS
                   and r.get("head_branch") != branch)
 
 

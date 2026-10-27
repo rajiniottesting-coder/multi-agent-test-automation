@@ -44,13 +44,16 @@
 #   auto/SCRUM-nn story PR, blaming the wrong change.
 #
 # EVENT MATRIX:
-#   step / job            pull_request   push (main)   workflow_dispatch
-#   unit-test gate             yes           yes             yes
-#   Chromium install           yes            -              yes
-#   app E2E tests              yes            -              yes
-#   report artifact            yes            -              yes
-#   job summary                yes           yes             yes
-#   Agent 5 -> Jira            yes            -               -
+#   step / job            pull_request   push (main)   workflow_dispatch   schedule (main)
+#   unit-test gate             yes           yes             yes               yes
+#   Chromium install           yes            -              yes               yes
+#   app E2E tests              yes            -              yes               yes
+#   retry of failures          yes            -              yes               yes
+#   report artifact            yes            -              yes               yes
+#   job summary                yes           yes             yes               yes
+#   Agent 5 -> Jira            yes            -               -                 -
+#   ("-" for push: unless a runtime-affecting file changed, then the E2E runs
+#   too - see "Detect runtime-affecting changes".)
 # ─────────────────────────────────────────────────────────────
 
 name: Agent 4 - Runner
@@ -111,6 +114,13 @@ on:
 
   workflow_dispatch: {}  # allow manual triggering from Actions tab
 
+  # F-21: the whole app suite on main every night, outside business hours
+  # (03:10 IST), so a regression the application ships with no pull request
+  # open - another team's deploy - is found the next morning. No story report:
+  # the run summary and its artifact carry the result.
+  schedule:
+    - cron: "40 21 * * *"
+
 permissions:
   contents: read
   pull-requests: write   # Agent 5 may need to read PR metadata
@@ -147,8 +157,11 @@ jobs:
     # run for this SHA" as a stalled PR and reopens it to re-fire the event
     # chain. Cancelling story runs would manufacture exactly the condition the
     # sweeper is built to repair.
+    #
+    # The scheduled run has its own group: sharing main's would let a push to
+    # main cancel the nightly run part-way.
     concurrency:
-      group: agent4-${{ github.event.pull_request.number || github.ref }}
+      group: agent4-${{ github.event.pull_request.number || (github.event_name == 'schedule' && 'scheduled') || github.ref }}
       cancel-in-progress: ${{ github.event_name == 'push' }}
 
     steps:
@@ -347,18 +360,20 @@ jobs:
       # better than a stuck pipeline.
       - name: Wait for earlier pull requests' browser runs
         # always(): the E2E runs even when the unit gate failed, so the wait must too.
-        if: always() && github.event_name == 'pull_request' && steps.pr_changes.outputs.e2e != 'false'
+        # The scheduled run on main takes its turn too, and pull requests wait
+        # for it: it drives the same application with the same accounts.
+        if: always() && (github.event_name == 'pull_request' || github.event_name == 'schedule') && steps.pr_changes.outputs.e2e != 'false'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
-          BRANCH: ${{ github.head_ref }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
           MAX_WAIT_SECONDS: "900"
         run: |
           deadline=$(( $(date +%s) + MAX_WAIT_SECONDS ))
           while :; do
-            if ! RUNS=$(gh api "repos/$REPO/actions/workflows/agent4_runner.yml/runs?event=pull_request&per_page=100" --jq '.workflow_runs'); then
+            if ! RUNS=$(gh api "repos/$REPO/actions/workflows/agent4_runner.yml/runs?per_page=100" --jq '.workflow_runs'); then
               echo "could not list the runs - not waiting"
               break
             fi
@@ -924,3 +939,4 @@ jobs:
           GITHUB_REPO: ${{ vars.GH_REPO || github.repository }}
         run: |
           python -m agents.agent5_reporter --reports-dir reports/
+

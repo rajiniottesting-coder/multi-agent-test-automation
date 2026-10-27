@@ -276,10 +276,23 @@ def _r(i, status="in_progress", branch="b", event="pull_request"):
     ([_r(30, branch="other")], []),                            # started after us
     ([_r(10, branch="mine")], []),                             # our own PR: its own group
     ([_r(10, branch="other", event="push")], []),              # not a PR run
+    ([_r(10, branch="main", event="schedule")], [10]),         # the nightly run on main (F-21)
+    ([_r(10, branch="other", event="workflow_dispatch")], []),
     ([_r(10, branch="x"), _r(12, branch="y"), _r(5, status="completed", branch="z")], [10, 12]),
 ])
 def test_runs_ahead(runs, ahead):
     assert runs_ahead(20, "mine", runs) == ahead
+
+
+def test_the_nightly_run_waits_for_earlier_pull_requests():
+    assert runs_ahead(20, "main", [_r(10, branch="auto/X-1-y"), _r(11, branch="main",
+                                                                    event="push")]) == [10]
+
+
+def test_the_wait_lists_runs_of_every_event():
+    run = _wait_step()["run"]
+    assert "runs?per_page=100" in run and "event=pull_request" not in run, \
+        "the scheduled run must be visible to pull requests"
 
 
 def _agent4():
@@ -297,7 +310,9 @@ def _wait_step():
 
 def test_the_wait_step_is_guarded_like_the_browser_run():
     step = _wait_step()
-    assert step["if"].startswith("always() && github.event_name == 'pull_request'")
+    assert step["if"].startswith("always() && (github.event_name == 'pull_request' "
+                                 "|| github.event_name == 'schedule')"), \
+        "pull requests and the nightly run on main take turns"
     assert "steps.pr_changes.outputs.e2e != 'false'" in step["if"]
     assert step.get("continue-on-error") is True
     assert int(step["env"]["MAX_WAIT_SECONDS"]) > 0
