@@ -1620,7 +1620,14 @@ listed; the rest goes under the named heading (`_insert_under()`: end of that
 section, a bullet list continued), as a new `## heading` section when the
 heading does not exist, at the end, or as a new `# <Component>` module.
 `render_addition_body()` lists each addition with its reason, the repeated
-lines and the refusals. `_open_branch_pr()` (shared with the change-story PR)
+lines and the refusals, and `render_notes_report()` - from `notes_report(texts,
+budget)` (F-9): modules over `module_budget_chars`, and sentence pairs of at
+least six words whose token sets overlap ≥ 0.8, both limited to the files the
+addition touches. Sentences come from `_paragraphs()` (hard-wrapped lines
+joined, a bullet its own paragraph) - the same units the duplicate check of
+the additions uses. The unit suite fails on a committed module over budget
+(`tests/unit/test_notes_budget.py`) and `core.onboarding.notes_checks()` warns
+on size and repetition. `_open_branch_pr()` (shared with the change-story PR)
 branches, commits and opens. Cost: `Agent 0 (Impact Analyst)` on the story.
 
 ### 18.5 Reconcile (`core/impact_reconcile.py`, `scripts/impact_reconcile.py`)

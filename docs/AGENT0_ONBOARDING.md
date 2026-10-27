@@ -110,6 +110,17 @@ convincingly and wrongly.
 
 Until markers exist, Agent 0 degrades to report-only for those scenarios.
 
+### 6. App notes
+
+`prompts/app_context/` holds `core.md` and one module per Component; Agent 1
+and Agent 0's context update read them by the same rule. The readiness check
+reports `notes: size` (each module against
+`agents.agent0_impact.context_update.module_budget_chars`, 8000 by default) and
+`notes: repetition` (sentences two modules - or one - repeat). Both are
+`WARN`: they cost tokens in every prompt, they do not stop Agent 0. In this
+repository the unit suite also fails on a module over its budget, so the
+notes-addition pull requests cannot grow a module past it unnoticed.
+
 ## Done
 
 The onboarding is done when the readiness check passes with no `FAIL`, the

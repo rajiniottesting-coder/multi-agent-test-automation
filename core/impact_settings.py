@@ -47,7 +47,11 @@ DEFAULTS: dict = {
     "context_update": {"enabled": True, "branch_prefix": "context-update/",
                        # When a story's PR merges: the facts its feature adds to
                        # the notes, as a reviewed PR (core.context_update, F-8).
-                       "additions": True, "max_addition_chars": 1500},
+                       "additions": True, "max_addition_chars": 1500,
+                       # Each app-context module goes into the prompt of every story
+                       # it is selected for: one over this many characters fails
+                       # the unit suite and is reported in a notes PR (F-9).
+                       "module_budget_chars": 8000},
     # Nightly drift job: the inventory changes the crawl implies, as one rolling
     # pull request for a person to merge (core.inventory_update). A key the
     # code directories name is never removed; a page with more than hold_ratio

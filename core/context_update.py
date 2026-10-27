@@ -627,16 +627,29 @@ def _tokens(line: str) -> set:
     return set(_WORD.findall(_BULLET.sub("", line).lower()))
 
 
-def _units(text: str) -> list:
-    """The content lines of a notes text (headings and blank lines excluded),
-    each split into sentences: what a new line is compared against."""
-    units = []
+def _paragraphs(text: str) -> list:
+    """Paragraphs and bullets of a notes text, hard-wrapped lines joined:
+    a heading or a blank line ends one, a bullet starts a new one."""
+    out, cur = [], []
     for line in (text or "").splitlines():
         if not line.strip() or _HEADING.match(line):
+            if cur:
+                out.append(" ".join(cur))
+            cur = []
             continue
-        body = _BULLET.sub("", line).strip()
-        units += [u for u in re.split(r"(?<=[.!?])\s+", body) if u.strip()]
-    return units
+        if _BULLET.match(line) and cur:
+            out.append(" ".join(cur))
+            cur = []
+        cur.append(_BULLET.sub("", line).strip() if not cur else line.strip())
+    if cur:
+        out.append(" ".join(cur))
+    return out
+
+
+def _units(text: str) -> list:
+    """The sentences of a notes text (headings excluded, wrapped lines
+    joined): what a new line is compared against."""
+    return [u for p in _paragraphs(text) for u in re.split(r"(?<=[.!?])\s+", p) if u.strip()]
 
 
 def near_duplicate(line: str, existing: list, threshold: float = 0.8) -> bool:
@@ -688,6 +701,46 @@ def _insert_under(text: str, heading: str, block: str) -> Optional[str]:
 
 def _append_section(text: str, block: str) -> str:
     return (text.rstrip("\n") + "\n\n" if text.strip() else "") + block.strip() + "\n"
+
+
+def notes_report(texts: dict, budget: int, min_words: int = 6) -> dict:
+    """Size and repetition of the notes modules (F-9), on {relpath: text}:
+
+        {"over": [(path, chars)], "duplicates": [(path, sentence, path, sentence)]}
+
+    `over`: modules longer than `budget` characters - every one of them goes
+    into the prompt of each story it is selected for. `duplicates`: sentence
+    pairs (at least `min_words` words) saying the same thing, within a module
+    or across two. Deterministic; the inventory is not a notes module."""
+    md = {p: t for p, t in sorted(texts.items()) if p.endswith(".md")}
+    over = [(p, len(t)) for p, t in md.items() if len(t) > budget]
+    items = [(p, u, _tokens(u)) for p, t in md.items() for u in _units(t)]
+    items = [i for i in items if len(i[2]) >= min_words]
+    dup = []
+    for a in range(len(items)):
+        for b in range(a + 1, len(items)):
+            pa, ua, ta = items[a]
+            pb, ub, tb = items[b]
+            if len(ta & tb) / len(ta | tb) >= 0.8:
+                dup.append((pa, ua, pb, ub))
+    return {"over": over, "duplicates": dup}
+
+
+def render_notes_report(report: dict, budget: int, limit: int = 10) -> str:
+    """The notes-size section of a pull request body ('' when all is well)."""
+    lines = []
+    if report["over"]:
+        lines += [f"**Notes over the {budget}-character budget** - each goes into the prompt "
+                  "of every story it is selected for. Condense before merging (the unit "
+                  "suite fails on a module over budget):"]
+        lines += [f"- `{p}`: {n} characters" for p, n in report["over"]]
+    if report["duplicates"]:
+        lines += ["", "Sentences that say the same thing - consider keeping one:"]
+        lines += [f"- `{pa}`: {_cell(ua, 90)} ↔ `{pb}`: {_cell(ub, 90)}"
+                  for pa, ua, pb, ub in report["duplicates"][:limit]]
+        if len(report["duplicates"]) > limit:
+            lines.append(f"- … and {len(report['duplicates']) - limit} more")
+    return "\n".join(lines).strip()
 
 
 def new_module_paths(components, root: Path) -> dict:
@@ -842,7 +895,13 @@ def propose_addition_for_story(tracker, host, llm, story_key: str, settings: dic
                                        pages, new_modules)
     res = propose_additions(sources, additions, set(offered), new_modules,
                             int(cfg.get("max_addition_chars", 1500)))
-    body = render_addition_body(story_key, res)
+    budget = int(cfg.get("module_budget_chars", 8000))
+    after = {**{p: t for p, t in sources.items() if p.endswith(".md")}, **res.edits}
+    report = notes_report(after, budget)
+    touched = set(res.edits)
+    report = {"over": [o for o in report["over"] if o[0] in touched],
+              "duplicates": [d for d in report["duplicates"] if d[0] in touched or d[2] in touched]}
+    body = render_addition_body(story_key, res, render_notes_report(report, budget))
     if dry_run:
         return {"story": story_key, "addition": "dry-run", "body": body,
                 "files": sorted(res.edits)}

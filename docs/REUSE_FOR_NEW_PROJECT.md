@@ -217,6 +217,10 @@ prompts/app_context/
   injects **ALL** modules. This is a safe default that never silently drops
   context. (A Login-tagged story injects ~49% fewer app-context tokens than the
   old single file.)
+- **Keep each module small.** Every selected module goes into the prompt;
+  `agents.agent0_impact.context_update.module_budget_chars` (8000) is the
+  budget the unit suite and the onboarding check enforce. Shared facts belong
+  in `core.md` once, not repeated per module.
 - **Backward compatible:** if the `prompts/app_context/` folder does not exist,
   the loader falls back to a single `prompts/app_context.md` file. You can start
   with one file and split into modules later.
