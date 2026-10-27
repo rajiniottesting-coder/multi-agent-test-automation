@@ -257,7 +257,12 @@ class TestD3:
             fake.issues["SBX-5"]["description"] = f"edit {n}"     # new content each time
             a0.publish(jira, "SBX-5", a0.analyse_requirement(jira, "SBX-5",
                                                              FakeModel([f"{page}:{key}"]), s, root), s)
-        assert len([c for c in fake.comments["SBX-5"] if c.startswith(a0.NO_COMPONENT)]) == 1
+        # F-31: the report's own "No Component" line says it, with the advice;
+        # no separate comment repeats it.
+        assert not [c for c in fake.comments["SBX-5"] if c.startswith(a0.NO_COMPONENT)]
+        reports = [c for c in fake.comments["SBX-5"] if c.startswith(a0.REPORT)]
+        assert len(reports) == 2 and all("No Component: whole-suite analysis" in c
+                                         and "Add a Component" in c for c in reports)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -335,10 +340,14 @@ class TestPublish:
         # stage 7: the ranked report is also on the change story, grouped by owner
         body = next(c for c in fake.comments["SBX-5"] if c.startswith(a0.REPORT))
         assert f"review {review['key']}" in body.splitlines()[0]
-        posted = ia.extract(body)
+        assert "By owning story: " in body and "SBX-12" in body and "||Tier||" in body
+        # F-31: the data the agents read back is in the review, once - not
+        # copied onto the story; the story says where it is.
+        assert ia.extract(body) is None
+        assert f"the data the agents read back, are in {review['key']}" in body
+        posted, _review = a0._previous_report(jira, "SBX-5", s)
         assert "SBX-12" in posted["by_owner"]["SBX-1"]
         assert posted["by_owner"] == ia.by_owner(posted["ranked"])
-        assert "By owning story: " in body
 
     def test_nothing_to_review_makes_the_story_ready(self, world):
         fake, jira, root, _g = world
@@ -403,7 +412,10 @@ class TestD4:
         second = jira.get_subtasks("SBX-5")[-1]
         rows = __import__("core.impact_review", fromlist=["x"]).parse(second["description"])
         assert "SBX-11" in rows and "SBX-12" not in rows
-        assert any(c.startswith(a0.DELTA) for c in fake.comments["SBX-5"])
+        # F-31: the delta is the second line of that analysis's report comment
+        report = [c for c in fake.comments["SBX-5"] if c.startswith(a0.REPORT)][-1]
+        assert report.splitlines()[1].startswith(a0.DELTA)
+        assert not any(c.startswith(a0.DELTA) for c in fake.comments["SBX-5"])
 
     def test_after_approval_a_removal_alone_is_reported_and_the_story_released(self, world):
         """Agent 3 review of #131: with only removals there are no new rows.
@@ -443,8 +455,10 @@ class TestD4:
         r = a0.publish(jira, "SBX-5", a0.analyse_requirement(
             jira, "SBX-5", FakeModel([]), s, root), s)
         assert r["action"] == "nothing-to-review"
-        assert any(c.startswith(a0.DELTA) and "removed [" in c and "removed []" not in c
-                   for c in fake.comments["SBX-5"])
+        report = [c for c in fake.comments["SBX-5"] if c.startswith(a0.REPORT)][-1]
+        delta = report.splitlines()[1]
+        assert delta.startswith(a0.DELTA) and "removed [" in delta and "removed []" not in delta
+        assert ia.extract(report) is not None, "no review holds this one: the data stays"
 
 
 def test_cli_code_change_posts_once_per_distinct_change(world, monkeypatch, tmp_path):
