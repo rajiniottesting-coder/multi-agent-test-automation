@@ -46,6 +46,7 @@ from dataclasses import dataclass
 from core.app_context import AppContext
 from integrations.repo_host import get_repo_host
 from core.llm_client import LLMClient
+from core.spend_budget import BudgetExceeded
 from core.schemas import ReviewReport, ReviewIssue
 from config import (
     REQUIRED_GITHUB_ENV_VARS,
@@ -1041,6 +1042,13 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
     # truncates mid-object — Pydantic then rejects it with "Field required"
     # validation errors. 8K leaves comfortable headroom.
     llm = LLMClient(temperature=0.1, max_output_tokens=8192)
+    # F-24: a story's PR is reviewed within the story's budget (and every
+    # review within the day's). Over a limit the call is not made and the
+    # stop is reported on the PR by main().
+    _story = re.match(r"auto/([A-Z][A-Z0-9_]*-\d+)-", pr_metadata.get("head_branch", "") or "")
+    if _story and not dry_run:
+        from core.spend_budget import begin_story
+        begin_story(_story.group(1))
     report: ReviewReport = llm.invoke_structured(
         system_prompt="You are a Senior SDET performing rigorous code review on automated test code.",
         user_prompt=user_prompt,
@@ -1164,6 +1172,14 @@ def main():
         if result.get("verdict") == "request_changes":
             print("REVIEW GATE: changes requested - see the PR comment above.")
             sys.exit(1)
+    except BudgetExceeded as stop:
+        # F-24: nothing was reviewed - the check stays red, and the PR says why.
+        logger.error(f"[BUDGET] {stop}")
+        if not args.dry_run:
+            from core.spend_budget import current_tracker, hold_story
+            hold_story(current_tracker(), stop)
+            post_failure_note(pr_number, stop)
+        sys.exit(1)
     except Exception as e:
         logger.error(f"Agent 3 failed: {type(e).__name__}: {e}", exc_info=True)
         if not args.dry_run:
@@ -1175,7 +1191,7 @@ def main():
 _SECRET_ENV = ("OPENAI_API_KEY", "GITHUB_TOKEN", "GH_PAT", "JIRA_API_TOKEN", "APP_PASSWORD")
 
 
-def failure_note(error: Exception, limit: int = 600) -> str:
+def failure_note(error: BaseException, limit: int = 600) -> str:
     """The PR comment for a review that could not be produced. A red check with
     no comment left the reviewer guessing (PR #225); the error's type and
     message say why, with every configured secret value, token-shaped string,
@@ -1192,12 +1208,16 @@ def failure_note(error: Exception, limit: int = 600) -> str:
     text = re.sub(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+", "[redacted]", text)
     if len(text) > limit:
         text = text[: limit - 1] + "…"
+    if isinstance(error, BudgetExceeded):
+        return ("## 🤖 Agent 3 — Code Review\n\n### ⏸️ Not reviewed: model budget reached\n\n"
+                f"```\n{text}\n```\n\nNothing was reviewed: the check is red for that reason, "
+                "not for a finding. Re-run the job once the budget allows it.")
     return ("## 🤖 Agent 3 — Code Review\n\n### ⚠️ Could not review this pull request\n\n"
             f"```\n{text}\n```\n\nNothing was reviewed: the check is red for that reason, not "
             "for a finding. Re-run the job; if it fails again, the error above says why.")
 
 
-def post_failure_note(pr_number: int, error: Exception) -> None:
+def post_failure_note(pr_number: int, error: BaseException) -> None:
     """Best-effort: a failure to post the note must not hide the original error."""
     try:
         get_repo_host().post_pr_comment(pr_number, failure_note(error))

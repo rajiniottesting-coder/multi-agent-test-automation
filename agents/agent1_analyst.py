@@ -527,6 +527,7 @@ def main():
     validate_required_env(REQUIRED_JIRA_ENV_VARS + REQUIRED_LLM_ENV_VARS)
 
     clean = True
+    from core.spend_budget import BudgetExceeded
     from core.usage_ledger import story_usage
     try:
         if args.story:
@@ -579,6 +580,20 @@ def main():
                                  dry_run=args.dry_run):
                     result = run(story["key"], dry_run=args.dry_run)
                 results.append(result)
+            except BudgetExceeded as stop:
+                # F-24: a held story needs a person (red once, then no longer
+                # selected); the daily budget stops the scan until tomorrow.
+                logger.error(f"{story['key']}: {stop}")
+                if stop.scope == "day":
+                    print(f"[BUDGET] {stop} The remaining stories wait for the next scan.")
+                    break
+                results.append({
+                    "story_id": story["key"],
+                    "story_summary": story["summary"],
+                    "test_cases_generated": 0,
+                    "test_case_keys": [],
+                    "status": "failed: BudgetExceeded",
+                })
             except Exception as e:
                 logger.error(f"Failed processing {story['key']}: {e}", exc_info=True)
                 results.append({
@@ -591,6 +606,10 @@ def main():
 
         clean = print_summary(results)
 
+    except BudgetExceeded as stop:
+        # --story mode (a scan handles it per story above).
+        logger.error(f"[BUDGET] {stop}")
+        sys.exit(1)
     except Exception as e:
         logger.error(f"Agent 1 (Test Designer) failed: {type(e).__name__}: {e}", exc_info=True)
         sys.exit(1)

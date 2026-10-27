@@ -58,10 +58,18 @@ def main(argv=None) -> int:
     from integrations.repo_host import get_repo_host
     from integrations.tracker import get_tracker
 
+    from core.spend_budget import BudgetExceeded
     reset_usage()
-    out = cu.propose_addition_for_story(get_tracker(), get_repo_host(),
-                                        LLMClient(temperature=0.0), story_key, settings,
-                                        PROJECT_ROOT, dry_run=dry)
+    try:
+        out = cu.propose_addition_for_story(get_tracker(), get_repo_host(),
+                                            LLMClient(temperature=0.0), story_key, settings,
+                                            PROJECT_ROOT, dry_run=dry)
+    except BudgetExceeded as stop:
+        # F-24: the merge is done; only the notes proposal waits. Say how to
+        # get it, and keep the cost already spent on the story's ledger.
+        print(f"[BUDGET] {stop} The notes addition for {story_key} was not proposed; run "
+              f"this script for {story_key} once the budget allows it.")
+        out = {"addition": "budget"}
     if out.get("addition") == "dry-run":
         why = "--dry-run" if args.dry_run else "Agent 0 shadow mode"
         print(f"{why}: nothing written. Files: {out['files']}\n\n{out['body']}")

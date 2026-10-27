@@ -162,6 +162,12 @@ def check_model(mode: str) -> Finding | None:
     except BaseException as e:                                     # noqa: BLE001
         if isinstance(e, (KeyboardInterrupt, SystemExit)):
             raise
+        from core.spend_budget import BudgetExceeded
+        if isinstance(e, BudgetExceeded):
+            # The pipeline's own budget stopped the check: nothing is known
+            # about the key, so the alert is left as it is.
+            logger.info("Model endpoint not checked: %s", e)
+            return None
         return Finding(alert, True, "The model endpoint refused the pipeline's request",
                        f"{type(e).__name__}: {_redact(str(e))[:400]}. Agents that call the "
                        "model stop until this is fixed: check the key, its spend limit at "

@@ -142,6 +142,29 @@ defects:
   open_statuses: ["To Do", "In Progress", "In Review"]
   max_new_per_run: 10                # more at once: one health alert instead
 
+# Model spend budgets (F-24, core/spend_budget.py). Checked before EVERY model
+# call; over a limit the call is not made and the stop says why. Values grow
+# with the repository and the stories - raise them here, nowhere else.
+#   per_story_usd  a story's cost since its ledger's last reset, all agents.
+#                  Over it the story is labelled hold_label (every selection
+#                  below excludes it) with one comment; removing the label
+#                  allows it one more per_story_usd.
+#   per_day_usd    every model call of the day (stories, reviews of any PR,
+#                  context/inventory proposals, Agent 0, the health check).
+#                  Over it: a health alert; scans stop until the day ends.
+#   warn_at        share of per_day_usd that opens a warning alert; Agent 5's
+#                  cost line marks a story past this share of its budget.
+# Needs LLM_PRICE_INPUT_PER_1M / LLM_PRICE_OUTPUT_PER_1M: without prices no
+# cost is known and nothing is enforced (the log says so). Applies in CI;
+# PIPELINE_BUDGET=on/off forces it on or off.
+budget:
+  enabled: true
+  per_story_usd: 8
+  per_day_usd: 12
+  warn_at: 0.5
+  timezone: "UTC"
+  hold_label: "budget-hold"
+
 app_under_test:
   name: "Automation Exercise"
   base_url: "https://automationexercise.com"
@@ -273,6 +296,7 @@ agents:
         # The hand-over removes these and adds ai-ready.
         - "impact-check"
         - "impact-proposed"
+        - "budget-hold"    # F-24: over its model budget until a person removes it
       # ── SPRINT SCOPING ──────────────────────────────────────────
       # "auto"          → resolve the currently ACTIVE sprint from Jira at
       #                   runtime via the JIRA_BOARD_ID env var. RECOMMENDED:
@@ -326,6 +350,7 @@ agents:
         - "ai-skip"        # human override / opt-out
         - "ai-regenerate"  # belongs in regenerate_selection, not normal scan
         - "ai-update"      # belongs in update_selection, not normal scan
+        - "budget-hold"    # F-24: over its model budget until a person removes it
       # Keep in sync with agent1_analyst.selection.sprint above.
       sprint: "auto"
 
@@ -342,6 +367,7 @@ agents:
       excluded_labels:
         - "ai-skip"
         - "ai-update"      # exclusive - if both are set, neither mode runs
+        - "budget-hold"    # F-24
       sprint: "auto"
 
     # INCREMENTAL UPDATE (ai-update label):
@@ -363,6 +389,7 @@ agents:
       excluded_labels:
         - "ai-skip"
         - "ai-regenerate"  # exclusive — only one mode per scan
+        - "budget-hold"    # F-24
       sprint: "auto"
 
     completion_label: "ai-coded"
@@ -432,7 +459,7 @@ agents:
       issue_type: "Story"
       allowed_statuses: ["To Do", "In Progress", "In Review"]
       required_labels: ["impact-check"]
-      excluded_labels: ["ai-skip"]
+      excluded_labels: ["ai-skip", "budget-hold"]   # budget-hold: F-24
     # Label lifecycle (design section 9): a story carries at most one
     # impact- label at a time, and none once its pull request is merged.
     labels:

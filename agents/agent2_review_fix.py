@@ -360,7 +360,6 @@ def run(pr_number: int, review_id: int | None = None, comment_id: int | None = N
     from agents import agent2_coder as a2
     from config import extract_jira_key
     from core.llm_client import LLMClient, log_usage_summary, reset_usage
-    from core.schemas import GeneratedFile
 
     cfg = settings()
     key = review_key(review_id, comment_id)
@@ -412,10 +411,19 @@ def run(pr_number: int, review_id: int | None = None, comment_id: int | None = N
                                          {_norm(p) for p in ctx.reserved_paths_normalized()},
                                          owned)
     contents = {p: host.get_file_content(p, branch=head) for p in [*editable, *protected]}
+    from core.spend_budget import BudgetExceeded, begin_story, hold_story
+    if not dry_run:
+        begin_story(story_key, tracker)             # F-24: within the story's budget
     llm = llm or LLMClient(temperature=0.2)
 
-    outcomes = enforce(decide(llm, items, story, test_cases, editable, protected),
-                       items, editable, protected)
+    try:
+        outcomes = enforce(decide(llm, items, story, test_cases, editable, protected),
+                           items, editable, protected)
+    except BudgetExceeded as stop:
+        if not dry_run:
+            hold_story(tracker, stop)
+        outcomes = [Outcome(i, "decline", f"Not attempted - the model budget is reached: {stop}")
+                    for i in items]
     to_fix: dict = {}
     for o in outcomes:
         if o.action == "fix":
@@ -432,6 +440,53 @@ def run(pr_number: int, review_id: int | None = None, comment_id: int | None = N
                 o.action, o.reason = "decline", f"Not attempted: {problem}"
         to_fix = {}
 
+    try:
+        pushed = _fix(host, pr_number, key, head, meta, contents, editable, protected, to_fix,
+                      outcomes, story, story_key, test_cases, ctx, llm, a2)
+    except _Refused as refused:
+        problem = refused.problem
+    except BudgetExceeded as stop:
+        # Nothing is pushed: pushing comes after every generation and check.
+        if not dry_run:
+            hold_story(tracker, stop)
+        problem = f"Stopped before any change was pushed - the model budget is reached: {stop}"
+        for o in outcomes:
+            if o.action == "fix":
+                o.action, o.reason = "decline", "Not attempted - the model budget is reached."
+
+    for o in outcomes:
+        _reply(host, pr_number, o, bool(pushed))
+    host.post_pr_comment(pr_number, summary_comment(key, outcomes, pushed, problem))
+
+    usage = log_usage_summary(f"PR #{pr_number} review fix")
+    reset_usage()
+    if not dry_run:
+        from core.usage_ledger import post_usage_to_story
+        post_usage_to_story(story_key, AGENT_NAME, usage, jira=tracker)
+
+    status = "fixed" if pushed else ("refused" if problem else "nothing_to_fix")
+    out = {**result, "status": status, "story": story_key, "pushed": pushed,
+           "outcomes": [(o.item.n, o.action) for o in outcomes]}
+    for recorder in recorders:
+        for line in recorder.describe():
+            print(line)
+    return out
+
+
+class _Refused(Exception):
+    """The changed files did not pass the checks: `problem` says why."""
+
+    def __init__(self, problem: str):
+        super().__init__(problem)
+        self.problem = problem
+
+
+def _fix(host, pr_number, key, head, meta, contents, editable, protected, to_fix, outcomes,
+         story, story_key, test_cases, ctx, llm, a2) -> list:
+    """Generate, check and push the fixes. Returns the pushed paths; raises
+    _Refused when the checks refuse the batch (nothing pushed)."""
+    from core.schemas import GeneratedFile
+    pushed: list = []
     if to_fix:
         statuses = {**editable, **{p: "modified" for p in protected}}
         plan = _plan_for(head, meta.get("title") or "", contents, statuses, story_key, test_cases)
@@ -490,31 +545,14 @@ def run(pr_number: int, review_id: int | None = None, comment_id: int | None = N
                     if len(errors) > 10:
                         problem += f"\n- ... and {len(errors) - 10} more"
                 logger.error("Review fix for PR #%s refused: %s", pr_number, e)
-            else:
-                for f in batch:
-                    if f.content != contents.get(f.file_path):
-                        host.create_or_update_file(
-                            f.file_path, f.content,
-                            f"fix(review): {f.file_path} - {key} on PR #{pr_number}", head)
-                        pushed.append(f.file_path)
-
-    for o in outcomes:
-        _reply(host, pr_number, o, bool(pushed))
-    host.post_pr_comment(pr_number, summary_comment(key, outcomes, pushed, problem))
-
-    usage = log_usage_summary(f"PR #{pr_number} review fix")
-    reset_usage()
-    if not dry_run:
-        from core.usage_ledger import post_usage_to_story
-        post_usage_to_story(story_key, AGENT_NAME, usage, jira=tracker)
-
-    status = "fixed" if pushed else ("refused" if problem else "nothing_to_fix")
-    out = {**result, "status": status, "story": story_key, "pushed": pushed,
-           "outcomes": [(o.item.n, o.action) for o in outcomes]}
-    for recorder in recorders:
-        for line in recorder.describe():
-            print(line)
-    return out
+                raise _Refused(problem) from e
+            for f in batch:
+                if f.content != contents.get(f.file_path):
+                    host.create_or_update_file(
+                        f.file_path, f.content,
+                        f"fix(review): {f.file_path} - {key} on PR #{pr_number}", head)
+                    pushed.append(f.file_path)
+    return pushed
 
 
 def main(argv=None) -> int:
