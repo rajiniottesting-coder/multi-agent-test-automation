@@ -8,13 +8,13 @@ This document records substantive changes to the framework in reverse-chronologi
 
 **Why:** the inventory comes from the live crawl and Agent 2 may use inventory keys only, so a test for an element not deployed yet could not be written (L19); a new page was never crawled and nothing said it existed (L25); and the first nightly inventory-update PR (#228) proposed a footer field - already one page's key - again on four other pages (G14).
 
-- **Shared (G14):** the crawl marks other pages' live keys on each page with their owner (`SHARED_ATTR`, `collect_uncovered(shared=)`); `uncovered_entry()` returns them as `shared`; the update lists them (*Not added - already covered on another page*) and never adds them
+- **Shared (G14):** the crawl marks other pages' live keys on each page with their owner (`SHARED_ATTR`, `collect_uncovered(shared=)`); `uncovered_entry()` returns them as `shared`; the update lists them (*Not added - already covered on another page*) and never adds them. A new element on every measured page (`inventory_update.layout_min_pages`, 3) is listed once (*Not added - new on every page: a shared section*), not added per page - found by a real-browser run of this change
 - **Planned (F-12, L19):** page list `planned`, page flag `planned_page`; `core/inventory_planned.py` + `scripts/plan_inventory.py` add them with the shared refusal rules; `diff_page(declared_planned=)` → `planned_live` / `planned_waiting`, never `missing`; the update never treats a planned key as stale, confirms a live one (not on a held page), skips a planned page until one of its planned keys is live, then adds its live elements (L25); `verify_locators` `PLAN` / `LIVE` / `PLANNED PAGE`; `promote_draft` prunes `planned`; `onboarding` warns on unconfirmable entries; Agent 2's PR lists *Uses planned elements - not deployed yet* (`uses_planned` in the result)
 - **Unlisted pages (L25):** `introspect.unlisted_paths()` - same-origin links matching no inventory url or `{template}` - listed in the PR body
 - Tests: two fakes of `collect_uncovered` take the new `shared` keyword
 - Docs: README, GUIDE (the update's table, planned entries, the inventory fields), TECHNICAL_DEEP_DIVE (layout, inventory update), `inventory_tools/inventory_readme.md`, REUSE_FOR_NEW_PROJECT, DECISIONS ADR-021, VALIDATION_AND_KNOWN_GAPS (L19, L25, G14 closed; F-12 done; L32-L34; E25 for UC-7)
 
-Pinned by `tests/unit/test_inventory_planned_shared.py`.
+Pinned by `tests/unit/test_inventory_planned_shared.py` (40); 35 deliberate breaks, 34 failed a test (the survivor is equivalent: a same-page filter the next condition also enforces). Validated end to end with a real Chromium against a local site in three phases - before deployment, a placeholder at the planned url, after deployment - running the real crawl, update, `verify_locators` and `plan_inventory`: 37 of 37 checks passed. The browser part is kept as an opt-in test: `INVENTORY_E2E=1 pytest tests/integration/test_inventory_update_local_site.py` (not in CI: it needs a browser).
 
 ---
 
