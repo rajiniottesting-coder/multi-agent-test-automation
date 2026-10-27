@@ -86,7 +86,7 @@ For more diagrams — component view, Agent 2 sequence, and the labels-as-state-
 
 | # | Agent | Implementation | Trigger | Model calls |
 |:-:|---|---|---|---|
-| 0 | Impact Analyst | `agents/agent0_impact.py` + `core/impact_*.py` | `impact-check` scan (weekdays 10:45 IST), PRs touching `pages/` or `app_inventory/`, nightly drift (or on demand, `mode` = `drift`) | 2 to analyse (more only past 300 candidates); up to 2 for the context update; 0 on code-change and drift runs |
+| 0 | Impact Analyst | `agents/agent0_impact.py` + `core/impact_*.py` | `impact-check` scan (weekdays 10:45 IST), PRs touching `pages/` or `app_inventory/`, nightly drift (or on demand, `mode` = `drift`) | 2 to analyse (more only past 300 candidates); up to 2 for the context update; 1 for a merged story's notes addition; 0 on code-change and drift runs |
 | 1 | Test Designer | `agents/agent1_analyst.py`, `agents/agent1_impact.py` | cron, every 30 min, weekdays 10:00–19:00 IST | 1 (+1 if a rule fails) |
 | 2 | Coder | `agents/agent2_coder.py`, `agents/agent2_impact.py` | cron, same window | 1 plan + 1 per file (+ repairs); a change story adds 1 per revised scenario and up to 1 per owner step file |
 | 3 | Reviewer | `agents/agent3_reviewer.py` | PR opened / synchronize / reopened | 1 |
@@ -485,7 +485,9 @@ different: it means a person read the code and accepted it, which no agent can
 know. `.github/workflows/story_done_on_merge.yml` fires on `pull_request:
 closed` and is gated on `merged == true` - a PR closed without merging moves
 nothing - then runs `scripts/close_merged_story.py`, which moves the story to
-Done. A card in Done therefore always means a human merged the work.
+Done. A card in Done therefore always means a human merged the work. Its next
+step proposes the story's **notes addition** (see "Notes addition when a story
+merges" under Change stories); it never undoes the move to Done.
 
 ### The board follows the work
 
@@ -576,6 +578,33 @@ deployed**; the nightly inventory check then confirms the selectors. No PR is
 opened when nothing is stale. A story can therefore have two PRs: its own code
 PR (every approved impact, of any kind) and the context-update PR (reference
 material only).
+
+### Notes addition when a story merges (`core/context_update.py`)
+
+The hand-over update above only replaces wording and rewrites passages a change
+makes untrue - it never **adds**. So when any story's pull request merges (its
+feature is live and its tests passed), the Story Done on merge workflow runs
+`scripts/propose_context_addition.py` after moving the card:
+
+- One model call (`prompts/agent0_context_additions.md`, `NoteAdditions`) reads
+  the story, its approved test cases, its merged scenarios (found by their
+  `# JIRA:` markers) and the notes its Components select (the same rule as
+  Agent 1), and proposes the facts a future story on that feature needs:
+  rules, limits, messages, flow, test data.
+- Each addition goes under an existing heading of a selected module, as a new
+  section at its end, or into a **new module** for a Component that has none
+  yet - never anywhere else, never into the inventory.
+- **Every line the notes already state is dropped** (same words, or contained
+  in an existing line - a deterministic check), and an addition longer than
+  `max_addition_chars` is refused; the PR lists both.
+- A pull request on `context-update/<key>-notes` (no issue key, so merging it
+  moves nothing) and an `[agent0:context-addition]` marker on the story; "No
+  notes addition needed" when nothing is new. Once per story text.
+- Off with Agent 0 or `context_update.additions`; printed in shadow mode. Its
+  cost goes to the story as `Agent 0 (Impact Analyst)`.
+
+Review each line against the story before merging: a fact the model inferred
+rather than read is the one thing this cannot check.
 
 ### Inventory update — the nightly pull request (`core/inventory_update.py`)
 
@@ -1111,7 +1140,8 @@ agents:
       closed_scans: 2           # scans that must see a close before the undo
       no_pr_days: 14
       reset_labels: [ai-processed, human-approved, ai-coded, tests-run]
-    context_update: { enabled: ..., branch_prefix: "context-update/" }
+    context_update: { enabled: ..., branch_prefix: "context-update/",
+                      additions: true, max_addition_chars: 1500 }
     inventory_update: { enabled: true, branch_prefix: "inventory-update/",
                         max_additions_per_page: 20, hold_ratio: 0.5, code_dirs: [pages, tests] }
 
@@ -1302,7 +1332,7 @@ Selection rules come from `config.yaml`'s `agents.<name>.selection` block.
 | Agents 3, 4 + 5 | on PR opened / synchronize / reopened | Run workflow |
 | Inventory Health | daily 08:00 (02:30 UTC) | Run workflow |
 | Sweeper | weekdays hourly, 10:05–19:05 | `dry_run` input |
-| Story Done on merge | on PR closed with `merged == true` | — |
+| Story Done on merge | on PR closed with `merged == true`: Done, then the notes addition | — |
 
 Agent 2 opens its PR with a PAT so the PR events reach Agents 3–5 (see
 [DECISIONS.md → ADR-008](./DECISIONS.md)); the built-in token would not trigger
@@ -1699,6 +1729,17 @@ Same as above — Agent 2's filename validator catches most of these. If one sli
 
 Expected when the PR changes only `prompts/`, `docs/` or Markdown: no browser run, so no report. Otherwise the most common cause: PR branch doesn't contain a Jira key. Agent 5 extracts the story key from the branch name (e.g., `auto/SCRUM-5-foo` → `SCRUM-5`). Branches without a key cause Agent 5 to skip cleanly with a warning log. Manual fix: pass `--story KEY` explicitly, or rename the branch.
 
+### A merged story got no notes-addition pull request
+
+It runs only for a branch carrying a story key, with Agent 0 enabled (and not
+in shadow mode, which prints it) and `context_update.additions` on, and only
+once per story text (`[agent0:context-addition]` marker, or an existing
+`context-update/<key>-notes` branch). "No notes addition needed" means every
+proposed line was already in the notes, or the model proposed nothing; the
+comment lists anything refused (a file the story's Components do not select,
+an addition over `max_addition_chars`). Re-run it with Run workflow on Story
+Done on merge and the branch.
+
 ### The nightly inventory-update pull request did not appear, or left something out
 
 It is opened only when something can be applied (a replaced selector, an
@@ -1901,7 +1942,7 @@ flowchart LR
     end
 
     subgraph PROMPTS["📝 Prompts Layer<br/>(templated)"]
-        P0["agent0_seeds.md · agent0_adjudicate.md<br/>agent0_wording.md · agent0_context_notes.md"]
+        P0["agent0_seeds.md · agent0_adjudicate.md<br/>agent0_wording.md · agent0_context_notes.md<br/>agent0_context_additions.md"]
         P1["agent1_analyst.md · agent1_impact_aware.md"]
         P2P["agent2_coder_plan.md"]
         P2G["agent2_coder_generate.md"]
@@ -2224,6 +2265,7 @@ any run can find it again. All are plain Jira comments.
 | `[agent0:delta]` | story | Agent 0 | A re-analysis after the story changed: what moved |
 | `[agent0:no-component]` | story | Agent 0 | Posted once: no Component, so the whole suite was considered |
 | `[agent0:context-update]` | story | Agent 0 | The context-update PR link, or "No context update needed"; carries the story-text hash |
+| `[agent0:context-addition]` | story | Done on merge (Agent 0's context update) | The notes-addition PR link, or "No notes addition needed"; carries the story-text hash, so an edited story is checked again |
 | `[agent0:trace]` `will-revise` / `result` / `merged` / `restored` | owning story | Agent 0 hand-over, Agent 5, reconcile | What a change story did to this story's tests |
 | `[agent0:snapshot]` | test case | Agent 1 impact-aware | The text before revision: the undo source |
 | `[agent0:reconcile]` `closed-unmerged` / `reverted` / `no-pr` / `ask-a-person` | story | reconcile | Reconcile's memory between scans |

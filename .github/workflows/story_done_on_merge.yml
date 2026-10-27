@@ -59,3 +59,24 @@ jobs:
           python -m scripts.close_merged_story \
             --branch "${{ github.event.pull_request.head.ref || inputs.branch }}" \
             --merged "${{ github.event_name == 'workflow_dispatch' && 'true' || github.event.pull_request.merged }}"
+
+      # The merged story's feature is live and tested: propose what it adds to
+      # the app notes (rules, limits, messages, flow, test data) as a reviewed
+      # PR (scripts/propose_context_addition.py, core/context_update.py). No
+      # story key -> nothing; Agent 0 off -> nothing; shadow mode -> printed.
+      # Runs after Done and never undoes it.
+      - name: Propose the notes the story adds
+        env:
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'claude-opus-4-6' }}
+          LLM_PRICE_INPUT_PER_1M: ${{ vars.LLM_PRICE_INPUT_PER_1M }}
+          LLM_PRICE_OUTPUT_PER_1M: ${{ vars.LLM_PRICE_OUTPUT_PER_1M }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_REPO: ${{ vars.GH_REPO }}
+          BRANCH: ${{ github.event.pull_request.head.ref || inputs.branch }}
+        run: python -m scripts.propose_context_addition --branch "$BRANCH"

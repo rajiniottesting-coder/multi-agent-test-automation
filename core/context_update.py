@@ -55,6 +55,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 MARKER = "[agent0:context-update]"
+ADD_MARKER = "[agent0:context-addition]"
 _STORY_HASH = re.compile(r"\(story: ([0-9a-f]+)\)")
 _UNDONE = "[agent0:reconcile] reverted"
 _CODE_GLOBS = ("features/**/*.feature", "tests/step_defs/**/*.py", "pages/**/*.py")
@@ -358,26 +359,30 @@ def render_body(story_key: str, prop: Proposal) -> str:
     return "\n".join(lines)
 
 
-def open_pull_request(host, story_key: str, prop: Proposal, prefix: str) -> Optional[str]:
-    """Branch, commit each edited file, open the PR. Returns its URL, or None
-    when the branch already exists (proposed before)."""
-    branch = branch_for(story_key, prefix)
+def _open_branch_pr(host, branch: str, edits: dict, message: str, title: str,
+                    body: str) -> Optional[str]:
+    """Branch from main, commit each edited file, open the PR. Returns its URL,
+    or None when the branch already exists (proposed before)."""
     if host.branch_exists(branch):
-        logger.info("context update for %s: branch %s exists - not proposed again",
-                    story_key, branch)
+        logger.info("context update: branch %s exists - not proposed again", branch)
         return None
     host.create_branch(branch, "main")
     try:
-        for relpath, text in sorted(prop.edits.items()):
-            host.create_or_update_file(relpath, text,
-                                       f"chore(context): wording from {story_key} in {relpath}",
-                                       branch)
-        return host.open_pull_request(
-            f"chore(context): reference wording from {story_key} - merge after deploy",
-            render_body(story_key, prop), branch, "main")
+        for relpath, text in sorted(edits.items()):
+            host.create_or_update_file(relpath, text, f"{message} in {relpath}", branch)
+        return host.open_pull_request(title, body, branch, "main")
     except Exception:
         host.delete_branch(branch)            # never leave a half-written branch
         raise
+
+
+def open_pull_request(host, story_key: str, prop: Proposal, prefix: str) -> Optional[str]:
+    """The change story's context-update PR (wording and untrue passages)."""
+    return _open_branch_pr(
+        host, branch_for(story_key, prefix), prop.edits,
+        f"chore(context): wording from {story_key}",
+        f"chore(context): reference wording from {story_key} - merge after deploy",
+        render_body(story_key, prop))
 
 
 # ─────────────────────────────────────────────────────────────
@@ -524,3 +529,272 @@ def _already_proposed(comments: list, chash: str, pr_is_open=None) -> bool:
                 continue
             return True
     return False
+
+
+# ─────────────────────────────────────────────────────────────
+# Additions when a story's pull request merges (F-8)
+# ─────────────────────────────────────────────────────────────
+#
+# The hand-over update above can only REPLACE wording and REWRITE passages the
+# story makes untrue; it never adds. A new feature - or a change story that
+# adds a rule - therefore never reached the notes, and the next story on that
+# feature was drafted from its own text alone. When a story's pull request
+# merges (its tests passed against the live application), one model call
+# proposes the facts the notes do not hold yet: rules, limits, messages, flow,
+# test data. They go into the story's Component modules - a new module for a
+# Component that has none - and every line already said, in any wording, is
+# dropped deterministically. A reviewed pull request, like every other.
+
+_WORD = re.compile(r"[a-z0-9]+")
+_BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
+_HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
+
+
+@dataclass
+class Additions:
+    edits: dict = field(default_factory=dict)       # relpath -> new full text
+    added: list = field(default_factory=list)       # {"path","heading","text","reason","new_file"}
+    dropped: list = field(default_factory=list)     # (path, snippet, why)
+    repeated: list = field(default_factory=list)    # (path, line) dropped as already said
+
+    @property
+    def empty(self) -> bool:
+        return not self.edits
+
+
+def _tokens(line: str) -> set:
+    return set(_WORD.findall(_BULLET.sub("", line).lower()))
+
+
+def _units(text: str) -> list:
+    """The content lines of a notes text (headings and blank lines excluded),
+    each split into sentences: what a new line is compared against."""
+    units = []
+    for line in (text or "").splitlines():
+        if not line.strip() or _HEADING.match(line):
+            continue
+        body = _BULLET.sub("", line).strip()
+        units += [u for u in re.split(r"(?<=[.!?])\s+", body) if u.strip()]
+    return units
+
+
+def near_duplicate(line: str, existing: list, threshold: float = 0.8) -> bool:
+    """True when `line` says what one existing unit already says: its words
+    are (almost) the same set, or it is contained in one. Deterministic, so a
+    reviewer sees exactly why a line was left out."""
+    words = _tokens(line)
+    if not words:
+        return True
+    flat = re.sub(r"\s+", " ", _BULLET.sub("", line).strip().lower())
+    for unit in existing:
+        other = _tokens(unit)
+        if not other:
+            continue
+        if flat and flat in re.sub(r"\s+", " ", unit.lower()):
+            return True
+        if len(words & other) / len(words | other) >= threshold:
+            return True
+    return False
+
+
+def _insert_under(text: str, heading: str, block: str) -> Optional[str]:
+    """`block` placed at the end of the section titled `heading` (any level),
+    before the next heading of the same or a higher level. None when no such
+    heading exists."""
+    lines = text.splitlines()
+    want = heading.strip().lstrip("#").strip().lower()
+    for i, line in enumerate(lines):
+        m = _HEADING.match(line)
+        if m and m.group(2).strip().lower() == want:
+            level = len(m.group(1))
+            end = len(lines)
+            for j in range(i + 1, len(lines)):
+                n = _HEADING.match(lines[j])
+                if n and len(n.group(1)) <= level:
+                    end = j
+                    break
+            last = end
+            while last > i + 1 and not lines[last - 1].strip():
+                last -= 1
+            rest = lines[end:]
+            new = block.splitlines()
+            # A bullet list continues as one list; anything else is a paragraph.
+            joined = bool(_BULLET.match(lines[last - 1]) and new and _BULLET.match(new[0]))
+            out = lines[:last] + ([] if joined else [""]) + new + ([""] + rest if rest else [])
+            return "\n".join(out).rstrip("\n") + "\n"
+    return None
+
+
+def _append_section(text: str, block: str) -> str:
+    return (text.rstrip("\n") + "\n\n" if text.strip() else "") + block.strip() + "\n"
+
+
+def new_module_paths(components, root: Path) -> dict:
+    """{relpath: Component} for each story Component with no module yet - the
+    only new files an addition may create (and only in the module layout)."""
+    from core.app_context import _norm_component
+    folder = Path(root) / "prompts" / "app_context"
+    if not folder.is_dir():
+        return {}
+    have = {_norm_component(p.stem) for p in folder.glob("*.md")}
+    out = {}
+    for c in components or []:
+        key = _norm_component(c or "")
+        if key and key not in have:
+            out[f"prompts/app_context/{key}.md"] = c.strip()
+    return out
+
+
+def propose_additions(sources: dict, additions, offered: set, new_modules: dict,
+                      max_chars: int = 1500) -> Additions:
+    """Place each addition (pure). Refused, and reported: a file the story's
+    Components do not select (or the inventory - not a notes module), an
+    empty or over-long addition, and every line the notes already state."""
+    res = Additions()
+    current = {p: t for p, t in sources.items() if not p.endswith(".json")}
+    for add in additions or []:
+        path = (getattr(add, "path", "") or "").strip()
+        text = (getattr(add, "text", "") or "").strip()
+        heading = (getattr(add, "heading", "") or "").strip().lstrip("#").strip()
+        reason = (getattr(add, "reason", "") or "").strip()
+        snippet = text[:60]
+        if not text:
+            res.dropped.append((path, snippet, "empty addition"))
+            continue
+        if path.endswith(".json") or not (path in offered or path in new_modules):
+            res.dropped.append((path, snippet, "not a notes module the story's Components select"))
+            continue
+        if len(text) > max_chars:
+            res.dropped.append((path, snippet, f"longer than {max_chars} characters"))
+            continue
+        existing = [u for t in current.values() for u in _units(t)]
+        kept = []
+        for line in text.splitlines():
+            if not line.strip() or _HEADING.match(line):
+                kept.append(line)
+            elif near_duplicate(line, existing):
+                res.repeated.append((path, line.strip()))
+            else:
+                kept.append(line)
+        if not any(l.strip() and not _HEADING.match(l) for l in kept):
+            res.dropped.append((path, snippet, "the notes already state it"))
+            continue
+        block = "\n".join(kept).strip()
+        new_file = path not in current
+        if new_file:
+            current[path] = f"# {new_modules[path]}\n\n{block}\n"
+        elif heading:
+            placed = _insert_under(current[path], heading, block)
+            current[path] = placed if placed is not None else _append_section(
+                current[path], f"## {heading}\n\n{block}")
+        else:
+            current[path] = _append_section(current[path], block)
+        res.added.append({"path": path, "heading": heading, "text": block, "reason": reason,
+                          "new_file": new_file})
+    res.edits = {p: t for p, t in current.items() if t != sources.get(p)}
+    return res
+
+
+def story_scenarios(root: Path, keys) -> str:
+    """The merged scenarios of these test cases (by their `# JIRA:` markers),
+    as written in the feature files on the checked-out branch."""
+    from agents.agent2_coder import parse_feature_file
+    keys = {k.upper() for k in keys or []}
+    parts = []
+    for path in sorted(Path(root).glob("features/**/*.feature")):
+        try:
+            _header, blocks = parse_feature_file(path.read_text(encoding="utf-8"))
+        except Exception:                                          # noqa: BLE001
+            continue
+        for b in blocks:
+            if getattr(b, "kind", "") == "scenario" and (b.jira_key or "").upper() in keys:
+                parts.append(f"## {path.relative_to(root).as_posix()}\n{b.text().strip()}")
+    return "\n\n".join(parts)
+
+
+def extract_note_additions(llm, story: dict, story_key: str, test_cases: list, scenarios: str,
+                           sources: dict, pages, new_modules: dict) -> list:
+    """One model call: the facts the merged story adds to the notes."""
+    from config.paths import PROMPTS_DIR
+    from core.schemas import NoteAdditions
+    notes = {p: t for p, t in sources.items() if not p.endswith(".json")}
+    text = f"Title: {story['summary']}\n\nDescription:\n{story.get('description') or ''}"
+    cases = "\n\n".join(f"### {tc.get('key')}: {tc.get('summary', '')}\n{tc.get('description') or ''}"
+                         for tc in test_cases or []) or "(none)"
+    new = "\n".join(f"- {p} (Component: {c})" for p, c in new_modules.items()) or "(none)"
+    prompt = ((PROMPTS_DIR / "agent0_context_additions.md").read_text(encoding="utf-8")
+              .replace("{story_key}", story_key).replace("{story_text}", text)
+              .replace("{test_cases}", cases).replace("{scenarios}", scenarios or "(none)")
+              .replace("{new_modules}", new).replace("{notes_block}", _notes_block(notes, pages)))
+    result = llm.invoke_structured(system_prompt="You are a senior QA analyst.",
+                                   user_prompt=prompt, output_schema=NoteAdditions)
+    return list(getattr(result, "additions", None) or [])
+
+
+def render_addition_body(story_key: str, res: Additions, notes_report: str = "") -> str:
+    lines = [f"Notes addition proposed by Agent 0 for **{story_key}**, whose pull request "
+             "merged: its feature is live and its tests passed.", "",
+             "Each addition is a fact a future story on this feature needs and the notes did "
+             "not state. **Check every line against the story and its test cases**, edit or "
+             "drop any you do not want, then merge.", ""]
+    for a in res.added:
+        where = "a new module" if a["new_file"] else (
+            f"under `{a['heading']}`" if a["heading"] else "a new section at the end")
+        lines += [f"### `{a['path']}` - {where}", "", a["text"], "",
+                  f"_From: {_cell(a['reason'], 300)}_", ""]
+    if res.repeated:
+        lines += ["Left out - the notes already state it:"]
+        lines += [f"- `{p}`: {_cell(l, 140)}" for p, l in res.repeated[:40]]
+        lines += [""]
+    if res.dropped:
+        lines += ["Not applied:"]
+        lines += [f"- `{p or '(no path)'}`: {_cell(s, 60)} - {why}" for p, s, why in res.dropped]
+        lines += [""]
+    if notes_report:
+        lines += [notes_report, ""]
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def addition_branch(story_key: str, prefix: str) -> str:
+    return branch_for(f"{story_key}-notes", prefix)
+
+
+def propose_addition_for_story(tracker, host, llm, story_key: str, settings: dict, root: Path,
+                               dry_run: bool = False) -> dict:
+    """Propose the notes addition for a story whose pull request merged, once."""
+    cfg = settings.get("context_update") or {}
+    if not cfg.get("enabled", False) or not cfg.get("additions", True):
+        return {"story": story_key, "addition": "disabled"}
+    branch = addition_branch(story_key, cfg.get("branch_prefix", "context-update/"))
+    story = tracker.get_story(story_key)
+    chash = _story_hash(story)
+    if any(f"{ADD_MARKER}" in (c or "") and f"(story: {chash})" in (c or "")
+           for c in tracker.get_comments(story_key)) or host.branch_exists(branch):
+        return {"story": story_key, "addition": "already-proposed"}
+    sources = context_sources(root)
+    components = story.get("components") or []
+    offered, pages = scoped_sources(sources, components, root)
+    new_modules = new_module_paths(components, root)
+    cases = list(tracker.get_linked_test_cases(story_key) or [])
+    scenarios = story_scenarios(root, [tc.get("key", "") for tc in cases])
+    additions = extract_note_additions(llm, story, story_key, cases, scenarios, offered,
+                                       pages, new_modules)
+    res = propose_additions(sources, additions, set(offered), new_modules,
+                            int(cfg.get("max_addition_chars", 1500)))
+    body = render_addition_body(story_key, res)
+    if dry_run:
+        return {"story": story_key, "addition": "dry-run", "body": body,
+                "files": sorted(res.edits)}
+    if res.empty:
+        tracker.add_comment(story_key, f"{ADD_MARKER} No notes addition needed: the notes "
+                            "already hold what this story's feature adds."
+                            + "".join(f"\nNot applied: {p} - {why}" for p, _s, why in res.dropped)
+                            + f"\n(story: {chash})")
+        return {"story": story_key, "addition": "none"}
+    url = _open_branch_pr(host, branch, res.edits, f"docs(context): notes from {story_key}",
+                          f"docs(context): notes for {story_key}'s feature", body)
+    if url:
+        tracker.add_comment(story_key, f"{ADD_MARKER} Notes addition proposed: {url} - "
+                            f"{len(res.added)} addition(s) to the app notes. Review and merge."
+                            f"\n(story: {chash})")
+    return {"story": story_key, "addition": "proposed" if url else "branch-exists", "url": url}

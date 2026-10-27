@@ -125,6 +125,26 @@ class NoteRewrites(BaseModel):
         description="Each passage the story makes untrue. Empty when it makes none untrue")
 
 
+class NoteAddition(BaseModel):
+    path: str = Field(..., description="The notes file to add to, exactly as given in a `## FILE` "
+                                       "heading - or a new module named in the allowed list")
+    heading: str = Field("", description="An existing heading in that file, copied exactly "
+                                         "(without the leading #), to add the text under; empty to "
+                                         "add it at the end as its own section")
+    text: str = Field(..., description="The new facts, in the file's own style: short bullets or "
+                                       "sentences. A new section starts with its own '## ' heading")
+    reason: str = Field(..., description="The story, test case or scenario statement each fact "
+                                         "comes from")
+
+
+class NoteAdditions(BaseModel):
+    """Agent 0, context update at merge: facts a merged story adds to the notes."""
+    additions: list[NoteAddition] = Field(
+        default_factory=list,
+        description="Each fact the notes do not state yet. Empty when the notes already "
+                    "cover the story")
+
+
 class CandidateAssessment(BaseModel):
     candidate_id: str = Field(..., description="The candidate id exactly as given, e.g. 'C3'")
     tier: Literal["must-update", "review", "unaffected"] = Field(...)
