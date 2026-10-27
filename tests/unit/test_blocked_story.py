@@ -140,12 +140,28 @@ def test_the_scan_summary_shows_a_blocked_story():
     assert any(line.startswith("[BLOCK] PROJ-5") for line in lines)
 
 
-def test_only_the_normal_scan_pass_skips():
-    """Regenerate and update are explicit requests; a manual run is a retry."""
-    import inspect
+def test_only_the_normal_scan_pass_skips(monkeypatch):
+    """Regenerate and update are explicit requests; a manual run is a retry.
+    Checked by running the scan, not by reading its source."""
+    import sys
+    from unittest.mock import MagicMock
 
     import agents.agent2_coder as a2
-    src = inspect.getsource(a2.main)
-    assert src.count("skip_if_blocked=True") == 1
-    normal = src.split("for story in normal_stories:")[1].split("for story in regen_stories:")[0]
-    assert "skip_if_blocked=True" in normal
+    tracker = MagicMock()
+    tracker.find_stories_to_process.side_effect = [
+        [{"key": "PROJ-1"}], [{"key": "PROJ-2"}], [{"key": "PROJ-3"}]]
+    calls = []
+    monkeypatch.setattr(a2, "get_tracker", lambda: tracker)
+    monkeypatch.setattr(a2, "validate_required_env", lambda *a: None)
+    monkeypatch.setattr(a2, "load_agent_config", lambda: {
+        "selection": {"x": 1}, "regenerate_selection": {"x": 1}, "update_selection": {"x": 1},
+        "max_stories_per_run": 5})
+    monkeypatch.setattr(a2, "run", lambda key, **kw: calls.append(
+        (key, kw.get("skip_if_blocked", False), kw.get("is_regenerate"))) or
+        {"story_id": key, "status": "pr_opened"})
+    monkeypatch.setattr(a2, "run_update", lambda key, **kw: calls.append((key, "update", None)) or
+                        {"story_id": key, "status": "update_pr_opened"})
+    monkeypatch.setattr(a2, "_print_scan_summary", lambda r: None)
+    monkeypatch.setattr(sys, "argv", ["agent2", "--scan"])
+    a2.main()
+    assert calls == [("PROJ-1", True, False), ("PROJ-2", False, True), ("PROJ-3", "update", None)]

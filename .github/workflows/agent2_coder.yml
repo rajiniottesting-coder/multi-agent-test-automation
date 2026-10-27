@@ -91,7 +91,11 @@ jobs:
   generate:
     name: Generate Test Code
     runs-on: ubuntu-latest
-    timeout-minutes: 10  # cap: 5 stories × ~90s/story + setup overhead
+    # F-4: setup (~1.5 min) + the scan deadline (agents.agent2_coder.
+    # scan_deadline_minutes, 12) + one story started just before it (slowest
+    # measured ~8 min) + margin. Under the 30-minute cron interval, so scans
+    # never queue behind each other. A kill mid-story would waste its spend.
+    timeout-minutes: 25
 
     steps:
       - name: Checkout repository
