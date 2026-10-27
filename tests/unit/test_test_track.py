@@ -63,6 +63,13 @@ def test_every_pr_changes_cites_is_in_the_coverage_list():
     assert not missing, f"PRs in CHANGES.md missing from TEST_TRACK's coverage list: {missing}"
 
 
+def test_every_check_row_is_read():
+    """A `|` inside a cell would split it and hide that row from these checks."""
+    starts = [l for l in TRACK.split("## Every merged change")[0].splitlines()
+              if re.match(r"\| [A-Z][A-Za-z0-9-]* \| ", l) and not l.startswith(("| ID", "| Session", "| Planned"))]
+    assert len(starts) == len(_rows()), "a check row does not have exactly 6 cells"
+
+
 def test_row_ids_are_unique_and_statuses_known():
     rows = _rows()
     assert len(rows) > 100
