@@ -65,6 +65,22 @@ _SIGNATURES: list[tuple[re.Pattern, Diagnosis]] = [
         ),
     ),
     (
+        # A page load the application refused with a temporary error on every
+        # attempt (BasePage.navigate retries 5xx/429 first). The sentence after
+        # the status appears only in the raised error, never in the retry log
+        # lines, so a captured log cannot make a different failure match this.
+        re.compile(r"Navigation to \S+ returned HTTP (?:5\d\d|429)\b[^\n]*?"
+                   r"The page did not load", re.I),
+        Diagnosis(
+            "application temporarily unavailable",
+            "The application answered a page load with a temporary server error "
+            "(HTTP 5xx or 429) on every attempt. Nothing in the test ran against "
+            "the page, so this says nothing about the test or the behaviour.",
+            "Nothing to change in the test. Check that the application is up, "
+            "then re-run the workflow.",
+        ),
+    ),
+    (
         re.compile(r"strict mode violation.*resolved to (\d+) elements", re.I),
         Diagnosis(
             "multi-match selector",
@@ -582,6 +598,36 @@ def diagnose(error_text: str) -> Diagnosis:
         if pattern.search(text):
             return diagnosis
     return _UNKNOWN
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# Outage: the application was unavailable, not the test or the behaviour (F-7)
+#
+# Agent 4 re-runs such a failure (5xx/429) and BasePage retries page loads; a
+# failure that outlasts those retries is reported apart from test failures -
+# in the run summary and Agent 5's report - and is never evidence for Agent 3
+# nor a defect (F-22). Matched on the FAILURE TEXT only, never on a captured
+# log: a log may hold a retried page load that later succeeded, or a refused
+# third-party request, beside a real failure that must stay a failure.
+# ═════════════════════════════════════════════════════════════════════════
+
+_OUTAGE = [
+    # pages/base_page.py with_server_errors: an action request the server
+    # refused with 5xx/429 and never answered successfully afterwards.
+    re.compile(r"answered these requests with a temporary server error", re.I),
+    # BasePage.navigate: every attempt at a page load refused with 5xx/429.
+    re.compile(r"Navigation to \S+ returned HTTP (?:5\d\d|429)\b[^\n]*?The page did not load",
+               re.I),
+    # The browser could not reach the application at all on a page load.
+    re.compile(r"\bgoto: net::ERR_(?:CONNECTION_\w+|NAME_NOT_RESOLVED|ADDRESS_UNREACHABLE|"
+               r"INTERNET_DISCONNECTED|TIMED_OUT)\b"),
+]
+
+
+def is_outage(failure_text: str) -> bool:
+    """True when the failure says the application was unavailable."""
+    text = failure_text or ""
+    return any(p.search(text) for p in _OUTAGE)
 
 
 def format_failure(test_name: str, error_text: str,

@@ -467,10 +467,12 @@ def scenario_key(title: str) -> str:
 def parse_junit_scenarios(xml_bytes: bytes | None) -> dict | None:
     """{scenario key: [outcome, ...]} from a junit report, None when unreadable.
 
-    Outcome is 'passed', 'failed', 'error' or 'skipped'. A list, because two
-    features may hold a scenario of the same title, and an outline runs once
-    per example: a prediction is refuted only when EVERY run of its scenario
-    passed.
+    Outcome is 'passed', 'failed', 'error', 'skipped' or 'outage'. A list,
+    because two features may hold a scenario of the same title, and an outline
+    runs once per example: a prediction is refuted only when EVERY run of its
+    scenario passed. 'outage' (Agent 4's mark, core/junit_marks.py, F-7): the
+    application was unavailable, so that run is evidence neither way - it
+    never refutes a prediction and never confirms one.
     """
     if not xml_bytes:
         return None
@@ -480,11 +482,10 @@ def parse_junit_scenarios(xml_bytes: bytes | None) -> dict | None:
     except ET.ParseError as e:
         logger.warning("Runner report unreadable (%s); judging the whole run.", e)
         return None
+    from core import junit_marks
     out: dict = {}
     for case in root.iter("testcase"):
-        tags = {child.tag for child in case}
-        outcome = ("failed" if "failure" in tags else "error" if "error" in tags
-                   else "skipped" if "skipped" in tags else "passed")
+        outcome = "outage" if junit_marks.is_outage(case) else junit_marks.outcome(case)
         out.setdefault(scenario_key(case.get("name", "")), []).append(outcome)
     return out
 
