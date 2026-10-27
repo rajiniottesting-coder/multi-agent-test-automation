@@ -1,0 +1,81 @@
+# ─────────────────────────────────────────────────────────────
+# Pipeline health check (F-23)
+#
+# A scheduled agent that kept failing, or an expired credential, used to show
+# up only as red runs in the Actions tab - nobody was told, and the pipeline
+# could stop quietly. This check reports them on ONE tracker issue that people
+# watch (core/pipeline_health.py): a comment when a problem starts, one when it
+# ends, nothing while it persists.
+#
+# Checks: the tracker's credentials (if refused, THIS run fails - GitHub then
+# notifies the workflow's owner, since no alert can be posted); every
+# scheduled workflow failing `pipeline_health.consecutive_failures` scheduled
+# runs in a row (read from .github/workflows, so new ones are watched too);
+# the repo host token and its expiry; the model endpoint.
+#
+# Three times a day, outside the night run: 08:50, 12:50, 16:50 IST.
+# ─────────────────────────────────────────────────────────────
+
+name: Pipeline health
+
+on:
+  schedule:
+    - cron: "20 3,7,11 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print the findings only; write nothing"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: pipeline-health
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check the pipeline's health
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run the health check
+        env:
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          # The token the agents use, so its refusal or expiry is what is checked.
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_REPO: ${{ vars.GH_REPO || github.repository }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
+          # The cheapest model the agents use: a one-token request.
+          LLM_MODEL: ${{ vars.LLM_MODEL_LIGHT || vars.LLM_MODEL || 'claude-opus-4-6' }}
+          LLM_PRICE_INPUT_PER_1M: ${{ vars.LLM_PRICE_INPUT_PER_1M }}
+          LLM_PRICE_OUTPUT_PER_1M: ${{ vars.LLM_PRICE_OUTPUT_PER_1M }}
+        run: |
+          DRY_RUN_FLAG=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
+          python -m scripts.pipeline_health_check $DRY_RUN_FLAG

@@ -106,6 +106,23 @@ tracker:
   # Every test case query skips it, so no later update brings it back.
   retired_label: "ai-retired"
 
+# ────────────────────────────────────────────────────────────
+# Pipeline health (F-23): ONE tracker issue people watch. An alert opens with a
+# comment and closes with one; nothing is posted while it persists. The issue
+# is found by its label and created the first time something needs it.
+# scripts/pipeline_health_check.py runs the checks (pipeline_health.yml).
+# Defaults: core/ops_settings.py.
+# ────────────────────────────────────────────────────────────
+pipeline_health:
+  enabled: true
+  issue_type: "Task"
+  summary: "Pipeline health"
+  label: "pipeline-health"
+  consecutive_failures: 3        # failed scheduled runs in a row before an alert
+  expiry_warn_days: 14           # where the provider gives a credential's expiry
+  model_check: "completion"      # completion (1-token call) | models (list, free) | off
+  spend_keep_days: 35            # day-spend records kept this long
+
 app_under_test:
   name: "Automation Exercise"
   base_url: "https://automationexercise.com"

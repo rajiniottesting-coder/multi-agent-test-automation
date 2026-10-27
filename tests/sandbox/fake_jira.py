@@ -50,6 +50,8 @@ class FakeJira:
         self._n = itertools.count(1)
         self._link_n = itertools.count(1000)
         self.calls: list = []             # (method, args) audit trail
+        self.properties: dict = {}        # key -> {property key: value}
+        self.session = _FakeSession(self)
 
     # ── seeding ─────────────────────────────────────────────
     def add(self, issuetype: str, summary: str, *, key: Optional[str] = None,
@@ -141,6 +143,35 @@ class FakeJira:
         self.comments.setdefault(key, []).append(body)
         return SimpleNamespace(id=str(len(self.comments[key])))
 
+    # ── issue properties, as the jira library reaches them ──
+    def add_issue_property(self, issue, key, data):
+        self._issue(issue)
+        self.calls.append(("set_property", issue, key))
+        self.properties.setdefault(issue, {})[key] = data
+        return SimpleNamespace(status_code=200)
+
+    def issue_property(self, issue, key):
+        if key not in self.properties.get(issue, {}):
+            raise JIRAError(404, f"property {key} not found on {issue}")
+        return SimpleNamespace(key=key, value=self.properties[issue][key])
+
+    def _get_json(self, path):
+        m = re.fullmatch(r"issue/([^/]+)/properties", path)
+        if not m:
+            raise ValueError(f"FakeJira does not serve {path!r}")
+        self._issue(m.group(1))
+        return {"keys": [{"key": k} for k in self.properties.get(m.group(1), {})]}
+
+    def _get_url(self, path):
+        return "fake://" + path
+
+    @property
+    def _session(self):
+        return self.session
+
+    def myself(self):
+        return {"displayName": "Sandbox Bot", "accountId": "sandbox"}
+
     def transitions(self, issue):
         return [{"id": str(i), "to": {"name": s}} for i, s in enumerate(STATUSES)]
 
@@ -216,6 +247,22 @@ class FakeJira:
         if m := re.fullmatch(r'sprint\s*(=|in)\s*.+', c, re.I):
             return True
         raise ValueError(f"FakeJira does not understand JQL clause: {c!r}")
+
+
+class _FakeSession:
+    """The one raw request the adapter makes: deleting an issue property."""
+
+    def __init__(self, fake):
+        self.fake = fake
+
+    def delete(self, url):
+        m = re.fullmatch(r"fake://issue/([^/]+)/properties/(.+)", url)
+        if not m:
+            raise ValueError(f"FakeJira does not serve DELETE {url!r}")
+        self.fake.calls.append(("delete_property", m.group(1), m.group(2)))
+        if self.fake.properties.get(m.group(1), {}).pop(m.group(2), None) is None:
+            raise JIRAError(404, "no such property")
+        return SimpleNamespace(status_code=204)
 
 
 def jira_client_over(fake: FakeJira, monkeypatch, project_key: Optional[str] = None):

@@ -55,6 +55,11 @@ are contractual but the VALUES are not. scripts/sweep_stalled_prs.py compares
 them against GitHub Actions vocabulary (_SETTLED_CONCLUSIONS, _ACTIVE_STATUSES).
 A non-GitHub adapter must map its own statuses onto those strings, or the
 sweeper will treat every pipeline as unsettled and re-trigger it forever.
+
+OPTIONAL CAPABILITY: `check_access() -> {"ok", "who", "expires"}` proves the
+credentials work and, where the host says, when they expire (the pipeline
+health check). Without it the repo host's credentials are checked by the first
+real call that needs them.
 """
 from __future__ import annotations
 
@@ -172,7 +177,11 @@ class RepoHost(Protocol):
     # ── CI status ────────────────────────────────────────────
     def get_workflow_runs(self, workflow_file: str, branch: str,
                           limit: int = 20) -> list[dict]:
-        """Recent CI runs as [{"id","status","conclusion","head_sha"}, ...].
+        """Recent CI runs as [{"id","status","conclusion","head_sha"}, ...],
+        newest first. An adapter may add "event" (what started the run:
+        "schedule", "push", "pull_request", ...), "created_at" (ISO time) and
+        "url"; the pipeline health check needs "event" to find scheduled runs
+        and treats a run without it as not scheduled.
 
         "Workflow" is GitHub's word; a GitLab adapter maps this onto pipelines
         and an Azure adapter onto builds.

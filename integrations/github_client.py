@@ -157,17 +157,39 @@ class GitHubClient:
                           limit: int = 20) -> list[dict]:
         """Recent CI runs for a workflow on a branch, as plain dicts.
 
-        Returns [{"status", "conclusion", "head_sha"}, ...]. "Workflow" is
-        GitHub's word; a GitLab adapter would map this onto pipelines.
+        Returns [{"id", "status", "conclusion", "head_sha", "event",
+        "created_at", "url"}, ...], newest first. "Workflow" is GitHub's word;
+        a GitLab adapter would map this onto pipelines.
         """
         try:
             wf = self.repo.get_workflow(workflow_file)
             return [{"id": r.id, "status": r.status, "conclusion": r.conclusion,
-                     "head_sha": r.head_sha}
+                     "head_sha": r.head_sha, "event": getattr(r, "event", None),
+                     "created_at": (r.created_at.isoformat()
+                                    if getattr(r, "created_at", None) else None),
+                     "url": getattr(r, "html_url", None)}
                     for r in wf.get_runs(branch=branch)[:limit]]
         except Exception as e:
             logger.warning(f"Could not read runs for {workflow_file}: {e}")
             return []
+
+    def check_access(self) -> dict:
+        """Optional capability (the credential check): prove the token can
+        read the repository, and say when it expires where GitHub tells us
+        (fine-grained and expiring classic tokens carry the date in a response
+        header). Raises when the token is refused."""
+        import requests
+        resp = requests.get(f"https://api.github.com/repos/{self.repo_full_name}", timeout=30,
+                            headers={"Authorization": f"Bearer {self.token}",
+                                     "Accept": "application/vnd.github+json"})
+        if resp.status_code >= 400:
+            try:
+                message = resp.json().get("message", "")
+            except ValueError:
+                message = resp.text[:200]
+            raise RuntimeError(f"HTTP {resp.status_code}: {message}")
+        return {"ok": True, "who": self.repo_full_name,
+                "expires": resp.headers.get("github-authentication-token-expiration")}
 
     def get_run_artifact_file(self, run_id: int, artifact_prefix: str,
                               filename: str) -> Optional[bytes]:

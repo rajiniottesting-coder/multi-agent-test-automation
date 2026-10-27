@@ -750,3 +750,64 @@ class JiraClient:
             f"will comment on {issue_key} itself."
         )
         return None
+    # ─────────────────────────────────────────────────────────────
+    # Optional capabilities (P3: pipeline health, defects, spend)
+    #
+    # Not part of the Tracker Protocol: an adapter without them keeps every
+    # existing behaviour, and the features that use them say once in the log
+    # that they are off (integrations/tracker.py, OPTIONAL CAPABILITIES).
+    # ─────────────────────────────────────────────────────────────
+
+    def create_issue(self, issue_type: str, summary: str, description: str,
+                     labels: Optional[list] = None) -> str:
+        """Create an issue of any type in the project and return its key."""
+        issue = self.client.create_issue(fields={
+            "project": {"key": self.project_key},
+            "summary": summary,
+            "description": description,
+            "issuetype": {"name": issue_type},
+            "labels": list(labels or []),
+        })
+        logger.info(f"Created {issue_type}: {issue.key} — {summary}")
+        return issue.key
+
+    def set_property(self, issue_key: str, key: str, value) -> None:
+        """Store a JSON value on an issue, out of sight of its comments
+        (a Jira issue property: key <= 255 bytes, value <= 32 KB, any number
+        per issue; needs edit permission on the issue)."""
+        response = self.client.add_issue_property(issue_key, key, value)
+        status = getattr(response, "status_code", 200)
+        if status >= 400:
+            raise RuntimeError(f"setting property {key} on {issue_key}: HTTP {status}")
+
+    def get_property(self, issue_key: str, key: str):
+        """The stored value, or None when the issue has no such property."""
+        try:
+            return getattr(self.client.issue_property(issue_key, key), "value", None)
+        except Exception as e:                                     # noqa: BLE001
+            if getattr(e, "status_code", None) == 404:
+                return None
+            raise
+
+    def property_keys(self, issue_key: str) -> list:
+        """Every property key on the issue (one request, keys only)."""
+        data = self.client._get_json(f"issue/{issue_key}/properties")
+        return [k.get("key", "") for k in (data or {}).get("keys", []) if k.get("key")]
+
+    def delete_property(self, issue_key: str, key: str) -> None:
+        """Remove a property; one already gone is not an error."""
+        url = self.client._get_url(f"issue/{issue_key}/properties/{key}")
+        try:
+            response = self.client._session.delete(url)
+        except Exception as e:                                     # noqa: BLE001
+            if getattr(e, "status_code", None) == 404:
+                return
+            raise
+        status = getattr(response, "status_code", 204)
+        if status >= 400 and status != 404:
+            raise RuntimeError(f"deleting property {key} on {issue_key}: HTTP {status}")
+
+    def check_access(self) -> dict:
+        """Prove the credentials work: who they belong to. Raises when refused."""
+        me = self.client.myself() or {}
+        return {"ok": True, "who": me.get("displayName") or me.get("accountId") or "?"}
