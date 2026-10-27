@@ -137,7 +137,8 @@ def changed_existing_keys(host, pr_number, branch_index) -> set:
 
 
 def record_prediction_outcome(tracker, host, story_key: str, pr_number, pr_url: str | None,
-                              results: list, features_dir: Path, settings: dict | None = None):
+                              results: list, features_dir: Path, settings: dict | None = None,
+                              save: bool = True):
     """Stage 10, run by Agent 5 after the change story's pull request ran.
 
     Predicted: the tests in Agent 0's last report for the story (shadow or
@@ -147,7 +148,8 @@ def record_prediction_outcome(tracker, host, story_key: str, pr_number, pr_url: 
     test cases are not "existing tests" and are left out of both.
 
     Does nothing when Agent 0 is off, when no report exists, or without a
-    pull request number."""
+    pull request number. save=False measures without keeping it (Agent 5
+    shows the line in its report, then keeps it - agent0_impact.save_outcome)."""
     from agents import agent0_impact as a0
     from agents.agent2_coder import build_marker_index
     from core.impact_settings import impact_settings
@@ -164,4 +166,4 @@ def record_prediction_outcome(tracker, host, story_key: str, pr_number, pr_url: 
     failed = sorted(k for k, v in status.items() if v in ("failed", "error") and k not in own)
     changed = sorted(changed_existing_keys(host, pr_number, index) - own)
     return a0.record_outcome(tracker, story_key, settings, changed, failed,
-                             pr_url or f"#{pr_number}")
+                             pr_url or f"#{pr_number}", save=save)

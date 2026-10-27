@@ -285,14 +285,13 @@ def run(story_id: str, dry_run: bool = False) -> dict:
     if not dry_run:
         from core.usage_ledger import (
             IMPACT_ANALYST,
-            has_usage_comments,
+            has_usage,
             post_reset_to_story,
         )
         try:
             # Agent 0's entries belong to THIS attempt of a change story (it
             # runs first), so they do not make the story "already costed".
-            if has_usage_comments(jira.get_comments(story_id),
-                                  ignore_agents=(IMPACT_ANALYST,)):
+            if has_usage(story_id, jira, ignore_agents=(IMPACT_ANALYST,)):
                 logger.info(
                     f"{story_id} already has usage entries from a previous run — "
                     "posting ledger reset boundary."

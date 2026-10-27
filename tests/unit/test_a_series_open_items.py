@@ -113,12 +113,23 @@ def test_agent1_keeps_agent0s_entry_on_a_change_story(tmp_path, monkeypatch):
     assert any(IMPACT_ANALYST in b for b in bodies)
 
 
-def test_agent1_still_resets_when_the_story_was_costed_downstream(tmp_path, monkeypatch):
+@pytest.mark.parametrize("store", ["comments", "auto"])
+def test_agent1_still_resets_when_the_story_was_costed_downstream(tmp_path, monkeypatch, store):
+    """Both ledger stores: the reset is a [LEDGER-RESET] comment, or a hidden
+    reset entry after which the old entries no longer count (F-31)."""
+    import core.usage_ledger as ul
     from tests.unit.test_agent2_impact import _hand_over_and_draft, world
+    monkeypatch.setattr(ul, "_store_setting", lambda: store)
     fake, jira, _root = world.__wrapped__(tmp_path, monkeypatch)
     fake.comments.setdefault("SBX-5", []).append(_entry("Agent 2 (Coder)"))
     _hand_over_and_draft(jira, {"SBX-11": "approve"})
-    assert any(RESET_MARKER in b for b in jira.get_comments("SBX-5"))
+    if store == "comments":
+        assert any(RESET_MARKER in b for b in jira.get_comments("SBX-5"))
+    else:
+        assert any(k.startswith(ul.PROP_RESET + ".") for k in fake.properties.get("SBX-5", {}))
+        assert not any(RESET_MARKER in b for b in jira.get_comments("SBX-5"))
+    assert all(e["agent"] != "Agent 2 (Coder)"
+               for e in ul.story_ledger("SBX-5", jira)["entries"]), "the old run no longer counts"
 
 
 # ─────────────────────────────────────────────────────────────

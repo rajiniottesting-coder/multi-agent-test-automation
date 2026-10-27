@@ -21,7 +21,7 @@ import pytest
 
 from core import llm_client
 from core.schemas import CodePlan, FilePlan
-from core.usage_ledger import USAGE_MARKER
+from core.usage_ledger import story_ledger
 from tests.sandbox.fake_jira import FakeRepoHost, jira_client_over
 from tests.sandbox.seed import build_repo, repo_files, seed_jira
 
@@ -49,16 +49,20 @@ def world(tmp_path, monkeypatch):
     llm_client.reset_usage()
 
 
-def _usage(fake, story):
-    out = []
-    for c in fake.comments.get(story, []):
-        m = re.search(r'agent="([^"]+)" calls=(\d+)', c)
-        if c.startswith(USAGE_MARKER) and m:
-            out.append((m.group(1), int(m.group(2))))
-    return out
+def _usage(jira, story):
+    """(agent, calls) of every ledger entry on the story, whichever store."""
+    return [(e["agent"], e["calls"]) for e in story_ledger(story, jira)["entries"]]
 
 
-def test_one_scan_three_stories(world, monkeypatch):
+@pytest.fixture(params=["comments", "auto"])
+def store(request, monkeypatch):
+    """Both ledger stores: comments, and issue properties (F-31)."""
+    import core.usage_ledger as ul
+    monkeypatch.setattr(ul, "_store_setting", lambda: request.param)
+    return request.param
+
+
+def test_one_scan_three_stories(world, monkeypatch, store):
     import agents.agent2_coder as a2
     fake, jira, gh = world
     order = list(STORIES)
@@ -101,8 +105,8 @@ def test_one_scan_three_stories(world, monkeypatch):
 
     assert exit_.value.code == 1, "the refused story fails the job; the deferred one does not"
     # M1: each story's own cost
-    assert _usage(fake, "SBX-101") == [("Agent 2 (Coder, initial) (failed)", 2)]
-    assert _usage(fake, "SBX-102") == [("Agent 2 (Coder, initial)", 2)]
+    assert _usage(jira, "SBX-101") == [("Agent 2 (Coder, initial) (failed)", 2)]
+    assert _usage(jira, "SBX-102") == [("Agent 2 (Coder, initial)", 2)]
     assert any(c.startswith("[agent2:blocked]") for c in fake.comments["SBX-101"])
     # the second story's PR, opened after the last in-flight check
     assert [p["head_ref"] for p in gh.prs] == ["auto/SBX-102-x"]
