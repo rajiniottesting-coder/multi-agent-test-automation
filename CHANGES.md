@@ -17,7 +17,7 @@ This document records substantive changes to the framework in reverse-chronologi
 - Tests: `test_only_the_normal_scan_pass_skips` checked `main()`'s source text; it now runs the scan
 - Docs: README, GUIDE (Agent 3, Agent 0 analysis and hand-over, reconcile, board, config, in-flight, cost, troubleshooting `[DEFER]` / closed PR / hand-over waiting, label table), TECHNICAL_DEEP_DIVE (Agent 3, §9.9, §18.5, config, labels), DECISIONS ADR-022 (+ a later note on ADR-014), VALIDATION_AND_KNOWN_GAPS (G1, G2, G8, M1-M3 closed; M4 documented; L3, L6 updated; F-1-F-5, F-16 done; UC-5 rewritten step by step; E26)
 
-Pinned by `tests/unit/test_usage_per_story.py` (10), `test_last_in_flight_check.py` (7), `test_change_in_progress.py` (10), `test_reconcile_new_story.py` (16), `test_scan_budget.py` (7), `test_runner_wait.py` (4).
+Pinned by `tests/unit/test_usage_per_story.py` (11), `test_last_in_flight_check.py` (7), `test_change_in_progress.py` (10), `test_reconcile_new_story.py` (18), `test_scan_budget.py` (7), `test_runner_wait.py` (4) and `test_p2_scan_end_to_end.py` (1: one Agent 2 scan through the real `run()`) - 58; 30 deliberate breaks, each failed a test.
 
 ---
 
