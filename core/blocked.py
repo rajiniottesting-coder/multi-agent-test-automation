@@ -60,8 +60,10 @@ def _short(error: str) -> str:
 def blocked_comment(story_id: str, fp: str, errors) -> str:
     errors = list(dict.fromkeys(str(e) for e in errors or [] if str(e).strip()))
     lines = [f"{BLOCKED_MARKER} inputs: {fp}",
-             (f"Agent 2 could not code {story_id}: the generated code still broke the "
-              "rules below after every repair attempt, so no pull request was opened."),
+             (f"Agent 2 could not code {story_id}: the final gate refused the generated "
+              "code for the reasons below (a rule still broken after every repair "
+              "attempt, or no approved test case automated), so no pull request was "
+              "opened."),
              ""]
     lines += [f"- {_short(e)}" for e in errors[:_MAX_ERRORS]]
     if len(errors) > _MAX_ERRORS:

@@ -120,6 +120,9 @@ class TestChangeStoryRun:
         assert result["status"] == "pr_opened"
         assert result["revised"] == ["SBX-11"] and result["retired"] == ["SBX-12"]
         assert len(gh.prs) == 1
+        # F-13: the owner's unmarked scenario is another story's, never this one's gap
+        assert "unknown email address" not in gh.prs[0]["body"]
+        assert result["not_automated"] == []
         files = gh.branches[gh.prs[0]["head_ref"]]
         before = gh.branches["main"][OWNER_FILE]
         after = files[OWNER_FILE]

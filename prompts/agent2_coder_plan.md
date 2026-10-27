@@ -75,7 +75,7 @@ Return a `CodePlan` with:
     be rejected (it would wipe existing methods).
   - `purpose`: one-sentence justification
   - `related_test_cases`: list of Jira keys this file addresses (e.g., `["SCRUM-7", "SCRUM-9"]`)
-- `notes`: caveats, skipped test cases (with reasons), assumptions
+- `notes`: caveats, assumptions, and EVERY test case you leave out, by its key - one line each, `Skipped: <KEY> -- <reason>`. The system checks that every test case has a scenario and shows each one that has none, with this reason, in the pull request and on the story; a test case left out with no line here is reported with no reason
 
 # Reference Files (FOR STYLE REFERENCE ONLY -- DO NOT RECREATE)
 

@@ -327,6 +327,11 @@ agents:
     completion_label: "ai-coded"
     regenerate_label: "ai-regenerate"
     update_label: "ai-update"
+    # Set beside ai-coded when an approved test case has no scenario of its own
+    # (agents/agent2_coverage.py): the pull request and one story comment list
+    # each one with its reason. Removed by the next run - ai-update after the
+    # cause is fixed, or ai-regenerate - that leaves none uncovered.
+    incomplete_label: "ai-incomplete"
     # CAP for automated cron scans (Day 8): same reasoning as Agent 1.
     # Each Agent 2 run on a story spends ~$0.10-0.30 in LLM tokens and
     # opens a PR. With cap=2, worst-case mislabel costs ~$0.60 and 2 PRs
@@ -406,7 +411,7 @@ agents:
       no_pr_days: 14         # impact-applied with no PR this long -> ask a person
       # On undo: labels the closed PR made untrue, removed so a retry is just
       # "remove impact-reverted, add impact-check".
-      reset_labels: ["ai-processed", "human-approved", "ai-coded", "tests-run"]
+      reset_labels: ["ai-processed", "human-approved", "ai-coded", "ai-incomplete", "tests-run"]
     # Live mode: at hand-over, propose the inventory and prompts/app_context
     # changes a story implies, as a pull request (never merged by an agent;
     # merge it after deployment): wording it replaces (which can update a
