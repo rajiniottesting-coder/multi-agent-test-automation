@@ -46,6 +46,7 @@ These files contain zero project-specific knowledge. Reuse as-is:
 - `agents/agent5_reporter.py` — results and cost to Jira; scores Agent 0
 - `core/impact_*.py`, `core/context_update.py`, `core/json_block.py` — Agent 0's graph, analysis, review, hand-over, reconcile, context update
 - `core/inventory_update.py`, `scripts/propose_inventory_update.py` — the nightly inventory-update PR from the drift report (no app names; settings `agents.agent0_impact.inventory_update`)
+- `core/inventory_planned.py`, `scripts/plan_inventory.py` — planned inventory entries (an element or a page from the design, before deployment); confirmed by the nightly update once live
 - `core/board_status.py`, `core/test_case_rules.py`, `core/failure_diagnosis.py`, `core/allure_*.py`
 - `core/in_flight.py` (stories in flight), `core/test_runtime.py` (what a test reads), `scripts/e2e_turn.py` (browser runs take turns)
 - `validators/orphan_cleanup.py` — dead-code detection (purely AST + Gherkin)

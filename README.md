@@ -252,6 +252,7 @@ multi-agent-test-automation/
 │   ├── impact_trace.py, impact_results.py, impact_settings.py
 │   ├── context_update.py            # Agent 0: context-update PR (wording + untrue passages)
 │   ├── inventory_proposals.py       # Reviewable inventory additions
+│   ├── inventory_planned.py         # Planned entries: tests before deployment (F-12)
 │   ├── inventory_update.py          # Agent 0 drift: the nightly inventory-update PR
 │   ├── json_block.py                # Reads JSON stored in tracker code blocks, in every format
 │   └── onboarding.py                # Agent 0 readiness for another application
@@ -285,6 +286,7 @@ multi-agent-test-automation/
 │   ├── smoke_test.py                # Env, tracker, LLM and Playwright connectivity check
 │   ├── generate_inventory.py, promote_draft.py, verify_locators.py
 │   ├── check_inventory_staleness.py, apply_inventory_proposals.py, propose_inventory_update.py
+│   ├── plan_inventory.py            # Add a planned element or page from the design
 │   ├── propose_context_addition.py  # Done on merge: the notes a merged story adds
 │   ├── sweep_stalled_prs.py, close_merged_story.py, cleanup_artifacts.py
 │   ├── impact_handover.py, impact_reconcile.py, backfill_markers.py
