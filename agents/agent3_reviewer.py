@@ -1168,13 +1168,18 @@ _SECRET_ENV = ("OPENAI_API_KEY", "GITHUB_TOKEN", "GH_PAT", "JIRA_API_TOKEN", "AP
 def failure_note(error: Exception, limit: int = 600) -> str:
     """The PR comment for a review that could not be produced. A red check with
     no comment left the reviewer guessing (PR #225); the error's type and
-    message say why, with every configured secret value redacted."""
+    message say why, with every configured secret value, token-shaped string,
+    key alias and email address redacted."""
     text = f"{type(error).__name__}: {error}"
     for name in _SECRET_ENV:
         value = os.environ.get(name) or ""
         if len(value) >= 8:
             text = text.replace(value, "[redacted]")
     text = re.sub(r"\b(sk|ghp|gho|github_pat)[-_][A-Za-z0-9_\-]{8,}", "[redacted]", text)
+    # A gateway names the key's owner in its errors ("Key=<email>_<id>"): no
+    # personal address or key alias belongs in a PR comment.
+    text = re.sub(r"\bKey=\S+", "Key=[redacted]", text)
+    text = re.sub(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+", "[redacted]", text)
     if len(text) > limit:
         text = text[: limit - 1] + "…"
     return ("## 🤖 Agent 3 — Code Review\n\n### ⚠️ Could not review this pull request\n\n"
