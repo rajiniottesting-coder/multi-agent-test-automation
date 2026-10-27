@@ -62,7 +62,7 @@ class MemoryTracker:
 
     def create_test_case(self, test_case, parent_story_key, components=None):
         self._n += 1
-        key = f"ACME-T{self._n}"
+        key = f"ACME-{200 + self._n}"      # a key a scenario marker can hold (PROJ-123)
         self.test_cases[key] = {"key": key,
                                 "summary": getattr(test_case, "title", "tc"),
                                 "description": "steps"}
@@ -190,9 +190,9 @@ def test_agent1_writes_test_cases_to_a_non_jira_tracker(tracker):
 def test_agent2_reads_test_cases_and_marks_coded(tracker):
     """READ test cases -> generate -> move state marker."""
     import agents.agent2_coder as a2
-    tracker.test_cases = {"ACME-T1": {"key": "ACME-T1", "summary": "Login",
+    tracker.test_cases = {"ACME-11": {"key": "ACME-11", "summary": "Login",
                                       "description": "steps"}}
-    tracker.links = {"ACME-1": ["ACME-T1"]}
+    tracker.links = {"ACME-1": ["ACME-11"]}
     tracker.stories["ACME-1"]["labels"] = ["ai-processed", "human-approved"]
 
     plan = CodePlan(feature_name="login", branch_name="auto/ACME-1-login",
@@ -225,9 +225,9 @@ def test_agent2_run_passes_the_repo_host_to_existing_page_object_lookup(tracker)
     by the block's own `except Exception` and logged at DEBUG, and the
     existing-page-object context never reached a single prompt."""
     import agents.agent2_coder as a2
-    tracker.test_cases = {"ACME-T1": {"key": "ACME-T1", "summary": "Login",
+    tracker.test_cases = {"ACME-11": {"key": "ACME-11", "summary": "Login",
                                       "description": "steps"}}
-    tracker.links = {"ACME-1": ["ACME-T1"]}
+    tracker.links = {"ACME-1": ["ACME-11"]}
     tracker.stories["ACME-1"]["labels"] = ["ai-processed", "human-approved"]
     plan = CodePlan(feature_name="login", branch_name="auto/ACME-1-login",
                     pr_title="t", pr_body="b", notes="n",
@@ -369,7 +369,8 @@ def test_full_pipeline_runs_on_neither_jira_nor_github(tracker, tmp_path):
          patch.object(a2, "_attempt_step_coverage_repair", side_effect=lambda g, *a, **k: g):
         LLM.return_value.invoke_structured.return_value = plan
         LLM.return_value.invoke_text.return_value = (
-            "Feature: Login\n\n  Scenario: Login\n    Given I am on the login page\n")
+            "Feature: Login\n\n  Scenario: Login\n    Given I am on the login page\n\n"
+            "  Scenario: Bad password\n    Given I am on the login page\n")
         r2 = a2.run("ACME-1")
     assert r2["status"] == "pr_opened"
     assert r2["pr_url"].startswith("hub://")               # NOT a github.com URL

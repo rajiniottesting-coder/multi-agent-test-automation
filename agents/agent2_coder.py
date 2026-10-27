@@ -2335,6 +2335,7 @@ def _select_new_test_cases(
                 "test_case": item["test_case"],
                 "matched_file": item["file"],
                 "matched_scenario": item["scenario"],
+                "other_key": item.get("other_key"),
                 "reason": reason,
             })
 
@@ -3418,7 +3419,10 @@ def _inject_markers_into_feature(content: str, test_cases: list[dict]) -> str:
     #
     # Fewer scenarios than cases is sometimes deliberate: two cases can share
     # one scenario. So this is a warning, not a gate - but it now names the
-    # case, so the decision is a decision rather than an oversight.
+    # case, so the decision is a decision rather than an oversight. A scenario
+    # carries ONE test case's marker, so a shared one leaves the other case
+    # untraceable: run() names it in the pull request and on the story
+    # (agents/agent2_coverage.py, F-13).
     _unpaired = [tc for _i, tc in enumerate(test_cases) if _i not in _claimed]
     if _unpaired:
         logger.warning(
@@ -4054,6 +4058,12 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
             "appended again: %s. Give them their marker with "
             "`python scripts/backfill_markers.py propose`.",
             len(legacy_here), feature_file_path, [tc["key"] for tc in legacy_here])
+    # Said on the story and in the pull request, not only in the log (F-13).
+    from agents import agent2_coverage
+    coverage_labels = agent2_coverage.labels_from(load_agent_config())
+    legacy_gaps = agent2_coverage.skipped_gaps(
+        [{"test_case": tc, "reason": "legacy", "matched_file": feature_file_path}
+         for tc in legacy_here], coverage_labels)
     logger.info(
         "Classification: unchanged=%d modified=%d new=%d orphan=%d",
         len(classification["unchanged"]),
@@ -4073,9 +4083,13 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
             f"All {len(test_cases)} test cases for {story_id} are unchanged and "
             "no orphan scenarios. Nothing to update — exiting without a PR."
         )
+        agent2_coverage.log_gaps(story_id, legacy_gaps, [])
         if not dry_run:
             agent_config = load_agent_config()
             update_label = agent_config.get("update_label", "ai-update")
+            # Every test case has its scenario: an incomplete label is cleared.
+            agent2_coverage.record(jira, story_id, legacy_gaps, [], "no pull request opened",
+                                   coverage_labels, story.get("labels"))
             try:
                 jira.remove_label(story_id, update_label)
                 logger.info(f"Removed label '{update_label}' from {story_id} (no-op consumed)")
@@ -4273,6 +4287,20 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
     _validate_generated_files(generated_files, story_id,
                               list(classification["modified"]) + list(classification["new"]))
 
+    # Every test case this file should hold has its markered scenario, or is
+    # named (F-13). A scenario the model wrote without its marker counts as
+    # missing; only the unmarked scenarios this update ADDED are listed.
+    expected_here = [tc for tc in test_cases
+                     if tc["key"] not in elsewhere and tc not in legacy_here]
+    coverage_gaps = agent2_coverage.missing_from_batch(generated_files[:1], expected_here) \
+        + legacy_gaps
+    before_unmarked = set(agent2_coverage.unmarked_scenarios(
+        [GeneratedFile(file_path=feature_file_path, content=existing_content,
+                       is_new_file=False, purpose="")]))
+    unmarked = [u for u in agent2_coverage.unmarked_scenarios(generated_files[:1])
+                if u not in before_unmarked]
+    agent2_coverage.log_gaps(story_id, coverage_gaps, unmarked)
+
     base_branch = f"auto/{story_id}-{feature_stem.replace('_', '-')}"
     update_branch = _find_unused_update_branch(gh, base_branch)
     pr_title = f"feat({feature_stem}): incremental update to test scenarios"
@@ -4323,6 +4351,7 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
         "use the `ai-regenerate` label for a full regeneration."
     )
     pr_body = "".join(pr_body_parts)
+    pr_body += agent2_coverage.pr_section(coverage_gaps, unmarked, coverage_labels)
 
     if dry_run:
         logger.warning("DRY RUN -- skipping branch/commit/PR creation")
@@ -4331,6 +4360,9 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
         print(f"[DRY RUN] Files to commit:")
         for gf in generated_files:
             print(f"  - {gf.file_path} ({len(gf.content)} chars)")
+        section = agent2_coverage.pr_section(coverage_gaps, unmarked, coverage_labels)
+        if section:
+            print(section.encode("ascii", "replace").decode("ascii"))
         return {
             "story_id": story_id,
             "status": "update_dry_run",
@@ -4339,6 +4371,7 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
             "scenarios_removed": len(classification["orphan_keys"]),
             "files_generated": len(generated_files),
             "branch_name": update_branch,
+            "not_automated": [g.key for g in agent2_coverage.blocking(coverage_gaps)],
         }
 
     assert_valid_branch_for_pipeline(update_branch)
@@ -4356,6 +4389,8 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
         title=pr_title,
         body=pr_body,
     )
+    agent2_coverage.record(jira, story_id, coverage_gaps, unmarked, f"pull request {pr_url}",
+                           coverage_labels, story.get("labels"))
 
     agent_config = load_agent_config()
     update_label = agent_config.get("update_label", "ai-update")
@@ -4385,6 +4420,7 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
         "files_generated": len(generated_files),
         "branch_name": update_branch,
         "pr_url": pr_url,
+        "not_automated": [g.key for g in agent2_coverage.blocking(coverage_gaps)],
     }
 
 
@@ -4533,15 +4569,25 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
     # 1b. DEDUP (skipped in regenerate mode)
     new_test_cases, skipped_test_cases = _select_new_test_cases(test_cases, is_regenerate)
 
+    # A skip is not always coverage (agents/agent2_coverage.py, F-13): a title
+    # clash leaves the test case with no scenario of its own, and an outdated or
+    # unmarked scenario needs a person. Said on the story, never only logged.
+    from agents import agent2_coverage
+    coverage_labels = agent2_coverage.labels_from(load_agent_config())
+    skip_gaps = agent2_coverage.skipped_gaps(skipped_test_cases, coverage_labels)
+
     if not new_test_cases and not impact_work:
         # Every approved test case is already covered. No work needed.
         logger.info(
             f"All {len(test_cases)} test cases for {story_id} are already covered "
             "by existing scenarios. No new code generation needed."
         )
+        agent2_coverage.log_gaps(story_id, skip_gaps, [])
         if not dry_run:
             agent_config = load_agent_config()
             completion_label = agent_config.get("completion_label", "ai-coded")
+            agent2_coverage.record(jira, story_id, skip_gaps, [], "no pull request opened",
+                                   coverage_labels, story.get("labels"))
             jira.add_label(story_id, completion_label)
             logger.info(f"Marked {story_id} with label '{completion_label}' (no work needed)")
         return {
@@ -4549,6 +4595,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
             "status": "skipped_all_duplicates",
             "files_generated": 0,
             "skipped_count": len(skipped_test_cases),
+            "not_automated": [g.key for g in agent2_coverage.blocking(skip_gaps)],
         }
 
     if len(new_test_cases) < len(test_cases):
@@ -4881,12 +4928,30 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
             orphan_regen_step_defs = []
             orphan_regen_page_methods = []
 
+    # 4c-pre. COVERAGE. Every approved test case this run was given has a
+    # markered scenario, or is named - never dropped in silence
+    # (agents/agent2_coverage.py, F-13). Judged from the files: unmarked
+    # scenarios only in the story's own files, not in the owners' files a change
+    # story spliced into (theirs are other stories').
+    own_files = [f for f in generated_files if f.file_path not in owner_files]
+    batch_gaps = agent2_coverage.missing_from_batch(generated_files, new_test_cases, plan.notes)
+    coverage_gaps = batch_gaps + skip_gaps
+    unmarked = agent2_coverage.unmarked_scenarios(own_files)
+    agent2_coverage.log_gaps(story_id, coverage_gaps, unmarked)
+
     # 4c. FINAL VALIDATION (after any repair attempts). The scenarios this run
     # wrote are judged against their approved test cases: the story's new ones
-    # and, for a change story, the revisions it spliced into owners' files.
+    # and, for a change story, the revisions it spliced into owners' files. A
+    # run that automates NONE of its new test cases is refused here too.
     try:
         _validate_generated_files(generated_files, story_id,
                                   list(new_test_cases) + list(revisions))
+        if new_test_cases and len(batch_gaps) == len(new_test_cases) and not impact_work:
+            raise GateFailure(
+                f"Coverage gate failed for {story_id}: none of its "
+                f"{len(new_test_cases)} new approved test case(s) has a scenario, so "
+                "there is nothing to open a pull request for.",
+                errors=[f"{g.key}: {g.reason}" for g in batch_gaps])
     except ValueError as e:
         # Tell the person once which rules could not be met, so the story stops
         # being retried on unchanged input (core.blocked). Every gate refusal is
@@ -4900,10 +4965,14 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
     if dry_run:
         logger.warning("DRY RUN -- skipping branch/commit/PR creation")
         _print_dry_run_preview(output)
+        section = agent2_coverage.pr_section(coverage_gaps, unmarked, coverage_labels)
+        if section:
+            print(section.encode("ascii", "replace").decode("ascii"))
         return {
             "story_id": story_id,
             "files_generated": len(output.files),
             "status": "code_generated_dry_run",
+            "not_automated": [g.key for g in agent2_coverage.blocking(coverage_gaps)],
         }
 
     # Real run — branch must contain a Jira key for downstream agents to work
@@ -5012,6 +5081,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
 
     if impact_report:
         pr_body_with_footer += agent2_impact.pr_sections(impact_report)
+    pr_body_with_footer += agent2_coverage.pr_section(coverage_gaps, unmarked, coverage_labels)
 
     pr_url = gh.open_pull_request(
         title=output.pr_title,
@@ -5019,6 +5089,10 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
         head_branch=output.branch_name,
         base_branch="main",
     )
+    # On the story BEFORE `ai-coded`: a run killed between the two leaves the
+    # pull request, which says it too, and the crash guard adds only ai-coded.
+    agent2_coverage.record(jira, story_id, coverage_gaps, unmarked, f"pull request {pr_url}",
+                           coverage_labels, story.get("labels"))
 
     # Idempotency markers: tag the parent story so the next --scan run skips it.
     agent_config = load_agent_config()
@@ -5048,6 +5122,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
         "pr_url": pr_url,
         "status": "pr_opened",
         "llm_usage": usage,
+        "not_automated": [g.key for g in agent2_coverage.blocking(coverage_gaps)],
     }
     if impact_report:
         result["revised"] = sorted(impact_report["revised"])
@@ -5131,6 +5206,9 @@ def _scan_summary_lines(results: list[dict]) -> list[str]:
         elif r.get("branch_name"):
             detail = f" (branch {r['branch_name']})"
         lines.append(f"[{marker}] {story}: {status}{detail}")
+        if r.get("not_automated"):
+            lines.append(f"       not automated: {', '.join(r['not_automated'])} "
+                         "(see the story's [agent2:incomplete] comment)")
 
         # The reason, on the line below, indented. One story's failure should
         # be readable without hunting for it among the others.
