@@ -14,7 +14,9 @@ This document records substantive changes to the framework in reverse-chronologi
 - **F-9 - size budget:** `context_update.module_budget_chars` (8000); the unit suite fails on a committed module over it; `notes_report()` lists over-budget modules and repeated sentences in the notes PR; `core.onboarding.notes_checks()` warns; `_paragraphs()` joins hard-wrapped lines so sentences, not fragments, are compared
 - Docs: README, GUIDE, TECHNICAL_DEEP_DIVE (§9.7, §18.4, tree), REUSE_FOR_NEW_PROJECT, AGENT0_ONBOARDING (step 6), `inventory_tools/inventory_readme.md`, DECISIONS ADR-019, VALIDATION_AND_KNOWN_GAPS (L15, L16, L17, L18 closed; F-8, F-9, F-10, F-11 done; L27-L29; E20-E23 for UC-7)
 
-Pinned by `tests/unit/test_context_scope.py` (16), `test_context_additions.py` (31), `test_removed_elements.py` (21) and `test_notes_budget.py` (11); each rule was broken on purpose once (26 mutations), and each break failed a test.
+- **Found by this PR's own review:** Agent 3 failed on it with no comment - every changed file went into the prompt whole, and the large guides made it ~964,000 characters (~241k tokens). `format_changed_files_for_prompt()` now shows a file no test reads while it runs (`prompts/`, `docs/`, Markdown - `core.test_runtime`) as its diff, and caps the section at 300,000 characters, the largest full contents falling back to their diffs first; this PR's prompt is now ~86k tokens. Test-code PRs are shown exactly as before (byte-for-byte on PRs #214, #217, #221, #223)
+
+Pinned by `tests/unit/test_context_scope.py` (16), `test_context_additions.py` (34), `test_removed_elements.py` (21), `test_notes_budget.py` (11) and `test_review_prompt_budget.py` (6); each P1-2 rule was broken on purpose once (26 mutations), and each break failed a test.
 
 ---
 

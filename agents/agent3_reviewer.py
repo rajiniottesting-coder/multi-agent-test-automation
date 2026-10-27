@@ -835,23 +835,59 @@ def base_page_helpers_called(changed_files: list[dict], project_root=None) -> st
             "with its docstring here.\n\n" + "\n\n".join(blocks))
 
 
-def format_changed_files_for_prompt(files: list[dict]) -> str:
-    """Format the list of changed files into a clear text block for the LLM."""
+# The changed-files section's share of the review prompt. The model's context
+# also holds the reference files, the page inventory and the instructions; a
+# PR that changed the large guides in full measured ~241k tokens and the
+# review call failed (PR #225). ~75k tokens leaves ample room for the rest.
+_CHANGED_FILES_BUDGET_CHARS = 300_000
+
+
+def _file_block(f: dict, full: bool) -> str:
+    block = f"### File: `{f['filename']}`\n"
+    block += f"Status: {f['status']} (+{f['additions']} -{f['deletions']})\n\n"
+    if full and f.get("content"):
+        block += f"**Full file content:**\n```\n{f['content']}\n```\n"
+    elif f.get("patch"):
+        if f.get("content"):
+            block += "(Full content left out to keep the review within the model's context; " \
+                     "the diff is complete.)\n"
+        block += f"**Diff (patch):**\n```diff\n{f['patch']}\n```\n"
+    elif f.get("content"):
+        block += "(Full content and diff left out to keep the review within the model's " \
+                 "context.)\n"
+    else:
+        block += "(File content not available — possibly binary or too large)\n"
+    return block
+
+
+def format_changed_files_for_prompt(files: list[dict],
+                                    budget_chars: int = _CHANGED_FILES_BUDGET_CHARS) -> str:
+    """Format the list of changed files into a clear text block for the LLM.
+
+    A file no test reads while it runs - `prompts/`, `docs/`, Markdown (the
+    rule Agent 4 uses to skip the browser, core.test_runtime) - is shown as its
+    diff only: the review is about test code, and a whole guide can exceed the
+    model's context. Every other file is shown in full. If the section still
+    exceeds `budget_chars`, the largest full contents fall back to their diff,
+    largest first, and the block says so."""
     if not files:
         return "(No files changed)"
+    from core.test_runtime import NOT_READ_AT_RUNTIME
 
-    blocks = []
-    for f in files:
-        block = f"### File: `{f['filename']}`\n"
-        block += f"Status: {f['status']} (+{f['additions']} -{f['deletions']})\n\n"
-        if f.get("content"):
-            block += f"**Full file content:**\n```\n{f['content']}\n```\n"
-        elif f.get("patch"):
-            block += f"**Diff (patch):**\n```diff\n{f['patch']}\n```\n"
-        else:
-            block += "(File content not available — possibly binary or too large)\n"
-        blocks.append(block)
-    return "\n---\n".join(blocks)
+    full = {i: bool(f.get("content")) and not NOT_READ_AT_RUNTIME.search(f.get("filename") or "")
+            for i, f in enumerate(files)}
+    blocks = {i: _file_block(f, full[i]) for i, f in enumerate(files)}
+    sep = len("\n---\n")
+
+    def total() -> int:
+        return sum(len(b) for b in blocks.values()) + sep * (len(blocks) - 1)
+
+    for i in sorted((i for i in full if full[i]), key=lambda i: -len(files[i]["content"])):
+        if total() <= budget_chars:
+            break
+        full[i] = False
+        blocks[i] = _file_block(files[i], False)
+    return "\n---\n".join(blocks[i] for i in range(len(files)))
 
 
 # ─────────────────────────────────────────────────────────────
