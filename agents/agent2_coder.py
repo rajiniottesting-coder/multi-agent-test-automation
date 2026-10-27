@@ -4304,6 +4304,12 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
     uses_planned = inventory_planned.planned_keys_used(
         generated_files, inventory_planned.load_inventory(ctx))
 
+    # LAST IN-FLIGHT CHECK (F-1): every file this update commits, against a
+    # fresh snapshot - another pull request may have opened while it ran.
+    waiting = _last_in_flight_check(gh, jira, story_id, generated_files, dry_run)
+    if waiting:
+        return waiting
+
     base_branch = f"auto/{story_id}-{feature_stem.replace('_', '-')}"
     update_branch = _find_unused_update_branch(gh, base_branch)
     pr_title = f"feat({feature_stem}): incremental update to test scenarios"
@@ -4973,6 +4979,14 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
                                       getattr(e, "errors", None) or [str(e)])
         raise
 
+    # 4f. LAST IN-FLIGHT CHECK (F-1): every file the batch commits, whoever
+    # wrote it, against a fresh snapshot of the other open pull requests.
+    if gh is None:
+        gh = get_repo_host()
+    waiting = _last_in_flight_check(gh, jira, story_id, output.files, dry_run)
+    if waiting:
+        return waiting
+
     # 5. ACT
     if dry_run:
         logger.warning("DRY RUN -- skipping branch/commit/PR creation")
@@ -5023,9 +5037,6 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
     # The same ambiguity reaches the TITLE: PR #157 went out as "... (SCRUM-223)",
     # a test case's key, after its branch had been corrected to the story.
     output.pr_title = title_for_story(output.pr_title, story_id)
-
-    if gh is None:                    # stage 2 could not reach the host; try again here
-        gh = get_repo_host()
 
     # REGENERATE: append -revN suffix so we don't reuse the existing branch.
     if is_regenerate:
@@ -5179,6 +5190,23 @@ def _wait_for_in_flight(jira, story_id: str, dry_run: bool, files=(), scenarios=
             post_usage_to_story(story_id, "Agent 2 (Coder, waiting)", usage, jira=jira)
     return {"story_id": story_id, "status": "waiting_for_open_pr", "waiting_for": prs,
             "files_generated": 0}
+
+
+def _last_in_flight_check(gh, jira, story_id: str, files, dry_run: bool):
+    """The wait result if another open pull request changes ANY file this run is
+    about to commit, else None (F-1).
+
+    The earlier checks look at the files the plan names and the owners' feature
+    and step files. Other writers add files after them - a regeneration's or a
+    change story's orphan cleanup comments methods out of page objects no plan
+    named - and generation takes minutes, during which another pull request may
+    open. So, right before the branch is created: a fresh snapshot of the open
+    pull requests, against every file in the batch. Fails open, like every
+    in-flight check."""
+    from core import in_flight
+    clashes = in_flight.file_conflicts([f.file_path for f in files],
+                                       in_flight.snapshot(gh, story_id))
+    return _wait_for_in_flight(jira, story_id, dry_run, files=clashes) if clashes else None
 
 
 # ---------------------------------------------------------------------------
