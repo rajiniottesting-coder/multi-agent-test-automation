@@ -47,6 +47,22 @@ Jira has them natively. A tracker without labels (TestRail) should implement
 `add_label`/`remove_label`/`get_labels` over whatever it does have — a custom
 field, a tag list, a status. The agents only require that a marker can be set,
 cleared and read back; they never assume it is literally a Jira label.
+
+OPTIONAL CAPABILITIES
+---------------------
+Some features need more than the Protocol, and an adapter may not offer it.
+They are looked up with `capability(tracker, name)`; without one, the feature
+that needs it is off and says so once in the log - nothing else changes, and
+an adapter written before them stays valid.
+
+    render_markdown(markdown) -> str          comment markup (Agent 5)
+    create_issue(issue_type, summary, description, labels=None) -> key
+                                              pipeline health issue, defects
+    set_property(issue_key, key, value)       hidden JSON values on an issue:
+    get_property(issue_key, key) -> value     flaky-test records and the day's
+    property_keys(issue_key) -> [key]         spend (append-only keys, so two
+    delete_property(issue_key, key)           runs never overwrite each other)
+    check_access() -> {"ok", "who"}           the credential check
 """
 from __future__ import annotations
 
@@ -224,6 +240,13 @@ class Tracker(Protocol):
     def get_comments(self, issue_key: str) -> list:
         """All comment bodies on the issue."""
         ...
+
+
+def capability(tracker, name: str):
+    """The tracker's optional operation `name` (see OPTIONAL CAPABILITIES), or
+    None when the adapter does not offer it."""
+    fn = getattr(tracker, name, None) if tracker is not None else None
+    return fn if callable(fn) else None
 
 
 # ─────────────────────────────────────────────────────────────
