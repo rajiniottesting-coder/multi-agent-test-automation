@@ -603,6 +603,11 @@ feature is live and its tests passed), the Story Done on merge workflow runs
   notes addition needed" when nothing is new. Once per story text.
 - Off with Agent 0 or `context_update.additions`; printed in shadow mode. Its
   cost goes to the story as `Agent 0 (Impact Analyst)`.
+- **Size budget:** each module is held to `module_budget_chars` (8000) - it goes
+  into the prompt of every story it is selected for. The PR reports a module
+  it pushes over budget and sentences it repeats; the unit suite fails on a
+  module over budget, so condense it in the same PR. Condensing is a person's
+  job: no model rewrites a whole module.
 
 Review each line against the story before merging: a fact the model inferred
 rather than read is the one thing this cannot check.
@@ -1144,7 +1149,8 @@ agents:
       no_pr_days: 14
       reset_labels: [ai-processed, human-approved, ai-coded, tests-run]
     context_update: { enabled: ..., branch_prefix: "context-update/",
-                      additions: true, max_addition_chars: 1500 }
+                      additions: true, max_addition_chars: 1500,
+                      module_budget_chars: 8000 }
     inventory_update: { enabled: true, branch_prefix: "inventory-update/",
                         max_additions_per_page: 20, hold_ratio: 0.5, code_dirs: [pages, tests] }
 

@@ -208,6 +208,53 @@ def configured_adapters(root: Path | str) -> tuple[str, str]:
     return tracker_type, host_type
 
 
+def notes_checks(root: Path, budget: int | None = None) -> list[Check]:
+    """The app-context modules against their size budget, and sentences two
+    modules (or one) repeat (F-9). Size and repetition both cost tokens in
+    every prompt the module is selected for; neither stops Agent 0."""
+    from core.context_update import notes_report
+    folder = Path(root) / "prompts" / "app_context"
+    texts = {f"prompts/app_context/{p.name}": p.read_text(encoding="utf-8")
+             for p in sorted(folder.glob("*.md"))} if folder.is_dir() else {}
+    single = Path(root) / "prompts" / "app_context.md"
+    if not texts and single.is_file():
+        texts = {"prompts/app_context.md": single.read_text(encoding="utf-8")}
+    if not texts:
+        return [Check("notes", WARN, "no prompts/app_context modules - Agent 1 drafts "
+                                     "from the generic prompt only",
+                      "Write prompts/app_context/core.md and one module per Component.")]
+    if budget is None:
+        budget = _configured_budget(Path(root))
+    report = notes_report(texts, budget)
+    out = []
+    if report["over"]:
+        out.append(Check("notes: size", WARN,
+                         "over the " + str(budget) + "-character budget: "
+                         + ", ".join(f"{p} ({n})" for p, n in report["over"]),
+                         "Condense these modules: each goes into every prompt it is "
+                         "selected for."))
+    else:
+        out.append(Check("notes: size", OK, f"{len(texts)} module(s) within {budget} characters"))
+    if report["duplicates"]:
+        out.append(Check("notes: repetition", WARN,
+                         f"{len(report['duplicates'])} sentence pair(s) say the same thing",
+                         "Keep each fact in one module (core.md for shared ones)."))
+    return out
+
+
+def _configured_budget(root: Path) -> int:
+    from core.impact_settings import DEFAULTS
+    default = int(DEFAULTS["context_update"]["module_budget_chars"])
+    try:
+        import yaml
+        data = yaml.safe_load((root / "config" / "config.yaml").read_text(encoding="utf-8")) or {}
+        value = (((data.get("agents") or {}).get("agent0_impact") or {})
+                 .get("context_update") or {}).get("module_budget_chars")
+        return int(value) if value else default
+    except Exception:                                          # noqa: BLE001
+        return default
+
+
 def run_checks(root: Path | str, *, language: str = "python-pytest-bdd",
                inventory_file: str | None = None,
                tracker: str | None = None, repo_host: str | None = None) -> list[Check]:
@@ -240,6 +287,7 @@ def run_checks(root: Path | str, *, language: str = "python-pytest-bdd",
     graph_part, graph = graph_checks(root, language, inventory_file)
     checks += graph_part
     checks += marker_checks(graph)
+    checks += notes_checks(root)
     return checks
 
 

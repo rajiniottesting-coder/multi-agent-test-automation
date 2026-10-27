@@ -421,6 +421,11 @@ agents:
       # state are dropped (core/context_update.py, propose_addition_for_story).
       additions: true
       max_addition_chars: 1500             # a longer addition is refused, not cut
+      # Each prompts/app_context module goes into the prompt of every story it
+      # is selected for. A module over this many characters fails the unit
+      # suite (so a notes PR that grows one too far must condense it first)
+      # and is reported by the onboarding check; repeated sentences are listed.
+      module_budget_chars: 8000
     # Nightly drift job: the inventory changes the crawl implies, as one pull
     # request at a time for a person to merge (core/inventory_update.py): a
     # stale selector replaced when the same element is found under a new
