@@ -291,11 +291,17 @@ def _propose_context(tracker, host, llm, story_key: str, settings: dict, root: P
         return {"context": "error", "context_error": str(e)}
 
 
-def _render_report(report: dict, title: str) -> str:
+def _render_report(report: dict, title: str, data_in: str | None = None) -> str:
+    """The readable report, then the data the agents read back. `data_in`
+    names the Impact Review when it holds that data (F-31): the story's comment
+    then keeps every readable part - the table with the scenarios, the tests
+    not judged, the ones to revise by hand - and points to the review for the
+    data, instead of a second copy of it."""
     lines = [f"{REPORT} {title} | hash: {report['content_hash']} | graph: {report['graph_sha']}"]
     if report["no_component"]:
         lines.append(f"No Component: whole-suite analysis, {len(report['not_judged'])} "
-                     "tests not judged.")
+                     "tests not judged. Add a Component to the story to focus the analysis "
+                     "on the pages it changes.")
     lines.append(f"Affected: {len(report['ranked'])}; unaffected: {len(report['unaffected'])}; "
                  f"not judged: {len(report['not_judged'])}.")
     if report.get("by_owner"):
@@ -311,6 +317,9 @@ def _render_report(report: dict, title: str) -> str:
         lines += ["", "Not judged (beyond max_candidates, never shown as unaffected): "
                   + ", ".join(n["key"] or n["ref"] for n in report["not_judged"][:50])]
     lines += _manual_section(report)
+    if data_in:
+        return "\n".join(lines + ["", f"The decisions, and the data the agents read back, "
+                                       f"are in {data_in}."])
     return "\n".join(lines) + "\n\n" + ia.embed(report)
 
 
@@ -482,23 +491,39 @@ def _structural_report(graph, sha, seeds, change_ref, settings, tracker, host, c
 # Stage 7 - publish
 # ─────────────────────────────────────────────────────────────
 
-def _post_delta(tracker, story_key: str, change: dict | None, note: str = "") -> None:
-    """D4: what a re-analysis added, removed and re-tiered. Posted on every
-    live path that has an earlier report, so a removal is never silent."""
+def _delta_text(change: dict | None, note: str = "") -> str | None:
+    """D4: what a re-analysis added, removed and re-tiered - None for a first
+    analysis, which has nothing to compare."""
     if change is None:
-        return                                   # a first analysis has nothing to compare
+        return None
     if any(change.values()):
-        tracker.add_comment(story_key, f"{DELTA} Re-analysed: added "
-                            f"{[r['ref'] for r in change['added']]}, removed "
-                            f"{[r['ref'] for r in change['removed']]}, tier changed "
-                            f"{[(t['ref'], t['from'], t['to']) for t in change['tier_changed']]}."
-                            + note)
-    else:
-        # A re-analysis runs only because the story changed (stage 0 skips an
-        # unchanged one). Without this line a person sees a second full report
-        # and has to compare it by hand to learn that the edit changed nothing.
-        tracker.add_comment(story_key, f"{DELTA} Re-analysed after the story changed: "
-                            "no change to the affected tests or their tiers." + note)
+        return (f"{DELTA} Re-analysed: added {[r['ref'] for r in change['added']]}, removed "
+                f"{[r['ref'] for r in change['removed']]}, tier changed "
+                f"{[(t['ref'], t['from'], t['to']) for t in change['tier_changed']]}." + note)
+    # A re-analysis runs only because the story changed (stage 0 skips an
+    # unchanged one). Without this line a person sees a second report and has
+    # to compare it by hand to learn that the edit changed nothing.
+    return (f"{DELTA} Re-analysed after the story changed: no change to the affected tests "
+            "or their tiers." + note)
+
+
+def _post_delta(tracker, story_key: str, change: dict | None, note: str = "") -> None:
+    """The delta on its own - only where no report comment goes with it (an
+    approved review stands and nothing new is to be reviewed). Every other
+    path carries it inside its report comment (_with_delta, F-31)."""
+    text = _delta_text(change, note)
+    if text:
+        tracker.add_comment(story_key, text)
+
+
+def _with_delta(body: str, change: dict | None) -> str:
+    """The report comment with the delta as its second line: one comment per
+    analysis, and the first line stays the report header the agents read."""
+    text = _delta_text(change)
+    if not text:
+        return body
+    head, _sep, rest = body.partition("\n")
+    return f"{head}\n{text}\n{rest}" if rest else f"{head}\n{text}"
 
 
 def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool = False) -> dict:
@@ -514,12 +539,8 @@ def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool
         print(_render_report(report, f"Impact report for {story_key} (dry run)"))
         return {"story": story_key, "action": "dry-run"}
 
-    if report["no_component"] and not any(
-            c.startswith(NO_COMPONENT) for c in tracker.get_comments(story_key)):
-        tracker.add_comment(story_key, f"{NO_COMPONENT} This story has no Component, so Agent 0 "
-                            "compared it with the whole suite. Add a Component to focus the "
-                            "analysis on the pages it changes.")
-
+    # A story with no Component: the report's own "No Component" line says so
+    # and how to focus the analysis (F-31: no separate comment repeating it).
     title = f"Impact report for {story_key}"
     if settings["shadow_mode"]:
         # Shadow mode creates no review and adds no label, but it consumes the
@@ -532,8 +553,7 @@ def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool
     change = ia.delta(previous, report) if previous else None
     rows = _review_rows(report)
     if not rows:
-        _post_delta(tracker, story_key, change)
-        tracker.add_comment(story_key, _render_report(report, title))
+        tracker.add_comment(story_key, _with_delta(_render_report(report, title), change))
         tracker.remove_label(story_key, labels["check"])
         tracker.add_label(story_key, labels["ready"])
         return {"story": story_key, "action": "nothing-to-review"}
@@ -564,13 +584,15 @@ def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool
             action = "review-created"
         else:
             review_key, action = review["key"], "no-new-impact"
-    _post_delta(tracker, story_key, change,
-                f" Nothing new to review; the approved review {review_key} stands."
-                if action == "no-new-impact" else "")
-    if action != "no-new-impact":
+    if action == "no-new-impact":
+        _post_delta(tracker, story_key, change,
+                    f" Nothing new to review; the approved review {review_key} stands.")
+    else:
         # Stage 7: the ranked report on the change story itself, next to the
-        # requirement, as well as the table in the Impact Review.
-        tracker.add_comment(story_key, _render_report(report, f"{title} - review {review_key}"))
+        # requirement. Its data block is in the Impact Review, where the agents
+        # read it; the story no longer carries a second copy of it (F-31).
+        body = _render_report(report, f"{title} - review {review_key}", data_in=review_key)
+        tracker.add_comment(story_key, _with_delta(body, change))
     # impact-check comes off on every path, or the next scan would analyse the
     # story again. With no new review the story keeps the labels it had.
     tracker.remove_label(story_key, labels["check"])
