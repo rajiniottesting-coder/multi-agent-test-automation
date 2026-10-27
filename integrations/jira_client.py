@@ -3,6 +3,7 @@ Jira client wrapper — handles all Jira API interactions for our agents.
 Centralized so we don't repeat boilerplate everywhere.
 """
 import os
+import re
 import logging
 from typing import Optional
 from jira import JIRA, Issue
@@ -788,6 +789,42 @@ class JiraClient:
             if getattr(e, "status_code", None) == 404:
                 return None
             raise
+
+    def properties(self, issue_key: str, prefix: str = "") -> dict:
+        """Every property on the issue whose key starts with `prefix`, with its
+        value - one request (GET issue?properties=*all), not one per key."""
+        issue = self.client.issue(issue_key, fields="summary", properties="*all")
+        found = (getattr(issue, "raw", None) or {}).get("properties") or {}
+        return {k: v for k, v in found.items() if k.startswith(prefix)}
+
+    def update_comment(self, issue_key: str, comment_ref: str, body: str) -> str:
+        """Replace a comment's body. `comment_ref` is what add_comment returned
+        (its URL) or the bare comment id.
+
+        Watchers are not notified where the account may say so: Jira lets only
+        a (project) administrator switch the notification off, so when that is
+        refused the edit is made with the notification, and later edits go
+        straight to it. Raises LookupError when the comment is gone (a person
+        deleted it) - the caller posts it anew; any other refusal is raised as is."""
+        m = re.search(r"focusedCommentId=(\d+)", str(comment_ref))
+        comment_id = m.group(1) if m else str(comment_ref)
+        try:
+            comment = self.client.comment(issue_key, comment_id)
+        except Exception as e:                                     # noqa: BLE001
+            if getattr(e, "status_code", None) == 404:
+                raise LookupError(f"comment {comment_id} on {issue_key} is gone") from e
+            raise
+        quiet = not getattr(self, "_edits_notify", False)
+        try:
+            comment.update(body=body, notify=not quiet)
+        except Exception as e:                                     # noqa: BLE001
+            if not quiet or getattr(e, "status_code", None) not in (400, 401, 403):
+                raise
+            logger.info("Editing a comment without notifying needs an administrator - "
+                        "editing with the notification (%s).", e)
+            self._edits_notify = True
+            comment.update(body=body, notify=True)
+        return f"{self.url}/browse/{issue_key}?focusedCommentId={comment_id}"
 
     # The jira SDK has no public call that lists property KEYS without fetching
     # every value, nor one that deletes a property, so these two use its
