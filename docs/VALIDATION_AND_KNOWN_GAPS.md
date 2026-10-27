@@ -41,11 +41,15 @@ has not yet run live: [TEST_TRACK.md](./TEST_TRACK.md).
 ## 2. Still to run → [TEST_TRACK.md](./TEST_TRACK.md)
 
 Everything built and not yet proven live is tracked in **[TEST_TRACK.md](./TEST_TRACK.md)**:
-one row per check, grouped by use case (TG-1 to TG-9), run in sessions S1-S8
+one row per check, grouped by use case (TG-1 to TG-8), run in sessions S1-S8
 at the end, after the implementation work, with each row's expected result,
-the PR that built it, and its status and evidence. Every fix adds its rows
-there when it is built; a unit test fails if a fix marked **Done** in section 4
-has none. The runs UC-1 to UC-7 that used to be listed here are its sessions
+the PR that built it, and its status and evidence. TG-0 re-proves what V1-V8
+above already showed, so a later change that broke it is found; TG-9 holds
+every fix in section 4 not built yet. Its last section maps every merged
+change to the run or rows that prove it. Every fix adds its rows there when it
+is built; a unit test fails if a fix marked **Done** in section 4 has none, a
+fix not done is missing from TG-9, or a PR `CHANGES.md` cites is missing from
+the map. The runs UC-1 to UC-7 that used to be listed here are its sessions
 S1-S5.
 
 ---

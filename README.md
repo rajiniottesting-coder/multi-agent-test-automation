@@ -18,7 +18,7 @@ A reusable framework where **six AI agents** turn a Jira story into a reviewed, 
 | [docs/TECHNICAL_DEEP_DIVE.md](./docs/TECHNICAL_DEEP_DIVE.md) | Function-level walkthrough of the agents and mechanisms |
 | [inventory_tools/inventory_readme.md](./inventory_tools/inventory_readme.md) | Building and maintaining the app inventory (crawl, merge, measure, curate) |
 | [docs/VALIDATION_AND_KNOWN_GAPS.md](./docs/VALIDATION_AND_KNOWN_GAPS.md) | What has been validated live, and every known gap with its status and planned fix |
-| [docs/TEST_TRACK.md](./docs/TEST_TRACK.md) | The live test track: every check still to run against the real Jira, GitHub and application, grouped by use case, with expected result, status and evidence |
+| [docs/TEST_TRACK.md](./docs/TEST_TRACK.md) | The live test track: every check still to run against the real Jira, GitHub and application, grouped by use case, with expected result, status and evidence; a regression group for what was proven before; and every merged change mapped to the run or rows that prove it |
 | [CHANGES.md](./CHANGES.md) | Changelog — what changed, why, how to adapt |
 
 ---
