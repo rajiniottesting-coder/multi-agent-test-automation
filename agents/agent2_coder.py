@@ -44,6 +44,7 @@ from types import SimpleNamespace
 import hashlib
 import logging
 import re
+import time
 from pathlib import Path
 import sys
 from dataclasses import dataclass, field
@@ -5214,6 +5215,7 @@ def _last_in_flight_check(gh, jira, story_id: str, files, dry_run: bool):
 # ---------------------------------------------------------------------------
 _SCAN_MARKERS = {
     "pr_opened": "OK",
+    "deferred": "DEFER",
     "skipped_all_duplicates": "SKIP",
     "waiting_for_open_pr": "WAIT",
     "blocked": "BLOCK",
@@ -5289,6 +5291,34 @@ def _print_scan_summary(results: list[dict]) -> None:
                     handle.write(f"  - {line.strip()}\n")
     except Exception:                                     # noqa: BLE001
         logger.debug("could not write the scan summary to GITHUB_STEP_SUMMARY")
+
+
+_clock = time.monotonic          # the scan deadline's clock; replaced in tests
+
+
+def plan_scan(passes, max_stories: int) -> tuple:
+    """(to_run, deferred) for one scan (F-4).
+
+    `passes` is [(mode, [story, ...])] in pass order (normal, regenerate,
+    update). A story already taken by an earlier pass is not taken again (a
+    selection that overlaps is a configuration slip, logged). At most
+    `max_stories` are run - the budget is for the whole scan, not per pass;
+    the rest are deferred with the reason: their labels are unchanged, so the
+    next scan takes them. Returns ([(mode, story)], [(mode, story, why)])."""
+    to_run, deferred, seen = [], [], set()
+    for mode, stories in passes:
+        for story in stories or []:
+            if story["key"] in seen:
+                logger.warning(
+                    f"Skipping {story['key']} in the {mode} pass - already taken by an "
+                    "earlier pass. Check config: each selection must require its own label.")
+                continue
+            seen.add(story["key"])
+            if len(to_run) < max(0, int(max_stories)):
+                to_run.append((mode, story))
+            else:
+                deferred.append((mode, story, f"over max_stories_per_run ({max_stories})"))
+    return to_run, deferred
 
 
 def main():
@@ -5418,62 +5448,43 @@ def main():
             f"+ {len(update_stories)} update = {total_count} stories to process."
         )
 
+        # ONE budget for the three passes (F-4): `max_stories_per_run` stories
+        # in all, in pass order, and no story started after
+        # `scan_deadline_minutes` - the job must finish what it starts.
+        to_run, deferred = plan_scan(
+            [("normal", normal_stories), ("regenerate", regen_stories),
+             ("update", update_stories)], max_stories)
+        deadline_s = float(agent_config.get("scan_deadline_minutes", 12)) * 60
+        started = _clock()
         results = []
-        for story in normal_stories:
+        for i, (mode, story) in enumerate(to_run):
+            if _clock() - started > deadline_s:
+                deferred += [(m, s_, "the scan deadline passed") for m, s_ in to_run[i:]]
+                break
+            label = {"normal": "Agent 2 (Coder, initial)",
+                     "regenerate": "Agent 2 (Coder, regenerate)",
+                     "update": "Agent 2 (Coder, incremental update)"}[mode]
             try:
-                with story_usage(story["key"], "Agent 2 (Coder, initial)", dry_run=args.dry_run):
-                    result = run(story["key"], dry_run=args.dry_run, is_regenerate=False,
-                                 skip_if_blocked=True)
+                with story_usage(story["key"], label, dry_run=args.dry_run):
+                    if mode == "update":
+                        result = run_update(story["key"], dry_run=args.dry_run)
+                    else:
+                        result = run(story["key"], dry_run=args.dry_run,
+                                     is_regenerate=(mode == "regenerate"),
+                                     skip_if_blocked=(mode == "normal"))
                 results.append(result)
             except Exception as e:
-                logger.error(f"Failed processing {story['key']} (normal): {e}", exc_info=True)
+                logger.error(f"Failed processing {story['key']} ({mode}): {e}", exc_info=True)
                 results.append({
                     "story_id": story["key"],
                     "status": "failed",
-                    "mode": "normal",
+                    "mode": mode,
                     "error": str(e),
                 })
-
-        for story in regen_stories:
-            if any(r.get("story_id") == story["key"] for r in results):
-                logger.warning(
-                    f"Skipping {story['key']} in regen pass — already processed in normal pass. "
-                    "Check config: regenerate_selection should require ai-regenerate label."
-                )
-                continue
-            try:
-                with story_usage(story["key"], "Agent 2 (Coder, regenerate)", dry_run=args.dry_run):
-                    result = run(story["key"], dry_run=args.dry_run, is_regenerate=True)
-                results.append(result)
-            except Exception as e:
-                logger.error(f"Failed processing {story['key']} (regen): {e}", exc_info=True)
-                results.append({
-                    "story_id": story["key"],
-                    "status": "failed",
-                    "mode": "regenerate",
-                    "error": str(e),
-                })
-
-        for story in update_stories:
-            if any(r.get("story_id") == story["key"] for r in results):
-                logger.warning(
-                    f"Skipping {story['key']} in update pass — already processed earlier. "
-                    "Check config: update_selection should require ai-update and exclude ai-regenerate."
-                )
-                continue
-            try:
-                with story_usage(story["key"], "Agent 2 (Coder, incremental update)",
-                                 dry_run=args.dry_run):
-                    result = run_update(story["key"], dry_run=args.dry_run)
-                results.append(result)
-            except Exception as e:
-                logger.error(f"Failed processing {story['key']} (update): {e}", exc_info=True)
-                results.append({
-                    "story_id": story["key"],
-                    "status": "failed",
-                    "mode": "update",
-                    "error": str(e),
-                })
+        for mode, story, why in deferred:
+            logger.info(f"Deferred {story['key']} ({mode}) to the next scan: {why}.")
+            results.append({"story_id": story["key"], "status": "deferred", "mode": mode,
+                            "error": f"{why} - labels unchanged, the next scan takes it"})
 
         _print_scan_summary(results)
 

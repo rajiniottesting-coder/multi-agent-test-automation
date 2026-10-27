@@ -343,6 +343,12 @@ agents:
     # to close — recoverable. The human-approved label gate is still the
     # primary protection; this cap is the secondary safety net.
     max_stories_per_run: 2
+    # F-4: max_stories_per_run is ONE budget for the three passes (normal,
+    # ai-regenerate, ai-update), taken in that order; the rest wait for the
+    # next scan with their labels unchanged. No story starts after
+    # scan_deadline_minutes, so the job (agent2_coder.yml timeout-minutes: 25)
+    # always finishes the story it started: slowest stories measured ~8 min.
+    scan_deadline_minutes: 12
     # REVIEW FIX (agents/agent2_review_fix.py, agent2_review_fix.yml). A person
     # with write access submits a "Request changes" review on an auto/* pull
     # request, or comments `<command> <what to change>` on it: Agent 2 changes
