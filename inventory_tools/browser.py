@@ -18,7 +18,7 @@ import os
 from contextlib import contextmanager
 from typing import Iterator, Optional
 
-from inventory_tools.introspect import COVER_ATTR, TEST_ID_ATTRS, FRAME_DELIM
+from inventory_tools.introspect import COVER_ATTR, SHARED_ATTR, TEST_ID_ATTRS, FRAME_DELIM
 
 logger = logging.getLogger(__name__)
 
@@ -480,8 +480,10 @@ def collect_descriptors(page, url: str, test_attrs: tuple = TEST_ID_ATTRS
     return page.title(), _snapshot_descriptors(page, test_attrs)
 
 
-def _mark_selector(page, selector: str) -> None:
-    """Tag every node `selector` resolves to with COVER_ATTR (design E1).
+def _mark_selector(page, selector: str, attr: str = "", value: str = "") -> None:
+    """Tag every node `selector` resolves to with COVER_ATTR (design E1), or with
+    `attr`="value" when given (another page's key: SHARED_ATTR, G14). A node
+    already carrying `attr` keeps its first value.
 
     Mirrors _count_selector: a frame-prefixed selector enters its iframe chain
     through frame_locator first, so a node inside an iframe is marked in the
@@ -497,15 +499,25 @@ def _mark_selector(page, selector: str) -> None:
         matches = _resolve_one(loc, elem)
     else:
         matches = _resolve_one(page, selector)
+    if not attr:
+        matches.evaluate_all(
+            f"els => els.forEach(e => e.setAttribute('{COVER_ATTR}', ''))")
+        return
     matches.evaluate_all(
-        f"els => els.forEach(e => e.setAttribute('{COVER_ATTR}', ''))")
+        "(els, [a, v]) => els.forEach(e => { if (!e.hasAttribute(a)) e.setAttribute(a, v); })",
+        [attr, value])
 
 
 def collect_uncovered(page, url: str, selectors: list[str],
-                      test_attrs: tuple = TEST_ID_ATTRS
+                      test_attrs: tuple = TEST_ID_ATTRS,
+                      shared: dict | None = None
                       ) -> tuple[str, list[dict]]:
     """Navigate to `url`; mark what the inventory's selectors resolve to; then
     return (page_title, element_descriptors) with the marks in each attrs dict.
+
+    `shared` ({selector: "<page>.<key>"}, other pages' selectors) marks what a
+    key on ANOTHER page already covers - a footer or header repeated on every
+    page - with SHARED_ATTR, so it is reported, not added again here (G14).
 
     Pass the result to introspect.uncovered_elements() - the marks are what tell
     a covered element from an uncovered one. A selector that fails to resolve is
@@ -520,6 +532,11 @@ def collect_uncovered(page, url: str, selectors: list[str],
             _mark_selector(page, sel)
         except PlaywrightError as exc:
             logger.debug(f"  compare: could not mark {sel!r}: {exc}")
+    for sel, owner in (shared or {}).items():
+        try:
+            _mark_selector(page, sel, SHARED_ATTR, owner)
+        except PlaywrightError as exc:
+            logger.debug(f"  compare: could not mark shared {sel!r}: {exc}")
     return page.title(), _snapshot_descriptors(page, test_attrs)
 
 

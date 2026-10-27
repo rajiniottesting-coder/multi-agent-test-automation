@@ -150,6 +150,19 @@ def main() -> int:
     # every shared-overlay element was reported as uncovered on every page.
     always_selectors = [sel for entry in pages.values() if entry.get("always")
                         for sel in _page_selectors(entry).values()]
+    # Every other page's live keys, by owner (G14): an element another page's key
+    # already covers - a footer on every page - is reported there, never added
+    # again here. A key declared `removed` or `planned` covers nothing live.
+    owners = {}
+    for pname_, entry_ in pages.items():
+        if entry_.get("always"):
+            continue
+        skip = set(entry_.get("removed") or []) | set(entry_.get("planned") or [])
+        for key, sel in _page_selectors(entry_).items():
+            if key not in skip:
+                owners.setdefault(pname_, {})[sel] = f"{pname_}.{key}"
+    planned_pages_waiting: list[str] = []   # planned pages not deployed yet (F-12)
+    hrefs: dict[str, list] = {}             # --compare: links on each page (L25)
 
     with browser_page(headless=not args.headed) as page:
         if not args.no_login:
@@ -183,6 +196,14 @@ def main() -> int:
                 from urllib.parse import urlparse
                 return (urlparse(u).path or "/").rstrip("/") or "/"
 
+            if entry.get("planned_page") and (
+                    not reachable or _path_of(page.url) != _path_of(base_url + url_path)):
+                # Declared from the design (F-12): not deployed yet is expected,
+                # not an unreachable page and not drift.
+                print(f"  [{name}] planned page - not live yet ({url_path})")
+                planned_pages_waiting.append(name)
+                continue
+
             if reachable and _path_of(page.url) != _path_of(base_url + url_path):
                 print(f"  [{name}] skipped - requested {url_path} but landed on "
                       f"{_path_of(page.url)}. A page that exists only in the other "
@@ -197,16 +218,22 @@ def main() -> int:
                 # Marks every node the inventory covers, then reports what the
                 # generator would capture that is NOT marked. Read-only in the
                 # sense that matters: no element is changed, clicked or saved.
+                shared = {sel: owner for other, sels in owners.items() if other != name
+                          for sel, owner in sels.items() if sel not in selectors.values()}
                 title, descriptors = collect_uncovered(
                     page, base_url + url_path,
-                    list(selectors.values()) + always_selectors, test_attrs)
+                    list(selectors.values()) + always_selectors, test_attrs,
+                    shared=shared)
+                hrefs[name] = [(d.get("attrs") or {}).get("href") for d in descriptors
+                               if (d.get("attrs") or {}).get("href")]
                 found = introspect.uncovered_entry(
                     base_url + url_path, title, descriptors,
                     base_url=base_url, test_attrs=test_attrs)
                 new_by_page[name] = found["elements"]
-                if found["multi_match"] or found["conditional"] or found["unstable"]:
+                if (found["multi_match"] or found["conditional"] or found["unstable"]
+                        or found["shared"]):
                     new_declared[name] = {k: found[k] for k in
-                                          ("multi_match", "conditional", "unstable")}
+                                          ("multi_match", "conditional", "unstable", "shared")}
             per_page[name] = introspect.diff_page(
                 name, selectors, counts, live_test_ids, test_attrs,
                 # The inventory states which keys are meant to match several
@@ -214,13 +241,15 @@ def main() -> int:
                 # them through stops the nightly report crying wolf.
                 declared_family=set(entry.get("multi_match") or []),
                 declared_conditional=set(entry.get("conditional") or []),
-                declared_removed=set(entry.get("removed") or []))
+                declared_removed=set(entry.get("removed") or []),
+                declared_planned=set(entry.get("planned") or []))
 
     report = introspect.summarize_drift(per_page, unreachable)
     report["pages_missing_notes"] = introspect.pages_missing_notes(inventory)
     # When the live application was looked at. A reader of this file later
     # (Agent 0's uncovered-element hint) uses it to refuse a stale report.
     report["checked_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    report["planned_pages_waiting"] = planned_pages_waiting
     if args.compare:
         # Informational: deliberately NOT folded into summarize_drift, so an
         # uncovered element can never fail --fail-on-drift.
@@ -231,6 +260,8 @@ def main() -> int:
         # stale the next night and is removed again - and never adds an
         # element with no durable handle.
         report["new_element_declarations"] = new_declared
+        # Pages the application links to that the inventory has no entry for.
+        report["unlisted_paths"] = introspect.unlisted_paths(hrefs, inventory, base_url)
 
     # ── human-readable summary ──
     print(f"\nInventory staleness report for {ctx.name} ({base_url})")
@@ -240,6 +271,9 @@ def main() -> int:
     print(f"  ambiguous selectors: {report['ambiguous_selectors']}")
     print(f"  removed, but back  : {report['reappeared_selectors']}")
     print(f"  unreachable pages  : {report['unreachable_pages'] or 'none'}")
+    print(f"  planned, now live  : {report['planned_live']}")
+    print(f"  planned, waiting   : {report['planned_waiting']} element(s); "
+          f"pages: {planned_pages_waiting or 'none'}")
     for pname, diff in per_page.items():
         if (diff["missing"] or diff["new_data_tests"] or diff.get("ambiguous")
                 or diff.get("reappeared")):
@@ -255,6 +289,10 @@ def main() -> int:
                       f"fail on this)")
             for nt in diff["new_data_tests"]:
                 print(f"    NEW     test-id '{nt}' present live but not in inventory")
+    for pname, diff in per_page.items():
+        for live in diff.get("planned_live", []):
+            print(f"    LIVE    {pname}.{live['element']}: planned, now on the page "
+                  f"({live['matches']} match(es)) - the inventory update confirms it")
     if args.propose:
         proposals = inventory_proposals.build_proposals(
             {p: els for p, els in new_by_page.items() if els}, inventory,
@@ -273,6 +311,13 @@ def main() -> int:
                 print(f"\n  [{pname}] uncovered")
                 for ename, sel in els.items():
                     print(f"    NEW-ELEMENT   {ename}: {sel}")
+        for pname, dec in new_declared.items():
+            for ename, row in (dec.get("shared") or {}).items():
+                print(f"    SHARED        {pname}.{ename}: already in the inventory as "
+                      f"{row['covered_by']}")
+        for row in report.get("unlisted_paths") or []:
+            print(f"    UNLISTED-PAGE {row['group']} ({row['count']} path(s), e.g. "
+                  f"{row['example']}) - linked from {', '.join(row['linked_from'])}")
     if report["pages_missing_notes"]:
         print(f"\n  WARN: pages with no elements_notes (author them): "
               f"{', '.join(report['pages_missing_notes'])}")

@@ -46,7 +46,7 @@ def run(tmp_path, monkeypatch):
                     "renderedText": "Cancel", "label": "", "visible": True,
                     "thirdParty": False, "hasIconChild": False, "cssPath": ""}]
     monkeypatch.setattr(chk, "collect_uncovered",
-                        lambda page, url, sels, attrs: ("Home", descriptors))
+                        lambda page, url, sels, attrs, **k: ("Home", descriptors))
 
     def _run(*flags):
         monkeypatch.setattr(sys, "argv", ["check", "--no-login", *flags])
@@ -99,7 +99,7 @@ def test_compare_marks_always_page_selectors_on_every_page(run, tmp_path, monkey
     (tmp_path / "inventory.json").write_text(json.dumps(inv), encoding="utf-8")
     seen = []
 
-    def capture(page, url, sels, attrs):
+    def capture(page, url, sels, attrs, **k):
         seen.append(list(sels))
         return "Home", []
 
@@ -145,7 +145,7 @@ def test_compare_records_the_generators_declarations_for_uncovered_elements(
                    desc("button", {"id": "undo"}, "Undo", visible=False),
                    *[desc("a", {"href": f"/item/{i}"}, f"Item {i}") for i in (1, 2)]]
     monkeypatch.setattr(chk, "collect_uncovered",
-                        lambda page, url, sels, attrs: ("Home", descriptors))
+                        lambda page, url, sels, attrs, **k: ("Home", descriptors))
     out_json = tmp_path / "report.json"
     assert run("--compare", "--json", str(out_json)) == 0
     report = json.loads(out_json.read_text(encoding="utf-8"))

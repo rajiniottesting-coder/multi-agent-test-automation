@@ -1323,7 +1323,8 @@ def diff_page(page_name: str, inventory_selectors: dict[str, str],
               test_attrs: tuple = TEST_ID_ATTRS,
               declared_family: set | None = None,
               declared_conditional: set | None = None,
-              declared_removed: set | None = None) -> dict:
+              declared_removed: set | None = None,
+              declared_planned: set | None = None) -> dict:
     """Diff one committed page against the live DOM.
 
     inventory_selectors : {element_name: selector} from the committed inventory
@@ -1363,6 +1364,21 @@ def diff_page(page_name: str, inventory_selectors: dict[str, str],
     # also report.
     removed = declared_removed or set()
     missing = [m for m in missing if m["element"] not in removed]
+    # A key declared `planned` was written from the design before the element
+    # was deployed (F-12). Zero matches is "not live yet", never drift; a match
+    # (one, or several for a declared family) is the deployment confirming it.
+    planned = declared_planned or set()
+    missing = [m for m in missing if m["element"] not in planned]
+    family = declared_family or set()
+    planned_live, planned_waiting = [], []
+    for n, s_ in inventory_selectors.items():
+        if n not in planned:
+            continue
+        count = live_resolved.get(s_, 0)
+        if count == 1 or (count > 1 and n in family):
+            planned_live.append({"element": n, "selector": s_, "matches": count})
+        elif count == 0:
+            planned_waiting.append({"element": n, "selector": s_})
     reappeared = [{"element": n, "selector": s_, "matches": live_resolved.get(s_, 0)}
                   for n, s_ in inventory_selectors.items()
                   if n in removed and live_resolved.get(s_, 0) > 0]
@@ -1375,7 +1391,6 @@ def diff_page(page_name: str, inventory_selectors: dict[str, str],
     # the declaration being satisfied, not drift, and the generation-time
     # validator already stops anyone clicking it. Reporting it as ambiguous
     # every night trains the reader to ignore the report.
-    family = declared_family or set()
     ambiguous = sorted(
         (name, sel, live_resolved.get(sel, 0))
         for name, sel in inventory_selectors.items()
@@ -1384,7 +1399,8 @@ def diff_page(page_name: str, inventory_selectors: dict[str, str],
     return {"missing": missing, "new_data_tests": new,
             "ambiguous": [{"element": n, "selector": s_, "matches": c}
                           for n, s_, c in ambiguous],
-            "reappeared": reappeared}
+            "reappeared": reappeared,
+            "planned_live": planned_live, "planned_waiting": planned_waiting}
 
 
 def summarize_drift(per_page: dict[str, dict], missing_pages: list[str]) -> dict:
@@ -1405,6 +1421,10 @@ def summarize_drift(per_page: dict[str, dict], missing_pages: list[str]) -> dict
         "reappeared_selectors": total_reappeared,
         "has_drift": bool(total_missing or missing_pages or total_new
                           or total_ambiguous or total_reappeared),
+        # Planned elements (F-12): information, never drift. Live ones are
+        # confirmed by the nightly inventory update; waiting ones are expected.
+        "planned_live": sum(len(p.get("planned_live", [])) for p in per_page.values()),
+        "planned_waiting": sum(len(p.get("planned_waiting", [])) for p in per_page.values()),
         "pages": per_page,
     }
 
@@ -1423,6 +1443,10 @@ def summarize_drift(per_page: dict[str, dict], missing_pages: list[str]) -> dict
 # the inventory does not cover.
 
 COVER_ATTR = "data-inventory-covered"
+# Set on a node ANOTHER page's selector resolves to, valued "<page>.<key>": a
+# shared section (a footer, a header) is already in the inventory once, under
+# that key; the page being compared must not get a second copy (G14).
+SHARED_ATTR = "data-inventory-shared"
 
 
 def uncovered_descriptors(descriptors: list[dict]) -> list[dict]:
@@ -1431,7 +1455,22 @@ def uncovered_descriptors(descriptors: list[dict]) -> list[dict]:
     A descriptor is covered when the browser marked its node with COVER_ATTR.
     Only unmarked descriptors are returned, so the mark can never reach a
     selector or a name built from their attributes."""
-    return [d for d in descriptors if COVER_ATTR not in (d.get("attrs") or {})]
+    return [d for d in descriptors
+            if COVER_ATTR not in (d.get("attrs") or {})
+            and SHARED_ATTR not in (d.get("attrs") or {})]
+
+
+def shared_descriptors(descriptors: list[dict]) -> list[dict]:
+    """The descriptors only ANOTHER page's selector resolved to (pure), with the
+    mark taken out of their attributes so it never reaches a name or selector."""
+    out = []
+    for d in descriptors:
+        attrs = d.get("attrs") or {}
+        if COVER_ATTR in attrs or SHARED_ATTR not in attrs:
+            continue
+        out.append({**d, "attrs": {k: v for k, v in attrs.items() if k != SHARED_ATTR},
+                    "_covered_by": attrs[SHARED_ATTR]})
+    return out
 
 
 def uncovered_entry(url: str, title: str, descriptors: list[dict],
@@ -1463,10 +1502,21 @@ def uncovered_entry(url: str, title: str, descriptors: list[dict],
     unstable = set((entry.get("_unstable_selectors") or {}).get("elements") or [])
     for names in ((entry.get("_ambiguous_selectors") or {}).get("selectors") or {}).values():
         unstable |= set(names or [])
+    # Covered by another page's key (G14): named as the generator would name
+    # it, so the reader recognises it, and never added.
+    shared: dict = {}
+    for d in shared_descriptors(descriptors):
+        one = build_page_entry(url, title, [{k: v for k, v in d.items() if k != "_covered_by"}],
+                               base_url=base_url, test_attrs=test_attrs)
+        for name, value in (one.get("elements") or {}).items():
+            if not name.startswith("_") and name not in shared:
+                shared[name] = {"selector": value.get("selector") if isinstance(value, dict)
+                                else value, "covered_by": d["_covered_by"]}
     return {"elements": elements,
             "multi_match": sorted(n for n in entry.get("multi_match") or [] if n in elements),
             "conditional": sorted(n for n in entry.get("conditional") or [] if n in elements),
-            "unstable": sorted(n for n in unstable if n in elements)}
+            "unstable": sorted(n for n in unstable if n in elements),
+            "shared": shared}
 
 
 def uncovered_elements(url: str, title: str, descriptors: list[dict],
@@ -1475,6 +1525,54 @@ def uncovered_elements(url: str, title: str, descriptors: list[dict],
     (uncovered_entry without the declarations)."""
     return uncovered_entry(url, title, descriptors, base_url=base_url,
                            test_attrs=test_attrs)["elements"]
+
+
+_ASSET = re.compile(r"\.(png|jpe?g|gif|svg|webp|ico|css|js|pdf|zip|xml|txt|woff2?)$", re.I)
+
+
+def _path_pattern(url: str):
+    """A regex for an inventory page's url: `{name}` matches one path segment."""
+    path = (urlparse(url).path if "://" in url else url.split("?")[0].split("#")[0]) or "/"
+    path = path.rstrip("/") or "/"
+    parts = re.split(r"(\{[^}]+\})", path)
+    body = "".join("[^/]+" if p.startswith("{") else re.escape(p) for p in parts)
+    return re.compile(f"^{body}/?$")
+
+
+def unlisted_paths(hrefs: dict, inventory: dict, base_url: str, limit: int = 20) -> list:
+    """Same-origin pages the application links to that no inventory page's url
+    (or url template) matches (L25), grouped by first path segment (pure):
+
+        [{"group": "/<segment>", "count": distinct paths, "example": path,
+          "linked_from": [inventory pages]}]
+
+    Listed only: a person adds a page entry (or a planned one) to have it
+    crawled. Assets, anchors, mail and script links, other hosts are skipped."""
+    host = urlparse(base_url).netloc
+    patterns = [_path_pattern((p or {}).get("url") or "/")
+                for p in ((inventory or {}).get("pages") or {}).values()
+                if not (p or {}).get("always")]
+    groups: dict = {}
+    for page_name in sorted(hrefs or {}):
+        for href in sorted(set(hrefs[page_name] or ())):
+            href = (href or "").strip()
+            if not href or href.startswith(("#", "mailto:", "tel:", "javascript:")):
+                continue
+            parsed = urlparse(href if "://" in href or href.startswith("//")
+                              else base_url.rstrip("/") + "/" + href.lstrip("/"))
+            if parsed.netloc and parsed.netloc != host:
+                continue
+            path = (parsed.path or "/").rstrip("/") or "/"
+            if _ASSET.search(path) or any(p.match(path) for p in patterns):
+                continue
+            group = "/" + path.strip("/").split("/")[0]
+            g = groups.setdefault(group, {"group": group, "paths": set(),
+                                          "example": path, "linked_from": set()})
+            g["paths"].add(path)
+            g["linked_from"].add(page_name)
+    out = [{"group": g["group"], "count": len(g["paths"]), "example": g["example"],
+            "linked_from": sorted(g["linked_from"])} for g in groups.values()]
+    return sorted(out, key=lambda r: (-r["count"], r["group"]))[:limit]
 
 
 def pages_missing_notes(inventory: dict) -> list[str]:

@@ -186,7 +186,7 @@ def propose_run(tmp_path, monkeypatch):
                     "renderedText": "Cancel", "label": "", "visible": True,
                     "thirdParty": False, "hasIconChild": False, "cssPath": ""}]
     monkeypatch.setattr(chk, "collect_uncovered",
-                        lambda page, url, sels, attrs: ("Widgets", descriptors))
+                        lambda page, url, sels, attrs, **k: ("Widgets", descriptors))
 
     def _run(*flags):
         monkeypatch.setattr(sys, "argv", ["check", "--no-login", *flags])

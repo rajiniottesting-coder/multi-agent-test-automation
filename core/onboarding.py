@@ -124,7 +124,35 @@ def inventory_checks(inventory: dict, inventory_file: str | None) -> list[Check]
                          "Add Components to these pages in the inventory."))
     else:
         out.append(Check("inventory: components", OK, "every page carries Components"))
+    out += planned_checks(inventory)
     return out
+
+
+def planned_checks(pages: dict) -> list[Check]:
+    """Planned entries (F-12) that can never be confirmed: a `planned` key with
+    no selector, or a `planned_page` with no planned element. Silent when the
+    inventory declares nothing planned."""
+    unknown, unconfirmable, count = [], [], 0
+    for name, spec in sorted((pages or {}).items()):
+        spec = spec or {}
+        planned = list(spec.get("planned") or [])
+        count += len(planned)
+        unknown += [f"{name}.{k}" for k in planned if k not in (spec.get("elements") or {})]
+        if spec.get("planned_page") and not planned:
+            unconfirmable.append(name)
+    if not count and not unconfirmable:
+        return []
+    if unknown or unconfirmable:
+        return [Check("inventory: planned", WARN,
+                      "; ".join(x for x in (
+                          f"planned keys with no selector: {', '.join(unknown)}" if unknown else "",
+                          f"planned pages with no planned element: {', '.join(unconfirmable)}"
+                          if unconfirmable else "") if x),
+                      "Give each planned key its selector, and each planned page an element "
+                      "the design names (python -m scripts.plan_inventory); nothing else can "
+                      "confirm it is live.")]
+    return [Check("inventory: planned", OK,
+                  f"{count} planned element(s), confirmed by the nightly update once live")]
 
 
 def graph_checks(root: Path, language: str, inventory_file: str | None

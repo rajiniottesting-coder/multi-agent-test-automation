@@ -4300,6 +4300,9 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
     unmarked = [u for u in agent2_coverage.unmarked_scenarios(generated_files[:1])
                 if u not in before_unmarked]
     agent2_coverage.log_gaps(story_id, coverage_gaps, unmarked)
+    from core import inventory_planned
+    uses_planned = inventory_planned.planned_keys_used(
+        generated_files, inventory_planned.load_inventory(ctx))
 
     base_branch = f"auto/{story_id}-{feature_stem.replace('_', '-')}"
     update_branch = _find_unused_update_branch(gh, base_branch)
@@ -4352,6 +4355,7 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
     )
     pr_body = "".join(pr_body_parts)
     pr_body += agent2_coverage.pr_section(coverage_gaps, unmarked, coverage_labels)
+    pr_body += inventory_planned.pr_section(uses_planned)
 
     if dry_run:
         logger.warning("DRY RUN -- skipping branch/commit/PR creation")
@@ -4939,6 +4943,13 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
     coverage_gaps = batch_gaps + skip_gaps
     unmarked = agent2_coverage.unmarked_scenarios(own_files)
     agent2_coverage.log_gaps(story_id, coverage_gaps, unmarked)
+    # Planned inventory keys this code reaches (F-12): named in the PR, so the
+    # reviewer knows those tests fail until the feature is deployed.
+    from core import inventory_planned
+    uses_planned = inventory_planned.planned_keys_used(
+        generated_files, inventory_planned.load_inventory(ctx))
+    if uses_planned:
+        logger.warning("%s uses planned (not deployed) inventory keys: %s", story_id, uses_planned)
 
     # 4c. FINAL VALIDATION (after any repair attempts). The scenarios this run
     # wrote are judged against their approved test cases: the story's new ones
@@ -4966,7 +4977,8 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
     if dry_run:
         logger.warning("DRY RUN -- skipping branch/commit/PR creation")
         _print_dry_run_preview(output)
-        section = agent2_coverage.pr_section(coverage_gaps, unmarked, coverage_labels)
+        section = (agent2_coverage.pr_section(coverage_gaps, unmarked, coverage_labels)
+                   + inventory_planned.pr_section(uses_planned))
         if section:
             print(section.encode("ascii", "replace").decode("ascii"))
         return {
@@ -4974,6 +4986,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
             "files_generated": len(output.files),
             "status": "code_generated_dry_run",
             "not_automated": [g.key for g in agent2_coverage.blocking(coverage_gaps)],
+            "uses_planned": uses_planned,
         }
 
     # Real run — branch must contain a Jira key for downstream agents to work
@@ -5083,6 +5096,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
     if impact_report:
         pr_body_with_footer += agent2_impact.pr_sections(impact_report)
     pr_body_with_footer += agent2_coverage.pr_section(coverage_gaps, unmarked, coverage_labels)
+    pr_body_with_footer += inventory_planned.pr_section(uses_planned)
 
     pr_url = gh.open_pull_request(
         title=output.pr_title,
@@ -5124,6 +5138,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
         "status": "pr_opened",
         "llm_usage": usage,
         "not_automated": [g.key for g in agent2_coverage.blocking(coverage_gaps)],
+        "uses_planned": uses_planned,
     }
     if impact_report:
         result["revised"] = sorted(impact_report["revised"])
