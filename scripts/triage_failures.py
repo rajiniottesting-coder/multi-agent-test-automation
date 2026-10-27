@@ -10,9 +10,12 @@ ran the E2E, a manual run on main), on the junit.xml Agent 4 finalised:
             unavailability; it closes on the next run without one
   flakes    recorded on the pipeline health issue (core/flaky_tests.py)
   no report one health alert: the run on main produced nothing to read
+  refused   one health alert when the tracker refused a defect write
 
-Exit code 0 unless the tracker cannot be used: the findings live on the
-tracker, not in this job's colour.
+Exit code 0 when everything found was recorded - the findings live on the
+tracker, not in this job's colour. 1 when the tracker cannot be used or
+refused a write: then the job's red run is the notice that still reaches
+someone (the workflow's owner), even if the alert could not be posted.
 """
 from __future__ import annotations
 
@@ -25,6 +28,7 @@ from pathlib import Path
 logger = logging.getLogger("triage_failures")
 
 NO_REPORT = "main-run-no-report"
+NOT_WRITTEN = "defects-not-written"
 OUTAGE = "application-unavailable-on-main"
 CAPPED = "defects-capped"
 
@@ -61,6 +65,15 @@ def run(tracker, junit: Path, run_url: str, features_dir: Path, dry_run: bool = 
                 "environment problem - look at the run first.")
     else:
         resolve(tracker, CAPPED, f"Every failing test on main has a defect again: {run_url}")
+    if result["errors"]:
+        alert(tracker, NOT_WRITTEN, f"The tracker refused {len(result['errors'])} defect "
+                                    "write(s) after a run on main",
+              f"Run: {run_url}\n\n" + "\n".join(f"- {what}: {why[:300]}"
+                                                for what, why in result["errors"][:10])
+              + "\n\nUsually a field the defect's create screen requires, or a missing "
+                "permission: check `defects.issue_type` and the bot account.")
+    else:
+        resolve(tracker, NOT_WRITTEN, f"Every defect write succeeded again: {run_url}")
     if result["flaky"] and not dry_run:
         cases = {jm.case_id(c): c for c in jm.cases(root)}
         flaky_tests.record(tracker, [(t, jm.props(cases[t]).get("first_failure"))
@@ -87,6 +100,9 @@ def main(argv=None) -> int:
               Path(args.features_dir) if args.features_dir else FEATURES_DIR, args.dry_run)
     for name, value in out.items():
         print(f"{name}: {value}")
+    if out.get("errors"):
+        print(f"[FAIL] the tracker refused {len(out['errors'])} write(s) - see above.")
+        return 1
     return 0
 
 

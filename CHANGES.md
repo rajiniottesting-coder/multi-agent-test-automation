@@ -17,7 +17,7 @@ This document records substantive changes to the framework in reverse-chronologi
 - Tests updated: `test_in_flight.py` (the wait step's guard and the runs listing), `test_review_scenario_evidence.py` (a green run's report is read now), `test_impact_handover.py` defaults (Agent 0's selection excludes `budget-hold`)
 - Docs: README, GUIDE (Agents 4 and 5, what runs per event, labels, config, cost, CI schedule, test suites, new *Operating the pipeline*, onboarding step 8, troubleshooting), TECHNICAL_DEEP_DIVE (layout, Agent 4 steps and triage job, Agent 5, llm_client, the adapters' optional capabilities, labels, schedules), REUSE_FOR_NEW_PROJECT (Change 8), DECISIONS ADR-023, VALIDATION_AND_KNOWN_GAPS (N1-N4, L14, L22 closed; F-7, F-19, F-21-F-24 done; L35-L41; N11 and F-31 for P4's comment de-duplication; E27-E32 in UC-7; P1-4 / P2 rows now cite #229 / #230)
 
-Pinned by `tests/unit/test_pipeline_health.py` (48), `test_outage_reported_apart.py` (32), `test_flaky_retry.py` (26, one a real pytest run and `--last-failed` retry), `test_defect_triage.py` (21), `test_spend_budget.py` (36) and `test_p3_night_end_to_end.py` (1: two nights on main through the finalise, verdict, triage and health-check scripts) - 164, plus 5 in updated files; 38 deliberate breaks, each failed a test.
+Pinned by `tests/unit/test_pipeline_health.py` (48), `test_outage_reported_apart.py` (32), `test_flaky_retry.py` (26, one a real pytest run and `--last-failed` retry), `test_defect_triage.py` (23), `test_spend_budget.py` (36) and `test_p3_night_end_to_end.py` (1: two nights on main through the finalise, verdict, triage and health-check scripts) - 166, plus 5 in updated files; 41 deliberate breaks, each failed a test.
 
 ---
 

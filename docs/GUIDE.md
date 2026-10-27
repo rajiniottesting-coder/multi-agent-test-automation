@@ -1497,7 +1497,8 @@ rewritten on each change - edits to it are not kept.
 | `credential-expiry:repo-host` | health check | the token expires within `expiry_warn_days` (where GitHub gives the date) | a new token is further away, or has no expiry |
 | `application-unavailable-on-main` | triage | tests on `main` could not run: the application was unavailable | the next run on `main` without an outage |
 | `defects-capped` | triage | more new failures on `main` than `max_new_per_run` | a run on `main` where every failing test has its defect |
-| `main-run-no-report` | triage | a run on `main` produced no readable report | the next run on `main` with a report |
+| `main-run-no-report` | triage | a run on `main` produced no readable report (not for a run a newer push cancelled) | the next run on `main` with a report |
+| `defects-not-written` | triage | the tracker refused a defect write - usually a field the defect's create screen requires, or a permission; the triage job also goes red | a run on `main` whose writes all succeed |
 | `budget-warn-<day>`, `budget-day-<day>` | any agent | the day's model spend passed `warn_at`, or reached `per_day_usd` | the day ends (the health check closes them) |
 
 The tracker's own credentials cannot be reported on the tracker: when they are

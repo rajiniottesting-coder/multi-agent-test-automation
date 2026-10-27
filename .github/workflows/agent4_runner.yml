@@ -953,11 +953,14 @@ jobs:
   # request's story. After a run on MAIN - the nightly schedule (F-21), a push
   # that ran the E2E, or a manual run on main - this raises one defect per
   # failing test and cause (core/defects.py), opens a pipeline health alert for
-  # an outage, and records flakes. Never on a pull request.
+  # an outage, and records flakes. Never on a pull request, and not when the
+  # test job was CANCELLED: a push to main cancels the run of the push before
+  # it (cancel-in-progress), and that run's missing report is no problem to
+  # report - the newer run is triaged instead.
   triage:
     name: Raise defects for failures on main
     needs: test
-    if: always() && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && needs.test.outputs.push_e2e != 'false'))
+    if: always() && needs.test.result != 'cancelled' && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && needs.test.outputs.push_e2e != 'false'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # One triage at a time: two would both raise the same new defect.

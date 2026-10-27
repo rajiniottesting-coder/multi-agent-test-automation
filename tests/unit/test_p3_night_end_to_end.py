@@ -9,8 +9,6 @@ issue - and that night 2 closes what night 1 opened, posting once each.
 Real JiraClient over a fake Jira, real junit files and scripts; only the repo
 host (workflow runs) and the model probe are stand-ins. Generic names only.
 """
-import datetime as dt
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
