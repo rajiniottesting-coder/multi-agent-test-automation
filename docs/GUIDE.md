@@ -598,9 +598,12 @@ feature is live and its tests passed), the Story Done on merge workflow runs
 - **Every line the notes already state is dropped** (same words, or contained
   in an existing line - a deterministic check), and an addition longer than
   `max_addition_chars` is refused; the PR lists both.
-- A pull request on `context-update/<key>-notes` (no issue key, so merging it
-  moves nothing) and an `[agent0:context-addition]` marker on the story; "No
-  notes addition needed" when nothing is new. Once per story text.
+- A pull request on `context-update/<key>-notes-<hash>` (no issue key, so
+  merging it moves nothing) and an `[agent0:context-addition]` marker on the
+  story; "No notes addition needed" when nothing is new. Once per content: the
+  hash covers the story **and its test cases**, so an `ai-update` or
+  `ai-regenerate` merge whose test cases changed is proposed again, and the
+  same content never is.
 - Off with Agent 0 or `context_update.additions`; printed in shadow mode. Its
   cost goes to the story as `Agent 0 (Impact Analyst)`.
 - **Size budget:** each module is held to `module_budget_chars` (8000) - it goes
@@ -1745,8 +1748,9 @@ Expected when the PR changes only `prompts/`, `docs/` or Markdown: no browser ru
 
 It runs only for a branch carrying a story key, with Agent 0 enabled (and not
 in shadow mode, which prints it) and `context_update.additions` on, and only
-once per story text (`[agent0:context-addition]` marker, or an existing
-`context-update/<key>-notes` branch). "No notes addition needed" means every
+once per content of the story and its test cases (`[agent0:context-addition]`
+marker carrying that hash, or an existing `context-update/<key>-notes-<hash>`
+branch). "No notes addition needed" means every
 proposed line was already in the notes, or the model proposed nothing; the
 comment lists anything refused (a file the story's Components do not select,
 an addition over `max_addition_chars`). Re-run it with Run workflow on Story
@@ -1767,10 +1771,6 @@ stale, elements with no durable selector, elements over
 to is never replaced and no second one is opened - merge or close it and the
 next night proposes again from `main`.
 
-### A review comment on Agent 2's pull request was not acted on
-
-Only a **"Request changes"** review, or a conversation comment starting with
-**`/fix`**, starts Agent 2's review fix - an approval or an ordinary comment is
 ### Agent 3's check failed and no review was posted
 
 The review call itself failed: the model gateway refused the request (an
@@ -1780,6 +1780,10 @@ budget), so size should not recur; re-run the job, and if it fails again on the
 same PR, measure the prompt locally with a fake model (the size is logged as
 `Review prompt size`).
 
+### A review comment on Agent 2's pull request was not acted on
+
+Only a **"Request changes"** review, or a conversation comment starting with
+**`/fix`**, starts Agent 2's review fix - an approval or an ordinary comment is
 conversation. The reviewer needs write access (author association owner, member
 or collaborator), bots are ignored, and only pull requests on `auto/*` branches
 qualify. The `[agent2:review-fix]` comment on the PR lists each comment's
@@ -2286,7 +2290,7 @@ any run can find it again. All are plain Jira comments.
 | `[agent0:delta]` | story | Agent 0 | A re-analysis after the story changed: what moved |
 | `[agent0:no-component]` | story | Agent 0 | Posted once: no Component, so the whole suite was considered |
 | `[agent0:context-update]` | story | Agent 0 | The context-update PR link, or "No context update needed"; carries the story-text hash |
-| `[agent0:context-addition]` | story | Done on merge (Agent 0's context update) | The notes-addition PR link, or "No notes addition needed"; carries the story-text hash, so an edited story is checked again |
+| `[agent0:context-addition]` | story | Done on merge (Agent 0's context update) | The notes-addition PR link, or "No notes addition needed"; carries the hash of the story and its test cases, so an edited story or edited test cases are checked again |
 | `[agent0:trace]` `will-revise` / `result` / `merged` / `restored` | owning story | Agent 0 hand-over, Agent 5, reconcile | What a change story did to this story's tests |
 | `[agent0:snapshot]` | test case | Agent 1 impact-aware | The text before revision: the undo source |
 | `[agent0:reconcile]` `closed-unmerged` / `reverted` / `no-pr` / `ask-a-person` | story | reconcile | Reconcile's memory between scans |

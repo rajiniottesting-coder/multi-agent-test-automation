@@ -1604,9 +1604,13 @@ does not suppress a retry's update.
 `scripts/propose_context_addition.py`, the second step of Story Done on merge
 (story key from the branch; Agent 0 `enabled`, `context_update.enabled` and
 `additions`; `shadow_mode` or `--dry-run` print). Idempotent: an
-`[agent0:context-addition]` marker carrying the story-text hash, or the branch
-`addition_branch()` (`context-update/<key>-notes`, no issue key) already
-existing, means no model call. One call, `extract_note_additions()`
+`[agent0:context-addition]` marker carrying `addition_hash()` (the story's text
+and its linked test cases - an `ai-update` / `ai-regenerate` merge with edited
+test cases is proposed again), or the branch `addition_branch()`
+(`context-update/<key>-notes-<hash[:8]>`, lower case, no issue key) already
+existing, means no model call. A text that repeats the heading it is placed
+under keeps one heading; a new section that brings its own heading gets no
+second one. One call, `extract_note_additions()`
 (`NoteAdditions`, `prompts/agent0_context_additions.md`), reads the story, its
 linked test cases, `story_scenarios()` (the merged scenarios whose `# JIRA:`
 marker is one of them, parsed with `parse_feature_file`), the scoped notes

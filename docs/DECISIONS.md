@@ -34,7 +34,8 @@ nothing measured how large the notes - which go into every prompt - had grown.
    and tested, so its facts - rules, limits, messages, flow, test data - are
    proposed for its Component modules (a new module for a new Component). Every
    line the notes already state is dropped by a deterministic check, not by the
-   model. A reviewed pull request, once per story text.
+   model. A reviewed pull request, once per content of the story and its test
+   cases (an update that edits only the test cases is proposed again).
 3. **A removed element is declared, not left stale.** The hand-over adds it to
    the page's `removed` list; every checker reads missing as expected and
    present again as drift; the nightly inventory update deletes the key once no

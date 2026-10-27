@@ -245,7 +245,8 @@ def test_a_merged_story_gets_one_notes_pull_request(repo):
         _add(WISH, "- A wishlist holds at most 10 items.")]), "AB-5", SETTINGS, repo)
     assert out == {"story": "AB-5", "addition": "proposed", "url": "https://host.example/pr/5"}
     title, body, head = host.prs[0]
-    assert head == "context-update/ab-5-notes"
+    digest = cu.addition_hash(tracker.get_story(), tracker.get_linked_test_cases("AB-5"))
+    assert head == f"context-update/ab-5-notes-{digest[:8]}"
     from config import extract_jira_key
     assert extract_jira_key(head) is None, "merging it must not close or report on the story"
     assert set(host.files) == {BASKET, WISH}
@@ -263,11 +264,12 @@ def test_nothing_new_is_said_once_on_the_story(repo):
 
 def test_a_story_already_handled_costs_no_model_call(repo):
     llm = _llm([])
-    host = _Host(existing={"context-update/ab-5-notes"})
+    t = _tracker()
+    digest = cu.addition_hash(t.get_story(), t.get_linked_test_cases("AB-5"))
+    host = _Host(existing={f"context-update/ab-5-notes-{digest[:8]}"})
     assert cu.propose_addition_for_story(_tracker(), host, llm, "AB-5", SETTINGS,
                                          repo)["addition"] == "already-proposed"
-    story_hash = cu._story_hash(_tracker().get_story())
-    marked = _tracker(comments=[f"{cu.ADD_MARKER} No notes addition needed\n(story: {story_hash})"])
+    marked = _tracker(comments=[f"{cu.ADD_MARKER} No notes addition needed\n(story: {digest})"])
     assert cu.propose_addition_for_story(marked, _Host(), llm, "AB-5", SETTINGS,
                                          repo)["addition"] == "already-proposed"
     assert llm.invoke_structured.call_count == 0
@@ -362,3 +364,33 @@ def test_the_merge_workflow_proposes_the_notes_after_done():
     assert step["env"]["GITHUB_TOKEN"] == "${{ secrets.GH_PAT }}"
     assert "OPENAI_API_KEY" in step["env"] and "JIRA_API_TOKEN" in step["env"]
     assert "$BRANCH" in step["run"], "the branch reaches the script through the environment"
+
+
+def test_edited_test_cases_bring_a_new_proposal_on_a_new_branch(repo):
+    """An ai-update / ai-regenerate merge: the story is unchanged, its test
+    cases are not - their new facts must still reach the notes."""
+    first = _tracker()
+    digest = cu.addition_hash(first.get_story(), first.get_linked_test_cases("AB-5"))
+    edited = _tracker(comments=[f"{cu.ADD_MARKER} Notes addition proposed: u\n(story: {digest})"])
+    edited.get_linked_test_cases.return_value = [
+        {"key": "AB-11", "summary": "[Negative] A second coupon is refused",
+         "description": "Expected: 'Only one coupon per order' and the first coupon stays"}]
+    host = _Host(existing={f"context-update/ab-5-notes-{digest[:8]}"})
+    out = cu.propose_addition_for_story(edited, host, _llm([
+        _add(BASKET, "- The first coupon stays applied when a second is refused.", "Coupons")]),
+        "AB-5", SETTINGS, repo)
+    assert out["addition"] == "proposed" and host.prs[0][2] != f"context-update/ab-5-notes-{digest[:8]}"
+
+
+def test_a_text_that_repeats_its_heading_is_placed_once():
+    res = cu.propose_additions(_sources(), [_add(BASKET, "## Coupons\n\nA coupon expires after "
+                                                         "seven days.", "Coupons")], OFFERED, {})
+    assert res.edits[BASKET].count("## Coupons") == 1
+    assert res.edits[BASKET].endswith("One coupon per order.\n\nA coupon expires after seven days.\n")
+
+
+def test_a_new_section_with_its_own_heading_gets_no_second_heading():
+    res = cu.propose_additions(_sources(), [_add(BASKET, "## Gift wrap\n\n- Wrapping is free.",
+                                                 "Wrapping")], OFFERED, {})
+    text = res.edits[BASKET]
+    assert text.endswith("## Gift wrap\n\n- Wrapping is free.\n") and "## Wrapping" not in text
