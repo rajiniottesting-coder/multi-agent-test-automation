@@ -59,7 +59,10 @@ DEFAULTS: dict = {
     # of its selectors stale is never edited.
     "inventory_update": {"enabled": True, "branch_prefix": "inventory-update/",
                          "max_additions_per_page": 20, "hold_ratio": 0.5,
-                         "code_dirs": ["pages", "tests"]},
+                         "code_dirs": ["pages", "tests"],
+                         # The same new element on every measured page (at least
+                         # this many) is a shared section: listed, not added.
+                         "layout_min_pages": 3},
 }
 
 

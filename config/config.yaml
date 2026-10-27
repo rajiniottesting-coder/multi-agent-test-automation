@@ -443,6 +443,8 @@ agents:
       max_additions_per_page: 20           # the rest are listed in the PR
       hold_ratio: 0.5                      # more than this share stale -> page left alone
       code_dirs: ["pages", "tests"]        # a key named here is never removed
+      layout_min_pages: 3                  # a new element on every measured page (>= this many)
+                                           # is a shared section: listed, never added per page
 
   # agent3_reviewer:  # triggered by GitHub PR events, no Jira selection needed
   # agent4_runner:    # triggered by GitHub PR events (CI workflow only — no .py file)
