@@ -61,7 +61,7 @@ These files contain zero project-specific knowledge. Reuse as-is:
 - `tests/conftest.py`, `tests/step_defs/conftest.py` — browser lifecycle, auto-registered page-object fixtures, role-based `credentials` (see Change 5)
 
 ### Agent prompts (templated, read app info from config at runtime)
-- `prompts/agent0_seeds.md`, `prompts/agent0_adjudicate.md`, `prompts/agent0_wording.md`, `prompts/agent0_context_notes.md`
+- `prompts/agent0_seeds.md`, `prompts/agent0_adjudicate.md`, `prompts/agent0_wording.md`, `prompts/agent0_context_notes.md`, `prompts/agent0_context_additions.md`
 - `prompts/agent1_analyst.md`, `prompts/agent1_impact_aware.md`
 - `prompts/agent2_coder_plan.md`
 - `prompts/agent2_coder_generate.md` — all generation rules + BasePage helpers section

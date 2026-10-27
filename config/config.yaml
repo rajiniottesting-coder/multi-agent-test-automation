@@ -415,6 +415,12 @@ agents:
     context_update:
       enabled: true
       branch_prefix: "context-update/"   # must not contain an issue key
+      # When a story's pull request merges (Story Done on merge): the facts its
+      # feature adds - rules, limits, messages, flow, test data - proposed to
+      # the story's Component modules as a reviewed PR; lines the notes already
+      # state are dropped (core/context_update.py, propose_addition_for_story).
+      additions: true
+      max_addition_chars: 1500             # a longer addition is refused, not cut
     # Nightly drift job: the inventory changes the crawl implies, as one pull
     # request at a time for a person to merge (core/inventory_update.py): a
     # stale selector replaced when the same element is found under a new

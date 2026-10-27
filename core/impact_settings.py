@@ -44,7 +44,10 @@ DEFAULTS: dict = {
     # Live mode only: when a change story is handed over (or has nothing to
     # review), propose the inventory / context-note wording update as a pull
     # request for a person to merge after deployment (core.context_update).
-    "context_update": {"enabled": True, "branch_prefix": "context-update/"},
+    "context_update": {"enabled": True, "branch_prefix": "context-update/",
+                       # When a story's PR merges: the facts its feature adds to
+                       # the notes, as a reviewed PR (core.context_update, F-8).
+                       "additions": True, "max_addition_chars": 1500},
     # Nightly drift job: the inventory changes the crawl implies, as one rolling
     # pull request for a person to merge (core.inventory_update). A key the
     # code directories name is never removed; a page with more than hold_ratio

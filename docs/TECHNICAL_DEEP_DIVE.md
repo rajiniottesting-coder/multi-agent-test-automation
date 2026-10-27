@@ -122,6 +122,7 @@ scripts/
   impact_reconcile.py
   onboarding_check.py
   promote_draft.py
+  propose_context_addition.py
   propose_inventory_update.py
   smoke_test.py
   sweep_stalled_prs.py
@@ -129,6 +130,7 @@ scripts/
 
 prompts/
   agent0_adjudicate.md
+  agent0_context_additions.md
   agent0_context_notes.md
   agent0_seeds.md
   agent0_wording.md
@@ -921,7 +923,7 @@ Wraps PyGithub. Methods used across agents:
 | `close_pull_request(pr_number)` | Close without merging; raises on failure (inventory update retires a superseded proposal) |
 | `delete_branch(name)` | Returns False on failure; discards a half-written branch, and best-effort a closed proposal's branch |
 
-### 9.7 `core/schemas.py` — every Pydantic model (24 classes)
+### 9.7 `core/schemas.py` — every Pydantic model (26 classes)
 
 | Class | Used by | Purpose |
 |---|---|---|
@@ -934,6 +936,7 @@ Wraps PyGithub. Methods used across agents:
 | `ChangeSeeds` | Agent 0 | change_type, behaviours, element_keys, components extracted from the story |
 | `WordingChange` / `WordingChanges` | Agent 0 | Inventory wording updates proposed by the context update |
 | `NoteRewrite` / `NoteRewrites` | Agent 0 | Inventory note rewrites proposed by the context update |
+| `NoteAddition` / `NoteAdditions` | Agent 0 (Done on merge) | Facts a merged story adds to the app notes: path, heading, text, reason |
 | `CandidateAssessment` | Agent 0 | The model's verdict on one candidate test |
 | `ImpactAssessment` | Agent 0 | The batch of candidate assessments |
 | `FilePlan` | Agent 2 | One file in the plan (path, type, is_new_file, purpose, related_test_cases) |
@@ -1583,6 +1586,29 @@ or a hash, so the branch never carries an issue key — and the
 `[agent0:context-update]` marker makes it idempotent. A marker that opened a
 pull request stands only while that PR is open (#185), so a closed proposal
 does not suppress a retry's update.
+
+**Notes addition at merge (F-8).** `propose_addition_for_story()` - run by
+`scripts/propose_context_addition.py`, the second step of Story Done on merge
+(story key from the branch; Agent 0 `enabled`, `context_update.enabled` and
+`additions`; `shadow_mode` or `--dry-run` print). Idempotent: an
+`[agent0:context-addition]` marker carrying the story-text hash, or the branch
+`addition_branch()` (`context-update/<key>-notes`, no issue key) already
+existing, means no model call. One call, `extract_note_additions()`
+(`NoteAdditions`, `prompts/agent0_context_additions.md`), reads the story, its
+linked test cases, `story_scenarios()` (the merged scenarios whose `# JIRA:`
+marker is one of them, parsed with `parse_feature_file`), the scoped notes
+(`scoped_sources()`, F-10) and `new_module_paths()` (a Component with no module
+yet). `propose_additions()` is pure: a path that is not an offered module or an
+allowed new one, the inventory, an empty addition or one over
+`max_addition_chars` is dropped with its reason; each content line
+`near_duplicate()` of an existing unit (token Jaccard ≥ 0.8, or contained in
+one - also against additions placed earlier in the same run) is left out and
+listed; the rest goes under the named heading (`_insert_under()`: end of that
+section, a bullet list continued), as a new `## heading` section when the
+heading does not exist, at the end, or as a new `# <Component>` module.
+`render_addition_body()` lists each addition with its reason, the repeated
+lines and the refusals. `_open_branch_pr()` (shared with the change-story PR)
+branches, commits and opens. Cost: `Agent 0 (Impact Analyst)` on the story.
 
 ### 18.5 Reconcile (`core/impact_reconcile.py`, `scripts/impact_reconcile.py`)
 
