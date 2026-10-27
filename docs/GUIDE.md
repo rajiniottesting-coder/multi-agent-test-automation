@@ -12,13 +12,14 @@ Everything you need to operate, configure, extend, and onboard new apps to this 
 6. [Branch naming](#branch-naming)
 7. [Configuration](#configuration)
 8. [Running the pipeline](#running-the-pipeline)
-9. [Inventory tooling — the full sequence](#inventory-tooling--the-full-sequence)
-10. [The sweeper (stalled-PR backstop)](#the-sweeper-stalled-pr-backstop)
-11. [Onboarding a new app](#onboarding-a-new-app)
-12. [Diagram reference](#diagram-reference)
-13. [Reading a test failure](#reading-a-test-failure)
-14. [Troubleshooting](#troubleshooting)
-15. [State management deep-dive](#state-management-deep-dive)
+9. [Operating the pipeline: health, defects, flakes, budgets](#operating-the-pipeline-health-defects-flakes-budgets)
+10. [Inventory tooling — the full sequence](#inventory-tooling--the-full-sequence)
+11. [The sweeper (stalled-PR backstop)](#the-sweeper-stalled-pr-backstop)
+12. [Onboarding a new app](#onboarding-a-new-app)
+13. [Diagram reference](#diagram-reference)
+14. [Reading a test failure](#reading-a-test-failure)
+15. [Troubleshooting](#troubleshooting)
+16. [State management deep-dive](#state-management-deep-dive)
 
 ---
 
@@ -373,12 +374,13 @@ Pydantic's `max_length=10` translates to JSON Schema `maxItems`, which some prov
 **What the workflow does:**
 1. Checks out the PR branch
 2. Installs Python deps and Playwright (with browser caching for speed)
-3. Runs `pytest` — the offline unit suite and the BDD tests — with JUnit XML, HTML and Allure output; a failed test keeps its screenshot, video and Playwright trace. A BDD test whose failure names a temporary HTTP error from the application (5xx or 429) is re-run up to twice, 20 s apart (`pytest-rerunfailures`, `--only-rerun`); a failure in a test whose own request the server refused that way, and never answered afterwards, is restated to name it (`tests/conftest.py`), so it is re-run too; nothing else is re-run, and `scripts/collapse_junit_reruns.py` then keeps only each test's final attempt in `junit.xml`, so Agent 5's counts and Agent 3's per-scenario evidence see one result per test. Page loads are retried earlier still, inside `BasePage.navigate()`. On a pull request that changes only `prompts/`, `docs/` or Markdown the browser run and Agent 5 are skipped (see *What runs, per event*); on a push to `main` the browser runs only when a runtime file changed
-4. On a pull request, before the browser run: waits while a run of another PR that started earlier has not finished (first come, first served, `scripts/e2e_turn.py`). Every PR tests the same live application with the same accounts, and saved state such as a cart would otherwise leak between them. Capped at 15 minutes, then it runs anyway; if the runs cannot be read it does not wait.
+3. Runs `pytest` — the offline unit suite and the BDD tests — with JUnit XML, HTML and Allure output; a failed test keeps its screenshot, video and Playwright trace. A BDD test whose failure names a temporary HTTP error from the application (5xx or 429) is re-run up to twice, 20 s apart (`pytest-rerunfailures`, `--only-rerun`); a failure in a test whose own request the server refused that way, and never answered afterwards, is restated to name it (`tests/conftest.py`), so it is re-run too; nothing else is re-run, and `scripts/collapse_junit_reruns.py` then keeps only each test's final attempt in `junit.xml`, so Agent 5's counts and Agent 3's per-scenario evidence see one result per test. Page loads are retried earlier still, inside `BasePage.navigate()`. Then every test still failing is **retried once** (`--last-failed`, at most 10; F-19), and `scripts/finalise_junit.py` writes what was learned into `junit.xml` (`core/junit_marks.py`): a pass on the retry is `flaky` (counts as passed, named, recorded on the pipeline health issue) or `outage_recovered`; a failure whose text says the application was unavailable is `outage` (F-7) - reported apart from test failures everywhere. The run step itself never fails the job; the last step, *Decide the E2E result*, does - on anything still failing after the retry (outages included: such a test was not tested), an interrupted run, a collection error, or no tests. On a pull request that changes only `prompts/`, `docs/` or Markdown the browser run and Agent 5 are skipped (see *What runs, per event*); on a push to `main` the browser runs only when a runtime file changed
+4. On a pull request and on the nightly run, before the browser run: waits while a run of another PR (or the nightly run) that started earlier has not finished (first come, first served, `scripts/e2e_turn.py`). Every PR tests the same live application with the same accounts, and saved state such as a cart would otherwise leak between them. Capped at 15 minutes, then it runs anyway; if the runs cannot be read it does not wait.
 5. Uploads `reports/` as a workflow artifact (so Agent 5 can read it in the next job)
-6. Writes a markdown test summary to the GitHub Actions job summary page
+6. Writes a markdown test summary to the GitHub Actions job summary page - failures, tests the application's outage stopped and flaky tests each in their own section
+7. After a run on `main` (nightly, a push that ran the E2E, a manual run on main): the `triage` job raises defects for what still fails (F-22, see *Operating the pipeline*)
 
-**Triggers:** PR opened, synchronized (new commits), reopened; a push to `main` touching framework paths; manual `workflow_dispatch`.
+**Triggers:** PR opened, synchronized (new commits), reopened; a push to `main` touching framework paths; manual `workflow_dispatch`; every night at 03:10 IST on `main` (F-21: the whole suite, no story report).
 
 **Why combined with Agent 5 in one workflow?** GitHub Actions has a quirk: workflows triggered by `workflow_run` (cross-workflow) don't appear as PR checks. Combining Agent 4 + Agent 5 into one workflow with two jobs gives both visibility on the PR. Trade-off: Agent 5's check shows as "Agent 4 - Runner / Post Results to Jira" instead of "Agent 5 - Reporter / Post Results to Jira" — cosmetic only.
 
@@ -390,9 +392,10 @@ Pydantic's `max_length=10` translates to JSON Schema `maxItems`, which some prov
 1. Parses `reports/junit.xml` (produced by Agent 4) into a `RunReport`.
 2. Scopes it to the story: keeps only the step-def modules the PR added or changed, so another story's failure is not counted as this one's. If the scope cannot be established it reports everything - over-reporting is cosmetic, hiding a story's own failure is not.
 3. Keeps what scoping dropped. Agent 4 runs the whole suite, so a failure in a test the story does not own still turns the PR check red. Those failures are listed by Python in their own section, under a warning at the top of the comment, and the verdict is `failed` - it is `passed` only when the story's tests and everything else on the branch pass, so the comment always agrees with the PR check.
+3b. Keeps the application's outages apart (F-7): a test Agent 4 marked `outage` is neither a pass nor a failure - it is listed under *Not judged* with a warning at the top, never counted as failing outside the story, and the verdict is `unavailable` when nothing else failed. A test that passed only on the retry is named under *Passed only on the retry (flaky)* and recorded on the pipeline health issue (F-19).
 4. Enriches with CI context: PR URL, workflow run URL, commit SHA, link to artifact download.
-5. Calls the LLM with a structured schema (`JiraCommentDraft`) to produce ONLY the prose summary of the story's own tests (Python adds the outside failures and the deterministic links after).
-6. Posts the comment to the parent Jira story (resolved from PR branch name), with the end-to-end cost table. It runs only on a pull request whose browser tests ran: a PR changing only prompts, docs or Markdown gets no report.
+5. Calls the LLM with a structured schema (`JiraCommentDraft`) to produce ONLY the prose summary of the story's own tests (Python adds the outside failures, outages, flakes and the deterministic links after). When no test of the story could be judged, or the spend budget stops the call (F-24), code writes the same prose instead - the results are always reported.
+6. Posts the comment to the parent Jira story (resolved from PR branch name), with the end-to-end cost table and one line saying how much of the story's budget is used (marked past `budget.warn_at`). It runs only on a pull request whose browser tests ran: a PR changing only prompts, docs or Markdown gets no report.
 7. Tags the story with `tests-run`.
 8. **Change stories:** posts a one-line run result on each story that owns a revised test (`core/impact_results.py`) and records how Agent 0's prediction compared with what actually changed and failed — the measure used to judge Agent 0 in shadow mode.
 
@@ -474,6 +477,10 @@ The gate is between Agents 1 and 2 specifically because that's the highest-lever
 | `impact-reverted` | "The PR closed unmerged; the revisions were undone" | Agent 0 reconcile |
 | `ai-retired` | (on a Test Case) "Retired by a change; not run" | Agent 0 hand-over / reconcile |
 | `inventory-drift` | (on the drift maintenance story) "Selectors stopped matching; these tests are affected" | Agent 0 drift job |
+| `budget-hold` | "This story reached its model budget; no agent works on it" (F-24) | Any agent; a person removes it to allow one more budget |
+| `pipeline-health` | (on the one pipeline health issue) "Watch this for alerts" (F-23) | The first alert, or the health check |
+| `ai-defect`, `ai-defect-<hash>` | (on a defect) "Raised by the triage for this test and cause" (F-22) | Defect triage |
+| `ai-defect-passing` | (on a defect) "Its test passes on `main` again; a person may close it" | Defect triage (removed when it fails again) |
 
 For the full lifecycle view (sticky vs one-shot semantics, who removes what),
 see the "Label semantics table" in the State management deep-dive below.
@@ -879,6 +886,11 @@ about ceremony; it is about which files the push gate actually exercises.
 | 5b | Pull request changing only `prompts/`, `docs/` or Markdown | yes | ✅ | — | — |
 | 6 | Manual dispatch | yes | ✅ | ✅ | — |
 | 7 | Push to `main`, **detector crashed** | yes | ✅ | ✅ | — |
+| 8 | **Nightly, on `main`** (03:10 IST, F-21) | yes | ✅ | ✅ (takes its turn with PRs) | — |
+
+After a run on `main` - rows 1, 7, 8, and 6 when dispatched on `main` - the
+`triage` job turns what still fails into defects, opens a pipeline health alert
+for an outage and records flakes (F-22). Never on a pull request.
 
 Rows worth explaining:
 
@@ -987,9 +999,10 @@ this gate whenever a story PR merges, on files Agent 4 has already tested.
 
 Two things worth knowing:
 
-- **A manual dispatch runs everything except the Jira post.** That is the way
+- **A manual dispatch runs everything except the story report.** That is the way
   to run the full suite against `main` without opening a PR — no story gets a
-  spurious comment, because a manual run is not tied to one.
+  spurious comment, because a manual run is not tied to one. On `main` its
+  failures are triaged into defects like the nightly run's (F-22).
 - **Agent 5 is skipped on push and on dispatch by design.** Its job is to
   report a story's result, and neither of those events belongs to a story.
 
@@ -1218,7 +1231,21 @@ status_workflow:                    # board columns per label, Done on merge
   on_label: { ai-processed: "In Progress", ai-coded: "In Review", impact-reverted: "To Do" }
   on_merge: "Done"
   on_close_unmerged: "To Do"     # a new story reset by reconcile (F-16)
+
+pipeline_health:                    # the watched issue and its checks (F-23)
+  { enabled, issue_type: "Task", summary: "Pipeline health", label: "pipeline-health",
+    consecutive_failures: 3, expiry_warn_days: 14, model_check: "completion", spend_keep_days: 35 }
+flaky_tests: { enabled: true, window_days: 30 }                         # F-19
+defects:                            # failures on main (F-22)
+  { enabled, issue_type: "Bug", label: "ai-defect", passing_label: "ai-defect-passing",
+    open_statuses: [To Do, In Progress, In Review], max_new_per_run: 10 }
+budget:                             # model spend (F-24); every selection excludes hold_label
+  { enabled, per_story_usd: 8, per_day_usd: 12, warn_at: 0.5, timezone: "UTC",
+    hold_label: "budget-hold" }
 ```
+
+The four operational blocks are read by `core/ops_settings.py`: a missing or
+malformed block falls back to these defaults and never stops a run.
 
 ### `extendable_paths` and `auto_extend_page_objects`
 
@@ -1357,6 +1384,12 @@ reaches Agent 5 (the aggregate table is built by the last agent; before
 that, the individual `[LLM-USAGE]` comments are already visible on the
 story one by one).
 
+**Budgets (F-24).** The same numbers are enforced: `budget.per_story_usd` for a
+story's cost since its ledger's last reset, `budget.per_day_usd` for every model
+call of the day, checked before each call. The prices are needed for that too -
+without them nothing is enforced, and the log says so once. See
+[Operating the pipeline → Spend budgets](#spend-budgets-f-24).
+
 ---
 
 ## Running the pipeline
@@ -1406,6 +1439,8 @@ Selection rules come from `config.yaml`'s `agents.<name>.selection` block.
 | Agent 0 code change | on PRs touching `pages/**`, `app_inventory/**` | — |
 | Agents 3, 4 + 5 | on PR opened / synchronize / reopened | Run workflow |
 | Inventory Health | daily 08:00 (02:30 UTC) | Run workflow |
+| Agent 4 nightly run on `main` + defect triage | daily 03:10 (21:40 UTC) | Run workflow on `main` |
+| Pipeline health check | daily 08:50, 12:50, 16:50 | Run workflow (`dry_run` prints the findings only) |
 | Sweeper | weekdays hourly, 10:05–19:05 | `dry_run` input |
 | Story Done on merge | on PR closed with `merged == true`: Done, then the notes addition | — |
 
@@ -1422,7 +1457,7 @@ Three distinct test layers exist; they have different triggers and purposes:
 | Suite | Trigger | Touches network? | Purpose |
 |---|---|---|---|
 | `tests/unit/` (~3,000 tests, about 2 minutes) | Every PR and every framework push to `main` — Agent 4's "Framework self-test" step runs `pytest tests/unit/` before the E2E. Also run manually (`python -m pytest tests/unit/ -q`) before committing any framework change. | No — fully offline (no Jira/GitHub/LLM) | Framework correctness: validators, markers, orphan cleanup, usage tracking, ledger, component filtering, repair routing, step-def splicing, splice grounding, inventory tooling, sweeper, Agent 0 (graph, ranking, review, hand-over, context update, reconcile), and the whole pipeline against a fake tracker and repo host |
-| `tests/step_defs/` (generated E2E) | Every PR that changes more than prompts, docs or Markdown, and a push to `main` touching a runtime file — same Agent 4 run | Yes — drives a real browser against the app under test | Does the application work |
+| `tests/step_defs/` (generated E2E) | Every PR that changes more than prompts, docs or Markdown, a push to `main` touching a runtime file, and every night on `main` — same Agent 4 workflow | Yes — drives a real browser against the app under test | Does the application work |
 | `scripts/smoke_test.py` | **Manual only** — run on first setup, after credential/`.env` changes, on a new machine, or when onboarding a new app | Yes — live Jira login, one real LLM call, one browser hit on the app's `base_url` (config-driven) | Is the *environment* wired correctly |
 
 Notes:
@@ -1436,6 +1471,98 @@ Notes:
 - The smoke test is deliberately not scheduled: it verifies *setup*, not
   *code*, makes live calls (small LLM cost), and setup doesn't change per
   commit.
+
+---
+
+## Operating the pipeline: health, defects, flakes, budgets
+
+Four things keep the pipeline from stopping quietly or spending without limit
+(P3). All of them report on the tracker, so a person is told without watching
+the Actions tab.
+
+### The pipeline health issue (F-23)
+
+One issue (`pipeline_health.summary`, type `pipeline_health.issue_type`, found
+by the label `pipeline_health.label`) is created the first time something needs
+it. **Watch it**: the tracker then emails you on each comment, and the pipeline
+comments only when something changes - `[health:open] <id>` when a problem
+starts, `[health:resolved] <id>` when it ends, nothing while it persists. The
+description is the current picture (open alerts, flaky tests, today's spend),
+rewritten on each change - edits to it are not kept.
+
+| Alert id | Opened by | Means | Closes when |
+|---|---|---|---|
+| `workflow-failing:<file>` | health check | a scheduled workflow failed `consecutive_failures` scheduled runs in a row | its next scheduled run succeeds, or the workflow is no longer scheduled |
+| `credential:repo-host`, `credential:model` | health check | the repo host token, or the model key, was refused (a spent key budget included, with `model_check: completion`) | the next check succeeds |
+| `credential-expiry:repo-host` | health check | the token expires within `expiry_warn_days` (where GitHub gives the date) | a new token is further away, or has no expiry |
+| `application-unavailable-on-main` | triage | tests on `main` could not run: the application was unavailable | the next run on `main` without an outage |
+| `defects-capped` | triage | more new failures on `main` than `max_new_per_run` | a run on `main` where every failing test has its defect |
+| `main-run-no-report` | triage | a run on `main` produced no readable report | the next run on `main` with a report |
+| `budget-warn-<day>`, `budget-day-<day>` | any agent | the day's model spend passed `warn_at`, or reached `per_day_usd` | the day ends (the health check closes them) |
+
+The tracker's own credentials cannot be reported on the tracker: when they are
+refused, the health check's run fails instead and GitHub notifies the
+workflow's owner. `python -m scripts.pipeline_health_check --dry-run` prints the
+findings and writes nothing.
+
+### The nightly run and defects (F-21, F-22)
+
+Every night at 03:10 IST Agent 4 runs the whole suite on `main` - the unit gate,
+the E2E with the retry, the summary and the artifact; no story report. It takes
+its turn with pull requests for the live application. After any run on `main`
+the `triage` job (`scripts/triage_failures.py`, `core/defects.py`):
+
+- raises **one defect per test and cause** (`defects.issue_type`, labels
+  `defects.label` and `defects.label-<hash>`) with the test, its test case and
+  owning story (from the `# JIRA:` marker), the diagnosed cause and fix, the
+  latest failure and the run link. Evidence is in the run's artifact.
+- updates it on a repeat - times seen, first and last seen, the latest
+  failure - **without a comment**;
+- when the test passes on `main` again (not only on the retry), adds
+  `defects.passing_label` and **one comment suggesting it be closed**. A person
+  closes it; failing again removes the label with one comment. A closed defect
+  is never reopened - a new failure raises a new one;
+- never raises a defect for an outage (one health alert instead) or a flaky
+  test (recorded instead), and raises at most `max_new_per_run` new defects in
+  one run (more: one health alert - usually a broken build or environment).
+
+### Flaky tests (F-19)
+
+A test that failed and then passed when Agent 4 retried it once counts as
+passed, is named in the run summary and in Agent 5's report, and is recorded on
+the pipeline health issue (one hidden record per flake). The issue's description
+lists the flaky tests of the last `flaky_tests.window_days` days by how often
+they flaked. A test that keeps appearing there is worth fixing; quarantining it
+is a person's decision, not automatic. A pass after an outage is not a flake.
+For Agent 3, a scenario that passed only on the retry does not refute a
+prediction that it fails.
+
+### Spend budgets (F-24)
+
+`budget.per_story_usd` and `budget.per_day_usd` are checked **before every
+model call** (`core/spend_budget.py`). Over a limit the call is not made, and the
+stop says which limit, how much and what to do.
+
+- **A story over its budget** (its ledger since the last `[LEDGER-RESET]`, plus
+  the run in progress) gets the label `budget.hold_label` and one
+  `[budget:hold]` comment. Every agent's selection excludes the label, so no
+  scan picks it again. **Remove the label to allow it one more
+  `per_story_usd`**; to stop, do nothing.
+- **A day over its budget** opens a health alert. Scans stop starting stories
+  (green - the alert is the notice) and resume the next day (`budget.timezone`).
+  A pull request's review is not made - Agent 3 posts *Not reviewed: model
+  budget reached* and stays red - and Agent 5 still reports, with the summary
+  written by code. To continue today, raise `per_day_usd`.
+- **Every model call counts toward the day**: story agents, reviews of any PR,
+  context and inventory proposals, Agent 0, the health check's probe. Each run
+  records its spend on the health issue when it ends; a run reads the day's
+  total at its first call. Runs going on at the same time are not seen until
+  they finish (L36).
+- Enforced in CI only, never inside a unit test. `PIPELINE_BUDGET=on` enforces
+  it in a local run; `=off` switches it off. Without `LLM_PRICE_*` nothing is
+  enforced.
+- The values grow with the repository and the stories: raise them in
+  `config.yaml`, nowhere else.
 
 ---
 
@@ -1723,6 +1850,16 @@ Leave `agents.agent0_impact.enabled: false` until the inventory pages carry
 `python -m scripts.onboarding_check`, switch to shadow mode, and go live once
 the shadow reports are trusted. See [AGENT0_ONBOARDING.md](./AGENT0_ONBOARDING.md).
 
+### Step 8: Operations (health, defects, budgets)
+
+The tracker needs the issue types named in `pipeline_health.issue_type` (Task)
+and `defects.issue_type` (Bug) - change them in `config.yaml` if the project
+calls them otherwise - and a workflow whose open statuses match
+`defects.open_statuses`. Set the `LLM_PRICE_*` variables, or no budget is
+enforced. Run the health check once (*Pipeline health* → Run workflow) so the
+issue exists, and have the team **watch** it. Set `budget.per_story_usd` and
+`per_day_usd` from the costs Agent 5 reports for the first stories.
+
 ### What you do NOT need to change
 
 - ❌ Any Python file in `agents/`, `core/`, `integrations/` or `validators/`
@@ -1787,6 +1924,20 @@ Your LLM provider's rate limit or quota has been reached. Options:
 1. Wait for the rate limit to reset
 2. Switch `LLM_MODEL` in `.env` to a different model
 3. Check your API plan limits with your provider
+
+### `[BUDGET] ...` in a log, or *Not reviewed: model budget reached* on a PR
+
+A spend budget stopped a model call before it was made (F-24). The message says
+which: **a story's** - the story carries `budget-hold`; remove the label to
+allow it one more `budget.per_story_usd`, or leave it held; **the day's** - the
+pipeline health issue has a `budget-day-<day>` alert; runs resume the next day,
+or raise `budget.per_day_usd`. Re-run the PR's review job once the budget allows
+it.
+
+### An alert on the pipeline health issue
+
+See the alert table in [Operating the pipeline](#the-pipeline-health-issue-f-23):
+each says what it means and when it closes by itself.
 
 ### Jira `enhanced_search_issues` not found
 
@@ -2323,6 +2474,10 @@ A change story enters before `ai-ready`:
 | `impact-reverted` | terminal marker | reconcile | human (to retry) | "the change was undone" |
 | `ai-retired` | test-case marker | hand-over / reconcile | reconcile on undo | "this test case is retired" |
 | `inventory-drift` | sticky marker | Agent 0 drift (live) | never (the story keeps it for life) | "the nightly drift maintenance story" - the next night reuses it |
+| `budget-hold` | gate marker | any agent stopped by the story's budget (F-24) | human (allows one more `per_story_usd`) | every selection excludes it |
+| `pipeline-health` | identity | the first alert / health check | never | finds the one pipeline health issue |
+| `ai-defect`, `ai-defect-<hash>` | identity | defect triage | never | finds a defect again by test and cause |
+| `ai-defect-passing` | state marker | defect triage (test passes on `main`) | defect triage (fails again) | "a person may close this defect" |
 
 `ai-processed`, `human-approved`, `ai-coded` and `ai-incomplete` are also removed by reconcile
 when it undoes a change story (`reconcile.reset_labels`), so a retry starts

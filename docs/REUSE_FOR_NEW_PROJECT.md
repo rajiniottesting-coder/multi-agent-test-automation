@@ -80,7 +80,7 @@ These files contain zero project-specific knowledge. Reuse as-is:
 - `tests/unit/test_validators.py` — a fixture uses "Admin" as a generic role placeholder, not tied to any app
 
 ### Infrastructure
-- `.github/workflows/*.yml` — all ten workflows
+- `.github/workflows/*.yml` — all eleven workflows
 - `requirements.txt`
 - `pytest.ini`
 - `config/__init__.py`, `config/paths.py`
@@ -89,7 +89,7 @@ These files contain zero project-specific knowledge. Reuse as-is:
 
 ## What you MUST change (project-specific touch points)
 
-There are **6 changes** for a new project, plus an optional seventh (Agent 0). They are ranked by criticality.
+There are **6 changes** for a new project, plus an optional seventh (Agent 0) and an eighth for operations (health issue, defects, budgets). They are ranked by criticality.
 
 ### Change 1 — `config/config.yaml` (MANDATORY)
 
@@ -169,7 +169,7 @@ Login roles are NOT in `config.yaml`: rename the `APP_USER_<ROLE>` variables in
 > API keys, DB connection strings, tokens. Behavioural knowledge in the prompt;
 > secrets in the environment.
 
-The `agents:` section (label selection rules, completion labels) **stays exactly the same**. The Jira label workflow is universal. Two exceptions: set `agents.agent0_impact.enabled: false` until Change 7, and check the column names under `status_workflow` match your board.
+The `agents:` section (label selection rules, completion labels) **stays exactly the same**. The Jira label workflow is universal. Two exceptions: set `agents.agent0_impact.enabled: false` until Change 7, and check the column names under `status_workflow` match your board. The operational blocks (`pipeline_health`, `flaky_tests`, `defects`, `budget`) are Change 8.
 
 ### Change 2 — `app_inventory/<your_app>.json` (MANDATORY)
 
@@ -337,6 +337,27 @@ scenario (`python -m scripts.backfill_markers` adds missing ones). Then:
 3. `shadow_mode: false` once the shadow reports are trusted — Impact Reviews go live
 
 Details: [AGENT0_ONBOARDING.md](./AGENT0_ONBOARDING.md).
+
+### Change 8 - Operations: health issue, defects, budgets (RECOMMENDED)
+
+Nothing here names the application; check that the tracker matches:
+
+1. `pipeline_health.issue_type` (Task) and `defects.issue_type` (Bug) exist in the
+   project, and `defects.open_statuses` are its board columns before done.
+2. Set the `LLM_PRICE_INPUT_PER_1M` / `LLM_PRICE_OUTPUT_PER_1M` variables - without
+   them no spend budget is enforced. Start `budget.per_story_usd` and
+   `per_day_usd` from the costs Agent 5 reports for the first stories; raise them
+   as the repository grows.
+3. Run *Pipeline health* once by hand, so its issue exists, and have the team
+   **watch** it.
+4. The nightly run (`agent4_runner.yml`, 03:10 IST) runs the whole suite on
+   `main`; move the cron outside the new application's business hours if
+   needed.
+
+A tracker adapter other than Jira needs the optional capabilities
+(`create_issue`, issue properties, `check_access` - `integrations/tracker.py`)
+for these features; without them the features say so once in the log and stay
+off, and nothing else changes.
 
 ---
 
