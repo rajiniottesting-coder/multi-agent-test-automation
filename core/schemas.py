@@ -119,10 +119,15 @@ class NoteRewrite(BaseModel):
 
 
 class NoteRewrites(BaseModel):
-    """Agent 0, context update: reference passages a story makes untrue."""
+    """Agent 0, context update: reference passages a story makes untrue, and the
+    inventory elements it removes from the application."""
     rewrites: list[NoteRewrite] = Field(
         default_factory=list,
         description="Each passage the story makes untrue. Empty when it makes none untrue")
+    removed: list[str] = Field(
+        default_factory=list,
+        description="'page.key' of each inventory element the story removes from the "
+                    "application, taken from the element lists given. Empty when it removes none")
 
 
 class NoteAddition(BaseModel):

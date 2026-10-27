@@ -137,7 +137,11 @@ def drift_seeds(report: dict) -> Seeds:
     """Seeds from scripts/check_inventory_staleness.py --json output."""
     seeds = Seeds()
     for page, diff in (report.get("pages") or {}).items():
-        for item in (diff.get("missing") or []) + (diff.get("ambiguous") or []):
+        # A `removed` element back on the page fails the absence test that
+        # keeps it: seeded like a stale one. One still gone is never in the
+        # report (check_inventory_staleness reads it as expected).
+        for item in ((diff.get("missing") or []) + (diff.get("ambiguous") or [])
+                     + (diff.get("reappeared") or [])):
             element = item.get("element") if isinstance(item, dict) else item
             if element:
                 seeds.elements.add((page, element))

@@ -570,6 +570,7 @@ stale. At hand-over Agent 0 proposes the update as a pull request:
 
 - **Wording** the story replaces (a label, a message) — one model call lists old → new (`prompts/agent0_wording.md`); the replacement is applied exactly to the inventory's values and the notes. A change whose old text appears nowhere is dropped and reported.
 - **Passages the story makes untrue** — behaviour, rules, removed elements. One more call rewrites each such passage (`prompts/agent0_context_notes.md`). A passage not found verbatim is dropped and reported. **A rewrite never touches a selector**: the element is live until the change is deployed. (A *wording* change, above, does update a selector that matches on the old text - which is why the PR waits for deployment.) The call reads only what the story's Components select - `core.md`, their modules and their pages' inventory notes, by the same rule as Agent 1 (all of them when none match) - and a rewrite of a file it was not shown is dropped.
+- **Elements the story removes** — the same call names them (`removed`, as `page.key`, from the element keys it is shown - never selectors). Each one that exists on a page the story's Components select is added to that page's `removed` list in the inventory: after deployment the nightly checks read the missing element as expected (present again: drift), Agent 0 seeds nothing from it, and the nightly inventory update deletes the key once no test names it. A reference that is not such an element is dropped and reported.
 - Code mentioning the old text is listed, not edited — code changes go through the story's own PR.
 
 The branch is `context-update/<story key in lower case>`, which no tool reads as
@@ -622,6 +623,8 @@ inventory alone:
 | A live element no selector covers | **Adds** it - the generator's own name and selector **and its declarations** (a family → `multi_match`, a hidden element → `conditional`), the proposals file's refusal rules, at most `max_additions_per_page` per page |
 | An element the generator flags for review (a css fallback, an index-pinned `>> nth=` member, hidden when crawled) | Listed, **never added** |
 | More than `hold_ratio` of a page's selectors stale | **Leaves the page alone** and lists it: an error page, an outage or a redesign is a person's call |
+| A key declared `removed`, still gone, that no code names any more (on `main` or in an open PR) | **Removes** it with its note and its list entries - its absence test is gone |
+| A key declared `removed` that is on the page again | Listed: the removal was undone, or the selector matches something else |
 | Ambiguous selectors, unreachable pages, untracked test-ids | Listed only |
 
 Merge it after checking the names and Agent 4's run on it - the suite runs
@@ -1479,8 +1482,10 @@ covers. Exits non-zero under `--fail-on-drift` (for a CI gate). The nightly
 affected tests and proposes the inventory update as a pull request
 (`scripts/propose_inventory_update.py`, see "Inventory update" under Change
 stories). The nightly `Inventory Health` workflow measures with
-`verify_locators` instead. Both tools honour `multi_match` and `conditional`,
-so a declared family reads as expected rather than as a fault.
+`verify_locators` instead. Both tools honour `multi_match`, `conditional` and
+`removed`, so a declared family, an element shown only after a click and one a
+change story removed read as expected rather than as a fault - and a removed
+element on the page again reads as drift (`BACK`).
 
 ### Every section of the inventory JSON, and what to do with it
 
@@ -1496,6 +1501,7 @@ so a declared family reads as expected rather than as a fault.
 | `key_methods` | legacy field — no agent reads it. Agent 2 reads the real page objects by AST (`_build_sibling_page_object_context()`) instead, so a hand-written list could only drift from the code | **leave empty** |
 | `multi_match` | keys matching several elements | **verify** — measured at crawl time, confirm it is right |
 | `conditional` | elements that exist only after an interaction | **verify** |
+| `removed` | elements a change story removed, kept only because a test asserts they are gone - written by the context update at hand-over | **leave**: missing reads as expected, present again as drift; the nightly inventory update deletes the key once no test names it |
 | `async_family` | a family the app fills asynchronously | **add** where index 0 may be a loading row |
 | `errors` | validation message text | **fill** if the page has any |
 | `implementation_status` | draft marker | **delete** |

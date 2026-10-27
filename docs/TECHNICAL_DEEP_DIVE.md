@@ -1580,7 +1580,20 @@ modules (`core.app_context.select_note_modules()`, the rule Agent 1's
 `selected_page_names()` keeps (`filter_inventory_by_components()`' rule);
 `_notes_block(sources, pages)` offers only those pages' notes plus notes outside
 `pages`; `propose(..., offered=...)` drops a rewrite of a file that was not
-offered. Wording replacement stays global - it is exact and deterministic. Code mentioning the old text is listed, not
+offered. Wording replacement stays global - it is exact and deterministic. The
+same call returns `removed` (`NoteRewrites.removed`: `page.key` of each element
+the story removes - `_notes_block()` lists each offered page's element KEYS,
+never selectors); `_declare_removed()` appends each to that page's `removed`
+list when the page was offered and the key exists (else dropped with the
+reason), writing the file in its own format (`inventory_update.dump_like()`),
+and the PR body lists them (F-11). Readers of `removed`:
+`introspect.diff_page(declared_removed=)` (0 matches: neither missing nor
+ambiguous; any match: `reappeared`, counted in `reappeared_selectors` and
+`has_drift`), `check_inventory_staleness` (`BACK` lines), `verify_locators`
+(`GONE` expected, `BACK(n)` a problem), `impact_analysis.drift_seeds()` (seeds
+`reappeared` only), `inventory_update.build_update()` (retires a still-gone key
+no code names - `retired` - unless removal is off or the page is held), and
+`promote_draft.prune()` (drops entries whose element is gone). Code mentioning the old text is listed, not
 edited. `open_pull_request()` uses `branch_for()` — the story key in lower case,
 or a hash, so the branch never carries an issue key — and the
 `[agent0:context-update]` marker makes it idempotent. A marker that opened a

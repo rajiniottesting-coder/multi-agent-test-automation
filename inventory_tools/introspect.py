@@ -1322,7 +1322,8 @@ def diff_page(page_name: str, inventory_selectors: dict[str, str],
               live_resolved: dict[str, int], live_data_tests: set[str],
               test_attrs: tuple = TEST_ID_ATTRS,
               declared_family: set | None = None,
-              declared_conditional: set | None = None) -> dict:
+              declared_conditional: set | None = None,
+              declared_removed: set | None = None) -> dict:
     """Diff one committed page against the live DOM.
 
     inventory_selectors : {element_name: selector} from the committed inventory
@@ -1356,6 +1357,15 @@ def diff_page(page_name: str, inventory_selectors: dict[str, str],
     conditional = declared_conditional or set()
     missing = [m for m in missing
                if (m.get("element") if isinstance(m, dict) else m) not in conditional]
+    # A key declared `removed` is kept only because a test asserts the element
+    # is gone. Zero matches is that declaration being satisfied; any match
+    # means the removed element is back - drift that the absence test will
+    # also report.
+    removed = declared_removed or set()
+    missing = [m for m in missing if m["element"] not in removed]
+    reappeared = [{"element": n, "selector": s_, "matches": live_resolved.get(s_, 0)}
+                  for n, s_ in inventory_selectors.items()
+                  if n in removed and live_resolved.get(s_, 0) > 0]
 
     new = sorted(v for v in live_data_tests if not _covered(v))
     # Live multi-match. Only ZERO matches were previously reported, so a
@@ -1369,11 +1379,12 @@ def diff_page(page_name: str, inventory_selectors: dict[str, str],
     ambiguous = sorted(
         (name, sel, live_resolved.get(sel, 0))
         for name, sel in inventory_selectors.items()
-        if live_resolved.get(sel, 0) > 1 and name not in family
+        if live_resolved.get(sel, 0) > 1 and name not in family and name not in removed
     )
     return {"missing": missing, "new_data_tests": new,
             "ambiguous": [{"element": n, "selector": s_, "matches": c}
-                          for n, s_, c in ambiguous]}
+                          for n, s_, c in ambiguous],
+            "reappeared": reappeared}
 
 
 def summarize_drift(per_page: dict[str, dict], missing_pages: list[str]) -> dict:
@@ -1381,6 +1392,7 @@ def summarize_drift(per_page: dict[str, dict], missing_pages: list[str]) -> dict
     total_missing = sum(len(p["missing"]) for p in per_page.values())
     total_new = sum(len(p["new_data_tests"]) for p in per_page.values())
     total_ambiguous = sum(len(p.get("ambiguous", [])) for p in per_page.values())
+    total_reappeared = sum(len(p.get("reappeared", [])) for p in per_page.values())
     return {
         "pages_checked": len(per_page),
         "unreachable_pages": missing_pages,
@@ -1389,8 +1401,10 @@ def summarize_drift(per_page: dict[str, dict], missing_pages: list[str]) -> dict
         # Selectors matching >1 element. Counted as drift because Playwright's
         # strict mode makes them fail at runtime just as surely as a stale one.
         "ambiguous_selectors": total_ambiguous,
+        # Elements declared `removed` that are on the page again.
+        "reappeared_selectors": total_reappeared,
         "has_drift": bool(total_missing or missing_pages or total_new
-                          or total_ambiguous),
+                          or total_ambiguous or total_reappeared),
         "pages": per_page,
     }
 

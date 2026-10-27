@@ -217,6 +217,7 @@ parts of the shape are required and which were invented for illustration.
 | `elements` | The working set: `key -> selector`. The key is nearly all the signal a generator gets, so it must say what the thing IS |
 | `multi_match` | Keys whose selector matches several elements. A declaration, not a fault — `verify_locators` stops reporting them |
 | `conditional` | Keys that do not exist on page load: a modal, an error, an empty-state banner |
+| `removed` | Keys of elements a change story removed, kept only while a test asserts they are gone. Written by Agent 0's context update; missing reads as expected, present again as drift; the nightly inventory update deletes the key when no test names it |
 | `elements_notes` | The highest-value field in the file, and the one a crawler can never produce. Behaviour, traps, starting state |
 | `errors` | Validation messages the app shows, so a negative test asserts real text |
 
@@ -335,10 +336,12 @@ usually not the draft you just produced.
 | `AMBIG` | several matches, and the key is **not** declared `multi_match` |
 | `FAMILY` | several matches, and it **is** declared — expected |
 | `COND` | zero matches, and the key is declared `conditional` — expected |
+| `GONE` | zero matches, and the key is declared `removed` — expected |
+| `BACK` | one or more matches, and the key is declared `removed` — the removed element is on the page again |
 | `REDIRECTED` | the page sent us elsewhere; reported once instead of fifty times |
 
-`FAMILY` and `COND` are why writing those declarations down matters: they turn
-fifty false alarms into silence.
+`FAMILY`, `COND` and `GONE` are why writing those declarations down matters:
+they turn fifty false alarms into silence.
 
 ---
 
