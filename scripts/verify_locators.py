@@ -306,6 +306,9 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
     # "problems" and buried the one line that mattered.
     declared_family = set(entry.get("multi_match") or [])
     declared_conditional = set(entry.get("conditional") or [])
+    # Declared gone (a change story removed the element; a test asserts it is
+    # absent): zero is the expected reading, any match is the problem.
+    declared_removed = set(entry.get("removed") or [])
 
     for name, sel in selectors.items():
         try:
@@ -314,7 +317,15 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
             count = -1
             note = f"INVALID ({type(e).__name__})"
         expected = False
-        if count == 1:
+        if name in declared_removed and count >= 0:
+            if count == 0:
+                ok += 1
+                expected = True
+                status, colour = "GONE ", "#3b82f6"
+            else:
+                bad += 1
+                status, colour = f"BACK({count})", "#ef4444"
+        elif count == 1:
             ok += 1
             status, colour = "OK  ", "#22c55e"
         elif count == 0:

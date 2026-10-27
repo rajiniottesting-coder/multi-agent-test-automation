@@ -69,6 +69,7 @@ class Proposal:
     applied: list = field(default_factory=list)     # [(old, new)] that matched something
     dropped: list = field(default_factory=list)     # [(old, new, why)]
     rewrites: list = field(default_factory=list)    # {"path","before","after","reason"}
+    declared_removed: list = field(default_factory=list)  # ["page.key"] added to `removed`
 
     @property
     def empty(self) -> bool:
@@ -267,11 +268,49 @@ def _apply_rewrites(current: dict, rewrites, prop: Proposal, offered=None) -> No
         prop.rewrites.append({"path": path, "before": old, "after": new, "reason": reason})
 
 
+def _declare_removed(current: dict, removed, pages, prop: Proposal) -> None:
+    """Add each `page.key` the story removes to that page's `removed` list in
+    the inventory: after deployment the nightly check then reads the missing
+    element as expected, and the inventory update deletes the key once no
+    test names it (F-11). A reference that is not an element of a page the
+    story's Components select is dropped and reported."""
+    refs = [r.strip() for r in removed or () if r and r.strip()]
+    if not refs:
+        return
+    paths = [p for p in current if p.endswith(".json")]
+    if len(paths) != 1:
+        prop.dropped += [(ref, "", "no single inventory file to declare it in") for ref in refs]
+        return
+    path = paths[0]
+    try:
+        data = json.loads(current[path])
+    except ValueError:
+        prop.dropped += [(ref, "", "the inventory could not be read") for ref in refs]
+        return
+    page_map = data.get("pages") or {}
+    for ref in dict.fromkeys(refs):
+        page, _, key = ref.partition(".")
+        spec = page_map.get(page)
+        if not key:
+            prop.dropped.append((ref, "", "not written as page.key"))
+        elif pages is not None and page not in pages:
+            prop.dropped.append((ref, "", "not a page the story's Components select"))
+        elif not isinstance(spec, dict) or key not in (spec.get("elements") or {}):
+            prop.dropped.append((ref, "", "no such element in the inventory"))
+        elif key not in (spec.get("removed") or []):
+            spec["removed"] = list(spec.get("removed") or []) + [key]
+            prop.declared_removed.append(ref)
+    if prop.declared_removed:
+        from core.inventory_update import dump_like
+        current[path] = dump_like(current[path], data)
+
+
 def propose(sources: dict, changes, code: dict | None = None, rewrites=(),
-            offered=None) -> Proposal:
-    """Apply each old -> new, then each passage rewrite, to the sources.
-    `offered`: the files the rewrite call was shown (None: all). Pure: nothing
-    is written."""
+            offered=None, removed=(), pages=None) -> Proposal:
+    """Apply each old -> new, then each passage rewrite, then each removed
+    element's declaration, to the sources. `offered`: the files the rewrite
+    call was shown (None: all); `pages`: the inventory pages it was shown.
+    Pure: nothing is written."""
     prop = Proposal()
     current = dict(sources)
     seen: set = set()
@@ -299,6 +338,7 @@ def propose(sources: dict, changes, code: dict | None = None, rewrites=(),
                 if old in line:
                     prop.code_mentions.append({"path": relpath, "line": n, "text": line.strip()})
     _apply_rewrites(current, rewrites, prop, offered)
+    _declare_removed(current, removed, pages, prop)
     prop.edits = {p: t for p, t in current.items() if t != sources.get(p)}
     return prop
 
@@ -343,6 +383,12 @@ def render_body(story_key: str, prop: Proposal) -> str:
         for r in prop.rewrites:
             lines.append(f"| `{r['path']}` | {_cell(r['before'], 200)} | "
                          f"{_cell(r['after'], 200)} | {_cell(r['reason'], 160)} |")
+    if prop.declared_removed:
+        lines += ["", "Elements the story removes, declared `removed` in the inventory - after "
+                      "deployment the nightly check reads each missing element as expected "
+                      "(present again: drift), and the nightly inventory update deletes the key "
+                      "once no test names it:"]
+        lines += [f"- `{ref}`" for ref in prop.declared_removed]
     if any(f["kind"] == "selector" for f in prop.findings):
         lines += ["", "Selectors: verify after deployment that each matches exactly the "
                       "element it should (`python -m scripts.verify_locators`)."]
@@ -416,26 +462,39 @@ def _notes_block(sources: dict, pages=None) -> str:
             if notes:
                 parts.append(f"## FILE {relpath} (inventory - note text only)\n"
                              + "\n".join(f"- {where}: {value}" for where, value in notes))
+            try:
+                page_map = (json.loads(text).get("pages") or {})
+            except (ValueError, AttributeError):
+                page_map = {}
+            keys = [(name, sorted(k for k, v in (spec.get("elements") or {}).items()
+                                  if isinstance(v, str) and not k.startswith("_")))
+                    for name, spec in sorted(page_map.items())
+                    if isinstance(spec, dict) and (pages is None or name in pages)]
+            if any(k for _n, k in keys):
+                parts.append(f"## Elements of {relpath} (keys only - for `removed`)\n"
+                             + "\n".join(f"- {name}: {', '.join(k)}" for name, k in keys if k))
         else:
             parts.append(f"## FILE {relpath}\n{text}")
     return "\n\n".join(parts)
 
 
-def extract_note_rewrites(llm, story: dict, story_key: str, sources: dict, pages=None) -> list:
-    """One model call: each reference passage the story makes untrue, rewritten.
+def extract_note_rewrites(llm, story: dict, story_key: str, sources: dict, pages=None):
+    """One model call: each reference passage the story makes untrue, rewritten,
+    and the elements it removes. Returns (rewrites, removed).
     `sources` and `pages` are what the story's Components select (scoped_sources)."""
     from config.paths import PROMPTS_DIR
     from core.schemas import NoteRewrites
     block = _notes_block(sources, pages)
     if not block:
-        return []
+        return [], []
     text = f"Title: {story['summary']}\n\nDescription:\n{story.get('description') or ''}"
     prompt = ((PROMPTS_DIR / "agent0_context_notes.md").read_text(encoding="utf-8")
               .replace("{story_key}", story_key).replace("{story_text}", text)
               .replace("{notes_block}", block))
     result = llm.invoke_structured(system_prompt="You are a senior QA analyst.",
                                    user_prompt=prompt, output_schema=NoteRewrites)
-    return list(getattr(result, "rewrites", None) or [])
+    return (list(getattr(result, "rewrites", None) or []),
+            list(getattr(result, "removed", None) or []))
 
 
 def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: Path) -> dict:
@@ -451,17 +510,18 @@ def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: 
     offered, pages = scoped_sources(sources, story.get("components") or [], root)
     changes = extract_changes(llm, story)
     try:
-        rewrites = extract_note_rewrites(llm, story, story_key, offered, pages)
+        rewrites, removed = extract_note_rewrites(llm, story, story_key, offered, pages)
         unchecked = ""
     except Exception as e:                                         # noqa: BLE001
         # The wording update must not be lost to a failure of this step.
         logger.warning("context update for %s: behaviour notes not checked: %s", story_key, e)
-        rewrites, unchecked = [], f"\nBehaviour notes were not checked ({type(e).__name__})."
-    prop = propose(sources, changes, code_sources(root), rewrites, set(offered))
+        rewrites, removed = [], []
+        unchecked = f"\nBehaviour notes were not checked ({type(e).__name__})."
+    prop = propose(sources, changes, code_sources(root), rewrites, set(offered), removed, pages)
     if prop.empty:
         tracker.add_comment(story_key, f"{MARKER} No context update needed: the story replaces "
-                            "no wording, and makes no passage untrue, in the inventory or the "
-                            "context notes."
+                            "no wording, makes no passage untrue and removes no element, in the "
+                            "inventory or the context notes."
                             + ("".join(f"\nNot applied: {o} -> {n} ({why})"
                                        for o, n, why in prop.dropped)) + unchecked
                             + f"\n(story: {chash})")
@@ -469,7 +529,8 @@ def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: 
     url = open_pull_request(host, story_key, prop, cfg.get("branch_prefix", "context-update/"))
     if url:
         tracker.add_comment(story_key, f"{MARKER} Context update proposed: {url} - "
-                            f"{len(prop.findings) + len(prop.rewrites)} change(s) to the inventory "
+                            f"{len(prop.findings) + len(prop.rewrites) + len(prop.declared_removed)} "
+                            "change(s) to the inventory "
                             "and context notes. "
                             "Merge it after this change is deployed."
                             f"\n(story: {chash})")

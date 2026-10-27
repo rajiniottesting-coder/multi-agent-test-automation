@@ -30,6 +30,10 @@ WHAT IT CHANGES (each rule errs toward leaving the inventory alone)
   * KEEP     a stale key code still names: removing it would break a page
              object, and a change story may be asserting it is gone (an
              absence test needs the key). Listed for a person.
+  * RETIRE   a key the inventory declares `removed` (a change story took the
+             element out; F-11) that is still gone and that no code names any
+             more - its absence test is gone too: the key, its note and the
+             declaration go. One on the page again is listed, never changed.
   * ADD      live elements no selector covers, named and ranked by the
              generator's own rules (`introspect.uncovered_entry`), WITH the
              generator's declarations (a family -> multi_match, a hidden
@@ -88,7 +92,9 @@ _QUOTED = re.compile(r"[\"']([A-Za-z0-9_]+)[\"']")
 DEFAULTS = _IMPACT_DEFAULTS["inventory_update"]
 
 # Page fields that list element keys. A removed key leaves every one of them.
-_KEY_LISTS = ("multi_match", "conditional")
+# (`removed` too: it declares an element gone that a test still asserts.)
+_KEY_LISTS = ("multi_match", "conditional", "removed")
+_DECLARATIONS = ("multi_match", "conditional")      # what the crawler may declare
 
 # GitHub refuses a pull request body over 65,536 characters; each table is
 # capped well below it and the rest counted.
@@ -107,13 +113,15 @@ class InventoryUpdate:
     refused: list = field(default_factory=list)       # {page, element, selector, refused}
     fragile: list = field(default_factory=list)       # {page, element, selector}
     held_pages: list = field(default_factory=list)    # {page, stale, total}
+    retired: list = field(default_factory=list)       # {page, element, selector}: declared removed, unused
+    reappeared: list = field(default_factory=list)    # {page, element, selector, matches}
     ambiguous: list = field(default_factory=list)     # {page, element, selector, matches}
     unreachable: list = field(default_factory=list)   # [page]
     new_test_ids: list = field(default_factory=list)  # {page, value}
 
     @property
     def changed(self) -> bool:
-        return bool(self.added or self.replaced or self.removed)
+        return bool(self.added or self.replaced or self.removed or self.retired)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -234,7 +242,7 @@ def _drop_key(page: dict, key: str) -> None:
 
 def _declare(page: dict, key: str, declared: dict) -> None:
     """Carry the generator's declarations for `key` onto the page."""
-    for name in _KEY_LISTS:
+    for name in _DECLARATIONS:
         if key in (declared.get(name) or []):
             values = page.get(name)
             values = list(values) if isinstance(values, list) else []
@@ -269,6 +277,7 @@ def build_update(drift: dict, inventory: dict, used: set, *,
         stale = [m for m in diff.get("missing") or []
                  if isinstance(m, dict) and m.get("element") in current]
         upd.ambiguous += [{"page": name, **a} for a in diff.get("ambiguous") or []]
+        upd.reappeared += [{"page": name, **r} for r in diff.get("reappeared") or []]
         upd.new_test_ids += [{"page": name, "value": v} for v in diff.get("new_data_tests") or []]
 
         if current and len(stale) > 1 and len(stale) / len(current) > hold_ratio:
@@ -305,6 +314,21 @@ def build_update(drift: dict, inventory: dict, used: set, *,
             else:
                 _drop_key(page, key)
                 upd.removed.append({"page": name, "element": key, "selector": old})
+
+        # A key declared `removed` stays while a test asserts the element is
+        # gone. Measured gone tonight (not back) and named by no code any more
+        # - on main or in an open PR - its job is done: it goes, with every
+        # reference. Never when removal is off.
+        back = {r.get("element") for r in diff.get("reappeared") or []}
+        for key in list(page.get("removed") or []):
+            if not allow_removal or key in back or key in used:
+                continue
+            selector = _selectors(page).get(key)
+            _drop_key(page, key)
+            upd.retired.append({"page": name, "element": key,
+                                "selector": selector or "(no selector)"})
+        if isinstance(page.get("removed"), list) and not page["removed"]:
+            page.pop("removed")
 
         added_here = 0
         for element, selector in sorted(new.items()):
@@ -386,6 +410,15 @@ def render_body(upd: InventoryUpdate, inventory_path: str, digest: str,
                     "only in the other sign-in state, should be declared `conditional` "
                     "instead: restore it in this branch and add it to the page's "
                     "`conditional` list.")
+    lines += _table("Removed - declared gone, and no test uses them any more", upd.retired,
+                    [el, sel],
+                    "A change story declared each removed (`removed`) so its absence test "
+                    "could keep the key. No code names it now: the key, its note and the "
+                    "declaration go.")
+    lines += _table("Declared removed, but on the page again", upd.reappeared,
+                    [el, sel, ("Matches", lambda r: r.get("matches", ""))],
+                    "Listed, not changed: either the removal was undone in the application, "
+                    "or the selector now matches something else. The absence test will fail.")
     lines += _table("Kept although not found - a person decides", upd.kept_missing,
                     [el, sel, ("Why kept", lambda r: r["why"])],
                     "Each is missing on the live page. If the feature was removed on "

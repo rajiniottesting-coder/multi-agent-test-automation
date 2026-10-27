@@ -213,7 +213,8 @@ def main() -> int:
                 # elements and which cannot be reached without a click. Passing
                 # them through stops the nightly report crying wolf.
                 declared_family=set(entry.get("multi_match") or []),
-                declared_conditional=set(entry.get("conditional") or []))
+                declared_conditional=set(entry.get("conditional") or []),
+                declared_removed=set(entry.get("removed") or []))
 
     report = introspect.summarize_drift(per_page, unreachable)
     report["pages_missing_notes"] = introspect.pages_missing_notes(inventory)
@@ -237,12 +238,17 @@ def main() -> int:
     print(f"  stale selectors    : {report['stale_selectors']}")
     print(f"  new untracked tags : {report['new_untracked_data_tests']}")
     print(f"  ambiguous selectors: {report['ambiguous_selectors']}")
+    print(f"  removed, but back  : {report['reappeared_selectors']}")
     print(f"  unreachable pages  : {report['unreachable_pages'] or 'none'}")
     for pname, diff in per_page.items():
-        if diff["missing"] or diff["new_data_tests"] or diff.get("ambiguous"):
+        if (diff["missing"] or diff["new_data_tests"] or diff.get("ambiguous")
+                or diff.get("reappeared")):
             print(f"\n  [{pname}]")
             for m in diff["missing"]:
                 print(f"    STALE   {m['element']}: {m['selector']} -> 0 matches on live page")
+            for back in diff.get("reappeared", []):
+                print(f"    BACK    {back['element']}: {back['selector']} -> declared "
+                      f"removed, but {back['matches']} match(es) on the live page")
             for amb in diff.get("ambiguous", []):
                 print(f"    AMBIG   {amb['element']}: {amb['selector']} -> "
                       f"{amb['matches']} matches (Playwright strict mode will "

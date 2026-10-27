@@ -415,7 +415,7 @@ The framework was moved from an Angular HR system to this e-commerce application
 
 ### Inventory Health (nightly)
 
-`.github/workflows/inventory_health.yml` runs `verify_locators` against the live application every night (02:30 UTC) and on demand, across every page in the inventory. It is the only check that proves a selector still **resolves** — the unit suite proves the inventory is structurally sound, but cannot know that a selector still matches a site someone else deploys. It reports and never auto-fixes: a regenerated draft would lose the curated `elements_notes`, `multi_match` and `conditional` markers. Agent 0's nightly drift job turns a broken selector into the list of affected tests and then proposes the inventory update as a pull request - selective edits, never a regeneration, so the curated notes and declarations stay (`core/inventory_update.py`).
+`.github/workflows/inventory_health.yml` runs `verify_locators` against the live application every night (02:30 UTC) and on demand, across every page in the inventory. It is the only check that proves a selector still **resolves** — the unit suite proves the inventory is structurally sound, but cannot know that a selector still matches a site someone else deploys. It reports and never auto-fixes: a regenerated draft would lose the curated `elements_notes`, `multi_match`, `conditional` and `removed` markers (a `removed` element missing reads `GONE`, expected; present again, `BACK`). Agent 0's nightly drift job turns a broken selector into the list of affected tests and then proposes the inventory update as a pull request - selective edits, never a regeneration, so the curated notes and declarations stay (`core/inventory_update.py`).
 
 ---
 
