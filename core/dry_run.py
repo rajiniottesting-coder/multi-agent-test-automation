@@ -23,6 +23,12 @@ TRACKER_READS = frozenset({
     "get_impacted_test_cases", "get_impacting_stories", "get_subtasks",
     "render_test_case", "get_comments",
 })
+# Optional capabilities (integrations.tracker, OPTIONAL CAPABILITIES) that only
+# read. Not Protocol members, so kept apart from the classified sets above; every
+# other capability (set_property, update_comment, ...) is a write and recorded.
+CAPABILITY_READS = frozenset({
+    "get_property", "property_keys", "properties", "render_markdown", "check_access",
+})
 TRACKER_WRITES = frozenset({
     "create_test_case", "update_test_case", "link_issues", "unlink_issues",
     "create_story", "create_subtask", "set_description", "add_label",
@@ -72,7 +78,7 @@ class DryRun:
 
 
 def tracker(inner: Any) -> DryRun:
-    return DryRun(inner, TRACKER_READS, "tracker")
+    return DryRun(inner, TRACKER_READS | CAPABILITY_READS, "tracker")
 
 
 def repo_host(inner: Any) -> DryRun:

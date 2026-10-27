@@ -42,6 +42,10 @@ class JIRAError(Exception):
 
 
 class FakeJira:
+    # True: like a site where the account is no administrator - an edit that
+    # asks not to notify is refused (HTTP 403).
+    quiet_edits_refused = False
+
     def __init__(self, project_key: str = "SBX"):
         self.project_key = project_key
         self.issues: dict = {}            # key -> dict
@@ -90,8 +94,9 @@ class FakeJira:
             elif outward == key:
                 links.append(SimpleNamespace(id=lid, type=t, inwardIssue=self._ref(inward),
                                              outwardIssue=None))
-        comments = SimpleNamespace(comments=[SimpleNamespace(body=b)
-                                             for b in self.comments.get(key, [])])
+        comments = SimpleNamespace(comments=[SimpleNamespace(body=b, id=str(i + 1))
+                                             for i, b in enumerate(self.comments.get(key, []))
+                                             if b is not None])
         fake = self
 
         class _Issue:
@@ -101,6 +106,7 @@ class FakeJira:
                     d[name] = list(value) if name == "labels" else value
         issue = _Issue()
         issue.key = key
+        issue.raw = {"properties": dict(self.properties.get(key, {}))}
         issue.fields = SimpleNamespace(
             summary=d["summary"], description=d["description"] or None,
             status=SimpleNamespace(name=d["status"]),
@@ -111,7 +117,9 @@ class FakeJira:
         return issue
 
     # ── the jira library surface the adapter uses ───────────
-    def issue(self, key, fields=None):
+    def issue(self, key, fields=None, expand=None, properties=None):
+        if properties is not None:
+            self.calls.append(("get_properties", key))
         return self._issue(key)
 
     def create_issue(self, fields: dict):
@@ -141,7 +149,33 @@ class FakeJira:
 
     def add_comment(self, key, body):
         self.comments.setdefault(key, []).append(body)
+        self.calls.append(("add_comment", key))
         return SimpleNamespace(id=str(len(self.comments[key])))
+
+    def comment(self, key, comment_id):
+        """A comment as the jira library returns it; update() edits it in place.
+        A deleted comment (body None) is a 404, as on a real site."""
+        self._issue(key)
+        bodies = self.comments.get(key, [])
+        i = int(comment_id) - 1
+        if not 0 <= i < len(bodies) or bodies[i] is None:
+            raise JIRAError(404, f"comment {comment_id} not found on {key}")
+        fake = self
+
+        class _Comment:
+            id = str(comment_id)
+            body = bodies[i]
+
+            def update(self, body="", notify=True, **_kw):
+                if not notify and fake.quiet_edits_refused:
+                    raise JIRAError(403, "notifyUsers=false needs an administrator")
+                fake.calls.append(("update_comment", key, str(comment_id), notify))
+                fake.comments[key][i] = body
+        return _Comment()
+
+    def delete_comment(self, key, comment_id):
+        """Test helper: a person deletes a comment (its slot stays, as an id)."""
+        self.comments[key][int(comment_id) - 1] = None
 
     # ── issue properties, as the jira library reaches them ──
     def add_issue_property(self, issue, key, data):

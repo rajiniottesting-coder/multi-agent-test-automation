@@ -59,9 +59,15 @@ an adapter written before them stays valid.
     create_issue(issue_type, summary, description, labels=None) -> key
                                               pipeline health issue, defects
     set_property(issue_key, key, value)       hidden JSON values on an issue:
-    get_property(issue_key, key) -> value     flaky-test records and the day's
-    property_keys(issue_key) -> [key]         spend (append-only keys, so two
-    delete_property(issue_key, key)           runs never overwrite each other)
+    get_property(issue_key, key) -> value     flaky-test records, the day's
+    property_keys(issue_key) -> [key]         spend, a story's model-cost
+    delete_property(issue_key, key)           ledger (append-only keys, so two
+    properties(issue_key, prefix) -> {k: v}   runs never overwrite each other);
+                                              `properties` reads them in one call
+    update_comment(issue_key, ref, body)      edit a comment in place, without
+                                              notifying where allowed (`ref` = what
+                                              add_comment returned); LookupError
+                                              when it is gone: the cost comment
     check_access() -> {"ok", "who"}           the credential check
 """
 from __future__ import annotations
