@@ -150,7 +150,7 @@ def check_model(mode: str) -> Finding | None:
     try:
         if mode == "models":
             import requests
-            base = (os.getenv("OPENAI_API_BASE") or "https://api.openai.com/v1").rstrip("/")
+            base = (os.getenv("OPENAI_API_BASE") or _client_default_base()).rstrip("/")
             resp = requests.get(f"{base}/models", timeout=30,
                                 headers={"Authorization": f"Bearer {os.getenv('OPENAI_API_KEY', '')}"})
             if resp.status_code >= 400:
@@ -175,6 +175,14 @@ def check_model(mode: str) -> Finding | None:
                        "model stop until this is fixed: check the key, its spend limit at "
                        "the provider, and OPENAI_API_BASE.")
     return Finding(alert, False, "The model endpoint answers")
+
+
+def _client_default_base() -> str:
+    """The endpoint the model client itself uses when OPENAI_API_BASE is unset
+    - owned by the client library, the same one LLMClient talks to, so the
+    check never names a provider of its own."""
+    from openai import OpenAI
+    return str(OpenAI(api_key="unused").base_url)
 
 
 def _redact(text: str) -> str:

@@ -478,3 +478,19 @@ def test_a_removed_workflows_alert_closes_but_an_unreadable_ones_stays(script_wo
     assert "workflow-failing:job.yml" in ph.open_alerts(jira)
     assert any(c.startswith("[health:resolved] workflow-failing:other.yml\nThe workflow is no "
                             "longer scheduled") for c in fake.comments[key])
+
+
+def test_the_listing_check_uses_the_clients_own_default_endpoint(monkeypatch):
+    """No provider URL is written in the check (Agent 3, PR #231)."""
+    import requests
+    from openai import OpenAI
+    monkeypatch.delenv("OPENAI_API_BASE", raising=False)
+    seen = []
+    monkeypatch.setattr(requests, "get", lambda url, **k: seen.append(url) or SimpleNamespace(
+        status_code=200))
+    hc.check_model("models")
+    assert seen == [str(OpenAI(api_key="x").base_url).rstrip("/") + "/models"]
+    monkeypatch.setenv("OPENAI_API_BASE", "https://gateway.example/v1/")
+    hc.check_model("models")
+    assert seen[-1] == "https://gateway.example/v1/models"
+    assert "api.openai.com" not in (ROOT / "core/health_checks.py").read_text(encoding="utf-8")
