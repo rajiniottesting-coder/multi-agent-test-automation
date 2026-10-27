@@ -222,7 +222,9 @@ File sizes change with almost every pull request, so they are not listed here; `
 [Agent 5 — Reporter]
   - parses JUnit XML, scopes it to the step files this PR changed
   - lists failures outside the story separately (verdict follows the PR check)
-  - LLM drafts a prose summary; Python adds the facts and the cost table
+  - LLM drafts a prose summary; Python adds the facts and the cost (one line
+    linking the story's cost comment, or the table with the comment ledger)
+  - same commit, same results as the last report: nothing posted, no model call
   - posts to Jira parent story as comment, adds 'tests-run'
   - change story: one result line per owning story + Agent 0 prediction score
               ↓
@@ -787,9 +789,10 @@ Priority: the `--story` CLI arg, then `JIRA_STORY_KEY`, then the first Jira key 
 4. Scope the report to the step-def modules this PR added or changed; failures outside that scope are kept and listed separately, and the verdict is `failed` unless everything on the branch passed, so the comment agrees with the PR check.
 4b. Outages (`TestResult.outage`, Agent 4's mark) are taken out of what the model sees (`_without_outages`), never counted as outside failures, and listed by `_outage_section()` under a *Not judged* warning; `_overall_verdict()` returns `unavailable` when nothing else failed. Flaky tests (`TestResult.flaky`, `first_failure`) are listed by `_flaky_section()` and recorded by `record_flakes()` on the pipeline health issue - every flake of the run, not only the story's.
 5. Invoke LLM with structured schema `JiraCommentDraft` (`core/schemas.py`) — `title` and `body_markdown` — for the prose about the story's own tests only. `spend_budget.begin_story()` first; when no story test could be judged (all outages), or `BudgetExceeded` stops the call, `fallback_draft()` / a fixed draft writes the prose instead.
-6. Compose final comment via `build_final_comment(prose_body, report, outside, unscoped_total, outages)`. Appends the outside failures, the outages, the flakes, the run details and the end-to-end cost table with its story-budget line (`format_e2e_section(agg, budget)`).
-7. Post to Jira parent story via `jira.add_comment(story_key, comment)` and add `tests-run`. No duplicate check: a re-run posts another comment (P4 proposes skipping a re-run with identical results).
-8. Change story: `core.impact_results.post_owner_results()` puts one result line on each story owning a revised test, and `record_prediction_outcome()` scores Agent 0's prediction against what changed and failed (shadow mode too).
+4c. F-31 (D4), before the model call: `report_fingerprint()` hashes the story, the PR, the commit, the verdict and every test's outcome; equal to the hidden property `agent5.report` → nothing posted, no model call, status `unchanged_not_reposted` (flakes still recorded when the run URL differs). Property ledger only; without a commit the run is always reported.
+6. Compose final comment via `build_final_comment(prose_body, report, outside, unscoped_total, outages)`. Appends the outside failures, the outages, the flakes and the run details, then the cost: with the property ledger (`usage_ledger.mode()`) one `cost_line()` - the total so far and a link to the story's cost comment; with the comment ledger the end-to-end table with its story-budget line (`format_e2e_section(agg, budget, allowance)`). With the property ledger Agent 0's outcome is measured now (`record_prediction_outcome(..., save=False)`) and appended as `outcome_line()`.
+7. Post to Jira parent story via `jira.add_comment(story_key, comment)` and add `tests-run`; record its own usage (which brings the cost comment up to date) and keep the fingerprint.
+8. Change story: `core.impact_results.post_owner_results()` puts one result line on each story owning a revised test; Agent 0's outcome is kept once per PR - `save_outcome()` after the report (property `agent0.outcome.<hash>`), or `record_prediction_outcome()` posting the `[agent0:outcome]` comment with the comment ledger (shadow mode too).
 
 ### Idempotency design
 
@@ -939,7 +942,9 @@ off with one log line):
 | Method | Purpose |
 |---|---|
 | `create_issue(issue_type, summary, description, labels)` | The pipeline health issue, defects |
-| `set_property` / `get_property` / `property_keys` / `delete_property` | Hidden JSON on an issue (Jira issue properties: key ≤ 255 bytes, value ≤ 32 KB, unlimited per issue, edit permission). Append-only records: flakes, the day's spend |
+| `set_property` / `get_property` / `property_keys` / `delete_property` | Hidden JSON on an issue (Jira issue properties: key ≤ 255 bytes, value ≤ 32 KB, unlimited per issue, edit permission). Append-only records: flakes, the day's spend; a story's model-cost ledger, Agent 5's report fingerprint, Agent 0's outcome (F-31) |
+| `properties(issue_key, prefix)` | Every property under a prefix with its value, in one request (Jira: `GET issue?properties=*all`). Without it the ledger reads `property_keys` + `get_property` |
+| `update_comment(issue_key, ref, body)` | Edit a comment in place (`ref` = what `add_comment` returned): the story's one cost comment. Jira: without notifying where the account may (a project administrator), else with the notification; `LookupError` when the comment is gone. Without it the story keeps the comment ledger |
 | `check_access()` | The health check: whose credentials (`myself`) |
 | `render_markdown(markdown)` | Comment markup (Agent 5, alerts, defects) |
 
@@ -1588,13 +1593,28 @@ story run ends with two separate log lines — `LLM TOKEN USAGE [...]` (exact)
 and `LLM COST [...]` (derived from the `LLM_PRICE_INPUT_PER_1M` /
 `LLM_PRICE_OUTPUT_PER_1M` repo variables). Cross-agent story cost:
 `core/usage_ledger.py` — each LLM-using agent (Agent 0 included, for a change
-story) posts a machine-parseable
-`[LLM-USAGE]` comment on the story (Agent 3 derives the key from the
-`auto/<KEY>-` branch); Agent 5 reads them back (`JiraClient.get_comments`),
-adds its own usage, and appends an "End-to-end LLM usage & cost" table
-(per-agent rows + TOTAL) to its test report. Posting/reading is best-effort
-and can never fail a run; missing pricing flags totals as a lower bound
-(token counts stay exact).
+story; Agent 3 derives the key from the `auto/<KEY>-` branch) records one
+entry per run with `post_usage_to_story()`. `mode(tracker)` picks the store:
+- **properties** (F-31; the tracker has `set_property`, `properties` or
+  `property_keys` + `get_property`, and `update_comment`, and
+  `usage_ledger.store` is not `comments`): the entry is the issue property
+  `llm.usage.<UTC time>.<id>`, then `refresh_cost_comment()` re-renders the
+  story's one cost comment for the attempt (`render_cost_comment()`: a row per
+  agent from `by_agent()`, modes and run counts, totals, `budget_line()` with
+  the story's `allowance`) and edits it in place - posted when the attempt has
+  none (`llm.comment` holds its reference) or a person deleted it
+  (`LookupError`); any other refusal is logged, never a new comment. A render
+  that missed an entry recorded meanwhile renders again (at most three
+  passes). A reset (`post_reset_to_story()`) closes the old comment with a
+  line saying why, then writes `llm.reset.<time>.<id>`.
+- **comments** (the original): one `[LLM-USAGE]` comment per run,
+  `[LEDGER-RESET]` boundaries, Agent 5's end-to-end table.
+`story_ledger()` reads either: in properties mode the story's `[LLM-USAGE]`
+comments after their last reset still count until the first property reset,
+so a story costed before the switch loses nothing. `has_usage()`,
+`core.spend_budget.begin_story()` and Agent 5 read through it. Recording and
+reading are best-effort and can never fail a run; missing pricing flags totals
+as a lower bound (token counts stay exact).
 
 ## 18. Agent 0 — Impact Analyst (deep)
 

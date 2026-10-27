@@ -94,7 +94,7 @@ For more diagrams — component view, Agent 2 sequence, and the labels-as-state-
 | 4 | Runner | `.github/workflows/agent4_runner.yml` | same PR events; a push to `main` touching framework paths | 0 |
 | 5 | Reporter | `agents/agent5_reporter.py` (job 2 of Agent 4's workflow) | after Agent 4, on a PR whose browser tests ran | 1 |
 
-Per story with no repairs: a **new story** takes 7 calls (1 draft, 1 plan, typically 3 files, 1 review, 1 report). A **change story** like A3 takes about 14–15: Agent 0 2 + 2 (context update), Agent 1 1, Agent 2 1 plan + typically 3 new files + 1 per revised scenario + 0–1 for the owner's step file, Agent 3 1 on the story PR + 1 on the context-update PR, Agent 5 1. Each push to an open PR runs Agents 3 and 5 again; a story that waits for another open PR spends its plan call again on the retry. Agent 5's end-to-end cost table is the measured figure (Agent 3's review of the context-update PR is not on it: that branch carries no story key).
+Per story with no repairs: a **new story** takes 7 calls (1 draft, 1 plan, typically 3 files, 1 review, 1 report). A **change story** like A3 takes about 14–15: Agent 0 2 + 2 (context update), Agent 1 1, Agent 2 1 plan + typically 3 new files + 1 per revised scenario + 0–1 for the owner's step file, Agent 3 1 on the story PR + 1 on the context-update PR, Agent 5 1. Each push to an open PR runs Agents 3 and 5 again; a story that waits for another open PR spends its plan call again on the retry. The story's cost comment is the measured figure (Agent 3's review of the context-update PR is not on it: that branch carries no story key).
 
 Agent 0 is described in its own chapter, [Change stories — Agent 0](#change-stories--agent-0).
 
@@ -395,9 +395,9 @@ Pydantic's `max_length=10` translates to JSON Schema `maxItems`, which some prov
 3b. Keeps the application's outages apart (F-7): a test Agent 4 marked `outage` is neither a pass nor a failure - it is listed under *Not judged* with a warning at the top, never counted as failing outside the story, and the verdict is `unavailable` when nothing else failed. A test that passed only on the retry is named under *Passed only on the retry (flaky)* and recorded on the pipeline health issue (F-19).
 4. Enriches with CI context: PR URL, workflow run URL, commit SHA, link to artifact download.
 5. Calls the LLM with a structured schema (`JiraCommentDraft`) to produce ONLY the prose summary of the story's own tests (Python adds the outside failures, outages, flakes and the deterministic links after). When no test of the story could be judged, or the spend budget stops the call (F-24), code writes the same prose instead - the results are always reported.
-6. Posts the comment to the parent Jira story (resolved from PR branch name), with the end-to-end cost table and one line saying how much of the story's budget is used (marked past `budget.warn_at`). It runs only on a pull request whose browser tests ran: a PR changing only prompts, docs or Markdown gets no report.
+6. Posts the comment to the parent Jira story (resolved from PR branch name). With the property ledger (F-31) the cost is one line - the total so far and a link to the story's cost comment, which holds the table and the story-budget line; with the comment ledger the end-to-end cost table and the budget line (marked past `budget.warn_at`) are appended, as before. It runs only on a pull request whose browser tests ran: a PR changing only prompts, docs or Markdown gets no report. **A re-run on the same commit with the same results posts nothing new** and calls no model (property ledger; the fingerprint is the hidden property `agent5.report`) - its flakes are still recorded when it is another run of the tests.
 7. Tags the story with `tests-run`.
-8. **Change stories:** posts a one-line run result on each story that owns a revised test (`core/impact_results.py`) and records how Agent 0's prediction compared with what actually changed and failed — the measure used to judge Agent 0 in shadow mode.
+8. **Change stories:** posts a one-line run result on each story that owns a revised test (`core/impact_results.py`) and records how Agent 0's prediction compared with what actually changed and failed — the measure used to judge Agent 0 in shadow mode. With the property ledger that outcome is a line of this report (once per pull request) and kept as hidden data; with the comment ledger it is a separate `[agent0:outcome]` comment.
 
 **Why Python builds the deterministic parts:**
 LLMs are bad at conditional rendering (`if PR_URL exists, include link`). Even with explicit instructions, they include "View PR (None)" or similar when fields are unavailable. Splitting prose (LLM) from facts (Python) eliminates this entire class of bugs.
@@ -1242,6 +1242,8 @@ defects:                            # failures on main (F-22)
 budget:                             # model spend (F-24); every selection excludes hold_label
   { enabled, per_story_usd: 8, per_day_usd: 12, warn_at: 0.5, timezone: "UTC",
     hold_label: "budget-hold" }
+usage_ledger: { store: "auto" }     # F-31: hidden properties + one cost comment per
+                                    # attempt; "comments" = [LLM-USAGE] per run
 ```
 
 The four operational blocks are read by `core/ops_settings.py`: a missing or
@@ -1335,14 +1337,26 @@ exact (reported by the API per call); cost is derived from the
 - **Per run:** every LLM call logs its own tokens plus running totals; each
   story run ends with two lines in the Actions log — `LLM TOKEN USAGE [...]`
   and `LLM COST [...]` (input + output cost shown separately).
-- **Per story, end to end:** each LLM-using agent (0, 1, 2, 3, 5) posts a
-  machine-parseable `[LLM-USAGE]` comment on the Jira story after it
-  finishes. Agent 5 aggregates every entry and appends an
-  **"End-to-end LLM usage & cost"** table to its final test report — one
-  row per agent run plus a TOTAL row. That table is the actual measured
-  cost of taking the story from `ai-ready` to a tested, reported PR.
-  For a change story it includes Agent 0 (analysis and context update).
-- Dry runs never post ledger comments. Posting and reading are
+- **Per story, end to end:** each LLM-using agent (0, 1, 2, 3, 5, and the
+  review fix) records one ledger entry on the Jira story after it finishes.
+  Where it is kept depends on the tracker (`usage_ledger.store`, F-31):
+  - **Property ledger** (default on Jira): every entry is a hidden issue
+    property, and the story shows **one cost comment per attempt**, edited in
+    place after every run - one row per agent with its modes and run count
+    (`Agent 2 (Coder): initial, review fix ×2`), the total, and the story
+    budget line. Nobody is notified of the edit where the account may switch
+    the notification off (a Jira project administrator); otherwise the edit
+    notifies, as a new comment would. Agent 5's report carries one line - the
+    total so far and a link to the cost comment - instead of the table.
+  - **Comment ledger** (`usage_ledger.store: comments`, or a tracker without
+    issue properties and comment editing): the original behaviour - one
+    machine-parseable `[LLM-USAGE]` comment per run, and Agent 5 appends the
+    **"End-to-end LLM usage & cost"** table (one row per agent run plus a
+    TOTAL row) to every report.
+  Either way it is the actual measured cost of taking the story from
+  `ai-ready` to a tested, reported PR; for a change story it includes Agent 0
+  (analysis and context update).
+- Dry runs never record ledger entries. Recording and reading are
   best-effort: a Jira hiccup can't fail a pipeline run. If some runs had
   no pricing configured, the total is marked as a lower bound (token
   totals remain exact).
@@ -1350,39 +1364,45 @@ exact (reported by the API per call); cost is derived from the
 #### What gets tracked when a story goes through the pipeline
 
 Cost tracking is fully automatic — no per-story action is ever needed.
-For a fresh story (e.g. SCRUM-25) the lifecycle looks like this:
+For a fresh story (e.g. SCRUM-25) the lifecycle looks like this (property
+ledger; with the comment ledger each "entry" is an `[LLM-USAGE]` comment):
 
 | Stage | You do | Tracked automatically |
 |---|---|---|
 | 1. Create story, add `ai-ready` (or `impact-check` for a change story) | manual | — |
-| 1b. Change story only: Agent 0 analyses it | nothing | posts `[LLM-USAGE] agent="Agent 0 (Impact Analyst)"` (analysis, and the context update at hand-over). A new attempt after downstream agents ran starts with a `[LEDGER-RESET]`; Agent 1 keeps Agent 0's entries rather than resetting over them |
-| 2. Agent 1 picks it up (cron) | nothing | Actions log: per-call tokens + `LLM TOKEN USAGE` / `LLM COST` summaries; posts `[LLM-USAGE] agent="Agent 1 (Test Designer)" ...` comment on the story |
+| 1b. Change story only: Agent 0 analyses it | nothing | an `Agent 0 (Impact Analyst)` entry (analysis, and the context update at hand-over); the cost comment opens. A new attempt after downstream agents ran starts with a reset; Agent 1 keeps Agent 0's entries rather than resetting over them |
+| 2. Agent 1 picks it up (cron) | nothing | Actions log: per-call tokens + `LLM TOKEN USAGE` / `LLM COST` summaries; an `Agent 1 (Test Designer)` entry; the cost comment opens (or is brought up to date) |
 | 3. Review TCs, add `human-approved` | manual | — |
-| 4. Agent 2 generates code, opens PR | nothing | Summary lines + `[LLM-USAGE] agent="Agent 2 (Coder, initial)"` comment |
-| 5. Agent 3 reviews the PR | nothing | Derives the story key from the `auto/<KEY>-` branch, posts `[LLM-USAGE] agent="Agent 3 (Reviewer)"` |
-| 6. Agent 4 runs the tests | nothing | No LLM calls — correctly contributes $0 (nothing posted) |
-| 7. Agent 5 reports results | nothing | Reads all prior `[LLM-USAGE]` comments, adds its own usage, appends the **End-to-end LLM usage & cost** table (per-agent rows + TOTAL) to its report, then posts its own usage comment |
+| 4. Agent 2 generates code, opens PR | nothing | Summary lines + an `Agent 2 (Coder, initial)` entry; the cost comment is edited |
+| 5. Agent 3 reviews the PR | nothing | Derives the story key from the `auto/<KEY>-` branch; an `Agent 3 (Reviewer)` entry |
+| 6. Agent 4 runs the tests | nothing | No LLM calls — correctly contributes $0 (nothing recorded) |
+| 7. Agent 5 reports results | nothing | Its report says the cost so far in one line, linking the cost comment; then its own entry |
 
-When the pipeline completes, the story itself carries the answer: Agent 5's
-report shows the actual measured cost of that story — total calls, exact
-input/output tokens, and dollars at the configured rates.
+When the pipeline completes, the story itself carries the answer: the cost
+comment (or, with the comment ledger, Agent 5's table) shows the actual
+measured cost of that story — total calls, exact input/output tokens, and
+dollars at the configured rates.
 
 Each story's cost is its own: every story an agent runs (Agents 0, 1 and 2,
 scan or single story) starts with the usage counter at zero, and a story that
-**fails** part-way posts what it spent as `<agent> (failed)` on that story -
+**fails** part-way records what it spent as `<agent> (failed)` on that story -
 it used to land in the next story's numbers in the same scan.
 
 Rework is included in the lifetime total: a later `ai-update` or
-`ai-regenerate` run posts another ledger entry (e.g. `Agent 2 (Coder,
-incremental update)`), and the next Agent 5 report's table includes it —
-so the TOTAL reflects the story's true lifetime cost, not just the first
-pass.
+`ai-regenerate` run records another entry (e.g. `Agent 2 (Coder,
+incremental update)`), and the cost comment counts it — so the total reflects
+the story's true lifetime cost, not just the first pass. A story reset to
+`ai-ready` and drafted again starts a **new attempt**: the cost comment of the
+old attempt gets a closing line saying why and keeps its figures; the next run
+opens a new one counted from zero (with the comment ledger: a `[LEDGER-RESET]`
+comment).
 
 Prerequisites for full numbers (one-time): the two `LLM_PRICE_*`
-variables are set, runs are real (not `--dry-run`), and the pipeline
-reaches Agent 5 (the aggregate table is built by the last agent; before
-that, the individual `[LLM-USAGE]` comments are already visible on the
-story one by one).
+variables are set and runs are real (not `--dry-run`). The cost comment is
+current after every run, so a story that stops before Agent 5 (blocked,
+waiting, held by its budget) still shows what it spent. Stories costed before
+the property ledger keep their `[LLM-USAGE]` comments: they count until the
+story's next reset.
 
 **Budgets (F-24).** The same numbers are enforced: `budget.per_story_usd` for a
 story's cost since its ledger's last reset, `budget.per_day_usd` for every model
@@ -1544,11 +1564,12 @@ prediction that it fails.
 model call** (`core/spend_budget.py`). Over a limit the call is not made, and the
 stop says which limit, how much and what to do.
 
-- **A story over its budget** (its ledger since the last `[LEDGER-RESET]`, plus
-  the run in progress) gets the label `budget.hold_label` and one
+- **A story over its budget** (its ledger since the last reset - the start of
+  the current attempt - plus the run in progress) gets the label `budget.hold_label` and one
   `[budget:hold]` comment. Every agent's selection excludes the label, so no
   scan picks it again. **Remove the label to allow it one more
-  `per_story_usd`**; to stop, do nothing.
+  `per_story_usd`**; to stop, do nothing. The story's budget line then reads
+  against what it may spend now (*raised after a budget hold*), not one budget.
 - **A day over its budget** opens a health alert. Scans stop starting stories
   (green - the alert is the notice) and resume the next day (`budget.timezone`).
   A pull request's review is not made - Agent 3 posts *Not reviewed: model
@@ -1934,6 +1955,25 @@ allow it one more `budget.per_story_usd`, or leave it held; **the day's** - the
 pipeline health issue has a `budget-day-<day>` alert; runs resume the next day,
 or raise `budget.per_day_usd`. Re-run the PR's review job once the budget allows
 it.
+
+### The cost comment is missing, stale, or there are two
+
+The story's **Model cost for this story** comment (F-31) is brought up to date
+after every agent run; the figures themselves are hidden issue properties
+(`llm.usage.*`), so nothing is lost when the comment is.
+- **Deleted by a person:** the next run posts it again.
+- **Not updated, `Cost comment on ... not brought up to date` in the log:** the
+  bot account may not edit its own comments (Jira's *Edit Own Comments*
+  permission). The run never posts a new comment instead - grant the permission
+  and the next run brings it up to date. Agent 5's report still gives the total.
+- **Watchers emailed on every edit:** switching the notification off needs a
+  (project) administrator; without it the edit notifies, as a new comment
+  would (`Editing a comment without notifying needs an administrator` in the
+  log once).
+- **Two cost comments for one attempt:** two runs recorded the attempt's first
+  entries at the same moment (L43). Both show the same total once either is
+  updated again; delete either.
+- **Back to one comment per run:** `usage_ledger.store: comments`.
 
 ### An alert on the pipeline health issue
 
@@ -2551,17 +2591,17 @@ any run can find it again. All are plain Jira comments.
 
 | Marker | On | Written by | Meaning |
 |---|---|---|---|
-| `[LLM-USAGE]` | story | Agents 0, 1, 2, 3, 5 | One run's tokens and cost; Agent 5 totals them |
-| `[LEDGER-RESET]` | story | Agents 0, 1 | Entries above it belong to an earlier attempt and are not totalled |
-| `[agent0:report]` | story | Agent 0 | The analysis report (shadow or live) |
-| `[agent0:delta]` | story | Agent 0 | A re-analysis after the story changed: what moved |
-| `[agent0:no-component]` | story | Agent 0 | Posted once: no Component, so the whole suite was considered |
+| `[LLM-USAGE]` | story | Agents 0, 1, 2, 3, 5 | Comment ledger only (and stories costed before F-31): one run's tokens and cost; Agent 5 totals them. With the property ledger each run is the hidden property `llm.usage.<time>.<id>` and the story has one **Model cost for this story** comment per attempt, edited in place |
+| `[LEDGER-RESET]` | story | Agents 0, 1 | Comment ledger only: entries above it belong to an earlier attempt and are not totalled. With the property ledger: the hidden `llm.reset.<time>.<id>`, and a closing line on the old attempt's cost comment |
+| `[agent0:report]` | story | Agent 0 | The analysis report (shadow or live); a re-analysis carries its `[agent0:delta]` line as the second line. When an Impact Review exists, the data block the agents read is in the review only - the story's report points to it |
+| `[agent0:delta]` | story | Agent 0 | A re-analysis after the story changed: what moved - inside that analysis's report comment; on its own only when an approved review stands and nothing new is to be reviewed |
+| `[agent0:no-component]` | story | Agent 0 | No longer posted (F-31): the report's *No Component* line says it, with the advice. Older stories may carry it |
 | `[agent0:context-update]` | story | Agent 0 | The context-update PR link, or "No context update needed"; carries the story-text hash |
 | `[agent0:context-addition]` | story | Done on merge (Agent 0's context update) | The notes-addition PR link, or "No notes addition needed"; carries the hash of the story and its test cases, so an edited story or edited test cases are checked again |
 | `[agent0:trace]` `will-revise` / `result` / `merged` / `restored` | owning story | Agent 0 hand-over, Agent 5, reconcile | What a change story did to this story's tests |
 | `[agent0:snapshot]` | test case | Agent 1 impact-aware | The text before revision: the undo source |
 | `[agent0:reconcile]` `closed-unmerged` / `reverted` / `no-pr` / `ask-a-person` | story | reconcile | Reconcile's memory between scans |
-| `[agent0:outcome]` | story | Agent 5 | Agent 0's prediction scored against what the PR changed and failed |
+| `[agent0:outcome]` | story | Agent 5 | Comment ledger only: Agent 0's prediction scored against what the PR changed and failed. With the property ledger it is a line of Agent 5's report for that PR, kept as the hidden `agent0.outcome.<hash>` |
 | `[agent1:coverage]` | story | Agent 1 | Each acceptance criterion and the test case(s) that verify it, with the step that proves it |
 | `[agent1:impact-draft]` | story | Agent 1 impact-aware | Before/after of each revision, new tests, the coverage map, `Change applied at: <UTC>` |
 | `[agent2:waiting]` | story | Agent 2 | Why the story is waiting for another open PR (once per reason) |
@@ -2569,6 +2609,27 @@ any run can find it again. All are plain Jira comments.
 | `[agent2:review-fix] review <id>` / `comment <id>` | pull request | Agent 2 review fix | Each review comment's outcome (fix / decline / no_change) and what was pushed; the comment ids it lists are not acted on again |
 | `[inventory-update] content: <hash>` | inventory-update PR body | Agent 0 drift job | The hash of the inventory it wrote: tells an untouched PR (replaced or kept) from one a person edited (never touched) |
 | `[inventory-update] kept-edited: <hash>` | inventory-update PR comment | Agent 0 drift job | A finding noted on a PR a person edited, so the next night does not repeat it |
+
+### Hidden issue properties
+
+Data the agents read back but a person never needs to read is kept as Jira
+issue properties (not shown in the issue view; the tracker's optional
+`set_property` / `properties` capabilities). Append-only keys carry the time,
+so two runs never overwrite each other.
+
+| Property | On | Written by | Meaning |
+|---|---|---|---|
+| `llm.usage.<time>.<id>` | story | Agents 0, 1, 2, 3, 5, review fix | One run's tokens and cost (property ledger, F-31) |
+| `llm.reset.<time>.<id>` | story | Agents 0, 1 | A new attempt: earlier entries are not totalled |
+| `llm.hold.<time>.<id>` | story | spend budget | What the story had spent when its budget held it - what it may spend after a person removes the label |
+| `llm.comment` | story | the ledger | Which comment is the current attempt's cost comment |
+| `agent5.report` | story | Agent 5 | The fingerprint of the last report (commit, verdict, every test's outcome): an identical re-run posts nothing |
+| `agent0.outcome.<hash>` | story | Agent 5 | Agent 0's prediction scored for one pull request, kept once |
+| `flaky.*`, `flaky-name.*`, `spend.*` | pipeline health issue | Agent 5 and the triage job (flakes); every run (spend) | Flake records and the day's model spend (F-19, F-24) |
+
+`usage_ledger.store: comments` in `config.yaml` (or a tracker without issue
+properties and comment editing) keeps the story's ledger and Agent 0's outcome
+as the marker comments above instead.
 
 ### Failure recovery
 

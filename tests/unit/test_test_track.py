@@ -3,7 +3,7 @@
 docs/TEST_TRACK.md must list:
 - every fix marked **Done** in docs/VALIDATION_AND_KNOWN_GAPS.md §4, in the
   *Built in* column of at least one check row;
-- every fix not done yet, in TG-9 (the rows to add when it is built);
+- every fix not done yet, in TG-10 (the rows to add when it is built);
 - every PR number CHANGES.md cites, in *Every merged change and where it is
   proven* (or the line naming the cited PRs that were never merged).
 Row ids are unique, every row carries a known status, and a passed or partly
@@ -48,11 +48,14 @@ def test_every_done_fix_has_a_row():
     assert not missing, f"built but no live check in TEST_TRACK.md: {missing}"
 
 
-def test_every_fix_not_done_is_in_tg9():
-    tg9 = TRACK.split("## TG-9")[1].split("\n## ")[0]
+def test_every_fix_not_done_is_in_the_not_built_group():
+    group = TRACK.split("## TG-10 · Fixes not built yet")[1].split("\n## ")[0]
     open_fixes = [f for f, d in _backlog().items() if not d]
-    missing = [f for f in open_fixes if not re.search(rf"\| {f}\b", tg9)]
-    assert not missing, f"fixes not built and not in TG-9: {missing}"
+    missing = [f for f in open_fixes if not re.search(rf"\| {f}\b", group)]
+    assert not missing, f"fixes not built and not in TG-10: {missing}"
+    done = [f for f, d in _backlog().items() if d]
+    stale = [f for f in done if re.search(rf"\| {f}\b", group)]
+    assert not stale, f"built, but still listed as not built in TG-10: {stale}"
 
 
 def test_every_pr_changes_cites_is_in_the_coverage_list():

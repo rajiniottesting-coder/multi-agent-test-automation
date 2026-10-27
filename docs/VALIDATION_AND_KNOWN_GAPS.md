@@ -41,14 +41,14 @@ has not yet run live: [TEST_TRACK.md](./TEST_TRACK.md).
 ## 2. Still to run → [TEST_TRACK.md](./TEST_TRACK.md)
 
 Everything built and not yet proven live is tracked in **[TEST_TRACK.md](./TEST_TRACK.md)**:
-one row per check, grouped by use case (TG-1 to TG-8), run in sessions S1-S8
+one row per check, grouped by use case (TG-1 to TG-9), run in sessions S1-S8
 at the end, after the implementation work, with each row's expected result,
 the PR that built it, and its status and evidence. TG-0 re-proves what V1-V8
-above already showed, so a later change that broke it is found; TG-9 holds
+above already showed, so a later change that broke it is found; TG-10 holds
 every fix in section 4 not built yet. Its last section maps every merged
 change to the run or rows that prove it. Every fix adds its rows there when it
 is built; a unit test fails if a fix marked **Done** in section 4 has none, a
-fix not done is missing from TG-9, or a PR `CHANGES.md` cites is missing from
+fix not done is missing from TG-10, or a PR `CHANGES.md` cites is missing from
 the map. The runs UC-1 to UC-7 that used to be listed here are its sessions
 S1-S5.
 
@@ -149,14 +149,16 @@ code, the scenario markers and the inventory, not the notes.
 |---|---|---|---|
 | L36 | **The daily budget sees finished runs only** | Each run records its spend when it ends; a run reads the day's total at its first model call. Runs going on at the same time can pass the limit by what each spends; a run killed by its timeout records nothing. `scripts/smoke_test.py` and local runs (unless `PIPELINE_BUDGET=on`) are not counted | Limit |
 | L38 | **The tracker's own credentials fail** | No alert can be posted on the tracker: the health check's run fails and GitHub notifies the workflow's owner - the one alert outside the health issue | Limit |
-| L40 | **A story allowed more budget** (its `budget-hold` removed) | Agent 5's budget line compares the total with one `per_story_usd`, so it reads over 100% | Limit |
+| L43 | **Two cost comments for one attempt** | The cost comment is posted by the attempt's first entry; two runs recording the first entries at the same moment both post one (the ledger keeps one reference). Both are correct; the one not referenced is no longer brought up to date | Limit (F-31; rare - an attempt starts with one agent) |
+| L44 | **The comment ledger** (`usage_ledger.store: comments`, or a tracker without issue properties and comment editing) | The original behaviour: one `[LLM-USAGE]` comment per run, the table in every Agent 5 report, `[agent0:outcome]` as a comment, and a re-run of Agent 5 on the same commit reported again | Limit (by design: the fallback) |
+| L45 | **A re-run with the same results is not reported** | Its run link is not on the story (the PR's checks show it); its flakes are recorded only when it is another run of the tests | Limit (F-31, D4) |
+| L46 | **Agent 0's report on a change story keeps its table** | Only the data block moved to the Impact Review: the review shows no scenario titles and no tests left unjudged, so the story's table still repeats the review's key, owner, tier and score columns | Limit (F-31) |
 | N5 | **An agent's PR goes stale or conflicts** because `main` moved (e.g. a person's PR merged first) | No rebase or regeneration; the sweeper re-triggers only PRs whose checks never ran. The PR waits for a person | Fix planned |
 | N6 | **A red PR is merged** | No required status check (a decision recorded in GUIDE → Branch protection), so a story PR with failing tests can be merged and moved to Done | Decision pending |
 | N7 | **Test data and isolation** | Every run shares the live application's accounts and saved state; tests run one at a time (no parallel execution). Browser turn-taking avoids collisions but rules out parallelism; no per-run data set-up and tear-down | Fix planned |
 | N8 | **More than one environment or browser** | One `base_url` (an environment variable can override it) and Chromium only; no staging/production profiles, no browser matrix | Fix planned |
 | N9 | **"How healthy is our testing?"** | Results, cost and Agent 0 recall/precision are posted to Jira per story but never aggregated: no pass-rate, flake-rate, coverage, cost-per-story or Agent 0 accuracy trend | Fix planned |
 | N10 | **Agent 2's pull requests are opened under the reviewer's own account** (`GH_PAT`) | GitHub lets no author request changes on or approve their own PR, so the reviewer must use `/fix` instead of "Request changes", and merging needs a ruleset bypass; a required approval or status check (N6) cannot be enforced (seen live on PR #221) | Fix planned (P4) |
-| N11 | **Most story comments are bookkeeping** | On six recent stories, 54 of 70 comments (77%) were `[LLM-USAGE]` / `[LEDGER-RESET]` / `[agent0:outcome]` entries the agents read back, not information for people; Agent 5's cost table repeats them, grows by one row per agent run, and a re-run of the same commit posts the same report again. Watchers are emailed for each | Fix planned (P4, F-31) |
 
 ---
 
@@ -194,14 +196,14 @@ code, the scenario markers and the inventory, not the notes.
 | F-28 | N8 | Environment profiles in config (base URL and credentials per environment) and an optional browser matrix in Agent 4 |
 | F-29 | N9 | A scheduled metrics report built from the ledger, Agent 5's results and Agent 0's outcomes: pass and flake rates, coverage per story, cost per story, Agent 0 recall and precision over time |
 | F-30 | N10 | A separate bot identity for the agents' writes - a machine user or a GitHub App token in `GH_PAT` - so a person can request changes and approve; then the review fix's "Request changes" trigger and N6 work as designed. Needs the repository owner to create the account or App |
-| F-31 | N11 | Comment de-duplication, proposed 27 Oct 2026 (nothing a person reads is lost; every machine-read marker keeps working): **D1** the cost ledger and its reset boundary as hidden issue properties, one per run (no race between Agents 3 and 5), the old comments still read; **D2** Agent 5's cost table one row per agent with run counts; **D3** Agent 0's prediction outcome as one line in Agent 5's report; **D4** Agent 5 skips a re-run of the same commit with the same results; **D5** Agent 0 posts a summary and the Impact Review link, not a second copy of the table, and only the "no change" note for an unchanged re-analysis; **D6** no "no update needed" notes (the run-once flag hidden); **D7** a cost line on the comments a stopped story already gets. Expected: SCRUM-187's 20 comments → 4, SCRUM-202's 14 → 3 |
+| F-31 | N11, L40 | **Done (P4)** - each thing said once on a story, nothing a person reads lost (`core/usage_ledger.py`): **D1** every run's cost is a hidden issue property, and ONE cost comment per attempt is edited in place (instead of a comment per run); a new attempt closes it with a line saying why; old stories' `[LLM-USAGE]` comments count until their next reset; **D2** a row per agent with its modes and run count; **D3** Agent 0's outcome is a line of Agent 5's report, kept as a property; **D4** Agent 5 posts nothing (and calls no model) for the same commit with the same results; **D5** Agent 0's report on the story no longer copies the Impact Review's data block (the table stays, L46), carries a re-analysis's delta as its second line, and says "no Component" with the advice itself (no separate comment); **L40** the budget line measures a released story against what it may spend. Not done: D6 - the "no update needed" notes are the only record of that check, not duplicates; D7 - the cost comment already shows a stopped story's cost. A tracker without issue properties and comment editing, or `usage_ledger.store: comments`, keeps the comment ledger (L44) |
 
 **Agreed priority (27 Oct 2026)** - fixes first that keep the agents' knowledge true, then story state, then production readiness:
 
 - **P1 - knowledge stays true:** P1-1 inventory update (G12, PR #224) → P1-2 context update for every story: additions for new features, removals, scoped and size-bounded (F-8, F-11, F-10, F-9, PR #225) → P1-3 no silent drop of an approved test case (F-13, PR #227) → P1-4 planned inventory entries and new pages (F-12, L25, G14, PR #229).
 - **P2 - story state and cost:** F-16 (a closed-unmerged PR resets the story), F-1, F-3, with F-2, F-4, F-5 (PR #230).
-- **P3 - production readiness:** F-21, F-22, F-23, with F-7, F-19 and F-24 (this change).
-- **P4 - identity and noise:** F-30 (needs the repository owner), F-31 comment de-duplication (D1-D7).
+- **P3 - production readiness:** F-21, F-22, F-23, with F-7, F-19 and F-24 (PR #231).
+- **P4 - identity and noise:** F-31 comment de-duplication (this change), then F-30 (needs the repository owner).
 - Then the rest in the order below. All of it is validated live at the end, in the sessions of [TEST_TRACK.md](./TEST_TRACK.md).
 
 Order of the rest (before the priority plan): F-1 to F-7 (then session S4) with the correctness fixes F-13 and F-16; then continuous running - F-21 and F-22; then operational safety - F-23, F-24, F-25; then change detection - F-14, F-15; then the notes lifecycle together - F-8 with F-9 and F-10, then F-11, F-12; then scale - F-17, F-18, F-19, F-27, F-29, F-28, F-20; F-26 when the pipeline is reliably green. Each fix adds its rows to [TEST_TRACK.md](./TEST_TRACK.md) when it is built.
@@ -246,9 +248,11 @@ Gaps found earlier and fixed, for reference (details in [AI_CONCEPTS.md → fail
 | G14: the nightly inventory update added a footer field - already in the inventory as one page's key - to four other pages under a new name (PR #228, closed) | #229 (P1-4: other pages' keys marked by owner) |
 | L19: tests could not be written before a feature was deployed (the inventory comes from the live crawl) | #229 (P1-4, F-12: planned entries) |
 | L25: a new page's elements were never proposed; nothing said the page existed | #229 (P1-4: planned pages; unlisted pages listed) |
-| N1: no run tested `main` unless a pull request opened - an application regression with no PR open was found by the next PR | this change (P3, F-21) |
-| N2: a test failing on `main` reached nobody | this change (P3, F-22) |
-| N3: a scheduled agent failing run after run, or a refused / expiring credential, showed only as red runs nobody was told about | this change (P3, F-23) |
-| N4: nothing limited model spend; a spent provider budget stopped every agent at once | this change (P3, F-24) |
-| L14: a failure that outlasted the retries read as a failed test in the summary and Agent 5's report | this change (P3, F-7) |
-| L22: a failure was final on the first try (only a named 5xx/429 was re-run) and flakes were never counted | this change (P3, F-19) |
+| N1: no run tested `main` unless a pull request opened - an application regression with no PR open was found by the next PR | #231 (P3, F-21) |
+| N2: a test failing on `main` reached nobody | #231 (P3, F-22) |
+| N3: a scheduled agent failing run after run, or a refused / expiring credential, showed only as red runs nobody was told about | #231 (P3, F-23) |
+| N4: nothing limited model spend; a spent provider budget stopped every agent at once | #231 (P3, F-24) |
+| L14: a failure that outlasted the retries read as a failed test in the summary and Agent 5's report | #231 (P3, F-7) |
+| L22: a failure was final on the first try (only a named 5xx/429 was re-run) and flakes were never counted | #231 (P3, F-19) |
+| N11: most of a story's comments were bookkeeping - 41 of SCRUM-187's 71 were `[LLM-USAGE]` / `[LEDGER-RESET]`, every Agent 5 report repeated the growing cost table, Agent 0's report copied the Impact Review's data, and the delta, the no-Component note and the outcome were each a second comment of the same event | this change (P4, F-31) |
+| L40: a story allowed more budget (its hold released) read over 100% of one budget | this change (P4, F-31) |
