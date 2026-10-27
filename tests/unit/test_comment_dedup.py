@@ -163,6 +163,18 @@ def test_a_story_costed_before_the_switch_keeps_its_comments_until_its_first_res
         "after a property reset the old comments no longer count"
 
 
+def test_resetting_a_story_costed_before_posts_no_summary_of_its_old_comments(world):
+    fake, jira = world
+    fake.comments[STORY] = [ul.format_usage_comment("Agent 1 (Test Designer)", _usage(cost=0.5))]
+    ul.post_reset_to_story(STORY, reason="story reprocessed from ai-ready", jira=jira)
+    assert fake.comments[STORY] == [ul.format_usage_comment("Agent 1 (Test Designer)",
+                                                             _usage(cost=0.5))], \
+        "the old comment already shows that cost; the reset is hidden data"
+    ul.post_usage_to_story(STORY, "Agent 1 (Test Designer)", _usage(cost=0.25), jira=jira)
+    (new,) = _cost_comments(fake)
+    assert "(story reprocessed from ai-ready)" in new and "$0.2500" in new and "$0.5" not in new
+
+
 def test_a_deleted_cost_comment_is_posted_again(world):
     fake, jira = world
     ul.post_usage_to_story(STORY, "Agent 1 (Test Designer)", _usage(cost=0.1), jira=jira)

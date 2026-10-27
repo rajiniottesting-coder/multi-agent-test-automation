@@ -268,7 +268,7 @@ def post_reset_to_story(story_key: str, reason: str = "", jira=None) -> bool:
         jira = _tracker_or_default(jira)
         if mode(jira) == "properties":
             when = _now()
-            refresh_cost_comment(story_key, jira, closing=(
+            refresh_cost_comment(story_key, jira, create=False, closing=(
                 f"Closed {when.strftime('%Y-%m-%d %H:%M')} UTC: a new attempt started"
                 + (f" ({reason})" if reason else "")
                 + ". Its cost is counted from zero in a new cost comment; the runs "
@@ -641,10 +641,12 @@ def _allowance(story_key: str, tracker, ledger: dict, budget: dict) -> float | N
 
 
 def refresh_cost_comment(story_key: str, tracker, after: str | None = None,
-                         closing: str | None = None) -> str | None:
+                         closing: str | None = None, create: bool = True) -> str | None:
     """Bring the story's cost comment up to date (properties mode): edit it in
     place, or post it when the attempt has none yet (or a person deleted it).
-    Returns its reference. Never raises.
+    Returns its reference. Never raises. create=False only edits an existing
+    one (closing an attempt whose cost is still in the old comments must not
+    post a summary of them).
 
     Two agents finishing together each render from what they read; a run whose
     render missed an entry recorded meanwhile renders once more, so the last
@@ -682,6 +684,8 @@ def refresh_cost_comment(story_key: str, tracker, after: str | None = None,
                     logger.warning("Cost comment on %s not brought up to date: %s",
                                    story_key, e)
                     return ref
+            if not ref and not create:
+                return None
             if not ref:
                 ref = tracker.add_comment(story_key, body)
                 _cap(tracker, "set_property")(story_key, PROP_COMMENT,
