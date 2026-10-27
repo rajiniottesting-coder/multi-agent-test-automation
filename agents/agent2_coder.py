@@ -5465,7 +5465,7 @@ def main():
                      "regenerate": "Agent 2 (Coder, regenerate)",
                      "update": "Agent 2 (Coder, incremental update)"}[mode]
             try:
-                with story_usage(story["key"], label, dry_run=args.dry_run):
+                with story_usage(story["key"], label, jira=jira, dry_run=args.dry_run):
                     if mode == "update":
                         result = run_update(story["key"], dry_run=args.dry_run)
                     else:

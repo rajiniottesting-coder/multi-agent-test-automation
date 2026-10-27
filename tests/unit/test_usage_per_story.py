@@ -183,3 +183,33 @@ def test_agent0_scan_charges_a_failed_story_to_itself(monkeypatch):
     out = a0.scan(tracker, None, None, settings, root=".")
     assert out[0]["action"] == "error"
     assert posted == [("AB-1", "Agent 0 (Impact Analyst) (failed)")]
+
+
+def test_the_scans_post_through_their_own_tracker(monkeypatch):
+    """Found by the end-to-end scan: without it, posting a failed story's cost
+    built a second tracker client instead of using the agent's own."""
+    import agents.agent1_analyst as a1
+    import agents.agent2_coder as a2
+    seen = []
+    monkeypatch.setattr(ul, "post_usage_to_story",
+                        lambda key, agent, usage, jira=None: seen.append(jira))
+    for mod, argv, stories in ((a2, ["agent2", "--scan"], [[{"key": "AB-1"}], [], []]),
+                               (a1, ["agent1", "--scan"],
+                                [[{"key": "AB-1", "status": "To Do", "summary": "s"}]])):
+        tracker = MagicMock()
+        tracker.find_stories_to_process.side_effect = stories
+        monkeypatch.setattr(mod, "get_tracker", lambda t=tracker: t)
+        monkeypatch.setattr(mod, "validate_required_env", lambda *a: None)
+
+        def boom(key, **kw):
+            _spend(1)
+            raise RuntimeError("x")
+        monkeypatch.setattr(mod, "run", boom)
+        if mod is a2:
+            monkeypatch.setattr(a2, "_print_scan_summary", lambda r: None)
+        monkeypatch.setattr(sys, "argv", argv)
+        try:
+            mod.main()
+        except SystemExit:
+            pass
+        assert seen[-1] is tracker
