@@ -39,7 +39,10 @@ on four other pages under a new name (G14).
    crawled like any other, so its other live elements arrive the same night.
 3. **One element, one key.** The crawl marks what other pages' live keys cover,
    with the owner's name; such an element is listed with that key, never added
-   again. Moving a shared section to an `always` page stays a person's call.
+   again. A new element found on every page checked (at least
+   `layout_min_pages`) is a shared section no key covers yet: listed once, not
+   added to each page. Moving a shared section to an `always` page stays a
+   person's call.
 4. **New pages are listed, not invented.** Same-origin links to paths no
    inventory url matches are listed; adding the entry is a person's decision.
 

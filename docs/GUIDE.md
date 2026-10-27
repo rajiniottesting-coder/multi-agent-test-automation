@@ -636,6 +636,7 @@ inventory alone:
 | A key declared `removed`, still gone, that no code names any more (on `main` or in an open PR) | **Removes** it with its note and its list entries - its absence test is gone |
 | A key declared `removed` that is on the page again | Listed: the removal was undone, or the selector matches something else |
 | A live element **another page's key already covers** (a header or footer repeated on every page) | Listed with that key, **never added** a second time under a new name - move it to an `always` page if several page objects need it |
+| A new element no key covers, found on **every** page checked (at least `layout_min_pages`, default 3) | Listed once with its pages, **never added** to each - a shared section belongs once on an `always` page. On some pages only, it is page-specific and added |
 | A key declared `planned` (added from the design before deployment), found on the page | **Confirms** it: it leaves `planned` |
 | A key declared `planned`, not found | Listed as not live yet; never stale, never removed |
 | A page declared `planned_page`, none of its planned keys found (a 404, a redirect, a placeholder) | **Not touched** at all; listed |
@@ -1184,7 +1185,8 @@ agents:
                       additions: true, max_addition_chars: 1500,
                       module_budget_chars: 8000 }
     inventory_update: { enabled: true, branch_prefix: "inventory-update/",
-                        max_additions_per_page: 20, hold_ratio: 0.5, code_dirs: [pages, tests] }
+                        max_additions_per_page: 20, hold_ratio: 0.5, code_dirs: [pages, tests],
+                        layout_min_pages: 3 }
 
 status_workflow:                    # board columns per label, Done on merge
   on_label: { ai-processed: "In Progress", ai-coded: "In Review", impact-reverted: "To Do" }
@@ -1800,7 +1802,9 @@ unreachable. Not applied, and listed in the PR instead: a stale key code
 names (on `main` or in an open PR), every stale key when the open PRs could
 not be read, every page where more than `hold_ratio` of the selectors were
 stale, elements with no durable selector, elements over
-`max_additions_per_page`, and refused names or selectors. A PR you committed
+`max_additions_per_page`, refused names or selectors, an element another page's
+key already covers, and a new element found on every page checked (at least
+`layout_min_pages`) - a shared section, to add once to an `always` page. A PR you committed
 to is never replaced and no second one is opened - merge or close it and the
 next night proposes again from `main`.
 

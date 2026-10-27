@@ -1568,7 +1568,7 @@ Agent 0 off). Key settings: `enabled`, `shadow_mode`, `selection`, `labels`,
 `thresholds` (`must_update 0.6, review 0.3`), `max_candidates` (300),
 `reconcile` (`closed_scans`, `no_pr_days`, `reset_labels`), `context_update` (`enabled`,
 `branch_prefix`) and `inventory_update` (`enabled`, `branch_prefix`, `max_additions_per_page`,
-`hold_ratio`, `code_dirs`; read by `core/inventory_update.py`, whose `DEFAULTS` are these).
+`hold_ratio`, `code_dirs`, `layout_min_pages`; read by `core/inventory_update.py`, whose `DEFAULTS` are these).
 
 ### 18.2 The analysis
 
@@ -1719,7 +1719,13 @@ above `hold_ratio` is held: nothing on it changes.
 kept). `uncovered_descriptors()` excludes both marks; `shared_descriptors()`
 strips the mark and `uncovered_entry()` returns `shared` = `{generated name:
 {selector, covered_by}}` (built per descriptor by `build_page_entry`), which
-`build_update()` lists as `shared`, never adds. **Planned (F-12):**
+`build_update()` lists as `shared`, never adds. A NEW element whose selector
+the crawl reports on every measured page (pages in the report the update may
+change, a planned page not live excluded; at least `layout_min_pages`, never
+fewer than 2) is a shared section no key covers yet: `layout` lists it once with
+its pages, and it is popped from every page's additions - found by the
+real-browser run of this change, where a menu link was otherwise added once per
+page. **Planned (F-12):**
 `diff_page(declared_planned=)` drops planned keys from `missing` and returns
 `planned_live` (1 match, or ≥1 for a declared family) and `planned_waiting` (0);
 `summarize_drift()` counts both, outside `has_drift`. The crawl reports a
