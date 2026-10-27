@@ -87,8 +87,11 @@ def section(name: str) -> dict:
         return merged
     for key, value in block.items():
         default = merged.get(key)
-        if default is not None and value is not None and not isinstance(value, type(default)) \
-                and not (isinstance(default, float) and isinstance(value, int)):
+        # bool is an int in Python: `true` is no number of runs or dollars.
+        wrong_bool = isinstance(value, bool) and not isinstance(default, bool)
+        if default is not None and value is not None and (wrong_bool or (
+                not isinstance(value, type(default))
+                and not (isinstance(default, float) and isinstance(value, int)))):
             logger.warning("config %s.%s=%r is not a %s; default %r used.",
                            name, key, value, type(default).__name__, default)
             continue
