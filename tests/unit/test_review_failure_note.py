@@ -59,3 +59,12 @@ def test_a_dry_run_posts_nothing_and_a_failed_post_hides_nothing(monkeypatch):
     posted = []
     assert _run_main(monkeypatch, ["--pr", "7", "--dry-run"], posted) == 1 and not posted
     assert _run_main(monkeypatch, ["--pr", "7"], posted, fail_post=True) == 1
+
+
+def test_a_gateway_error_never_carries_an_owner_or_a_key_alias():
+    """Seen live on PR #225: the gateway's 429 named the key's owner."""
+    note = a3.failure_note(RuntimeError(
+        "Error code: 429 - Budget has been exceeded! Key=someone.name@example.org_123456 "
+        "(sk-...AbCd) Current cost: 30.7, Max budget: 30.0; contact admin@example.com"))
+    assert "@" not in note and "someone.name" not in note
+    assert "Budget has been exceeded" in note and "Max budget: 30.0" in note
