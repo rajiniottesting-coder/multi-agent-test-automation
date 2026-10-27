@@ -41,7 +41,11 @@ DEFAULTS: dict = {
                   # Pipeline-progress labels a closed-unmerged PR makes untrue:
                   # removed on undo so the story can simply be retried.
                   "reset_labels": ["ai-processed", "human-approved", "ai-coded", "ai-incomplete",
-                                   "tests-run"]},
+                                   "tests-run"],
+                  # A NEW story's PR closed unmerged (F-16): off so it is not
+                  # re-coded by itself; its test cases stay approved-in-waiting.
+                  "story_reset_labels": ["human-approved", "ai-coded", "ai-incomplete",
+                                         "tests-run"]},
     # Live mode only: when a change story is handed over (or has nothing to
     # review), propose the inventory / context-note wording update as a pull
     # request for a person to merge after deployment (core.context_update).

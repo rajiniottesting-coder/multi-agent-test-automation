@@ -1,4 +1,5 @@
-"""Settle every change story labelled impact-applied (Agent 0, C7).
+"""Settle every change story labelled impact-applied (Agent 0, C7), and every
+other coded story whose pull request was closed without merging (F-16).
 
 Merged pull request -> trace line on each owner, impact-applied off.
 Closed without merging on two consecutive scans -> revised test cases
@@ -29,13 +30,13 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 def main(argv=None) -> int:
     from dotenv import load_dotenv
     load_dotenv()
-    from core.impact_reconcile import reconcile_all, reconcile_story
+    from core.impact_reconcile import reconcile_all, reconcile_one
     from core.impact_settings import impact_settings
     from integrations.repo_host import get_repo_host
     from integrations.tracker import get_tracker
 
     ap = argparse.ArgumentParser(prog="python -m scripts.impact_reconcile")
-    ap.add_argument("--story", help="settle one change story only")
+    ap.add_argument("--story", help="settle one story only (a change story or a coded one)")
     ap.add_argument("--dry-run", action="store_true",
                     help="run the real reconcile, print every write it would make, make none")
     args = ap.parse_args(argv)
@@ -45,7 +46,7 @@ def main(argv=None) -> int:
     if args.dry_run:
         from core import dry_run
         tracker, host = dry_run.tracker(tracker), dry_run.repo_host(host)
-    results = ([reconcile_story(tracker, host, args.story.upper(), settings)] if args.story
+    results = ([reconcile_one(tracker, host, args.story.upper(), settings)] if args.story
                else reconcile_all(tracker, host, settings))
     for r in results:
         print(f"{r['story']}: {r['action']}" + (f" ({r.get('error')})" if r.get("error") else ""))

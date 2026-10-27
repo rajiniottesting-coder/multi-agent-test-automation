@@ -35,6 +35,17 @@ stalled PR by closing and reopening it, which emits the same event. The
 two-scan rule absorbs that - a close is acted on only when the SAME close
 (same PR, same updated_at) is still in place on the next scan.
 
+NEW STORIES TOO (F-16). A story that is not a change story - Agent 2 coded
+it, its pull request was closed WITHOUT merging - used to keep ai-coded and its
+In Review card, with nothing left to act on it. The same scan now settles every
+story labelled with Agent 2's completion label (not a change in progress or
+undone, not on the board's merge column): no pull request or one open or
+merged - nothing; the newest one closed unmerged, seen on `closed_scans`
+scans - `reconcile.story_reset_labels` come off (approval included, so the
+story is not coded again by itself; ai-processed stays, so its test cases are
+not drafted again), the card goes to `status_workflow.on_close_unmerged`, and
+one comment says how to retry or drop it. Its test cases are not touched.
+
 Stateless: the scan keeps its memory in marker comments on the change story
 (`[agent0:reconcile] ...`), so it can run anywhere, any number of times.
 """
@@ -268,6 +279,103 @@ def _revert(tracker, story, pr, cases, owners, labels, settings=None,
             "unretired": unretired, **settled}
 
 
+_STORY_RESET = re.compile(r"^\[agent0:reconcile\] story-reset pr: (\d+) updated: (\S+)", re.M)
+
+
+def _agent2_config() -> dict:
+    try:
+        from agents.agent2_coder import load_agent_config
+        return load_agent_config() or {}
+    except Exception as e:                                     # noqa: BLE001
+        logger.warning("Reconcile: Agent 2's settings could not be read (%s).", e)
+        return {}
+
+
+def reconcile_unmerged_story(tracker, host, story: str, settings: dict | None = None,
+                             now=None) -> dict:
+    """Settle a story that is NOT a change story whose newest pull request was
+    closed without merging (F-16); returns {"story", "action", ...}."""
+    settings = settings or impact_settings()
+    prs = sorted(host.find_prs_for_story(story), key=lambda p: p.get("updated_at") or "",
+                 reverse=True)
+    if not prs:
+        return {"story": story, "action": "no-pr"}     # e.g. coded with nothing to commit
+    if any(p["state"] == "open" for p in prs):
+        return {"story": story, "action": "open"}
+    if any(p.get("merged") for p in prs):
+        return {"story": story, "action": "merged"}   # its code is on main
+    pr = prs[0]
+    comments = tracker.get_comments(story)
+    text = "\n".join(comments)
+    if (pr["number"], pr["updated_at"]) in {(int(n), u) for n, u in _STORY_RESET.findall(text)}:
+        return {"story": story, "action": "already-reset", "pr": pr["number"]}
+    needed = max(1, int(settings["reconcile"].get("closed_scans", 2)))
+    sightings = sum(1 for n, u in _CLOSED.findall(text)
+                    if (int(n), u) == (pr["number"], pr["updated_at"]))
+    if sightings + 1 < needed:
+        remaining = needed - sightings - 1
+        when = "on the next scan" if remaining == 1 else f"after {remaining} more scans"
+        tracker.add_comment(story, f"{MARK} closed-unmerged pr: {pr['number']} "
+                                   f"updated: {pr['updated_at']}\n"
+                                   f"Pull request #{pr['number']} is closed without merging. "
+                                   f"If it is still closed {when}, the story is set back so "
+                                   "it can be coded again or dropped.")
+        return {"story": story, "action": "pending-close", "pr": pr["number"]}
+    return _reset_unmerged(tracker, story, pr, settings)
+
+
+def _reset_unmerged(tracker, story: str, pr: dict, settings: dict) -> dict:
+    reset = list(settings["reconcile"].get("story_reset_labels") or [])
+    for label in reset:
+        tracker.remove_label(story, label)
+    try:
+        from core.board_status import move_card_on_close_unmerged
+        move_card_on_close_unmerged(tracker, story)
+    except Exception as e:                                     # noqa: BLE001
+        logger.warning("Reconcile: could not move %s on the board: %s", story, e)
+    retry = [lab for lab in ((_agent2_config().get("selection") or {}).get("required_labels")
+                             or []) if lab in reset]
+    lines = [f"{MARK} story-reset pr: {pr['number']} updated: {pr['updated_at']}",
+             (f"Pull request #{pr['number']} was closed without merging, so its code never "
+              "reached main. The story is set back; its test cases are not changed.")]
+    if reset:
+        lines.append("Pipeline labels removed: " + ", ".join(reset))
+    lines.append("To code it again: check or edit its test cases, then add "
+                 + (" and ".join(retry) if retry else "the approval label")
+                 + " - Agent 2 codes it on its next scan, in a new pull request. "
+                   "To drop it: nothing more to do.")
+    tracker.add_comment(story, "\n".join(lines))
+    logger.info("Reset %s: PR #%s closed unmerged; removed %s", story, pr["number"], reset)
+    return {"story": story, "action": "reset", "pr": pr["number"], "reset_labels": reset}
+
+
+def reconcile_one(tracker, host, story: str, settings: dict | None = None, now=None) -> dict:
+    """One story: a change in progress is finished or undone; any other coded
+    story whose pull request closed unmerged is set back (F-16)."""
+    settings = settings or impact_settings()
+    labels = tracker.get_story(story).get("labels") or []
+    if settings["labels"]["applied"] in labels:
+        return reconcile_story(tracker, host, story, settings, now)
+    return reconcile_unmerged_story(tracker, host, story, settings, now)
+
+
+def _coded_stories(tracker, settings: dict) -> list:
+    """Stories Agent 2 coded that are not a change in progress or undone, and
+    not on the board's merge column (their PR merged: nothing to settle)."""
+    coded = _agent2_config().get("completion_label") or "ai-coded"
+    stories = tracker.find_stories_to_process(
+        {"issue_type": "Story", "required_labels": [coded],
+         "excluded_labels": [settings["labels"]["applied"], settings["labels"]["reverted"]]},
+        max_results=100)
+    try:
+        from core.board_status import load_status_workflow
+        wf = load_status_workflow()
+        done = (wf.get("on_merge") or "").strip().lower() if wf.get("enabled") else ""
+    except Exception:                                          # noqa: BLE001
+        done = ""
+    return [s for s in stories if not done or (s.get("status") or "").strip().lower() != done]
+
+
 def reconcile_all(tracker, host, settings: dict | None = None, now=None) -> list:
     settings = settings or impact_settings()
     stories = tracker.find_stories_to_process(
@@ -280,4 +388,26 @@ def reconcile_all(tracker, host, settings: dict | None = None, now=None) -> list
         except Exception as e:                                 # noqa: BLE001
             logger.error("Reconcile failed for %s: %s", s["key"], e, exc_info=True)
             out.append({"story": s["key"], "action": "error", "error": str(e)})
+    # F-16: every other coded story whose pull request closed unmerged.
+    try:
+        coded = _coded_stories(tracker, settings)
+    except Exception as e:                                     # noqa: BLE001
+        logger.error("Reconcile: coded stories could not be listed: %s", e, exc_info=True)
+        return out + [{"story": "-", "action": "error", "error": f"coded stories: {e}"}]
+    settled = {r["story"] for r in out}          # a change story finished above: once per run
+    for s in coded:
+        if s["key"] in settled:
+            continue
+        try:
+            result = reconcile_unmerged_story(tracker, host, s["key"], settings, now)
+        except Exception as e:                                 # noqa: BLE001
+            logger.error("Reconcile failed for %s: %s", s["key"], e, exc_info=True)
+            result = {"story": s["key"], "action": "error", "error": str(e)}
+        if result["action"] not in _NOTHING_TO_DO:
+            out.append(result)                   # only what this scan acted on, or an error
     return out
+
+
+# Coded stories reconcile reads but leaves alone: listing each on every scan
+# would bury the ones it acted on.
+_NOTHING_TO_DO = frozenset({"no-pr", "open", "merged", "already-reset"})
