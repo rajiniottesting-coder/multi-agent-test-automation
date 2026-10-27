@@ -45,6 +45,13 @@ DEFAULTS: dict = {
     # review), propose the inventory / context-note wording update as a pull
     # request for a person to merge after deployment (core.context_update).
     "context_update": {"enabled": True, "branch_prefix": "context-update/"},
+    # Nightly drift job: the inventory changes the crawl implies, as one rolling
+    # pull request for a person to merge (core.inventory_update). A key the
+    # code directories name is never removed; a page with more than hold_ratio
+    # of its selectors stale is never edited.
+    "inventory_update": {"enabled": True, "branch": "inventory-update/nightly",
+                         "max_additions_per_page": 20, "hold_ratio": 0.5,
+                         "code_dirs": ["pages", "tests"]},
 }
 
 

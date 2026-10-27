@@ -125,7 +125,10 @@ def main() -> int:
     ap.add_argument("--propose", metavar="PATH",
                     help="Write the uncovered elements as an inventory proposals "
                          "file for review (implies --compare). The inventory is "
-                         "not changed; apply with scripts.apply_inventory_proposals.")
+                         "not changed; apply with scripts.apply_inventory_proposals. "
+                         "(The nightly drift job proposes the same additions, and "
+                         "removals and replacements, as a pull request: "
+                         "scripts.propose_inventory_update.)")
     args = ap.parse_args()
     if args.propose:
         args.compare = True

@@ -4,6 +4,19 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## October 2026 (end) — the nightly crawl proposes the inventory update as a pull request
+
+**Why:** the drift job measured stale selectors and uncovered live elements every night, but nothing wrote the inventory back. A new feature's elements never reached it - so Agent 2, which may use inventory keys only, left those test cases out - dead keys stayed, and a changed selector waited for someone to run the proposal scripts by hand.
+
+- `core/inventory_update.py` (pure) and `scripts/propose_inventory_update.py`, a new step of the Agent 0 drift job (`if: always()`, `GH_PAT`): one rolling PR on `inventory-update/nightly`. A stale key is **replaced** when the crawl finds the element the generator names the same, **removed** when no code names it and it is not the row family (its note and `multi_match` / `conditional` entries too), otherwise **kept** and listed; uncovered live elements are **added** under the proposals file's refusal rules, at most `max_additions_per_page` per page; a page with more than `hold_ratio` of its selectors stale is **not edited**. Ambiguous selectors, unreachable pages and untracked test-ids are listed. The file keeps its own JSON format, so the diff is the change
+- One PR: the same findings leave it alone; new findings replace an untouched PR (comment, branch deleted, fresh PR from `main`) or close it when nothing is left; a PR a person committed to is never replaced (one `kept-edited` comment per finding). A crawl that measured no page proposes and closes nothing; `--dry-run` and Agent 0's shadow mode print the PR body instead. RepoHost operations only, no model
+- `core/inventory_proposals.refusal_reason()`: the one refusal rule for both writers. Settings `agents.agent0_impact.inventory_update` (defaults in `core/impact_settings.py`, equal to the shipped block)
+- Docs: README (Agent 0, schedule table, tree, inventory health), GUIDE (inventory update section, drift row, config, markers, troubleshooting; the drift section no longer says Inventory Health runs `check_inventory_staleness`), TECHNICAL_DEEP_DIVE §18.1 and §18.6 and the file tree (also `acceptance_coverage.py`, `blocked.py`, `collapse_junit_reruns.py`, which were missing), REUSE_FOR_NEW_PROJECT, `inventory_tools/inventory_readme.md`, DECISIONS ADR-018, VALIDATION_AND_KNOWN_GAPS (G12 closed, L18 and F-11 narrowed, L25, L26, E19; G11 credited to #215)
+
+Pinned by `tests/unit/test_inventory_update.py` (27 tests: each rule above, the file format, the PR's open / unchanged / superseded / closed / person-edited / failed-write paths, the empty-crawl, dry-run and shadow-mode script paths, the workflow step, config equal to the defaults).
+
+---
+
 ## October 2026 (end) — `/fix <text>` also takes the open inline comments; a skipped event cannot cancel a waiting `/fix`
 
 **Why:** found in the live E18 run on PR #221. `/fix <text>` acted on its text alone, so a reviewer who left inline comments and then wrote `/fix please address these` had every inline comment ignored - Agent 2 answered only the sentence. (In the run the text was an attribution footer the posting tool appended; a person's own words fail the same way.)

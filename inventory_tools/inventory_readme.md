@@ -355,6 +355,13 @@ It never regenerates. A regenerated draft carries none of your curated notes,
 families or conditionals, so a tool that "fixed" drift by regenerating would
 delete exactly the knowledge that makes the inventory worth having.
 
+The pipeline acts on its report selectively instead: the nightly Agent 0 drift
+job runs it with `--compare --json` and `scripts.propose_inventory_update`
+opens one pull request - a stale selector replaced when the crawl finds the
+same-named element, a stale key no code names removed, uncovered elements
+added, a page where most selectors are stale left alone. Notes, families and
+conditionals stay. You review and merge it (core/inventory_update.py).
+
 ---
 
 ## Working with a repeated widget

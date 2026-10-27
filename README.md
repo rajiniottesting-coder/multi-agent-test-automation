@@ -34,7 +34,7 @@ A reusable framework where **six AI agents** turn a Jira story into a reviewed, 
 
 **A change story** (label `impact-check`) goes through **Agent 0** first: it traces the change to the existing tests it affects, ranks them with evidence and opens an **Impact Review**. 🛑 A person decides each test (approve, reject or retire). At the next scan Agent 0 hands the decisions over and opens a separate **context-update PR** for the reference material the change makes stale. Agent 1 then revises the approved tests in place and adds only uncovered cases, Agent 2 splices the revised scenarios into the files that own them, and Agent 5 scores how well Agent 0 predicted the impact. If the story's PR is closed without merging, Agent 0's **reconcile** undoes every revision.
 
-**Agent 0 also watches the code and the live app:** every PR touching `pages/` or `app_inventory/` gets a comment listing the tests its changes affect, and a nightly drift check turns a selector that stopped matching into the list of affected tests.
+**Agent 0 also watches the code and the live app:** every PR touching `pages/` or `app_inventory/` gets a comment listing the tests its changes affect, and a nightly drift check turns a selector that stopped matching into the list of affected tests - and proposes the inventory update itself as one pull request: changed selectors replaced, new live elements added, dead keys no code names removed.
 
 **Reworking a coded story:** `ai-update` splices only the scenarios whose test cases changed, were added or were deleted; `ai-regenerate` rewrites the story's code on a fresh `-revN` branch.
 
@@ -137,7 +137,7 @@ Agent 0 answers *"which existing tests does this change touch?"* before any test
 |---|---|---|
 | Story label `impact-check` | Weekdays 10:45 IST, or a manual run | Two model calls (seeds, then judgement; one more per batch past 300 candidates); a report, or an Impact Review |
 | Pull request | Any PR touching `pages/` or `app_inventory/` | Compares page-object methods and selectors with `main`, no model; posts the affected tests on the PR |
-| Nightly drift | After the inventory staleness check (07:15 IST), or on demand (`mode` = `drift`) | A selector that stopped matching is traced to the affected tests, no model; live mode opens one maintenance story (label `inventory-drift`) and updates it on later nights |
+| Nightly drift | After the inventory staleness check (07:15 IST), or on demand (`mode` = `drift`) | A selector that stopped matching is traced to the affected tests, no model; live mode opens one maintenance story (label `inventory-drift`) and updates it on later nights. Then one rolling **inventory-update PR** (`inventory-update/nightly`, `scripts/propose_inventory_update.py`): a changed selector replaced, uncovered live elements added, a dead key no code names removed; everything else listed for a person |
 
 **Manual run inputs** (Run workflow): `story_key` analyses and reconciles that one story (blank = everything); `dry_run` makes **every** job print what it would write and write nothing - analysis, hand-over, reconcile and drift; `mode` = `drift` runs the drift job only and refuses a `story_key`.
 
@@ -239,6 +239,7 @@ multi-agent-test-automation/
 │   ├── board_status.py              # Board column automation
 │   ├── dry_run.py                   # Dry run: real code, adapters that make no writes
 │   ├── in_flight.py                 # Files and scenarios other open PRs are changing (Agent 2 waits)
+│   ├── blocked.py                   # A story the final gate refused is not retried on unchanged input
 │   ├── test_runtime.py              # Can a change alter a test result? (Agent 4 PR gate, Agent 3)
 │   ├── failure_diagnosis.py         # Raw failure → plain-English cause + remedy
 │   ├── allure_meta.py, allure_steps.py
@@ -250,6 +251,7 @@ multi-agent-test-automation/
 │   ├── impact_trace.py, impact_results.py, impact_settings.py
 │   ├── context_update.py            # Agent 0: context-update PR (wording + untrue passages)
 │   ├── inventory_proposals.py       # Reviewable inventory additions
+│   ├── inventory_update.py          # Agent 0 drift: the nightly inventory-update PR
 │   ├── json_block.py                # Reads JSON stored in tracker code blocks, in every format
 │   └── onboarding.py                # Agent 0 readiness for another application
 │
@@ -281,11 +283,12 @@ multi-agent-test-automation/
 ├── scripts/
 │   ├── smoke_test.py                # Env, tracker, LLM and Playwright connectivity check
 │   ├── generate_inventory.py, promote_draft.py, verify_locators.py
-│   ├── check_inventory_staleness.py, apply_inventory_proposals.py
+│   ├── check_inventory_staleness.py, apply_inventory_proposals.py, propose_inventory_update.py
 │   ├── sweep_stalled_prs.py, close_merged_story.py, cleanup_artifacts.py
 │   ├── impact_handover.py, impact_reconcile.py, backfill_markers.py
 │   ├── agent0_backtest.py, onboarding_check.py, gateway_probe.py
 │   ├── e2e_turn.py                  # Agent 4: wait for earlier PRs' browser runs
+│   ├── collapse_junit_reruns.py     # Agent 4: keep only a re-run test's final attempt
 │
 ├── .github/workflows/
 │   ├── agent0_impact.yml            # Scan, reconcile, PR code change, nightly drift
@@ -411,7 +414,7 @@ The framework was moved from an Angular HR system to this e-commerce application
 
 ### Inventory Health (nightly)
 
-`.github/workflows/inventory_health.yml` runs `verify_locators` against the live application every night (02:30 UTC) and on demand, across every page in the inventory. It is the only check that proves a selector still **resolves** — the unit suite proves the inventory is structurally sound, but cannot know that a selector still matches a site someone else deploys. It reports and never auto-fixes: a regenerated draft would lose the curated `elements_notes`, `multi_match` and `conditional` markers. Agent 0's nightly drift job turns a broken selector into the list of affected tests.
+`.github/workflows/inventory_health.yml` runs `verify_locators` against the live application every night (02:30 UTC) and on demand, across every page in the inventory. It is the only check that proves a selector still **resolves** — the unit suite proves the inventory is structurally sound, but cannot know that a selector still matches a site someone else deploys. It reports and never auto-fixes: a regenerated draft would lose the curated `elements_notes`, `multi_match` and `conditional` markers. Agent 0's nightly drift job turns a broken selector into the list of affected tests and then proposes the inventory update as a pull request - selective edits, never a regeneration, so the curated notes and declarations stay (`core/inventory_update.py`).
 
 ---
 

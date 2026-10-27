@@ -9,6 +9,53 @@ ADR-005 (the Jira label state machine) under [State management deep-dive](./GUID
 
 ---
 
+## ADR-018 — The nightly crawl proposes the inventory update as one pull request
+
+### Status
+
+Accepted (2026-10).
+
+### Context
+
+Every agent reads the page inventory, and the nightly drift job already
+measured what was wrong with it - stale selectors, live elements no selector
+covers - but nothing in the pipeline wrote it back. A new feature's elements
+never reached the inventory, so Agent 2 (which may use inventory keys only)
+left those test cases out; dead keys stayed; a changed selector waited for a
+person to run scripts by hand.
+
+### Decision
+
+1. **A pull request, never a direct write.** The inventory is a claim about the
+   application; a person merges it after checking the names and Agent 4's run
+   on the PR (the suite runs against the updated inventory).
+2. **Selective edits, never a regeneration.** Curated notes, families and
+   conditionals stay; only the keys below change.
+3. **Every rule errs toward leaving the inventory alone.** A stale selector is
+   replaced only when the crawl finds the element the generator names the same;
+   a stale key is removed only when no code names it (any string literal under
+   `code_dirs` - over-wide on purpose) and it is not the row family; one code
+   names is kept and listed (a page object needs a selector, or an absence test
+   needs the key). A page with most selectors stale is not edited at all: an
+   error page, an outage or a redesign is a person's call. A crawl that measured
+   no page proposes and closes nothing.
+4. **Additions follow the existing proposal rules** (`refusal_reason`), with the
+   generator's own names and selectors, capped per page.
+5. **One rolling PR.** An untouched PR is replaced by a fresher one or closed
+   when nothing is left; a PR a person committed to is never touched - it gets
+   one comment per new finding. The body records the hash of the file it wrote,
+   which is how the two are told apart.
+
+### Consequences
+
+- The inventory keeps up with the live application with one review a night at
+  most; Agent 2 sees a new feature's elements once the PR is merged.
+- A renamed element arrives as an added key plus a removed or kept old key
+  (L26), and a new page is not discovered (L25): both stay with a person.
+- The manual proposals route stays for one-off use; both share one refusal rule.
+
+---
+
 ## ADR-017 — Agent 2 fixes what a pull request's reviewer asks for
 
 ### Status
