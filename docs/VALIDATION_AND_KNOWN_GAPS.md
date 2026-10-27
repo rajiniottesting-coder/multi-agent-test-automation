@@ -80,6 +80,7 @@ is built (E19 onwards) and is listed in UC-7.
 | E23 | Notes budget (P1-2, F-9): a notes-addition PR that pushes a module over `module_budget_chars` says so in its body and its unit-suite check fails until the module is condensed in the same PR; `scripts.onboarding_check` reports `notes: size` / `notes: repetition` | Context update |
 | E24 | No silent drop (P1-3, F-13, PR #227), on UC-7's new story; write each expected result down before the run. **(a) Partial:** one approved test case needs an element not in the inventory yet → the PR opens with the others; its body lists that test case under *Approved test cases not automated* with the plan's `Skipped:` reason (or "no reason given" - note which); one `[agent2:incomplete]` story comment; `ai-incomplete` beside `ai-coded`; the scan summary line says `not automated: <KEY>`. **(b) Markers are right:** open the PR's feature file - each `# JIRA:` marker sits on the scenario that tests that test case (L31: the check proves a marker exists, not that it is on the right scenario). **(c) Title clash:** one more test case whose summary repeats the title of another story's marked scenario on `main` → listed as a title clash naming that test case, counted as not automated. **(d) Gap filled:** after the element reaches the inventory and the PR is merged, add `ai-update` → only the missing scenario is appended, and `ai-incomplete` comes off. **(e) Nothing automated:** a story whose only test case needs a missing element (`--dry-run` is enough) → no PR, an `[agent2:blocked]` comment naming it | Agent 2 |
 | E25 | Planned entries, new pages, shared elements (P1-4, F-12, L25, G14), on UC-7's new story and the nights around its deployment; write each expected result down first. **(a)** Before deployment: `python -m scripts.plan_inventory element ...` (and `page ...` for a new page) for what the story needs → the onboarding check is clean; Agent 2 uses the keys and its PR lists *Uses planned elements - not deployed yet*; its browser run is red on exactly those steps. **(b)** Nights before deployment: `verify_locators` shows `PLAN` / `PLANNED PAGE`; the drift report has no stale or unreachable entry for them; the inventory-update PR only lists them under *Planned, not live yet*. **(c)** First night after deployment: the PR confirms them (*Planned elements now live*), drops `planned_page`, and adds the new page's other live elements. **(d)** The footer field of PR #228 is listed under *Not added - already covered on another page* with `home.subscribe_email_input`, on every page, and never added; a header or footer element no key covers yet is listed once under *new on every page*, not added per page. **(e)** The PR lists pages the application links to that the inventory lacks. **(f)** A placeholder answering at a planned page's url (no planned element on it) → that page is not changed | Inventory update |
+| E26 | A new story's PR closed without merging (P2, F-16): first scan after the close → one `closed-unmerged` comment, nothing else changes; reopen it → nothing; close it again and leave it two scans → `story-reset` comment, `human-approved` / `ai-coded` / `ai-incomplete` / `tests-run` off, `ai-processed` kept, card in To Do, test cases unchanged; Agent 2's next scan does not pick it; add `human-approved` → Agent 2 codes it again in a new PR | Reconcile |
 
 ### 2.2 The runs
 
@@ -89,7 +90,7 @@ is built (E19 onwards) and is listed in UC-7.
 | **UC-2** Re-run A2 to the end | SCRUM-229 (2 owners) | E1, E2, E3, E5 or E8, E10, I8 | Review: approve the 7 → hand-over → context-update PR (notes only: E5; inventory: its browser run takes its turn, E8). While the story PR is open, `ai-update` on an owner waits (E10). Close the PR with `closed_scans: 1` → undone on the first scan (E2). Then the owner's `ai-update` deletes a test case → unused step commented out, PR opens (E1). Cost table has the Agent 0 row (E3). Cart tests watched for I8. |
 | **UC-3** Two new stories in flight | P1 (labelled `impact-check`), P2 (same page object as P1) | H4, E3, E4, E6, E7, E8, E9 | P1: Agent 0 finds nothing → `ai-ready` (H4), its cost on the table (E3); test cases carry Components (E4); one test case titled as an unmarked scenario on `main` → skipped (E9). While P1's PR is open: P2 with a duplicate test case waits before the plan (E7); remove it → waits after the plan (E6); merge P1 → P2 extends the page object. P2's PR opened next to another PR → its browser run waits (E8). |
 | **UC-4** Runs B and C together | a hand-made PR; a manual run with `mode` = `drift` | B, C | The PR's Agent 0 comment lists the tests the changed method and selector reach; the browser runs (runtime file changed). The drift run opens or updates the maintenance story; scan and reconcile skip. |
-| **UC-5** After the section 4 fixes | two stories in one Agent 1/2 scan, the first set up to fail | M1–M4, G1, G2 | Each story's cost lands on its own story; the scan finishes inside its timeouts; Agent 3 waits long enough for Agent 4; a cleanup-only page-object edit that another open PR changes makes the story wait (G1); a test case already approved by another change in progress is blocked in the second review (G2). |
+| **UC-5** After the P2 fixes | three stories in one Agent 1/2 scan, the first set up to fail; a regeneration; two change stories touching one test case; a new story's PR closed | M1–M4, G1, G2, E26 | Write the expected results down first. **(M1)** The failing story's ledger shows `Agent 2 (Coder, initial) (failed)` with its calls; the next story's comment shows only its own. **(M2)** With three stories eligible and `max_stories_per_run: 2`, the scan runs two and shows the third `[DEFER]`; the next scan takes it; the job ends inside 25 minutes. **(M3)** A PR whose only blocking finding is a predicted failure, queued behind another PR's browser run: Agent 3 still reads Agent 4's result (log: "waiting up to 1380s"). **(G1)** A regeneration whose orphan cleanup edits a page object another open PR changes: `[WAIT]` naming that file, no branch. **(G2)** Change story A handed over (no PR yet) and change story B analysed after: B's row for the shared test reads "blocked by A"; B's hand-over of an approved row waits with "being revised by another change in progress" until A's PR merges or is undone. **(G8)** E26. |
 | **UC-6** Retry the removal story | SCRUM-206 after its PR and context-update PR are closed and reconcile has undone it | E11, E12 (E13 with H2 in UC-1) | Remove `impact-reverted`, add `impact-check`; approve the review as before. Agent 1's `[agent1:coverage]` lines name the test asserting the quantity field is gone. Agent 2's PR: that step present and asserted on a loaded page; its browser run fails on exactly that step while the field is still deployed - the expected red (L20). |
 | **UC-7** Final consolidated run, after P1-P4 | One new story whose feature is not yet in the inventory or the app notes (a new element on an existing page, ideally a new page too), one change story removing an element, and a drift run | E17, E19-E25 and every item P1-P4 add | Planned once the P1-P4 fixes are merged. The new story exercises the inventory update (its elements arrive through the nightly PR, or a planned entry - P1-4), the context-update addition for a new feature (P1-2), no silent drop of a test case Agent 2 cannot automate (P1-3, E24), and planned entries before its deployment (P1-4, E25); the change story exercises removal in the notes and the inventory (P1-2, F-11); its PR closed once unmerged exercises the reset (P2, F-16); the drift run covers E19 (a)-(g) across nights; any 5xx burst during the runs covers E17. Each item's expected result is written down before the run |
 
@@ -107,23 +108,18 @@ yet known.
 
 | ID | Situation | What happens today | Status |
 |---|---|---|---|
-| G1 | Agent 2 `run()` (regenerate mode, or a change story whose orphan cleanup comments out methods) edits a page object that is **not in the plan** while another open PR changes it | The in-flight check covers the plan's files and the owners' feature and step files only, so that clash is not detected; it surfaces as a merge conflict. `run_update()` already checks such page objects | Fix planned |
-| G2 | Two change stories approved for the **same test case** before either has a pull request | `_owners_and_blocks()` blocks a review row only when the other story has an **open PR**, so both can revise the test case in Jira. Partly mitigated: an undo restores a snapshot only if the test still has the text that change wrote, otherwise it names it for a person | Fix planned |
 | L1 | Two stories change **different scenarios of one feature file** | The second waits: the guard works per file, not per scenario. Safe, sometimes slower | Limit |
 | L2 | Two stories add the **same scenario with different wording** | Both are created: the in-flight check and duplicate detection compare titles | Limit |
-| L3 | A person opens a pull request on a file **after** Agent 2's PR, or during the minutes Agent 2 is generating | Nothing stops a person; GitHub reports a merge conflict if the same lines change. Agent 0 lists affected tests on any PR touching `pages/` or `app_inventory/` | Limit |
+| L3 | A person opens a pull request on a file **after** Agent 2's PR is open | Nothing stops a person; GitHub reports a merge conflict if the same lines change. Agent 0 lists affected tests on any PR touching `pages/` or `app_inventory/`. (One opened while Agent 2 is generating is caught by the last in-flight check, F-1: the story waits.) | Limit |
 | L4 | A **semantic clash across different files** (PR A renames an inventory key PR B's new page method uses) | Not detected before merge: the guard compares files, not meaning. Agent 0's code-change comment on PR A covers tests already on `main`, not PR B's; B's tests fail after A merges | Limit |
 | L5 | GitHub cannot be read when Agent 2 takes the snapshot | The story proceeds without the guard (fail open), as before #201 | Limit (by design) |
-| L6 | A story that waits | Its plan call is spent, recorded as `Agent 2 (Coder, waiting)`, and spent again on the retry | Limit |
+| L6 | A story that waits | Its plan call is spent - or, when the last check before the branch finds the clash (F-1), its generation calls too - recorded as `Agent 2 (Coder, waiting)`, and spent again on the retry | Limit |
 
 ### 3.2 Several stories in one scan
 
 | ID | Situation | What happens today | Status |
 |---|---|---|---|
-| M1 | A story fails part-way in an Agent 1 or Agent 2 scan with more stories | Agents 1 and 2 reset the usage counter only after a success, so the failed story's model cost is charged to the next story | Fix planned |
-| M2 | Agent 2 scans its three passes (normal, `ai-regenerate`, `ai-update`) | `max_stories_per_run` (2) applies to each pass, up to 6 stories, but the job timeout is 10 minutes; a kill mid-story wastes it | Fix planned |
-| M3 | Agent 3 predicts a test failure on a PR whose browser run is queued behind others | Agent 3 waits 8 minutes for Agent 4; a run waiting its turn can take longer, so the prediction keeps blocking (safe, less accurate) | Fix planned |
-| M4 | More than about four PRs want the browser at once | The turn cap is 900 s, so later runs overlap again | Limit (document the burst size) |
+| M4 | More than about four PRs want the browser at once | The turn cap is 900 s; a run is about 4 minutes (median), so about four queued runs fit before later ones overlap again. Agent 3's wait (F-5) covers one turn plus one run | Limit (burst size documented) |
 
 ### 3.3 Agent 0
 
@@ -178,7 +174,6 @@ code, the scenario markers and the inventory, not the notes.
 
 | ID | Situation | What happens today | Status |
 |---|---|---|---|
-| G8 | A **new story's PR is closed without merging** | Reconcile acts only on `impact-applied` stories, Story Done on merge ignores a close, and the sweeper handles open PRs only. The story keeps `ai-coded` and In Review, and its test cases stay active | Fix planned |
 
 ### 3.9 Running the suite over time
 
@@ -210,11 +205,11 @@ code, the scenario markers and the inventory, not the notes.
 
 | Fix | Gaps | Change |
 |---|---|---|
-| F-1 | G1 | One final in-flight check over **every** file in `generated_files` right before the branch is created, so any writer (plan, owner splice, orphan cleanup, future ones) is covered |
-| F-2 | G2 | `_owners_and_blocks()` also blocks a row when another impacting story is in progress (`impact-proposed` or `impact-applied`), not only when it has an open PR |
-| F-3 | M1 | Reset the usage counter when each story **starts**; a failed story posts its own cost |
-| F-4 | M2 | `max_stories_per_run` across all three passes; a deadline-aware scan loop; Agent 2 job timeout sized for it |
-| F-5 | M3, M4 | Agent 3's runner wait sized to Agent 4's turn cap; the burst size documented |
+| F-1 | G1 | **Done (P2)** - `_last_in_flight_check()`: a fresh snapshot of the open PRs against every file a run commits, right before the branch, in `run()` and `run_update()` |
+| F-2 | G2 | **Done (P2)** - a row is also blocked by an `impact-applied` story and by another open Impact Review listing the test; the hand-over refuses a test another change is still revising |
+| F-3 | M1 | **Done (P2)** - `story_usage()` around every story (Agents 0, 1, 2): counter at zero at the start; a failed story posts `<agent> (failed)` on itself |
+| F-4 | M2 | **Done (P2)** - one budget for the three passes (`plan_scan`), `scan_deadline_minutes` (12), job timeout 25; the rest `[DEFER]` |
+| F-5 | M3, M4 | **Done (P2)** - wait = turn cap 900 s + one run 480 s; Agent 3 job timeout 30; burst size documented (M4) |
 | F-6 | L11 | Validator for snapshot-count and snapshot-membership assertions |
 | F-7 | L14 | Retry: done in #213 (page loads in `BasePage.navigate()`, tests whose failure names a 5xx/429 re-run by Agent 4; a 4xx still fails at once) and #215 (a failure names the 5xx/429 its own requests met). Still to do: a failure that outlasts the retries is reported as an **outage of the application under test** - separate from test failures in the run summary and Agent 5's report, and never taken by Agent 3 as evidence either way |
 | F-8 | L15 | **Done (P1-2)** - when any story's PR merges (Story Done on merge), not only a new feature's. When a new-feature story's PR merges (and for a change story that adds a rule), Agent 0 proposes a **notes addition** for the story's Component module: facts only (rules, limits, test data, flow), a few lines in the module's style, written from the story **and** its merged scenarios, checked against existing text so it repeats nothing; the same reviewed context-update PR, merged after deployment. Later change stories then have a passage to rewrite |
@@ -225,7 +220,7 @@ code, the scenario markers and the inventory, not the notes.
 | F-13 | G5 | **Done (P1-3)** - after generation every approved test case must have a markered scenario, read from the files (new stories, regenerations and `ai-update`, not only the change-story splice); each missing one, with the plan's reason, goes in the PR body and one `[agent2:incomplete]` story comment, and the story gets `ai-incomplete` beside `ai-coded` until a run fills the gap. The duplicate check's title clash counts as missing; a run that automates none of the new test cases opens no PR (blocked) |
 | F-14 | G6 | Agent 1 records a hash of the story text when it drafts; a scan compares it: edited before coding → suggest a re-draft; edited after coding → suggest `impact-check`. A comment, never an automatic action |
 | F-15 | G7 | A scheduled comparison of each scenario marker's hash with its Jira test case (edited, deleted, retired): a comment on the owning story suggesting `ai-update`, never applied automatically |
-| F-16 | G8 | Reconcile covers every pipeline story PR, not only `impact-applied`: a close seen on `closed_scans` scans resets the pipeline labels and the card and posts the retry steps |
+| F-16 | G8 | **Done (P2)** - reconcile also settles every coded story: its newest PR closed unmerged on `closed_scans` scans → `story_reset_labels` off (approval included), card to `on_close_unmerged`, retry steps |
 | F-17 | L20 | An optional deployment signal (config or webhook) that marks a change story's failures as expected until deployment and reminds a person to merge its context-update PR |
 | F-18 | L21 | On a PR, run the tests Agent 0's graph links to the change (plus a smoke set); the full suite nightly and before merge |
 | F-19 | L22 | Retry a failed test once; record flakes over time; quarantine a test with a review step (extends F-7) |
@@ -244,7 +239,7 @@ code, the scenario markers and the inventory, not the notes.
 **Agreed priority (27 Oct 2026)** - fixes first that keep the agents' knowledge true, then story state, then production readiness:
 
 - **P1 - knowledge stays true:** P1-1 inventory update (G12, PR #224) → P1-2 context update for every story: additions for new features, removals, scoped and size-bounded (F-8, F-11, F-10, F-9, PR #225) → P1-3 no silent drop of an approved test case (F-13, PR #227) → P1-4 planned inventory entries and new pages (F-12, L25, G14, this change).
-- **P2 - story state and cost:** F-16 (a closed-unmerged PR resets the story), F-1, F-3.
+- **P2 - story state and cost:** F-16 (a closed-unmerged PR resets the story), F-1, F-3, with F-2, F-4, F-5 (this change).
 - **P3 - production readiness:** F-21, F-22, F-23.
 - **P4 - identity:** F-30 (needs the repository owner).
 - Then the rest in the order below. All of it is validated together in UC-7.
@@ -266,6 +261,12 @@ Gaps found earlier and fixed, for reference (details in [AI_CONCEPTS.md → fail
 | The golden-rule guard missing newer prompts | #200 |
 | Drift runnable only on its schedule | #200 |
 | `ai-update` failing on step functions it left unused | #199 |
+| G1: an edit no plan named (orphan cleanup) or a PR opened during generation was not checked against other open PRs | this change (P2, F-1) |
+| G2: two change stories could revise one test case before either had a PR | this change (P2, F-2) |
+| M1: a failed story's model cost landed on the next story in the scan | this change (P2, F-3) |
+| M2: up to 6 stories in a 10-minute Agent 2 job | this change (P2, F-4) |
+| M3: Agent 3 gave up on a runner result still queued for the browser | this change (P2, F-5) |
+| G8: a new story whose PR closed unmerged stayed ai-coded and In Review | this change (P2, F-16) |
 | Step coverage accepting steps from a sibling module | #199 |
 | Two open stories conflicting on files, duplicating scenarios, or flaking each other's browser tests | #201 |
 | Title-based duplicate detection never matching a pipeline test case | #201 |

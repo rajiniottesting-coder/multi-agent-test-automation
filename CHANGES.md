@@ -4,6 +4,23 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## October 2026 (end) — story state and scans (P2)
+
+**Why:** running several stories per scan, and several changes at once, left six gaps: a failed story's cost landed on the next (M1); up to six stories in a 10-minute Agent 2 job (M2); a page-object edit no plan named, or a PR opened during generation, unchecked (G1); two change stories revising one test case (G2); Agent 3 giving up on a queued runner result (M3); a new story whose PR closed unmerged left coded and In Review (G8).
+
+- **F-3:** `core.usage_ledger.story_usage()` around every story Agents 0, 1 and 2 run - counter at zero; a failed run posts `<agent> (failed)` on its own story; `has_usage_comments()` reads it as that agent
+- **F-1:** `agent2_coder._last_in_flight_check()` - a fresh snapshot of the open PRs against every file the batch commits, after the final gate, in `run()` and `run_update()`
+- **F-2:** `_owners_and_blocks()` also blocks by `impact-applied` stories and other open reviews listing the test (`_claimed_by_open_reviews()`); `impact_handover` refuses a test another change is still revising (`_revised_elsewhere()`), so the scan waits and retries
+- **F-16:** `impact_reconcile.reconcile_unmerged_story()` / `_reset_unmerged()` / `reconcile_one()` - a coded story's PR closed unmerged on `closed_scans` scans → `reconcile.story_reset_labels` off, `status_workflow.on_close_unmerged` (To Do, `board_status.move_card_on_close_unmerged()`), retry comment; `reconcile_all()` lists only acted-on stories
+- **F-4:** `agent2_coder.plan_scan()` - one `max_stories_per_run` budget for the three passes; `scan_deadline_minutes` (12); `[DEFER]`; `agent2_coder.yml` timeout 25
+- **F-5:** `agent3_reviewer.RUNNER_WAIT_SECONDS` = `E2E_TURN_CAP_SECONDS` (900) + `E2E_RUN_SECONDS` (480); `agent3-reviewer.yml` timeout 30; M4 burst size documented
+- Tests: `test_only_the_normal_scan_pass_skips` checked `main()`'s source text; it now runs the scan
+- Docs: README, GUIDE (Agent 3, Agent 0 analysis and hand-over, reconcile, board, config, in-flight, cost, troubleshooting `[DEFER]` / closed PR / hand-over waiting, label table), TECHNICAL_DEEP_DIVE (Agent 3, §9.9, §18.5, config, labels), DECISIONS ADR-022 (+ a later note on ADR-014), VALIDATION_AND_KNOWN_GAPS (G1, G2, G8, M1-M3 closed; M4 documented; L3, L6 updated; F-1-F-5, F-16 done; UC-5 rewritten step by step; E26)
+
+Pinned by `tests/unit/test_usage_per_story.py` (10), `test_last_in_flight_check.py` (7), `test_change_in_progress.py` (10), `test_reconcile_new_story.py` (16), `test_scan_budget.py` (7), `test_runner_wait.py` (4).
+
+---
+
 ## October 2026 (end) — planned inventory entries, new pages, shared elements listed once (P1-4)
 
 **Why:** the inventory comes from the live crawl and Agent 2 may use inventory keys only, so a test for an element not deployed yet could not be written (L19); a new page was never crawled and nothing said it existed (L25); and the first nightly inventory-update PR (#228) proposed a footer field - already one page's key - again on four other pages (G14).

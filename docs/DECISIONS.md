@@ -9,6 +9,52 @@ ADR-005 (the Jira label state machine) under [State management deep-dive](./GUID
 
 ---
 
+## ADR-022 — Story state and scans: each story's cost, one scan budget, nothing revised twice, a closed PR sets the story back
+
+### Status
+
+Accepted (2026-10).
+
+### Context
+
+Running several stories in one scan, and several changes at once, left six
+gaps (G1, G2, G8, M1, M2, M3): a failed story's model cost landed on the next
+story; up to six stories were started in a 10-minute job; an edit no plan named,
+or a pull request opened during generation, was not checked against the other
+open PRs; two change stories could revise one test case before either had a
+PR; Agent 3 gave up on a runner result still queued for the browser; and a new
+story whose PR was closed unmerged stayed coded and In Review.
+
+### Decision
+
+1. **Each story pays for itself.** Every story an agent runs is wrapped
+   (`story_usage`): the counter starts at zero, and what a failed run spent is
+   posted on that story as `<agent> (failed)`.
+2. **A scan finishes what it starts.** `max_stories_per_run` is one budget for
+   the three passes; no story starts after `scan_deadline_minutes`; the job
+   timeout is sized from measured run times. The rest wait for the next scan.
+3. **The last check sees every file.** Right before the branch, a fresh look at
+   the open PRs against every file the run commits, whoever wrote it.
+4. **One test, one change at a time.** A review row is blocked by any change in
+   progress (open PR, handed over, or an open review listing it), and the
+   hand-over refuses a test another change is still revising - it waits and
+   retries by itself rather than asking a person to remember.
+5. **The reviewer waits as long as the queue can.** Agent 3's wait is Agent 4's
+   turn cap plus one run, tied to the workflows by a test.
+6. **A rejected PR is a decision, not a retry.** A new story whose PR closed
+   unmerged is set back with its approval removed - it is not coded again by
+   itself; re-approval is the retry. Its test cases are kept.
+
+### Consequences
+
+- Cost per story is exact, failures included; scans never die mid-story.
+- A wait found at the last check has spent generation calls (L6).
+- Agent 3 can take up to 30 minutes on a PR whose only blocker is a predicted
+  failure; most reviews never wait.
+- A closed PR needs a person to re-approve before the story is coded again.
+
+---
+
 ## ADR-021 — Planned inventory entries, new pages, shared elements listed once
 
 ### Status
@@ -449,6 +495,11 @@ leaked between them and produced flaky failures.
   reworded duplicates; a person's PR opened later; clashes across different
   files) and the gaps found later are tracked in
   [VALIDATION_AND_KNOWN_GAPS.md](./VALIDATION_AND_KNOWN_GAPS.md).
+
+*Later note (P2, ADR-022):* the several-stories gaps listed above - a failed
+story's cost charged to the next, the per-pass cap in a 10-minute job, the
+8-minute runner wait - are closed; the burst limit of the turn cap (M4) stays,
+documented.
 
 ---
 
