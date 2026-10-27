@@ -364,7 +364,16 @@ def derive_verdict(report: ReviewReport) -> ReviewReport:
 RUNNER_WORKFLOW = "agent4_runner.yml"
 RUNNER_ARTIFACT_PREFIX = "pytest-report-"
 RUNNER_REPORT_FILE = "junit.xml"
-RUNNER_WAIT_SECONDS = 480
+# How long the review waits for Agent 4's result on the same commit (F-5).
+# Agent 4 first waits its turn for the browser - up to MAX_WAIT_SECONDS in
+# agent4_runner.yml, the shared live application's turn cap - and then runs the
+# suite (measured: median ~4 min, 95th percentile ~11 min including the turn).
+# Waiting 8 minutes in all gave up on a run still queued, and the predicted
+# failure kept blocking without evidence. Turn cap + one full run; a unit test
+# keeps these equal to the workflows (and the job timeout above the wait).
+E2E_TURN_CAP_SECONDS = 900
+E2E_RUN_SECONDS = 480
+RUNNER_WAIT_SECONDS = E2E_TURN_CAP_SECONDS + E2E_RUN_SECONDS
 RUNNER_POLL_SECONDS = 20
 _REFUTED_NOTE = ("Refuted by the runner: this commit's scenarios were executed "
                  "and passed, so the predicted failure did not happen.")
