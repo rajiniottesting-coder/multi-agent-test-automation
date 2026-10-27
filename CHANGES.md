@@ -4,6 +4,20 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## October 2026 (end) — the app notes follow every story, and stay small (P1-2)
+
+**Why:** the context update ran only at a change story's hand-over and could only replace wording or rewrite untrue passages. A new feature never reached `prompts/app_context` (the next story on it was drafted from its own text alone); an element a change story removed stayed in the inventory as "stale" every night after deployment, raising its absence test as affected; the rewrite call read every module whatever the story touched; and nothing measured the notes, which go into every prompt.
+
+- **F-10 - one selection rule:** `core.app_context.select_note_modules()` (core.md + the story's Component modules, all when none match) and `selected_page_names()`; Agent 1 calls it (behaviour unchanged); the change-story rewrite call reads only that scope (`scoped_sources()`, `_notes_block(pages=)`), and a rewrite of a file it was not shown is dropped
+- **F-8 - additions at merge:** Story Done on merge runs `scripts/propose_context_addition.py` after moving the card; `propose_addition_for_story()` makes one call (`prompts/agent0_context_additions.md`, `NoteAddition` / `NoteAdditions`) over the story, its test cases, its merged scenarios and its scoped notes; `propose_additions()` places facts under a heading, as a new section or a new Component module, refuses other files and the inventory, and drops every line the notes already state (`near_duplicate()`); PR on `context-update/<key>-notes`, `[agent0:context-addition]` marker, once per story text; cost on the story
+- **F-11 - removed elements declared:** `NoteRewrites.removed` (`page.key`, from element keys - never selectors - the call is shown); `_declare_removed()` adds each valid one to the page's `removed` list; `introspect.diff_page(declared_removed=)` reads missing as expected and present as `reappeared` (drift); `verify_locators` `GONE` / `BACK`; Agent 0 seeds only a reappeared one; the inventory update retires a still-gone key no code names (never the row family); `promote_draft` prunes it
+- **F-9 - size budget:** `context_update.module_budget_chars` (8000); the unit suite fails on a committed module over it; `notes_report()` lists over-budget modules and repeated sentences in the notes PR; `core.onboarding.notes_checks()` warns; `_paragraphs()` joins hard-wrapped lines so sentences, not fragments, are compared
+- Docs: README, GUIDE, TECHNICAL_DEEP_DIVE (§9.7, §18.4, tree), REUSE_FOR_NEW_PROJECT, AGENT0_ONBOARDING (step 6), `inventory_tools/inventory_readme.md`, DECISIONS ADR-019, VALIDATION_AND_KNOWN_GAPS (L15, L16, L17, L18 closed; F-8, F-9, F-10, F-11 done; L27-L29; E20-E23 for UC-7)
+
+Pinned by `tests/unit/test_context_scope.py` (16), `test_context_additions.py` (31), `test_removed_elements.py` (21) and `test_notes_budget.py` (11); each rule was broken on purpose once (26 mutations), and each break failed a test.
+
+---
+
 ## October 2026 (end) — the nightly crawl proposes the inventory update as a pull request
 
 **Why:** the drift job measured stale selectors and uncovered live elements every night, but nothing wrote the inventory back. A new feature's elements never reached it - so Agent 2, which may use inventory keys only, left those test cases out - dead keys stayed, and a changed selector waited for someone to run the proposal scripts by hand.

@@ -9,6 +9,52 @@ ADR-005 (the Jira label state machine) under [State management deep-dive](./GUID
 
 ---
 
+## ADR-019 — The app notes follow every story, and stay small
+
+### Status
+
+Accepted (2026-10).
+
+### Context
+
+Agent 1 learns the application from `prompts/app_context/`; Agent 0's context
+update was the only writer, and only at a change story's hand-over, and only
+to replace wording or rewrite a passage the story made untrue. A new feature
+never reached the notes; a removed element stayed "stale" in the inventory for
+ever; the rewrite call read every module whatever the story touched; and
+nothing measured how large the notes - which go into every prompt - had grown.
+
+### Decision
+
+1. **One selection rule** (`core.app_context.select_note_modules`) for every
+   reader: `core.md` plus the story's Component modules, all of them when none
+   match. The rewrite call reads only that, and the pages those Components
+   select; a rewrite of a file it was not shown is dropped.
+2. **Additions when a story merges** (Story Done on merge): its feature is live
+   and tested, so its facts - rules, limits, messages, flow, test data - are
+   proposed for its Component modules (a new module for a new Component). Every
+   line the notes already state is dropped by a deterministic check, not by the
+   model. A reviewed pull request, once per story text.
+3. **A removed element is declared, not left stale.** The hand-over adds it to
+   the page's `removed` list; every checker reads missing as expected and
+   present again as drift; the nightly inventory update deletes the key once no
+   code names it.
+4. **A size budget per module**, enforced by the unit suite; repetition is
+   reported. Condensing stays with a person: no model rewrites a whole module.
+
+### Consequences
+
+- The notes keep up with what ships, one reviewed PR per merged story at most.
+- A removed element costs nothing at night once its change is deployed.
+- A notes PR that grows a module past its budget cannot merge green until the
+  module is condensed.
+- Limits: L27 (condensing by hand), L28 (two notes PRs on one module), L29 (a
+  removed key still offered to Agent 2).
+- Two more schemas (26): `NoteAddition`, `NoteAdditions`; `NoteRewrites` gains
+  `removed`.
+
+---
+
 ## ADR-018 — The nightly crawl proposes the inventory update as one pull request
 
 ### Status
