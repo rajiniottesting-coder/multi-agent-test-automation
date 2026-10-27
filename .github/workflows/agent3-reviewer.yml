@@ -57,10 +57,12 @@ jobs:
   review:
     name: AI Code Review
     runs-on: ubuntu-latest
-    # 12, not 5: when the only blocking finding is a predicted test failure,
-    # the review waits up to 8 minutes for Agent 4's result on the same commit
-    # (agents/agent3_reviewer.py, RUNNER_WAIT_SECONDS) instead of guessing.
-    timeout-minutes: 12
+    # When the only blocking finding is a predicted test failure, the review
+    # waits for Agent 4's result on the same commit instead of guessing
+    # (agents/agent3_reviewer.py, RUNNER_WAIT_SECONDS = Agent 4's turn cap,
+    # 15 min, + one run, 8 min = 23 min; F-5). Most reviews never wait.
+    # 30 = that wait + checkout, install and the review call.
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
