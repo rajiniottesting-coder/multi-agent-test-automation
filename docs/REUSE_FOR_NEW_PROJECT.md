@@ -41,7 +41,7 @@ These files contain zero project-specific knowledge. Reuse as-is:
 ### Agents (the orchestration brains)
 - `agents/agent0_impact.py` — change story → affected tests, Impact Review (Agent 0)
 - `agents/agent1_analyst.py` — Jira → Test Cases; `agents/agent1_impact.py` — revise approved tests
-- `agents/agent2_coder.py` — Test Cases → Playwright code + PR; `agents/agent2_impact.py` — change-story splice; `agents/agent2_review_fix.py` — fixes what a PR's reviewer asks for
+- `agents/agent2_coder.py` — Test Cases → Playwright code + PR; `agents/agent2_impact.py` — change-story splice; `agents/agent2_coverage.py` — every approved test case covered or named (`ai-incomplete`); `agents/agent2_review_fix.py` — fixes what a PR's reviewer asks for
 - `agents/agent3_reviewer.py` — PR review
 - `agents/agent5_reporter.py` — results and cost to Jira; scores Agent 0
 - `core/impact_*.py`, `core/context_update.py`, `core/json_block.py` — Agent 0's graph, analysis, review, hand-over, reconcile, context update

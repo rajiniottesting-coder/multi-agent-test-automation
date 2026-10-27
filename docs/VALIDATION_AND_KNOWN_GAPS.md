@@ -62,7 +62,7 @@ is built (E19 onwards) and is listed in UC-7.
 | E6 | Two stories writing one page object: the second waits after the plan, one `[agent2:waiting]` note across scans, then extends the file after the first merges | #201 |
 | E7 | A test case whose scenario another open PR adds → waits before the plan, no model call | #201 |
 | E8 | Two PRs open at once → the later browser run waits its turn (cap 900 s) | #201 |
-| E9 | A pipeline test case (`[Positive] <title>`) whose scenario exists without a marker → skipped by title | #201 |
+| E9 | A pipeline test case (`[Positive] <title>`) whose scenario exists without a marker → skipped by title (since P1-3 also listed in the PR and the story comment as needing its marker, without `ai-incomplete`) | #201 |
 | E10 | `ai-update` while another open PR changes its feature or step file → waits before any model call | #201 |
 | I8 | The live-site add-to-cart flake: still seen with turn-taking? failure messages now list the action requests | Open defect |
 | P6 | SCRUM-187 re-analysed by Agent 0 after #186: expect no false "review" rows | Re-check |
@@ -78,6 +78,7 @@ is built (E19 onwards) and is listed in UC-7.
 | E21 | Notes addition (P1-2, F-8): UC-7's new story, merged → Story Done on merge moves it to Done, then one `context-update/<key>-notes-<hash>` PR adds its rules / messages / test data under its Component module (a new module for a new Component) and an `[agent0:context-addition]` comment; nothing the notes already said is repeated; a second run of the workflow does nothing, while an `ai-update` of its test cases, merged, proposes again; the cost is on the story | Context update |
 | E22 | Removed element (P1-2, F-11): UC-7's removal change story → its context-update PR declares the element in `removed` (and its note `REMOVED by …`); merged after deployment, the nightly check shows `GONE`, not `STALE`, Agent 0 raises no affected test for it, and once the absence test is retired the next inventory-update PR deletes the key | Context update, inventory |
 | E23 | Notes budget (P1-2, F-9): a notes-addition PR that pushes a module over `module_budget_chars` says so in its body and its unit-suite check fails until the module is condensed in the same PR; `scripts.onboarding_check` reports `notes: size` / `notes: repetition` | Context update |
+| E24 | No silent drop (P1-3, F-13): UC-7's new story with one approved test case Agent 2 cannot automate (an element not in the inventory yet) → the PR opens with the others; its body lists that test case under *Approved test cases not automated* with the plan's reason; one `[agent2:incomplete]` comment on the story; `ai-incomplete` beside `ai-coded`. After the element reaches the inventory and the PR is merged, `ai-update` appends only that scenario and removes `ai-incomplete`. A test case titled like another test case's scenario is listed as a title clash | Agent 2 |
 
 ### 2.2 The runs
 
@@ -89,7 +90,7 @@ is built (E19 onwards) and is listed in UC-7.
 | **UC-4** Runs B and C together | a hand-made PR; a manual run with `mode` = `drift` | B, C | The PR's Agent 0 comment lists the tests the changed method and selector reach; the browser runs (runtime file changed). The drift run opens or updates the maintenance story; scan and reconcile skip. |
 | **UC-5** After the section 4 fixes | two stories in one Agent 1/2 scan, the first set up to fail | M1–M4, G1, G2 | Each story's cost lands on its own story; the scan finishes inside its timeouts; Agent 3 waits long enough for Agent 4; a cleanup-only page-object edit that another open PR changes makes the story wait (G1); a test case already approved by another change in progress is blocked in the second review (G2). |
 | **UC-6** Retry the removal story | SCRUM-206 after its PR and context-update PR are closed and reconcile has undone it | E11, E12 (E13 with H2 in UC-1) | Remove `impact-reverted`, add `impact-check`; approve the review as before. Agent 1's `[agent1:coverage]` lines name the test asserting the quantity field is gone. Agent 2's PR: that step present and asserted on a loaded page; its browser run fails on exactly that step while the field is still deployed - the expected red (L20). |
-| **UC-7** Final consolidated run, after P1-P4 | One new story whose feature is not yet in the inventory or the app notes (a new element on an existing page, ideally a new page too), one change story removing an element, and a drift run | E17, E19-E23 and every item P1-P4 add | Planned once the P1-P4 fixes are merged. The new story exercises the inventory update (its elements arrive through the nightly PR, or a planned entry - P1-4), the context-update addition for a new feature (P1-2), and no silent drop of a test case Agent 2 cannot automate (P1-3); the change story exercises removal in the notes and the inventory (P1-2, F-11); its PR closed once unmerged exercises the reset (P2, F-16); the drift run covers E19 (a)-(g) across nights; any 5xx burst during the runs covers E17. Each item's expected result is written down before the run |
+| **UC-7** Final consolidated run, after P1-P4 | One new story whose feature is not yet in the inventory or the app notes (a new element on an existing page, ideally a new page too), one change story removing an element, and a drift run | E17, E19-E24 and every item P1-P4 add | Planned once the P1-P4 fixes are merged. The new story exercises the inventory update (its elements arrive through the nightly PR, or a planned entry - P1-4), the context-update addition for a new feature (P1-2), and no silent drop of a test case Agent 2 cannot automate (P1-3, E24); the change story exercises removal in the notes and the inventory (P1-2, F-11); its PR closed once unmerged exercises the reset (P2, F-16); the drift run covers E19 (a)-(g) across nights; any 5xx burst during the runs covers E17. Each item's expected result is written down before the run |
 
 Order: UC-1 → UC-2 → UC-3 → UC-4 → UC-6 → section 4 fixes → UC-5 → **UC-7 last**, after the P1-P4 fixes are merged.
 
@@ -161,7 +162,7 @@ code, the scenario markers and the inventory, not the notes.
 
 | ID | Situation | What happens today | Status |
 |---|---|---|---|
-| G5 | Agent 2 **cannot automate** an approved test case (e.g. an element is missing from the inventory) | The prompt says to omit it and name it in `notes`, but the plan's notes are printed only in a dry run - not in the PR body, not on Jira; marker injection only logs a warning when scenarios and test cases do not pair. The story still gets `ai-coded`. (A change story's splice does check coverage, `check_coverage()`; a new story's run does not) | Fix planned |
+| L30 | A test case Agent 2 cannot automate is **reported, not automated** | Since F-13 it is named with its reason in the PR and on the story (`ai-incomplete`); generating it still needs its cause fixed by a person, then `ai-update`. The reason is only as good as the plan's `Skipped:` line - a test case the model drops without one is reported with "no reason given" | Limit |
 
 ### 3.7 Change detection after coding
 
@@ -218,7 +219,7 @@ code, the scenario markers and the inventory, not the notes.
 | F-10 | L17 | **Done (P1-2).** Call 2 of the context update reads only the story's Component modules and those pages' inventory notes, as Agent 1 does (all modules when the story has no Component) |
 | F-11 | L18 | **Done (P1-2)** - the hand-over declares the element in the page's `removed` list; every checker reads missing as healthy and present again as drift (`reappeared`, `GONE` / `BACK`); Agent 0 seeds only a reappeared one; the nightly inventory update deletes the key, note and declaration once no code names it. |
 | F-12 | L19 | "Planned" inventory entries a person adds from the design, marked unverified (usable by Agent 2, flagged in its PR); the nightly drift check confirms them after deployment, or reports them still missing |
-| F-13 | G5 | After generation, check that every approved test case has a markered scenario (new stories too, not only the splice); each missing one, with its reason, goes in the PR body and a Jira comment, and the story is not reported as fully coded |
+| F-13 | G5 | **Done (P1-3)** - after generation every approved test case must have a markered scenario, read from the files (new stories, regenerations and `ai-update`, not only the change-story splice); each missing one, with the plan's reason, goes in the PR body and one `[agent2:incomplete]` story comment, and the story gets `ai-incomplete` beside `ai-coded` until a run fills the gap. The duplicate check's title clash counts as missing; a run that automates none of the new test cases opens no PR (blocked) |
 | F-14 | G6 | Agent 1 records a hash of the story text when it drafts; a scan compares it: edited before coding → suggest a re-draft; edited after coding → suggest `impact-check`. A comment, never an automatic action |
 | F-15 | G7 | A scheduled comparison of each scenario marker's hash with its Jira test case (edited, deleted, retired): a comment on the owning story suggesting `ai-update`, never applied automatically |
 | F-16 | G8 | Reconcile covers every pipeline story PR, not only `impact-applied`: a close seen on `closed_scans` scans resets the pipeline labels and the card and posts the retry steps |
@@ -239,7 +240,7 @@ code, the scenario markers and the inventory, not the notes.
 
 **Agreed priority (27 Oct 2026)** - fixes first that keep the agents' knowledge true, then story state, then production readiness:
 
-- **P1 - knowledge stays true:** P1-1 inventory update (G12, PR #224) → P1-2 context update for every story: additions for new features, removals, scoped and size-bounded (F-8, F-11, F-10, F-9) → P1-3 no silent drop of an approved test case (F-13) → P1-4 planned inventory entries and new pages (F-12, L25).
+- **P1 - knowledge stays true:** P1-1 inventory update (G12, PR #224) → P1-2 context update for every story: additions for new features, removals, scoped and size-bounded (F-8, F-11, F-10, F-9, PR #225) → P1-3 no silent drop of an approved test case (F-13, this change) → P1-4 planned inventory entries and new pages (F-12, L25).
 - **P2 - story state and cost:** F-16 (a closed-unmerged PR resets the story), F-1, F-3.
 - **P3 - production readiness:** F-21, F-22, F-23.
 - **P4 - identity:** F-30 (needs the repository owner).
@@ -271,9 +272,10 @@ Gaps found earlier and fixed, for reference (details in [AI_CONCEPTS.md → fail
 | G9: an acceptance criterion verified by no test - a change story removing a field went green against an application that still had it (SCRUM-206, PR #208) | #209 |
 | G10: a reviewer's predicted failure kept blocking after its own scenario passed, because another test was red (an HTTP 503 from the site; a change story's expected pre-deployment failure) - PR #211 | #212 |
 | G11: Agent 1 approved an exact cart quantity in a signed-in test case that Agent 2's gate then refused on every attempt, and the scan retried the story every 30 minutes (SCRUM-187) | #215 |
-| G12: the pipeline never wrote the inventory - a new feature's live elements never reached it (so Agent 2 left those test cases out), dead keys stayed, a changed selector needed a person to run scripts | this change (`core/inventory_update.py`) |
-| L17: the context update's rewrite call read every module and every inventory note, not the story's Components (Agent 1 used its own selection rule) | this change (P1-2, F-10) |
-| L15: a new feature, or a change story adding a rule, never reached the app notes - the context update could only replace or rewrite, never add | this change (P1-2, F-8) |
-| L18: a removed element's key had to stay for its absence test, so after deployment the nightly checks reported it stale every night, the drift job raised that test as affected, and the key was never cleaned up | this change (P1-2, F-11) |
-| L16: nothing measured the notes' size or repetition, while every selected module goes into each prompt | this change (P1-2, F-9) |
-| G13: Agent 3 sent every changed file whole; a PR editing the large guides made a ~241k-token prompt and the review failed with no comment (PR #225) | this change (documentation as diffs, a changed-files budget) |
+| G12: the pipeline never wrote the inventory - a new feature's live elements never reached it (so Agent 2 left those test cases out), dead keys stayed, a changed selector needed a person to run scripts | #224 (`core/inventory_update.py`) |
+| L17: the context update's rewrite call read every module and every inventory note, not the story's Components (Agent 1 used its own selection rule) | #225 (P1-2, F-10) |
+| L15: a new feature, or a change story adding a rule, never reached the app notes - the context update could only replace or rewrite, never add | #225 (P1-2, F-8) |
+| L18: a removed element's key had to stay for its absence test, so after deployment the nightly checks reported it stale every night, the drift job raised that test as affected, and the key was never cleaned up | #225 (P1-2, F-11) |
+| L16: nothing measured the notes' size or repetition, while every selected module goes into each prompt | #225 (P1-2, F-9) |
+| G13: Agent 3 sent every changed file whole; a PR editing the large guides made a ~241k-token prompt and the review failed with no comment (PR #225) | #225 (documentation as diffs, a changed-files budget) |
+| G5: an approved test case Agent 2 could not automate was left out with a word only in the dry-run notes - not in the PR, not on the story, which still got `ai-coded`; the duplicate check's title clash and `ai-update`'s unmarked match were logged only | this change (P1-3, F-13, `agents/agent2_coverage.py`) |

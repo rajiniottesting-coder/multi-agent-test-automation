@@ -9,6 +9,55 @@ ADR-005 (the Jira label state machine) under [State management deep-dive](./GUID
 
 ---
 
+## ADR-020 — No approved test case is dropped in silence
+
+### Status
+
+Accepted (2026-10).
+
+### Context
+
+When Agent 2 could not automate an approved test case - an element missing
+from the inventory, a step the page cannot show, a scenario it could not pair
+with its test case - the model left it out and said so in the plan's `notes`,
+which were printed only in a dry run. The story still got `ai-coded`, and the
+board said it was coded. The duplicate check's title clash (a test case titled
+like another test case's scenario) and `ai-update`'s unmarked match were only
+logged. A change story's splice checked its revisions; nothing checked a new
+story.
+
+### Decision
+
+1. **Coverage is read from the files**, not from the model: after generation,
+   every approved test case the run was given must have a scenario carrying
+   its marker (`agents/agent2_coverage.py`). The same rule runs in `run()`
+   (new, regenerate and change stories) and `run_update()`.
+2. **A partial result still ships, and says so.** The pull request opens with
+   what was automated; its body and one `[agent2:incomplete]` story comment
+   name each uncovered test case with the plan's reason, and the story gets
+   `ai-incomplete` beside `ai-coded`. Refusing the whole story instead would
+   throw away the automated part and leave nothing to review while a person
+   fixes one test case.
+3. **Nothing automated, nothing opened.** A run that would cover none of the
+   story's new test cases is refused by the final gate (`core.blocked`).
+4. **The gap is filled by the existing flow:** after the cause is fixed and the
+   PR merged, `ai-update` appends only the missing scenarios; the run that
+   leaves none uncovered removes `ai-incomplete`.
+5. **Covered is not the same as fine:** an outdated scenario, a scenario with no
+   marker, and a scenario no test case pairs with are listed for a person, but
+   do not make the story incomplete.
+
+### Consequences
+
+- The board can be queried for partly automated stories (`ai-incomplete`).
+- A test case keyed in a shape no marker can hold (not `PROJ-123`) is reported
+  with that cause rather than shipping untraceable.
+- One scenario covering two test cases (allowed before) now lists the second as
+  not automated: a marker holds one key, so it could never be maintained.
+- Limit: L30 - the reason is only as good as the plan's `Skipped:` line.
+
+---
+
 ## ADR-019 — The app notes follow every story, and stay small
 
 ### Status
