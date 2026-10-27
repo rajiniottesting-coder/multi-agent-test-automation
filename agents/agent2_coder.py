@@ -4930,9 +4930,10 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
 
     # 4c-pre. COVERAGE. Every approved test case this run was given has a
     # markered scenario, or is named - never dropped in silence
-    # (agents/agent2_coverage.py, F-13). Judged from the files: unmarked
-    # scenarios only in the story's own files, not in the owners' files a change
-    # story spliced into (theirs are other stories').
+    # (agents/agent2_coverage.py, F-13). Judged from the files. Markers are read
+    # from EVERY file of the batch - a scenario counts wherever its marker is;
+    # unmarked scenarios only from the story's own files - the owners' files a
+    # change story spliced into hold other stories' (never this story's gap).
     own_files = [f for f in generated_files if f.file_path not in owner_files]
     batch_gaps = agent2_coverage.missing_from_batch(generated_files, new_test_cases, plan.notes)
     coverage_gaps = batch_gaps + skip_gaps
