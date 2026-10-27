@@ -346,7 +346,7 @@ already cover the revision).
 
 **What it does:**
 1. Reads PR metadata + changed files through the repo host. The workflow checks out the BASE branch, so every PR is reviewed by the reviewer code, prompt and reference files on `main` — never by a stale copy on an old story branch.
-2. Calls the LLM with a rigorous review prompt (`prompts/agent3_reviewer.md`) plus the reference files for style baseline, returning a `ReviewReport`.
+2. Calls the LLM with a rigorous review prompt (`prompts/agent3_reviewer.md`) plus the reference files for style baseline, returning a `ReviewReport`. Test code goes in whole; documentation, prompts and Markdown - nothing a test reads while it runs - go in as their diff, and the changed-files section has a size budget (the largest full contents fall back to their diffs first), so a PR that edits the big guides still fits the model's context.
 3. Post-processes the response (`postprocess_review()`): deduplicates issues and caps at 10, withdraws unsubstantiated findings, lowers findings on lines this PR did not change to advice, and derives the verdict. **Blocking needs a named failure scenario**; when the only blocker is a predicted test failure, it waits up to 8 minutes for Agent 4's result on the same commit, and a green run refutes the block; a red run refutes each prediction whose own scenario passed on that commit (`runner_evidence_for_head()` reads the run's `junit.xml` from its `pytest-report-<run id>` artifact; the finding names its `scenario`, or quotes it in its failure scenario). A finding naming no scenario, a scenario not in the report, or a report that cannot be read is judged on the whole run, as before. All of this only when the PR changes a file read at test runtime (`core/test_runtime.py`); a unit-only green run proves nothing about a test failure. The prompt also lists every BasePage helper the changed page objects call, with its docstring (`base_page_helpers_called()`), and a finding about a helper's behaviour must agree with it.
 4. Posts a markdown comment on the PR. Agent 3 never merges; its check goes red only for a finding that names a failure.
 
@@ -1771,6 +1771,15 @@ next night proposes again from `main`.
 
 Only a **"Request changes"** review, or a conversation comment starting with
 **`/fix`**, starts Agent 2's review fix - an approval or an ordinary comment is
+### Agent 3's check failed and no review was posted
+
+The review call itself failed: the model gateway refused the request (an
+outage, a rate limit) or the prompt was too large. Since PR #225 the changed
+files are bounded (documentation as diffs, a 300,000-character section
+budget), so size should not recur; re-run the job, and if it fails again on the
+same PR, measure the prompt locally with a fake model (the size is logged as
+`Review prompt size`).
+
 conversation. The reviewer needs write access (author association owner, member
 or collaborator), bots are ignored, and only pull requests on `auto/*` branches
 qualify. The `[agent2:review-fix]` comment on the PR lists each comment's

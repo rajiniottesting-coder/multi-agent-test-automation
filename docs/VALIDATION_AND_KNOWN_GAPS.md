@@ -276,3 +276,4 @@ Gaps found earlier and fixed, for reference (details in [AI_CONCEPTS.md → fail
 | L15: a new feature, or a change story adding a rule, never reached the app notes - the context update could only replace or rewrite, never add | this change (P1-2, F-8) |
 | L18: a removed element's key had to stay for its absence test, so after deployment the nightly checks reported it stale every night, the drift job raised that test as affected, and the key was never cleaned up | this change (P1-2, F-11) |
 | L16: nothing measured the notes' size or repetition, while every selected module goes into each prompt | this change (P1-2, F-9) |
+| G13: Agent 3 sent every changed file whole; a PR editing the large guides made a ~241k-token prompt and the review failed with no comment (PR #225) | this change (documentation as diffs, a changed-files budget) |
