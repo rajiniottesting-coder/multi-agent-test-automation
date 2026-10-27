@@ -394,10 +394,9 @@ def reconcile_all(tracker, host, settings: dict | None = None, now=None) -> list
     except Exception as e:                                     # noqa: BLE001
         logger.error("Reconcile: coded stories could not be listed: %s", e, exc_info=True)
         return out + [{"story": "-", "action": "error", "error": f"coded stories: {e}"}]
-    settled = {r["story"] for r in out}          # a change story finished above: once per run
+    # A change story settled above is never here: `impact-applied` and
+    # `impact-reverted` are excluded, and one just merged reads "merged".
     for s in coded:
-        if s["key"] in settled:
-            continue
         try:
             result = reconcile_unmerged_story(tracker, host, s["key"], settings, now)
         except Exception as e:                                 # noqa: BLE001
