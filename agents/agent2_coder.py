@@ -5298,11 +5298,15 @@ def main():
     )
 
     try:
+        from core.usage_ledger import story_usage
         if args.story:
-            if args.update:
-                result = run_update(args.story, dry_run=args.dry_run)
-            else:
-                result = run(args.story, dry_run=args.dry_run)
+            label = ("Agent 2 (Coder, incremental update)" if args.update
+                     else "Agent 2 (Coder, initial)")
+            with story_usage(args.story, label, dry_run=args.dry_run):
+                if args.update:
+                    result = run_update(args.story, dry_run=args.dry_run)
+                else:
+                    result = run(args.story, dry_run=args.dry_run)
             print("\n" + "=" * 60)
             print(f"[OK] Agent 2 finished -- story: {result['story_id']}")
             print(f"   Files generated: {result.get('files_generated', 0)}")
@@ -5389,8 +5393,9 @@ def main():
         results = []
         for story in normal_stories:
             try:
-                result = run(story["key"], dry_run=args.dry_run, is_regenerate=False,
-                             skip_if_blocked=True)
+                with story_usage(story["key"], "Agent 2 (Coder, initial)", dry_run=args.dry_run):
+                    result = run(story["key"], dry_run=args.dry_run, is_regenerate=False,
+                                 skip_if_blocked=True)
                 results.append(result)
             except Exception as e:
                 logger.error(f"Failed processing {story['key']} (normal): {e}", exc_info=True)
@@ -5409,7 +5414,8 @@ def main():
                 )
                 continue
             try:
-                result = run(story["key"], dry_run=args.dry_run, is_regenerate=True)
+                with story_usage(story["key"], "Agent 2 (Coder, regenerate)", dry_run=args.dry_run):
+                    result = run(story["key"], dry_run=args.dry_run, is_regenerate=True)
                 results.append(result)
             except Exception as e:
                 logger.error(f"Failed processing {story['key']} (regen): {e}", exc_info=True)
@@ -5428,7 +5434,9 @@ def main():
                 )
                 continue
             try:
-                result = run_update(story["key"], dry_run=args.dry_run)
+                with story_usage(story["key"], "Agent 2 (Coder, incremental update)",
+                                 dry_run=args.dry_run):
+                    result = run_update(story["key"], dry_run=args.dry_run)
                 results.append(result)
             except Exception as e:
                 logger.error(f"Failed processing {story['key']} (update): {e}", exc_info=True)

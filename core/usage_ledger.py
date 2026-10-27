@@ -28,9 +28,13 @@ from __future__ import annotations
 
 import logging
 import re
+from contextlib import contextmanager
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+# Appended to an agent's name in the usage comment of a run that raised (F-3).
+FAILED_SUFFIX = " (failed)"
 
 USAGE_MARKER = "[LLM-USAGE]"
 
@@ -163,7 +167,9 @@ def has_usage_comments(comment_bodies: list[str], ignore_agents=()) -> bool:
     ignore = set(ignore_agents or ())
     for b in _comments_after_last_reset(comment_bodies or []):
         parsed = parse_usage_comment(b)
-        if parsed and parsed["agent"] not in ignore:
+        # An ignored agent's failed run ("<agent> (failed)", story_usage) is
+        # still that agent: its cost is part of the same attempt.
+        if parsed and parsed["agent"].removesuffix(FAILED_SUFFIX) not in ignore:
             return True
     return False
 
@@ -293,3 +299,41 @@ def format_e2e_section(agg: dict) -> str:
             "lower bound. Token totals are exact._"
         )
     return "\n".join(lines)
+
+
+@contextmanager
+def story_usage(story_key: str, agent_name: str, *, jira=None, dry_run: bool = False):
+    """One story's model cost, and only its own (F-3).
+
+    In a scan, the usage counter was reset only after a SUCCESS, so a story
+    that failed part-way left its calls in the counter and the next story's
+    usage comment carried them - one story paid for another's failure, and
+    the failed story's ledger showed nothing.
+
+    Around each story: the counter starts at zero; on the way out, whatever
+    the run did not post itself is posted to THIS story - as
+    "<agent_name> (failed)" when the run raised, as `agent_name` otherwise (a
+    successful run normally posts and resets, so nothing is left) - and the
+    counter is reset. A dry run posts nothing. Never raises from bookkeeping;
+    the run's own exception is re-raised unchanged."""
+    from core.llm_client import get_usage_summary, log_usage_summary, reset_usage
+    reset_usage()
+    failed = False
+    try:
+        yield
+    except BaseException:
+        failed = True
+        raise
+    finally:
+        try:
+            if (get_usage_summary() or {}).get("llm_calls"):
+                usage = log_usage_summary(
+                    f"story {story_key} ({'failed' if failed else 'not posted by the run'})")
+                if not dry_run:
+                    post_usage_to_story(story_key,
+                                        agent_name + (FAILED_SUFFIX if failed else ""),
+                                        usage, jira=jira)
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning("Usage ledger for %s not recorded: %s", story_key, e)
+        finally:
+            reset_usage()

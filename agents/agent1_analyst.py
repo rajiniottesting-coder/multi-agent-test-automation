@@ -527,10 +527,12 @@ def main():
     validate_required_env(REQUIRED_JIRA_ENV_VARS + REQUIRED_LLM_ENV_VARS)
 
     clean = True
+    from core.usage_ledger import story_usage
     try:
         if args.story:
             logger.info(f"Manual mode: processing {args.story}")
-            result = run(args.story, dry_run=args.dry_run)
+            with story_usage(args.story, "Agent 1 (Test Designer)", dry_run=args.dry_run):
+                result = run(args.story, dry_run=args.dry_run)
             if not print_summary([result]):
                 sys.exit(1)
             return
@@ -573,7 +575,8 @@ def main():
         results = []
         for story in stories:
             try:
-                result = run(story["key"], dry_run=args.dry_run)
+                with story_usage(story["key"], "Agent 1 (Test Designer)", dry_run=args.dry_run):
+                    result = run(story["key"], dry_run=args.dry_run)
                 results.append(result)
             except Exception as e:
                 logger.error(f"Failed processing {story['key']}: {e}", exc_info=True)
