@@ -88,7 +88,7 @@ For more diagrams — component view, Agent 2 sequence, and the labels-as-state-
 |:-:|---|---|---|---|
 | 0 | Impact Analyst | `agents/agent0_impact.py` + `core/impact_*.py` | `impact-check` scan (weekdays 10:45 IST), PRs touching `pages/` or `app_inventory/`, nightly drift (or on demand, `mode` = `drift`) | 2 to analyse (more only past 300 candidates); up to 2 for the context update; 1 for a merged story's notes addition; 0 on code-change and drift runs |
 | 1 | Test Designer | `agents/agent1_analyst.py`, `agents/agent1_impact.py` | cron, every 30 min, weekdays 10:00–19:00 IST | 1 (+1 if a rule fails) |
-| 2 | Coder | `agents/agent2_coder.py`, `agents/agent2_impact.py` | cron, same window | 1 plan + 1 per file (+ repairs); a change story adds 1 per revised scenario and up to 1 per owner step file |
+| 2 | Coder | `agents/agent2_coder.py`, `agents/agent2_impact.py`, `agents/agent2_coverage.py` | cron, same window | 1 plan + 1 per file (+ repairs); a change story adds 1 per revised scenario and up to 1 per owner step file |
 | 3 | Reviewer | `agents/agent3_reviewer.py` | PR opened / synchronize / reopened | 1 |
 | 4 | Runner | `.github/workflows/agent4_runner.yml` | same PR events; a push to `main` touching framework paths | 0 |
 | 5 | Reporter | `agents/agent5_reporter.py` (job 2 of Agent 4's workflow) | after Agent 4, on a PR whose browser tests ran | 1 |
@@ -126,12 +126,13 @@ Agent 0 is described in its own chapter, [Change stories — Agent 0](#change-st
 
 **What it does:**
 1. Reads approved Test Cases from Jira (filtered by `ai-processed` AND `human-approved` labels).
-2. Optional dedup check: if any test cases are already covered by existing scenarios, skip them — by marker first, then by title without the `[type]` tag. (`ai-regenerate` label bypasses this.) If another open PR already adds one of the scenarios, or (after the plan) changes a file this story would write, the story **waits** for the next scan instead — see *Two stories on one page object*.
+2. Optional dedup check: if any test cases are already covered by existing scenarios, skip them — by marker first, then by title without the `[type]` tag. (`ai-regenerate` label bypasses this.) A test case whose title matches **another** test case's scenario is not covered: it is reported, not silently skipped (step 6). If another open PR already adds one of the scenarios, or (after the plan) changes a file this story would write, the story **waits** for the next scan instead — see *Two stories on one page object*.
 3. **Stage 1 (Plan):** Calls the LLM with a Pydantic schema (`CodePlan`) — gets file paths, types, branch name, PR title. NO code yet.
 4. **Stage 2 (Generate):** For EACH file in the plan, calls the LLM in text mode to generate the file's content.
 5. **Validators:** 32 static checks run before a branch is created — see **The validator gate** below. Repairable failures go through the repair loop; anything still failing aborts the run.
-6. Creates a branch (`auto/<JIRA-KEY>-<feature-name>`), commits files, opens a PR.
-7. Tags the parent story with `ai-coded` (the card moves to In Review) and posts its cost.
+6. **Coverage (`agents/agent2_coverage.py`, F-13).** Every approved test case must end with a scenario carrying its marker, read from the files, not from what the model says. One that has none - left out by the model, or a scenario it could not be paired with - is listed with its reason (the plan's `Skipped: <KEY> -- <reason>` line, or "no reason given") in the PR body and in one `[agent2:incomplete]` comment on the story, and the story gets `ai-incomplete` beside `ai-coded`. Covered cases that need a person (an outdated scenario, one without its marker) are listed too, without the label. A run that would automate **none** of the story's new test cases opens no PR: the gate refuses it (`[agent2:blocked]`).
+7. Creates a branch (`auto/<JIRA-KEY>-<feature-name>`), commits files, opens a PR.
+8. Tags the parent story with `ai-coded` (the card moves to In Review) and posts its cost.
 
 **Review fix (`agents/agent2_review_fix.py`, `agent2_review_fix.yml`, ADR-017).**
 A person with write access asks for a change on Agent 2's open pull request - a
@@ -463,6 +464,7 @@ The gate is between Agents 1 and 2 specifically because that's the highest-lever
 | `human-approved` | "I reviewed the Test Cases and approve" | Human |
 | `ai-skip` | "Don't process this story (override)" | Human |
 | `ai-coded` | "Agent 2 finished, PR is open" | Agent 2 |
+| `ai-incomplete` | "An approved test case has no scenario of its own; see the `[agent2:incomplete]` comment" | Agent 2 (removed by the run that fills the gap) |
 | `ai-regenerate` | "Regenerate code for this story — full rewrite (one-shot)" | Human |
 | `ai-update` | "Surgically update code for changed/added/deleted Test Cases (one-shot)" | Human |
 | `tests-run` | "Agent 5 posted test results" | Agent 5 |
@@ -669,7 +671,7 @@ Every story labelled `impact-applied` is settled on each scan:
 After an undo the story is left ready to retry or drop, not half-done: its own
 test cases that never reached `main` are retired (reversible), the labels in
 `reconcile.reset_labels` (`ai-processed`, `human-approved`, `ai-coded`,
-`tests-run`) are removed, the Impact Review is renamed `[undone PR #N] Impact
+`ai-incomplete`, `tests-run`) are removed, the Impact Review is renamed `[undone PR #N] Impact
 Review: …` (so it no longer counts), the card moves to To Do, and one comment
 says how to retry: remove `impact-reverted`, add `impact-check`.
 
@@ -1141,6 +1143,8 @@ agents:
     regenerate_selection: { ... }   # for ai-regenerate flow
     completion_label: ...
     regenerate_label: ...
+    update_label: ...
+    incomplete_label: ...           # an approved test case with no scenario (F-13)
     max_stories_per_run: ...
     review_fix: { enabled, command: "/fix", branch_prefix: "auto/", max_files: 6 }
 
@@ -1150,7 +1154,7 @@ agents:
     reconcile:
       closed_scans: 2           # scans that must see a close before the undo
       no_pr_days: 14
-      reset_labels: [ai-processed, human-approved, ai-coded, tests-run]
+      reset_labels: [ai-processed, human-approved, ai-coded, ai-incomplete, tests-run]
     context_update: { enabled: ..., branch_prefix: "context-update/",
                       additions: true, max_addition_chars: 1500,
                       module_budget_chars: 8000 }
@@ -1806,13 +1810,29 @@ object*.
 ### Agent 2 shows `[BLOCK]` for a story, or the story has an `[agent2:blocked]` comment
 
 The final gate refused the story: the generated code still broke a rule after
-every repair attempt, so no pull request was opened. The comment lists the
-rules. A rule that survives every repair usually means a test case asks for
+every repair attempt, or none of the story's new approved test cases got a
+scenario, so no pull request was opened. The comment lists the reasons. A rule that survives every repair usually means a test case asks for
 something the application cannot show as written - for example an exact
 quantity on state the application keeps against a shared account. Change that
 test case (or the story): the next scheduled scan then tries again by itself.
 Until then the scan skips the story and spends nothing. To retry without an
 edit - after a framework fix, say - run Agent 2 with the story's key.
+
+### The story has `ai-incomplete`, or an `[agent2:incomplete]` comment
+
+Agent 2 opened the pull request, but at least one approved test case has no
+scenario of its own. The comment (and the PR body, under *Approved test cases
+not automated*) names each one with its reason: the line the plan wrote for it
+(`Skipped: <KEY> -- <reason>`), or "the model gave no reason". The usual causes:
+an element missing from the inventory (the nightly inventory update proposes a
+live one; P1-4 covers one not deployed yet), a test case asking for something
+the page cannot show (edit it), or a title clash - its summary is the title of
+another test case's scenario (retire it if it duplicates that one, else give it
+a distinct summary). Fix the cause, merge the story's PR, then add `ai-update`:
+it generates only the missing scenarios and removes `ai-incomplete` when none
+is left. Listed **without** the label: a covered case whose scenario is outdated
+(`ai-update` revises it) or has no marker (`python scripts/backfill_markers.py
+propose`), and a scenario no test case could be paired with.
 
 ### Agent 4 log says "waiting for earlier run(s)"
 
@@ -2203,6 +2223,7 @@ A change story enters before `ai-ready`:
 | `ai-processed` | sticky marker | Agent 1 | never | "Agent 1 is done" — Agent 1 excludes it (idempotency); Agent 2 requires it (prerequisite) |
 | `human-approved` | sticky gate | human | never | "a human reviewed the test cases" — Agent 2 requires it |
 | `ai-coded` | sticky marker | Agent 2 | never | "code exists, PR opened" — normal-mode Agent 2 excludes it |
+| `ai-incomplete` | state marker | Agent 2 | Agent 2 - the run (`ai-update`, `ai-regenerate`) that leaves no approved test case without a scenario; reconcile on undo | "an approved test case has no scenario of its own" |
 | `ai-update` | one-shot trigger | human | Agent 2 on success | "do a surgical incremental update" |
 | `ai-regenerate` | one-shot trigger | human | Agent 2 on success | "do a full rewrite on a -revN branch" |
 | `ai-skip` | permanent opt-out | human | human | invisible to all agents |
@@ -2214,7 +2235,7 @@ A change story enters before `ai-ready`:
 | `ai-retired` | test-case marker | hand-over / reconcile | reconcile on undo | "this test case is retired" |
 | `inventory-drift` | sticky marker | Agent 0 drift (live) | never (the story keeps it for life) | "the nightly drift maintenance story" - the next night reuses it |
 
-`ai-processed`, `human-approved` and `ai-coded` are also removed by reconcile
+`ai-processed`, `human-approved`, `ai-coded` and `ai-incomplete` are also removed by reconcile
 when it undoes a change story (`reconcile.reset_labels`), so a retry starts
 clean.
 

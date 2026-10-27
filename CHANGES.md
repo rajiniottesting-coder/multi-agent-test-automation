@@ -4,6 +4,21 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## October 2026 (end) — no approved test case is dropped in silence (P1-3)
+
+**Why:** when Agent 2 could not automate an approved test case, the model left it out and said so in the plan's `notes`, printed only in a dry run; marker injection logged a warning; the story still got `ai-coded`. The duplicate check's title clash and `ai-update`'s unmarked match were logged the same way (G5).
+
+- **`agents/agent2_coverage.py` (F-13):** `missing_from_batch()` - each test case the run was given with no markered scenario, with the plan's `Skipped: <KEY> -- <reason>` line (`notes_about()`), or the cause when its key cannot be held by a marker; `skipped_gaps()` - the dedup's `title_clash` (not covered), `modified` and `legacy` (covered, need a person); `unmarked_scenarios()`; `pr_section()`, `comment()`, `record()` (one `[agent2:incomplete]` comment; `ai-incomplete` set, or cleared - only when present)
+- **`run()`:** coverage after marker injection and the change-story splice, over the story's own files; a run covering none of its new test cases (and no change-story work) is refused by the final gate (`GateFailure` → `core.blocked`); the PR body gets the section; the story is told BEFORE `ai-coded`; the no-work path reports a title clash too; dry run prints it; `not_automated` in the result and the scan summary
+- **`run_update()`:** the same rule for the file it updates - a generated scenario that lost its marker is missing, an unmarked legacy match is listed, not appended or counted; only unmarked scenarios the update added are listed; the label is cleared when nothing is uncovered (also on a no-op)
+- Config: `agents.agent2_coder.incomplete_label: "ai-incomplete"`; `reconcile.reset_labels` adds it (config and `impact_settings.DEFAULTS`). Plan prompt: every test case left out gets a `Skipped: <KEY> -- <reason>` line. `core.blocked`'s comment names both refusals
+- Tests: the in-memory tracker of `test_pipeline_tool_agnostic.py` minted keys (`ACME-T1`) no marker can hold - now `ACME-201`; its pipeline run's fake model wrote one scenario for two test cases - now two
+- Docs: README, GUIDE (Agent 2 steps, label tables, config, troubleshooting), TECHNICAL_DEEP_DIVE (§5.7, §5.8, §5.11, labels, §11, §16), REUSE_FOR_NEW_PROJECT, DECISIONS ADR-020, VALIDATION_AND_KNOWN_GAPS (G5 closed, F-13 done, L30, E24 for UC-7; P1-1/P1-2 rows now cite #224/#225)
+
+Pinned by `tests/unit/test_no_silent_drop.py` (24); each rule was broken on purpose (25 mutations), and each break failed a test.
+
+---
+
 ## October 2026 (end) — the app notes follow every story, and stay small (P1-2)
 
 **Why:** the context update ran only at a change story's hand-over and could only replace wording or rewrite untrue passages. A new feature never reached `prompts/app_context` (the next story on it was drafted from its own text alone); an element a change story removed stayed in the inventory as "stale" every night after deployment, raising its absence test as affected; the rewrite call read every module whatever the story touched; and nothing measured the notes, which go into every prompt.

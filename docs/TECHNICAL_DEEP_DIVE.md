@@ -53,6 +53,7 @@ agents/
   agent1_impact.py
   agent2_coder.py
   agent2_impact.py
+  agent2_coverage.py
   agent2_review_fix.py
   agent3_reviewer.py
   agent5_reporter.py
@@ -500,12 +501,21 @@ def run(story_id, dry_run=False, is_regenerate=False) -> dict:
     # 4d-bis. CHANGE-STORY SPLICE — approved scenarios spliced into the
     #         owners' feature files (change stories only, §19)
     # 4e. ORPHAN CLEANUP (regenerate mode only) — cleanup_orphans_after_removal()
-    # 4c. FINAL VALIDATION — _validate_generated_files()
+    # 4c. COVERAGE (agents/agent2_coverage.py, F-13) — missing_from_batch():
+    #     each new test case with no markered scenario, with the plan's
+    #     `Skipped: <KEY> -- <reason>` line; skipped_gaps(): the dedup's
+    #     title clash (not covered), outdated and unmarked matches (covered,
+    #     need a person); unmarked_scenarios() in the story's own files
+    # 4c. FINAL VALIDATION — _validate_generated_files(); then, if NONE of the
+    #     new test cases has a scenario (and no change-story work), GateFailure
+    #     → core.blocked comment, no PR
     # 5. ACT:
     #    - If regenerate: _resolve_unused_revision_branch() picks auto/...-rev2/rev3
     #    - create branch from main
     #    - create_or_update_file() for each generated file
-    #    - open PR with body + footer
+    #    - open PR with body + footer + pr_section() (not automated / to check)
+    #    - record(): one [agent2:incomplete] comment; ai-incomplete set, or
+    #      cleared when nothing is uncovered — BEFORE ai-coded
     #    - jira.add_label('ai-coded')
     #    - if regenerate: jira.remove_label('ai-regenerate')  # one-shot
 ```
@@ -539,8 +549,11 @@ def run_update(story_id, dry_run=False) -> dict:
     #    left unused (removed or modified scenarios)
     # 7c. IN FLIGHT — a page object the orphan cleanup edits that another
     #    open PR changes → _wait_for_in_flight()
-    # 8. Validate, branch (-updateN suffix via _find_unused_update_branch),
-    #    commit, open PR
+    # 8. Validate; coverage: every test case this file should hold has its
+    #    markered scenario (a generated one that lost its marker is missing;
+    #    an unmarked legacy match is listed, not counted as missing)
+    # 8b. Branch (-updateN suffix via _find_unused_update_branch), commit,
+    #    open PR (+ pr_section()); record(): ai-incomplete set or cleared
     # 9. jira.remove_label('ai-update')  # one-shot consumed
 ```
 
@@ -617,7 +630,7 @@ skipped runs would cancel a person's `/fix` waiting in the group. ADR-017.
 | `tests/unit/test_orphan_cleanup.py` | 20 | Orphan detection across banking + CMS domains |
 | `tests/unit/test_validators.py` | 122 | All validators (filename consistency, feature structure, step completeness, imports, method resolution) |
 
-217 tests in these four files. The whole unit suite (~3,000 tests, about 2 minutes, fully offline) covers much more — splice grounding (`test_splice_grounding.py`), the validator gate, Agent 0 and the Protocols among them.
+217 tests in these four files. `tests/unit/test_no_silent_drop.py` covers the coverage rule (F-13) end to end in the sandbox: a partial run, a run that automates nothing, a title clash, a dry run, and `ai-update` filling the gap. The whole unit suite (~3,000 tests, about 2 minutes, fully offline) covers much more — splice grounding (`test_splice_grounding.py`), the validator gate, Agent 0 and the Protocols among them.
 
 ---
 
@@ -1102,6 +1115,7 @@ To opt out a story permanently:
 | `ai-processed` | Agent 1 | Never (sticky) | Permanent idempotency marker | Tells Agent 1 "already done"; required by Agent 2 selection |
 | `human-approved` | Human | Never (sticky) | Permanent approval gate | Required by Agent 2 — proves human reviewed Test Cases |
 | `ai-coded` | Agent 2 | Never (sticky) | Permanent idempotency marker | Tells Agent 2 normal mode to skip; required (implicitly) for ai-update/ai-regenerate to make sense |
+| `ai-incomplete` | Agent 2 | Agent 2 (a run leaving no test case uncovered), reconcile on undo | State marker | An approved test case has no scenario of its own; the `[agent2:incomplete]` comment says which and why |
 | `ai-update` | Human | Agent 2 (on success) | One-shot trigger | Causes Agent 2 to run `run_update()` instead of `run()` |
 | `ai-regenerate` | Human | Agent 2 (on success) | One-shot trigger | Causes Agent 2 to run `run(is_regenerate=True)` |
 | `ai-skip` | Human | Human | Permanent opt-out | Excluded by ALL agents — story is invisible |
@@ -1136,7 +1150,7 @@ update_selection:
 
 - `classify_test_cases()` returns `{unchanged: all, modified: [], new: [], orphan_keys: []}`
 - `run_update()` exits with no changes — no PR opened
-- Labels: `ai-update` is still consumed (removed) to prevent re-trigger loops
+- Labels: `ai-update` is still consumed (removed) to prevent re-trigger loops; `ai-incomplete`, if present, is removed - every test case has its scenario
 - **Why:** prevents pointless PRs that would say "no changes"
 
 ### Scenario B — One Test Case description was edited in Jira
@@ -1156,6 +1170,7 @@ update_selection:
 - Step_def file: only the new step functions are spliced in
 - Orphan cleanup: no orphans (nothing was removed)
 - PR body: `**New scenarios:** PROJ-32`
+- Coverage (F-13): when every test case now has its markered scenario, `ai-incomplete` is removed - this is how a gap reported by a partial run is filled. A new scenario the model returned without its marker is listed as not automated and the label stays. A new test case whose title matches an UNMARKED scenario already in the file is not appended again; it is listed as needing its marker (`backfill_markers`), not as missing
 
 ### Scenario D — A Test Case was DELETED in Jira
 
@@ -1304,6 +1319,12 @@ The two selections exclude each other:
 - **Read by:** Agent 2's NORMAL selection (`excluded_labels: ["ai-coded"]`)
 - **Removed by:** Never (sticky)
 - **Effect:** Tells normal-mode Agent 2 "already done; don't process again." Implicitly required for `ai-update`/`ai-regenerate` to be meaningful.
+
+### `ai-incomplete`
+
+- **Set by:** Agent 2 (`agents/agent2_coverage.record()`), beside `ai-coded`, when an approved test case has no scenario carrying its marker — in `run()` (including the no-work path, for a title clash) and in `run_update()`
+- **Removed by:** the next Agent 2 run on the story that leaves none uncovered (`ai-update` after the cause is fixed, `ai-regenerate`, or an `ai-update` with nothing to do); reconcile's `reset_labels` on an undo
+- **Effect:** none on selection — a board query finds partly automated stories. The PR body and one `[agent2:incomplete]` story comment list each uncovered test case with its reason.
 
 ### `ai-skip`
 
@@ -1474,6 +1495,12 @@ This isolation is enforced by code, not just convention:
 - Rare — typical Agent 2 run is 2-5 minutes
 - If it happens, partial commits may exist on the branch and no PR opens
 - Recovery is automatic: the next run discards the partial branch and rebuilds it
+
+### An approved test case has no scenario (`ai-incomplete`)
+
+- **Symptom:** the PR body has *Approved test cases not automated*; the story has `ai-incomplete` and an `[agent2:incomplete]` comment
+- **Cause:** the model left the test case out (its plan line says why), its scenario could not be paired with it (no marker), or its title clashes with another test case's scenario
+- **Recovery:** fix the cause, merge the PR, add `ai-update` — it appends only the missing scenarios and removes the label. If NONE of the story's test cases got a scenario, no PR was opened (`[agent2:blocked]`)
 
 ### `ai-update` triggered but feature file has no markers
 
