@@ -320,6 +320,7 @@ class SourceHub:
         return [{"filename": "features/x.feature", "status": "added",
                  "additions": 5, "deletions": 0, "patch": "+Scenario"}]
     def reopen_pull_request(self, pr_number): pass
+    def close_pull_request(self, pr_number): pass
     def post_pr_comment(self, pr_number, body):
         self.pr_comments.setdefault(pr_number, []).append(body)
     def get_pr_comments(self, pr_number): return self.pr_comments.get(pr_number, [])

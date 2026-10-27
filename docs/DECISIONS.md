@@ -32,19 +32,30 @@ person to run scripts by hand.
 2. **Selective edits, never a regeneration.** Curated notes, families and
    conditionals stay; only the keys below change.
 3. **Every rule errs toward leaving the inventory alone.** A stale selector is
-   replaced only when the crawl finds the element the generator names the same;
-   a stale key is removed only when no code names it (any string literal under
-   `code_dirs` - over-wide on purpose) and it is not the row family; one code
-   names is kept and listed (a page object needs a selector, or an absence test
-   needs the key). A page with most selectors stale is not edited at all: an
-   error page, an outage or a redesign is a person's call. A crawl that measured
-   no page proposes and closes nothing.
+   replaced only when the crawl finds the element the generator names the same,
+   with a durable selector; a stale key is removed only when no code names it -
+   any string literal under `code_dirs` on `main` (over-wide on purpose) or on
+   an added line of an open pull request (a story in flight) - and it is not
+   the row family; when the open pull requests cannot be read, nothing is
+   removed. A key code names is kept and listed (a page object needs a
+   selector, or an absence test needs the key). A page with most selectors
+   stale is not edited at all: an error page, an outage or a redesign is a
+   person's call. A crawl that measured no page, or a report older than
+   `uncovered_max_age_hours`, proposes and closes nothing.
 4. **Additions follow the existing proposal rules** (`refusal_reason`), with the
-   generator's own names and selectors, capped per page.
-5. **One rolling PR.** An untouched PR is replaced by a fresher one or closed
-   when nothing is left; a PR a person committed to is never touched - it gets
-   one comment per new finding. The body records the hash of the file it wrote,
-   which is how the two are told apart.
+   generator's own names, selectors **and declarations** (`multi_match`,
+   `conditional` - without them an added family reads as ambiguous and a hidden
+   element as stale the next night), capped per page. Elements the generator
+   flags for review (no durable handle, `>> nth=` members, hidden when crawled)
+   are listed, never added.
+5. **One proposal at a time, never by deleting branches.** An untouched
+   proposal is closed (`RepoHost.close_pull_request`, a new operation) when a
+   fresher one replaces it or nothing is left; each proposal has its own dated
+   branch, so a repository that forbids branch deletion still works (old
+   branches are deleted best-effort). A proposal a person committed to - or
+   any PR on the prefix without the marker - is never touched and no second one
+   is opened; it gets one comment per new finding. The body records the hash of
+   the file it wrote, which is how the two are told apart.
 
 ### Consequences
 
@@ -53,6 +64,7 @@ person to run scripts by hand.
 - A renamed element arrives as an added key plus a removed or kept old key
   (L26), and a new page is not discovered (L25): both stay with a person.
 - The manual proposals route stays for one-off use; both share one refusal rule.
+- `RepoHost` gains `close_pull_request` (20 operations).
 
 ---
 

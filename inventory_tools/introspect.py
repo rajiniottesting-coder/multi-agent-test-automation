@@ -1420,21 +1420,47 @@ def uncovered_descriptors(descriptors: list[dict]) -> list[dict]:
     return [d for d in descriptors if COVER_ATTR not in (d.get("attrs") or {})]
 
 
-def uncovered_elements(url: str, title: str, descriptors: list[dict],
-                       base_url: str = "", test_attrs: tuple = TEST_ID_ATTRS) -> dict:
-    """{name: selector} for capturable elements no inventory selector covers.
+def uncovered_entry(url: str, title: str, descriptors: list[dict],
+                    base_url: str = "", test_attrs: tuple = TEST_ID_ATTRS) -> dict:
+    """The uncovered elements with the generator's declarations about them:
+
+        {"elements": {name: selector},
+         "multi_match": [names the generator declared a family],
+         "conditional": [names it captured hidden],
+         "unstable": [names with no durable handle: a css fallback
+                      (`_unstable_selectors`) or one member of a selector
+                      several elements share, pinned `>> nth=`
+                      (`_ambiguous_selectors`)]}
 
     Built with build_page_entry - the generator's own rules - so a reported
     element is exactly what a fresh crawl would have drafted: the same
     capturability filter, ranked selector and name. Third-party embeds (ad
     networks), which the generator keeps but flags, are left out: they are
-    not part of the application. Report only - never drift."""
+    not part of the application. The declarations matter to anything that
+    ADDS these elements: a family added without `multi_match` reads as
+    ambiguous, and a hidden element without `conditional` reads as stale the
+    next night. Report only - never drift."""
     entry = build_page_entry(url, title, uncovered_descriptors(descriptors),
                              base_url=base_url, test_attrs=test_attrs)
     third_party = set((entry.get("_third_party_elements") or {}).get("elements") or [])
-    return {name: (value.get("selector") if isinstance(value, dict) else value)
-            for name, value in (entry.get("elements") or {}).items()
-            if not name.startswith("_") and name not in third_party}
+    elements = {name: (value.get("selector") if isinstance(value, dict) else value)
+                for name, value in (entry.get("elements") or {}).items()
+                if not name.startswith("_") and name not in third_party}
+    unstable = set((entry.get("_unstable_selectors") or {}).get("elements") or [])
+    for names in ((entry.get("_ambiguous_selectors") or {}).get("selectors") or {}).values():
+        unstable |= set(names or [])
+    return {"elements": elements,
+            "multi_match": sorted(n for n in entry.get("multi_match") or [] if n in elements),
+            "conditional": sorted(n for n in entry.get("conditional") or [] if n in elements),
+            "unstable": sorted(n for n in unstable if n in elements)}
+
+
+def uncovered_elements(url: str, title: str, descriptors: list[dict],
+                       base_url: str = "", test_attrs: tuple = TEST_ID_ATTRS) -> dict:
+    """{name: selector} for capturable elements no inventory selector covers
+    (uncovered_entry without the declarations)."""
+    return uncovered_entry(url, title, descriptors, base_url=base_url,
+                           test_attrs=test_attrs)["elements"]
 
 
 def pages_missing_notes(inventory: dict) -> list[str]:

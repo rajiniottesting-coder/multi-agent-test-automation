@@ -99,8 +99,13 @@ class RepoHost(Protocol):
         """Open PR for a story as {"number","head_ref","head_sha","url","title"}."""
         ...
 
-    def list_open_prs(self, branch_prefix: str = "") -> list[dict]:
-        """All open PRs as dicts, optionally filtered by branch prefix."""
+    def list_open_prs(self, branch_prefix: str = "", strict: bool = False) -> list[dict]:
+        """All open PRs as dicts, optionally filtered by branch prefix.
+
+        By default a read failure yields what was read so far (callers that
+        only want a best-effort view). `strict=True` raises instead - for a
+        caller that would otherwise mistake "could not read" for "no open
+        pull request" (core.inventory_update)."""
         ...
 
     def find_prs_for_story(self, story_id: str, branch_prefix: str = "auto/") -> list[dict]:
@@ -136,6 +141,13 @@ class RepoHost(Protocol):
     def reopen_pull_request(self, pr_number: int) -> None:
         """Close then reopen, to re-fire event-driven CI. Provider-specific:
         GitLab would retry a pipeline instead."""
+        ...
+
+    def close_pull_request(self, pr_number: int) -> None:
+        """Close an open PR without merging it (GitLab: close the merge
+        request). The branch stays; deleting it is a separate, best-effort
+        step, because a repository may forbid branch deletion. Used to retire
+        a superseded proposal (core.inventory_update)."""
         ...
 
     # ── comments ─────────────────────────────────────────────

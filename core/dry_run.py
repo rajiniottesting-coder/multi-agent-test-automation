@@ -37,7 +37,8 @@ REPO_HOST_READS = frozenset({
 })
 REPO_HOST_WRITES = frozenset({
     "create_branch", "delete_branch", "create_or_update_file", "open_pull_request",
-    "reopen_pull_request", "post_pr_comment", "reply_to_review_comment",
+    "reopen_pull_request", "close_pull_request", "post_pr_comment",
+    "reply_to_review_comment",
 })
 
 

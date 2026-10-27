@@ -143,6 +143,7 @@ def main() -> int:
     per_page: dict[str, dict] = {}
     unreachable: list[str] = []
     new_by_page: dict[str, dict] = {}   # --compare: {page: {element: selector}}
+    new_declared: dict[str, dict] = {}  # --compare: {page: {"multi_match", "conditional", "unstable"}}
     # Pages marked `always` (a global menu, a cookie banner, a footer) are
     # rendered on EVERY page. Their elements are covered wherever they appear,
     # so compare marks their selectors on each page it visits. Without this,
@@ -199,9 +200,13 @@ def main() -> int:
                 title, descriptors = collect_uncovered(
                     page, base_url + url_path,
                     list(selectors.values()) + always_selectors, test_attrs)
-                new_by_page[name] = introspect.uncovered_elements(
+                found = introspect.uncovered_entry(
                     base_url + url_path, title, descriptors,
                     base_url=base_url, test_attrs=test_attrs)
+                new_by_page[name] = found["elements"]
+                if found["multi_match"] or found["conditional"] or found["unstable"]:
+                    new_declared[name] = {k: found[k] for k in
+                                          ("multi_match", "conditional", "unstable")}
             per_page[name] = introspect.diff_page(
                 name, selectors, counts, live_test_ids, test_attrs,
                 # The inventory states which keys are meant to match several
@@ -219,6 +224,12 @@ def main() -> int:
         # Informational: deliberately NOT folded into summarize_drift, so an
         # uncovered element can never fail --fail-on-drift.
         report["new_elements"] = {p: els for p, els in new_by_page.items() if els}
+        # The generator's declarations about those elements (families, hidden
+        # ones, ones with no durable handle). The nightly inventory update adds
+        # the declarations with the element - or a hidden element reads as
+        # stale the next night and is removed again - and never adds an
+        # element with no durable handle.
+        report["new_element_declarations"] = new_declared
 
     # ── human-readable summary ──
     print(f"\nInventory staleness report for {ctx.name} ({base_url})")
