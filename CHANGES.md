@@ -18,7 +18,7 @@ This document records substantive changes to the framework in reverse-chronologi
 - Tests updated: `test_usage_per_story.py` (a tracker with the Protocol only), `test_p2_scan_end_to_end.py`, `test_a_series_open_items.py` and `test_spend_budget.py` (both stores), `test_agent0.py` (the delta in the report, the data in the review, no separate no-Component comment, the outcome kept once in either store), `test_test_track.py` (the not-built group is TG-10; a built fix may not stay in it)
 - Docs: README, GUIDE (cost tracking, Agent 5 steps, budgets, config, marker table, new hidden-properties table, troubleshooting), TECHNICAL_DEEP_DIVE (Agent 5, the ledger, the capability table), REUSE_FOR_NEW_PROJECT, AI_CONCEPTS (#52), DECISIONS ADR-024, VALIDATION_AND_KNOWN_GAPS (N11, L40 closed; F-31 done; L43-L46), TEST_TRACK (TG-9: E35a-k; E3, E32d, H5)
 
-Pinned by `tests/unit/test_comment_dedup.py` (25: both stores, the cost comment and its edits, a reset, an old story, a deleted or refused comment, a concurrent run, the quiet-edit fallback, L40, Agent 5's line, re-run and outcome, the dry run, and a whole story - 4 comments where the comment ledger posts 16). 23 deliberate breaks, each caught.
+Pinned by `tests/unit/test_comment_dedup.py` (26: both stores, the cost comment and its edits, a reset, an old story, a deleted or refused comment, a concurrent run, the quiet-edit fallback, L40, Agent 5's line, re-run and outcome, the dry run, a reset of a story costed before, and a whole story - 4 comments where the comment ledger posts 16). 24 deliberate breaks, each caught.
 
 ---
 
