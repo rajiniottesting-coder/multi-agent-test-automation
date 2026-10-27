@@ -9,6 +9,50 @@ ADR-005 (the Jira label state machine) under [State management deep-dive](./GUID
 
 ---
 
+## ADR-021 — Planned inventory entries, new pages, shared elements listed once
+
+### Status
+
+Accepted (2026-10).
+
+### Context
+
+The inventory comes from crawling the live application, and Agent 2 may use
+inventory keys only. A test for an element not deployed yet could not be
+automated (L19); a new page was not crawled at all, and nothing said it
+existed (L25). The first nightly inventory-update PR (#228) also showed the
+crawl counting an element as covered only by its own page's selectors: a
+footer field already in the inventory under one page's key was proposed again
+on four other pages under a new name (G14).
+
+### Decision
+
+1. **Planned entries are declared, not guessed.** A person adds an element - or
+   a page - from the design with the selector it promises
+   (`scripts.plan_inventory`); it is declared `planned` (a page also
+   `planned_page`, with at least one planned element). Agent 2 may use it and
+   its PR names it; every checker reads it as not live yet, never drift.
+2. **Deployment confirms it, nothing else.** The nightly update confirms a
+   planned key the crawl finds; it never removes one, and does not touch a
+   planned page until one of its planned keys is found - a 404, a redirect or
+   a placeholder at the url is not the page. A confirmed planned page is
+   crawled like any other, so its other live elements arrive the same night.
+3. **One element, one key.** The crawl marks what other pages' live keys cover,
+   with the owner's name; such an element is listed with that key, never added
+   again. Moving a shared section to an `always` page stays a person's call.
+4. **New pages are listed, not invented.** Same-origin links to paths no
+   inventory url matches are listed; adding the entry is a person's decision.
+
+### Consequences
+
+- Tests can be written before deployment; they are red until it, and the PR says so.
+- The nightly PR stops proposing duplicates of shared sections.
+- Limits: L32 (a page nothing links to is not found), L33 (a planned selector the
+  deployment does not match stays planned), L34 (a shared element reachable from
+  one page object until moved to an `always` page).
+
+---
+
 ## ADR-020 — No approved test case is dropped in silence
 
 ### Status

@@ -218,6 +218,8 @@ parts of the shape are required and which were invented for illustration.
 | `multi_match` | Keys whose selector matches several elements. A declaration, not a fault — `verify_locators` stops reporting them |
 | `conditional` | Keys that do not exist on page load: a modal, an error, an empty-state banner |
 | `removed` | Keys of elements a change story removed, kept only while a test asserts they are gone. Written by Agent 0's context update; missing reads as expected, present again as drift; the nightly inventory update deletes the key when no test names it |
+| `planned` | Keys of elements added from the design before they are deployed (`python -m scripts.plan_inventory element ...`). Agent 2 may use them (its PR says so); missing reads as not live yet, never drift; the nightly inventory update takes a key off this list once the element is live |
+| `planned_page` | `true` on a page not deployed yet (`python -m scripts.plan_inventory page ...`), with at least one `planned` element - finding one live is the only proof the page is deployed. Until then the nightly update does not touch the page; then the flag goes and its live elements are added |
 | `elements_notes` | The highest-value field in the file, and the one a crawler can never produce. Behaviour, traps, starting state |
 | `errors` | Validation messages the app shows, so a negative test asserts real text |
 
@@ -338,9 +340,12 @@ usually not the draft you just produced.
 | `COND` | zero matches, and the key is declared `conditional` — expected |
 | `GONE` | zero matches, and the key is declared `removed` — expected |
 | `BACK` | one or more matches, and the key is declared `removed` — the removed element is on the page again |
+| `PLAN` | zero matches, and the key is declared `planned` — not deployed yet, expected |
+| `LIVE` | one match, and the key is declared `planned` — deployed; the nightly update confirms it |
+| `PLANNED PAGE` | a `planned_page` that did not load or render — not deployed yet, expected |
 | `REDIRECTED` | the page sent us elsewhere; reported once instead of fifty times |
 
-`FAMILY`, `COND` and `GONE` are why writing those declarations down matters:
+`FAMILY`, `COND`, `GONE` and `PLAN` are why writing those declarations down matters:
 they turn fifty false alarms into silence.
 
 ---

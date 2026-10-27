@@ -635,6 +635,12 @@ inventory alone:
 | More than `hold_ratio` of a page's selectors stale | **Leaves the page alone** and lists it: an error page, an outage or a redesign is a person's call |
 | A key declared `removed`, still gone, that no code names any more (on `main` or in an open PR) | **Removes** it with its note and its list entries - its absence test is gone |
 | A key declared `removed` that is on the page again | Listed: the removal was undone, or the selector matches something else |
+| A live element **another page's key already covers** (a header or footer repeated on every page) | Listed with that key, **never added** a second time under a new name - move it to an `always` page if several page objects need it |
+| A key declared `planned` (added from the design before deployment), found on the page | **Confirms** it: it leaves `planned` |
+| A key declared `planned`, not found | Listed as not live yet; never stale, never removed |
+| A page declared `planned_page`, none of its planned keys found (a 404, a redirect, a placeholder) | **Not touched** at all; listed |
+| A `planned_page` whose first planned key is found | The flag goes, and the page is updated like any other - its other live elements are **added** the same night |
+| Links to same-origin pages no inventory page's url (or `{template}`) matches | Listed, grouped by first path segment - add a page entry (or a planned one) to have one crawled |
 | Ambiguous selectors, unreachable pages, untracked test-ids | Listed only |
 
 Merge it after checking the names and Agent 4's run on it - the suite runs
@@ -655,6 +661,25 @@ is printed, not opened. Edits are selective, never a regeneration, so curated
 notes and declarations stay; each table in the body shows at most 60 rows. The
 manual route (`check_inventory_staleness --propose` → mark rows →
 `apply_inventory_proposals`) still works for a one-off.
+
+**Tests before deployment - planned entries (F-12).** A test case for an
+element - or a page - that is not deployed yet can be automated now: add it from
+the design, with the selector the design promises (a test-id, a label, a
+heading's text):
+
+```
+python -m scripts.plan_inventory element --page <page> --key <key> --selector "<selector>"
+python -m scripts.plan_inventory page --page <page> --url /<path> --component "<Component>" \
+    --element <key>="<selector>" [--element ...]
+```
+
+It is declared `planned` (a page also `planned_page: true`, with at least one
+planned element - finding one live is what confirms the page). Agent 2 may use
+it; its PR lists *Uses planned elements - not deployed yet*, because those tests
+fail until the deployment. Every checker reads it as not live yet, never drift;
+the nightly update confirms it once the crawl finds it, and crawls a confirmed
+planned page like any other. `scripts.onboarding_check` warns about a planned
+key with no selector or a planned page with no planned element.
 
 ### Reconcile — finish or undo (`core/impact_reconcile.py`)
 
@@ -1495,10 +1520,12 @@ covers. Exits non-zero under `--fail-on-drift` (for a CI gate). The nightly
 affected tests and proposes the inventory update as a pull request
 (`scripts/propose_inventory_update.py`, see "Inventory update" under Change
 stories). The nightly `Inventory Health` workflow measures with
-`verify_locators` instead. Both tools honour `multi_match`, `conditional` and
-`removed`, so a declared family, an element shown only after a click and one a
-change story removed read as expected rather than as a fault - and a removed
-element on the page again reads as drift (`BACK`).
+`verify_locators` instead. Both tools honour `multi_match`, `conditional`,
+`removed` and `planned`, so a declared family, an element shown only after a
+click, one a change story removed and one not deployed yet read as expected
+rather than as a fault - a removed element on the page again reads as drift
+(`BACK`), a planned one found as `LIVE`, and a `planned_page` not deployed yet as
+`PLANNED PAGE`.
 
 ### Every section of the inventory JSON, and what to do with it
 
@@ -1515,6 +1542,8 @@ element on the page again reads as drift (`BACK`).
 | `multi_match` | keys matching several elements | **verify** — measured at crawl time, confirm it is right |
 | `conditional` | elements that exist only after an interaction | **verify** |
 | `removed` | elements a change story removed, kept only because a test asserts they are gone - written by the context update at hand-over | **leave**: missing reads as expected, present again as drift; the nightly inventory update deletes the key once no test names it |
+| `planned` | elements added from the design before deployment (`scripts.plan_inventory`) | **leave**: missing reads as not live yet; the nightly inventory update takes the key off the list once the element is live |
+| `planned_page` | `true` for a page not deployed yet, with at least one `planned` element | **leave**: the page is not touched until a planned element is found, then the flag goes |
 | `async_family` | a family the app fills asynchronously | **add** where index 0 may be a loading row |
 | `errors` | validation message text | **fill** if the page has any |
 | `implementation_status` | draft marker | **delete** |

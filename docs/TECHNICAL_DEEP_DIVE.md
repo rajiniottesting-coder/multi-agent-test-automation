@@ -77,6 +77,7 @@ core/
   impact_settings.py
   impact_trace.py
   in_flight.py
+  inventory_planned.py
   inventory_proposals.py
   inventory_update.py
   json_block.py
@@ -122,6 +123,7 @@ scripts/
   impact_handover.py
   impact_reconcile.py
   onboarding_check.py
+  plan_inventory.py
   promote_draft.py
   propose_context_addition.py
   propose_inventory_update.py
@@ -1707,7 +1709,39 @@ it is a `row_family` (a string or a list); else **removed** with
 Uncovered elements are **added** with their declarations through
 `inventory_proposals.refusal_reason()` - the proposals file's rules - up to
 `max_additions_per_page`. A page with more than one stale key and a stale share
-above `hold_ratio` is held: nothing on it changes. `dump_like()` writes the
+above `hold_ratio` is held: nothing on it changes.
+
+*P1-4.* **Shared (G14):** `check_inventory_staleness` builds
+`owners` - every non-`always` page's live keys (not `removed`, not `planned`) as
+`{selector: "<page>.<key>"}` - and passes the other pages' to
+`browser.collect_uncovered(shared=)`, which marks their nodes with
+`introspect.SHARED_ATTR` after the page's own `COVER_ATTR` marks (first owner
+kept). `uncovered_descriptors()` excludes both marks; `shared_descriptors()`
+strips the mark and `uncovered_entry()` returns `shared` = `{generated name:
+{selector, covered_by}}` (built per descriptor by `build_page_entry`), which
+`build_update()` lists as `shared`, never adds. **Planned (F-12):**
+`diff_page(declared_planned=)` drops planned keys from `missing` and returns
+`planned_live` (1 match, or ≥1 for a declared family) and `planned_waiting` (0);
+`summarize_drift()` counts both, outside `has_drift`. The crawl reports a
+`planned_page` that is unreachable or redirected in `planned_pages_waiting`, not
+`unreachable_pages`. `build_update()` never treats a key the page declares
+`planned` as stale; a `planned_page` with no planned key live is skipped whole
+(listed; one with no planned key at all is `refused`); then, after the hold
+check, each live planned key is `confirmed` (it leaves `planned`, the list goes
+when empty) and `planned_page` is dropped - the page's live elements are added
+the same night (L25). **Unlisted pages (L25):** in `--compare`, every
+descriptor's `href` per page goes to `introspect.unlisted_paths()`: same-origin,
+not an asset / anchor / mail / script link, matching no non-`always` page's url
+or `{template}` (`_path_pattern()`), grouped by first segment, at most 20 -
+listed in the PR body. Writers of planned entries:
+`core.inventory_planned.add_planned_element()` / `add_planned_page()` (the
+shared refusal rules; a page needs one element and a free url) behind
+`scripts/plan_inventory.py`; readers besides the above: `verify_locators`
+(`PLAN`, `LIVE`, `PLANNED PAGE`), `promote_draft.prune()`,
+`core.onboarding.planned_checks()`, and Agent 2 -
+`inventory_planned.planned_keys_used()` (each `sel("<key>")` of a module whose
+`INVENTORY_PAGE` declares it planned) adds *Uses planned elements* to the PR
+body and `uses_planned` to the result. `dump_like()` writes the
 file in its own format (indent 2, non-ASCII kept, the same final newline or
 none), so the diff is the change; the real inventory round-trips byte for
 byte. `render_body()` caps each table at 60 rows and the body at 60,000
