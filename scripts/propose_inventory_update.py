@@ -47,6 +47,7 @@ def plan(drift: dict, root: Path, cfg: dict, inventory_file: str, in_flight=froz
     upd = iu.build_update(drift, json.loads(original), used,
                           max_additions_per_page=int(cfg["max_additions_per_page"]),
                           hold_ratio=float(cfg["hold_ratio"]),
+                          layout_min_pages=int(cfg["layout_min_pages"]),
                           allow_removal=in_flight is not None,
                           no_removal_reason="open pull requests could not be checked")
     return upd, original

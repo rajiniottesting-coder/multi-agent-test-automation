@@ -54,7 +54,10 @@ WHAT IT CHANGES (each rule errs toward leaving the inventory alone)
              other - its live elements are ADDED (a new page, L25).
   * SHARED   a live element that ANOTHER page's key already covers (a footer or
              header on every page; G14) is listed with that key, never added a
-             second time under a new name.
+             second time under a new name. A new element the crawl finds on
+             EVERY measured page (at least `layout_min_pages`) - a shared section
+             no key covers yet - is listed once with its pages, never added to
+             each: it belongs once on a page declared `always`.
   * REPORT   ambiguous selectors, unreachable pages, untracked test-ids, planned
              elements and pages not live yet, and pages the application links to
              that the inventory has no entry for (L25): listed, never changed.
@@ -130,6 +133,7 @@ class InventoryUpdate:
     planned_waiting: list = field(default_factory=list)  # {page, element, selector}: planned, not live
     planned_pages_waiting: list = field(default_factory=list)  # [page] declared, not live yet
     shared: list = field(default_factory=list)        # {page, element, selector, covered_by}
+    layout: list = field(default_factory=list)        # {element, selector, pages}: new on every page
     unlisted_paths: list = field(default_factory=list)  # {group, count, example, linked_from}
     ambiguous: list = field(default_factory=list)     # {page, element, selector, matches}
     unreachable: list = field(default_factory=list)   # [page]
@@ -275,7 +279,8 @@ def _declare(page: dict, key: str, declared: dict) -> None:
 def build_update(drift: dict, inventory: dict, used: set, *,
                  max_additions_per_page: int = 20, hold_ratio: float = 0.5,
                  allow_removal: bool = True,
-                 no_removal_reason: str = "") -> InventoryUpdate:
+                 no_removal_reason: str = "",
+                 layout_min_pages: int = 3) -> InventoryUpdate:
     """The inventory after tonight's drift report, and what changed (pure).
 
     `drift` is check_inventory_staleness's JSON report (with --compare for
@@ -290,6 +295,24 @@ def build_update(drift: dict, inventory: dict, used: set, *,
     upd.unreachable = list(drift.get("unreachable_pages") or [])
     upd.planned_pages_waiting = list(drift.get("planned_pages_waiting") or [])
     upd.unlisted_paths = list(drift.get("unlisted_paths") or [])
+
+    # A NEW element on every page measured tonight is a shared section (a
+    # header, a footer) that no key covers yet: added page by page it would be
+    # N keys for one element. Measured = compared pages the update may change
+    # (a planned page not live yet is not the page).
+    measured = sorted(n for n in (drift.get("pages") or {})
+                      if isinstance(pages.get(n), dict)
+                      and not (pages[n].get("planned_page")
+                               and not (drift["pages"][n] or {}).get("planned_live")))
+    by_selector: dict = {}
+    for n in measured:
+        for element, selector in (new_by_page.get(n) or {}).items():
+            by_selector.setdefault(selector, {})[n] = element
+    layout = {sel: names for sel, names in by_selector.items()
+              if len(measured) >= max(2, layout_min_pages) and set(names) == set(measured)}
+    for sel, names in sorted(layout.items()):
+        upd.layout.append({"element": sorted(set(names.values()))[0], "selector": sel,
+                           "pages": sorted(names)})
 
     for name in sorted(drift.get("pages") or {}):
         diff = drift["pages"][name] or {}
@@ -388,6 +411,8 @@ def build_update(drift: dict, inventory: dict, used: set, *,
         if isinstance(page.get("removed"), list) and not page["removed"]:
             page.pop("removed")
 
+        for element in [e for e, s_ in new.items() if s_ in layout]:
+            new.pop(element)
         added_here = 0
         for element, selector in sorted(new.items()):
             reason = refusal_reason(out, name, element, selector)
@@ -503,6 +528,13 @@ def render_body(upd: InventoryUpdate, inventory_path: str, digest: str,
                     "key - a shared section such as a header or footer. It is not added again "
                     "under a second name. If page objects need it on several pages, move it to "
                     "one page declared `always`.")
+    lines += _table("Not added - new on every page: a shared section", upd.layout,
+                    [("Element", lambda r: f"`{r['element']}`"), sel,
+                     ("Pages", lambda r: ", ".join(r["pages"]))],
+                    "The same new element is on every page checked - a header, footer or "
+                    "menu no key covers yet. Added page by page it would be one key per "
+                    "page for one element. Add it once to a page declared `always`; the "
+                    "crawl then covers it everywhere.")
     lines += _table("Not added - over the per-page limit", upd.over_cap, [el, sel])
     lines += _table("Not applied - refused", upd.refused,
                     [el, sel, ("Reason", lambda r: r["refused"])])

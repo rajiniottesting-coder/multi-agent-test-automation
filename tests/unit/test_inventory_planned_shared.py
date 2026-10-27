@@ -495,3 +495,67 @@ def test_a_held_page_confirms_nothing():
     inv = _inv()
     upd = iu.build_update(_drift(live=[LIVE], missing=stale), inv, set())
     assert upd.held_pages and upd.confirmed == [] and upd.inventory == inv
+
+
+# ── a new element on EVERY page is a shared section: listed, not added ───
+# Found by the real-browser run of P1-4: a menu link no key covered yet was
+# added once per page, the same night - PR #228's duplication for an element
+# not in the inventory at all.
+
+def _pages_drift(new_by_page, extra_pages=(), **kw):
+    names = list(new_by_page) + list(extra_pages)
+    return {"pages_checked": len(names),
+            "pages": {n: {"missing": [], "ambiguous": [], "new_data_tests": [], "reappeared": []}
+                      for n in names},
+            "new_elements": new_by_page, "new_element_declarations": {}, **kw}
+
+
+def _pages_inv(*names, **extra):
+    inv = {"pages": {n: {"url": f"/{n}", "elements": {"x": f"#{n}-x"}} for n in names}}
+    for n, fields in extra.items():
+        inv["pages"][n].update(fields)
+    return inv
+
+
+MENU = {"menu_link": "role=link[name='Menu']"}
+
+
+def test_a_new_element_on_every_measured_page_is_listed_once_not_added():
+    drift = _pages_drift({"a": {**MENU, "own_a": "#oa"}, "b": dict(MENU), "c": dict(MENU)})
+    upd = iu.build_update(drift, _pages_inv("a", "b", "c"), set())
+    assert [(r["page"], r["element"]) for r in upd.added] == [("a", "own_a")]
+    assert upd.layout == [{"element": "menu_link", "selector": "role=link[name='Menu']",
+                           "pages": ["a", "b", "c"]}]
+    body = iu.render_body(upd, "inv.json", "d")
+    assert "Not added - new on every page: a shared section (1)" in body and "a, b, c" in body
+
+
+def test_an_element_on_some_pages_only_is_page_specific_and_added():
+    drift = _pages_drift({"a": dict(MENU), "b": dict(MENU)}, extra_pages=["c"])
+    upd = iu.build_update(drift, _pages_inv("a", "b", "c"), set())
+    assert {(r["page"], r["element"]) for r in upd.added} == {("a", "menu_link"), ("b", "menu_link")}
+    assert upd.layout == []
+
+
+@pytest.mark.parametrize("minimum, layout", [(3, False), (2, True)])
+def test_below_the_minimum_page_count_nothing_is_called_layout(minimum, layout):
+    drift = _pages_drift({"a": dict(MENU), "b": dict(MENU)})
+    upd = iu.build_update(drift, _pages_inv("a", "b"), set(), layout_min_pages=minimum)
+    assert bool(upd.layout) is layout and bool(upd.added) is not layout
+
+
+def test_a_planned_page_not_live_does_not_count_as_measured():
+    drift = _pages_drift({"a": dict(MENU), "b": dict(MENU), "c": dict(MENU)}, extra_pages=["w"])
+    inv = _pages_inv("a", "b", "c", "w", w={"planned_page": True, "planned": ["x"]})
+    upd = iu.build_update(drift, inv, set())
+    assert upd.layout and upd.layout[0]["pages"] == ["a", "b", "c"] and upd.added == []
+
+
+def test_the_minimum_is_configured_and_passed():
+    import yaml
+    from core.impact_settings import DEFAULTS
+    cfg = yaml.safe_load(open("config/config.yaml", encoding="utf-8"))
+    shipped = cfg["agents"]["agent0_impact"]["inventory_update"]
+    assert shipped["layout_min_pages"] == DEFAULTS["inventory_update"]["layout_min_pages"] == 3
+    src = open("scripts/propose_inventory_update.py", encoding="utf-8").read()
+    assert 'layout_min_pages=int(cfg["layout_min_pages"])' in src
