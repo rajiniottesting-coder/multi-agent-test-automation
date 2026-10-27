@@ -68,6 +68,17 @@ def handover(tracker, change_story: str, decisions: dict, review_key: str | None
         raise HandoverRefused(f"{change_story} owns {', '.join(clash)}: a story revises "
                               "its own test cases through its own run, not a hand-over")
 
+    # F-2: a test case another change is still revising - handed over, not yet
+    # merged or undone - is not revised twice. Refused, so the scan retries
+    # this hand-over by itself once that change finishes (reconcile takes
+    # `impact-applied` off on a merge or an undo); or reject the row.
+    busy = _revised_elsewhere(tracker, change_story, result.approved + result.retired,
+                              labels["applied"])
+    if busy:
+        raise HandoverRefused("being revised by another change in progress: " + "; ".join(
+            f"{key} by {', '.join(others)}" for key, others in sorted(busy.items()))
+            + " - wait for it to merge or be undone, or reject the row")
+
     for key in result.approved + result.retired:
         owner = tracker.get_parent_story_key(key)
         if owner:
@@ -110,6 +121,27 @@ def handover(tracker, change_story: str, decisions: dict, review_key: str | None
                 change_story, result.approved, result.retired, result.rejected,
                 sorted(result.owners))
     return result
+
+
+def _revised_elsewhere(tracker, change_story: str, keys, applied_label: str) -> dict:
+    """{test case: [other change story]} for each key another story impacts and
+    is still applying (`applied_label`)."""
+    busy: dict = {}
+    labels_of: dict = {}
+    for key in keys:
+        for other in tracker.get_impacting_stories(key):
+            if other == change_story:
+                continue
+            if other not in labels_of:
+                try:
+                    labels_of[other] = tracker.get_story(other).get("labels") or []
+                except Exception as e:                         # noqa: BLE001
+                    logger.warning("Could not read %s's labels (%s) - not counted as a "
+                                   "change in progress.", other, e)
+                    labels_of[other] = []
+            if applied_label in labels_of[other]:
+                busy.setdefault(key, []).append(other)
+    return busy
 
 
 def decisions_from_review(tracker, change_story: str, settings: dict | None = None) -> tuple:

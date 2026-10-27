@@ -101,11 +101,18 @@ def _story_text(story: dict) -> str:
     return f"Title: {story['summary']}\n\nDescription:\n{story.get('description') or ''}"
 
 
-def _owners_and_blocks(tracker, host, story_key: str, candidates: list) -> None:
+def _owners_and_blocks(tracker, host, story_key: str, candidates: list,
+                       settings: dict | None = None) -> None:
     """Owner per candidate (marker first, tracker second) and the in-flight
     guard (D4): a test is blocked while another story that impacts it, or its
-    owning story, still has an open pull request."""
+    owning story, still has an open pull request - or is a change in progress
+    (F-2): handed over and not finished (`impact-applied`, no PR yet), or with
+    an open Impact Review that lists the test (`impact-proposed`: no Impacts
+    link exists before the hand-over, so its report is what says so)."""
+    settings = settings or impact_settings()
+    applied = settings["labels"]["applied"]
     open_pr: dict = {}
+    in_change: dict = {}
 
     def has_open_pr(story: str) -> bool:
         if host is None:
@@ -114,6 +121,17 @@ def _owners_and_blocks(tracker, host, story_key: str, candidates: list) -> None:
             open_pr[story] = host.find_open_pr_for_story(story) is not None
         return open_pr[story]
 
+    def change_in_progress(story: str) -> bool:
+        if story not in in_change:
+            try:
+                in_change[story] = applied in (tracker.get_story(story).get("labels") or [])
+            except Exception as e:                             # noqa: BLE001
+                logger.warning("Could not read %s's labels (%s) - not counted as in "
+                               "progress.", story, e)
+                in_change[story] = False
+        return in_change[story]
+
+    claims = _claimed_by_open_reviews(tracker, story_key, settings) if candidates else {}
     for c in candidates:
         if not c.test_case_key:
             continue
@@ -121,7 +139,34 @@ def _owners_and_blocks(tracker, host, story_key: str, candidates: list) -> None:
         others = [s for s in tracker.get_impacting_stories(c.test_case_key) if s != story_key]
         if c.owner and c.owner != story_key:
             others.append(c.owner)
-        c.blocked_by = sorted({s for s in others if has_open_pr(s)})
+        c.blocked_by = sorted({s for s in others if has_open_pr(s) or change_in_progress(s)}
+                              | set(claims.get(c.test_case_key, ())))
+
+
+def _claimed_by_open_reviews(tracker, story_key: str, settings: dict) -> dict:
+    """{test case key: [change story]} - the rows of every OTHER story's open
+    Impact Review (`impact-proposed`). Read from each story's latest report;
+    a story whose report cannot be read claims nothing. Fails open."""
+    claims: dict = {}
+    try:
+        stories = tracker.find_stories_to_process(
+            {"issue_type": "Story", "required_labels": [settings["labels"]["proposed"]]},
+            max_results=50)
+    except Exception as e:                                     # noqa: BLE001
+        logger.warning("Could not list the open Impact Reviews (%s) - not checked.", e)
+        return claims
+    for s in stories:
+        if s["key"] == story_key:
+            continue
+        try:
+            report, _review = _previous_report(tracker, s["key"], settings)
+        except Exception as e:                                 # noqa: BLE001
+            logger.warning("Could not read %s's report (%s).", s["key"], e)
+            continue
+        for row in (report or {}).get("ranked") or []:
+            if row.get("key"):
+                claims.setdefault(row["key"], []).append(s["key"])
+    return claims
 
 
 def _previous_report(tracker, story_key: str, settings: dict):
@@ -378,7 +423,7 @@ def analyse_requirement(tracker, story_key: str, llm, settings: dict, root: Path
     judged, not_judged = ia.shortlist(layer1, layer2, text, settings["max_candidates"])
     for c in judged:
         c.component = ia.component_match(c, graph, list(seeds.components))
-    _owners_and_blocks(tracker, host, story_key, judged)
+    _owners_and_blocks(tracker, host, story_key, judged, settings)
 
     # Stage 5: adjudication, at most max_candidates per call; layer 1 never dropped
     judgements, dropped = {}, []
@@ -427,7 +472,7 @@ def _structural_report(graph, sha, seeds, change_ref, settings, tracker, host, c
     layer1 = ia.structural_candidates(graph, seeds)
     judged, _ = ia.shortlist(layer1, [], "", max(settings["max_candidates"], len(layer1)))
     if tracker is not None:
-        _owners_and_blocks(tracker, host, change_ref, judged)
+        _owners_and_blocks(tracker, host, change_ref, judged, settings)
     ranked = ia.rank(judged, {}, settings["weights"], settings["thresholds"],
                      signals=("structural",))
     return ia.report_dict(change_ref, chash, sha, ranked, [], False, seeds, [])
