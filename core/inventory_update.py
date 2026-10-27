@@ -45,8 +45,19 @@ WHAT IT CHANGES (each rule errs toward leaving the inventory alone)
   * HOLD     a page where more than `hold_ratio` of the selectors are stale is
              not changed at all: that is a page that did not render as itself
              (an error page, an outage, a redesign) - a person decides.
-  * REPORT   ambiguous selectors, unreachable pages and untracked test-ids:
-             listed, never changed.
+  * CONFIRM  a key declared `planned` (written from the design before the
+             element was deployed; F-12) that tonight's crawl found - once, or
+             several times for a declared family: it leaves `planned`. A planned
+             key never reads as stale and is never removed. A page declared
+             `planned_page` is not touched at all until one of its planned keys
+             is found; then the flag goes and the page is updated like any
+             other - its live elements are ADDED (a new page, L25).
+  * SHARED   a live element that ANOTHER page's key already covers (a footer or
+             header on every page; G14) is listed with that key, never added a
+             second time under a new name.
+  * REPORT   ambiguous selectors, unreachable pages, untracked test-ids, planned
+             elements and pages not live yet, and pages the application links to
+             that the inventory has no entry for (L25): listed, never changed.
 
 Nothing is merged here. The pull request is the review, and the normal checks
 run on it: Agent 4 runs the suite against the updated inventory, Agent 0 lists
@@ -93,7 +104,7 @@ DEFAULTS = _IMPACT_DEFAULTS["inventory_update"]
 
 # Page fields that list element keys. A removed key leaves every one of them.
 # (`removed` too: it declares an element gone that a test still asserts.)
-_KEY_LISTS = ("multi_match", "conditional", "removed")
+_KEY_LISTS = ("multi_match", "conditional", "removed", "planned")
 _DECLARATIONS = ("multi_match", "conditional")      # what the crawler may declare
 
 # GitHub refuses a pull request body over 65,536 characters; each table is
@@ -115,13 +126,23 @@ class InventoryUpdate:
     held_pages: list = field(default_factory=list)    # {page, stale, total}
     retired: list = field(default_factory=list)       # {page, element, selector}: declared removed, unused
     reappeared: list = field(default_factory=list)    # {page, element, selector, matches}
+    confirmed: list = field(default_factory=list)     # {page, element, selector}: planned, now live
+    planned_waiting: list = field(default_factory=list)  # {page, element, selector}: planned, not live
+    planned_pages_waiting: list = field(default_factory=list)  # [page] declared, not live yet
+    shared: list = field(default_factory=list)        # {page, element, selector, covered_by}
+    unlisted_paths: list = field(default_factory=list)  # {group, count, example, linked_from}
     ambiguous: list = field(default_factory=list)     # {page, element, selector, matches}
     unreachable: list = field(default_factory=list)   # [page]
     new_test_ids: list = field(default_factory=list)  # {page, value}
 
     @property
     def changed(self) -> bool:
-        return bool(self.added or self.replaced or self.removed or self.retired)
+        return bool(self.added or self.replaced or self.removed or self.retired
+                    or self.confirmed)
+
+    @property
+    def pages_confirmed(self) -> list:
+        return [r["page"] for r in self.confirmed if r.get("page_confirmed")]
 
 
 # ─────────────────────────────────────────────────────────────
@@ -267,6 +288,8 @@ def build_update(drift: dict, inventory: dict, used: set, *,
     new_by_page = drift.get("new_elements") or {}
     declared_by_page = drift.get("new_element_declarations") or {}
     upd.unreachable = list(drift.get("unreachable_pages") or [])
+    upd.planned_pages_waiting = list(drift.get("planned_pages_waiting") or [])
+    upd.unlisted_paths = list(drift.get("unlisted_paths") or [])
 
     for name in sorted(drift.get("pages") or {}):
         diff = drift["pages"][name] or {}
@@ -274,8 +297,29 @@ def build_update(drift: dict, inventory: dict, used: set, *,
         if not isinstance(page, dict):
             continue
         current = _selectors(page)
+        # A planned key is never stale, whatever the report says (an older
+        # checker, or a key declared planned after the crawl): the inventory's
+        # own declaration decides.
+        planned_here = set(page.get("planned") or [])
         stale = [m for m in diff.get("missing") or []
-                 if isinstance(m, dict) and m.get("element") in current]
+                 if isinstance(m, dict) and m.get("element") in current
+                 and m.get("element") not in planned_here]
+        # PLANNED (F-12). A page declared from the design is not touched until
+        # one of its planned keys is found live: before that, whatever answered
+        # at its url (a soft 404, a redirect target) is not the page.
+        live = [r for r in diff.get("planned_live") or []
+                if r.get("element") in (page.get("planned") or [])]
+        upd.planned_waiting += [{"page": name, **w} for w in diff.get("planned_waiting") or []]
+        if page.get("planned_page") and not live:
+            if not page.get("planned"):
+                upd.refused.append({"page": name, "element": "(page)",
+                                    "selector": page.get("url", ""),
+                                    "refused": "declared planned_page with no planned "
+                                               "element - nothing can confirm it is live; "
+                                               "add one the design names"})
+            elif name not in upd.planned_pages_waiting:
+                upd.planned_pages_waiting.append(name)
+            continue
         upd.ambiguous += [{"page": name, **a} for a in diff.get("ambiguous") or []]
         upd.reappeared += [{"page": name, **r} for r in diff.get("reappeared") or []]
         upd.new_test_ids += [{"page": name, "value": v} for v in diff.get("new_data_tests") or []]
@@ -284,7 +328,21 @@ def build_update(drift: dict, inventory: dict, used: set, *,
             upd.held_pages.append({"page": name, "stale": len(stale), "total": len(current)})
             continue
 
+        # Confirmed only on a page that rendered as itself (not held).
+        page_confirmed = bool(page.pop("planned_page", None))
+        for r in live:
+            page["planned"] = [k for k in page["planned"] if k != r["element"]]
+            upd.confirmed.append({"page": name, "element": r["element"],
+                                  "selector": r.get("selector", ""),
+                                  "page_confirmed": page_confirmed})
+            page_confirmed = False          # said once, on the first row
+        if isinstance(page.get("planned"), list) and not page["planned"]:
+            page.pop("planned")
+
         declared = declared_by_page.get(name) or {}
+        upd.shared += [{"page": name, "element": e, "selector": r.get("selector", ""),
+                        "covered_by": r.get("covered_by", "")}
+                       for e, r in sorted((declared.get("shared") or {}).items())]
         unstable = set(declared.get("unstable") or [])
         new = dict(new_by_page.get(name) or {})
         for element in sorted(set(new) & unstable):
@@ -403,6 +461,11 @@ def render_body(upd: InventoryUpdate, inventory_path: str, digest: str,
     lines += _table("Selectors replaced - the element is still there, its selector changed",
                     upd.replaced, [el, ("Old", lambda r: f"`{r['old']}`"),
                                    ("New", lambda r: f"`{r['new']}`")])
+    lines += _table("Planned elements now live - confirmed", upd.confirmed,
+                    [el, sel, ("Page", lambda r: "page confirmed live" if r.get("page_confirmed")
+                               else "")],
+                    "Each was declared `planned` from the design; tonight's crawl found it, so "
+                    "it leaves the `planned` list. A test using it can now pass.")
     lines += _table("Added - live elements no selector covered", upd.added, [el, sel])
     lines += _table("Removed - no longer on the page, and no code names them",
                     upd.removed, [el, sel],
@@ -434,6 +497,12 @@ def render_body(upd: InventoryUpdate, inventory_path: str, digest: str,
                     "fallback), one member of a repeated widget pinned by `>> nth=`, or "
                     "an element hidden when crawled. Add a test-id in the application, "
                     "declare a family, or write the entry by hand.")
+    lines += _table("Not added - already covered on another page", upd.shared,
+                    [el, sel, ("Covered by", lambda r: f"`{r['covered_by']}`")],
+                    "The same live element is already in the inventory under another page's "
+                    "key - a shared section such as a header or footer. It is not added again "
+                    "under a second name. If page objects need it on several pages, move it to "
+                    "one page declared `always`.")
     lines += _table("Not added - over the per-page limit", upd.over_cap, [el, sel])
     lines += _table("Not applied - refused", upd.refused,
                     [el, sel, ("Reason", lambda r: r["refused"])])
@@ -442,6 +511,24 @@ def render_body(upd: InventoryUpdate, inventory_path: str, digest: str,
     if upd.unreachable:
         lines += [f"**Unreachable pages** (not checked): "
                   f"{', '.join(f'`{p}`' for p in upd.unreachable)}", ""]
+    if upd.planned_pages_waiting or upd.planned_waiting:
+        waiting = sorted({f"`{r['page']}.{r['element']}`" for r in upd.planned_waiting})
+        lines += ["**Planned, not live yet** (declared from the design; expected, not drift): "
+                  + "; ".join(x for x in (
+                      f"pages {', '.join(f'`{p}`' for p in upd.planned_pages_waiting)}"
+                      if upd.planned_pages_waiting else "",
+                      f"elements {', '.join(waiting[:_MAX_ROWS])}" if waiting else "") if x),
+                  ""]
+    lines += _table("Pages the application links to that the inventory has no entry for",
+                    upd.unlisted_paths,
+                    [("Path", lambda r: f"`{r['group']}`" + (f" ({r['count']} paths, e.g. "
+                                                              f"`{r['example']}`)"
+                                                              if r["count"] > 1 else "")),
+                     ("Linked from", lambda r: ", ".join(r["linked_from"]))],
+                    "Listed only. To have one crawled - its elements then arrive in this "
+                    "pull request - add a page entry with its url (and `components`); for "
+                    "a page not deployed yet, declare it `planned_page` with the elements "
+                    "the design names (`scripts.plan_inventory`).")
     lines += ["_Generated by `scripts.propose_inventory_update` from the nightly drift "
               "report. A newer check closes this pull request while nobody has edited "
               "it; once a person commits to the branch, it is left alone._"]

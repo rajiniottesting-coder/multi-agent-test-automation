@@ -278,12 +278,19 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
         # background requests in flight.
         page.wait_for_load_state("load")
     except Exception as e:
+        if entry.get("planned_page"):
+            print(f"  [{page_name}] PLANNED PAGE - not live yet ({url})")
+            return 0, 0
         print(f"  [{page_name}] UNREACHABLE {url}: {type(e).__name__}")
         return 0, 0
 
     _pre = {n: s for n, s in (entry.get("elements") or {}).items()
             if isinstance(s, str) and n != "_selector_strategies"}
     if _pre and not _wait_for_render(page, _pre):
+        if entry.get("planned_page"):
+            # Declared from the design (F-12): not rendering is "not deployed".
+            print(f"  [{page_name}] PLANNED PAGE - not live yet ({url})")
+            return 0, 0
         print(f"  [{page_name}] {url}\n"
               f"    PAGE DID NOT RENDER - not one of its {len(_pre)} selectors "
               f"appeared within 15s.\n"
@@ -309,6 +316,9 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
     # Declared gone (a change story removed the element; a test asserts it is
     # absent): zero is the expected reading, any match is the problem.
     declared_removed = set(entry.get("removed") or [])
+    # Declared from the design before the element is deployed (F-12): zero is
+    # "not live yet"; found, it is LIVE and the nightly update confirms it.
+    declared_planned = set(entry.get("planned") or [])
 
     for name, sel in selectors.items():
         try:
@@ -325,9 +335,13 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
             else:
                 bad += 1
                 status, colour = f"BACK({count})", "#ef4444"
+        elif name in declared_planned and count == 0:
+            ok += 1
+            expected = True
+            status, colour = "PLAN ", "#3b82f6"
         elif count == 1:
             ok += 1
-            status, colour = "OK  ", "#22c55e"
+            status, colour = ("LIVE ", "#22c55e") if name in declared_planned else ("OK  ", "#22c55e")
         elif count == 0:
             if name in declared_conditional:
                 # Declared as existing only after an interaction. This tool

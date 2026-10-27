@@ -116,7 +116,7 @@ def prune(inventory: dict, drop_fragile: bool = False) -> list[tuple[str, int, i
             elements.pop(key, None)
 
         # A family or conditional list may now name an element that is gone.
-        for field in ("multi_match", "conditional", "async_family", "removed"):
+        for field in ("multi_match", "conditional", "async_family", "removed", "planned"):
             if field in entry:
                 kept = [k for k in entry[field] if k in elements]
                 if kept:

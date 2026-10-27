@@ -107,7 +107,9 @@ def main(argv=None) -> int:
     print(f"replaced {len(upd.replaced)}, added {len(upd.added)}, removed {len(upd.removed)}; "
           f"kept {len(upd.kept_missing)}, held pages {len(upd.held_pages)}, "
           f"no durable selector {len(upd.fragile)}, over cap {len(upd.over_cap)}, "
-          f"refused {len(upd.refused)}")
+          f"refused {len(upd.refused)}; planned confirmed {len(upd.confirmed)}, "
+          f"planned waiting {len(upd.planned_waiting)} (pages {len(upd.planned_pages_waiting)}), "
+          f"shared {len(upd.shared)}, unlisted pages {len(upd.unlisted_paths)}")
 
     if not write:
         # Agent 0's shadow mode reports and writes nothing - the drift
