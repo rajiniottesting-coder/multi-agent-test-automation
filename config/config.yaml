@@ -73,6 +73,11 @@ status_workflow:
   # merging the PR can move a card to Done.
   on_merge: "Done"
 
+  # A story whose pull request was closed WITHOUT merging, reset by reconcile
+  # (core/impact_reconcile.py, F-16): back to where a person decides to retry
+  # or drop it. Leave unset to keep the card where it is.
+  on_close_unmerged: "To Do"
+
 tracker:
   type: "jira"
 
@@ -412,6 +417,10 @@ agents:
       # On undo: labels the closed PR made untrue, removed so a retry is just
       # "remove impact-reverted, add impact-check".
       reset_labels: ["ai-processed", "human-approved", "ai-coded", "ai-incomplete", "tests-run"]
+      # A NEW story's pull request closed without merging (not a change story):
+      # these come off so it is not re-coded by itself; ai-processed stays, so
+      # its approved test cases are not drafted again. Retry: add human-approved.
+      story_reset_labels: ["human-approved", "ai-coded", "ai-incomplete", "tests-run"]
     # Live mode: at hand-over, propose the inventory and prompts/app_context
     # changes a story implies, as a pull request (never merged by an agent;
     # merge it after deployment): wording it replaces (which can update a

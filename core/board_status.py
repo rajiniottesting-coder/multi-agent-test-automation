@@ -65,7 +65,9 @@ def load_status_workflow() -> dict:
         return {"enabled": False, "on_label": {}, "on_merge": None}
     return {"enabled": bool(block.get("enabled", False)),
             "on_label": _coerce_mapping(block.get("on_label"), "on_label"),
-            "on_merge": _coerce_status(block.get("on_merge"), "on_merge")}
+            "on_merge": _coerce_status(block.get("on_merge"), "on_merge"),
+            "on_close_unmerged": _coerce_status(block.get("on_close_unmerged"),
+                                                "on_close_unmerged")}
 
 
 def _coerce_mapping(value, field: str) -> dict:
@@ -178,6 +180,31 @@ def move_card_on_merge(tracker, issue_key: str,
             f"Board: {issue_key} not moved to {status!r} - the tracker declined "
             f"the transition. The merge itself is unaffected."
         )
+        return moved
+    except Exception as e:
+        logger.warning(f"Board: could not move {issue_key} to {status!r}: {e}")
+        return False
+
+def move_card_on_close_unmerged(tracker, issue_key: str,
+                                workflow: Optional[dict] = None) -> bool:
+    """Move a story whose pull request was closed WITHOUT merging (and reset by
+    reconcile, F-16) to the `on_close_unmerged` status. Unset: no move. Same
+    never-fatal contract as every other board move."""
+    try:
+        wf = workflow if workflow is not None else load_status_workflow()
+        if not isinstance(wf, dict) or not wf.get("enabled"):
+            return False
+        status = _coerce_status(wf.get("on_close_unmerged"), "on_close_unmerged")
+    except Exception as e:
+        logger.warning(f"status_workflow is unusable ({e}); not moving the card.")
+        return False
+    if not status:
+        return False
+    try:
+        moved = tracker.transition_status(issue_key, status)
+        logger.info(f"Board: {issue_key} moved to {status!r} (PR closed unmerged)" if moved
+                    else f"Board: {issue_key} not moved to {status!r} - the tracker "
+                         f"declined the transition.")
         return moved
     except Exception as e:
         logger.warning(f"Board: could not move {issue_key} to {status!r}: {e}")
