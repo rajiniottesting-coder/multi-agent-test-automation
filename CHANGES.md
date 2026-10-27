@@ -4,13 +4,12 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## October 2026 (end) — Agent 3's review prompt stays within the model's context
+## October 2026 (end) — Agent 3's review prompt stays within the model's context, and a failed review says why
 
 **Why:** found on PR #225 - Agent 3 failed with no comment. Every changed file went into the prompt whole, and the large guides made it ~964,000 characters (~241k tokens).
 
 - `format_changed_files_for_prompt()` shows a file no test reads while it runs (`prompts/`, `docs/`, Markdown - `core.test_runtime`) as its diff, and caps the section at 300,000 characters, the largest full contents falling back to their diffs first; PR #225's prompt is now ~86k tokens. Test-code PRs are shown exactly as before (byte-for-byte on PRs #214, #217, #221, #223)
-
-- **A failed review says why:** on any exception Agent 3 posts "Could not review this pull request" with the error (`failure_note()` - configured secret values and token-shaped strings redacted) and exits 1, instead of failing with no comment
+- **A failed review says why:** on any exception Agent 3 posts "Could not review this pull request" with the error (`failure_note()` - configured secret values, token-shaped strings, key aliases and email addresses redacted) and exits 1, instead of failing with no comment
 
 Pinned by `tests/unit/test_review_prompt_budget.py` (6) and `test_review_failure_note.py` (5).
 
