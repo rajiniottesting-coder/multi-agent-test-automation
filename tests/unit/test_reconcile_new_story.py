@@ -209,3 +209,27 @@ def test_the_settings_and_board_column_are_shipped():
     assert shipped == DEFAULTS["reconcile"]["story_reset_labels"]
     assert "ai-processed" not in shipped and "human-approved" in shipped
     assert load_status_workflow()["on_close_unmerged"] == "To Do"
+
+
+# A change story's labels may be configured so ai-coded survives its undo
+# (reconcile.reset_labels is a setting). It is then still a coded story with a
+# closed PR - and must never be "set back" a second time by the new-story path.
+
+def test_a_change_undone_this_run_is_not_set_back_again(world):
+    fake, jira, gh = world
+    fake.issues[STORY]["labels"].append("impact-applied")
+    gh.close(1)
+    keep_coded = _settings(closed_scans=1,
+                           reset_labels=["ai-processed", "human-approved", "tests-run"])
+    out = rc.reconcile_all(jira, gh, keep_coded)
+    assert [r["action"] for r in out if r["story"] == STORY] == ["reverted"]
+    assert "ai-coded" in fake.issues[STORY]["labels"] and not _notes(fake, "story-reset")
+
+
+def test_an_undone_change_is_never_set_back_on_a_later_scan(world):
+    fake, jira, gh = world
+    fake.issues[STORY]["labels"] = ["ai-coded", "impact-reverted", "ai-processed"]
+    gh.close(1)
+    for _ in range(3):
+        assert rc.reconcile_all(jira, gh, _settings(closed_scans=1)) == []
+    assert not _notes(fake, "story-reset") and not _notes(fake, "closed-unmerged")
