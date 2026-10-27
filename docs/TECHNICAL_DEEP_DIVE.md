@@ -1570,7 +1570,14 @@ undecided review) leaves the story waiting.
 — which can include a text-based selector, flagged "verify after deployment" —
 and the context notes, then `_apply_rewrites()` replaces each untrue passage
 found verbatim; anything not found is dropped and reported. Note rewrites touch
-NOTE values only, so a selector is never rewritten by them. Code mentioning the old text is listed, not
+NOTE values only, so a selector is never rewritten by them. The rewrite call is
+scoped (F-10): `scoped_sources()` keeps `core.md` and the story's Component
+modules (`core.app_context.select_note_modules()`, the rule Agent 1's
+`load_app_context_block()` now calls too) and returns the inventory pages
+`selected_page_names()` keeps (`filter_inventory_by_components()`' rule);
+`_notes_block(sources, pages)` offers only those pages' notes plus notes outside
+`pages`; `propose(..., offered=...)` drops a rewrite of a file that was not
+offered. Wording replacement stays global - it is exact and deterministic. Code mentioning the old text is listed, not
 edited. `open_pull_request()` uses `branch_for()` — the story key in lower case,
 or a hash, so the branch never carries an issue key — and the
 `[agent0:context-update]` marker makes it idempotent. A marker that opened a

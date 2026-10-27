@@ -84,6 +84,55 @@ def _norm_component(name: str) -> str:
     return name.strip().lower().replace(" ", "_").replace("-", "_")
 
 
+def select_note_modules(folder: Path, components: Optional[list[str]] = None) -> list[Path]:
+    """The app-context modules a story's Components select - the one rule for
+    every reader of `prompts/app_context/` (Agent 1's draft, Agent 0's context
+    update):
+
+      - `core.md` always, first, when it exists;
+      - plus one `<component>.md` per Component, matched case/space/hyphen-
+        insensitively ("User Management" -> user_management.md);
+      - a story with no Components, or whose Components match no module, gets
+        ALL modules - a safe default that never silently drops context.
+
+    Unmatched Components beside matched ones are logged and skipped."""
+    import logging as _logging
+    log = _logging.getLogger(__name__)
+    module_files = {_norm_component(p.stem): p for p in sorted(Path(folder).glob("*.md"))}
+    selected: list[Path] = []
+    core = module_files.pop("core", None)
+    if core is not None:
+        selected.append(core)
+    requested = [_norm_component(c) for c in (components or []) if c]
+    matched = [module_files[r] for r in requested if r in module_files]
+    if matched:
+        unmatched = [r for r in requested if r not in module_files]
+        if unmatched:
+            log.info("Module context: no file for component(s) %s — using matched "
+                     "modules only (%s).", unmatched, [p.stem for p in matched])
+        return selected + list(dict.fromkeys(matched))
+    if requested:
+        log.info("Module context: story components %s matched no files — using all "
+                 "modules as a safe default.", requested)
+    return selected + list(module_files.values())
+
+
+def selected_page_names(data: dict, components: Optional[list[str]] = None) -> set:
+    """Names of the inventory pages `filter_inventory_by_components` keeps for
+    these Components (same rule: `always` pages plus matching ones; none
+    requested or none matching -> every page)."""
+    pages = (data or {}).get("pages") if isinstance(data, dict) else None
+    if not isinstance(pages, dict):
+        return set()
+    requested = {_norm_component(c) for c in (components or []) if c}
+    if not requested:
+        return set(pages)
+    keep = {name for name, page in pages.items() if isinstance(page, dict) and (
+        page.get("always") or requested & {_norm_component(c) for c in page.get("components") or []})}
+    matched = {name for name in keep if not pages[name].get("always")}
+    return keep if matched else set(pages)
+
+
 # Internal inventory keys that drive our filtering but are NOT content the LLM
 # needs — stripped from the injected string to save tokens.
 _INVENTORY_META_KEYS = ("components", "always")

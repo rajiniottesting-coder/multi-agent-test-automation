@@ -103,36 +103,10 @@ def load_app_context_block(components: list[str] | None = None) -> str:
             return ""
         return path.read_text(encoding="utf-8")
 
-    def _norm(name: str) -> str:
-        return name.strip().lower().replace(" ", "_").replace("-", "_")
-
-    module_files = {_norm(p.stem): p for p in sorted(folder.glob("*.md"))}
-
-    blocks: list[str] = []
-    core = module_files.pop("core", None)
-    if core is not None:
-        blocks.append(core.read_text(encoding="utf-8"))
-
-    requested = [_norm(c) for c in (components or [])]
-    matched = [module_files[r] for r in requested if r in module_files]
-
-    if matched:
-        for p in matched:
-            blocks.append(p.read_text(encoding="utf-8"))
-        unmatched = [r for r in requested if r not in module_files]
-        if unmatched:
-            logger.info(
-                "Module context: no file for component(s) %s — injecting matched "
-                "modules only (%s).", unmatched, [p.stem for p in matched],
-            )
-    else:
-        if requested:
-            logger.info(
-                "Module context: story components %s matched no files — "
-                "injecting all modules as a safe default.", requested,
-            )
-        for p in module_files.values():
-            blocks.append(p.read_text(encoding="utf-8"))
+    # One selection rule for every reader of the modules (core.app_context).
+    from core.app_context import select_note_modules
+    blocks: list[str] = [p.read_text(encoding="utf-8")
+                         for p in select_note_modules(folder, components)]
 
     if not blocks:
         logger.warning(
