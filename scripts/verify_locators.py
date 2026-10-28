@@ -109,6 +109,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -281,6 +282,29 @@ def _wait_for_render(page, selectors: dict, timeout_ms: int = 15000) -> bool:
         page.wait_for_timeout(250)
 
 
+def exact_text_form(selector: str) -> str | None:
+    """The exact-match form of a contains-match text selector, or None.
+
+    `text=All Items` (unquoted) is a case-INSENSITIVE SUBSTRING match in
+    Playwright: it also matches "All Items Catalog", "all items" in a menu, or
+    a hidden copy - one site change away from matching two. `text="All Items"`
+    (quoted) matches only an element whose whole text is exactly that. Only a
+    whole `text=` selector is converted; a chained or already-quoted one is not.
+    """
+    m = re.fullmatch(r"text=(?![\"'])(.+)", (selector or "").strip())
+    if not m or ">>" in m.group(1):
+        return None
+    words = m.group(1).strip()
+    return 'text="' + words.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _count(page, selector: str) -> int:
+    try:
+        return _resolve_one(page, selector).count()
+    except Exception:                                          # noqa: BLE001
+        return -1
+
+
 def _describe_matches(locator, limit: int = _MAX_DESCRIBED) -> list[str]:
     """One line per match, at most `limit` - [] when they cannot be read."""
     try:
@@ -349,6 +373,12 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
     ok = bad = 0
     declared_family = set(entry.get("multi_match") or [])
     measured_family: list[tuple[str, int]] = []
+    # Ambiguous keys whose exact text form resolves to one element: the fix.
+    exact_fixes: dict = {}
+    # Keys that resolve to one today through a contains-match text selector
+    # whose exact form also resolves to one: safe to tighten before the site
+    # adds similar words somewhere and they break the way an ambiguous one did.
+    tighten: dict = {}
 
     # The inventory already states which keys are EXPECTED to match several
     # elements, and which cannot be reached by a tool that never clicks.
@@ -428,6 +458,15 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
                 print(f"                {i}. {line}")
             if described and count > len(described):
                 print(f"                ... and {count - len(described)} more")
+            exact = exact_text_form(sel)
+            if exact and _count(page, exact) == 1:
+                exact_fixes[name] = exact
+                print(f"                fix: {exact} matches exactly one (the whole text, "
+                      f"exact) - use it for this key")
+        elif count == 1 and not expected:
+            exact = exact_text_form(sel)
+            if exact and _count(page, exact) == 1:
+                tighten[name] = exact
         if pause and count >= 1:
             time.sleep(pause)
 
@@ -440,18 +479,33 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
     # be closed resolves to 0 or 1. Auto-editing the inventory from that would
     # silently UNCLASSIFY a real family, which is worse than not classifying it
     # at all. The human applies it; the tool only has to notice.
-    unlisted = [(n, c) for n, c in measured_family if n not in declared_family]
+    #
+    # A key meant to be ONE element (a heading, a message) must not be declared
+    # a family to silence it: that hides the drift. Its fix is a tighter
+    # selector - printed above when the exact text form is one. So the
+    # suggestion leaves out keys with an exact fix, and says when it applies.
+    unlisted = [(n, c) for n, c in measured_family
+                if n not in declared_family and n not in exact_fixes]
     if unlisted:
-        print(f"\n    multi_match SUGGESTION for [{page_name}] - "
-              f"{len(unlisted)} key(s) matched >1 element but are not listed:")
+        print(f"\n    {len(unlisted)} key(s) on [{page_name}] matched more than one element "
+              f"and are not declared as families:")
         for n, c in unlisted:
             print(f"      {n:28} matched {c} elements")
+        print("      Meant to be ONE element? Tighten its selector to that one (the list of\n"
+              "      matches above shows which) - never declare it a family to silence it.\n"
+              "      Meant to be EVERY match (rows, cards, buttons)? Declare the family:")
         merged = sorted(declared_family | {n for n, _ in unlisted})
-        print('      paste into the page entry:')
         print('        "multi_match": ['
               + ", ".join(f'"{n}"' for n in merged) + '],')
         print("      and give each one a `<key>_first` sibling "
               "('<selector> >> nth=0') if a test needs a single element.")
+    if tighten:
+        print(f"\n    note: {len(tighten)} key(s) on [{page_name}] resolve today through a "
+              f"contains-match `text=` selector,\n"
+              f"    and their exact form also resolves to one - tighten them before the site\n"
+              f"    adds similar words (not a failure):")
+        for n, exact in tighten.items():
+            print(f"      {n:28} {exact}")
 
     # A declared family that measured 1 is NOT an error: a closed dropdown or an
     # unsubmitted form legitimately renders one member or none. Say so quietly

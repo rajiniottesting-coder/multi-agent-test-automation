@@ -348,6 +348,17 @@ usually not the draft you just produced.
 `FAMILY`, `COND`, `GONE` and `PLAN` are why writing those declarations down matters:
 they turn fifty false alarms into silence.
 
+**An `AMBIG` line lists what it matched** (tag, classes, shown or hidden, text),
+and a contains-match `text=` selector gets a `fix:` line with its exact form when
+that resolves to one element. A key meant to be ONE element - a heading, a
+message - is fixed by tightening its selector, never by declaring it
+`multi_match`: that silences the drift instead of fixing it. In Playwright an
+unquoted `text=Words` is a case-insensitive *substring* match (it also catches
+"Words Catalog", "words" in a menu, a hidden copy); the quoted `text="Words"`
+matches only an element whose whole text is exactly that. A run also lists, as a
+note and not a failure, the keys whose contains-match selector could already be
+tightened that way.
+
 ---
 
 # 5 · check_inventory_staleness
