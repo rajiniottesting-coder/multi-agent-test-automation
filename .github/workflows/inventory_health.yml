@@ -165,13 +165,16 @@ jobs:
               head = ["## ❌ Selector drift detected", "",
                       "One or more selectors no longer resolve to exactly one "
                       "element. Read the report below, then:", "",
-                      "1. Reproduce locally, watching the browser:",
+                      "1. Each **AMBIG** line lists what it matched; a contains-match "
+                      "`text=` selector also gets a `fix:` line. To watch it locally:",
                       "   `python -m scripts.verify_locators --page <page> --only-problems`",
                       "2. **STALE** (0 matches) — the app changed. Fix that selector "
                       "in the inventory by hand.",
-                      "3. **AMBIG** (>1) — if the key is already in that page's "
-                      "`multi_match`, this is expected and not a defect. If it is "
-                      "not, add it.",
+                      "3. **AMBIG** (>1) — a key meant to be ONE element (a heading, "
+                      "a message): tighten its selector to that element - use the "
+                      "`fix:` line when there is one. Never declare it `multi_match` "
+                      "to silence it: that hides the drift. Only a key meant to be "
+                      "EVERY match (rows, cards, buttons) belongs in `multi_match`.",
                       "4. Keys listed under `conditional` only exist after an "
                       "interaction, so a tool that never clicks always reports them "
                       "stale. Do not 'fix' those.", "",

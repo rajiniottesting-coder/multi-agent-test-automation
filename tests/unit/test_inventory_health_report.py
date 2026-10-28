@@ -190,3 +190,77 @@ def test_no_source_file_has_an_invalid_escape():
     assert len(_SOURCES) > 100
     assert not offenders, "use a raw string (r\"...\") or escape the backslash:\n" + \
         "\n".join(offenders)
+
+
+# ── a contains-match text selector: the fix, and the ones to tighten ───────
+#
+# Found on the second drift report (run #90, 28 Oct 2026): the site added a
+# visible "<words> Catalog" span, and an unquoted `text=<words>` heading
+# selector - a case-insensitive substring match - caught it too. The report's
+# advice was to declare the heading a multi_match family, which would have
+# hidden the drift. Proven in real Chromium while this was built: the quoted
+# form matched only the heading, extra whitespace included.
+
+@pytest.mark.parametrize("selector, exact", [
+    ("text=Some Words", 'text="Some Words"'),
+    ("text= Some Words ", 'text="Some Words"'),
+    ('text=Say "hi"', 'text="Say \\"hi\\""'),
+    ('text="Some Words"', None),
+    ("text='Some Words'", None),
+    ("css=div >> text=Some Words", None),
+    ("#an-id", None),
+    ("role=heading[name='Some Words']", None),
+])
+def test_the_exact_form_of_a_text_selector(selector, exact):
+    from scripts.verify_locators import exact_text_form
+    assert exact_text_form(selector) == exact
+
+
+def _counts(mapping):
+    return lambda page, sel: _locator(mapping[sel], ['<span> shown "Some Words Catalog"',
+                                                     '<h2.title> shown "Some Words"'])
+
+
+def test_an_ambiguous_text_selector_is_given_its_exact_fix(vl, monkeypatch, capsys):
+    monkeypatch.setattr(vl, "_resolve_one", _counts({"text=Some Words": 2,
+                                                     'text="Some Words"': 1}))
+    entry = {"url": "/p", "elements": {"heading": "text=Some Words"}}
+    assert vl._verify_page(MagicMock(), "https://x.test", "p", entry, 0, False) == (0, 1), \
+        "still a failure until the inventory is fixed"
+    out = capsys.readouterr().out
+    assert 'fix: text="Some Words" matches exactly one' in out
+    assert '"multi_match"' not in out, "never told to declare a heading a family"
+
+
+def test_without_an_exact_fix_the_family_advice_says_when_it_applies(vl, monkeypatch, capsys):
+    monkeypatch.setattr(vl, "_resolve_one", _counts({"li.row": 3}))
+    vl._verify_page(MagicMock(), "https://x.test", "p", {"url": "/p", "elements": {"rows": "li.row"}},
+                    0, False)
+    out = capsys.readouterr().out
+    assert "Meant to be ONE element? Tighten its selector" in out
+    assert "never declare it a family to silence it" in out
+    assert '"multi_match": ["rows"]' in out
+
+
+def test_a_text_selector_that_could_be_exact_is_listed_not_failed(vl, monkeypatch, capsys):
+    monkeypatch.setattr(vl, "_resolve_one", _counts({
+        "text=Heading": 1, 'text="Heading"': 1,          # can be tightened
+        "text=Greeting": 1, 'text="Greeting"': 0,        # its element says more: keep
+        "#save": 1}))
+    entry = {"url": "/p", "elements": {"heading": "text=Heading", "greeting": "text=Greeting",
+                                       "save": "#save"}}
+    assert vl._verify_page(MagicMock(), "https://x.test", "p", entry, 0, False) == (3, 0)
+    out = capsys.readouterr().out
+    assert "note: 1 key(s) on [p] resolve today through a contains-match" in out
+    assert 'heading                      text="Heading"' in out
+    assert "greeting" not in out.split("note:")[1]
+
+
+def test_declared_families_and_conditional_keys_are_never_tightened(vl, monkeypatch, capsys):
+    monkeypatch.setattr(vl, "_resolve_one", _counts({"text=Add": 4, 'text="Add"': 1,
+                                                     "text=Saved": 0, 'text="Saved"': 0}))
+    entry = {"url": "/p", "multi_match": ["adds"], "conditional": ["saved"],
+             "elements": {"adds": "text=Add", "saved": "text=Saved"}}
+    vl._verify_page(MagicMock(), "https://x.test", "p", entry, 0, False)
+    out = capsys.readouterr().out
+    assert "fix:" not in out and "note:" not in out.replace("note: declared multi_match", "")

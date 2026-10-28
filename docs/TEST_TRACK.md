@@ -235,7 +235,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E36f | F-30 | The App's private key replaced by a wrong one (a copy), then restored | Every agent job fails at *Agent identity* with the reason, never writes as `GH_PAT`; GitHub emails the workflow's owner; restored → green | ⬜ | |
 | E36g | F-30 | `GH_APP_CLIENT_ID` emptied for one run (GH_PAT still set) | The run writes as `GH_PAT`'s owner with the warning; restored → the App again | ⬜ | |
 | E36h | #235 | A story PR merged (E36d) | Story Done on merge moves the story to Done with the branch read from the environment (the job log shows `--branch "$BRANCH"`) | ⬜ | |
-| E37 | #237 | *Inventory Health* run by hand (on the branch, then nightly) | Each `AMBIG` line lists its matches (tag, classes, shown/hidden, text); the login page is reported `(signed out)` with its selectors measured, not "did not render"; no `SyntaxWarning` in the log | ⬜ | |
+| E37 | #237 | *Inventory Health* run by hand (on the branch, then nightly) | Each `AMBIG` line lists its matches (tag, classes, shown/hidden, text); the login page is reported `(signed out)` with its selectors measured, not "did not render"; no `SyntaxWarning` in the log; an ambiguous contains-match `text=` key shows a `fix:` line with its exact form; the run passes after the inventory fix, with a note (not a failure) listing the keys that could be tightened; the report never advises `multi_match` for a one-element key | ⬜ | |
 
 ## Not built yet: rows to add when each is built
 

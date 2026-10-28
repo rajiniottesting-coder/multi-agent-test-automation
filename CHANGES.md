@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## October 2026 (end) — the nightly inventory check says what it matched, and checks the login page (#237)
+## October 2026 (end) — the nightly inventory check says what it matched, checks the login page, and fixes a one-element drift by tightening, never by silencing (#237)
 
 **Why:** the pipeline health issue reported *Inventory Health* failing three nights in a row (25-27 Oct). Its report read `AMBIG(2)` for one key and no more, so finding the two elements needed a local reproduction; and it showed the login page as "did not render" every night - the verifier signed in first, a signed-in browser is sent away from the login page, so its selectors had never been checked. The log also began with a `SyntaxWarning: invalid escape sequence '\s'`.
 
@@ -12,7 +12,12 @@ This document records substantive changes to the framework in reverse-chronologi
 - `inventory_tools/browser.py`: the DOM-snapshot JavaScript is a raw string - the same script, no invalid escape (proven byte-for-byte)
 - `tests/unit/test_inventory_health_report.py` (12, 8 of which fail on the previous code), including a guard that no source file carries an invalid escape
 - GUIDE (*Measure - verify_locators*)
-- Not in this change: the drifted selector itself. The site changed around 25 Oct; with this report the next run names both matches, and the inventory fix follows from it
+- **The drift itself, and why it would recur (run #90 on the branch named both matches):** the site added a visible `<span>All Products Catalog`; the inventory's `text=All Products` is, in Playwright, a case-insensitive *substring* match, so it caught the span as well as the `<h2>` heading. Worse, the report header and the verifier's suggestion advised declaring such a key `multi_match` - which silences a one-element key instead of fixing it, so the next similar change would slip through the same way. Now:
+  - the inventory key uses the exact form `text="All Products"` (proven in Chromium: one match, the h2), with a dated note on why
+  - `exact_text_form` + `_count`: for an ambiguous contains-match `text=` key, the report prints a `fix:` line with the exact form when that resolves to one element
+  - every run lists, as a note and not a failure, the keys whose contains-match `text=` selector could already be tightened the same way (families and conditional keys are never listed) - so the other 15 such keys are measured before they are changed, not changed blind
+  - the family suggestion now leads with "meant to be ONE element? tighten it - never declare it a family to silence it", and leaves out keys with a `fix:` line; the report header, `inventory_readme.md` and the GUIDE say the same
+  - tests: 24 in `test_inventory_health_report.py` (12 new)
 
 ---
 

@@ -1856,11 +1856,20 @@ visitor sees (a sign-up page elsewhere) still needs `--no-login`.
                 2. <a#menu.nav-link> shown "<heading text, other casing>"
 ```
 
-so the nightly report is enough to choose the element meant: scope the selector
-to it (a role, a tag or a container), or, when every match is meant, declare the
-key in `multi_match`. A `text=` selector is a case-insensitive *substring* match
-in Playwright, so it catches any element containing those words - prefer a role
-(`role=heading[name="..."]`) or a scoped selector for a key meant to be unique.
+so the nightly report is enough to choose the element meant. A key meant to be
+ONE element (a heading, a message) is fixed by tightening its selector - never by
+declaring it `multi_match`, which only silences the drift. Only a key meant to be
+every match (rows, cards, buttons) is a family.
+
+**`text=` selectors: contains vs exact.** In Playwright an unquoted `text=Words`
+is a case-insensitive *substring* match: it also catches "Words Catalog", "words"
+in a menu, a hidden copy - one site change away from two matches (exactly what
+happened on 25 Oct 2026, run #90). The quoted `text="Words"` matches only an
+element whose whole text is exactly that. So for an ambiguous contains-match
+`text=` key the report prints a `fix:` line with the exact form when that resolves
+to one element; and every run lists, as a note (not a failure), the keys whose
+contains-match selector resolves today and whose exact form does too - tighten
+those before the site adds similar words.
 
 Exit codes: `0` clean · `1` drift · `2` login failed.
 
