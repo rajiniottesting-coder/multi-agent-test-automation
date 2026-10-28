@@ -954,7 +954,7 @@ off with one log line):
 **Whose token (F-30, ADR-025).** `GitHubClient` reads `GITHUB_TOKEN`; in CI
 every job that writes as the agents (Agent 0's four jobs, Agent 2 and its
 review fix, Story Done on merge, the health check, the sweeper) sets it from
-the step `.github/actions/agent-identity`: with `APP_CLIENT_ID` set,
+the step `.github/actions/agent-identity`: with `GH_APP_CLIENT_ID` set,
 `actions/create-github-app-token@v3` creates an installation token for this
 repository with exactly `contents: write`, `pull-requests: write`,
 `issues: write`, `actions: read` (one hour, revoked at the job's end; every

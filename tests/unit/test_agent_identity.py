@@ -7,7 +7,7 @@ a ruleset bypass, and a required approval could not be enforced.
 
 Now every job that writes as the agents takes its token from one step,
 `.github/actions/agent-identity`: a GitHub App's installation token when the
-App is configured (APP_CLIENT_ID variable, APP_PRIVATE_KEY secret), GH_PAT
+App is configured (GH_APP_CLIENT_ID variable, GH_APP_PRIVATE_KEY secret), GH_PAT
 otherwise. These tests pin the wiring, the fallback, the trust boundary (the
 step is never taken from a pull request's own checkout) and the health check's
 view of a token created per run.
@@ -69,8 +69,8 @@ def test_each_agent_job_gets_its_token_from_the_identity_step(wf, name, job):
     ids = [i for i, s in enumerate(steps) if s.get("id") == "identity"]
     assert len(ids) == 1, f"{wf}/{name}: one identity step"
     step = steps[ids[0]]
-    assert step["with"] == {"client-id": "${{ vars.APP_CLIENT_ID }}",
-                            "private-key": "${{ secrets.APP_PRIVATE_KEY }}",
+    assert step["with"] == {"client-id": "${{ vars.GH_APP_CLIENT_ID }}",
+                            "private-key": "${{ secrets.GH_APP_PRIVATE_KEY }}",
                             "fallback-token": "${{ secrets.GH_PAT }}"}
     users = [i for i, s in enumerate(steps) if TOKEN in str(s.get("env") or {})]
     assert users and all(i > ids[0] for i in users), f"{wf}/{name}: token used before it exists"
@@ -125,10 +125,10 @@ def test_the_identity_action():
 
 def test_the_app_id_is_an_identifier_and_the_key_a_credential():
     from tests.unit import test_workflow_secrets as rule
-    assert "APP_CLIENT_ID" in rule._MUST_NOT_BE_SECRET
+    assert "GH_APP_CLIENT_ID" in rule._MUST_NOT_BE_SECRET
     for wf, name, job in _agent_jobs():
         body = str(job)
-        assert "secrets.APP_CLIENT_ID" not in body and "vars.APP_PRIVATE_KEY" not in body
+        assert "secrets.GH_APP_CLIENT_ID" not in body and "vars.GH_APP_PRIVATE_KEY" not in body
 
 
 def test_the_health_check_is_told_when_the_token_is_created_per_run():

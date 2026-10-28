@@ -373,8 +373,8 @@ notifies.
 ### Change 9 - The agents' own identity on the repository (RECOMMENDED)
 
 Set up the agents' GitHub App before the first story (GUIDE →
-*Agent identity*): the variable `APP_CLIENT_ID` and the secret
-`APP_PRIVATE_KEY`, the App installed on the new repository and on its branch
+*Agent identity*): the variable `GH_APP_CLIENT_ID` and the secret
+`GH_APP_PRIVATE_KEY`, the App installed on the new repository and on its branch
 ruleset's bypass list. Without it the agents write with `GH_PAT` - as that
 person, who then cannot request changes on or approve the agents' pull
 requests. One App can serve several repositories: install it on each.

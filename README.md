@@ -454,8 +454,8 @@ Real secrets live only in `.env` (gitignored); `.env.example` is the template. I
 
 | Kind | Names |
 |---|---|
-| **Secrets** | `JIRA_EMAIL`, `JIRA_API_TOKEN`, `OPENAI_API_KEY`, `APP_PRIVATE_KEY` + the variable `APP_CLIENT_ID` (the agents' GitHub App: they write as `<app>[bot]`, so you can request changes on and approve their PRs; its PRs trigger the other workflows, which `GITHUB_TOKEN`'s cannot), `GH_PAT` (only until the App is set up: the agents then write as you), `APP_USER_REGISTERED`, `APP_PASSWORD` |
-| **Variables** | `JIRA_URL`, `JIRA_PROJECT_KEY`, `JIRA_BOARD_ID`, `GH_REPO`, `APP_CLIENT_ID`, `OPENAI_API_BASE`, `LLM_MODEL`, optional `LLM_MODEL_LIGHT`, `LLM_PRICE_INPUT_PER_1M`, `LLM_PRICE_OUTPUT_PER_1M` |
+| **Secrets** | `JIRA_EMAIL`, `JIRA_API_TOKEN`, `OPENAI_API_KEY`, `GH_APP_PRIVATE_KEY` + the variable `GH_APP_CLIENT_ID` (the agents' GitHub App: they write as `<app>[bot]`, so you can request changes on and approve their PRs; its PRs trigger the other workflows, which `GITHUB_TOKEN`'s cannot), `GH_PAT` (only until the App is set up: the agents then write as you), `APP_USER_REGISTERED`, `APP_PASSWORD` |
+| **Variables** | `JIRA_URL`, `JIRA_PROJECT_KEY`, `JIRA_BOARD_ID`, `GH_REPO`, `GH_APP_CLIENT_ID`, `OPENAI_API_BASE`, `LLM_MODEL`, optional `LLM_MODEL_LIGHT`, `LLM_PRICE_INPUT_PER_1M`, `LLM_PRICE_OUTPUT_PER_1M` |
 
 Credentials for the application under test come from CI secrets only. Full reference: [GUIDE.md → Configuration](./docs/GUIDE.md#configuration).
 

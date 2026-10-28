@@ -1324,8 +1324,8 @@ nothing is protected — a board id and a project key appear in every Jira URL.
 
 | Tab | Names |
 |---|---|
-| **Secrets** | `JIRA_API_TOKEN`, `JIRA_EMAIL`, `OPENAI_API_KEY`, `APP_PRIVATE_KEY` (the agents' GitHub App), `GH_PAT` (only until the App is set up), `APP_USER_REGISTERED`, `APP_PASSWORD` |
-| **Variables** | `JIRA_URL`, `JIRA_PROJECT_KEY`, `JIRA_BOARD_ID`, `GH_REPO`, `APP_CLIENT_ID` (the agents' GitHub App), `OPENAI_API_BASE`, `LLM_MODEL`, `LLM_MODEL_LIGHT` (optional: a cheaper model for Agents 1 and 5), both `LLM_PRICE_*` |
+| **Secrets** | `JIRA_API_TOKEN`, `JIRA_EMAIL`, `OPENAI_API_KEY`, `GH_APP_PRIVATE_KEY` (the agents' GitHub App), `GH_PAT` (only until the App is set up), `APP_USER_REGISTERED`, `APP_PASSWORD` |
+| **Variables** | `JIRA_URL`, `JIRA_PROJECT_KEY`, `JIRA_BOARD_ID`, `GH_REPO`, `GH_APP_CLIENT_ID` (the agents' GitHub App), `OPENAI_API_BASE`, `LLM_MODEL`, `LLM_MODEL_LIGHT` (optional: a cheaper model for Agents 1 and 5), both `LLM_PRICE_*` |
 
 The workflows reference them as `${{ secrets.NAME }}` and `${{ vars.NAME }}`
 respectively; `tests/unit/test_workflow_secrets.py` fails if an identifier is
@@ -1337,14 +1337,14 @@ The agents write to the repository - branches, files, pull requests, comments,
 review replies - with one token, created by the step
 `.github/actions/agent-identity` at the start of every job that writes:
 
-- **With a GitHub App** (`APP_CLIENT_ID` variable + `APP_PRIVATE_KEY` secret):
+- **With a GitHub App** (`GH_APP_CLIENT_ID` variable + `GH_APP_PRIVATE_KEY` secret):
   an installation token for this repository, created per job, valid one hour
   and revoked when the job ends. The agents' pull requests and comments are the
   App's (`<app-name>[bot]`), so **you review them like a colleague's**:
   inline comments and **Request changes** (which starts Agent 2's review fix),
   **Approve**, and a required approval becomes possible. Nothing expires to be
   rotated: the private key does not expire.
-- **Without it** (`APP_CLIENT_ID` empty): `GH_PAT` as before - the agents write
+- **Without it** (`GH_APP_CLIENT_ID` empty): `GH_PAT` as before - the agents write
   as the token's owner, a warning in every run says so, and that person must
   use `/fix` instead of Request changes (GitHub lets no author review their own
   pull request).
@@ -1372,8 +1372,10 @@ which would switch the agents back to a person's identity unnoticed.
 3. **Install App** (left menu) → your account → **Only select repositories** →
    this repository → **Install**.
 4. Repository → **Settings → Secrets and variables → Actions**: a **variable**
-   `APP_CLIENT_ID` = the Client ID (an identifier, not a secret); a **secret**
-   `APP_PRIVATE_KEY` = the whole content of the `.pem` file.
+   `GH_APP_CLIENT_ID` = the Client ID (an identifier, not a secret); a **secret**
+   `GH_APP_PRIVATE_KEY` = the whole content of the `.pem` file.
+   The names start with `GH_`, like `GH_PAT` and `GH_REPO`: they are GitHub's,
+   not the application under test's (`APP_USER_REGISTERED`, `APP_PASSWORD`).
 5. **Rulesets** (repository → Settings → Rules → Rulesets): the ruleset that
    restricts creating and updating branches to its bypass list must list the
    App (*Add bypass* → *Apps*), or the agents cannot create their branches.
@@ -1858,7 +1860,7 @@ Agent 2 (the GitHub App, else `GH_PAT`; the built-in token won't re-fire workflo
 `pull_request`, so a `workflow_dispatch` re-run would skip the report). Loop-safe:
 a real pass/fail is left alone, and a commit-SHA marker comment prevents
 double-nudging. Trigger a report-only pass anytime from the Actions tab (the
-`dry_run` input). Needs the agents' identity (`APP_CLIENT_ID` + `APP_PRIVATE_KEY`, or `GH_PAT`) and the `GH_REPO` variable already used by Agent 2.
+`dry_run` input). Needs the agents' identity (`GH_APP_CLIENT_ID` + `GH_APP_PRIVATE_KEY`, or `GH_PAT`) and the `GH_REPO` variable already used by Agent 2.
 
 ---
 
@@ -2122,17 +2124,17 @@ up the agents' GitHub App ([Agent identity](#agent-identity-the-agents-github-ap
 
 ### *Agent identity* fails: the GitHub App's token is not created
 
-The App is configured (`APP_CLIENT_ID` is set) but the token could not be made,
+The App is configured (`GH_APP_CLIENT_ID` is set) but the token could not be made,
 so the run stops before any agent writes - on purpose: falling back to `GH_PAT`
 would make the agents a person again. The step's message says why:
 - *Not Found* / *installation* - the App is not installed on this repository
   (App page → Install App).
-- *A JSON web token could not be decoded* / *key* - `APP_PRIVATE_KEY` is not the
+- *A JSON web token could not be decoded* / *key* - `GH_APP_PRIVATE_KEY` is not the
   whole `.pem` (include the BEGIN and END lines) or belongs to another App.
 - *permission* - the App lacks one of Contents, Pull requests, Issues (write) or
   Actions (read); add it on the App's page and **accept** the new permissions
   in the installation.
-To go back to `GH_PAT` for now, empty the `APP_CLIENT_ID` variable.
+To go back to `GH_PAT` for now, empty the `GH_APP_CLIENT_ID` variable.
 
 ### Agent 2 shows `[WAIT]` for a story (`waiting_for_open_pr`)
 

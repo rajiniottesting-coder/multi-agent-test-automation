@@ -198,7 +198,7 @@ def _client_default_base() -> str:
 def _redact(text: str) -> str:
     """No secret value, token-shaped string or email address in an alert."""
     import re
-    for name in ("OPENAI_API_KEY", "GITHUB_TOKEN", "GH_PAT", "APP_PRIVATE_KEY", "JIRA_API_TOKEN"):
+    for name in ("OPENAI_API_KEY", "GITHUB_TOKEN", "GH_PAT", "GH_APP_PRIVATE_KEY", "JIRA_API_TOKEN"):
         value = os.environ.get(name) or ""
         if len(value) >= 8:
             text = text.replace(value, "[redacted]")

@@ -110,8 +110,8 @@ jobs:
         id: identity
         uses: ./.github/actions/agent-identity
         with:
-          client-id: ${{ vars.APP_CLIENT_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          client-id: ${{ vars.GH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
           fallback-token: ${{ secrets.GH_PAT }}
 
       - name: Set up Python 3.13

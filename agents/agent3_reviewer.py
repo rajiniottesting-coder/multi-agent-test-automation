@@ -1206,7 +1206,7 @@ def main():
 
 
 # The environment variables whose values must never reach a PR comment.
-_SECRET_ENV = ("OPENAI_API_KEY", "GITHUB_TOKEN", "GH_PAT", "APP_PRIVATE_KEY", "JIRA_API_TOKEN",
+_SECRET_ENV = ("OPENAI_API_KEY", "GITHUB_TOKEN", "GH_PAT", "GH_APP_PRIVATE_KEY", "JIRA_API_TOKEN",
                "APP_PASSWORD")
 
 

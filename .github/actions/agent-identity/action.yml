@@ -1,13 +1,13 @@
 # The identity the agents write to the repository with (F-30).
 #
-# With a GitHub App configured - the repository variable APP_CLIENT_ID and
-# the secret APP_PRIVATE_KEY - every job creates a short-lived installation
+# With a GitHub App configured - the repository variable GH_APP_CLIENT_ID and
+# the secret GH_APP_PRIVATE_KEY - every job creates a short-lived installation
 # token (one hour, revoked when the job ends). The agents' branches, pull
 # requests, commits and comments are then the App's (<app>[bot]), not a
 # person's, so a person can review an agent's pull request: request changes
 # (which starts Agent 2's review fix), approve, and be required to.
 #
-# Without the App (APP_CLIENT_ID empty) the fallback token is used as before:
+# Without the App (GH_APP_CLIENT_ID empty) the fallback token is used as before:
 # GH_PAT, the token of the person who owns it - a warning in the run says so.
 # A configured App that cannot create a token FAILS the step: falling back
 # silently would switch the agents back to a person's identity unnoticed.
@@ -71,8 +71,8 @@ runs:
         if [ "$HAS_APP" = "true" ]; then
           echo "The agents write as the GitHub App ${APP_SLUG}[bot]."
         elif [ "$HAS_FALLBACK" = "true" ]; then
-          echo "::warning title=Agents write as a person::No GitHub App is configured (repository variable APP_CLIENT_ID), so the agents write with GH_PAT - their pull requests are that person's, who then cannot request changes on or approve them. See docs/GUIDE.md, Agent identity."
+          echo "::warning title=Agents write as a person::No GitHub App is configured (repository variable GH_APP_CLIENT_ID), so the agents write with GH_PAT - their pull requests are that person's, who then cannot request changes on or approve them. See docs/GUIDE.md, Agent identity."
         else
-          echo "::error title=No token for the agents::Neither a GitHub App (APP_CLIENT_ID + APP_PRIVATE_KEY) nor GH_PAT is configured."
+          echo "::error title=No token for the agents::Neither a GitHub App (GH_APP_CLIENT_ID + GH_APP_PRIVATE_KEY) nor GH_PAT is configured."
           exit 1
         fi
