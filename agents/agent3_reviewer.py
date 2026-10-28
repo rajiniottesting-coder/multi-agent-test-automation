@@ -46,6 +46,7 @@ from dataclasses import dataclass
 from core.app_context import AppContext
 from integrations.repo_host import get_repo_host
 from core.llm_client import LLMClient
+from core.redaction import redact
 from core.spend_budget import BudgetExceeded
 from core.schemas import ReviewReport, ReviewIssue
 from config import (
@@ -1205,9 +1206,6 @@ def main():
         sys.exit(1)
 
 
-# The environment variables whose values must never reach a PR comment.
-_SECRET_ENV = ("OPENAI_API_KEY", "GITHUB_TOKEN", "GH_PAT", "GH_APP_PRIVATE_KEY", "JIRA_API_TOKEN",
-               "APP_PASSWORD")
 
 
 def failure_note(error: BaseException, limit: int = 600) -> str:
@@ -1215,16 +1213,10 @@ def failure_note(error: BaseException, limit: int = 600) -> str:
     no comment left the reviewer guessing (PR #225); the error's type and
     message say why, with every configured secret value, token-shaped string,
     key alias and email address redacted."""
-    text = f"{type(error).__name__}: {error}"
-    for name in _SECRET_ENV:
-        value = os.environ.get(name) or ""
-        if len(value) >= 8:
-            text = text.replace(value, "[redacted]")
-    text = re.sub(r"\b(sk|ghp|gho|github_pat)[-_][A-Za-z0-9_\-]{8,}", "[redacted]", text)
-    # A gateway names the key's owner in its errors ("Key=<email>_<id>"): no
-    # personal address or key alias belongs in a PR comment.
-    text = re.sub(r"\bKey=\S+", "Key=[redacted]", text)
-    text = re.sub(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+", "[redacted]", text)
+    # Secret values, token-shaped strings, private keys, a gateway's key alias
+    # ("Key=<email>_<id>") and email addresses: none belongs in a PR comment -
+    # one rule for every place that posts text (core/redaction.py).
+    text = redact(f"{type(error).__name__}: {error}")
     if len(text) > limit:
         text = text[: limit - 1] + "…"
     if isinstance(error, BudgetExceeded):

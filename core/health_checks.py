@@ -196,12 +196,7 @@ def _client_default_base() -> str:
 
 
 def _redact(text: str) -> str:
-    """No secret value, token-shaped string or email address in an alert."""
-    import re
-    for name in ("OPENAI_API_KEY", "GITHUB_TOKEN", "GH_PAT", "GH_APP_PRIVATE_KEY", "JIRA_API_TOKEN"):
-        value = os.environ.get(name) or ""
-        if len(value) >= 8:
-            text = text.replace(value, "[redacted]")
-    text = re.sub(r"\b(sk|ghp|gho|github_pat)[-_][A-Za-z0-9_\-]{8,}", "[redacted]", text)
-    text = re.sub(r"\bKey=\S+", "Key=[redacted]", text)
-    return re.sub(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+", "[redacted]", text)
+    """No secret value, token-shaped string, private key or email address in an
+    alert (core/redaction.py - the same rules as Agent 3's failure note)."""
+    from core.redaction import redact
+    return redact(text)
