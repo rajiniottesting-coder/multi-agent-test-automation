@@ -1839,9 +1839,28 @@ python -m scripts.verify_locators --page products --only-problems
 python -m scripts.verify_locators --selector "a[href='/cart']" --url /products --login-url /login
 ```
 
-**Sign-in and sign-up pages need `--no-login`.** With a session they redirect,
-and the tool reports `REDIRECTED` and measures nothing rather than checking the
-form against the destination.
+**The login page is checked signed out.** A signed-in browser is sent away from
+it, so the tool verifies the page at the login path (from the inventory, or
+`--login-url`) *before* signing in, marked `(signed out)`, and not again after.
+Until 28 Oct 2026 it signed in first, and the login page "did not render" every
+night - its selectors were never checked. Another page that only a signed-out
+visitor sees (a sign-up page elsewhere) still needs `--no-login`.
+
+**An unexpected multi-match says what it matched.** Under an `AMBIG(n)` (or
+`BACK(n)`) line the report lists up to five of the matches - tag, id, classes,
+`shown` or `hidden`, and text - e.g.
+
+```
+    AMBIG(2)    <key>                        text=<heading text>
+                1. <h2.title.text-center> shown "<heading text>"
+                2. <a#menu.nav-link> shown "<heading text, other casing>"
+```
+
+so the nightly report is enough to choose the element meant: scope the selector
+to it (a role, a tag or a container), or, when every match is meant, declare the
+key in `multi_match`. A `text=` selector is a case-insensitive *substring* match
+in Playwright, so it catches any element containing those words - prefer a role
+(`role=heading[name="..."]`) or a scoped selector for a key meant to be unique.
 
 Exit codes: `0` clean · `1` drift · `2` login failed.
 

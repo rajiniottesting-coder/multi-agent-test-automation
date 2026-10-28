@@ -178,6 +178,25 @@ def _suggest_page(wanted: str, available) -> str:
 # row too, or stopped at the fold - without waiting for it.
 _MAX_HIGHLIGHTS = 25
 
+# How many of an unexpected selector's matches are described in the report.
+_MAX_DESCRIBED = 5
+
+# One line per match: tag, id, classes, whether it is shown, and its text. The
+# report then says WHICH elements an ambiguous selector caught, so the nightly
+# run is enough to fix it - "AMBIG(2)" alone needed a local reproduction.
+_DESCRIBE_JS = r"""
+(els, limit) => els.slice(0, limit).map(el => {
+  const id = el.id ? '#' + el.id : '';
+  const cls = (typeof el.className === 'string' && el.className.trim())
+    ? '.' + el.className.trim().split(/\s+/).slice(0, 4).join('.') : '';
+  const r = el.getBoundingClientRect();
+  const st = window.getComputedStyle(el);
+  const shown = r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none';
+  const text = (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+  return `<${el.tagName.toLowerCase()}${id}${cls}> ${shown ? 'shown' : 'hidden'} "${text}"`;
+})
+"""
+
 
 def _highlight(page, locator, label: str, colour: str) -> bool:
     """Box EVERY match, up to a cap. False if none could be drawn.
@@ -262,8 +281,31 @@ def _wait_for_render(page, selectors: dict, timeout_ms: int = 15000) -> bool:
         page.wait_for_timeout(250)
 
 
+def _describe_matches(locator, limit: int = _MAX_DESCRIBED) -> list[str]:
+    """One line per match, at most `limit` - [] when they cannot be read."""
+    try:
+        return [str(d) for d in (locator.evaluate_all(_DESCRIBE_JS, limit) or [])]
+    except Exception:                                          # noqa: BLE001
+        return []
+
+
+def signed_out_pages(inventory: dict, login_path: str | None, only_page: str | None = None) -> dict:
+    """The inventory pages served at the login path: a signed-in browser is sent
+    away from them, so they are verified BEFORE signing in. Verified after it,
+    the login page never rendered and its selectors were never checked."""
+    if not login_path:
+        return {}
+
+    def _norm(url) -> str:
+        return (str(url or "").split("?")[0].split("#")[0].rstrip("/")) or "/"
+
+    return {name: entry for name, entry in ((inventory or {}).get("pages") or {}).items()
+            if isinstance(entry, dict) and _norm(entry.get("url")) == _norm(login_path)
+            and only_page in (None, name)}
+
+
 def _verify_page(page, base_url: str, page_name: str, entry: dict,
-                 pause: float, only_problems: bool) -> tuple[int, int]:
+                 pause: float, only_problems: bool, state: str = "") -> tuple[int, int]:
     path, skip = resolve_page_url(entry)
     if skip:
         print(f"  [{page_name}] SKIPPED - {skip}")
@@ -302,7 +344,8 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
 
     selectors = {n: s for n, s in (entry.get("elements") or {}).items()
                  if isinstance(s, str) and n != "_selector_strategies"}
-    print(f"\n  [{page_name}] {url}  -  {len(selectors)} element(s)")
+    print(f"\n  [{page_name}] {url}  -  {len(selectors)} element(s)"
+          + (f"  ({state})" if state else ""))
     ok = bad = 0
     declared_family = set(entry.get("multi_match") or [])
     measured_family: list[tuple[str, int]] = []
@@ -378,6 +421,13 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
             if _highlight(page, _resolve_one(page, sel), name, colour):
                 shown = "  <- highlighted"
         print(f"    {status:11} {name:28} {sel}{shown}")
+        if count > 1 and not expected:
+            # Which elements it caught: enough to choose the one it means.
+            described = _describe_matches(_resolve_one(page, sel))
+            for i, line in enumerate(described, 1):
+                print(f"                {i}. {line}")
+            if described and count > len(described):
+                print(f"                ... and {count - len(described)} more")
         if pause and count >= 1:
             time.sleep(pause)
 
@@ -477,6 +527,8 @@ def main() -> int:
     base_url = ctx.base_url.rstrip("/")
 
     with browser_page(headless=args.headless) as page:
+        pre_ok = pre_bad = 0
+        checked_signed_out: set = set()
         if not args.no_login:
             # Where to SIGN IN. Priority: an explicit --login-url, then the
             # login page recorded in the inventory, then the root as a last
@@ -485,20 +537,30 @@ def main() -> int:
             # requiring an operator to repeat it is how a wrong default
             # ("/" works only if the root redirects to a login screen) stayed
             # hidden behind a workaround.
+            _inv_path = Path(args.inventory) if args.inventory else ctx.inventory_path()
+            try:
+                _inv = json.loads(_inv_path.read_text(encoding="utf-8"))
+            except Exception:                           # noqa: BLE001
+                _inv = {}
+            known_login = args.login_url or find_login_path(_inv)
             if args.login_url:
                 login_path = args.login_url
             else:
-                _inv_path = Path(args.inventory) if args.inventory else ctx.inventory_path()
-                try:
-                    _inv = json.loads(_inv_path.read_text(encoding="utf-8"))
-                except Exception:                       # noqa: BLE001
-                    _inv = {}
-                login_path = find_login_path(_inv) or "/"
+                login_path = known_login or "/"
                 # This module prints; it has no logger. Using one here raised
                 # NameError on the very first run for anyone who did not pass
                 # --login-url, which is now the normal case.
                 print(f"  login page: {login_path} (from the inventory)")
             login_url = base_url + login_path
+            # The login page as a signed-out visitor sees it - the only state
+            # in which it renders. Not when the root is only a fallback guess.
+            if not args.selector and known_login:
+                for name, entry in signed_out_pages(_inv, login_path, args.page).items():
+                    ok, bad = _verify_page(page, base_url, name, entry, args.pause,
+                                           args.only_problems, state="signed out")
+                    pre_ok += ok
+                    pre_bad += bad
+                    checked_signed_out.add(name)
             logged_in = do_login(page, login_url, args.username_selector,
                                  args.password_selector, args.submit_selector,
                                  args.username, args.password)
@@ -635,8 +697,10 @@ def main() -> int:
                 print(f"    available: {', '.join(sorted(all_pages))}")
                 return 2
 
-        total_ok = total_bad = 0
+        total_ok, total_bad = pre_ok, pre_bad
         for name, entry in pages.items():
+            if name in checked_signed_out:
+                continue                    # verified before signing in
             ok, bad = _verify_page(page, base_url, name, entry,
                                    args.pause, args.only_problems)
             total_ok += ok

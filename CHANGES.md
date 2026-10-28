@@ -4,6 +4,18 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## October 2026 (end) — the nightly inventory check says what it matched, and checks the login page (#237)
+
+**Why:** the pipeline health issue reported *Inventory Health* failing three nights in a row (25-27 Oct). Its report read `AMBIG(2)` for one key and no more, so finding the two elements needed a local reproduction; and it showed the login page as "did not render" every night - the verifier signed in first, a signed-in browser is sent away from the login page, so its selectors had never been checked. The log also began with a `SyntaxWarning: invalid escape sequence '\s'`.
+
+- `scripts/verify_locators.py`: an unexpected multi-match (`AMBIG`, `BACK`) lists up to five matches - tag, id, classes, shown or hidden, text (`_describe_matches`, `_DESCRIBE_JS`; proven in real Chromium on a page with the same shape). The page at the login path is verified signed out, before signing in, and skipped after (`signed_out_pages`); a root that is only a fallback guess is not treated as a login page
+- `inventory_tools/browser.py`: the DOM-snapshot JavaScript is a raw string - the same script, no invalid escape (proven byte-for-byte)
+- `tests/unit/test_inventory_health_report.py` (12, 8 of which fail on the previous code), including a guard that no source file carries an invalid escape
+- GUIDE (*Measure - verify_locators*)
+- Not in this change: the drifted selector itself. The site changed around 25 Oct; with this report the next run names both matches, and the inventory fix follows from it
+
+---
+
 ## October 2026 (end) — the agents' GitHub App settings are named GH_APP_*, and its set-up walked through (#236)
 
 **Why:** #235 named them `APP_CLIENT_ID` and `APP_PRIVATE_KEY`, beside the application under test's login secrets `APP_USER_REGISTERED` and `APP_PASSWORD` - a reader could take the App's key for part of the application's credentials. Raised by the repository owner while setting the App up, before either was stored.
