@@ -47,6 +47,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 from urllib.parse import urlparse
 
 from playwright.sync_api import Locator, Page, expect
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 import weakref
 
 # ── Network evidence for failure messages ──────────────────────────────
@@ -518,14 +519,50 @@ class BasePage:
         bursts while it loads fine in a browser (L14): a run failed five
         tests that way, none of them for anything the change did. A 4xx is
         an answer, not an outage, and fails at once as before.
+
+        The page counts as SERVED once its document is parsed
+        (domcontentloaded); the load event is then waited for as before every
+        action (_wait_for_page_scripts: bounded, fail-open). page.goto used to
+        wait for the load event itself, so one slow image or script on a page
+        whose HTML had arrived failed the test at the navigation (28 Oct 2026:
+        `Page.goto: Timeout 30000ms exceeded ... waiting until "load"`, on a
+        morning when the site's static files took 7 to 10 s each). A page that
+        is not even served in time is retried like a 5xx, and if it never is,
+        the error says the page did not load - an outage, not a test failure.
         """
         delays = self._navigation_retry_delays_ms()
         attempt = 0
         while True:
-            response = self.page.goto(url)
+            try:
+                response = self.page.goto(url, wait_until="domcontentloaded")
+            except PlaywrightTimeoutError as exc:
+                if attempt >= len(delays):
+                    tried = f" on {attempt + 1} attempts" if attempt else ""
+                    raise AssertionError(
+                        f"Navigation to {url} was not served in time{tried} "
+                        f"({str(exc).splitlines()[0]}). The page did not load, so "
+                        f"nothing in the test ran against it. From CI this means "
+                        f"the application answered too slowly or not at all - "
+                        f"check whether the same URL loads from a browser."
+                    ) from None
+                logger.warning("Navigation to %s was not served in time; retrying in %d ms "
+                               "(attempt %d of %d).", url, delays[attempt], attempt + 2,
+                               len(delays) + 1)
+                # The timed-out navigation is still pending in the browser, and
+                # a second goto to the same URL is then aborted at once
+                # (net::ERR_ABORTED - proven in Chromium). Cancel it first, so
+                # the retry is a fresh request like a 5xx retry.
+                try:
+                    self.page.goto("about:blank")
+                except Exception:                              # noqa: BLE001
+                    pass
+                self.page.wait_for_timeout(delays[attempt])
+                attempt += 1
+                continue
             if response is None or response.ok:
                 if attempt:
                     logger.warning("Navigation to %s succeeded on attempt %d.", url, attempt + 1)
+                self._wait_for_page_scripts()
                 return
             if not self._temporary_status(response.status) or attempt >= len(delays):
                 break

@@ -65,7 +65,7 @@ def test_what_counts_as_an_outage(text, outage):
 def test_the_real_navigation_error_is_an_outage(monkeypatch):
     """The message BasePage.navigate actually raises, not a copy of it."""
     class Page:
-        def goto(self, url):
+        def goto(self, url, wait_until=None):
             return type("R", (), {"status": 503, "ok": False, "status_text": "Service Unavailable"})()
 
         def wait_for_timeout(self, ms):

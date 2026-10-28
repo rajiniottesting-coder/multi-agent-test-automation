@@ -81,6 +81,23 @@ _SIGNATURES: list[tuple[re.Pattern, Diagnosis]] = [
         ),
     ),
     (
+        # A page load that was not served in time on any attempt
+        # (BasePage.navigate retries it like a 5xx). Tried before the generic
+        # "timed out" reading, whose advice - an element present but not
+        # actionable - is wrong for a page that never arrived.
+        re.compile(r"Navigation to \S+ was not served in time\b[^\n]*?"
+                   r"The page did not load", re.I),
+        Diagnosis(
+            "application too slow to serve a page",
+            "A page load got no parsed document within the navigation timeout, "
+            "on every attempt. Nothing in the test ran against the page, so "
+            "this says nothing about the test or the behaviour.",
+            "Nothing to change in the test. Check that the application loads "
+            "from a browser, then re-run the workflow. If it is reliably slow "
+            "from CI, raise `browser.timeout` in config.yaml.",
+        ),
+    ),
+    (
         re.compile(r"strict mode violation.*resolved to (\d+) elements", re.I),
         Diagnosis(
             "multi-match selector",
@@ -618,6 +635,8 @@ _OUTAGE = [
     # BasePage.navigate: every attempt at a page load refused with 5xx/429.
     re.compile(r"Navigation to \S+ returned HTTP (?:5\d\d|429)\b[^\n]*?The page did not load",
                re.I),
+    # BasePage.navigate: no attempt at a page load was served in time.
+    re.compile(r"Navigation to \S+ was not served in time\b[^\n]*?The page did not load", re.I),
     # The browser could not reach the application at all on a page load.
     re.compile(r"\bgoto: net::ERR_(?:CONNECTION_\w+|NAME_NOT_RESOLVED|ADDRESS_UNREACHABLE|"
                r"INTERNET_DISCONNECTED|TIMED_OUT)\b"),

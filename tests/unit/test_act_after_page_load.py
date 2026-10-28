@@ -9,6 +9,12 @@ problem. navigate() never had this gap (page.goto waits for the load event);
 a click-navigation did. Now every action waits for the load event first
 (BasePage._wait_for_page_scripts), bounded and fail-open.
 
+navigate() counts a page as served once its document is parsed, then waits
+for the load event the same bounded way: a run failed on `Page.goto: Timeout
+30000ms exceeded ... waiting until "load"` when one slow resource held the
+load event of a page whose HTML had arrived. A page not served in time is
+retried like a 5xx, then reported as an outage.
+
 Also: a wait for a row, a family or a hidden element that fails now carries
 the page's action requests, as wait_visible's failure already did - the
 remove in that run failed with a bare call log and was triaged "unclassified".
@@ -228,6 +234,7 @@ _DELAY_S = 1.5
 
 class _Handler(http.server.BaseHTTPRequestHandler):
     added = 0
+    unserved = 0
 
     def log_message(self, *a):
         pass
@@ -251,6 +258,15 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self._send("document.getElementById('add').onclick = () => "
                        "fetch('/add').then(() => { document.getElementById('done')"
                        ".hidden = false; });", "application/javascript")
+        elif self.path == "/slow-image":
+            self._send('<h1 id="title">Served</h1><img src="/hang">')
+        elif self.path == "/hang":
+            time.sleep(10)                             # a resource that holds the load event
+            self.send_error(404)
+        elif self.path == "/unserved":
+            type(self).unserved += 1
+            time.sleep(4)                              # the document itself does not come
+            self._send("late")
         elif self.path == "/add":
             type(self).added += 1
             self._send("ok", "text/plain")
@@ -309,4 +325,96 @@ def test_in_a_browser_the_action_now_reaches_the_application(browser, server):
     obj.click("#add")
     obj.wait_visible("#done", timeout_ms=5000)
     assert _Handler.added == 1
+    page.close()
+
+
+# ── navigate(): served is enough to go on; not served is an outage ──────────
+
+class _NavPage:
+    url = "https://app.example/"
+
+    def __init__(self, outcomes):
+        self.outcomes = list(outcomes)
+        self.calls, self.waits = [], []
+
+    def goto(self, url, wait_until=None):
+        if url == "about:blank":                       # the pending navigation cancelled
+            self.calls.append("reset")
+            return None
+        self.calls.append(wait_until)
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return None
+
+    def wait_for_timeout(self, ms):
+        self.waits.append(ms)
+
+
+def _nav(monkeypatch, outcomes, delays=(5, 7)):
+    page = _NavPage(outcomes)
+    obj = BasePage(page)
+    loads = []
+    monkeypatch.setattr(BasePage, "_navigation_retry_delays_ms", classmethod(lambda c: delays))
+    monkeypatch.setattr(obj, "_wait_for_page_scripts", lambda: loads.append(page.url))
+    return page, obj, loads
+
+
+def test_navigate_waits_for_the_document_then_for_the_load_event_bounded(monkeypatch):
+    page, obj, loads = _nav(monkeypatch, [None])
+    obj.navigate("https://app.example/")
+    assert page.calls == ["domcontentloaded"] and loads == ["https://app.example/"]
+
+
+def test_a_page_not_served_in_time_is_retried(monkeypatch):
+    from playwright.sync_api import TimeoutError as PwTimeout
+    page, obj, loads = _nav(monkeypatch, [PwTimeout("Page.goto: Timeout 30000ms exceeded."), None])
+    obj.navigate("https://app.example/")
+    assert page.waits == [5] and loads
+    assert page.calls == ["domcontentloaded", "reset", "domcontentloaded"], \
+        "the timed-out navigation is cancelled before the retry"
+
+
+def test_a_page_never_served_is_an_outage_not_a_test_failure(monkeypatch):
+    from core import failure_diagnosis as fd
+    from playwright.sync_api import TimeoutError as PwTimeout
+    timeouts = [PwTimeout("Page.goto: Timeout 30000ms exceeded.\nCall log:\n  - navigating")] * 3
+    page, obj, loads = _nav(monkeypatch, timeouts)
+    with pytest.raises(AssertionError) as info:
+        obj.navigate("https://app.example/")
+    text = str(info.value)
+    assert page.waits == [5, 7] and not loads
+    assert "was not served in time on 3 attempts" in text and "The page did not load" in text
+    assert fd.is_outage(text), "reported apart, never a defect"
+    assert fd.diagnose(text).label == "application too slow to serve a page"
+
+
+def test_an_ordinary_timeout_is_not_read_as_an_unserved_page():
+    from core import failure_diagnosis as fd
+    text = "Locator.click: Timeout 30000ms exceeded.\nwaiting for locator(\"#x\")"
+    assert not fd.is_outage(text) and fd.diagnose(text).label != "application too slow to serve a page"
+
+
+def test_in_a_browser_a_page_whose_load_event_hangs_is_still_used(browser, server, monkeypatch):
+    monkeypatch.setattr(BasePage, "_default_timeout_ms", classmethod(lambda c: 1500))
+    page = browser.new_page()
+    page.set_default_timeout(3000)                     # goto waiting for "load" would fail here
+    obj = BasePage(page)
+    started = time.monotonic()
+    obj.navigate(f"{server}/slow-image")
+    assert time.monotonic() - started < 6
+    assert page.locator("#title").is_visible()
+    page.close()
+
+
+def test_in_a_browser_a_page_never_served_fails_as_an_outage(browser, server, monkeypatch):
+    from core import failure_diagnosis as fd
+    monkeypatch.setattr(BasePage, "_navigation_retry_delays_ms", classmethod(lambda c: (10,)))
+    page = browser.new_page()
+    page.set_default_timeout(1000)
+    _Handler.unserved = 0
+    with pytest.raises(AssertionError) as info:
+        BasePage(page).navigate(f"{server}/unserved")
+    assert fd.is_outage(str(info.value)) and "on 2 attempts" in str(info.value)
+    assert _Handler.unserved == 2, "the retry reached the server as a fresh request"
     page.close()
