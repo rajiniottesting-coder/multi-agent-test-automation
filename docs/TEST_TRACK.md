@@ -236,7 +236,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E36g | F-30 | `GH_APP_CLIENT_ID` emptied for one run (GH_PAT still set) | The run writes as `GH_PAT`'s owner with the warning; restored → the App again | ⬜ | |
 | E36h | #235 | A story PR merged (E36d) | Story Done on merge moves the story to Done with the branch read from the environment (the job log shows `--branch "$BRANCH"`) | ⬜ | |
 | E37 | #237 | *Inventory Health* run by hand (on the branch, then nightly) | Each `AMBIG` line lists its matches (tag, classes, shown/hidden, text); the login page is reported `(signed out)` with its selectors measured, not "did not render"; no `SyntaxWarning` in the log; an ambiguous contains-match `text=` key shows a `fix:` line with its exact form; the run passes after the inventory fix, with a note (not a failure) listing the keys that could be tightened; the report never advises `multi_match` for a one-element key | ⬜ | |
-| E39 | #239 | Agent 4 on the next three runs (PRs and the nightly run), then the defects SCRUM-268 to SCRUM-271 | The cart scenarios pass; a step after a click-navigation acts only once the page has loaded (a slow page shows as a longer step, not a lost click); the four defects get the "passing" label and comment; any later row-wait failure lists the page's action requests | ⬜ | |
+| E39 | #239 | Agent 4 on the next three runs (PRs and the nightly run), then the defects SCRUM-268 to SCRUM-271 | The cart scenarios pass; a step after a click-navigation acts only once the page has loaded (a slow page shows as a longer step, not a lost click); the four defects get the "passing" label and comment; any later row-wait failure lists the page's action requests; a slow page shows as a longer step, never `Page.goto: Timeout ... waiting until "load"`, and a page truly not served is reported as an outage, not a failure | ⬜ | |
 
 ## Not built yet: rows to add when each is built
 
@@ -304,7 +304,7 @@ proves them.
 | #235 | The agents' own identity (F-30); a branch name never pasted into a script | | E36a-h, E18 (Request changes) | |
 | #236 | The App's settings named `GH_APP_*` | | E36a (the run finds them) | |
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
-| #239 | Every action waits for the page to load; row waits name the requests | | E39 | Race proven in Chromium (unit) |
+| #239 | Every action waits for the page to load; navigation needs the document, not every resource; row waits name the requests | | E39 | Race and slow load proven in Chromium (unit) |
 
 Cited in `CHANGES.md` but never merged (evidence, not changes): #178 (replaced
 by #181), #211, #214, #217, #221, #223 (story PRs used as live evidence, closed
