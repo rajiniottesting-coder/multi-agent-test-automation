@@ -4,6 +4,15 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## October 2026 (end) — the agents' GitHub App settings are named GH_APP_* (#236)
+
+**Why:** #235 named them `APP_CLIENT_ID` and `APP_PRIVATE_KEY`, beside the application under test's login secrets `APP_USER_REGISTERED` and `APP_PASSWORD` - a reader could take the App's key for part of the application's credentials. Raised by the repository owner while setting the App up, before either was stored.
+
+- The variable is `GH_APP_CLIENT_ID`, the secret `GH_APP_PRIVATE_KEY` - `GH_` like `GH_PAT` and `GH_REPO`: GitHub's, not the application's. Every workflow, the identity action, the redaction lists, the tests and the docs use the new names; GUIDE says why
+- Nothing to migrate: neither had been stored yet
+
+---
+
 ## October 2026 (end) — the agents write as their own identity: a GitHub App (P4, F-30, #235)
 
 **Why:** the agents wrote to the repository with `GH_PAT`, the reviewer's own token, so the reviewer was the author of every agent pull request (N10, PR #221). GitHub lets no author request changes on or approve their own pull request: the review fix's *Request changes* trigger could never fire (only `/fix` worked), merging needed a ruleset bypass, and a required approval (F-26) was impossible. The token also expired and had to be rotated by hand.
