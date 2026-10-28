@@ -4,12 +4,13 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## October 2026 (end) — the agents' GitHub App settings are named GH_APP_* (#236)
+## October 2026 (end) — the agents' GitHub App settings are named GH_APP_*, and its set-up walked through (#236)
 
 **Why:** #235 named them `APP_CLIENT_ID` and `APP_PRIVATE_KEY`, beside the application under test's login secrets `APP_USER_REGISTERED` and `APP_PASSWORD` - a reader could take the App's key for part of the application's credentials. Raised by the repository owner while setting the App up, before either was stored.
 
 - The variable is `GH_APP_CLIENT_ID`, the secret `GH_APP_PRIVATE_KEY` - `GH_` like `GH_PAT` and `GH_REPO`: GitHub's, not the application's. Every workflow, the identity action, the redaction lists, the tests and the docs use the new names; GUIDE says why
 - Nothing to migrate: neither had been stored yet
+- GUIDE → *Agent identity*: the set-up as a screen-by-screen walkthrough (Parts A-F, 23 steps) written while the owner set the App up - which of the long permission rows to change and which to leave (the "Agent ..." rows, Metadata), where the private key goes (downloaded at once; *Key pairs*, not *Client secrets*), why no bot shows until the App first acts, the ruleset's bypass, how to check the run, and how to undo
 
 ---
 
