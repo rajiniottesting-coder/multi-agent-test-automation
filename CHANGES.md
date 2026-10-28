@@ -4,6 +4,23 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## October 2026 (end) — the agents write as their own identity: a GitHub App (P4, F-30, #235)
+
+**Why:** the agents wrote to the repository with `GH_PAT`, the reviewer's own token, so the reviewer was the author of every agent pull request (N10, PR #221). GitHub lets no author request changes on or approve their own pull request: the review fix's *Request changes* trigger could never fire (only `/fix` worked), merging needed a ruleset bypass, and a required approval (F-26) was impossible. The token also expired and had to be rotated by hand.
+
+- `.github/actions/agent-identity` (new, a composite action): with the variable `APP_CLIENT_ID` (and the secret `APP_PRIVATE_KEY`) it creates a GitHub App installation token for this repository with `actions/create-github-app-token@v3` - contents, pull requests and issues write, actions read; one hour; revoked at the job's end. Without the App it gives `GH_PAT`, with a warning in the run. A configured App that cannot make a token fails the step (never a silent fallback). Outputs `token` and `kind` (`app` / `personal`)
+- Every job that writes as the agents takes its `GITHUB_TOKEN` from it: Agent 0's scan, reconcile, code-change (the step taken from the `base/` checkout, never the pull request's `head/`) and drift; Agent 2 and its review fix; Story Done on merge (now `timeout-minutes: 30`); the pipeline health check; the sweeper. `agents/` is unchanged: the identity is a credential
+- `core/health_checks.repo_host_findings(per_run=)`: a token created per run (`REPO_HOST_TOKEN_PER_RUN`, from the step's `kind`) has no expiry to warn about, and an earlier expiry alert closes; a refused token is still an alert
+- `APP_PRIVATE_KEY` added to the values Agent 3's failure note and the health alerts redact; `APP_CLIENT_ID` is an identifier (a variable - `test_workflow_secrets.py`)
+- Workflow comments no longer say the agents push with `GH_PAT`
+- **Security, found by actionlint on the way:** Story Done on merge pasted the pull request's branch name into its shell script; a branch name may hold shell syntax, and the job holds the secrets. It now reaches the script as an environment variable. `tests/unit/test_workflow_injection.py` fails on any `run:` script that pastes contributor-chosen text (branch names, titles, bodies, messages - actionlint's untrusted fields), and runs actionlint itself where it is installed: every workflow passes
+- Tests updated: `test_context_additions.py`, `test_inventory_update.py` (the proposal steps take the identity step's token), `test_test_track.py` (the not-built group has a fixed name, *Not built yet*)
+- Docs: README (secrets, troubleshooting), GUIDE (new *Agent identity* with the App's set-up steps, Route 2b, branch protection, the environment table, the sweeper, troubleshooting a token not created), TECHNICAL_DEEP_DIVE (9.6, the review fix), REUSE_FOR_NEW_PROJECT (Change 9; the agents' identity on GitLab, Azure DevOps, Bitbucket), DECISIONS ADR-025 (and a note on ADR-008), VALIDATION_AND_KNOWN_GAPS (N10 closed, F-30 done, L47, L48), TEST_TRACK (TG-10: E36a-g)
+
+Pinned by `tests/unit/test_agent_identity.py` (47: every agent job found and wired, no step writing with `GH_PAT` directly, the step only from trusted code, every agent job inside the token's hour, the action's permissions, fallback, warning and failure, the health check's per-run token, the review fix's trigger and its own replies). `test_workflow_injection.py` (13). 15 deliberate breaks, each caught. **Not proven live: the App itself** - it is created by the repository owner (TEST_TRACK E36a-g).
+
+---
+
 ## October 2026 (end) — a story says each thing once (P4, F-31, #234)
 
 **Why:** a story's comments were mostly the agents' own bookkeeping (N11). On SCRUM-187, 41 of 71 comments were `[LLM-USAGE]` / `[LEDGER-RESET]`; each agent run posted its cost and every Agent 5 report repeated all of it as a table that grew by one row per run. Agent 0's report on a change story copied the Impact Review's data block; a re-analysis posted its delta and its report as two comments; the no-Component note repeated the report's own line; Agent 0's outcome was a second comment at the moment Agent 5 reported. Watchers were emailed for each. And a story whose budget hold a person released read over 100% of one budget (L40).

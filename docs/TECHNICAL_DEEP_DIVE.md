@@ -590,7 +590,8 @@ state `changes_requested` on an `auto/*` pull request, or a conversation comment
 starting with `review_fix.command` (`/fix`), from an author whose association is
 OWNER, MEMBER or COLLABORATOR and who is not a bot. The workflow checks out
 `main` (a pull request cannot change its fixer), passes the event's text in
-`REVIEW_FIX_TEXT` and pushes with `GH_PAT`. One fix runs at a time per pull
+`REVIEW_FIX_TEXT` and pushes as the agents' identity (the GitHub App's token,
+else `GH_PAT` - see 9.6). One fix runs at a time per pull
 request, through a JOB-level concurrency group: each of Agent 2's own thread
 replies arrives as a "review submitted" event, and at workflow level those
 skipped runs would cancel a person's `/fix` waiting in the group. ADR-017.
@@ -949,6 +950,22 @@ off with one log line):
 | `render_markdown(markdown)` | Comment markup (Agent 5, alerts, defects) |
 
 ### 9.6 `integrations/github_client.py` — the GitHub adapter of the `RepoHost` Protocol
+
+**Whose token (F-30, ADR-025).** `GitHubClient` reads `GITHUB_TOKEN`; in CI
+every job that writes as the agents (Agent 0's four jobs, Agent 2 and its
+review fix, Story Done on merge, the health check, the sweeper) sets it from
+the step `.github/actions/agent-identity`: with `APP_CLIENT_ID` set,
+`actions/create-github-app-token@v3` creates an installation token for this
+repository with exactly `contents: write`, `pull-requests: write`,
+`issues: write`, `actions: read` (one hour, revoked at the job's end; every
+such job ends in at most 30 minutes); without it, `GH_PAT`, with a warning. A
+configured App that cannot create a token fails the step - no silent fallback.
+Output `kind` (`app` / `personal`) reaches the health check as
+`REPO_HOST_TOKEN_PER_RUN`, where a per-run token has no expiry to warn about.
+The code-change job takes the step from its `base/` checkout, never from the
+pull request's `head/`. Agent 3 and Agent 4/5 keep the built-in token: their
+comments need no review of their own. Nothing in `agents/` changed: the
+identity is a credential, not code.
 
 Wraps PyGithub. Methods used across agents:
 

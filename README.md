@@ -454,8 +454,8 @@ Real secrets live only in `.env` (gitignored); `.env.example` is the template. I
 
 | Kind | Names |
 |---|---|
-| **Secrets** | `JIRA_EMAIL`, `JIRA_API_TOKEN`, `OPENAI_API_KEY`, `GH_PAT` (a personal token: PRs it opens trigger the other workflows, which `GITHUB_TOKEN` cannot), `APP_USER_REGISTERED`, `APP_PASSWORD` |
-| **Variables** | `JIRA_URL`, `JIRA_PROJECT_KEY`, `JIRA_BOARD_ID`, `GH_REPO`, `OPENAI_API_BASE`, `LLM_MODEL`, optional `LLM_MODEL_LIGHT`, `LLM_PRICE_INPUT_PER_1M`, `LLM_PRICE_OUTPUT_PER_1M` |
+| **Secrets** | `JIRA_EMAIL`, `JIRA_API_TOKEN`, `OPENAI_API_KEY`, `APP_PRIVATE_KEY` + the variable `APP_CLIENT_ID` (the agents' GitHub App: they write as `<app>[bot]`, so you can request changes on and approve their PRs; its PRs trigger the other workflows, which `GITHUB_TOKEN`'s cannot), `GH_PAT` (only until the App is set up: the agents then write as you), `APP_USER_REGISTERED`, `APP_PASSWORD` |
+| **Variables** | `JIRA_URL`, `JIRA_PROJECT_KEY`, `JIRA_BOARD_ID`, `GH_REPO`, `APP_CLIENT_ID`, `OPENAI_API_BASE`, `LLM_MODEL`, optional `LLM_MODEL_LIGHT`, `LLM_PRICE_INPUT_PER_1M`, `LLM_PRICE_OUTPUT_PER_1M` |
 
 Credentials for the application under test come from CI secrets only. Full reference: [GUIDE.md → Configuration](./docs/GUIDE.md#configuration).
 
@@ -470,7 +470,7 @@ More in [GUIDE.md → Troubleshooting](./docs/GUIDE.md#troubleshooting). The mos
 - **Jira `enhanced_search_issues` not found** → upgrade to `jira>=3.10.5`
 - **`StepDefinitionNotFoundError` at collection** → the validators should catch this; check the repair-loop log in the Agent 2 run
 - **A PR never got Agents 3–5** → the hourly sweeper re-triggers it, or re-run the workflow manually
-- **A reviewer's comment was not acted on** → only a "Request changes" review or a comment starting with `/fix`, from someone with write access, starts Agent 2's review fix, and only on an `auto/*` pull request. Its `[agent2:review-fix]` comment on the PR lists each comment's outcome; a declined one says why (another story's file, or a change to what the test cases state). GitHub does not let a PR's author request changes: when `GH_PAT` is your own account, Agent 2's PRs are yours - comment, then post `/fix`
+- **A reviewer's comment was not acted on** → only a "Request changes" review or a comment starting with `/fix`, from someone with write access, starts Agent 2's review fix, and only on an `auto/*` pull request. Its `[agent2:review-fix]` comment on the PR lists each comment's outcome; a declined one says why (another story's file, or a change to what the test cases state). With the agents' GitHub App their PRs are the App's, so Request changes works; while the agents still write with `GH_PAT` (your account), Agent 2's PRs are yours and GitHub does not let an author request changes - comment, then post `/fix`
 - **Agent 2 shows `[WAIT]` for a story** → another open PR is changing one of its files or adds one of its scenarios; the story's `[agent2:waiting]` comment names it. It continues on the first scan after that PR merges or closes
 - **Agent 2 shows `[BLOCK]` for a story** → its final gate refused the story earlier and nothing has changed since; the `[agent2:blocked]` comment lists the rules. Edit the test case it names (the next scan retries) or run Agent 2 with the story key
 - **No Agent 5 report on a PR** → expected when the PR changes only prompts, docs or Markdown (no browser run); otherwise check the branch carries the story key
