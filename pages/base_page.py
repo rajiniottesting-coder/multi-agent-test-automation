@@ -40,6 +40,7 @@ Locator strings may be any Playwright selector: CSS, `text=`, `role=`, or an
 iframe-chained selector using ' >>> '. Open shadow DOM is pierced by CSS
 automatically.
 """
+import contextlib
 import logging
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
@@ -1034,12 +1035,17 @@ class BasePage:
 
         Use this for the presence or absence of ONE named row. Use
         wait_for_count when the NUMBER of rows is the point.
+
+        A row that never comes or never goes is usually the consequence of
+        the action before it, so the failure carries the page's action
+        requests, as wait_visible's does.
         """
         target = self._locator(row_locator).filter(has_text=text)
-        if present:
-            expect(target).not_to_have_count(0, timeout=self._timeout(timeout_ms))
-        else:
-            expect(target).to_have_count(0, timeout=self._timeout(timeout_ms))
+        with self._network_evidence_on_failure():
+            if present:
+                expect(target).not_to_have_count(0, timeout=self._timeout(timeout_ms))
+            else:
+                expect(target).to_have_count(0, timeout=self._timeout(timeout_ms))
 
     def wait_for_any(self, locator: str,
                      present: bool = True,
@@ -1061,10 +1067,11 @@ class BasePage:
         cleared-out list looks like.
         """
         target = self._locator(locator)
-        if present:
-            expect(target).not_to_have_count(0, timeout=self._timeout(timeout_ms))
-        else:
-            expect(target).to_have_count(0, timeout=self._timeout(timeout_ms))
+        with self._network_evidence_on_failure():
+            if present:
+                expect(target).not_to_have_count(0, timeout=self._timeout(timeout_ms))
+            else:
+                expect(target).to_have_count(0, timeout=self._timeout(timeout_ms))
 
     def get_nth_attribute(self, locator: str, index: int, name: str) -> Optional[str]:
         """Read one attribute from one member of a family."""
@@ -1122,6 +1129,25 @@ class BasePage:
     # Waiting and element state
     # ============================================================
 
+    @contextlib.contextmanager
+    def _network_evidence_on_failure(self):
+        """A wait that fails inside this block also says which action
+        requests the page made, and how they ended (_network_evidence).
+
+        wait_visible had this; the waits for a row, a family or a hidden
+        element did not, so a remove that never reached the application
+        failed with a bare Playwright call log and read as "unclassified".
+        The original message comes first, unchanged, so a reader or the
+        triage still sees exactly what Playwright said.
+        """
+        try:
+            yield
+        except AssertionError as exc:
+            evidence = _network_evidence(self.page)
+            if not evidence:
+                raise
+            raise AssertionError(f"{exc}{evidence}") from None
+
     def wait_visible(self, locator: str,
                      timeout_ms: Optional[int] = None) -> None:
         """Wait until the element is visible; raises if it never appears.
@@ -1164,8 +1190,9 @@ class BasePage:
     def wait_hidden(self, locator: str,
                     timeout_ms: Optional[int] = None) -> None:
         """Wait until the element is hidden or detached."""
-        expect(self._locator(locator)).to_be_hidden(
-            timeout=self._timeout(timeout_ms))
+        target = self._locator(locator)
+        with self._network_evidence_on_failure():
+            expect(target).to_be_hidden(timeout=self._timeout(timeout_ms))
 
     def wait_enabled(self, locator: str,
                      timeout_ms: Optional[int] = None) -> None:
