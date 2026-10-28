@@ -8,6 +8,10 @@ listening to - no request, no confirmation - and the failure read as a state
 problem. navigate() never had this gap (page.goto waits for the load event);
 a click-navigation did. Now every action waits for the load event first
 (BasePage._wait_for_page_scripts), bounded and fail-open.
+
+Also: a wait for a row, a family or a hidden element that fails now carries
+the page's action requests, as wait_visible's failure already did - the
+remove in that run failed with a bare call log and was triaged "unclassified".
 """
 import ast
 import http.server
@@ -157,6 +161,64 @@ def test_the_guard_would_catch_a_new_helper():
 def test_the_guard_covers_the_helpers_the_trace_failed_in():
     names = {fn.name for fn in _base_page_functions() if _first_wait_line(fn)}
     assert {"click", "click_in_row", "click_nth", "fill"} <= names
+
+
+# ── a failed row / family / hidden wait says what the page requested ────────
+
+class _Locator:
+    def filter(self, **kw):
+        return self
+
+
+@pytest.fixture
+def watched(monkeypatch):
+    class P:
+        url = "https://app.example/cart"
+        def on(self, *a):
+            pass
+    page = P()
+    bp.watch_network(page)
+    bp._NETWORK_LOG[page].append(("GET https://app.example/cart - HTTP 200", False))
+    obj = BasePage(page)
+    monkeypatch.setattr(obj, "_locator", lambda sel: _Locator())
+    return obj
+
+
+def _expect_failing(message):
+    class E:
+        def __getattr__(self, name):
+            def fail(*a, **k):
+                raise AssertionError(message)
+            return fail
+    return lambda target: E()
+
+
+@pytest.mark.parametrize("call", [
+    lambda o: o.wait_for_row("tr", "Item", present=False, timeout_ms=1),
+    lambda o: o.wait_for_row("tr", "Item", present=True, timeout_ms=1),
+    lambda o: o.wait_for_any("li", present=False, timeout_ms=1),
+    lambda o: o.wait_hidden("#dialog", timeout_ms=1),
+])
+def test_a_failed_wait_carries_the_pages_action_requests(watched, monkeypatch, call):
+    original = "Locator expected to have count '0'\nActual value: 1"
+    monkeypatch.setattr(bp, "expect", _expect_failing(original))
+    with pytest.raises(AssertionError) as info:
+        call(watched)
+    text = str(info.value)
+    assert text.startswith(original), "Playwright's own message stays first, unchanged"
+    assert "GET https://app.example/cart - HTTP 200" in text
+    assert "never reached the application" in text
+
+
+def test_an_unwatched_page_fails_exactly_as_before(monkeypatch):
+    class P:
+        url = "u"
+    obj = BasePage(P())
+    monkeypatch.setattr(obj, "_locator", lambda sel: _Locator())
+    monkeypatch.setattr(bp, "expect", _expect_failing("plain message"))
+    with pytest.raises(AssertionError) as info:
+        obj.wait_for_row("tr", "Item", present=False, timeout_ms=1)
+    assert str(info.value) == "plain message"
 
 
 # ── in a real browser: the race the trace showed, and the fix ───────────────
