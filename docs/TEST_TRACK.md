@@ -15,7 +15,7 @@ grouped sessions below**, so one story run proves as many items as possible.
    [Every merged change and where it is proven](#every-merged-change-and-where-it-is-proven).
    A unit test (`tests/unit/test_test_track.py`) fails when a fix marked
    **Done** in [VALIDATION_AND_KNOWN_GAPS.md](./VALIDATION_AND_KNOWN_GAPS.md) §4
-   has no row, a fix not done is missing from TG-10, or a PR named in
+   has no row, a fix not done is missing from *Not built yet*, or a PR named in
    `CHANGES.md` is missing from the coverage list.
 2. Before a session, read each row's expected result; change it first if it
    no longer matches the design - never after the run.
@@ -43,7 +43,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | **S4** Several stories in one scan | Three stories eligible in one Agent 1/2 scan (the first set up to fail), a regeneration, two change stories touching one test case, a new story's PR closed | TG-4 (M1-M3, G1, G2), TG-3 (E26) | Was UC-5 |
 | **S5** The consolidated run | One new story whose feature is not in the inventory or the notes yet (ideally a new page too), one change story removing an element; the nights around its deployment | TG-3, TG-5, the rest of TG-2, TG-0 (R3), TG-9 (E35j) | Was UC-7. Runs over several days: drift nights before and after deployment |
 | **S6** Nights on `main` | Nothing to set up - the nightly run; one night with a test broken on purpose on a throw-away branch merged and reverted, or an existing failure; the induced triage cases of E31i-E31k | TG-7, TG-0 (R8) | Runs in parallel with S5's nights |
-| **S7** Operations | The health issue created by hand first; induced failures one at a time (below); the budget lowered for one story and one day, then restored | TG-8, TG-0 (R9), TG-9 (E35h, E35k) | Each induced failure is undone right after its row |
+| **S7** Operations | The health issue created by hand first; induced failures one at a time (below); the budget lowered for one story and one day, then restored | TG-8, TG-0 (R9), TG-9 (E35h, E35k), TG-10 (E36a, E36f, E36g) | Each induced failure is undone right after its row |
 | **S8** Opportunistic | Any PR or nightly run during a 5xx burst from the site, or with a flaky test | TG-6 | Checked whenever it happens; I8 watched throughout |
 
 ---
@@ -96,7 +96,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E12 | #209 | SCRUM-206's PR | The scenario carries the absence step, asserted on a loaded page (`is_loaded() and is_gone(...)`); against the undeployed application exactly that step fails (L20) | ⬜ | |
 | E13 | #209 | H2 (a limit or restriction) | The coverage comment lists a rejection step for it | ⬜ | |
 | E14 | #212 | PR #211 re-reviewed (push or re-run Agent 3) | Red on the absence step only; the card-click finding lowered with "scenario ... passed"; review advisory | ⬜ | |
-| E18 | #219, #220, #222 | Agent 2's review fix: a bare `/fix` after inline comments on an `ai-regenerate` PR | Fixed on the same branch (the story's own regenerated files too), declined ones with the test-case route, a reply per thread, one summary; a re-run does nothing; `/fix <text>` also takes the inline comments; a skipped event cannot cancel a waiting `/fix` | ✅ | V7: SCRUM-202, PR #221 (26 Oct). The "Request changes" trigger waits for F-30 (TG-10) |
+| E18 | #219, #220, #222 | Agent 2's review fix: a bare `/fix` after inline comments on an `ai-regenerate` PR | Fixed on the same branch (the story's own regenerated files too), declined ones with the test-case route, a reply per thread, one summary; a re-run does nothing; `/fix <text>` also takes the inline comments; a skipped event cannot cancel a waiting `/fix` | ✅ | V7: SCRUM-202, PR #221 (26 Oct). The "Request changes" trigger: E36c |
 | E20 | F-10, #225 | S5's change story: `[agent0:context-update]` run | Reads only `core.md`, its Component modules and their pages' notes (prompt in the run log); no rewrite of another module in the PR | ⬜ | |
 | E22 | F-11, #225 | S5's removal story | Context-update PR declares the element in `removed` (note `REMOVED by …`); after deployment the nightly check shows `GONE`, not `STALE`; Agent 0 raises no affected test for it; once the absence test is retired the next inventory-update PR deletes the key | ⬜ | |
 
@@ -223,7 +223,20 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E35j | F-31 | S5's new story end to end | Comments on the story counted against a story before F-31 (SCRUM-202: 14 for 3 reports) - expected 3 reports + 1 cost comment; record the numbers | ⬜ | |
 | E35k | F-31 | `usage_ledger.store: comments` for one story run, then back | The original comments and Agent 5's table return; back on `auto` the story's next cost comment counts both | ⬜ | |
 
-## TG-10 · Fixes not built yet: rows to add when each is built
+## TG-10 · The agents' identity (F-30) (S7, then any session)
+
+| ID | Built in | Check | Expected result | Status | Evidence |
+|---|---|---|---|---|---|
+| E36a | F-30 | The App set up (GUIDE → Agent identity), then *Pipeline health* by hand | Its *Agent identity* step says "The agents write as the GitHub App `<name>[bot]`"; no warning; any `credential-expiry:repo-host` alert closes ("created for each run") | ⬜ | |
+| E36b | F-30 | The next Agent 2 PR | Opened, committed and labelled by `<name>[bot]`; Agents 3, 4 and 5 run on it (the cascade still fires) | ⬜ | |
+| E36c | F-30 | On that PR: inline comments, then **Request changes** | The review fix starts (no `/fix` needed); its thread replies and summary are the App's; those replies start no further run | ⬜ | |
+| E36d | F-30 | **Approve** and merge it without a ruleset bypass | Allowed; Story Done on merge runs (its context-addition PR is the App's too) | ⬜ | |
+| E36e | F-30 | The other writers: Agent 0's scan (Impact Review hand-over), code-change comment, drift's inventory-update PR; the sweeper's reopen | Each as `<name>[bot]`; the sweeper's reopen re-fires Agents 3 and 4 | ⬜ | |
+| E36f | F-30 | The App's private key replaced by a wrong one (a copy), then restored | Every agent job fails at *Agent identity* with the reason, never writes as `GH_PAT`; GitHub emails the workflow's owner; restored → green | ⬜ | |
+| E36g | F-30 | `APP_CLIENT_ID` emptied for one run (GH_PAT still set) | The run writes as `GH_PAT`'s owner with the warning; restored → the App again | ⬜ | |
+| E36h | #235 | A story PR merged (E36d) | Story Done on merge moves the story to Done with the branch read from the environment (the job log shows `--branch "$BRANCH"`) | ⬜ | |
+
+## Not built yet: rows to add when each is built
 
 | Planned | Rows to add when it is built |
 |---|---|
@@ -238,7 +251,6 @@ grouped sessions below**, so one story run proves as many items as possible.
 | F-27 per-run test data, parallel runs | Seeded data per run or worker; parallel run green; turn-taking off |
 | F-28 environments and browsers | A run against a second profile; a browser matrix run |
 | F-29 metrics report | The scheduled report's pass, flake, coverage, cost and Agent 0 accuracy figures match the sources |
-| F-30 bot identity | A person requests changes on and approves an agent PR; the review fix's "Request changes" trigger fires |
 
 ---
 
@@ -287,6 +299,7 @@ proves them.
 | #232 | Triage false alarm, refused defect writes | | E31g, E31h | |
 | #233 | The live test track | | | ✓ (docs and its guard test) |
 | #234 | A story says each thing once (F-31, L40) | | E35a-k, E3, E32d, H5 | |
+| #235 | The agents' own identity (F-30); a branch name never pasted into a script | | E36a-h, E18 (Request changes) | |
 
 Cited in `CHANGES.md` but never merged (evidence, not changes): #178 (replaced
 by #181), #211, #214, #217, #221, #223 (story PRs used as live evidence, closed

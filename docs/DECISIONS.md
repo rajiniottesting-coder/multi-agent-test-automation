@@ -9,6 +9,56 @@ ADR-005 (the Jira label state machine) under [State management deep-dive](./GUID
 
 ---
 
+## ADR-025 — The agents write as their own identity: a GitHub App, set up in the job
+
+### Status
+
+Accepted (2026-10).
+
+### Context
+
+The agents wrote to the repository with `GH_PAT`, the token of the person who
+reviews their work (ADR-008 chose a personal token because the built-in
+`GITHUB_TOKEN`'s pull requests do not trigger workflows). GitHub records the
+token's owner as the author, and lets no author request changes on or approve
+their own pull request (N10, seen on PR #221): the reviewer had to use `/fix`,
+merging needed a ruleset bypass, and a required approval (F-26) could not be
+enforced. A personal token also expires and must be rotated by that person.
+
+### Decision
+
+1. **The agents' writes come from a GitHub App**: an installation token per
+   job, for this repository only, asking for exactly what the agents do
+   (contents and pull requests write, issues write for conversation comments,
+   actions read). Its pull requests trigger workflows like a personal token's;
+   they are `<app>[bot]`'s, so a person reviews them as a colleague's work.
+2. **Identity is a credential, not code.** One step,
+   `.github/actions/agent-identity`, makes the token; every job that writes as
+   the agents uses it, and `agents/` is unchanged. On another repository host
+   the same place holds that host's bot identity (REUSE_FOR_NEW_PROJECT).
+3. **Fallback only when the App is not configured**, never when it fails: an
+   App that cannot make a token fails the run, because a quiet fallback would
+   turn the agents back into a person unnoticed. Until the App exists,
+   `GH_PAT` works as before, with a warning in every run.
+4. **Trusted code holds the key**: the step is always taken from `main` or a
+   pull request's base, never from the pull request being analysed.
+5. **No expiry to watch**: a per-run token is not an expiry alert; what can
+   break is the App itself, and that fails the run.
+
+### Consequences
+
+- Request changes starts the review fix; Approve and a required approval
+  work; the owner no longer needs to bypass rulesets to merge agent work.
+- The App must be on the branch ruleset's bypass list to create branches.
+- A job must finish inside the token's hour; every agent job ends within 30
+  minutes, and a test fails a longer timeout.
+- Agent 3's review and Agent 5's report keep the built-in token
+  (`github-actions[bot]`): they need no review of their own.
+- Supersedes ADR-008's choice of a personal token for the agents' writes; its
+  reason - the cascade - is kept.
+
+---
+
 ## ADR-024 — A story says each thing once: agents' data hidden, one cost comment per attempt
 
 ### Status
@@ -1351,7 +1401,7 @@ the scenarios whose test case changed.
 
 ### Status
 
-Accepted (2026-05-06)
+Accepted (2026-05-06). *Note (2026-10): the agents' writes now come from a GitHub App's per-job token, `GH_PAT` only until the App is set up - ADR-025. This record's reason, the cascade, still holds: an App's pull requests trigger workflows like a personal token's.*
 
 ### Context
 

@@ -370,6 +370,36 @@ notifies.
 
 ---
 
+### Change 9 - The agents' own identity on the repository (RECOMMENDED)
+
+Set up the agents' GitHub App before the first story (GUIDE →
+*Agent identity*): the variable `APP_CLIENT_ID` and the secret
+`APP_PRIVATE_KEY`, the App installed on the new repository and on its branch
+ruleset's bypass list. Without it the agents write with `GH_PAT` - as that
+person, who then cannot request changes on or approve the agents' pull
+requests. One App can serve several repositories: install it on each.
+
+### The agents' identity on another repository host
+
+The agents never see how their token was made: `RepoHost` (GitHub today) reads
+one token, and the CI job decides whose it is. Moving to another host means a
+new `RepoHost` adapter - needed anyway - and that host's bot identity in the
+job's set-up step instead of `.github/actions/agent-identity`:
+
+| Host | The agents' identity | A person then can | What triggers the review fix |
+|---|---|---|---|
+| GitHub | A GitHub App's installation token (per job) | Request changes, approve, be required to approve | `pull_request_review` (changes requested) and `issue_comment` (`/fix`) start the workflow directly |
+| GitLab | A project or group access token (GitLab creates a bot user for it) | Request changes, approve, approval rules | GitLab CI does not start a pipeline on a review or note: a webhook (merge request / note events) calls the pipeline trigger API |
+| Azure DevOps | A service principal (or the project's build service account) | Vote *Wait for author* / *Reject* / *Approve*; branch policies | Azure Pipelines does not start on a PR comment or vote: a service hook (pull request commented on / updated) queues the pipeline |
+| Bitbucket | A repository or workspace access token | Request changes, approve, merge checks | A webhook (pull request comment / changes requested) starts the pipeline |
+
+What carries over unchanged: every agent, the `/fix` command, the review fix's
+logic (read the review's comments, fix, reply in each thread, one summary) and
+its rule that a bot never starts it - map "changes requested" to the host's
+vote, and "is a bot" to its bot-user flag, in the trigger.
+
+---
+
 ## Changing the test stack (e.g. Playwright + Python to Playwright + JS)
 
 This is a DIFFERENT and larger job than changing the app. Changing the app

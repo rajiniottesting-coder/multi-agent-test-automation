@@ -806,9 +806,11 @@ fix**, on the same PR, at no token cost. Merge when green.
 
 Leave the review as you would for a person: inline comments on the lines, then
 **Request changes** - or comment `/fix rename the step to match the test case`.
-GitHub does not let a pull request's author request changes on it: when
-`GH_PAT` is your own account, Agent 2's pull requests are yours, so leave the
-inline comments with **Comment** and then post a bare `/fix`.
+With the agents' GitHub App ([Agent identity](#agent-identity-the-agents-github-app-f-30))
+Agent 2's pull requests are the App's, so Request changes works. Without it they
+are `GH_PAT`'s owner's, and GitHub does not let a pull request's author request
+changes on it: leave the inline comments with **Comment** and then post a bare
+`/fix`.
 Agent 2 replies in each comment's thread, pushes what it fixed to the same
 branch, and posts one `[agent2:review-fix]` summary listing every comment's
 outcome. Nothing is pushed unless the whole pull request passes the validator
@@ -1104,9 +1106,10 @@ run that fails on the same thing.
 
 `main` is protected by a repository ruleset: changes arrive through a pull
 request, and force-pushes and deletion are blocked. Repository admins are on the
-bypass list, so the agents - which push with the owner's `GH_PAT` - and an admin
-can still create branches and, if needed, push directly; GitHub records each
-bypass. A second ruleset on every branch restricts creating, updating and
+bypass list, so an admin can still create branches and, if needed, push
+directly; GitHub records each bypass. The agents write as their GitHub App
+(F-30), which must be on the branch ruleset's bypass list too - or, until the
+App is set up, with the owner's `GH_PAT`. A second ruleset on every branch restricts creating, updating and
 deleting branches to the bypass list as well, so a collaborator who is not on it
 cannot push a branch at all - widen it before adding one.
 
@@ -1162,7 +1165,7 @@ For ad-hoc human branches without a key (e.g., `feature/foo`): Agent 5 detects t
 | `OPENAI_API_KEY` | yes | All agents (LLM) | Your LLM provider's API key |
 | `OPENAI_API_BASE` | yes | Same | Base URL of your OpenAI-compatible API endpoint |
 | `LLM_MODEL` | no | Same | Model name sent to the endpoint. Set it explicitly; the code's fallback is only a placeholder |
-| `GITHUB_TOKEN` | yes | Agents 0, 2, 3, 5 and the sweeper | PAT with `repo` scope (CI passes `GH_PAT` for Agents 0 and 2 - its review fix included - and the sweeper, so the PRs they open and the fixes they push trigger workflows) |
+| `GITHUB_TOKEN` | yes | Agents 0, 2, 3, 5 and the sweeper | Locally: a personal token with `repo` scope. In CI: the agents' identity - the GitHub App's per-job token, else `GH_PAT` ([Agent identity](#agent-identity-the-agents-github-app-f-30)) - for Agents 0 and 2 (its review fix included), Story Done on merge, the health check and the sweeper, so the PRs they open and the fixes they push trigger workflows; Agents 3 and 5 use the built-in token |
 | `REVIEW_FIX_TEXT` | no | Agent 2 review fix | The review's or `/fix` comment's text; the workflow passes the event's text here, never on a command line |
 | `GITHUB_REPO` | yes | Same | `<owner>/<repo>` format |
 | `BASE_URL` | no | Tests at runtime | Override `config.yaml`'s base_url |
@@ -1321,12 +1324,72 @@ nothing is protected — a board id and a project key appear in every Jira URL.
 
 | Tab | Names |
 |---|---|
-| **Secrets** | `JIRA_API_TOKEN`, `JIRA_EMAIL`, `OPENAI_API_KEY`, `GH_PAT`, `APP_USER_REGISTERED`, `APP_PASSWORD` |
-| **Variables** | `JIRA_URL`, `JIRA_PROJECT_KEY`, `JIRA_BOARD_ID`, `GH_REPO`, `OPENAI_API_BASE`, `LLM_MODEL`, `LLM_MODEL_LIGHT` (optional: a cheaper model for Agents 1 and 5), both `LLM_PRICE_*` |
+| **Secrets** | `JIRA_API_TOKEN`, `JIRA_EMAIL`, `OPENAI_API_KEY`, `APP_PRIVATE_KEY` (the agents' GitHub App), `GH_PAT` (only until the App is set up), `APP_USER_REGISTERED`, `APP_PASSWORD` |
+| **Variables** | `JIRA_URL`, `JIRA_PROJECT_KEY`, `JIRA_BOARD_ID`, `GH_REPO`, `APP_CLIENT_ID` (the agents' GitHub App), `OPENAI_API_BASE`, `LLM_MODEL`, `LLM_MODEL_LIGHT` (optional: a cheaper model for Agents 1 and 5), both `LLM_PRICE_*` |
 
 The workflows reference them as `${{ secrets.NAME }}` and `${{ vars.NAME }}`
 respectively; `tests/unit/test_workflow_secrets.py` fails if an identifier is
 moved back to Secrets.
+
+### Agent identity: the agents' GitHub App (F-30)
+
+The agents write to the repository - branches, files, pull requests, comments,
+review replies - with one token, created by the step
+`.github/actions/agent-identity` at the start of every job that writes:
+
+- **With a GitHub App** (`APP_CLIENT_ID` variable + `APP_PRIVATE_KEY` secret):
+  an installation token for this repository, created per job, valid one hour
+  and revoked when the job ends. The agents' pull requests and comments are the
+  App's (`<app-name>[bot]`), so **you review them like a colleague's**:
+  inline comments and **Request changes** (which starts Agent 2's review fix),
+  **Approve**, and a required approval becomes possible. Nothing expires to be
+  rotated: the private key does not expire.
+- **Without it** (`APP_CLIENT_ID` empty): `GH_PAT` as before - the agents write
+  as the token's owner, a warning in every run says so, and that person must
+  use `/fix` instead of Request changes (GitHub lets no author review their own
+  pull request).
+
+A configured App that cannot create a token (wrong key, not installed, a
+permission missing) **fails the run**; it never falls back to `GH_PAT` quietly,
+which would switch the agents back to a person's identity unnoticed.
+
+**Setting it up (once, by the repository owner):**
+
+1. GitHub → your profile (or the organization) → **Settings → Developer
+   settings → GitHub Apps → New GitHub App**.
+   - **GitHub App name:** any free name, e.g. `<project>-agents`; it shows as
+     `<name>[bot]` on the pull requests.
+   - **Homepage URL:** the repository's URL.
+   - **Webhook:** clear **Active** (no webhook is needed).
+   - **Repository permissions:** Contents *Read and write*; Pull requests
+     *Read and write*; Issues *Read and write*; Actions *Read-only*
+     (Metadata *Read-only* is added by GitHub). Nothing else - the token asks
+     for exactly these, and creating it fails if the App has less.
+   - **Where can this GitHub App be installed?** *Only on this account.*
+   - **Create GitHub App.**
+2. On the App's page: copy the **Client ID**; under *Private keys*,
+   **Generate a private key** (a `.pem` file downloads).
+3. **Install App** (left menu) → your account → **Only select repositories** →
+   this repository → **Install**.
+4. Repository → **Settings → Secrets and variables → Actions**: a **variable**
+   `APP_CLIENT_ID` = the Client ID (an identifier, not a secret); a **secret**
+   `APP_PRIVATE_KEY` = the whole content of the `.pem` file.
+5. **Rulesets** (repository → Settings → Rules → Rulesets): the ruleset that
+   restricts creating and updating branches to its bypass list must list the
+   App (*Add bypass* → *Apps*), or the agents cannot create their branches.
+   The App never pushes to `main`; it does not need the `main` ruleset's bypass.
+6. Check: run **Pipeline health** by hand. Its *Agent identity* step says *The
+   agents write as the GitHub App `<name>[bot]`* - and the health issue's
+   `credential-expiry:repo-host` alert, if any, closes (an App's token has
+   nothing to expire).
+7. Once agent pull requests open as the App, delete the `GH_PAT` secret and
+   revoke the token on GitHub. You can then also remove yourself from the
+   rulesets' bypass list and require an approval on `main` (a person's - the
+   agents cannot approve their own pull requests either).
+
+Other repository hosts have the same idea under other names (a GitLab project
+access token's bot user, an Azure DevOps service principal): see
+[REUSE_FOR_NEW_PROJECT.md](./REUSE_FOR_NEW_PROJECT.md#the-agents-identity-on-another-repository-host).
 
 ### LLM token & cost tracking
 
@@ -1790,12 +1853,12 @@ agents (3 review, 4/5 run+report) do not: if a `pull_request` run is cancelled o
 never starts, the PR stalls silently. `.github/workflows/sweeper.yml` runs every weekday hour, 04:35-13:35 UTC,
 (`scripts/sweep_stalled_prs.py`), finds open `auto/*` PRs whose Agent-3 or Agent-4
 workflow has no settled run (success/failure/timed_out) for the current commit,
-and reopens them to re-fire the event chain. It reuses Agent 2's `GH_PAT` (the
-built-in token won't re-fire workflows, and Agent 5's report is gated on
+and reopens them to re-fire the event chain. It uses the agents' identity, like
+Agent 2 (the GitHub App, else `GH_PAT`; the built-in token won't re-fire workflows, and Agent 5's report is gated on
 `pull_request`, so a `workflow_dispatch` re-run would skip the report). Loop-safe:
 a real pass/fail is left alone, and a commit-SHA marker comment prevents
 double-nudging. Trigger a report-only pass anytime from the Actions tab (the
-`dry_run` input). Needs the `GH_PAT` secret and the `GH_REPO` variable already used by Agent 2.
+`dry_run` input). Needs the agents' identity (`APP_CLIENT_ID` + `APP_PRIVATE_KEY`, or `GH_PAT`) and the `GH_REPO` variable already used by Agent 2.
 
 ---
 
@@ -2053,8 +2116,23 @@ outcome: **declined** names the reason (a file another story owns, a reserved or
 framework file, or a change to what the test cases state), and **Nothing was
 pushed** quotes the check that failed. Each review is handled once; ask again
 with a new review or another `/fix`. If **Request changes** is greyed out, you
-opened the pull request: `GH_PAT` is your account, and GitHub does not let an
-author request changes - use `/fix`.
+are the pull request's author: the agents still write with `GH_PAT`, your
+account, and GitHub does not let an author request changes - use `/fix`, or set
+up the agents' GitHub App ([Agent identity](#agent-identity-the-agents-github-app-f-30)).
+
+### *Agent identity* fails: the GitHub App's token is not created
+
+The App is configured (`APP_CLIENT_ID` is set) but the token could not be made,
+so the run stops before any agent writes - on purpose: falling back to `GH_PAT`
+would make the agents a person again. The step's message says why:
+- *Not Found* / *installation* - the App is not installed on this repository
+  (App page → Install App).
+- *A JSON web token could not be decoded* / *key* - `APP_PRIVATE_KEY` is not the
+  whole `.pem` (include the BEGIN and END lines) or belongs to another App.
+- *permission* - the App lacks one of Contents, Pull requests, Issues (write) or
+  Actions (read); add it on the App's page and **accept** the new permissions
+  in the installation.
+To go back to `GH_PAT` for now, empty the `APP_CLIENT_ID` variable.
 
 ### Agent 2 shows `[WAIT]` for a story (`waiting_for_open_pr`)
 

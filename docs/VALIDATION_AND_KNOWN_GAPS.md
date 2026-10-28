@@ -41,14 +41,14 @@ has not yet run live: [TEST_TRACK.md](./TEST_TRACK.md).
 ## 2. Still to run → [TEST_TRACK.md](./TEST_TRACK.md)
 
 Everything built and not yet proven live is tracked in **[TEST_TRACK.md](./TEST_TRACK.md)**:
-one row per check, grouped by use case (TG-1 to TG-9), run in sessions S1-S8
+one row per check, grouped by use case (TG-1 to TG-10), run in sessions S1-S8
 at the end, after the implementation work, with each row's expected result,
 the PR that built it, and its status and evidence. TG-0 re-proves what V1-V8
-above already showed, so a later change that broke it is found; TG-10 holds
+above already showed, so a later change that broke it is found; *Not built yet* holds
 every fix in section 4 not built yet. Its last section maps every merged
 change to the run or rows that prove it. Every fix adds its rows there when it
 is built; a unit test fails if a fix marked **Done** in section 4 has none, a
-fix not done is missing from TG-10, or a PR `CHANGES.md` cites is missing from
+fix not done is missing from *Not built yet*, or a PR `CHANGES.md` cites is missing from
 the map. The runs UC-1 to UC-7 that used to be listed here are its sessions
 S1-S5.
 
@@ -153,12 +153,13 @@ code, the scenario markers and the inventory, not the notes.
 | L44 | **The comment ledger** (`usage_ledger.store: comments`, or a tracker without issue properties and comment editing) | The original behaviour: one `[LLM-USAGE]` comment per run, the table in every Agent 5 report, `[agent0:outcome]` as a comment, and a re-run of Agent 5 on the same commit reported again | Limit (by design: the fallback) |
 | L45 | **A re-run with the same results is not reported** | Its run link is not on the story (the PR's checks show it); its flakes are recorded only when it is another run of the tests | Limit (F-31, D4) |
 | L46 | **Agent 0's report on a change story keeps its table** | Only the data block moved to the Impact Review: the review shows no scenario titles and no tests left unjudged, so the story's table still repeats the review's key, owner, tier and score columns | Limit (F-31) |
+| L47 | **The agents' GitHub App not set up yet** (`APP_CLIENT_ID` empty) | The agents write with `GH_PAT`, as its owner, who cannot request changes on or approve their pull requests (N10's behaviour); every run's identity step warns | Limit (until the App is set up, GUIDE → Agent identity) |
+| L48 | **A job longer than an hour** | An App's token lasts one hour, so a longer job would lose its later writes. Every agent job ends within 30 minutes; a test fails a job allowed more than 55 | Limit |
 | N5 | **An agent's PR goes stale or conflicts** because `main` moved (e.g. a person's PR merged first) | No rebase or regeneration; the sweeper re-triggers only PRs whose checks never ran. The PR waits for a person | Fix planned |
 | N6 | **A red PR is merged** | No required status check (a decision recorded in GUIDE → Branch protection), so a story PR with failing tests can be merged and moved to Done | Decision pending |
 | N7 | **Test data and isolation** | Every run shares the live application's accounts and saved state; tests run one at a time (no parallel execution). Browser turn-taking avoids collisions but rules out parallelism; no per-run data set-up and tear-down | Fix planned |
 | N8 | **More than one environment or browser** | One `base_url` (an environment variable can override it) and Chromium only; no staging/production profiles, no browser matrix | Fix planned |
 | N9 | **"How healthy is our testing?"** | Results, cost and Agent 0 recall/precision are posted to Jira per story but never aggregated: no pass-rate, flake-rate, coverage, cost-per-story or Agent 0 accuracy trend | Fix planned |
-| N10 | **Agent 2's pull requests are opened under the reviewer's own account** (`GH_PAT`) | GitHub lets no author request changes on or approve their own PR, so the reviewer must use `/fix` instead of "Request changes", and merging needs a ruleset bypass; a required approval or status check (N6) cannot be enforced (seen live on PR #221) | Fix planned (P4) |
 
 ---
 
@@ -195,7 +196,7 @@ code, the scenario markers and the inventory, not the notes.
 | F-27 | N7 | Per-run test data (accounts and fixtures seeded per run or per worker) and then parallel execution; browser turn-taking becomes optional |
 | F-28 | N8 | Environment profiles in config (base URL and credentials per environment) and an optional browser matrix in Agent 4 |
 | F-29 | N9 | A scheduled metrics report built from the ledger, Agent 5's results and Agent 0's outcomes: pass and flake rates, coverage per story, cost per story, Agent 0 recall and precision over time |
-| F-30 | N10 | A separate bot identity for the agents' writes - a machine user or a GitHub App token in `GH_PAT` - so a person can request changes and approve; then the review fix's "Request changes" trigger and N6 work as designed. Needs the repository owner to create the account or App |
+| F-30 | N10 | **Done (P4)** - the agents write as their own identity: `.github/actions/agent-identity` creates a GitHub App installation token per job (`APP_CLIENT_ID` variable, `APP_PRIVATE_KEY` secret; contents, pull requests and issues write, actions read; one hour) for every job that writes as the agents, so a person can request changes on (starting the review fix), approve and be required to approve their pull requests. Falls back to `GH_PAT` only when no App is configured (a warning; L47) - an App that cannot make a token fails the run. The step comes only from `main` or a pull request's base; the health check sees a per-run token as nothing to expire. Needs the repository owner to create and install the App (GUIDE → Agent identity) |
 | F-31 | N11, L40 | **Done (P4)** - each thing said once on a story, nothing a person reads lost (`core/usage_ledger.py`): **D1** every run's cost is a hidden issue property, and ONE cost comment per attempt is edited in place (instead of a comment per run); a new attempt closes it with a line saying why; old stories' `[LLM-USAGE]` comments count until their next reset; **D2** a row per agent with its modes and run count; **D3** Agent 0's outcome is a line of Agent 5's report, kept as a property; **D4** Agent 5 posts nothing (and calls no model) for the same commit with the same results; **D5** Agent 0's report on the story no longer copies the Impact Review's data block (the table stays, L46), carries a re-analysis's delta as its second line, and says "no Component" with the advice itself (no separate comment); **L40** the budget line measures a released story against what it may spend. Not done: D6 - the "no update needed" notes are the only record of that check, not duplicates; D7 - the cost comment already shows a stopped story's cost. A tracker without issue properties and comment editing, or `usage_ledger.store: comments`, keeps the comment ledger (L44) |
 
 **Agreed priority (27 Oct 2026)** - fixes first that keep the agents' knowledge true, then story state, then production readiness:
@@ -203,7 +204,7 @@ code, the scenario markers and the inventory, not the notes.
 - **P1 - knowledge stays true:** P1-1 inventory update (G12, PR #224) → P1-2 context update for every story: additions for new features, removals, scoped and size-bounded (F-8, F-11, F-10, F-9, PR #225) → P1-3 no silent drop of an approved test case (F-13, PR #227) → P1-4 planned inventory entries and new pages (F-12, L25, G14, PR #229).
 - **P2 - story state and cost:** F-16 (a closed-unmerged PR resets the story), F-1, F-3, with F-2, F-4, F-5 (PR #230).
 - **P3 - production readiness:** F-21, F-22, F-23, with F-7, F-19 and F-24 (PR #231).
-- **P4 - identity and noise:** F-31 comment de-duplication (this change), then F-30 (needs the repository owner).
+- **P4 - identity and noise:** F-31 comment de-duplication (PR #234), then F-30 the agents' own identity (this change; the App is created by the repository owner).
 - Then the rest in the order below. All of it is validated live at the end, in the sessions of [TEST_TRACK.md](./TEST_TRACK.md).
 
 Order of the rest (before the priority plan): F-1 to F-7 (then session S4) with the correctness fixes F-13 and F-16; then continuous running - F-21 and F-22; then operational safety - F-23, F-24, F-25; then change detection - F-14, F-15; then the notes lifecycle together - F-8 with F-9 and F-10, then F-11, F-12; then scale - F-17, F-18, F-19, F-27, F-29, F-28, F-20; F-26 when the pipeline is reliably green. Each fix adds its rows to [TEST_TRACK.md](./TEST_TRACK.md) when it is built.
@@ -254,5 +255,7 @@ Gaps found earlier and fixed, for reference (details in [AI_CONCEPTS.md → fail
 | N4: nothing limited model spend; a spent provider budget stopped every agent at once | #231 (P3, F-24) |
 | L14: a failure that outlasted the retries read as a failed test in the summary and Agent 5's report | #231 (P3, F-7) |
 | L22: a failure was final on the first try (only a named 5xx/429 was re-run) and flakes were never counted | #231 (P3, F-19) |
-| N11: most of a story's comments were bookkeeping - 41 of SCRUM-187's 71 were `[LLM-USAGE]` / `[LEDGER-RESET]`, every Agent 5 report repeated the growing cost table, Agent 0's report copied the Impact Review's data, and the delta, the no-Component note and the outcome were each a second comment of the same event | this change (P4, F-31) |
-| L40: a story allowed more budget (its hold released) read over 100% of one budget | this change (P4, F-31) |
+| N11: most of a story's comments were bookkeeping - 41 of SCRUM-187's 71 were `[LLM-USAGE]` / `[LEDGER-RESET]`, every Agent 5 report repeated the growing cost table, Agent 0's report copied the Impact Review's data, and the delta, the no-Component note and the outcome were each a second comment of the same event | #234 (P4, F-31) |
+| L40: a story allowed more budget (its hold released) read over 100% of one budget | #234 (P4, F-31) |
+| Story Done on merge pasted the pull request's branch name into its shell script - a branch name may hold shell syntax, in a job holding the secrets (found by actionlint) | this change (P4, with F-30) |
+| N10: Agent 2's pull requests were opened under the reviewer's own account (`GH_PAT`), so that person could not request changes on or approve them - `/fix` instead, merging by a ruleset bypass, no required approval possible (PR #221) | this change (P4, F-30) |
