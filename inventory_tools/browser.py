@@ -97,7 +97,10 @@ def _match_selector(test_attrs: tuple) -> str:
 
 def _collect_js(test_attrs: tuple) -> str:
     """DOM-snapshot JS that also pierces OPEN shadow roots (recursive walk)."""
-    return """
+    # Raw string: the JavaScript regex `\s` must reach the page as written
+    # (a plain string made it an invalid Python escape - a SyntaxWarning now,
+    # an error in later Python versions).
+    return r"""
 () => {
   const out = [];
   const SEL = '__SEL__';
