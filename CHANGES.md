@@ -4,6 +4,19 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## October 2026 (end) — every action waits for the page to finish loading; a failed row wait names the page's requests (#239)
+
+**Why:** on 28 Oct, 4 of 8 Agent 4 runs failed cart scenarios that had been green for days (defects SCRUM-268 to SCRUM-271 raised by the triage), with no change to the tests. The trace of one (attached by the repository owner) settled it: the product page was reached by a CLICK; its heading was visible at +11.5 s and the test clicked its add button at +11.5 s, but the script that handles the button finished downloading at +19.1 s (the site's scripts took 7 to 10 s each that morning). The click went to a button nothing was listening to: no add request was made, the confirmation never showed, and on the retry a remove click on the cart page failed the same way. `navigate()` never had this gap - `page.goto` waits for the load event - but a page reached by a click was only waited for up to its element. The remove's failure was also triaged "unclassified": a wait for a row to go carried only Playwright's call log, while `wait_visible` already listed the page's action requests.
+
+- `pages/base_page.py`:
+  - `_wait_for_page_scripts()`: before driving the browser, every action helper (31 call sites: click, fill, select, check, hover, drag, upload, click_in_row, click_nth, in-frame actions, ...) waits for the document's load event. One round trip when the page is already loaded. Bounded and fail-open: a page that never finishes loading is acted on after the timeout, as before, with a warning, and that document is not waited for again; a page mid-navigation is left to the action's own wait
+  - `_network_evidence_on_failure()`: `wait_for_row`, `wait_for_any` and `wait_hidden` failures keep Playwright's message first and add the page's action requests and their outcome, as `wait_visible` does
+- `tests/unit/test_act_after_page_load.py` (17), including:
+  - a guard that fails when a BasePage helper drives the browser without the wait first
+  - the race reproduced in a real Chromium against a local page whose script arrives late: without the wait the click is lost (no request); with it the request is made and the confirmation shows
+- Verification: 8 deliberate breaks (click or click_in_row not waiting, the wait never waiting, DOMContentLoaded instead of load, no memo, a navigating page raising, a row wait losing its evidence, Playwright's message dropped) - each fails a test. Full unit suite 3787 passed.
+- Not in this change: the four auto-raised defects stay open until main passes again - the triage then labels them for closing
+
 ## October 2026 (end) — the nightly inventory check says what it matched, checks the login page, and fixes a one-element drift by tightening, never by silencing (#237)
 
 **Why:** the pipeline health issue reported *Inventory Health* failing three nights in a row (25-27 Oct). Its report read `AMBIG(2)` for one key and no more, so finding the two elements needed a local reproduction; and it showed the login page as "did not render" every night - the verifier signed in first, a signed-in browser is sent away from the login page, so its selectors had never been checked. The log also began with a `SyntaxWarning: invalid escape sequence '\s'`.
