@@ -36,7 +36,7 @@ class _Page:
         self.went_to = None
         self.waits = []
 
-    def goto(self, url):
+    def goto(self, url, wait_until=None):
         self.went_to = url
         return self._response
 

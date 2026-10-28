@@ -31,7 +31,7 @@ class _Page:
     def __init__(self, *statuses):
         self.statuses, self.waits, self.visits = list(statuses), [], 0
 
-    def goto(self, url):
+    def goto(self, url, wait_until=None):
         self.visits += 1
         status = self.statuses.pop(0)
         return None if status is None else _Response(status)

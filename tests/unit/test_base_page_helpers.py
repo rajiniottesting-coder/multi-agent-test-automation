@@ -420,7 +420,7 @@ class _AdPage:
     def go_back(self, **kwargs):
         self.url = self.origin + self.path
 
-    def goto(self, url):
+    def goto(self, url, wait_until=None):
         self.gotos.append(url)
         self.url = url
         return None
