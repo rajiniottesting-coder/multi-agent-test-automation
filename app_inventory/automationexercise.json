@@ -66,7 +66,9 @@
         "subscription_heading": "text=Subscription",
         "subscribe_email_input": "placeholder=Your email address",
         "subscribe_button": "#subscribe",
-        "subscribe_success": "text=You have been successfully subscribed!"
+        "subscribe_success": "text=You have been successfully subscribed!",
+        "apis_list_practice_button": "role=button[name='APIs list for practice']",
+        "test_cases_button": "role=button[name='Test Cases']"
       },
       "elements_notes": {
         "subscribe_button": "Icon-only button - an arrow glyph, no text - so it has NO accessible name and role=button[name='Subscribe'] matches nothing (verified 1 Aug 2026). The id is the only handle it offers. This is the case where css is genuinely correct.",
@@ -93,7 +95,8 @@
         "signup_email_input": "[data-qa='signup-email']",
         "signup_button": "[data-qa='signup-button']",
         "login_error": "text=Your email or password is incorrect!",
-        "signup_error": "text=Email Address already exist!"
+        "signup_error": "text=Email Address already exist!",
+        "form_element": "#form"
       },
       "elements_notes": {
         "_two_forms": "THIS PAGE CARRIES TWO INDEPENDENT FORMS - 'Login to your account' and 'New User Signup!' - and BOTH have an email field. A selector loose enough to match 'the email input' matches both and is a strict-mode violation. Always use the form-specific key.",
@@ -133,7 +136,8 @@
         "added_modal": "text=Your product has been added to cart.",
         "view_cart_link_in_modal": "role=link[name='View Cart']",
         "continue_shopping_button": "role=button[name='Continue Shopping']",
-        "searched_products_heading": "text=Searched Products"
+        "searched_products_heading": "text=Searched Products",
+        "sale_image_element": "alt=Website for practice"
       },
       "multi_match": [
         "product_cards",
@@ -240,7 +244,9 @@
         "review_email_input": "input[placeholder='Email Address']",
         "review_textarea": "textarea[placeholder='Add Review Here!']",
         "review_submit_button": "#button-review",
-        "review_success": "text=Thank you for your review."
+        "review_success": "text=Thank you for your review.",
+        "review_form_element": "#review-form",
+        "reviews_element": "#reviews"
       },
       "conditional": [
         "added_modal",
