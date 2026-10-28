@@ -35,6 +35,7 @@ _MUST_NOT_BE_SECRET = {
     "JIRA_PROJECT_KEY",  # appears in every issue key the logs print
     "JIRA_URL",          # the address of the tracker, not access to it
     "GH_REPO",           # owner/name - it is in the browser address bar
+    "APP_CLIENT_ID",     # the agents' GitHub App (F-30): public, in the App's URL
 }
 
 

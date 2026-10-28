@@ -1206,7 +1206,8 @@ def main():
 
 
 # The environment variables whose values must never reach a PR comment.
-_SECRET_ENV = ("OPENAI_API_KEY", "GITHUB_TOKEN", "GH_PAT", "JIRA_API_TOKEN", "APP_PASSWORD")
+_SECRET_ENV = ("OPENAI_API_KEY", "GITHUB_TOKEN", "GH_PAT", "APP_PRIVATE_KEY", "JIRA_API_TOKEN",
+               "APP_PASSWORD")
 
 
 def failure_note(error: BaseException, limit: int = 600) -> str:

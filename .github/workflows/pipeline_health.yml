@@ -47,6 +47,14 @@ jobs:
         with:
           ref: main
 
+      - name: Agent identity (the GitHub App's token, else GH_PAT)
+        id: identity
+        uses: ./.github/actions/agent-identity
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.GH_PAT }}
+
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
@@ -65,7 +73,9 @@ jobs:
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
           JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
           # The token the agents use, so its refusal or expiry is what is checked.
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_TOKEN: ${{ steps.identity.outputs.token }}
+          # A GitHub App's token is created for each run: no expiry to watch.
+          REPO_HOST_TOKEN_PER_RUN: ${{ steps.identity.outputs.kind == 'app' }}
           GITHUB_REPO: ${{ vars.GH_REPO || github.repository }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}

@@ -124,8 +124,15 @@ def expiry_finding(alert_id: str, what: str, expires: str | None, now: _dt.datet
                    f"further away than {warn_days} days.")
 
 
-def repo_host_findings(host_factory, now: _dt.datetime, warn_days: int) -> list:
-    """The repo host's credentials: refused, or close to expiry."""
+def repo_host_findings(host_factory, now: _dt.datetime, warn_days: int,
+                       per_run: bool = False) -> list:
+    """The repo host's credentials: refused, or close to expiry.
+
+    per_run: the token was created for this run (a GitHub App's installation
+    token, F-30) - it expires within the hour by design and nobody replaces
+    it, so there is no expiry to warn about (an earlier warning closes). What
+    can break is the App itself; then creating the token fails the run before
+    this check, and GitHub tells the workflow's owner."""
     from integrations.tracker import capability
     try:
         host = host_factory()
@@ -136,6 +143,9 @@ def repo_host_findings(host_factory, now: _dt.datetime, warn_days: int) -> list:
                         f"{type(e).__name__}: {_redact(str(e))}. Every agent that opens or "
                         "reads pull requests stops until the token is replaced.")]
     out = [Finding("credential:repo-host", False, "The repo host accepts the pipeline's token")]
+    if per_run:
+        return out + [Finding("credential-expiry:repo-host", False,
+                              "The repo host token is created for each run")]
     exp = expiry_finding("credential-expiry:repo-host", "The repo host token",
                          (info or {}).get("expires"), now, warn_days)
     return out + ([exp] if exp else [])
@@ -188,7 +198,7 @@ def _client_default_base() -> str:
 def _redact(text: str) -> str:
     """No secret value, token-shaped string or email address in an alert."""
     import re
-    for name in ("OPENAI_API_KEY", "GITHUB_TOKEN", "GH_PAT", "JIRA_API_TOKEN"):
+    for name in ("OPENAI_API_KEY", "GITHUB_TOKEN", "GH_PAT", "APP_PRIVATE_KEY", "JIRA_API_TOKEN"):
         value = os.environ.get(name) or ""
         if len(value) >= 8:
             text = text.replace(value, "[redacted]")
