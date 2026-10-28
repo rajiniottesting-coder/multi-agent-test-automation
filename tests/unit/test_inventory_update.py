@@ -604,7 +604,8 @@ def test_the_drift_job_proposes_the_update_after_its_analysis():
     step = steps[i]
     assert step["if"] == "always()"
     assert "scripts.propose_inventory_update" in step["run"] and "--dry-run" in step["run"]
-    assert step["env"]["GITHUB_TOKEN"] == "${{ secrets.GH_PAT }}"
+    # the agents' identity (F-30): its PR fires Agents 3 and 4, unlike the built-in token
+    assert step["env"]["GITHUB_TOKEN"] == "${{ steps.identity.outputs.token }}"
 
 
 def test_config_and_defaults_agree():

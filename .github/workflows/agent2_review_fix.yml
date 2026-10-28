@@ -15,7 +15,8 @@
 #
 # The fixer is checked out from main, like Agent 3: a pull request cannot
 # change the code that edits it. It reads and writes the pull request's branch
-# through the RepoHost adapter. It pushes with GH_PAT, so the push fires the
+# through the RepoHost adapter. It pushes as the agents' identity (the GitHub
+# App, else GH_PAT - .github/actions/agent-identity), so the push fires the
 # pull request's normal events and Agents 3, 4 and 5 run again on it.
 #
 # The review's or comment's text reaches the script as an environment
@@ -86,6 +87,14 @@ jobs:
         with:
           ref: main
 
+      - name: Agent identity (the GitHub App's token, else GH_PAT)
+        id: identity
+        uses: ./.github/actions/agent-identity
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.GH_PAT }}
+
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
@@ -109,7 +118,7 @@ jobs:
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
           JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
           JIRA_BOARD_ID: ${{ vars.JIRA_BOARD_ID }}
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_TOKEN: ${{ steps.identity.outputs.token }}
           GITHUB_REPO: ${{ vars.GH_REPO }}
           EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number }}

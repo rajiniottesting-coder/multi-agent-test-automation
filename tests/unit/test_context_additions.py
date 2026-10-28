@@ -361,7 +361,8 @@ def test_the_merge_workflow_proposes_the_notes_after_done():
     assert i > names.index("Move story to Done")
     step = steps[i]
     assert "scripts.propose_context_addition --branch" in step["run"]
-    assert step["env"]["GITHUB_TOKEN"] == "${{ secrets.GH_PAT }}"
+    # the agents' identity (F-30): its PR fires Agents 3 and 4, unlike the built-in token
+    assert step["env"]["GITHUB_TOKEN"] == "${{ steps.identity.outputs.token }}"
     assert "OPENAI_API_KEY" in step["env"] and "JIRA_API_TOKEN" in step["env"]
     assert "$BRANCH" in step["run"], "the branch reaches the script through the environment"
 

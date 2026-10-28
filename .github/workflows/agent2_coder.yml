@@ -106,6 +106,14 @@ jobs:
           # for what "good" Playwright code looks like.
           ref: main
 
+      - name: Agent identity (the GitHub App's token, else GH_PAT)
+        id: identity
+        uses: ./.github/actions/agent-identity
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.GH_PAT }}
+
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
@@ -149,17 +157,14 @@ jobs:
           # users can't create a secret named GITHUB_REPO. We store the repo
           # name as `GH_REPO` and map it to `GITHUB_REPO` inside the runner.
           #
-          # CASCADE FIX (ADR-008):
-          # We use a Personal Access Token (GH_PAT) instead of the built-in
-          # GITHUB_TOKEN. GitHub deliberately suppresses pull_request events
-          # when a PR is opened by the built-in token (anti-recursion safety).
-          # That meant Agents 3/4/5 never triggered after Agent 2 opened a PR.
-          # A PAT is treated as user-equivalent — its PR creation fires events
-          # normally, restoring the cascade.
-          # See docs/ADR-008-pat-for-cascade.md for security trade-offs and
-          # rotation strategy. The PAT is scoped to this repo only with
-          # Contents:R/W + PullRequests:R/W + Metadata:R.
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          # CASCADE FIX (ADR-008) and the agents' identity (ADR-025, F-30):
+          # not the built-in GITHUB_TOKEN - GitHub suppresses pull_request
+          # events for a PR the built-in token opens (anti-recursion safety),
+          # so Agents 3/4/5 would never run. The identity step's token is the
+          # GitHub App's (its PRs are <app>[bot]'s, so a person can review
+          # them), or GH_PAT until the App is configured; either fires the
+          # events. See .github/actions/agent-identity/action.yml.
+          GITHUB_TOKEN: ${{ steps.identity.outputs.token }}
           GITHUB_REPO: ${{ vars.GH_REPO }}
         run: |
           # Pick the right CLI flags based on workflow inputs:

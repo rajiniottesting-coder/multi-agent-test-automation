@@ -1,0 +1,78 @@
+# The identity the agents write to the repository with (F-30).
+#
+# With a GitHub App configured - the repository variable APP_CLIENT_ID and
+# the secret APP_PRIVATE_KEY - every job creates a short-lived installation
+# token (one hour, revoked when the job ends). The agents' branches, pull
+# requests, commits and comments are then the App's (<app>[bot]), not a
+# person's, so a person can review an agent's pull request: request changes
+# (which starts Agent 2's review fix), approve, and be required to.
+#
+# Without the App (APP_CLIENT_ID empty) the fallback token is used as before:
+# GH_PAT, the token of the person who owns it - a warning in the run says so.
+# A configured App that cannot create a token FAILS the step: falling back
+# silently would switch the agents back to a person's identity unnoticed.
+#
+# Either token makes the agents' pull requests fire their workflows (Agents
+# 3, 4 and 5); the built-in GITHUB_TOKEN would not.
+#
+# The permissions asked for are the agents' whole need (the App must have
+# been granted at least these, or creating the token fails):
+#   contents: write       branches and files of agent pull requests
+#   pull-requests: write  open, close, reopen; reply in review threads
+#   issues: write         conversation comments on a pull request
+#   actions: read         workflow runs and their artifacts
+#
+# Generic: nothing here names an application. On another repository host the
+# same idea is that host's bot identity - see docs/REUSE_FOR_NEW_PROJECT.md.
+name: Agent identity
+description: The token the agents write with - a GitHub App's when configured, else the fallback.
+inputs:
+  client-id:
+    description: The GitHub App's Client ID (a repository variable, not a secret).
+    required: false
+    default: ""
+  private-key:
+    description: The GitHub App's private key (a secret).
+    required: false
+    default: ""
+  fallback-token:
+    description: The token used when no App is configured (GH_PAT).
+    required: false
+    default: ""
+outputs:
+  token:
+    description: The token to write with.
+    value: ${{ steps.app.outputs.token || inputs.fallback-token }}
+  kind:
+    description: "'app' (created for this job) or 'personal' (the fallback token)."
+    value: ${{ steps.app.outputs.token != '' && 'app' || 'personal' }}
+runs:
+  using: composite
+  steps:
+    - name: Create the GitHub App's token
+      id: app
+      if: inputs.client-id != ''
+      uses: actions/create-github-app-token@v3
+      with:
+        client-id: ${{ inputs.client-id }}
+        private-key: ${{ inputs.private-key }}
+        permission-contents: write
+        permission-pull-requests: write
+        permission-issues: write
+        permission-actions: read
+
+    - name: Say who the agents write as
+      shell: bash
+      env:
+        APP_SLUG: ${{ steps.app.outputs.app-slug }}
+        HAS_APP: ${{ steps.app.outputs.token != '' }}
+        HAS_FALLBACK: ${{ inputs.fallback-token != '' }}
+      run: |
+        if [ "$HAS_APP" = "true" ]; then
+          echo "The agents write as the GitHub App ${APP_SLUG}[bot]."
+        elif [ "$HAS_FALLBACK" = "true" ]; then
+          echo "::warning title=Agents write as a person::No GitHub App is configured (repository variable APP_CLIENT_ID), so the agents write with GH_PAT - their pull requests are that person's, who then cannot request changes on or approve them. See docs/GUIDE.md, Agent identity."
+        else
+          echo "::error title=No token for the agents::Neither a GitHub App (APP_CLIENT_ID + APP_PRIVATE_KEY) nor GH_PAT is configured."
+          exit 1
+        fi

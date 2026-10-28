@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import logging
+import os
 import re
 import sys
 from pathlib import Path
@@ -44,7 +45,10 @@ def findings(tracker, host_factory, root: Path, now: _dt.datetime) -> list:
                                     exclude=(OWN_WORKFLOW,))
     except Exception as e:                                         # noqa: BLE001
         logger.warning("Scheduled workflows not checked: %s", e)
-    out += hc.repo_host_findings(host_factory, now, int(s["expiry_warn_days"]))
+    # A token created for this run (the agents' GitHub App, F-30) has no
+    # expiry to warn about; the workflow says which token it gave.
+    per_run = os.getenv("REPO_HOST_TOKEN_PER_RUN", "").strip().lower() == "true"
+    out += hc.repo_host_findings(host_factory, now, int(s["expiry_warn_days"]), per_run=per_run)
     model = hc.check_model(s.get("model_check", "completion"))
     if model:
         out.append(model)

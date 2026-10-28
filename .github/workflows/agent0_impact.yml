@@ -93,6 +93,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: main
+      - name: Agent identity (the GitHub App's token, else GH_PAT)
+        id: identity
+        uses: ./.github/actions/agent-identity
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.GH_PAT }}
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -128,7 +136,7 @@ jobs:
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
           JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
           JIRA_BOARD_ID: ${{ vars.JIRA_BOARD_ID }}
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_TOKEN: ${{ steps.identity.outputs.token }}
           GITHUB_REPO: ${{ vars.GH_REPO }}
         run: |
           DRY=""
@@ -155,6 +163,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: main
+      - name: Agent identity (the GitHub App's token, else GH_PAT)
+        id: identity
+        uses: ./.github/actions/agent-identity
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.GH_PAT }}
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -169,7 +185,7 @@ jobs:
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
           JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
           JIRA_BOARD_ID: ${{ vars.JIRA_BOARD_ID }}
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_TOKEN: ${{ steps.identity.outputs.token }}
           GITHUB_REPO: ${{ vars.GH_REPO }}
           # Inputs reach the shell as variables, never pasted into the script.
           STORY_KEY: ${{ github.event.inputs.story_key }}
@@ -196,6 +212,14 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           path: base
+      - name: Agent identity (the GitHub App's token, else GH_PAT)
+        id: identity
+        uses: ./base/.github/actions/agent-identity
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.GH_PAT }}
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -211,7 +235,7 @@ jobs:
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
           JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_TOKEN: ${{ steps.identity.outputs.token }}
           GITHUB_REPO: ${{ vars.GH_REPO }}
         run: |
           python -m agents.agent0_impact --code-change --base . --head ../head \
@@ -237,6 +261,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: main
+      - name: Agent identity (the GitHub App's token, else GH_PAT)
+        id: identity
+        uses: ./.github/actions/agent-identity
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.GH_PAT }}
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -256,7 +288,7 @@ jobs:
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
           JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_TOKEN: ${{ steps.identity.outputs.token }}
           GITHUB_REPO: ${{ vars.GH_REPO }}
         run: |
           mkdir -p reports
@@ -271,11 +303,12 @@ jobs:
       - name: Propose the inventory update as a pull request
         # One proposal at a time on inventory-update/<date> (core/inventory_update.py):
         # replaced, added and removed selectors, and what is left for a person.
-        # GH_PAT, so Agents 3 and 4 run on it like any PR. Never merged here. A
+        # The agents' identity (the GitHub App, else GH_PAT), so Agents 3 and 4
+        # run on it like any PR. Never merged here. A
         # failure here does not undo the drift analysis above.
         if: always()
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_TOKEN: ${{ steps.identity.outputs.token }}
           GITHUB_REPO: ${{ vars.GH_REPO }}
         run: |
           DRY=""
