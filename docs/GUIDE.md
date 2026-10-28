@@ -1353,41 +1353,142 @@ A configured App that cannot create a token (wrong key, not installed, a
 permission missing) **fails the run**; it never falls back to `GH_PAT` quietly,
 which would switch the agents back to a person's identity unnoticed.
 
-**Setting it up (once, by the repository owner):**
+**Setting it up (once, by the repository owner).** About 15 minutes. You need
+to be the repository's owner (or an organization owner). Done in this order;
+each part says what you see and what to leave alone.
 
-1. GitHub → your profile (or the organization) → **Settings → Developer
-   settings → GitHub Apps → New GitHub App**.
-   - **GitHub App name:** any free name, e.g. `<project>-agents`; it shows as
-     `<name>[bot]` on the pull requests.
-   - **Homepage URL:** the repository's URL.
-   - **Webhook:** clear **Active** (no webhook is needed).
-   - **Repository permissions:** Contents *Read and write*; Pull requests
-     *Read and write*; Issues *Read and write*; Actions *Read-only*
-     (Metadata *Read-only* is added by GitHub). Nothing else - the token asks
-     for exactly these, and creating it fails if the App has less.
-   - **Where can this GitHub App be installed?** *Only on this account.*
-   - **Create GitHub App.**
-2. On the App's page: copy the **Client ID**; under *Private keys*,
-   **Generate a private key** (a `.pem` file downloads).
-3. **Install App** (left menu) → your account → **Only select repositories** →
-   this repository → **Install**.
-4. Repository → **Settings → Secrets and variables → Actions**: a **variable**
-   `GH_APP_CLIENT_ID` = the Client ID (an identifier, not a secret); a **secret**
-   `GH_APP_PRIVATE_KEY` = the whole content of the `.pem` file.
-   The names start with `GH_`, like `GH_PAT` and `GH_REPO`: they are GitHub's,
-   not the application under test's (`APP_USER_REGISTERED`, `APP_PASSWORD`).
-5. **Rulesets** (repository → Settings → Rules → Rulesets): the ruleset that
-   restricts creating and updating branches to its bypass list must list the
-   App (*Add bypass* → *Apps*), or the agents cannot create their branches.
-   The App never pushes to `main`; it does not need the `main` ruleset's bypass.
-6. Check: run **Pipeline health** by hand. Its *Agent identity* step says *The
-   agents write as the GitHub App `<name>[bot]`* - and the health issue's
-   `credential-expiry:repo-host` alert, if any, closes (an App's token has
-   nothing to expire).
-7. Once agent pull requests open as the App, delete the `GH_PAT` secret and
-   revoke the token on GitHub. You can then also remove yourself from the
-   rulesets' bypass list and require an approval on `main` (a person's - the
-   agents cannot approve their own pull requests either).
+**Part A - Create the App** (`github.com/settings/apps/new`)
+
+Open it from GitHub: your profile picture (top right) → **Settings** → at the
+very bottom of the left menu **Developer settings** → **GitHub Apps** →
+**New GitHub App**. (For an organization: the organization's **Settings** →
+**Developer settings** → **GitHub Apps**.) The form is one long page:
+
+1. **GitHub App name** - any name not taken on GitHub, e.g. the repository's
+   name (this project's App is `multi-agent-test-automation`). The agents will
+   appear as `<name>[bot]` on pull requests and comments.
+2. **Homepage URL** - the repository's address,
+   `https://github.com/<owner>/<repository>`. Required, not used.
+3. **Identifying and authorizing users** (Callback URL, "Expire user
+   authorization tokens", "Request user authorization (OAuth)...") - leave as
+   they are. The agents never act for a signed-in user.
+4. **Post installation** - leave as it is.
+5. **Webhook** - **untick "Active"**. The agents start from GitHub Actions,
+   not from webhooks; the Webhook URL box then disappears.
+6. **Permissions → Repository permissions** - a long, alphabetical list. Every
+   row has a dropdown on the right reading **Access: No access**. Change
+   exactly four:
+
+   | Row | Set to | Why the agents need it |
+   |---|---|---|
+   | **Actions** (first row) | **Read-only** | Read workflow runs and their artifacts (Agent 0's nightly snapshot, the health check, the sweeper) |
+   | **Contents** | **Read and write** | Create branches, write files and commits |
+   | **Issues** | **Read and write** | Conversation comments on pull requests (GitHub keeps them as issue comments) |
+   | **Pull requests** | **Read and write** | Open, close and reopen pull requests; reply in review threads |
+
+   **Metadata** turns to *Read-only* by itself as soon as you set the first
+   one - GitHub requires it; nothing to do. Leave **every other row** on
+   *No access* - including the rows that start with "Agent" (Agent secrets,
+   Agent tasks, Agent variables): they are GitHub's own features, not ours.
+   Asking for less than these four makes the agents' runs fail; asking for
+   more is never needed.
+7. **Organization permissions** and **Account permissions** (further down) -
+   leave everything on *No access*.
+8. **Subscribe to events** - tick nothing.
+9. **Where can this GitHub App be installed?** - **Only on this account**.
+10. **Create GitHub App**. You land on the App's settings page.
+
+**Part B - The Client ID and the private key** (the App's settings page,
+`github.com/settings/apps/<name>`)
+
+11. **General** (left menu) - near the top: **Client ID**, a text starting
+    with `Iv`. Copy it; it is needed in Part D. It is not a secret.
+12. The private key. Depending on GitHub's layout it is either at the bottom of
+    **General** under *Private keys*, or under **Credentials** (left menu) →
+    **Key pairs** tab. Click **Generate a private key**.
+    - Nothing appears on the page: **the browser downloads the key at once**
+      as a file named like `<name>.<date>.private-key.pem` - see Chrome's
+      download icon (↓, top right) or your **Downloads** folder.
+    - The page then shows the key count (*Key pairs: 1*) and its fingerprint,
+      never the key itself; GitHub cannot show or download it again. If the
+      file is lost, generate a new key and delete the old one in the same list.
+    - The **Client secrets** tab beside it is something else (sign-in for
+      users): **do not create a client secret** - the agents do not use one.
+
+**Part C - Install the App on the repository**
+
+13. App settings → **Install App** (left menu) → **Install** next to your
+    account → **Only select repositories** → **Select repositories** → this
+    repository → **Install**.
+14. You land on `github.com/settings/installations/<number>`. It should show
+    *Read access to actions and metadata*, *Read and write access to code,
+    issues, and pull requests*, and under **Repository access** *Only select
+    repositories* with this one repository. A greyed-out **Save** only means
+    there is nothing new to save.
+    - **No bot appears anywhere yet - that is expected.** GitHub shows
+      `<name>[bot]` only when the App does something: the first pull request,
+      commit or comment the agents make with it.
+
+**Part D - Give the repository the two values**
+
+15. Repository → **Settings** → left menu **Secrets and variables** →
+    **Actions** (`github.com/<owner>/<repository>/settings/secrets/actions`).
+    The page has two tabs, **Secrets** and **Variables**.
+16. **Secrets** tab → **New repository secret**:
+    - **Name:** `GH_APP_PRIVATE_KEY`
+    - **Secret:** open the `.pem` file in Notepad (right-click → *Open with* →
+      *Notepad*), press **Ctrl+A**, **Ctrl+C**, and paste. It must run from
+      `-----BEGIN RSA PRIVATE KEY-----` to `-----END RSA PRIVATE KEY-----`,
+      those two lines included.
+    - **Add secret.** It now shows in the list with a lock; its value is never
+      shown again.
+17. **Variables** tab → **New repository variable**:
+    - **Name:** `GH_APP_CLIENT_ID`
+    - **Value:** the Client ID from step 11.
+    - **Add variable.**
+18. Close Notepad without saving and delete the `.pem` from Downloads (or move
+    it somewhere private). Never paste the key into a chat, an issue or a
+    commit; GitHub holds it from now on.
+
+The names start with `GH_`, like `GH_PAT` and `GH_REPO`: they are GitHub's -
+not the application under test's `APP_USER_REGISTERED` and `APP_PASSWORD`,
+which sit in the same list.
+
+**Part E - Let the App create branches**
+
+19. Repository → **Settings** → left menu **Rulesets** (under *Code, planning,
+    and automation*; older layouts: **Rules** → **Rulesets**). Open the ruleset that
+    applies to **all branches** and restricts creating, updating and deleting
+    branches (not the one for `main`).
+20. **Bypass list** → **Add bypass** → under **Apps**, the App's name → **Add
+    selected** → **Save changes** at the bottom. Without this, every agent run
+    that creates a branch is refused. The App never pushes to `main`, so the
+    `main` ruleset needs no change.
+
+**Part F - Check it, then retire GH_PAT**
+
+21. **Actions** → **Pipeline health** → **Run workflow** → branch `main` →
+    **Run workflow**. Open the run → job *check* → step *Agent identity*. It
+    should say **"The agents write as the GitHub App `<name>[bot]`."** - and a
+    `credential-expiry:repo-host` alert on the health issue, if there was one,
+    closes (an App's token has nothing to expire).
+    - The step **fails** with a reason: see Troubleshooting, *Agent identity
+      fails*. The run stops before any agent writes - it never quietly uses
+      `GH_PAT` instead.
+    - It shows the warning **"Agents write as a person"**: the variable
+      `GH_APP_CLIENT_ID` is missing or misspelt.
+22. The next agent pull request is opened by `<name>[bot]`: on it you can now
+    leave inline comments and press **Request changes** (Agent 2's review fix
+    starts), **Approve**, and merge without a ruleset bypass (TEST_TRACK
+    E36a-h).
+23. Once that works: delete the `GH_PAT` secret and revoke the token on
+    GitHub (profile → Settings → Developer settings → Personal access tokens).
+    Optionally remove yourself from the rulesets' bypass list and require an
+    approval on `main` - a person's; the agents cannot approve their own pull
+    requests either.
+
+**To undo** at any time: empty or delete the `GH_APP_CLIENT_ID` variable - the
+agents go back to `GH_PAT` (while it exists), with the warning in every run.
 
 Other repository hosts have the same idea under other names (a GitLab project
 access token's bot user, an Azure DevOps service principal): see
