@@ -4,6 +4,21 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## October 2026 (end) — one redaction rule for PR comments and alerts; GitHub App tokens and keys covered (#238)
+
+**Why:** found while the agents' GitHub App (F-30) was set up - GitHub announced that App installation tokens are moving to a longer `ghs_` format (about 520 characters, with dots). Agent 3's failure note and the pipeline health alerts each had their own copy of the redaction rules, and both missed things:
+- the token pattern knew `ghp_`, `gho_` and `github_pat_` only - not `ghs_` (App), `ghu_` or `ghr_` - and stopped at a dot;
+- the two copies named different secrets (the health alerts missed `APP_PASSWORD`; neither named `JIRA_EMAIL`, `APP_USER_REGISTERED` or `GH_APP_PRIVATE_KEY`);
+- a private key quoted in an error was caught only by its exact value, and not if cut off;
+- found by the deliberate-break checks of this change: `Key=\S+` also swallowed the comma, bracket or full stop after a gateway's key alias.
+
+- `core/redaction.py` (new): `redact()` - every credential the workflows pass (`SECRET_ENV`, longest value first), every token shape at any length, a private key block whole or cut off, a `Key=` alias up to its closing punctuation, emails
+- `agents/agent3_reviewer.failure_note` and `core/health_checks._redact` both call it
+- `tests/unit/test_redaction.py` (17), including a guard that fails when a workflow passes a secret `SECRET_ENV` does not name
+- Verification: 13 deliberate breaks (a secret dropped from the list, a token kind, the length or the dot, the key block whole or cut off, the alias, emails, the length threshold either way, the longest-first order, either caller bypassing the rule) - every one fails a test
+
+---
+
 ## October 2026 (end) — every action waits for the page to finish loading; a slow resource no longer fails a navigation; a failed row wait names the page's requests (#239)
 
 **Why:** on 28 Oct, 4 of 8 Agent 4 runs failed cart scenarios that had been green for days (defects SCRUM-268 to SCRUM-271 raised by the triage), with no change to the tests. The trace of one (attached by the repository owner) settled it: the product page was reached by a CLICK; its heading was visible at +11.5 s and the test clicked its add button at +11.5 s, but the script that handles the button finished downloading at +19.1 s (the site's scripts took 7 to 10 s each that morning). The click went to a button nothing was listening to: no add request was made, the confirmation never showed, and on the retry a remove click on the cart page failed the same way. `navigate()` never had this gap - `page.goto` waits for the load event - but a page reached by a click was only waited for up to its element. The remove's failure was also triaged "unclassified": a wait for a row to go carried only Playwright's call log, while `wait_visible` already listed the page's action requests.
@@ -19,6 +34,8 @@ This document records substantive changes to the framework in reverse-chronologi
   - the four fake pages of earlier navigation tests accept `wait_until` (test doubles only)
 - Verification: 13 deliberate breaks (click or click_in_row not waiting, the wait never waiting, DOMContentLoaded instead of load, no memo, a navigating page raising, a row wait losing its evidence, Playwright's message dropped; goto waiting for load again, the pending navigation not cancelled, navigate skipping the load wait, the outage rule or the diagnosis missing) - each fails a test. Full unit suite passed.
 - Not in this change: the four auto-raised defects stay open until main passes again - the triage then labels them for closing
+
+---
 
 ## October 2026 (end) — the nightly inventory check says what it matched, checks the login page, and fixes a one-element drift by tightening, never by silencing (#237)
 

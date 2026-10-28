@@ -64,6 +64,24 @@ def test_every_configured_secret_value_and_emails():
     assert out == f"401 {M} / {M} / {M} / {M} / Key={M} / {M}"
 
 
+def test_a_gateway_key_alias_without_an_email():
+    """A gateway names the key it refused (`Key=<owner>_<id>`); the alias is
+    not an email, so only its own rule removes it."""
+    out = redaction.redact("Budget exceeded for Key=team_alpha_42, retry later", env={})
+    assert out == f"Budget exceeded for Key={M}, retry later"
+    for text, want in (("(Key=team.x_9)", f"(Key={M})"), ("Key=team_alpha_42.", f"Key={M}."),
+                       ("refused: Key=a; next", f"refused: Key={M}; next")):
+        assert redaction.redact(text, env={}) == want, text
+
+
+def test_a_secret_holding_another_is_removed_whole():
+    """Values are replaced longest first: replacing a shorter secret inside a
+    longer one first would leave the rest of the longer one in the text."""
+    env = {"JIRA_API_TOKEN": "abcdefgh", "APP_PASSWORD": "abcdefgh-and-a-tail"}
+    out = redaction.redact("refused abcdefgh-and-a-tail", env=env)
+    assert out == f"refused {M}", out
+
+
 def test_a_short_value_is_not_redacted_everywhere():
     """A one- or two-character secret would blank that character all over the
     message - the reason identifiers are variables (test_workflow_secrets)."""
