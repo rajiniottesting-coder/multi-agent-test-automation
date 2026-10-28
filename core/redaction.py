@@ -38,7 +38,9 @@ SECRET_ENV = (
 _TOKEN = re.compile(r"\b(?:sk|gh[pousr]|github_pat)[-_][A-Za-z0-9_.\-]{8,}")
 _PEM = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)",
                   re.S)
-_KEY_ALIAS = re.compile(r"\bKey=\S+")
+# The alias runs to the next space or closing punctuation; a sentence's
+# comma, bracket or full stop after it stays.
+_KEY_ALIAS = re.compile(r"\bKey=[^\s,;)\]'\"]*[^\s,;)\]'\".]")
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 
 MARK = "[redacted]"
