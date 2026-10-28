@@ -69,6 +69,9 @@ _NETWORK_LOG_KEPT = 20
 # Kept apart from the bounded log above, so an early refusal is not pushed out
 # by the requests that followed it.
 _UNRECOVERED: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+# Per page: the URL whose load event an action already waited out in vain, so a
+# document that never finishes loading costs ONE timeout, not one per action.
+_LOAD_GAVE_UP: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
 
 
 def watch_network(page: Page, ignore: Optional[Callable[[str], bool]] = None) -> None:
@@ -551,9 +554,10 @@ class BasePage:
         element is identified by what it SAYS and only then reached by where
         it sits.
         """
+        target = self._locator(locator).nth(index)
+        self._wait_for_page_scripts()
         try:
-            self._locator(locator).nth(index).click(
-                timeout=self._default_timeout_ms())
+            target.click(timeout=self._default_timeout_ms())
         except Exception:
             # An index past the end of the family waits out the whole timeout
             # and then reports a plain "element not found", which sends the
@@ -615,6 +619,59 @@ class BasePage:
             return True
         except Exception:                                      # noqa: BLE001
             return False
+
+    def _wait_for_page_scripts(self) -> None:
+        """Before an action: let the document finish loading, so the page's
+        own scripts are listening when the control is used.
+
+        A page reached by a CLICK is not waited for the way navigate() waits
+        (page.goto waits for the load event); the next step only waits for
+        its element. The HTML can be on screen seconds before the scripts that
+        give its controls behaviour have even downloaded. A control used in
+        that window looks clicked and does nothing: no request, no dialog, no
+        change - and the failure reads as a state or application problem.
+
+        Proven by a trace (28 Oct 2026): a detail page's heading was visible at
+        +11.5 s and its add button clicked at +11.5 s; the script that handles
+        that button finished downloading at +19.1 s. No request was ever made
+        and the confirmation never showed; on a retry, a remove click on the
+        next page failed the same way. Every assertion was right; every action
+        had simply gone to a page that was not listening yet.
+
+        Costs one round trip when the document is already loaded - the usual
+        case, and always the case in a single-page app after its first load.
+        Never raises and never blocks for good: a page whose load event does
+        not come within the timeout is acted on anyway, as before, with a
+        warning, and that same document is not waited for again. A page in
+        the middle of navigating (its context destroyed) is left to the
+        action's own wait.
+        """
+        page = getattr(self, "page", None)
+        try:
+            state = page.evaluate("document.readyState")
+        except Exception:                                      # noqa: BLE001
+            return
+        if state == "complete":
+            return
+        url = getattr(page, "url", "") or ""
+        try:
+            if _LOAD_GAVE_UP.get(page) == url:
+                return
+        except TypeError:                                      # not weak-referenceable
+            pass
+        try:
+            page.wait_for_load_state("load", timeout=self._default_timeout_ms())
+        except Exception as exc:                               # noqa: BLE001
+            try:
+                _LOAD_GAVE_UP[page] = url
+            except TypeError:
+                pass
+            logger.warning(
+                "%s: %s had not finished loading (readyState %r) within %d ms - "
+                "acting anyway. A control whose script has not loaded does "
+                "nothing when used. (%s)",
+                type(self).__name__, url, state, self._default_timeout_ms(),
+                type(exc).__name__)
 
     _clearing_interstitial = False
 
@@ -937,6 +994,7 @@ class BasePage:
             )
         target = row.first.locator(target_locator)
         target = self._visible_member(target)
+        self._wait_for_page_scripts()
         target.click(timeout=self._default_timeout_ms())
 
     @staticmethod
@@ -1275,10 +1333,12 @@ class BasePage:
 
     def fill(self, locator: str, value: str) -> None:
         """Clear the field and set its value in one action."""
+        self._wait_for_page_scripts()
         self._locator(locator).fill(value)
 
     def type_text(self, locator: str, value: str, delay_ms: int = 50) -> None:
         """Type character by character — for fields with keystroke handlers."""
+        self._wait_for_page_scripts()
         self._locator(locator).press_sequentially(value, delay=delay_ms)
 
     def type_and_confirm(self, locator: str, value: str,
@@ -1373,6 +1433,7 @@ class BasePage:
 
     def clear(self, locator: str) -> None:
         """Empty an input."""
+        self._wait_for_page_scripts()
         self._locator(locator).fill("")
 
     def get_input_value(self, locator: str) -> str:
@@ -1385,6 +1446,7 @@ class BasePage:
 
     def press_key(self, locator: str, key: str) -> None:
         """Press a key with the element focused, e.g. 'Enter', 'Tab'."""
+        self._wait_for_page_scripts()
         self._locator(locator).press(key)
 
     # ============================================================
@@ -1393,14 +1455,17 @@ class BasePage:
 
     def click(self, locator: str) -> None:
         """Click the element."""
+        self._wait_for_page_scripts()
         self._locator(locator).click()
 
     def double_click(self, locator: str) -> None:
         """Double-click the element."""
+        self._wait_for_page_scripts()
         self._locator(locator).dblclick()
 
     def right_click(self, locator: str) -> None:
         """Right-click (context menu) the element."""
+        self._wait_for_page_scripts()
         self._locator(locator).click(button="right")
 
     def click_if_visible(self, locator: str) -> bool:
@@ -1410,12 +1475,14 @@ class BasePage:
         """
         target = self._locator(locator)
         if target.count() > 0 and target.is_visible():
+            self._wait_for_page_scripts()
             target.click()
             return True
         return False
 
     def force_click(self, locator: str) -> None:
         """Click bypassing actionability checks — last resort for overlays."""
+        self._wait_for_page_scripts()
         self._locator(locator).click(force=True)
 
     # ============================================================
@@ -1424,14 +1491,17 @@ class BasePage:
 
     def check(self, locator: str) -> None:
         """Tick a checkbox or select a radio (no-op if already checked)."""
+        self._wait_for_page_scripts()
         self._locator(locator).check()
 
     def uncheck(self, locator: str) -> None:
         """Untick a checkbox (no-op if already unchecked)."""
+        self._wait_for_page_scripts()
         self._locator(locator).uncheck()
 
     def set_checkbox(self, locator: str, checked: bool) -> None:
         """Set a checkbox to an explicit state."""
+        self._wait_for_page_scripts()
         self._locator(locator).set_checked(checked)
 
     def is_checked(self, locator: str) -> bool:
@@ -1444,19 +1514,23 @@ class BasePage:
 
     def select_by_value(self, locator: str, value: str) -> None:
         """Select an <option> by its value attribute."""
+        self._wait_for_page_scripts()
         self._locator(locator).select_option(value=value)
 
     def select_by_label(self, locator: str, label: str) -> None:
         """Select an <option> by its visible text."""
+        self._wait_for_page_scripts()
         self._locator(locator).select_option(label=label)
 
     def select_by_index(self, locator: str, index: int) -> None:
         """Select an <option> by its zero-based position."""
+        self._wait_for_page_scripts()
         self._locator(locator).select_option(index=index)
 
     def select_multiple_by_label(self, locator: str,
                                  labels: List[str]) -> None:
         """Select several options in a <select multiple>."""
+        self._wait_for_page_scripts()
         self._locator(locator).select_option(label=labels)
 
     def get_select_value(self, locator: str) -> str:
@@ -1489,6 +1563,7 @@ class BasePage:
         """
         target = (self.page.get_by_role(role, name=name) if name
                   else self.page.get_by_role(role))
+        self._wait_for_page_scripts()
         target.click()
 
     def get_role_text(self, role: str, name: Optional[str] = None) -> str:
@@ -1500,6 +1575,7 @@ class BasePage:
     def select_custom_option(self, trigger_locator: str,
                              option_text: str) -> None:
         """Open a custom (non-<select>) dropdown and pick an option by text."""
+        self._wait_for_page_scripts()
         self._locator(trigger_locator).click()
         self.page.get_by_role("option", name=option_text).click()
 
@@ -1604,10 +1680,12 @@ class BasePage:
 
     def hover(self, locator: str) -> None:
         """Hover over the element (reveals hover menus)."""
+        self._wait_for_page_scripts()
         self._locator(locator).hover()
 
     def hover_and_click(self, hover_locator: str, click_locator: str) -> None:
         """Hover to reveal a menu, then click an item inside it."""
+        self._wait_for_page_scripts()
         self._locator(hover_locator).hover()
         self._locator(click_locator).click()
 
@@ -1617,11 +1695,13 @@ class BasePage:
 
     def drag_to(self, source_locator: str, target_locator: str) -> None:
         """Drag one element onto another."""
+        self._wait_for_page_scripts()
         self._locator(source_locator).drag_to(self._locator(target_locator))
 
     def drag_by_offset(self, locator: str, dx: int, dy: int) -> None:
         """Drag an element by a pixel offset — for sliders and resizers."""
         source = self._locator(locator)
+        self._wait_for_page_scripts()
         box = source.bounding_box()
         if not box:
             raise ValueError(f"Element not visible, cannot drag: {locator}")
@@ -1638,15 +1718,18 @@ class BasePage:
 
     def upload_file(self, locator: str, file_path: Union[str, Path]) -> None:
         """Attach a single file to a file input."""
+        self._wait_for_page_scripts()
         self._locator(locator).set_input_files(str(file_path))
 
     def upload_files(self, locator: str,
                      file_paths: List[Union[str, Path]]) -> None:
         """Attach several files to a multi-file input."""
+        self._wait_for_page_scripts()
         self._locator(locator).set_input_files([str(p) for p in file_paths])
 
     def clear_uploads(self, locator: str) -> None:
         """Detach all files from a file input."""
+        self._wait_for_page_scripts()
         self._locator(locator).set_input_files([])
 
     # ============================================================
@@ -1744,6 +1827,7 @@ class BasePage:
 
     def click_and_get_new_tab(self, locator: str) -> Page:
         """Click something that opens a new tab; return the new Page."""
+        self._wait_for_page_scripts()
         with self.page.context.expect_page() as new_page_info:
             self._locator(locator).click()
         new_page = new_page_info.value
@@ -1755,6 +1839,7 @@ class BasePage:
         save_dir: Union[str, Path] = "reports/downloads",
     ) -> Path:
         """Click a download trigger; save the file and return its path."""
+        self._wait_for_page_scripts()
         with self.page.expect_download() as download_info:
             self._locator(locator).click()
         download = download_info.value
@@ -1771,10 +1856,12 @@ class BasePage:
     def fill_in_frame(self, frame_locator: str, locator: str,
                       value: str) -> None:
         """Fill a field inside an iframe."""
+        self._wait_for_page_scripts()
         self.page.frame_locator(frame_locator).locator(locator).fill(value)
 
     def click_in_frame(self, frame_locator: str, locator: str) -> None:
         """Click an element inside an iframe."""
+        self._wait_for_page_scripts()
         self.page.frame_locator(frame_locator).locator(locator).click()
 
     def get_text_in_frame(self, frame_locator: str, locator: str) -> str:
