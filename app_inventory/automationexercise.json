@@ -183,7 +183,9 @@
         "cart_delete_buttons": ".cart_quantity_delete",
         "proceed_to_checkout_button": "text=Proceed To Checkout",
         "empty_cart_message": "text=Cart is empty!",
-        "cart_quantities": ".cart_quantity"
+        "cart_quantities": ".cart_quantity",
+        "cart_items_element": "#cart_items",
+        "empty_cart_element": "#empty_cart"
       },
       "multi_match": [
         "cart_rows",
