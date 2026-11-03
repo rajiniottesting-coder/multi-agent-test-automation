@@ -373,6 +373,13 @@ Nothing here names the application; check that the tracker matches:
    application not up makes every failure an outage (no defect); otherwise
    every failure is run again, and only a test failing twice becomes a defect
    (`defects.only_after_retry`).
+7. Hand-off (`handoff`): Agent 0 starts Agent 1, Agents 1 and 2 start
+   themselves again while stories wait - GitHub drops most scheduled runs of a
+   quiet repository. `handoff.workflows` names the workflow files; keep them if
+   the workflows keep their names. Optionally add the tracker rule that starts
+   Agent 2 on approval (GUIDE, "Hand-off between agents"). A repo host adapter
+   other than GitHub needs the optional `dispatch_workflow` capability, or the
+   schedules alone run the agents.
 
 A tracker adapter other than Jira needs the optional capabilities
 (`create_issue`, issue properties, `check_access` - `integrations/tracker.py`)

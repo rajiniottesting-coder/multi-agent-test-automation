@@ -1420,6 +1420,8 @@ schedule:
   - cron: "20 3,7,11 * * *"     # 08:50, 12:50, 16:50 IST
 ```
 
+**GitHub starts only some of these** on a quiet repository (3 Nov 2026: about 4 of Agent 1's 19 daily runs over two weeks, some hours late). The hand-off (`core/handoff.py`) does not depend on them: `scripts/start_agent.py --agent <key> [--previous-chain N]` runs after Agent 0's story analysis (`--agent agent1_analyst`, `if: always()`) and as the last step of Agents 1 and 2 (themselves, `if: success()`). `handoff.start()` asks `tracker.find_stories_to_process(sel, max_results=1)` for every non-empty `*selection` block of `agents.<key>` (`selection` first); with a story waiting and `chain` (the previous run's input + 1) not past `handoff.max_chain`, it calls the repo host's optional `dispatch_workflow(handoff.workflows[key], "main", {"chain": n})` - scan mode, the built-in token with `actions: write`. Every outcome is a dict, never an exception; the script exits 0 and writes `started=` to `$GITHUB_OUTPUT`. Both workflows also accept `repository_dispatch` with their agent key as the event type (a tracker rule on approval); concurrency (`cancel-in-progress: false`) keeps one run going and one waiting, and a waiting scan covers every story, so starts that collapse lose nothing.
+
 The health check reads every workflow with a schedule from the files
 (`core.health_checks.scheduled_workflows`), so a new one is watched without a
 code change.
