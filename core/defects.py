@@ -23,6 +23,15 @@ WHAT
     Outages (F-7) and flakes (F-19) never raise a defect: the outage opens a
     health alert, the flake is recorded on the health issue.
 
+    Only after a rerun (`only_after_retry`, on by default): a defect is raised
+    or updated only for a test that failed, was run again once the application
+    was found up (core/app_probe.py), and failed again (`retried`). A failure
+    that was not run again - more failures than the retry takes, or a retry
+    that did not run - raises nothing and is listed in one health alert: a
+    single failure is not yet evidence of a defect (30 Oct 2026: 17 of 17
+    failed on an application that was not itself, and ten defects were raised
+    from the first run alone).
+
 Generic: no application, test or tracker name lives here. Every write is
 best-effort per defect - one failing write never stops the others.
 """
@@ -159,7 +168,9 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
            dry_run: bool = False) -> dict:
     """Raise, update and flag defects for one run on main. Returns what it did:
     {"raised", "updated", "passing", "failing_again", "capped", "outages", "flaky",
-    "errors"} - `errors` is [(what, why)] for every write the tracker refused
+    "not_retried", "errors"} - `not_retried` lists failures that were not run
+    again (no defect, see only_after_retry); `errors` is [(what, why)] for every
+    write the tracker refused
     (a required field on the defect's create screen, a permission), so the
     caller can say so instead of a run that looks clean."""
     s = settings()
@@ -167,9 +178,14 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
     today = now.date().isoformat()
     cases = jm.cases(root)
     failing = [c for c in cases if jm.outcome(c) in ("failed", "error") and not jm.is_outage(c)]
+    not_retried = []
+    if s.get("only_after_retry", True):
+        not_retried = [c for c in failing if not jm.is_retried(c)]
+        failing = [c for c in failing if jm.is_retried(c)]
     result = {"raised": [], "updated": [], "passing": [], "failing_again": [], "capped": [],
               "outages": [jm.case_id(c) for c in cases if jm.is_outage(c)],
-              "flaky": [jm.case_id(c) for c in cases if jm.is_flaky(c)], "errors": []}
+              "flaky": [jm.case_id(c) for c in cases if jm.is_flaky(c)],
+              "not_retried": [jm.case_id(c) for c in not_retried], "errors": []}
     if not s.get("enabled", True):
         logger.info("defects.enabled is false - no defect is raised.")
         return result

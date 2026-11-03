@@ -35,6 +35,10 @@ RUN = "https://ci.example/runs/"
 
 
 def _case(name, outcome="passed", msg=MULTI, props=None, module="test_cart"):
+    # A failure that reaches the triage was run again and failed again
+    # (defects.only_after_retry): marked `retried` unless a test says otherwise.
+    if props is None and outcome != "passed":
+        props = {"retried": "1"}
     body = {"passed": "", "failed": f'<failure message="{msg}">{msg}</failure>',
             "error": f'<error message="{msg}">{msg}</error>'}[outcome]
     p = "".join(f'<property name="{k}" value="{v}"/>' for k, v in (props or {}).items())
