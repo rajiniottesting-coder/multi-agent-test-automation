@@ -455,20 +455,40 @@ jobs:
         if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory != 'false') && steps.pr_changes.outputs.e2e != 'false'
         run: python -m scripts.collapse_junit_reruns reports/junit.xml
 
+      - name: Check the application is up
+        # After a run with failures, ask the application directly
+        # (core/app_probe.py, scripts/app_probe.py): open the pages listed in
+        # app_under_test.health_check and look for elements always on them,
+        # waiting up to app_health.wait_minutes for it to come back. A failure
+        # says what the TEST saw; this says whether the APPLICATION was up.
+        # On 30 Oct 2026 all 17 tests failed on pages served without their
+        # content, and the next night all 17 passed - nothing told the two
+        # apart. Not up: the retry is skipped and every failure is marked an
+        # outage (not judged, never a defect) with what was served instead.
+        # Up, or the check could not run (`unknown`): the retry runs as before.
+        # Never fails the job; the report goes into the artifact.
+        id: probe
+        if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory != 'false') && steps.pr_changes.outputs.e2e != 'false' && steps.e2e.outputs.exit_code == '1'
+        continue-on-error: true
+        run: python -m scripts.app_probe --report reports/app_probe.json
+
       - name: Retry failed tests once
         # F-19: a test that fails and then passes when run again is FLAKY - it
         # counts as passed, and Agent 5 / the defect triage record it on the
         # pipeline health issue, so it is never silently forgotten nor raised
-        # as a defect. A test that fails again is a failure. Only when pytest
-        # reported failures (exit code 1), and not when more than
-        # MAX_RETRIED_TESTS failed: that many at once is a broken build or an
-        # outage, and retrying would only double the run.
+        # as a defect. A test that fails again is a failure, and only such a
+        # test can become a defect (defects.only_after_retry). Only when
+        # pytest reported failures (exit code 1) and the application was not
+        # found down. Every failure is retried up to MAX_RETRIED_TESTS - a cap
+        # against doubling a huge run, not a guess that many failures mean an
+        # outage: the application check above answers that. A failure past the
+        # cap is never raised as a defect; one health alert lists it.
         id: retry
-        if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory != 'false') && steps.pr_changes.outputs.e2e != 'false' && steps.e2e.outputs.exit_code == '1'
+        if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory != 'false') && steps.pr_changes.outputs.e2e != 'false' && steps.e2e.outputs.exit_code == '1' && steps.probe.outputs.available != 'false'
         env:
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
           APP_USER_REGISTERED: ${{ secrets.APP_USER_REGISTERED }}
-          MAX_RETRIED_TESTS: "10"
+          MAX_RETRIED_TESTS: "100"
         run: |
           FAILED=$(python -m scripts.finalise_junit --count-failed reports/junit.xml)
           echo "failed tests: $FAILED"
@@ -486,11 +506,12 @@ jobs:
         # Merges the retry (a test that passed on it is marked `flaky`, or
         # `outage_recovered` when its first failure was the application's
         # outage) and marks every failure that says the application was
-        # unavailable `outage` (core/junit_marks.py) - so this summary,
+        # unavailable `outage` - and every failure, when the application check
+        # found it not up (--app-probe) - (core/junit_marks.py) - so this summary,
         # Agent 5, Agent 3 and the defect triage read one answer (F-7, F-19).
         # Never fails the job.
         if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory != 'false') && steps.pr_changes.outputs.e2e != 'false'
-        run: python -m scripts.finalise_junit reports/junit.xml --retry reports/junit-retry.xml
+        run: python -m scripts.finalise_junit reports/junit.xml --retry reports/junit-retry.xml --app-probe reports/app_probe.json
 
       # ── Allure ────────────────────────────────────────────────────────
       #

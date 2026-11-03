@@ -11,6 +11,8 @@ scripts/finalise_junit.py marks a test case with properties after the run:
                     and not a flake: the test did nothing wrong
   first_failure     the first line of the failure a retry replaced
   retried           failed, retried once, failed again
+  outage_reason     why a failure is an outage when the application health
+                    check (core/app_probe.py) found the application not up
 
 Every reader - the run summary, Agent 5, Agent 3, the defect triage - asks
 these helpers, so the readings never disagree. Standard library only.
@@ -19,7 +21,7 @@ from __future__ import annotations
 
 import xml.etree.ElementTree as ET
 
-MARKS = ("outage", "flaky", "outage_recovered", "first_failure", "retried")
+MARKS = ("outage", "flaky", "outage_recovered", "first_failure", "retried", "outage_reason")
 
 
 def is_retried(case: ET.Element) -> bool:
