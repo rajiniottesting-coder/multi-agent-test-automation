@@ -137,7 +137,9 @@ Agent 0 is described in its own chapter, [Change stories — Agent 0](#change-st
 
 **Review fix (`agents/agent2_review_fix.py`, `agent2_review_fix.yml`, ADR-017).**
 A person with write access asks for a change on Agent 2's open pull request - a
-**"Request changes" review** (its inline comments and text), or a comment
+**"Request changes" review** (its inline comments, every earlier inline comment
+not handled yet - "Add single comment" posts each line comment as a review of
+its own - and its text), or a comment
 **`/fix <what to change>`** - every inline comment not handled yet, plus that
 text (a bare `/fix` takes the inline comments alone). Bots never trigger it.
 1. One structured call (`ReviewFixPlan`, `prompts/agent2_review_triage.md`)
@@ -161,6 +163,10 @@ text (a bare `/fix` takes the inline comments alone). Bots never trigger it.
    run again; each comment gets a reply in its thread, the pull request one
    `[agent2:review-fix]` summary (which also stops a second run on the same
    review), and the story the cost as "Agent 2 (Coder, review fix)".
+5. **Stopped by the model budget**: nothing is decided or pushed, and the
+   summary is `[agent2:review-fix:not-done]` - nothing is recorded as handled.
+   Once the budget allows (the day's resets at midnight UTC), re-run that
+   workflow run or comment `/fix`: every comment is taken again.
 Settings: `agents.agent2_coder.review_fix` (`enabled`, `command`,
 `branch_prefix`, `max_files` - 6 files per review).
 
