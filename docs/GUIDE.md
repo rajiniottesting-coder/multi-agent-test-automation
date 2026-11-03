@@ -480,7 +480,7 @@ The gate is between Agents 1 and 2 specifically because that's the highest-lever
 | `inventory-drift` | (on the drift maintenance story) "Selectors stopped matching; these tests are affected" | Agent 0 drift job |
 | `budget-hold` | "This story reached its model budget; no agent works on it" (F-24) | Any agent; a person removes it to allow one more budget |
 | `pipeline-health` | (on the one pipeline health issue) "Watch this for alerts" (F-23) | The first alert, or the health check |
-| `ai-defect`, `ai-defect-<hash>` | (on a defect) "Raised by the triage for this test and cause" (F-22) | Defect triage |
+| `ai-defect` | (on a defect) "Raised by the defect triage" (F-22). A defect raised before #250 may still carry an `ai-defect-<hash>` code - removed on its next update or by `scripts.tidy_defect_labels` | Defect triage |
 | `ai-defect-passing` | (on a defect) "Its test passes on `main` again; a person may close it" | Defect triage (removed when it fails again) |
 | `ai-defect-unmapped` | (on a defect) "Nothing traces its test to a test case or a story" | Defect triage (removed once the test is traced) |
 
@@ -1734,12 +1734,21 @@ the `triage` job (`scripts/triage_failures.py`, `core/defects.py`):
   (`defects.only_after_retry`). A failure the application's outage explains is
   an outage; a failure that was not run again raises nothing and is listed in
   one `failures-not-retried` alert;
-- raises **one defect per test and cause** (`defects.issue_type`, labels
-  `defects.label` and `defects.label-<hash>`) with the test, its test case and
+- raises **one defect per test and cause** (`defects.issue_type`, label
+  `defects.label`) with the test, its test case and
   owning story (from the `# JIRA:` marker), the diagnosed cause and fix, the
   latest failure and the run link. Evidence is in the run's artifact.
 - updates it on a repeat - times seen, first and last seen, the latest
-  failure - **without a comment**;
+  failure - **without a comment**. The repeat is matched by the test and cause
+  in the defect's triage data (the block at the end of its description - leave
+  it as it is). No code label: before #250 each defect also carried
+  `ai-defect-<hash>`, which filled the label picker with meaningless codes; it
+  still finds such a defect, and goes on its next update. To clear the rest
+  once: `python -m scripts.tidy_defect_labels` (lists) then `--apply` - it
+  keeps the code only on an open defect whose triage data cannot be read.
+  **To see the defects**: a saved filter `labels = ai-defect AND
+  statusCategory != Done ORDER BY updated DESC` (each summary names the test
+  and cause), or a story's / test case's links (#244);
 - when the test passes on `main` again (not only on the retry), adds
   `defects.passing_label` and **one comment suggesting it be closed**. A person
   closes it; failing again removes the label with one comment. A closed defect
@@ -2795,7 +2804,7 @@ A change story enters before `ai-ready`:
 | `inventory-drift` | sticky marker | Agent 0 drift (live) | never (the story keeps it for life) | "the nightly drift maintenance story" - the next night reuses it |
 | `budget-hold` | gate marker | any agent stopped by the story's budget (F-24) | human (allows one more `per_story_usd`) | every selection excludes it |
 | `pipeline-health` | identity | the first alert / health check | never | finds the one pipeline health issue |
-| `ai-defect`, `ai-defect-<hash>` | identity | defect triage | never | finds a defect again by test and cause |
+| `ai-defect` | identity | defect triage | never | marks a raised defect; the triage finds it again by the test and cause in its triage data (no code label since #250) |
 | `ai-defect-passing` | state marker | defect triage (test passes on `main`) | defect triage (fails again) | "a person may close this defect" |
 
 `ai-processed`, `human-approved`, `ai-coded` and `ai-incomplete` are also removed by reconcile

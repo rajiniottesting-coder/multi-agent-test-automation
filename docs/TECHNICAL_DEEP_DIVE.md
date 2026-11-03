@@ -1183,7 +1183,7 @@ To opt out a story permanently:
 | `ai-retired` | Hand-over / reconcile | Reconcile on undo | Test-case marker | The test case is retired |
 | `budget-hold` | Any agent the story's budget stopped (F-24) | Human | Gate marker | Every selection excludes it; removing it allows one more `per_story_usd` |
 | `pipeline-health` | First alert / health check | Never | Identity | Finds the one pipeline health issue |
-| `ai-defect`, `ai-defect-<hash>` | Defect triage | Never | Identity | Finds a defect again by test and cause |
+| `ai-defect` | Defect triage | Never | Identity | Marks a raised defect. `defect_label(test, cause)` is its fingerprint, computed again from the triage data (`fingerprint_of()`; a pre-#250 `ai-defect-<hash>` label as the fallback, removed on update) |
 | `ai-defect-passing` | Defect triage | Defect triage (fails again) | State marker | Its test passes on `main` again; a person may close it |
 
 ---
