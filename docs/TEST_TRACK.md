@@ -247,6 +247,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E42b | #244 | A failing login reference test on `main` (a throw-away branch merged and reverted breaking one) | Its defect relates to SCRUM-282 (`defects.trace_owners`), component Login, no `ai-defect-unmapped` | ⬜ | |
 | E42c | #244 | A failing test nothing traces (a throw-away feature file without markers) | `ai-defect-unmapped`, "NOT TRACED" in the description, one `defects-unmapped` alert; adding a marker links it on the next failure and clears both | ⬜ | |
 | E42d | #244 | A defect raised before #244 failing again | Its links and components are added on that update | ⬜ | |
+| E44 | #247 | The next new-feature story Agent 0 analyses (dispatch with its `story_key`), then a change story (Wave 4) | New feature: the report shows "Change type: new_behaviour"; one "No context update needed ... new_behaviour" comment; no context-update PR; Agent 0's cost two calls lower. Change story: the context update runs as before (wording / passage rewrites proposed) | ⬜ | |
 | E43 | #245 | The next pull request's Agent 4 run (and one whose branch is older than a change on main) | *Checkout repository* fetches `refs/pull/<n>/merge`; the tests run on the merge result; an older branch no longer fails on main's workflow | ⬜ | |
 | E39 | #239 | Agent 4 on the next three runs (PRs and the nightly run), then the defects SCRUM-268 to SCRUM-271 | The cart scenarios pass; a step after a click-navigation acts only once the page has loaded (a slow page shows as a longer step, not a lost click); the four defects get the "passing" label and comment; any later row-wait failure lists the page's action requests; a slow page shows as a longer step, never `Page.goto: Timeout ... waiting until "load"`, and a page truly not served is reported as an outage, not a failure | ⬜ | |
 
@@ -317,6 +318,7 @@ proves them.
 | #236 | The App's settings named `GH_APP_*` | | E36a (the run finds them) | |
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
+| #247 | A new-behaviour story rewrites no reference note | | E44 | |
 | #245 | Agent 4 tests the pull request merged with main | | E43 | |
 | #244 | Every defect linked to its test case and story | | E42a-d | Sandbox (fake Jira) only |
 | #243 | Inventory Health asks whether the application was up | | E41 | Old and new summaries compared (unit) |
