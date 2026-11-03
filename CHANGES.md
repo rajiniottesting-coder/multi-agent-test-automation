@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — the nightly inventory check says when the application was not up (#243)
+
+**Why:** the *Inventory Health* run of 31 Oct found the login page loaded with none of its 11 elements, refused to report (correctly) and headlined "Login failed — inventory NOT checked: check the credentials". The night before, the application had served the nightly test run its pages without their content. Nothing in the check asked whether the application was up, so a site problem read as a credential problem. Asked by the repository owner: the same check on the nightly run, with no token spent, generic for any application.
+
+- `inventory_health.yml`: when the verifier does not pass, *Check the application is up* runs `scripts/app_probe.py` (#242: the pages and elements in `app_under_test.health_check`, a browser and no model). Job timeout 20 → 30 minutes for its wait; its report goes into the artifact
+- `scripts/inventory_health_report.py` (new): the summary the inline script wrote, plus two readings - **the application is not up** (neither drift nor credentials, change nothing; what the browser was shown), and a failed login on an application found **up** (the credentials or the login form). Every other summary is byte-for-byte what the inline script wrote (proven by running the old script beside the new one)
+- `tests/unit/test_inventory_health_summary.py` (19)
+- Verification: 5 deliberate breaks (the finding ignored, the credentials hint never used, the check run every night, the report not given the finding, a healthy night overridden) - each fails a test. Full unit suite passed; actionlint clean
+- Not tested live yet: E41 - a night the application is not up
+
 ## November 2026 — an application that is not itself is an outage, not 17 failures; a defect only after a failed rerun (#242)
 
 **Why:** on 30 Oct every one of the 17 tests failed in the nightly run on `main`: the login form, the search box, the product list and the newsletter field never appeared - on four different pages that were served (no HTTP error, no navigation timeout) without their content. The next night all 17 passed with no change. Nothing told "the application was not itself" from "17 tests are broken": more than ten failures switched the retry off (`MAX_RETRIED_TESTS` = 10, on the theory that so many meant an outage), and the triage then raised ten defects (SCRUM-272 to SCRUM-281) from the first run alone, plus a `defects-capped` alert for the other seven. Asked by the repository owner: rerun the failed tests, and raise a defect only after the rerun.

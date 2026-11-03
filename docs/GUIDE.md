@@ -1915,6 +1915,19 @@ rather than as a fault - a removed element on the page again reads as drift
 (`BACK`), a planned one found as `LIVE`, and a `planned_page` not deployed yet as
 `PLANNED PAGE`.
 
+When the verifier does not pass, `Inventory Health` asks whether the
+application itself was up - the same application health check Agent 4 uses
+(`scripts/app_probe.py`: the pages and elements in
+`app_under_test.health_check`, a browser and no model, so no token is spent).
+Its summary (`scripts/inventory_health_report.py`) then reads:
+
+| Summary | Means | Do |
+|---|---|---|
+| ✅ Inventory healthy | every selector resolved to exactly one element | nothing |
+| ❌ Selector drift detected | stale or ambiguous selectors on an application that is up (or the check could not run) | fix the inventory by hand, as the summary says |
+| ⚠️ Login failed — inventory NOT checked | the verifier could not sign in; the check found the application up | check `APP_USER_REGISTERED` / `APP_PASSWORD` and the login form's selectors |
+| ⚠️ The application is not up — inventory NOT checked | the check found the application not serving its own pages; the summary says what the browser was shown | **change nothing** - neither drift nor credentials; the next night checks again |
+
 ### Every section of the inventory JSON, and what to do with it
 
 | Field | What it is | Action |
