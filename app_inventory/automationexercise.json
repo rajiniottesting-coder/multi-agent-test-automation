@@ -270,6 +270,33 @@
       },
       "key_methods": [],
       "errors": {}
+    },
+    "contact_us": {
+      "url": "/contact_us",
+      "components": [
+        "Contact Us"
+      ],
+      "planned_page": true,
+      "elements": {
+        "contact_heading": "text=Get In Touch",
+        "contact_name_input": "[data-qa='name']",
+        "contact_email_input": "[data-qa='email']",
+        "contact_subject_input": "[data-qa='subject']",
+        "contact_message_input": "[data-qa='message']",
+        "contact_submit_button": "[data-qa='submit-button']",
+        "contact_success_message": ".status.alert-success",
+        "contact_home_button": "a.btn-success"
+      },
+      "planned": [
+        "contact_heading",
+        "contact_name_input",
+        "contact_email_input",
+        "contact_subject_input",
+        "contact_message_input",
+        "contact_submit_button",
+        "contact_success_message",
+        "contact_home_button"
+      ]
     }
   },
   "_starting_state": {
