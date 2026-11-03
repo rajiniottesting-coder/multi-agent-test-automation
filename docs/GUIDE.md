@@ -88,8 +88,8 @@ For more diagrams — component view, Agent 2 sequence, and the labels-as-state-
 | # | Agent | Implementation | Trigger | Model calls |
 |:-:|---|---|---|---|
 | 0 | Impact Analyst | `agents/agent0_impact.py` + `core/impact_*.py` | `impact-check` scan (weekdays 10:45 IST), PRs touching `pages/` or `app_inventory/`, nightly drift (or on demand, `mode` = `drift`) | 2 to analyse (more only past 300 candidates); up to 2 for the context update (none for a `new_behaviour` story); 1 for a merged story's notes addition; 0 on code-change and drift runs |
-| 1 | Test Designer | `agents/agent1_analyst.py`, `agents/agent1_impact.py` | cron, every 30 min, weekdays 10:00–19:00 IST | 1 (+1 if a rule fails) |
-| 2 | Coder | `agents/agent2_coder.py`, `agents/agent2_impact.py`, `agents/agent2_coverage.py` | cron, same window | 1 plan + 1 per file (+ repairs); a change story adds 1 per revised scenario and up to 1 per owner step file |
+| 1 | Test Designer | `agents/agent1_analyst.py`, `agents/agent1_impact.py` | cron, every 30 min, weekdays 10:00–19:00 IST; started by Agent 0 when a story reaches it, and by itself while stories wait (hand-off) | 1 (+1 if a rule fails) |
+| 2 | Coder | `agents/agent2_coder.py`, `agents/agent2_impact.py`, `agents/agent2_coverage.py` | cron, same window; by itself while stories wait; optionally a tracker rule on approval (hand-off) | 1 plan + 1 per file (+ repairs); a change story adds 1 per revised scenario and up to 1 per owner step file |
 | 3 | Reviewer | `agents/agent3_reviewer.py` | PR opened / synchronize / reopened | 1 |
 | 4 | Runner | `.github/workflows/agent4_runner.yml` | same PR events; a push to `main` touching framework paths | 0 |
 | 5 | Reporter | `agents/agent5_reporter.py` (job 2 of Agent 4's workflow) | after Agent 4, on a PR whose browser tests ran | 1 |
@@ -1628,7 +1628,7 @@ Selection rules come from `config.yaml`'s `agents.<name>.selection` block.
 
 | Workflow | Schedule (IST) | Also |
 |---|---|---|
-| Agent 1, Agent 2 | every 30 min, weekdays 10:00–19:00 | Run workflow |
+| Agent 1, Agent 2 | every 30 min, weekdays 10:00–19:00 - **GitHub starts only some of these** (below) | Run workflow; started by the hand-off; `repository_dispatch` (`agent1_analyst` / `agent2_coder`) |
 | Agent 0 scan + reconcile | weekdays 10:45 | Run workflow (`mode` = `scan`, the default; optional `story_key` - analyse and reconcile that story only; `dry_run` - every job prints its writes and makes none) |
 | Agent 0 nightly drift | daily 07:15 | Run workflow with `mode` = `drift` (optional `dry_run`; a `story_key` stops the run with an error, since drift analyses the inventory, not a story) |
 | Agent 0 code change | on PRs touching `pages/**`, `app_inventory/**` | — |
@@ -1638,6 +1638,25 @@ Selection rules come from `config.yaml`'s `agents.<name>.selection` block.
 | Pipeline health check | daily 08:50, 12:50, 16:50 | Run workflow (`dry_run` prints the findings only) |
 | Sweeper | weekdays hourly, 10:05–19:05 | `dry_run` input |
 | Story Done on merge | on PR closed with `merged == true`: Done, then the notes addition | — |
+
+### Hand-off between agents (`core/handoff.py`, settings `handoff`)
+
+GitHub drops or delays most scheduled runs of a quiet repository: on 3 Nov 2026
+none of Agent 1's half-hourly runs had started by 14:00 IST, and over the two
+weeks before about 4 of its 19 daily runs started, some hours late. So an agent
+that leaves work for another starts it (`python -m scripts.start_agent`):
+
+| After | Starts | When |
+|---|---|---|
+| Agent 0's story analysis (scan or one story, not a dry run) | Agent 1 | a story waits for Agent 1 - released by Agent 0 or labelled by a person |
+| Agent 1, on success | Agent 1 again | stories still wait (more than `max_stories_per_run` were waiting) |
+| Agent 2, on success | Agent 2 again | the same |
+
+- **Only with work**: the tracker is asked with the started agent's own selections (every `*selection` block under `agents.<key>`), so the run scans exactly as its schedule would. It runs in scan mode.
+- **Bounded**: the started run carries `chain` (runs started in a row); at `handoff.max_chain` (5) it stops and the schedule picks up the rest. A failed run starts nothing, so a story that keeps failing is retried by the schedule, never in a loop.
+- **Never fails a run**: a refused start is a warning and a line in the job summary; the schedule still runs. The built-in token starts the run (`actions: write`; GitHub runs a `workflow_dispatch` it makes).
+- **Agent 1 → Agent 2 stays a person's step**: the test cases are approved in the tracker, which GitHub cannot see. To start Agent 2 the moment a story is approved, add a tracker rule (optional; without it the schedule, or *Run workflow*, starts Agent 2). In Jira: *Project settings → Automation → Create rule* - trigger **Field value changed** (Labels) with condition *Labels contains* `human-approved` → action **Send web request**: `POST https://api.github.com/repos/<owner>/<repo>/dispatches`, headers `Accept: application/vnd.github+json` and `Authorization: Bearer <token>`, body `{"event_type": "agent2_coder"}`. The token is a fine-grained personal access token for this one repository with **Contents: Read and write** (GitHub's requirement for `repository_dispatch`) - kept in the rule, never in the repository. `agent1_analyst` starts Agent 1 the same way (e.g. on `ai-ready`).
+- `handoff.enabled: false` returns to schedules only.
 
 Agent 2 opens its PR with a PAT so the PR events reach Agents 3–5 (see
 [DECISIONS.md → ADR-008](./DECISIONS.md)); the built-in token would not trigger

@@ -4,6 +4,19 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — an agent that leaves work for another starts it (#248)
+
+**Why:** in end-to-end validation (3 Nov) SCRUM-283 and SCRUM-284 reached ai-ready at 13:22 IST; at 14:10 not one of Agent 1's half-hourly scheduled runs had started that day. Over the two weeks before, GitHub started about 4 of its 19 daily runs, some hours late (one at 03:34 IST); Agent 2's schedule showed the same. GitHub drops scheduled runs of a quiet repository, so a story waited hours, not the 30 minutes the schedule promised. Agreed with the repository owner: Agent 0 starts Agent 1; the schedules stay as the safety net.
+
+- `core/handoff.py` + `scripts/start_agent.py`: start an agent's workflow when a story waits for it - asked with that agent's own selections (every `*selection` block under `agents.<key>`), in scan mode, carrying `chain` (runs started in a row); stops at `handoff.max_chain` (5). Never raises; the script always exits 0 (a refused start is a warning and a job-summary line)
+- `agent0_impact.yml` (story analysis job): starts Agent 1 after Agent 0, also after a failed analysis (a story released before it still waits); not on a dry run. Job permission `actions: write` (was read)
+- `agent1_analyst.yml`, `agent2_coder.yml`: start themselves again while stories wait past `max_stories_per_run` - on success only, so a failing story is retried by the schedule, never in a loop; a `chain` input; `repository_dispatch` with the agent key as event type, for a tracker rule (GUIDE: the Jira Automation rule that starts Agent 2 on approval - optional, the person's token stays in the rule); `actions: write`
+- `integrations/github_client.dispatch_workflow()` (optional repo-host capability); `handoff` block in `config.yaml` / `core/ops_settings.py`
+- `tests/unit/test_agents_start_the_next_agent.py` (24); `test_uncovered_snapshot.py` pins the scan job's permissions at `actions: write`; 9 deliberate breaks (no chain bound, start without work, selection order, not scan mode, a refused start raising, Agent 1 looping after a failure, the chain input pasted into the script, Agent 0 not starting Agent 1, the script failing the run) each fail a test
+- Not tested live yet: E45a-d
+
+---
+
 ## November 2026 — a story that changes nothing existing rewrites no reference note (#247)
 
 **Why:** validating the pipeline end to end (3 Nov), SCRUM-283 "Write a review for a product" - coverage of a review form the application already has - went straight to ai-ready, so Agent 0 ran the hand-over context update at once. Asked which notes the story makes untrue, the model narrowed a correct, fuller note in `products.md` ("All three fields are required ... blocked by the browser's own validation") to the story's own sentence and opened a context-update pull request (branch `context-update/scrum-283`, closed unmerged). Agent 0 already classifies every requirement story (`ChangeSeeds.change_type`) and already trusts `new_behaviour` to mean nothing existing changes (its element seeds are dropped) - the context update never saw that classification.
