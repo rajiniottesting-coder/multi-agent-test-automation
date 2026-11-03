@@ -58,6 +58,7 @@ from integrations.repo_host import get_repo_host
 from validators.import_validator import validate_imports_resolvable
 from validators.page_object_contract import validate_extended_page_objects_keep_methods
 from validators.method_resolution_validator import (
+    pages_missing_from_inventory,
     validate_method_resolution,
     validate_page_object_selectors,
     validate_no_duplicate_page_object_methods,
@@ -2891,6 +2892,18 @@ def _attempt_step_coverage_repair(
         # time, fixed nothing and cost $1.74. If an attempt leaves the error
         # set exactly as it found it, the model is not converging and further
         # attempts only buy tokens. Stop and let the final gate report it.
+        # A page the inventory does not have is not the model's to fix: the
+        # inventory is curated by a person. Repairs only delete what the page
+        # object cannot anchor (SCRUM-284). Stop before spending; the final
+        # gate reports it and the blocked comment says how to add the page.
+        missing_pages = pages_missing_from_inventory(all_errors, PROJECT_ROOT)
+        if missing_pages:
+            logger.warning(
+                "The generated code needs page(s) the app inventory does not have: %s. "
+                "No repair can add a page - a person adds it (scripts.plan_inventory "
+                "page ...). Not repairing; the final validation gate will report it.",
+                ", ".join(missing_pages))
+            return generated_files
         current = set(all_errors)
         if previous_errors is not None and current and current == previous_errors:
             logger.warning(

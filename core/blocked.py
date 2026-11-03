@@ -57,6 +57,14 @@ def _short(error: str) -> str:
     return text if len(text) <= _MAX_ERROR_CHARS else text[:_MAX_ERROR_CHARS - 3] + "..."
 
 
+def _missing_pages(errors) -> list:
+    try:
+        from validators.method_resolution_validator import pages_missing_from_inventory
+        return pages_missing_from_inventory(errors)
+    except Exception:                                              # noqa: BLE001
+        return []
+
+
 def blocked_comment(story_id: str, fp: str, errors) -> str:
     errors = list(dict.fromkeys(str(e) for e in errors or [] if str(e).strip()))
     lines = [f"{BLOCKED_MARKER} inputs: {fp}",
@@ -68,6 +76,18 @@ def blocked_comment(story_id: str, fp: str, errors) -> str:
     lines += [f"- {_short(e)}" for e in errors[:_MAX_ERRORS]]
     if len(errors) > _MAX_ERRORS:
         lines.append(f"- ... and {len(errors) - _MAX_ERRORS} more (see the Agent 2 run log)")
+    missing = _missing_pages(errors)
+    if missing:
+        lines += ["",
+                  (f"The story needs page(s) the app inventory does not have: "
+                   f"{', '.join(missing)}. No repair can add a page - the inventory is "
+                   "curated by a person. Add each one, then run Agent 2 with this "
+                   "story's key: `python -m scripts.plan_inventory page --page <page> "
+                   "--url /<path> --component \"<Component>\" --element <key>=\"<selector>\"` "
+                   "(a page already live is confirmed and crawled by the next nightly "
+                   "inventory update, which proposes its other elements). The other "
+                   "errors above follow from the missing page.")]
+        return "\n".join(lines)
     lines += ["",
               ("A rule that survives every repair usually means a test case asks for "
                "something this application cannot show as written. Change that test "

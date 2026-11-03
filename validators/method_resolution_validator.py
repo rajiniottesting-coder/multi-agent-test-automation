@@ -1261,6 +1261,33 @@ _SELECTOR_LITERAL_RE = re.compile(
 )
 
 _ERROR_PREFIX = "Selector inventory error"
+_UNKNOWN_PAGE = re.compile(r"INVENTORY_PAGE = '([^']+)', which is not a page in the app inventory")
+
+
+def pages_missing_from_inventory(errors, project_root=None, pages=None) -> list:
+    """The pages a generated page object needs that the inventory does not
+    have - not a misspelling of one it has (no close match), so no repair can
+    fix it: the inventory is curated by a person, never by Agent 2.
+
+    3 Nov 2026, SCRUM-284: the page the story needed was not in the inventory. The
+    repair loop was told the page did not exist and "repaired" the page object
+    by deleting what it could not anchor; the step definitions then called
+    methods that no longer existed, and four attempts later the story was
+    blocked with a message blaming the model and the test case."""
+    import difflib
+    named = []
+    for err in errors or []:
+        for page in _UNKNOWN_PAGE.findall(str(err)):
+            if page not in named:
+                named.append(page)
+    if not named:
+        return []
+    if pages is None:
+        inventory = _load_configured_inventory(project_root)
+        pages = (inventory or {}).get("pages")
+    known = list(pages or [])
+    return [p for p in named if p not in known
+            and not difflib.get_close_matches(p, known, n=1, cutoff=0.8)]
 
 # How many inventory keys to name when reporting an unknown one. Enough to be
 # actionable, few enough that the repair prompt does not drown in them.
