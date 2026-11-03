@@ -107,6 +107,12 @@ def test_the_chain_stops_at_max_chain():
     assert "max_chain" in out["why"] and "schedule" in out["why"]
 
 
+def test_the_end_of_a_chain_with_nothing_waiting_is_no_warning():
+    host = Host()
+    out = _start(Tracker(), host, previous="3")
+    assert not out["started"] and not out.get("error") and out["why"] == "no story waits for it"
+
+
 @pytest.mark.parametrize("settings, why", [
     (dict(SETTINGS, enabled=False), "handoff.enabled is false"),
     (dict(SETTINGS, workflows={}), "no workflow for agent_a"),

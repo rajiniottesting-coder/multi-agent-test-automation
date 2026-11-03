@@ -81,16 +81,19 @@ def start(tracker, host, agent_key: str, previous_chain=0, settings: dict | None
     workflow = (s.get("workflows") or {}).get(agent_key)
     if not workflow:
         return {**out, "why": f"no workflow for {agent_key} in handoff.workflows"}
-    if chain > int(s.get("max_chain") or 0):
-        return {**out, "error": True, "why": f"{chain - 1} run(s) already started in a row "
-                              f"(handoff.max_chain {s.get('max_chain')}) - the schedule "
-                              "picks up what is left"}
     try:
         out["waiting"] = waiting(tracker, agent_key, config)
     except Exception as e:                                         # noqa: BLE001
         return {**out, "error": True, "why": f"could not ask the tracker what waits ({type(e).__name__}: {e})"}
     if not out["waiting"]:
         return {**out, "why": "no story waits for it"}
+    # Asked after what waits: the cap is a warning only when it leaves a story
+    # waiting for the schedule - a chain that ends with an empty queue is the
+    # normal end (Agent 3's review of #248).
+    if chain > int(s.get("max_chain") or 0):
+        return {**out, "error": True, "why": f"{chain - 1} run(s) already started in a row "
+                              f"(handoff.max_chain {s.get('max_chain')}) - the schedule "
+                              "picks up what is left"}
     if dry_run:
         return {**out, "why": f"dry run: would start {workflow}"}
     dispatch = getattr(host, "dispatch_workflow", None)
