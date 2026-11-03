@@ -91,8 +91,7 @@ def test_a_failure_raises_one_defect_with_its_owner_and_cause(world, tmp_path):
     (key,) = out["raised"]
     bug = fake.issues[key]
     assert bug["issuetype"] == "Bug"
-    label = defects.defect_label("tests.step_defs.test_cart::test_add_an_item", "multi-match selector")
-    assert bug["labels"] == ["ai-defect", label]
+    assert bug["labels"] == ["ai-defect"], "no fingerprint label (test_defects_without_code_labels)"
     assert "test_add_an_item fails on main: multi-match selector" in bug["summary"]
     state = defects.state_of(bug["description"])
     assert (state["test_case"], state["owner"], state["times"]) == ("SBX-5", "SBX-1", 1)
