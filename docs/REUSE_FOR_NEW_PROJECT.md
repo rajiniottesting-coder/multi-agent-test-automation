@@ -363,7 +363,12 @@ Nothing here names the application; check that the tracker matches:
 4. The nightly run (`agent4_runner.yml`, 03:10 IST) runs the whole suite on
    `main`; move the cron outside the new application's business hours if
    needed.
-5. Set `app_under_test.health_check` (Change 1). After a run with failures
+5. Defect traceability: check that the tracker has the link types
+   `tracker.link_types.defect_of` (default Blocks) and `defect_story` (default
+   Relates) name, and map each reserved reference feature file to its story in
+   `defects.trace_owners` - those files must not carry `# JIRA:` markers, so
+   nothing else traces their tests (create a story for them if none exists).
+6. Set `app_under_test.health_check` (Change 1). After a run with failures
    Agent 4 checks those pages, waiting up to `app_health.wait_minutes`: an
    application not up makes every failure an outage (no defect); otherwise
    every failure is run again, and only a test failing twice becomes a defect
