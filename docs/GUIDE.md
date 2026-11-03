@@ -87,7 +87,7 @@ For more diagrams — component view, Agent 2 sequence, and the labels-as-state-
 
 | # | Agent | Implementation | Trigger | Model calls |
 |:-:|---|---|---|---|
-| 0 | Impact Analyst | `agents/agent0_impact.py` + `core/impact_*.py` | `impact-check` scan (weekdays 10:45 IST), PRs touching `pages/` or `app_inventory/`, nightly drift (or on demand, `mode` = `drift`) | 2 to analyse (more only past 300 candidates); up to 2 for the context update; 1 for a merged story's notes addition; 0 on code-change and drift runs |
+| 0 | Impact Analyst | `agents/agent0_impact.py` + `core/impact_*.py` | `impact-check` scan (weekdays 10:45 IST), PRs touching `pages/` or `app_inventory/`, nightly drift (or on demand, `mode` = `drift`) | 2 to analyse (more only past 300 candidates); up to 2 for the context update (none for a `new_behaviour` story); 1 for a merged story's notes addition; 0 on code-change and drift runs |
 | 1 | Test Designer | `agents/agent1_analyst.py`, `agents/agent1_impact.py` | cron, every 30 min, weekdays 10:00–19:00 IST | 1 (+1 if a rule fails) |
 | 2 | Coder | `agents/agent2_coder.py`, `agents/agent2_impact.py`, `agents/agent2_coverage.py` | cron, same window | 1 plan + 1 per file (+ repairs); a change story adds 1 per revised scenario and up to 1 per owner step file |
 | 3 | Reviewer | `agents/agent3_reviewer.py` | PR opened / synchronize / reopened | 1 |
@@ -540,7 +540,7 @@ hands a person the decision.
 
 | Trigger | When | Model? | Output |
 |---|---|---|---|
-| Story scan | stories labelled `impact-check`; weekdays 10:45 IST or dispatch (optionally one `story_key`) | 2 calls (+1 per batch past 300 candidates); up to 2 more for the context update | report, or Impact Review. A full scan (`story_key` blank) also hands over decided reviews; a one-story run does not |
+| Story scan | stories labelled `impact-check`; weekdays 10:45 IST or dispatch (optionally one `story_key`) | 2 calls (+1 per batch past 300 candidates); up to 2 more for the context update (none for a `new_behaviour` story) | report, or Impact Review. A full scan (`story_key` blank) also hands over decided reviews; a one-story run does not |
 | Code change | any PR touching `pages/**` or `app_inventory/**` | none | methods and selectors changed or removed → the affected tests, posted on the PR |
 | Nightly drift | 07:15 IST, after the inventory staleness check, or dispatch with `mode` = `drift` | none | a selector that stopped matching → the affected tests; live mode opens one maintenance story; then the inventory-update PR (below) |
 | Reconcile | its own job: weekdays 10:45 IST and every manual run in `scan` mode, whatever the Agent 0 mode (off, shadow, live) | none | settles stories labelled `impact-applied`, and sets back a coded story whose PR closed unmerged |
@@ -587,6 +587,7 @@ stale. At hand-over Agent 0 proposes the update as a pull request:
 - **Passages the story makes untrue** — behaviour, rules, removed elements. One more call rewrites each such passage (`prompts/agent0_context_notes.md`). A passage not found verbatim is dropped and reported. **A rewrite never touches a selector**: the element is live until the change is deployed. (A *wording* change, above, does update a selector that matches on the old text - which is why the PR waits for deployment.) The call reads only what the story's Components select - `core.md`, their modules and their pages' inventory notes, by the same rule as Agent 1 (all of them when none match) - and a rewrite of a file it was not shown is dropped.
 - **Elements the story removes** — the same call names them (`removed`, as `page.key`, from the element keys it is shown - never selectors). Each one that exists on a page the story's Components select is added to that page's `removed` list in the inventory: after deployment the nightly checks read the missing element as expected (present again: drift), Agent 0 seeds nothing from it, and the nightly inventory update deletes the key once no test names it. A reference that is not such an element is dropped and reported.
 - Code mentioning the old text is listed, not edited — code changes go through the story's own PR.
+- **A story that changes nothing existing** — Agent 0 classified it `new_behaviour` (new functionality, a new journey, or coverage of behaviour already there; its report shows "Change type") — gets no update and no model call: nothing it says can make a note untrue, and asked anyway the model narrowed correct notes to the story's own sentence (SCRUM-283). What it adds reaches the notes when its tests merge (next section). A report without a change type (written before #247) runs the update as before.
 
 The branch is `context-update/<story key in lower case>`, which no tool reads as
 an issue key, so merging it neither closes the story nor reports on it. **Merge it after the change is

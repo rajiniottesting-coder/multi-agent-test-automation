@@ -4,6 +4,19 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a story that changes nothing existing rewrites no reference note (#247)
+
+**Why:** validating the pipeline end to end (3 Nov), SCRUM-283 "Write a review for a product" - coverage of a review form the application already has - went straight to ai-ready, so Agent 0 ran the hand-over context update at once. Asked which notes the story makes untrue, the model narrowed a correct, fuller note in `products.md` ("All three fields are required ... blocked by the browser's own validation") to the story's own sentence and opened a context-update pull request (branch `context-update/scrum-283`, closed unmerged). Agent 0 already classifies every requirement story (`ChangeSeeds.change_type`) and already trusts `new_behaviour` to mean nothing existing changes (its element seeds are dropped) - the context update never saw that classification.
+
+- `core/impact_analysis.report_dict(change_type=)`: a requirement report keeps the story's change type (`analyse_requirement` passes the model's classification); the pull-request and inventory triggers pass none, so their reports are byte-for-byte as before. The readable report shows "Change type: ..."
+- `core/context_update.propose_for_story(change_type=)`: `new_behaviour` → no model call, a `[agent0:context-update]` "No context update needed" marker naming the classification and pointing at the notes addition (what such a story ADDS reaches the notes when its tests merge). Every other type, and none (a report written before this), runs the update as before
+- `agents/agent0_impact._propose_context(report=)`: straight to ai-ready it uses the report just made; at hand-over it reads the published one. A report that cannot be read runs the update as before (logged)
+- Saves the two context-update calls (about $0.09 on SCRUM-284) on every new-feature story
+- `tests/unit/test_new_behaviour_rewrites_no_note.py` (18); 5 deliberate breaks (skip removed, type not passed, in-memory report ignored, key always written, unreadable report not tolerated) each fail a test
+- Not tested live yet: E44
+
+---
+
 ## November 2026 — Agent 4 tests a pull request merged with main, not the branch alone (#245)
 
 **Why:** PR #241 went red on "unrecognized arguments: --app-probe" while every one of its tests passed. On a pull request GitHub takes the workflow file from the PR merged with main; Agent 4 then checked out the branch alone, so a branch cut before #242 ran main's new workflow step with its own older script. Any pull request open while main changes a workflow and its script together hit the same false red. Agreed with the repository owner.

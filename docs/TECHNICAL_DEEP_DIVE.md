@@ -1676,7 +1676,7 @@ undecided review) leaves the story waiting.
 
 ### 18.4 Context update (`core/context_update.py`)
 
-`propose_for_story()` runs at hand-over (and when there is nothing to review), when `context_update.enabled` is set and no proposal for the same story text is already open; it makes up to two model calls:
+`propose_for_story()` runs at hand-over (and when there is nothing to review), when `context_update.enabled` is set and no proposal for the same story text is already open. `change_type` (the report's, from `ChangeSeeds`; `_propose_context()` passes the in-memory report or reads the published one) equal to `new_behaviour` ends it there with a "No context update needed" marker and no model call (#247). Otherwise it makes up to two model calls:
 `extract_changes()` (`WordingChanges`, `prompts/agent0_wording.md`) and
 `extract_note_rewrites()` (`NoteRewrites`, `prompts/agent0_context_notes.md`; no call when the sources hold no notes).
 `propose()` applies exact wording replacements to the inventory's string values
