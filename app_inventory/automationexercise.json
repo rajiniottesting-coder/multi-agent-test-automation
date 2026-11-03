@@ -278,7 +278,7 @@
       ],
       "planned_page": true,
       "elements": {
-        "contact_heading": "text=Get In Touch",
+        "contact_heading": "text=\"Get In Touch\"",
         "contact_name_input": "[data-qa='name']",
         "contact_email_input": "[data-qa='email']",
         "contact_subject_input": "[data-qa='subject']",
@@ -296,7 +296,17 @@
         "contact_submit_button",
         "contact_success_message",
         "contact_home_button"
-      ]
+      ],
+      "conditional": [
+        "contact_success_message",
+        "contact_home_button"
+      ],
+      "elements_notes": {
+        "contact_success_message": "In the page from the start but HIDDEN until the form is submitted: verify_locators finds it before any submit. Assert it is VISIBLE after submitting, and NOT VISIBLE when the submit must not go through - never by presence.",
+        "contact_home_button": "Appears only after a successful submit (in place of the form); it returns to the home page.",
+        "contact_submit_button": "Submitting opens a native browser confirmation dialog ('Press OK to proceed!'): call accept_next_dialog() BEFORE clicking, or the submit waits forever.",
+        "contact_email_input": "Required (browser validation): with it empty the browser blocks the submit, so no dialog opens and no success message is shown."
+      }
     }
   },
   "_starting_state": {
