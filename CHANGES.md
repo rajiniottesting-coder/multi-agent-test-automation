@@ -4,6 +4,18 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — review fix: a review takes the earlier line comments; a budget stop records nothing (#257)
+
+**Why:** validating the review loop on SCRUM-283's pull request (3 Nov). The reviewer added two line comments with GitHub's "Add single comment" - each became a review of its own - then submitted "Request changes" with a text only: the review fix saw only the text. And the day's model budget was spent: the run's summary read "Nothing needed a code change" and recorded the review as handled, so neither a re-run nor a later `/fix` would have taken those comments again.
+
+- `agents/agent2_review_fix.collect_items()`: a review takes its own inline comments, then every earlier inline comment not handled before (as `/fix` already did), then its text
+- A budget stop (deciding or generating): status `not_done`, summary `[agent2:review-fix:not-done]` saying nothing was decided or changed and how to retry; no review or comment is recorded as handled
+- GUIDE: both
+- `tests/unit/test_agent2_review_fix.py` +4 (37); 4 deliberate breaks (earlier comments ignored, the stop marked handled, the deciding-stage stop not flagged, handled comments taken twice) each fail a test
+- Not tested live yet: E51
+
+---
+
 ## November 2026 — Agent 4 checks out the event's commit by SHA (#255)
 
 **Why:** #253 was merged while its Agent 4 run was still going; the report job then failed at checkout - "couldn't find remote ref refs/pull/253/merge" - and Agent 5's report was lost. #245 checked out `github.ref` by name, and GitHub deletes `refs/pull/<n>/merge` once the pull request is merged or closed. A story's pull request merged quickly would never get its results on the story.
