@@ -4,6 +4,17 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — step decorators are read as Python reads them (#253)
+
+**Why:** validating SCRUM-284 (3 Nov), Agent 2 wrapped a long step phrase over several string literals - Python's usual line break, joined into one string before pytest-bdd sees it. The validators read decorators with a pattern that stopped at the first closing quote, so they reported "no matching decorator", "unused step definition" and "drifted wording" for a step pytest-bdd resolves. Four repair attempts "fixed" a non-problem and the story was blocked ($1.50) with a comment blaming the model and the test case. A decorator with keyword arguments (`target_fixture=`) was not seen at all.
+
+- `validators/gherkin_analyzer._extract_decorator_phrases()` parses the file (`_decorators_from_ast()`): literals joined, escapes resolved, comments dropped, keyword arguments allowed, source order kept; every validator and Agent 2's own checks use it. A file that does not parse falls back to the patterns, as before
+- `tests/unit/test_step_decorators_read_by_the_parser.py` (11), including SCRUM-284's shape validated clean and the same files failing with the patterns alone; 4 deliberate breaks each fail tests
+- SCRUM-284 also needs the Contact Us page in the inventory (a page outside it is refused) - Agent 2 stopping early with that message is the next change
+- Not tested live yet: E48
+
+---
+
 ## November 2026 — Agents 0, 1 and 2 scan every 30 minutes, off :00 and :30 (#252)
 
 **Why:** the repository owner (3 Nov): stories approved at 15:58 were still waiting at 17:04 - "is it started to break apart?". Nothing broke: since at least 8 Sep GitHub started 4 of Agent 1's and Agent 2's 19 weekday runs a day (two clusters, about 16:30 and 22:30-00:15 IST); that day none before 17:00. GitHub drops scheduled runs of a quiet repository, those at the start of an hour or half hour first - ours were on :00 and :30. Agent 0's story scan ran once a day. Asked: all three scan every 30 minutes in working hours.
