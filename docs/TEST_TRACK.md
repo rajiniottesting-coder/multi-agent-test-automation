@@ -252,7 +252,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E45c | #248 | An Agent 0 run with nothing released, and an Agent 1 run that fails | "no story waits for it" - nothing started; the failed Agent 1 run has no hand-off step run (the schedule retries) | ⬜ | |
 | E45d | #248 | Optional: the Jira Automation rule on `human-approved` (GUIDE, "Hand-off between agents") | Approving a story starts Agent 2 (event `repository_dispatch`) within a minute, in scan mode | ⬜ | |
 | E44 | #247 | The next new-feature story Agent 0 analyses (dispatch with its `story_key`), then a change story (Wave 4) | New feature: the report shows "Change type: new_behaviour"; one "No context update needed ... new_behaviour" comment; no context-update PR; Agent 0's cost two calls lower. Change story: the context update runs as before (wording / passage rewrites proposed) | ⬜ | |
-| E43 | #245 | The next pull request's Agent 4 run (and one whose branch is older than a change on main) | *Checkout repository* fetches `refs/pull/<n>/merge`; the tests run on the merge result; an older branch no longer fails on main's workflow | ⬜ | |
+| E43 | #245 | The next pull request's Agent 4 run (and one whose branch is older than a change on main) | *Checkout repository* fetches `refs/pull/<n>/merge`; the tests run on the merge result; an older branch no longer fails on main's workflow | ✅ | PR #247, run 41601050788 (3 Nov): `ref: refs/pull/247/merge` fetched; 3900 unit + 17 E2E passed. The older-branch case not seen yet |
 | E39 | #239 | Agent 4 on the next three runs (PRs and the nightly run), then the defects SCRUM-268 to SCRUM-271 | The cart scenarios pass; a step after a click-navigation acts only once the page has loaded (a slow page shows as a longer step, not a lost click); the four defects get the "passing" label and comment; any later row-wait failure lists the page's action requests; a slow page shows as a longer step, never `Page.goto: Timeout ... waiting until "load"`, and a page truly not served is reported as an outage, not a failure | ⬜ | |
 
 ## Not built yet: rows to add when each is built
@@ -324,7 +324,7 @@ proves them.
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
 | #247 | A new-behaviour story rewrites no reference note | | E44 | |
-| #245 | Agent 4 tests the pull request merged with main | | E43 | |
+| #245 | Agent 4 tests the pull request merged with main | | E43 ✅ | |
 | #244 | Every defect linked to its test case and story | | E42a-d | Sandbox (fake Jira) only |
 | #243 | Inventory Health asks whether the application was up | | E41 | Old and new summaries compared (unit) |
 | #242 | The application health check; every failure retried; a defect only after a failed rerun | | E40a-e, E31a | Health check proven in Chromium (unit) |
