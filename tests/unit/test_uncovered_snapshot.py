@@ -139,7 +139,9 @@ def test_the_nightly_check_runs_compare_and_keeps_its_report():
 
 def test_the_scan_fetches_it_without_ever_failing_on_it():
     job = _jobs()["scan"]
-    assert job["permissions"] == {"contents": "read", "actions": "read"}
+    # actions: write since the job also starts Agent 1 (core/handoff.py);
+    # it includes the read the artifact fetch needs. Nothing else is granted.
+    assert job["permissions"] == {"contents": "read", "actions": "write"}
     names = [s.get("name") for s in job["steps"]]
     fetch = names.index("Fetch the latest nightly drift report")
     assert fetch < names.index("Run Agent 0")

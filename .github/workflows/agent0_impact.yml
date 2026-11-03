@@ -85,10 +85,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # Job permissions replace the workflow's, so contents is restated.
-    # actions: read lets the job fetch the nightly drift report artifact.
+    # actions: write lets the job fetch the nightly drift report artifact and
+    # start Agent 1 (core/handoff.py).
     permissions:
       contents: read
-      actions: read
+      actions: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -148,6 +149,22 @@ jobs:
           else
             python -m agents.agent0_impact --scan $DRY $SNAP
           fi
+      - name: Start Agent 1 when a story waits for it
+        # GitHub drops most scheduled runs of a quiet repository: a story
+        # released to ai-ready waited hours for Agent 1's schedule. Asks the
+        # tracker with Agent 1's own selection; starts nothing without work.
+        # Also after a failed analysis: a story released before it still waits.
+        if: always() && github.event.inputs.dry_run != 'true'
+        continue-on-error: true
+        env:
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          JIRA_BOARD_ID: ${{ vars.JIRA_BOARD_ID }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPO: ${{ github.repository }}
+        run: python -m scripts.start_agent --agent agent1_analyst
 
   reconcile:
     # C7. Not gated on agents.agent0_impact.enabled, and it runs in shadow
