@@ -5,7 +5,7 @@ over several string literals - Python's usual way to break a long line, joined
 into one string before pytest-bdd sees it:
 
     @when(parsers.re(
-        'I fill in the Contact Us form with name "(?P<name>[^"]*)", '
+        'I fill in the form with name "(?P<name>[^"]*)", '
         'email "(?P<email>[^"]*)", ...'
     ))
 
