@@ -4,6 +4,27 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — every auto-raised defect is linked to its test case and story (#244)
+
+**Why:** a defect the nightly triage raised named its test case and owning story in its description only - neither the test case nor the story showed it, and nothing could be filtered by feature. Closing the 14 defects of 28 and 30 Oct showed the worse half: five of them (the login reference tests) read "test case: not marked" and traced to nothing - the reference files carry no `# JIRA:` markers on purpose, since a marker would make them a target for `ai-update` and Agent 0's revisions. Asked by the repository owner: map every auto defect to its test or story.
+
+- `core/defects.py`:
+  - links each defect: "<defect> **blocks** <test case>" (the test case shows "is blocked by") and "<defect> **relates to** <story>" - new link kinds `defect_of` / `defect_story` in `tracker.link_types` (defaults Blocks / Relates; another tracker or project names its own)
+  - the defect takes the story's **components** (`copy_components`; best-effort - a project whose defect screen refuses the field is logged, never a failure)
+  - `trace_of()`: traced from the scenario's marker; else the one story every marked scenario of its feature file shares; else `defects.trace_owners` (feature file → story, for files that must not carry markers); else **not traced** - label `ai-defect-unmapped` and a "NOT TRACED" line saying what to add
+  - kept current on every update: missing links added (defects raised before this included), a moved owner or test case moves its link, the label removed once traced
+  - a trace naming an issue that no longer exists is a *stale trace* for a person, not a refused write (the issue is read back to tell it from a link type the tracker lacks - Jira answers both with 404)
+  - `open_defects()` reads only `<label>-<10 hex>`: the unmapped and passing labels share the prefix (without it an untraced defect passing again was flagged twice - found by a deliberate break)
+- `scripts/triage_failures.py`: one `defects-unmapped` alert for untraced defects and stale traces; the `defects-not-written` text also names a missing link type
+- `integrations/jira_client.py`: `set_components()` (optional capability); `integrations/tracker.py`: the two link kinds
+- Jira: story **SCRUM-282 "Login (reference tests)"** (component Login, Done) created and mapped in `config.yaml` (`defects.trace_owners: features/login.feature`); `login.feature` itself is unchanged
+- `tests/sandbox/fake_jira.py`: a new issue never takes a key a test seeded by hand (as in Jira; a raised defect had been overwriting story SBX-1 in the sandbox)
+- `tests/unit/test_defect_traceability.py` (23)
+- Verification: 10 deliberate breaks (no links, no feature-file fallback, `trace_owners` ignored, the unmapped label read as a defect label, the label never removed, an old link never removed, every refused link read as stale, a components failure turning the triage red, no untraced alert, older defects never linked) - each fails a test. Full unit suite passed
+- Not tested live yet: E42a-d
+
+---
+
 ## November 2026 — the nightly inventory check says when the application was not up (#243)
 
 **Why:** the *Inventory Health* run of 31 Oct found the login page loaded with none of its 11 elements, refused to report (correctly) and headlined "Login failed — inventory NOT checked: check the credentials". The night before, the application had served the nightly test run its pages without their content. Nothing in the check asked whether the application was up, so a site problem read as a credential problem. Asked by the repository owner: the same check on the nightly run, with no token spent, generic for any application.
@@ -13,6 +34,8 @@ This document records substantive changes to the framework in reverse-chronologi
 - `tests/unit/test_inventory_health_summary.py` (19)
 - Verification: 5 deliberate breaks (the finding ignored, the credentials hint never used, the check run every night, the report not given the finding, a healthy night overridden) - each fails a test. Full unit suite passed; actionlint clean
 - Not tested live yet: E41 - a night the application is not up
+
+---
 
 ## November 2026 — an application that is not itself is an outage, not 17 failures; a defect only after a failed rerun (#242)
 
@@ -30,6 +53,8 @@ This document records substantive changes to the framework in reverse-chronologi
 - `tests/unit/test_defect_triage.py`: a failure in its fixtures is now one that was run again and failed again (the realistic state)
 - Verification: 11 deliberate breaks (the retry not gated by the check, the cap back at 10, the finding not read, an `unknown` check marking outages, an application found down marking nothing, defects from the first run again, no alert for failures not run again, the outage alert without its evidence, elements not checked, no waiting, an unknown element silently skipped) - each fails a test. The script run end to end in Chromium against a local site that comes back during the wait (`available=true` after 2 checks) and one that stays down (`available=false`, title and text named). Full unit suite 3837 passed; actionlint clean
 - Not tested live yet: E40 - a real night where the application is not itself, and a real failure that fails twice
+
+---
 
 ## October 2026 (end) — one redaction rule for PR comments and alerts; GitHub App tokens and keys covered (#238)
 

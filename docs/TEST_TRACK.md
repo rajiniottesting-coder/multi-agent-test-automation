@@ -243,6 +243,10 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E40d | #242 | `MAX_RETRIED_TESTS` lowered to 1 on a throw-away branch merged and reverted, with two failures | No defect for the failure not run again; one `failures-not-retried` alert naming it; resolved by the next run on `main` | ⬜ | |
 | E40e | #242 | A wrong `app_under_test.health_check` (a page not in the inventory), on a throw-away branch | The check says `unknown` with the reason; the run retries as before; nothing marked an outage | ⬜ | |
 | E41 | #243 | *Inventory Health* on a night the verifier does not pass (or run by hand with `BASE_URL` pointed at a page that is not the application, on a throw-away branch) | *Check the application is up* runs (skipped on a healthy night); an application not up gives "The application is not up — inventory NOT checked" with what was shown; a failed login on an application that is up points at the credentials; `app_probe.json` in the artifact | ⬜ | |
+| E42a | #244 | The next defect the triage raises on `main` (or E40c) | It "blocks" its test case (the test case shows "is blocked by") and "relates to" its story; it has the story's components; its description says how it was traced | ⬜ | |
+| E42b | #244 | A failing login reference test on `main` (a throw-away branch merged and reverted breaking one) | Its defect relates to SCRUM-282 (`defects.trace_owners`), component Login, no `ai-defect-unmapped` | ⬜ | |
+| E42c | #244 | A failing test nothing traces (a throw-away feature file without markers) | `ai-defect-unmapped`, "NOT TRACED" in the description, one `defects-unmapped` alert; adding a marker links it on the next failure and clears both | ⬜ | |
+| E42d | #244 | A defect raised before #244 failing again | Its links and components are added on that update | ⬜ | |
 | E39 | #239 | Agent 4 on the next three runs (PRs and the nightly run), then the defects SCRUM-268 to SCRUM-271 | The cart scenarios pass; a step after a click-navigation acts only once the page has loaded (a slow page shows as a longer step, not a lost click); the four defects get the "passing" label and comment; any later row-wait failure lists the page's action requests; a slow page shows as a longer step, never `Page.goto: Timeout ... waiting until "load"`, and a page truly not served is reported as an outage, not a failure | ⬜ | |
 
 ## Not built yet: rows to add when each is built
@@ -312,6 +316,7 @@ proves them.
 | #236 | The App's settings named `GH_APP_*` | | E36a (the run finds them) | |
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
+| #244 | Every defect linked to its test case and story | | E42a-d | Sandbox (fake Jira) only |
 | #243 | Inventory Health asks whether the application was up | | E41 | Old and new summaries compared (unit) |
 | #242 | The application health check; every failure retried; a defect only after a failed rerun | | E40a-e, E31a | Health check proven in Chromium (unit) |
 | #239 | Every action waits for the page to load; navigation needs the document, not every resource; row waits name the requests | | E39 | Race and slow load proven in Chromium (unit) |

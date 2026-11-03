@@ -482,6 +482,7 @@ The gate is between Agents 1 and 2 specifically because that's the highest-lever
 | `pipeline-health` | (on the one pipeline health issue) "Watch this for alerts" (F-23) | The first alert, or the health check |
 | `ai-defect`, `ai-defect-<hash>` | (on a defect) "Raised by the triage for this test and cause" (F-22) | Defect triage |
 | `ai-defect-passing` | (on a defect) "Its test passes on `main` again; a person may close it" | Defect triage (removed when it fails again) |
+| `ai-defect-unmapped` | (on a defect) "Nothing traces its test to a test case or a story" | Defect triage (removed once the test is traced) |
 
 For the full lifecycle view (sticky vs one-shot semantics, who removes what),
 see the "Label semantics table" in the State management deep-dive below.
@@ -1243,7 +1244,9 @@ flaky_tests: { enabled: true, window_days: 30 }                         # F-19
 defects:                            # failures on main (F-22)
   { enabled, issue_type: "Bug", label: "ai-defect", passing_label: "ai-defect-passing",
     open_statuses: [To Do, In Progress, In Review], max_new_per_run: 10,
-    only_after_retry: true }        # a defect only for a test that failed twice
+    only_after_retry: true,         # a defect only for a test that failed twice
+    trace_links: true, copy_components: true, unmapped_label: "ai-defect-unmapped",
+    trace_owners: { <feature file>: <story> } }   # files that cannot carry markers
 app_health:                         # the application health check's timing
   { wait_minutes: 8, interval_seconds: 60, element_timeout_ms: 15000 }
                                     # WHAT it checks: app_under_test.health_check
@@ -1687,6 +1690,7 @@ rewritten on each change - edits to it are not kept.
 | `credential:repo-host`, `credential:model` | health check | the repo host token, or the model key, was refused (a spent key budget included, with `model_check: completion`) | the next check succeeds |
 | `credential-expiry:repo-host` | health check | the token expires within `expiry_warn_days` (where GitHub gives the date) | a new token is further away, or has no expiry |
 | `application-unavailable-on-main` | triage | tests on `main` could not run: the application was unavailable - including a night the health check found it not itself, with what was served instead | the next run on `main` without an outage |
+| `defects-unmapped` | triage | defects nothing traces to a test case or a story, or traced to an issue that no longer exists | a run on `main` with no untraced defect |
 | `failures-not-retried` | triage | failures on `main` that were not run again, so no defect was raised (more than the retry takes, or a retry that did not run) | a run on `main` where every failure was run again |
 | `defects-capped` | triage | more new failures on `main` than `max_new_per_run` | a run on `main` where every failing test has its defect |
 | `main-run-no-report` | triage | a run on `main` produced no readable report (not for a run a newer push cancelled) | the next run on `main` with a report |
@@ -1722,7 +1726,28 @@ the `triage` job (`scripts/triage_failures.py`, `core/defects.py`):
   is never reopened - a new failure raises a new one;
 - never raises a defect for an outage (one health alert instead) or a flaky
   test (recorded instead), and raises at most `max_new_per_run` new defects in
-  one run (more: one health alert - usually a broken build or environment).
+  one run (more: one health alert - usually a broken build or environment);
+- **links every defect to what its test verifies**, so the test case and the
+  story show it, not only its description:
+
+  | Link | Reads | Kind (`tracker.link_types`) |
+  |---|---|---|
+  | defect → test case | "blocks" / the test case "is blocked by" | `defect_of` (Blocks) |
+  | defect → owning story | "relates to" | `defect_story` (Relates) |
+
+  and gives the defect the story's components (`copy_components`; a project
+  that refuses the field is logged, never a failure). Where the test is
+  traced from, in order: its scenario's `# JIRA:` marker (test case and
+  story); the one story every marked scenario of its feature file shares;
+  `defects.trace_owners` (a feature file → story, for files that must not
+  carry markers - the reserved reference files); otherwise it is **not
+  traced**: label `ai-defect-unmapped`, a "NOT TRACED" line in its
+  description, and one `defects-unmapped` alert - add a marker
+  (`scripts/backfill_markers.py`) or a `trace_owners` entry. Every update keeps
+  it current: a missing link is added (defects raised before this existed
+  included), a moved owner or test case moves its link, the label goes once
+  the test is traced. A trace naming an issue that no longer exists is listed
+  in the same alert, not reported as a refused write.
 
 ### Flaky tests (F-19)
 
