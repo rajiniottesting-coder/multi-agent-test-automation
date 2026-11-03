@@ -75,7 +75,7 @@ jobs:
   verify:
     name: Verify selectors against the live app
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -127,86 +127,40 @@ jobs:
             2>&1 | tee reports/inventory-health.txt
           echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
+      - name: Check the application is up
+        # Only when the verifier did not pass: is the APPLICATION up, or was it
+        # serving pages without their content? (core/app_probe.py - a browser,
+        # no model, no token spent.) 31 Oct 2026: the login page loaded with
+        # none of its elements and the summary blamed the credentials. The
+        # pages and elements checked come from app_under_test.health_check;
+        # nothing here names an application. Waits up to
+        # app_health.wait_minutes for it to come back. Never fails the job.
+        id: probe
+        if: always() && steps.verify.outputs.code != '0'
+        continue-on-error: true
+        env:
+          CI: 'true'
+        run: python -m scripts.app_probe --report reports/app_probe.json
+
       - name: Report
         # always() so a crashed verify step still produces a summary rather
-        # than a bare red X with nothing to read.
+        # than a bare red X with nothing to read. The headline is decided by
+        # scripts/inventory_health_report.py: healthy, drift, a failed login
+        # on an application that is up, or an application that is not up.
         if: always()
         env:
           CODE: ${{ steps.verify.outputs.code }}
-        run: |
-          python3 << 'PYEOF'
-          """Turn the verifier's exit code and output into a job summary."""
-          import os
-          from pathlib import Path
-
-          code = (os.environ.get("CODE") or "").strip()
-          out = Path("reports/inventory-health.txt")
-          body = out.read_text(encoding="utf-8", errors="replace") if out.exists() else ""
-          summary = os.environ.get("GITHUB_STEP_SUMMARY")
-
-          # 0 = every selector resolved to exactly one element
-          # 1 = stale or ambiguous selectors found
-          # 2 = login failed, so NOTHING below it can be trusted
-          if code == "0":
-              head = ["## ✅ Inventory healthy", "",
-                      "Every selector resolved to exactly one element against the "
-                      "live application.", ""]
-              exit_code = 0
-          elif code == "2":
-              head = ["## ⚠️ Login failed — inventory NOT checked", "",
-                      "The verifier could not sign in, so it refused to produce a "
-                      "report: every page would have redirected to the login screen "
-                      "and every selector would read as stale. This is a credential "
-                      "or availability problem, **not** inventory drift.", "",
-                      "Check `APP_USER_REGISTERED` / `APP_PASSWORD`, and that the "
-                      "application is up.", ""]
-              exit_code = 1
-          elif code == "1":
-              head = ["## ❌ Selector drift detected", "",
-                      "One or more selectors no longer resolve to exactly one "
-                      "element. Read the report below, then:", "",
-                      "1. Each **AMBIG** line lists what it matched; a contains-match "
-                      "`text=` selector also gets a `fix:` line. To watch it locally:",
-                      "   `python -m scripts.verify_locators --page <page> --only-problems`",
-                      "2. **STALE** (0 matches) — the app changed. Fix that selector "
-                      "in the inventory by hand.",
-                      "3. **AMBIG** (>1) — a key meant to be ONE element (a heading, "
-                      "a message): tighten its selector to that element - use the "
-                      "`fix:` line when there is one. Never declare it `multi_match` "
-                      "to silence it: that hides the drift. Only a key meant to be "
-                      "EVERY match (rows, cards, buttons) belongs in `multi_match`.",
-                      "4. Keys listed under `conditional` only exist after an "
-                      "interaction, so a tool that never clicks always reports them "
-                      "stale. Do not 'fix' those.", "",
-                      "Do NOT regenerate the inventory to repair this: a fresh draft "
-                      "carries no `elements_notes`, `multi_match` or `key_methods`, "
-                      "and promoting one would delete the curation that prevents "
-                      "these failures.", ""]
-              exit_code = 1
-          else:
-              head = [f"## ❌ Verifier did not complete (exit {code!r})", "",
-                      "The check crashed rather than reporting a result. The output "
-                      "below is whatever it managed to produce.", ""]
-              exit_code = 1
-
-          if body.strip():
-              head += ["<details><summary>Verifier output</summary>", "",
-                       "```", body.strip()[:8000], "```", "", "</details>", ""]
-          else:
-              head += ["_The verifier produced no output._", ""]
-
-          if summary:
-              with open(summary, "a", encoding="utf-8") as f:
-                  f.write("\n".join(head) + "\n")
-          print("\n".join(head))
-          raise SystemExit(exit_code)
-          PYEOF
+        run: >-
+          python -m scripts.inventory_health_report --code "$CODE"
+          --output reports/inventory-health.txt --app-probe reports/app_probe.json
 
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: inventory-health-${{ github.run_id }}
-          path: reports/inventory-health.txt
+          path: |
+            reports/inventory-health.txt
+            reports/app_probe.json
           retention-days: 14
           if-no-files-found: ignore
