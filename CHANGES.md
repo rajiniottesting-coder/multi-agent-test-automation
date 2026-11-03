@@ -10,7 +10,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 - `validators/gherkin_analyzer._extract_decorator_phrases()` parses the file (`_decorators_from_ast()`): literals joined, escapes resolved, comments dropped, keyword arguments allowed, source order kept; every validator and Agent 2's own checks use it. A file that does not parse falls back to the patterns, as before
 - `tests/unit/test_step_decorators_read_by_the_parser.py` (11), including SCRUM-284's shape validated clean and the same files failing with the patterns alone; 4 deliberate breaks each fail tests
-- SCRUM-284 also needs the Contact Us page in the inventory (a page outside it is refused) - Agent 2 stopping early with that message is the next change
+- SCRUM-284 also needs its page in the inventory (a page outside it is refused) - Agent 2 stopping early with that message is the next change
 - Not tested live yet: E48
 
 ---
