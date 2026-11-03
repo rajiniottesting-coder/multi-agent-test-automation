@@ -86,7 +86,60 @@ class ProductDetailPage(BasePage):
         """The current value typed in the quantity field (DOM value, not text)."""
         return self.get_input_value(self.sel("quantity_input"))
 
-    # ── actions ──────────────────────────────────────────────
+    # ── review: queries ──────────────────────────────────────
+    def has_review_form(self) -> bool:
+        """True once the Write Your Review form is on screen. WAITS for it.
+
+        A waiting predicate for asserting the form IS present. Probes the
+        review form element, which is always rendered on a product details
+        page regardless of sign-in state.
+        """
+        return self.is_showing(self.sel("review_form_element"))
+
+    def get_review_success(self) -> str:
+        """The review thank-you message text. WAITS for it to appear.
+
+        Only call this when the confirmation IS expected. To assert that NO
+        confirmation is shown, use is_review_success_absent(), which does not
+        wait for a presence that will never happen.
+        """
+        self.wait_visible(self.sel("review_success"))
+        return self.get_text(self.sel("review_success"))
+
+    def is_review_success_absent(self) -> bool:
+        """True once the review confirmation is NOT shown. For absence checks.
+
+        review_success is a CONDITIONAL element — it exists only after a review
+        submits successfully — so when the form was rejected by the browser's
+        own required-field validation it never renders. is_gone() returns True
+        at once when the element is absent, waiting only while it is still
+        shown, so an incomplete submission is confirmed without paying a full
+        presence timeout.
+        """
+        return self.is_gone(self.sel("review_success"))
+
+    # ── review: actions ──────────────────────────────────────
+    def submit_review(self, name: str, email: str, text: str) -> None:
+        """Fill the Write Your Review form and click Submit.
+
+        Confirms it is ON this page first. Filling a field that is not there
+        would wait the full timeout and then blame the field's locator rather
+        than the wrong page.
+
+        Fills whatever values it is given, including empty strings: the
+        negative scenarios leave a required field blank on purpose, so the
+        browser's own validation blocks the submission and no confirmation
+        renders. Scoped by placeholder, so each of Name / Email / Review maps
+        to exactly one field.
+        """
+        self.require_own_page()
+        self.scroll_into_view(self.sel("review_form_element"))
+        self.fill(self.sel("review_name_input"), name)
+        self.fill(self.sel("review_email_input"), email)
+        self.fill(self.sel("review_textarea"), text)
+        self.click(self.sel("review_submit_button"))
+
+    # ── cart: actions ────────────────────────────────────────
     def set_quantity(self, quantity: int) -> None:
         """Set the quantity BEFORE adding to cart.
 
