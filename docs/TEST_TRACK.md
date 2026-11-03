@@ -251,6 +251,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E45b | #248 | Three or more stories released to ai-ready at once (or labelled by hand, then Agent 1 run once) | Agent 1 takes 2, then starts itself again (`chain` 2) for the rest; no run when none waits | ⬜ | |
 | E45c | #248 | An Agent 0 run with nothing released, and an Agent 1 run that fails | "no story waits for it" - nothing started; the failed Agent 1 run has no hand-off step run (the schedule retries) | ⬜ | |
 | E45d | #248 | Optional: the Jira Automation rule on `human-approved` (GUIDE, "Hand-off between agents") | Approving a story starts Agent 2 (event `repository_dispatch`) within a minute, in scan mode | ⬜ | |
+| E50 | #255 | A pull request merged while its Agent 4 run is still going (merge right after *Run Tests* starts) | *Checkout repository* in both jobs fetches the commit by SHA; *Post Results to Jira* succeeds after the merge | ⬜ | |
 | E49 | #254 | Agent 2 with SCRUM-284's key before its page is added (or any story needing a page the inventory lacks) | The run stops after the first validation ("needs page(s) the app inventory does not have"), no repair attempt; the `[agent2:blocked]` comment names the page and the `plan_inventory page` command; a few calls spent, not ~$1.50 | ⬜ | |
 | E48 | #253 | SCRUM-284 run again once the Contact Us page is in the inventory (Agent 2 with its key) | No "Step coverage", "Unused step-definition" or "Drifted step wording" error for a step wrapped over several lines; the pull request opens | ⬜ | |
 | E47 | #252 | The next weekday's runs (Actions, filter by event `schedule`) | Agent 0, 1 and 2 scheduled runs at :02/:32, :07/:37, :12/:42; count how many of the 19 per agent GitHub started (was 4); Agent 0's 30-minute runs run the scan job only, reconcile once (10:45) | ⬜ | |
@@ -327,6 +328,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
+| #255 | Agent 4 checks out the event's commit by SHA | | E50 | |
 | #254 | A page missing from the inventory stops Agent 2 at once | | E49 | |
 | #253 | Step decorators read as Python reads them | | E48 | Regression pinned (patterns alone fail the SCRUM-284 shape) |
 | #252 | Agents 0, 1 and 2 every 30 minutes, off :00 and :30 | | E47 | |

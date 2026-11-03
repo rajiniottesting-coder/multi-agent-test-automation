@@ -716,7 +716,7 @@ No Python agent file. The "intelligence" is the test code Agent 2 wrote; Agent 4
 
 ### Workflow steps
 
-1. **Checkout** via `actions/checkout@v4` with `ref: ${{ github.ref }}` - on a pull request `refs/pull/<n>/merge`, the merge result GitHub also takes the workflow file from (the `report` job checks out the same); the branch alone ran main's workflow with the branch's older scripts
+1. **Checkout** via `actions/checkout@v4` with `ref: ${{ github.sha }}` - on a pull request the merge commit of `refs/pull/<n>/merge` the event was raised for, the merge result GitHub also takes the workflow file from (the `report` job checks out the same); the branch alone ran main's workflow with the branch's older scripts. By SHA, not `github.ref`: merging deletes the merge ref, and a report job still running then failed to check out (#255)
 2. **Setup Python 3.13** via `actions/setup-python@v5`
 3. **Install deps**: `pip install -r requirements.txt && playwright install --with-deps chromium`
 3b. **Wait for earlier browser runs** (pull request and the nightly run): `scripts/e2e_turn.py` lists unfinished `pull_request` and `schedule` runs (`TURN_EVENTS`) of OTHER branches with a lower run id; the step polls every 30 s, up to `MAX_WAIT_SECONDS` (900), then proceeds; it never waits if the runs cannot be read. A shared concurrency group is not used because GitHub cancels a pending run when a newer one queues, and the sweeper reads a cancelled run as a stalled PR. The nightly run has its own concurrency group (`scheduled`) so a push to `main` cannot cancel it. The job's timeout is 40 minutes: the wait, the run, and the retry.

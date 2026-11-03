@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — Agent 4 checks out the event's commit by SHA (#255)
+
+**Why:** #253 was merged while its Agent 4 run was still going; the report job then failed at checkout - "couldn't find remote ref refs/pull/253/merge" - and Agent 5's report was lost. #245 checked out `github.ref` by name, and GitHub deletes `refs/pull/<n>/merge` once the pull request is merged or closed. A story's pull request merged quickly would never get its results on the story.
+
+- `agent4_runner.yml`: the `test` and `report` jobs check out `github.sha` - the same commit (on a pull request the merge commit the event was raised for), fetched by SHA, which stays fetchable after the ref is gone
+- `tests/unit/test_agent4_tests_the_merge_result.py`: by SHA, and no job checks out a ref merging deletes (5); putting a job back on `github.ref` fails two tests
+- Not tested live yet: E50
+
+---
+
 ## November 2026 — a story that needs a page the inventory lacks stops at once, and says how to add it (#254)
 
 **Why:** validating SCRUM-284 (3 Nov) - a contact form whose page the inventory did not have. The generated page object was refused ("not a page in the app inventory"); the repair loop "fixed" it by deleting what it could not anchor, the step definitions then called methods that no longer existed, and after four attempts ($1.50) the story was blocked with a comment blaming the model and the test case. No repair can add a page: the inventory is curated by a person.
