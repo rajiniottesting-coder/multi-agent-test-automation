@@ -772,6 +772,12 @@ class JiraClient:
         logger.info(f"Created {issue_type}: {issue.key} — {summary}")
         return issue.key
 
+    def set_components(self, issue_key: str, components: list) -> None:
+        """Replace the issue's Jira Components (by name) - a defect takes its
+        owning story's. Components must exist in the project; the story's do."""
+        self.client.issue(issue_key).update(
+            fields={"components": [{"name": c} for c in components]})
+
     def set_property(self, issue_key: str, key: str, value) -> None:
         """Store a JSON value on an issue, out of sight of its comments
         (a Jira issue property: key <= 255 bytes, value <= 32 KB, any number

@@ -61,7 +61,11 @@ class FakeJira:
     def add(self, issuetype: str, summary: str, *, key: Optional[str] = None,
             description: str = "", status: str = "To Do", labels=(),
             components=(), parent: Optional[str] = None) -> str:
-        key = key or f"{self.project_key}-{next(self._n)}"
+        explicit = key is not None
+        while key is None or key in self.issues and not explicit:
+            # Like Jira: a new key is never one already taken (a test seeds
+            # SBX-1 by hand, then the triage creates an issue).
+            explicit, key = False, f"{self.project_key}-{next(self._n)}"
         self.issues[key] = {"key": key, "issuetype": issuetype, "summary": summary,
                             "description": description, "status": status,
                             "labels": list(labels), "components": list(components),
@@ -103,7 +107,9 @@ class FakeJira:
             def update(self, fields):
                 fake.calls.append(("update", key, dict(fields)))
                 for name, value in fields.items():
-                    d[name] = list(value) if name == "labels" else value
+                    if name == "components":
+                        value = [c["name"] if isinstance(c, dict) else c for c in value]
+                    d[name] = list(value) if name in ("labels", "components") else value
         issue = _Issue()
         issue.key = key
         issue.raw = {"properties": dict(self.properties.get(key, {}))}

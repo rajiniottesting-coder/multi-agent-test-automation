@@ -80,7 +80,7 @@ def test_a_failure_that_failed_again_raises_its_defect_and_the_alert_closes(worl
     out = _run(world, tmp_path, _junit(("test_a", "failed", "TimeoutError: x",
                                         {"retried": "1"})), n=2)
     assert len(out["raised"]) == 1 and out["not_retried"] == []
-    assert _alerts(fake)[-1].startswith(f"[health:resolved] {tf.NOT_RETRIED}")
+    assert any(a.startswith(f"[health:resolved] {tf.NOT_RETRIED}") for a in _alerts(fake))
 
 
 def test_an_open_defect_is_neither_updated_nor_flagged_by_a_failure_not_run_again(world, tmp_path):

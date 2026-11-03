@@ -101,6 +101,10 @@ tracker:
   link_types:
     owns:    { name: "Relates", query: "relates to", inverse_query: "relates to", from_field: "outwardIssue" }
     impacts: { name: "Impacts", query: "impacts", inverse_query: "is impacted by", from_field: "inwardIssue" }
+    # A defect the triage raised: "<defect> blocks <test case>" (the test case
+    # reads "is blocked by"), and "<defect> relates to <its story>".
+    defect_of:    { name: "Blocks", query: "blocks", inverse_query: "is blocked by", from_field: "inwardIssue" }
+    defect_story: { name: "Relates", query: "relates to", inverse_query: "relates to", from_field: "inwardIssue" }
 
   # A test case retired by an approved Impact Review carries this label.
   # Every test case query skips it, so no later update brings it back.
@@ -149,6 +153,17 @@ defects:
   open_statuses: ["To Do", "In Progress", "In Review"]
   max_new_per_run: 10                # more at once: one health alert instead
   only_after_retry: true             # a defect only for a test that failed twice
+  # Traceability: each defect is linked to its test case ("blocks") and story
+  # ("relates to") - tracker.link_types defect_of / defect_story - and takes
+  # the story's components. Traced from the scenario's # JIRA: marker; else the
+  # one story the marked scenarios of its feature file share; else trace_owners.
+  trace_links: true
+  copy_components: true
+  unmapped_label: "ai-defect-unmapped" # a defect nothing traces; one health alert
+  # Feature files that must not carry markers (reserved reference files) ->
+  # the story they belong to.
+  trace_owners:
+    "features/login.feature": "SCRUM-282"
 
 # A story's model-cost ledger (F-31, core/usage_ledger.py).
 #   store  auto      hidden issue properties, and ONE cost comment per attempt

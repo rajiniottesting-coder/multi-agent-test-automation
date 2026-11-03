@@ -150,9 +150,11 @@ def test_a_closed_defect_is_left_alone_and_a_new_one_raised(world, tmp_path):
 
 
 def test_an_unmarked_test_still_raises_a_defect(world, tmp_path):
+    """Its feature file holds a marked scenario (SBX-5, owned by SBX-1), so the
+    unmarked one is traced to that story through the file (test_defect_traceability)."""
     fake, *_ = world
     (key,) = _triage(world, tmp_path, _case("test_remove_an_item", "error"))["raised"]
-    assert "not marked" in fake.issues[key]["description"]
+    assert "its story SBX-1 is traced by the feature file" in fake.issues[key]["description"]
 
 
 def test_the_owner_falls_back_to_the_tracker(world, tmp_path, monkeypatch):

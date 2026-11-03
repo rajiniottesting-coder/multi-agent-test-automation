@@ -54,6 +54,16 @@ DEFAULTS: dict = {
         # found up) and failed again is raised as a defect. A failure that was
         # not run again is listed in one health alert instead.
         "only_after_retry": True,
+        # Traceability: link each defect to its test case ("blocks") and story
+        # ("relates to") - link kinds `defect_of` / `defect_story` in
+        # tracker.link_types - and give it the story's components.
+        "trace_links": True,
+        "copy_components": True,
+        # A defect no marker, feature file or trace_owners entry traces.
+        "unmapped_label": "ai-defect-unmapped",
+        # Feature files that cannot carry `# JIRA:` markers (the reserved
+        # reference files) -> the story they belong to: {path: story key}.
+        "trace_owners": {},
     },
     # The application health probe (core/app_probe.py): asked by Agent 4 after
     # a run with failures, before anything is retried or raised as a defect.

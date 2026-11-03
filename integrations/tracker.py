@@ -69,6 +69,8 @@ an adapter written before them stays valid.
                                               add_comment returned); LookupError
                                               when it is gone: the cost comment
     check_access() -> {"ok", "who"}           the credential check
+    set_components(issue_key, components)     replace an issue's components:
+                                              a defect takes its story's
 """
 from __future__ import annotations
 
@@ -181,6 +183,8 @@ class Tracker(Protocol):
           "owns"    - story `from_key` owns test case `to_key`
           "impacts" - story `from_key` changed `to_key` (a test case, or the
                       story that owns it)
+          "defect_of"    - defect `from_key` is about test case `to_key`
+          "defect_story" - defect `from_key` concerns story `to_key`
         The adapter maps the kind to its configured link type and direction.
         Idempotent: an existing identical link is left alone.
         """
@@ -319,7 +323,7 @@ def _configured_type() -> str:
 # Link and label settings shared by every adapter
 # ─────────────────────────────────────────────────────────────
 
-LINK_KINDS = ("owns", "impacts")
+LINK_KINDS = ("owns", "impacts", "defect_of", "defect_story")
 
 # Used when config.yaml has no `tracker.link_types` block, so an existing
 # deployment keeps today's behaviour: every test case is owned through the
@@ -329,6 +333,14 @@ _DEFAULT_LINK_TYPES: dict[str, dict] = {
              "inverse_query": "relates to", "from_field": "outwardIssue"},
     "impacts": {"name": "Impacts", "query": "impacts",
                 "inverse_query": "is impacted by", "from_field": "inwardIssue"},
+    # A defect the triage raised (core/defects.py) and the test case whose
+    # test fails: "<defect> blocks <test case>", so the test case reads
+    # "is blocked by <defect>".
+    "defect_of": {"name": "Blocks", "query": "blocks",
+                  "inverse_query": "is blocked by", "from_field": "inwardIssue"},
+    # ... and the story that owns the test: the story shows the defect.
+    "defect_story": {"name": "Relates", "query": "relates to",
+                     "inverse_query": "relates to", "from_field": "inwardIssue"},
 }
 _DEFAULT_RETIRED_LABEL = "ai-retired"
 

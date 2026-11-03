@@ -40,6 +40,8 @@ def night(monkeypatch, tmp_path):
     ph.reset_cache()
     fake = FakeJira()
     jira = jira_client_over(fake, monkeypatch)
+    fake.add("Story", "A shopper pays", key="SBX-50")
+    fake.add("Test Case", "[Positive] Pay for an order", key="SBX-9")
     features = tmp_path / "features"
     features.mkdir()
     (features / "shop.feature").write_text(
