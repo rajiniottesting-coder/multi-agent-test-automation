@@ -502,9 +502,16 @@ def by_owner(rows: list) -> dict:
 
 
 def report_dict(change_ref: str, chash: str, graph_sha: str, ranked: list,
-                not_judged: list, no_component: bool, seeds: Seeds, dropped: list) -> dict:
+                not_judged: list, no_component: bool, seeds: Seeds, dropped: list,
+                change_type: str | None = None) -> dict:
+    """`change_type`: the story's own classification (ChangeSeeds) on a
+    requirement report, read back by the context update - a new_behaviour
+    story changes nothing existing, so it rewrites no note. Absent on the other
+    triggers and on reports written before it was kept."""
     affected = [r for r in ranked if r["tier"] != "unaffected"]
+    extra = {"change_type": change_type} if change_type else {}
     return {"change_ref": change_ref, "content_hash": chash, "graph_sha": graph_sha,
+            **extra,
             "ranked": affected,
             "by_owner": by_owner(affected),
             "unaffected": [r for r in ranked if r["tier"] == "unaffected"],

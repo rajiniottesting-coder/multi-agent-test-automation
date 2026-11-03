@@ -236,7 +236,8 @@ def analyse_and_publish(tracker, story_key: str, llm, settings: dict, root: Path
     if result.get("action") == "nothing-to-review":
         # Released straight to ai-ready: no hand-over will follow, so the
         # context update is proposed now.
-        result.update(_propose_context(tracker, host, llm, story_key, settings, root))
+        result.update(_propose_context(tracker, host, llm, story_key, settings, root,
+                                       report=report))
     if not dry_run:
         _post_usage(tracker, story_key)
     return result
@@ -277,14 +278,28 @@ def _post_usage(tracker, story_key: str) -> None:
         logger.warning("Usage ledger for %s not posted: %s", story_key, e)
 
 
-def _propose_context(tracker, host, llm, story_key: str, settings: dict, root: Path) -> dict:
+def _propose_context(tracker, host, llm, story_key: str, settings: dict, root: Path,
+                     report: dict | None = None) -> dict:
     """The context-update pull request (core.context_update). Never fails the
-    hand-over it follows: that is already done and must stand."""
+    hand-over it follows: that is already done and must stand.
+
+    `report` is the story's Agent 0 report when the caller holds it; otherwise
+    the published one is read back. Its change_type tells the update whether
+    the story changes anything that exists (see propose_for_story)."""
     if host is None or llm is None or not (settings.get("context_update") or {}).get("enabled"):
         return {}                         # off: the result keeps its usual shape
     from core.context_update import propose_for_story
     try:
-        out = propose_for_story(tracker, host, llm, story_key, settings, Path(root))
+        if report is None:
+            try:
+                report, _review = _previous_report(tracker, story_key, settings)
+            except Exception as e:                                 # noqa: BLE001
+                # Unread, the update runs as it did before change_type was kept.
+                logger.warning("context update for %s: the Agent 0 report could not be "
+                               "read (%s) - change type unknown.", story_key, e)
+                report = None
+        out = propose_for_story(tracker, host, llm, story_key, settings, Path(root),
+                                change_type=(report or {}).get("change_type"))
         return {"context": out.get("context"), "context_pr": out.get("url")}
     except Exception as e:                                         # noqa: BLE001
         logger.error("context update for %s failed: %s", story_key, e, exc_info=True)
@@ -302,6 +317,10 @@ def _render_report(report: dict, title: str, data_in: str | None = None) -> str:
         lines.append(f"No Component: whole-suite analysis, {len(report['not_judged'])} "
                      "tests not judged. Add a Component to the story to focus the analysis "
                      "on the pages it changes.")
+    if report.get("change_type"):
+        lines.append(f"Change type: {report['change_type']}"
+                     + (" - nothing that exists today changes." if report["change_type"]
+                        == "new_behaviour" else "."))
     lines.append(f"Affected: {len(report['ranked'])}; unaffected: {len(report['unaffected'])}; "
                  f"not judged: {len(report['not_judged'])}.")
     if report.get("by_owner"):
@@ -456,7 +475,7 @@ def analyse_requirement(tracker, story_key: str, llm, settings: dict, root: Path
 
     ranked = ia.rank(judged, judgements, settings["weights"], settings["thresholds"])
     return ia.report_dict(story_key, requirement_hash(story), sha, ranked, not_judged,
-                          no_component, seeds, dropped)
+                          no_component, seeds, dropped, change_type=change.change_type)
 
 
 def analyse_code_change(base_root: Path, head_root: Path, change_ref: str, settings: dict,
