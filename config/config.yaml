@@ -134,6 +134,13 @@ flaky_tests:
 # a manual run on main) each test still failing raises ONE defect per test and
 # cause; a repeat updates it, a later pass flags it (passing_label + one
 # comment) - a person closes it. Outages and flakes never raise a defect.
+# The application health check's timing (core/app_probe.py); WHAT it checks
+# is app_under_test.health_check above.
+app_health:
+  wait_minutes: 8                    # wait this long for the application to come back
+  interval_seconds: 60
+  element_timeout_ms: 15000
+
 defects:
   enabled: true
   issue_type: "Bug"
@@ -184,6 +191,21 @@ app_under_test:
   # See app_inventory/automationexercise.json as the canonical example. The
   # JSON shape is documented in docs/REUSE_FOR_NEW_PROJECT.md ("App inventory JSON schema").
   inventory_file: "app_inventory/automationexercise.json"
+
+  # The application health check (core/app_probe.py): pages the application
+  # cannot work without, and inventory elements ALWAYS shown on them. Agent 4
+  # opens them after a run with failures; if they are not there, the run's
+  # failures are an outage (not judged, no defect) instead of test failures.
+  # Choose pages with a fixed URL that need no login, and elements that are
+  # never conditional. Empty: only the base URL is checked (served with a good
+  # status), which cannot catch a page served without its content.
+  health_check:
+    - page: home
+      elements: [site_logo, subscribe_email_input]
+    - page: login
+      elements: [login_email_input]
+    - page: products
+      elements: [search_input]
 
   # Reference files: existing tests Agent 2 mimics for style and Agent 3
   # uses as the style baseline. These are NOT edited by the agents —

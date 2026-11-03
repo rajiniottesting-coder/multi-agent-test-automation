@@ -55,6 +55,17 @@ DEFAULTS: dict = {
         # not run again is listed in one health alert instead.
         "only_after_retry": True,
     },
+    # The application health probe (core/app_probe.py): asked by Agent 4 after
+    # a run with failures, before anything is retried or raised as a defect.
+    # WHAT is checked is application-specific: app_under_test.health_check.
+    "app_health": {
+        # Wait this long for an application that is not up before calling the
+        # run's failures an outage; checks this often meanwhile.
+        "wait_minutes": 8,
+        "interval_seconds": 60,
+        # How long each checked element may take to show.
+        "element_timeout_ms": 15000,
+    },
     # Where a story's model-cost ledger is kept (F-31, core/usage_ledger.py):
     # "auto" - hidden issue properties and one cost comment per attempt, edited
     # in place, when the tracker can; "comments" - one [LLM-USAGE] comment per
