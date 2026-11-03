@@ -76,10 +76,35 @@ def settings() -> dict:
 
 
 def defect_label(test_id: str, cause: str, s: dict | None = None) -> str:
-    """The label that finds this test's defect for this cause again."""
+    """The fingerprint of this test's defect for this cause: `<label>-<10 hex>`.
+
+    It identifies the defect; it is no longer a LABEL on it. Every defect's
+    triage data (its description) holds the test and the cause, so the
+    fingerprint is computed from them again (fingerprint_of). As a label it
+    filled the tracker's label suggestions with one meaningless code per test
+    and cause, kept by closed defects too (3 Nov 2026). Defects raised before
+    carry it as a label: read as a fallback, removed when the defect is next
+    updated (scripts/tidy_defect_labels.py removes the rest)."""
     s = s or settings()
     digest = hashlib.sha1(f"{test_id}|{cause}".encode("utf-8")).hexdigest()[:10]
     return f"{s['label']}-{digest}"
+
+
+def legacy_labels(labels, s: dict) -> list:
+    """The fingerprint labels of a defect raised before they were dropped -
+    only `<label>-<10 hex>`: the passing and unmapped labels share the prefix."""
+    shape = re.compile(re.escape(s["label"]) + r"-[0-9a-f]{10}")
+    return [lb for lb in labels or [] if shape.fullmatch(lb)]
+
+
+def fingerprint_of(issue: dict, s: dict) -> str | None:
+    """The defect's fingerprint: from its triage data, else (raised before the
+    data held both, or the data was edited away) its fingerprint label."""
+    state = state_of(issue.get("description", "")) or {}
+    if state.get("test") and state.get("cause"):
+        return defect_label(state["test"], state["cause"], s)
+    old = legacy_labels(issue.get("labels"), s)
+    return old[0] if old else None
 
 
 # ── which story owns a failing test ──────────────────────────
@@ -217,17 +242,20 @@ def _diagnosis(case):
 # ── the triage ───────────────────────────────────────────────
 
 def open_defects(tracker, s: dict) -> dict:
-    """{defect label: issue dict} for every open defect the triage raised."""
+    """{fingerprint: issue dict} for every open defect the triage raised.
+    A defect whose fingerprint cannot be read is skipped and logged - it is
+    not the triage's to update."""
     found = tracker.find_stories_to_process(
         {"issue_type": s["issue_type"], "required_labels": [s["label"]],
          "allowed_statuses": list(s["open_statuses"])}, max_results=200)
     out = {}
-    # Only `<label>-<10 hex>`: the passing and unmapped labels share the prefix.
-    shape = re.compile(re.escape(s["label"]) + r"-[0-9a-f]{10}")
     for issue in found or []:
-        for label in issue.get("labels") or []:
-            if shape.fullmatch(label):
-                out[label] = issue
+        fp = fingerprint_of(issue, s)
+        if fp is None:
+            logger.warning("Defect %s: no triage data and no fingerprint label - not "
+                           "matched to a failure.", issue.get("key"))
+            continue
+        out.setdefault(fp, issue)
     return out
 
 
@@ -348,6 +376,15 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
                 result["updated"].append(issue["key"])
                 _trace(tracker, issue["key"], state, before, list(issue.get("labels") or []),
                        s, result, dry_run)
+                for old in legacy_labels(issue.get("labels"), s):
+                    # Raised before fingerprints left the labels: its triage
+                    # data now identifies it, so the code label goes.
+                    try:
+                        if not dry_run:
+                            tracker.remove_label(issue["key"], old)
+                    except Exception as e:                         # noqa: BLE001
+                        result["errors"].append((issue["key"], f"label {old} not removed: "
+                                                               f"{type(e).__name__}: {e}"))
                 if s["passing_label"] in (issue.get("labels") or []):
                     if not dry_run:
                         tracker.remove_label(issue["key"], s["passing_label"])
@@ -372,7 +409,7 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
                 if not (traced["test_case"] or traced["owner"]):
                     result["unmapped"].append(f"(dry run) {summary}")
                 continue
-            labels = [s["label"], label]
+            labels = [s["label"]]
             if not (traced["test_case"] or traced["owner"]) and s.get("unmapped_label"):
                 labels.append(s["unmapped_label"])
             key = create(s["issue_type"], summary, render(tracker, state), labels)

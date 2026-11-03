@@ -249,6 +249,7 @@ def test_a_defect_raised_before_traceability_is_linked_on_its_next_update(world,
     assert out["raised"] == [] and out["updated"] == [old]
     assert _links(fake, old) == {("Blocks", "SBX-105", "from"), ("Relates", "SBX-101", "from")}
     assert defects.state_of(fake.issues[old]["description"])["times"] == 4
+    assert label not in fake.issues[old]["labels"], "its fingerprint label goes on the update"
 
 
 # ── what goes wrong ─────────────────────────────────────────────────────────
