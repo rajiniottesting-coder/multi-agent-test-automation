@@ -497,8 +497,22 @@ def extract_note_rewrites(llm, story: dict, story_key: str, sources: dict, pages
             list(getattr(result, "removed", None) or []))
 
 
-def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: Path) -> dict:
-    """Propose the context update for one change story, once."""
+NEW_BEHAVIOUR = "new_behaviour"
+
+
+def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: Path,
+                      change_type: str | None = None) -> dict:
+    """Propose the context update for one change story, once.
+
+    `change_type` is Agent 0's classification of the story (ChangeSeeds). A
+    new_behaviour story changes nothing that exists today - new functionality,
+    a new journey, or coverage of behaviour already there - so no wording is
+    replaced, no passage becomes untrue and no element is removed: no model
+    call, a "no update needed" marker. Asked anyway, the model narrowed a
+    correct, fuller note to the story's own sentence (found in validation,
+    3 Nov 2026 - see CHANGES.md, #247). What such a story ADDS reaches the
+    notes when its tests merge (propose_addition_for_story). Any other value,
+    or none (an older report, another trigger), runs the update as before."""
     cfg = settings.get("context_update") or {}
     if not cfg.get("enabled", False):
         return {"story": story_key, "context": "disabled"}
@@ -506,6 +520,14 @@ def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: 
     chash = _story_hash(story)
     if _already_proposed(tracker.get_comments(story_key), chash, _pr_is_open(host)):
         return {"story": story_key, "context": "already-proposed"}
+    if change_type == NEW_BEHAVIOUR:
+        tracker.add_comment(story_key, f"{MARKER} No context update needed: Agent 0 classified "
+                            f"the story {NEW_BEHAVIOUR} - nothing that exists today changes, so "
+                            "no wording, passage or element in the inventory or the context "
+                            "notes becomes untrue. What the story adds reaches the notes when "
+                            "its tests merge (the notes addition)."
+                            f"\n(story: {chash})")
+        return {"story": story_key, "context": "none", "why": NEW_BEHAVIOUR}
     sources = context_sources(root)
     offered, pages = scoped_sources(sources, story.get("components") or [], root)
     changes = extract_changes(llm, story)
