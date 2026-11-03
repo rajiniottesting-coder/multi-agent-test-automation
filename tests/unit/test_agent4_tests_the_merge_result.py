@@ -7,11 +7,17 @@ older scripts: PR #241 (3 Nov 2026) went red on "unrecognized arguments:
 --app-probe" while every test passed - main had changed the workflow and its
 script together after the branch was cut.
 
-Now both jobs check out github.ref - the merge result on a pull request, the
-event's own ref otherwise: one run per push as before, the workflow and the
-code always from the same commit, and the result is what main will hold after
-the merge. Nothing that needs the branch's NAME reads it from the checkout
-(GITHUB_HEAD_REF / github.head_ref still name it).
+Now both jobs check out the event's commit - the merge result on a pull
+request, the event's own commit otherwise: one run per push as before, the
+workflow and the code always from the same commit, and the result is what main
+will hold after the merge. Nothing that needs the branch's NAME reads it from
+the checkout (GITHUB_HEAD_REF / github.head_ref still name it).
+
+By SHA (github.sha), not by github.ref's name: GitHub deletes
+refs/pull/<n>/merge when the pull request is merged or closed, so a run still
+going when #253 was merged (3 Nov 2026) could not check out its report job
+("couldn't find remote ref refs/pull/253/merge") and Agent 5's report was
+lost. The commit stays fetchable.
 """
 from pathlib import Path
 
@@ -33,8 +39,16 @@ def test_the_tests_and_the_report_run_on_the_merge_result():
     jobs = _jobs()
     for name in ("test", "report"):
         (checkout,) = _checkouts(jobs[name])
-        assert (checkout.get("with") or {}).get("ref") == "${{ github.ref }}", \
-            f"{name}: the same commit the workflow came from"
+        assert (checkout.get("with") or {}).get("ref") == "${{ github.sha }}", \
+            f"{name}: the same commit the workflow came from, by SHA"
+
+
+def test_no_job_checks_out_a_ref_that_merging_deletes():
+    for name, job in _jobs().items():
+        for checkout in _checkouts(job):
+            ref = str((checkout.get("with") or {}).get("ref", ""))
+            assert "github.ref" not in ref and "/merge" not in ref, \
+                f"{name}: refs/pull/<n>/merge is gone once the pull request merges"
 
 
 def test_no_job_checks_out_the_branch_alone():
