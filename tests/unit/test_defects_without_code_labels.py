@@ -17,12 +17,14 @@ from scripts import tidy_defect_labels as tidy
 from scripts import triage_failures as tf
 from tests.sandbox.fake_jira import FakeJira, jira_client_over
 from core import pipeline_health as ph
+from core.ops_settings import DEFAULTS
 
 TEST = "tests.step_defs.test_cart::test_add_an_item"
 MULTI = "Error: strict mode violation: locator('.row') resolved to 3 elements"
 CAUSE = "multi-match selector"
 RUN = "https://ci.example/runs/"
-S = defects.settings()
+# The shipped defaults, pinned: the tests do not follow a deployment's config.
+S = {**DEFAULTS["defects"], "trace_owners": {}}
 
 
 def _case(name, outcome="passed"):
@@ -35,6 +37,7 @@ def _case(name, outcome="passed"):
 @pytest.fixture
 def world(monkeypatch, tmp_path):
     ph.reset_cache()
+    monkeypatch.setattr(defects, "settings", lambda: S)
     fake = FakeJira()
     fake.add("Story", "A shopper keeps a cart", key="SBX-1")
     fake.add("Test Case", "[Positive] Add an item", key="SBX-5")
@@ -184,6 +187,6 @@ def test_a_refused_removal_is_listed_not_raised(world, monkeypatch):
 
 
 def test_the_tidy_script_needs_no_application_name():
-    src = (tidy.__file__)
-    text = open(src, encoding="utf-8").read()
+    from pathlib import Path
+    text = Path(tidy.__file__).read_text(encoding="utf-8")
     assert "ai-defect" not in text.split('"""', 2)[2], "the label comes from the settings"
