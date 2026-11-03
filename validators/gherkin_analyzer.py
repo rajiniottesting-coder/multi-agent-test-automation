@@ -673,6 +673,11 @@ def _extract_decorator_phrases(step_def_content: str) -> list[tuple[str, str, st
       - 'cfparse': cardinality-aware parse — same empty-string limitation
       - 're':     Python `re` module — full regex power
     """
+    from_ast = _decorators_from_ast(step_def_content)
+    if from_ast is not None:
+        return from_ast
+    # The file does not parse (a half-written draft): read it with the
+    # patterns, which see only one-literal phrases.
     decorators = []
 
     # A commented-out decorator is never registered by pytest-bdd, so it must
@@ -703,6 +708,56 @@ def _extract_decorator_phrases(step_def_content: str) -> list[tuple[str, str, st
         decorators.append((kind, phrase, 'string'))
 
     return decorators
+
+
+_STEP_KINDS = ("given", "when", "then")
+_PARSER_KINDS = ("parse", "cfparse", "re")
+
+
+def _callee(node) -> str:
+    """`when` for when(...), pytest_bdd.when(...); `re` for parsers.re(...)."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return ""
+
+
+def _decorators_from_ast(step_def_content: str):
+    """The step decorators as Python reads them, or None if the file does not
+    parse.
+
+    The patterns read a phrase up to its first closing quote, so a phrase
+    split over several string literals - Python's usual way to wrap a long
+    line, joined into one string before pytest-bdd sees it - came out as the
+    first piece plus quotes and indentation. Every check then reported the
+    step undefined, the decorator unused and the wording drifted, for a step
+    pytest-bdd resolves; the repair loop "fixed" it until it gave up
+    (SCRUM-284, 3 Nov 2026). A decorator with keyword arguments
+    (target_fixture=...) was not seen at all. The parser joins the pieces,
+    resolves escapes and drops comments, exactly as at runtime."""
+    try:
+        tree = ast.parse(step_def_content)
+    except (SyntaxError, ValueError):
+        return None
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for dec in node.decorator_list:
+            if not isinstance(dec, ast.Call) or _callee(dec.func) not in _STEP_KINDS:
+                continue
+            arg = dec.args[0] if dec.args else next(
+                (k.value for k in dec.keywords if k.arg in ("name", "step_name")), None)
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                found.append((dec.lineno, _callee(dec.func), arg.value, "string"))
+            elif (isinstance(arg, ast.Call) and _callee(arg.func) in _PARSER_KINDS
+                  and arg.args and isinstance(arg.args[0], ast.Constant)
+                  and isinstance(arg.args[0].value, str)):
+                found.append((dec.lineno, _callee(dec.func), arg.args[0].value,
+                              _callee(arg.func)))
+    found.sort(key=lambda d: d[0])
+    return [(kind, phrase, ptype) for _line, kind, phrase, ptype in found]
 
 
 def _phrase_matches(feature_phrase: str, decorator_phrase: str, parser_type: str) -> bool:
