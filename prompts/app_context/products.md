@@ -49,9 +49,8 @@ Every product detail page has a review form: a name, an email address, review
 text and a submit button. A successful submission shows
 **"Thank you for your review."** in place - there is no navigation.
 
-All three fields are required. Submitting with any of them empty is blocked by
-the browser's own validation, so nothing app-authored appears and the thank-you
-message never renders. That makes "an incomplete review is not accepted" a
+Submitting with the review text empty does not submit the review, so the
+thank-you message never renders. That makes "an incomplete review is not accepted" a
 legitimate negative case: assert that the thank-you message does NOT appear.
 Do not expect an error message from the application - there is none.
 
