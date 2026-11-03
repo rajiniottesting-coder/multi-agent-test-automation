@@ -4,6 +4,19 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a story that needs a page the inventory lacks stops at once, and says how to add it (#254)
+
+**Why:** validating SCRUM-284 (3 Nov) - a contact form whose page the inventory did not have. The generated page object was refused ("not a page in the app inventory"); the repair loop "fixed" it by deleting what it could not anchor, the step definitions then called methods that no longer existed, and after four attempts ($1.50) the story was blocked with a comment blaming the model and the test case. No repair can add a page: the inventory is curated by a person.
+
+- `validators/method_resolution_validator.pages_missing_from_inventory()`: the pages a generated page object names that the inventory lacks - not a misspelling of one it has (no close match), which a repair can still fix
+- `agents/agent2_coder._attempt_step_coverage_repair()`: stops before repairing when there is one; the final gate reports it
+- `core/blocked.blocked_comment()`: names the page and the command that adds it (`scripts.plan_inventory page ...`), then "run Agent 2 with this story's key"; every other refusal reads as before
+- GUIDE (troubleshooting): what to do with such a comment
+- `tests/unit/test_page_missing_from_inventory.py` (11); 3 deliberate breaks (the loop repairing, a misspelling read as missing, the comment without the page) each fail a test
+- Not tested live yet: E49
+
+---
+
 ## November 2026 — step decorators are read as Python reads them (#253)
 
 **Why:** validating SCRUM-284 (3 Nov), Agent 2 wrapped a long step phrase over several string literals - Python's usual line break, joined into one string before pytest-bdd sees it. The validators read decorators with a pattern that stopped at the first closing quote, so they reported "no matching decorator", "unused step definition" and "drifted wording" for a step pytest-bdd resolves. Four repair attempts "fixed" a non-problem and the story was blocked ($1.50) with a comment blaming the model and the test case. A decorator with keyword arguments (`target_fixture=`) was not seen at all.

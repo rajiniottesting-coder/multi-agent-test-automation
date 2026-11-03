@@ -2391,6 +2391,16 @@ test case (or the story): the next scheduled scan then tries again by itself.
 Until then the scan skips the story and spends nothing. To retry without an
 edit - after a framework fix, say - run Agent 2 with the story's key.
 
+**When the comment says the story needs a page the app inventory does not
+have**, no test case is wrong and no repair could fix it: Agent 2 stopped
+before repairing (#254), because only a person adds a page to the inventory.
+Add it - `python -m scripts.plan_inventory page --page <page> --url /<path>
+--component "<Component>" --element <key>="<selector>"`, with at least one
+element you can see on the page - commit it, then run Agent 2 with the story's
+key. A page already live is confirmed by the next nightly inventory update,
+which also proposes its other elements. A page name that is a misspelling of
+one the inventory has is still repaired as before.
+
 ### The story has `ai-incomplete`, or an `[agent2:incomplete]` comment
 
 Agent 2 opened the pull request, but at least one approved test case has no
