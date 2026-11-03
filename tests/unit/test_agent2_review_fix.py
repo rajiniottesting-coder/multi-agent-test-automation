@@ -509,3 +509,58 @@ def test_only_a_job_that_runs_waits_its_turn():
     c = wf["jobs"]["fix"]["concurrency"]
     assert "pull_request.number" in c["group"] and "issue.number" in c["group"]
     assert c["cancel-in-progress"] is False, "a running fix must never be cut off mid-push"
+
+
+# ── a review after single comments; a run the budget stopped (PR #251) ──
+#
+# 3 Nov 2026: the reviewer added two line comments with "Add single comment"
+# (each became a review of its own), then submitted "Request changes" with a
+# text only. The fix saw only the text. And the model budget stopped that run:
+# its summary said "Nothing needed a code change" and recorded the review as
+# handled, so neither a re-run nor a later `/fix` would have taken it again.
+
+def test_a_review_also_takes_earlier_line_comments_not_handled_before():
+    host = FakeHost(inline=[_inline(cid=11, review_id=97), _inline(cid=12, review_id=98),
+                            _inline(cid=13, review_id=99), _inline(cid=10, review_id=96)])
+    handled = rf.handled_comment_ids([f"{rf.MARKER} review 96 comments: 10\n"])
+    items = rf.collect_items(host, 5, 99, "Two changes, see the line comments.", handled)
+    assert [i.comment_id for i in items] == [13, 11, 12, None], \
+        "the review's own first, then the earlier ones not handled, then its text"
+    assert items[-1].body == "Two changes, see the line comments."
+
+
+def test_a_review_with_only_its_own_comments_reads_as_before():
+    host = FakeHost(inline=[_inline(cid=13, review_id=99)])
+    assert [i.comment_id for i in rf.collect_items(host, 5, 99, "", set())] == [13]
+
+
+def _budget_stop(monkeypatch):
+    from core import spend_budget
+
+    def stop(*a, **k):
+        raise spend_budget.BudgetExceeded("day", 12.07, 12.0)
+    monkeypatch.setattr(rf, "decide", stop)
+
+
+def test_a_budget_stop_records_nothing_as_handled(wired, monkeypatch):
+    _budget_stop(monkeypatch)
+    host = FakeHost(inline=[_inline(cid=11, review_id=97)])
+    out = _run(host, FakeLLM([]), text="Two changes")
+    assert out["status"] == "not_done" and host.pushed == {}
+    summary = host.comments[-1]
+    assert summary.startswith(f"{rf.NOT_DONE_MARKER} review 99")
+    assert "Nothing needed a code change" not in summary
+    assert "Nothing was decided or changed" in summary and "/fix" in summary
+    assert not rf.handled(host.comments, "review 99")
+    assert rf.handled_comment_ids(host.comments) == set()
+    again = _run(host, FakeLLM([]), text="Two changes")
+    assert again["status"] == "not_done", "the same review is taken again, not skipped"
+
+
+def test_after_the_budget_a_fix_comment_takes_every_comment(monkeypatch):
+    host = FakeHost(inline=[_inline(cid=11, review_id=97), _inline(cid=12, review_id=98)])
+    host.comments.append(rf.summary_comment(
+        "review 99", [rf.Outcome(rf.Item(1, "x", 11, "p", 1), "decline", "budget")], [],
+        "stopped", not_done=True))
+    items = rf.collect_items(host, 5, None, "", rf.handled_comment_ids(host.comments))
+    assert [i.comment_id for i in items] == [11, 12]

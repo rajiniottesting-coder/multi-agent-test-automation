@@ -440,7 +440,9 @@ def test_review_fix_stops_before_pushing(monkeypatch):
             raise sb.BudgetExceeded("day", "Daily model budget reached")
     host = t.FakeHost(inline=[t._inline()])
     out = t._run(host, StoppedLLM([]))
-    assert out["status"] == "nothing_to_fix" and host.pushed == {}
+    # not_done (#257): a stop decides nothing and records nothing as handled -
+    # it used to read "nothing_to_fix", and the review was never taken again.
+    assert out["status"] == "not_done" and host.pushed == {}
     assert "Not attempted - the model budget is reached" in host.comments[-1]
 
 

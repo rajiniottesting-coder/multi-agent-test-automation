@@ -61,6 +61,9 @@ from dataclasses import dataclass, field
 logger = logging.getLogger(__name__)
 
 MARKER = "[agent2:review-fix]"
+# A run the model budget stopped: it records nothing as handled, so the same
+# review re-run, or a later `/fix`, does the work (3 Nov 2026, SCRUM-283).
+NOT_DONE_MARKER = "[agent2:review-fix:not-done]"
 AGENT_NAME = "Agent 2 (Coder, review fix)"
 _CODE_DIRS = ("features/", "tests/step_defs/", "pages/")
 _FRAMEWORK_FILES = {"pages/base_page.py", "tests/step_defs/conftest.py", "tests/conftest.py"}
@@ -214,13 +217,22 @@ def strip_command(text: str, command: str) -> str:
 
 def collect_items(host, pr_number: int, review_id: int | None, text: str,
                   already: set) -> list[Item]:
-    """A review: its inline comments, then its own text. A `/fix` comment: every
-    inline comment not handled before, then the comment's own text, if any.
+    """A review: its inline comments, then every earlier inline comment not
+    handled before, then its own text. A `/fix` comment: every inline comment
+    not handled before, then the comment's own text, if any.
 
     A reviewer leaves comments on the lines and then writes `/fix please address
-    these`: the text must not hide the comments it refers to.
+    these`: the text must not hide the comments it refers to. The same holds
+    for a review: GitHub's "Add single comment" posts each line comment as a
+    review of its own, and the "Request changes" that follows carries only its
+    text - on SCRUM-283's pull request (3 Nov 2026) the two line comments
+    were never seen.
     """
     inline = host.get_review_comments(pr_number, review_id)
+    if review_id is not None:
+        own = {c.get("id") for c in inline}
+        inline = inline + [c for c in host.get_review_comments(pr_number, None)
+                           if c.get("id") not in own and c.get("id") not in already]
     items: list[Item] = []
     for c in inline:
         if (c.get("author") or "").endswith("[bot]") or not (c.get("body") or "").strip():
@@ -334,9 +346,15 @@ def _reply(host, pr_number: int, outcome: Outcome, pushed: bool) -> None:
         logger.warning("Could not reply to review comment %s: %s", outcome.item.comment_id, e)
 
 
-def summary_comment(key: str, outcomes: list[Outcome], pushed: list, problem: str = "") -> str:
+def summary_comment(key: str, outcomes: list[Outcome], pushed: list, problem: str = "",
+                    not_done: bool = False) -> str:
+    """`not_done`: the run was stopped before deciding or changing anything
+    (the model budget) - nothing is recorded as handled, so a re-run of the
+    same review, or a later `/fix`, takes every comment again."""
     ids = ",".join(str(o.item.comment_id) for o in outcomes if o.item.comment_id is not None)
-    lines = [f"{MARKER} {key} comments: {ids or '-'}", "", "## 🤖 Agent 2 - review fix", ""]
+    first = (f"{NOT_DONE_MARKER} {key}" if not_done
+             else f"{MARKER} {key} comments: {ids or '-'}")
+    lines = [first, "", "## 🤖 Agent 2 - review fix", ""]
     if pushed:
         lines.append(f"Pushed {len(pushed)} file(s) to this branch: {', '.join(pushed)}. "
                      "Agents 3, 4 and 5 run again on the new commit.")
@@ -348,8 +366,12 @@ def summary_comment(key: str, outcomes: list[Outcome], pushed: list, problem: st
     for o in outcomes:
         reason = o.reason.replace("|", "/").replace("\n", " ")
         lines.append(f"| {o.item.n} | {o.item.where()} | {o.action} | {reason} |")
-    lines += ["", "_A comment that asks the tests to check something the approved test cases "
-                  "do not state is declined: update the test case, then add `ai-regenerate`._"]
+    if not_done:
+        lines += ["", "_Nothing was recorded as handled: re-run this workflow run, or comment "
+                      "`/fix`, once the budget allows - every comment above is taken again._"]
+    else:
+        lines += ["", "_A comment that asks the tests to check something the approved test cases "
+                      "do not state is declined: update the test case, then add `ai-regenerate`._"]
     return "\n".join(lines)
 
 
@@ -416,12 +438,17 @@ def run(pr_number: int, review_id: int | None = None, comment_id: int | None = N
         begin_story(story_key, tracker)             # F-24: within the story's budget
     llm = llm or LLMClient(temperature=0.2)
 
+    not_done = False
+    stopped = ""
     try:
         outcomes = enforce(decide(llm, items, story, test_cases, editable, protected),
                            items, editable, protected)
     except BudgetExceeded as stop:
         if not dry_run:
             hold_story(tracker, stop)
+        not_done = True
+        stopped = (f"Not attempted - the model budget is reached: {stop} Nothing was decided "
+                   "or changed.")
         outcomes = [Outcome(i, "decline", f"Not attempted - the model budget is reached: {stop}")
                     for i in items]
     to_fix: dict = {}
@@ -450,13 +477,15 @@ def run(pr_number: int, review_id: int | None = None, comment_id: int | None = N
         if not dry_run:
             hold_story(tracker, stop)
         problem = f"Stopped before any change was pushed - the model budget is reached: {stop}"
+        not_done = True
         for o in outcomes:
             if o.action == "fix":
                 o.action, o.reason = "decline", "Not attempted - the model budget is reached."
+    problem = problem or stopped
 
     for o in outcomes:
         _reply(host, pr_number, o, bool(pushed))
-    host.post_pr_comment(pr_number, summary_comment(key, outcomes, pushed, problem))
+    host.post_pr_comment(pr_number, summary_comment(key, outcomes, pushed, problem, not_done))
 
     usage = log_usage_summary(f"PR #{pr_number} review fix")
     reset_usage()
@@ -464,7 +493,8 @@ def run(pr_number: int, review_id: int | None = None, comment_id: int | None = N
         from core.usage_ledger import post_usage_to_story
         post_usage_to_story(story_key, AGENT_NAME, usage, jira=tracker)
 
-    status = "fixed" if pushed else ("refused" if problem else "nothing_to_fix")
+    status = ("not_done" if not_done else
+              "fixed" if pushed else ("refused" if problem else "nothing_to_fix"))
     out = {**result, "status": status, "story": story_key, "pushed": pushed,
            "outcomes": [(o.item.n, o.action) for o in outcomes]}
     for recorder in recorders:
