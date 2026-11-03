@@ -50,6 +50,10 @@ DEFAULTS: dict = {
         # A run with more new failures than this raises this many defects and
         # one health alert, rather than a flood.
         "max_new_per_run": 10,
+        # Only a test that failed, was run again (after the application was
+        # found up) and failed again is raised as a defect. A failure that was
+        # not run again is listed in one health alert instead.
+        "only_after_retry": True,
     },
     # Where a story's model-cost ledger is kept (F-31, core/usage_ledger.py):
     # "auto" - hidden issue properties and one cost comment per attempt, edited

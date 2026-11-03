@@ -141,6 +141,7 @@ defects:
   passing_label: "ai-defect-passing"
   open_statuses: ["To Do", "In Progress", "In Review"]
   max_new_per_run: 10                # more at once: one health alert instead
+  only_after_retry: true             # a defect only for a test that failed twice
 
 # A story's model-cost ledger (F-31, core/usage_ledger.py).
 #   store  auto      hidden issue properties, and ONE cost comment per attempt

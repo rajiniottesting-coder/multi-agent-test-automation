@@ -22,6 +22,11 @@ import xml.etree.ElementTree as ET
 MARKS = ("outage", "flaky", "outage_recovered", "first_failure", "retried")
 
 
+def is_retried(case: ET.Element) -> bool:
+    """Failed, was run again, and failed again."""
+    return outcome(case) in ("failed", "error") and props(case).get("retried") == "1"
+
+
 def props(case: ET.Element) -> dict:
     """{name: value} of a test case's <properties>."""
     node = case.find("properties")
