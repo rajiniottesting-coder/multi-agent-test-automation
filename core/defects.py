@@ -23,6 +23,23 @@ WHAT
     Outages (F-7) and flakes (F-19) never raise a defect: the outage opens a
     health alert, the flake is recorded on the health issue.
 
+    Traceability (`trace_links`, `copy_components`): every defect is LINKED to
+    what its test verifies, so the test case and the story show it - not only
+    named in the description:
+      - "<defect> blocks <test case>" (link kind `defect_of`) and
+        "<defect> relates to <story>" (`defect_story`); the link types are the
+        tracker's, from `tracker.link_types`;
+      - the defect takes the story's components;
+      - where the test is traced from: its scenario's `# JIRA:` marker (test
+        case and story); else the one story every marked scenario of its
+        feature file shares; else `defects.trace_owners` (a feature file ->
+        story, for files that must not carry markers, such as the reserved
+        reference files); else it is NOT traced - label `unmapped_label` and
+        one health alert, never silent;
+      - kept current on every update: a missing link is added (defects raised
+        before this existed included), a moved owner or test case moves its
+        link, the unmapped label goes once the test is traced.
+
     Only after a rerun (`only_after_retry`, on by default): a defect is raised
     or updated only for a test that failed, was run again once the application
     was found up (core/app_probe.py), and failed again (`retried`). A failure
@@ -67,6 +84,45 @@ def defect_label(test_id: str, cause: str, s: dict | None = None) -> str:
 
 # ── which story owns a failing test ──────────────────────────
 
+def _feature_file(test_id: str) -> str:
+    """The feature file a pytest-bdd test id comes from (`test_<name>` -> `<name>.feature`)."""
+    module = test_id.partition("::")[0].rsplit(".", 1)[-1]
+    return (module[len("test_"):] if module.startswith("test_") else module) + ".feature"
+
+
+def trace_of(test_id: str, features_dir: Path, tracker=None, s: dict | None = None) -> dict:
+    """What a failing test is traced to: {"test_case", "owner", "traced_by"}.
+
+    In order: the scenario's marker; the one story every marked scenario of
+    the feature file shares; `defects.trace_owners` for the feature file.
+    All None when nothing traces it. Never raises."""
+    s = s or settings()
+    tc, owner = owner_of(test_id, features_dir, tracker)
+    if tc:
+        return {"test_case": tc, "owner": owner, "traced_by": "scenario marker"}
+    file = _feature_file(test_id)
+    try:
+        from agents.agent2_coder import build_marker_index
+        owners = set()
+        for entry in build_marker_index(Path(features_dir)).by_key.values():
+            if entry.file != file:
+                continue
+            o = getattr(entry, "owner", None)
+            if not o and tracker is not None:
+                o = tracker.get_parent_story_key(entry.key)
+            owners.add(o)
+        if len(owners) == 1 and None not in owners:
+            return {"test_case": None, "owner": owners.pop(), "traced_by": "feature file"}
+    except Exception as e:                                         # noqa: BLE001
+        logger.warning("Feature file of %s not read: %s", test_id, e)
+    for path, story in (s.get("trace_owners") or {}).items():
+        p = str(path).replace("\\", "/").strip("/")
+        if story and (p == file or p.endswith("/" + file)):
+            return {"test_case": None, "owner": str(story).upper(),
+                    "traced_by": "defects.trace_owners"}
+    return {"test_case": None, "owner": None, "traced_by": None}
+
+
 def owner_of(test_id: str, features_dir: Path, tracker=None) -> tuple:
     """(test case key, owning story key) of a test from its scenario's marker,
     (None, None) when the scenario is not marked or cannot be found."""
@@ -94,6 +150,18 @@ def _safe(text: str) -> str:
     return (text or "").replace("```", "'''").replace("{code", "{ code")
 
 
+def _traced_line(state: dict) -> str:
+    if state.get("test_case"):
+        return (f"{state['test_case']} (owning story: {state.get('owner') or 'not found'})")
+    if state.get("owner"):
+        return (f"none for this scenario - its story {state['owner']} is traced by the "
+                f"{state.get('traced_by') or 'feature file'}")
+    return ("NOT TRACED - no `# JIRA:` marker on the scenario, no story shared by the "
+            "marked scenarios of its feature file, and no `defects.trace_owners` entry "
+            "for the file. Add one; until then the defect is labelled "
+            f"`{settings().get('unmapped_label')}`")
+
+
 def render(tracker, state: dict) -> str:
     md = [
         "A test fails on `main`. Raised by the defect triage after a run on main "
@@ -102,9 +170,7 @@ def render(tracker, state: dict) -> str:
         "defect gets a label and one comment suggesting it be closed - a person decides.",
         "",
         f"**Test:** `{state['test']}`",
-        "**Test case:** " + (f"{state['test_case']} (owning story: "
-                             f"{state.get('owner') or 'not found'})"
-                             if state.get("test_case") else "not marked - no `# JIRA:` marker"),
+        "**Test case:** " + _traced_line(state),
         f"**Cause ({state['cause']}):** {state['cause_text']}",
         f"**Fix:** {state['remedy']}",
         "",
@@ -156,20 +222,84 @@ def open_defects(tracker, s: dict) -> dict:
         {"issue_type": s["issue_type"], "required_labels": [s["label"]],
          "allowed_statuses": list(s["open_statuses"])}, max_results=200)
     out = {}
-    prefix = s["label"] + "-"
+    # Only `<label>-<10 hex>`: the passing and unmapped labels share the prefix.
+    shape = re.compile(re.escape(s["label"]) + r"-[0-9a-f]{10}")
     for issue in found or []:
         for label in issue.get("labels") or []:
-            if label.startswith(prefix) and label != s["passing_label"]:
+            if shape.fullmatch(label):
                 out[label] = issue
     return out
+
+
+def _gone(tracker, key: str) -> bool:
+    """True when the issue `key` cannot be read. Asked after a refused link, so
+    a link type the tracker lacks (Jira answers that with a 404 too) stays a
+    refused write, and only a deleted or moved issue reads as a stale trace."""
+    try:
+        tracker.get_story(key)
+        return False
+    except Exception:                                              # noqa: BLE001
+        return True
+
+
+def _trace(tracker, key: str, state: dict, before: dict, labels: list, s: dict,
+           result: dict, dry_run: bool) -> None:
+    """Link the defect to its test case and story, give it the story's
+    components, and keep the unmapped label true. Best-effort per write: a
+    refused write is recorded in result["errors"], never stops the triage."""
+    tc, owner = state.get("test_case"), state.get("owner")
+    if not (tc or owner):
+        result["unmapped"].append(key)
+    if dry_run:
+        return
+    unmapped = s.get("unmapped_label")
+
+    def attempt(what, call, *args, target=None):
+        try:
+            call(*args)
+        except Exception as e:                                     # noqa: BLE001
+            if target and _gone(tracker, target):
+                # The marker (or trace_owners) names an issue that is gone:
+                # a traceability problem for a person, not a refused write.
+                logger.warning("Defect %s: %s no longer exists", key, target)
+                result["stale_trace"].append(f"{key} -> {target}")
+                return
+            logger.warning("Defect %s: %s not done: %s", key, what, e)
+            result["errors"].append((f"{key} {what}", f"{type(e).__name__}: {e}"))
+
+    if unmapped:
+        if not (tc or owner) and unmapped not in labels:
+            attempt("unmapped label", tracker.add_label, key, unmapped)
+        elif (tc or owner) and unmapped in labels:
+            attempt("unmapped label removal", tracker.remove_label, key, unmapped)
+    if s.get("trace_links", True):
+        for kind, old, new in (("defect_of", before.get("test_case"), tc),
+                               ("defect_story", before.get("owner"), owner)):
+            if old and old != new:
+                attempt(f"link to {old} removed", tracker.unlink_issues, key, old, kind)
+            if new:
+                attempt(f"link to {new}", tracker.link_issues, key, new, kind, target=new)
+    set_components = capability(tracker, "set_components")
+    if owner and s.get("copy_components", True) and set_components is not None:
+        try:
+            wanted = list(tracker.get_story(owner).get("components") or [])
+            have = list(tracker.get_story(key).get("components") or [])
+            if wanted and sorted(wanted) != sorted(have):
+                set_components(key, wanted)
+        except Exception as e:                                     # noqa: BLE001
+            # A nicety, never a failure: a project whose defect screen has no
+            # components field refuses it on every defect, every night.
+            logger.warning("Defect %s: components not copied: %s", key, e)
 
 
 def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | None = None,
            dry_run: bool = False) -> dict:
     """Raise, update and flag defects for one run on main. Returns what it did:
     {"raised", "updated", "passing", "failing_again", "capped", "outages", "flaky",
-    "not_retried", "errors"} - `not_retried` lists failures that were not run
-    again (no defect, see only_after_retry); `errors` is [(what, why)] for every
+    "not_retried", "unmapped", "stale_trace", "errors"} - `not_retried` lists
+    failures that were not run again (no defect, see only_after_retry);
+    `unmapped` defects nothing traces; `stale_trace` "defect -> key" where the
+    trace names an issue that no longer exists; `errors` is [(what, why)] for every
     write the tracker refused
     (a required field on the defect's create screen, a permission), so the
     caller can say so instead of a run that looks clean."""
@@ -185,7 +315,8 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
     result = {"raised": [], "updated": [], "passing": [], "failing_again": [], "capped": [],
               "outages": [jm.case_id(c) for c in cases if jm.is_outage(c)],
               "flaky": [jm.case_id(c) for c in cases if jm.is_flaky(c)],
-              "not_retried": [jm.case_id(c) for c in not_retried], "errors": []}
+              "not_retried": [jm.case_id(c) for c in not_retried], "unmapped": [],
+              "stale_trace": [], "errors": []}
     if not s.get("enabled", True):
         logger.info("defects.enabled is false - no defect is raised.")
         return result
@@ -206,13 +337,17 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
         try:
             if issue is not None:
                 state = state_of(issue.get("description", "")) or {}
+                before = {"test_case": state.get("test_case"), "owner": state.get("owner")}
                 state.update(test=test, cause=d.label, cause_text=d.cause, remedy=d.remedy,
                              failure=_failure_excerpt(case), last_seen=today, last_run=run_url,
-                             times=int(state.get("times", 1)) + 1)
+                             times=int(state.get("times", 1)) + 1,
+                             **trace_of(test, features_dir, tracker, s))
                 state.setdefault("first_seen", today)
                 if not dry_run:
                     tracker.set_description(issue["key"], render(tracker, state))
                 result["updated"].append(issue["key"])
+                _trace(tracker, issue["key"], state, before, list(issue.get("labels") or []),
+                       s, result, dry_run)
                 if s["passing_label"] in (issue.get("labels") or []):
                     if not dry_run:
                         tracker.remove_label(issue["key"], s["passing_label"])
@@ -226,18 +361,24 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
                 logger.warning("The tracker cannot create issues - no defect for %s.", test)
                 result["capped"].append(test)
                 continue
-            tc_key, owner = owner_of(test, features_dir, tracker)
-            state = {"test": test, "test_case": tc_key, "owner": owner, "cause": d.label,
+            traced = trace_of(test, features_dir, tracker, s)
+            state = {"test": test, **traced, "cause": d.label,
                      "cause_text": d.cause, "remedy": d.remedy,
                      "failure": _failure_excerpt(case), "first_seen": today,
                      "last_seen": today, "last_run": run_url, "times": 1}
             summary = f"[Auto] {test.rsplit('.', 1)[-1][:150]} fails on main: {d.label}"
             if dry_run:
                 result["raised"].append(f"(dry run) {summary}")
+                if not (traced["test_case"] or traced["owner"]):
+                    result["unmapped"].append(f"(dry run) {summary}")
                 continue
-            key = create(s["issue_type"], summary, render(tracker, state), [s["label"], label])
+            labels = [s["label"], label]
+            if not (traced["test_case"] or traced["owner"]) and s.get("unmapped_label"):
+                labels.append(s["unmapped_label"])
+            key = create(s["issue_type"], summary, render(tracker, state), labels)
             result["raised"].append(key)
             logger.warning("Defect %s raised: %s", key, summary)
+            _trace(tracker, key, state, {}, labels, s, result, dry_run)
         except Exception as e:                                     # noqa: BLE001
             logger.warning("Defect for %s not written: %s", test, e)
             result["errors"].append((test, f"{type(e).__name__}: {e}"))

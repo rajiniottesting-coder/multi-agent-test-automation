@@ -12,6 +12,8 @@ ran the E2E, a manual run on main), on the junit.xml Agent 4 finalised:
             it closes on the next run without one
   not run   one health alert for failures that were not run again: only a
   again     test that failed twice raises a defect (defects.only_after_retry)
+  unmapped  one health alert for defects nothing traces to a test case or a
+            story (labelled defects.unmapped_label)
   flakes    recorded on the pipeline health issue (core/flaky_tests.py)
   no report one health alert: the run on main produced nothing to read
   refused   one health alert when the tracker refused a defect write
@@ -36,6 +38,7 @@ NOT_WRITTEN = "defects-not-written"
 OUTAGE = "application-unavailable-on-main"
 CAPPED = "defects-capped"
 NOT_RETRIED = "failures-not-retried"
+UNMAPPED = "defects-unmapped"
 
 
 def _probe_finding(junit: Path) -> str:
@@ -96,13 +99,33 @@ def run(tracker, junit: Path, run_url: str, features_dir: Path, dry_run: bool = 
                 "main where every failure was run again.")
     else:
         resolve(tracker, NOT_RETRIED, f"Every failing test on main was run again: {run_url}")
+    untraced = list(result.get("unmapped") or [])
+    stale = list(result.get("stale_trace") or [])
+    if untraced or stale:
+        alert(tracker, UNMAPPED, f"{len(untraced) + len(stale)} defect trace(s) on main need "
+                                 "a person",
+              f"Run: {run_url}\n\n"
+              + ("Not traced to a test case or a story:\n"
+                 + "\n".join(f"- {k}" for k in untraced[:25]) + "\n\n" if untraced else "")
+              + ("Traced to an issue that no longer exists (a deleted or moved test case "
+                 "or story - fix the scenario's marker or `defects.trace_owners`):\n"
+                 + "\n".join(f"- {k}" for k in stale[:25]) + "\n\n" if stale else "")
+              + "For an untraced one, nothing traces its test: no `# JIRA:` marker on the scenario, no "
+                "story shared by the marked scenarios of its feature file, and no "
+                "`defects.trace_owners` entry for the file. Add a marker (scripts/"
+                "backfill_markers.py), or map the file in config.yaml. The next update "
+                "links the defect and removes its unmapped label; this alert closes on the "
+                "next run on main with no untraced defect.")
+    else:
+        resolve(tracker, UNMAPPED, f"Every defect on main is traced again: {run_url}")
     if result["errors"]:
         alert(tracker, NOT_WRITTEN, f"The tracker refused {len(result['errors'])} defect "
                                     "write(s) after a run on main",
               f"Run: {run_url}\n\n" + "\n".join(f"- {what}: {why[:300]}"
                                                 for what, why in result["errors"][:10])
-              + "\n\nUsually a field the defect's create screen requires, or a missing "
-                "permission: check `defects.issue_type` and the bot account.")
+              + "\n\nUsually a field the defect's create screen requires, a link type "
+                "`tracker.link_types` names that the tracker does not have, or a missing "
+                "permission: check `defects.issue_type`, the link types and the bot account.")
     else:
         resolve(tracker, NOT_WRITTEN, f"Every defect write succeeded again: {run_url}")
     if result["flaky"] and not dry_run:
