@@ -4,6 +4,18 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a raised defect carries no code label (#250)
+
+**Why:** the repository owner (3 Nov): Jira's label picker listed `ai-defect-ff8881ed6e`, `ai-defect-21bf9029c9`, ... - one meaningless code per failing test and cause, kept by the 14 closed defects too - "clumsy, and we don't know what that defect is". The code was the triage's fingerprint (sha1 of test and cause), and every defect's triage data already names both.
+
+- `core/defects.py`: a new defect gets `defects.label` only (plus the unmapped / passing labels as before). `fingerprint_of()` computes the fingerprint from the triage data; a defect raised before, or one whose data was edited away, is still found by its code label (`legacy_labels()`: only `<label>-<10 hex>`), which is removed when the triage next updates it (a refused removal is reported in `errors`). A defect with neither is logged and left alone
+- `scripts/tidy_defect_labels.py`: one-off pass - lists by default, `--apply` removes the code from every defect whose triage data identifies it or that is closed; an open defect whose data cannot be read keeps it (it is how the triage finds it) and is listed. Exit 0; refusals listed
+- GUIDE: how a repeat is matched, the tidy pass, and a saved filter to see the defects
+- `tests/unit/test_defects_without_code_labels.py` (13), two existing tests updated; 7 deliberate breaks (the code written again, the data not read, no label fallback, the code kept on update, the tidy pass removing an open unreadable defect's code, applying by default, a loose code shape that would take the passing label) each fail tests
+- Not tested live yet: E46
+
+---
+
 ## November 2026 — the hand-off's chain cap warns only when a story is left waiting (#249)
 
 **Why:** Agent 3's review of #248: `core/handoff.start()` applied `handoff.max_chain` before asking what waits, so a chain ending with an empty queue - the normal end - printed a `::warning::`.
