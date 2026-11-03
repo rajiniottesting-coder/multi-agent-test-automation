@@ -101,6 +101,16 @@ app_under_test:
   base_url: "https://bank.acme.example.com"
   inventory_file: "app_inventory/acmebank.json"
 
+  # The application health check: pages the application cannot work without
+  # (fixed URL, no login) and inventory elements ALWAYS shown on them. Without
+  # it only the base URL's status is checked, which cannot tell a page served
+  # without its content from a working one. See GUIDE.md, Agent 4.
+  health_check:
+    - page: home
+      elements: [main_logo]
+    - page: login
+      elements: [username_input]
+
   reference_files:
     feature: "features/login.feature"
     step_def: "tests/step_defs/test_login.py"
@@ -353,6 +363,11 @@ Nothing here names the application; check that the tracker matches:
 4. The nightly run (`agent4_runner.yml`, 03:10 IST) runs the whole suite on
    `main`; move the cron outside the new application's business hours if
    needed.
+5. Set `app_under_test.health_check` (Change 1). After a run with failures
+   Agent 4 checks those pages, waiting up to `app_health.wait_minutes`: an
+   application not up makes every failure an outage (no defect); otherwise
+   every failure is run again, and only a test failing twice becomes a defect
+   (`defects.only_after_retry`).
 
 A tracker adapter other than Jira needs the optional capabilities
 (`create_issue`, issue properties, `check_access` - `integrations/tracker.py`)

@@ -163,7 +163,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E29e | F-19, #231 | A test that failed on an outage, then passed on the retry | Marked `outage_recovered`: passed, not listed as flaky, not counted on the health issue | ⬜ | |
 | E29f | F-19, #231 | pytest interrupted or collecting nothing (a syntax error on a throw-away branch) | *Decide* red, naming the exit code ("no tests collected" / "interrupted"), even with no failed test in the report | ⬜ | |
 | E29g | F-19, #231 | A scenario Agent 3 predicted to fail that passed only on the retry | The prediction keeps blocking (log: "passed only on the retry (flaky)") | ⬜ | |
-| I8 | Open defect | The live-site add-to-cart flake | Still seen with turn-taking? The failure lists the action requests; with F-19 a pass on the retry is recorded as flaky | ⬜ | |
+| I8 | Open defect, root cause found (#239) | The live-site add-to-cart flake | Not seen again on the nightly runs since #239 (actions wait for the page to load); if it is, the failure lists the action requests and a pass on the retry is recorded as flaky | ⬜ | Nightly runs 31 Oct - 3 Nov green |
 
 ## TG-7 · Runs on `main` and defects (S6)
 
@@ -172,7 +172,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E30a | F-21, #231 | The 03:10 IST nightly run | Unit gate and the whole E2E with the retry; artifact; summary; no story report | ⬜ | |
 | E30b | F-21, #231 | A PR opened during it / it opened during a PR run | The later one waits its turn | ⬜ | |
 | E30c | F-21, #231 | A push to `main` during it | Does not cancel it | ⬜ | |
-| E31a | F-22, #231 | A test failing on `main` | One Bug (`ai-defect`, `ai-defect-<hash>`) naming the test, its test case and owning story, cause, fix, failure and run link | ⬜ | |
+| E31a | F-22, #231, #242 | A test failing on `main`, and failing again on the retry | One Bug (`ai-defect`, `ai-defect-<hash>`) naming the test, its test case and owning story, cause, fix, failure and run link | ⬜ | |
 | E31b | F-22, #231 | The same failure the next night | The same Bug, times 2, no comment | ⬜ | |
 | E31c | F-22, #231 | It passes, then fails again | `ai-defect-passing` and one "Suggest closing" comment; then the label off and "Failing again" | ⬜ | |
 | E31d | F-22, #231 | An outage night | No Bug; one `application-unavailable-on-main` alert, resolved the next clean night | ⬜ | |
@@ -237,6 +237,12 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E36h | #235 | A story PR merged (E36d) | Story Done on merge moves the story to Done with the branch read from the environment (the job log shows `--branch "$BRANCH"`) | ⬜ | |
 | E37 | #237 | *Inventory Health* run by hand (on the branch, then nightly) | Each `AMBIG` line lists its matches (tag, classes, shown/hidden, text); the login page is reported `(signed out)` with its selectors measured, not "did not render"; no `SyntaxWarning` in the log; an ambiguous contains-match `text=` key shows a `fix:` line with its exact form; the run passes after the inventory fix, with a note (not a failure) listing the keys that could be tightened; the report never advises `multi_match` for a one-element key | ⬜ | |
 | E38 | #238 | The next failure note Agent 3 posts on a PR, and the next health alert that quotes an error (or E36f, which makes the App's key fail on purpose) | No token, key block, secret value, `Key=` alias or email appears - `[redacted]` in their place; the rest of the message reads as before | ⬜ | |
+| E40a | #242 | A run with failures while the application is up (any PR or night with a real failure) | *Check the application is up* reports it up (pages and elements named); every failed test is run again; a test failing twice is a failure, a pass a flake | ⬜ | |
+| E40b | #242 | A night the application is not itself (or a PR run with `BASE_URL` pointed at a page that is not the application, on a throw-away branch) | The check waits `app_health.wait_minutes`, then reports it not up with the URL, title and text it was shown; no retry; every failure *not judged*; on `main` one `application-unavailable-on-main` alert with that finding and no defect | ⬜ | |
+| E40c | #242 | A failure on `main` that fails again on the retry | Its defect is raised (or updated) as before; no `failures-not-retried` alert | ⬜ | |
+| E40d | #242 | `MAX_RETRIED_TESTS` lowered to 1 on a throw-away branch merged and reverted, with two failures | No defect for the failure not run again; one `failures-not-retried` alert naming it; resolved by the next run on `main` | ⬜ | |
+| E40e | #242 | A wrong `app_under_test.health_check` (a page not in the inventory), on a throw-away branch | The check says `unknown` with the reason; the run retries as before; nothing marked an outage | ⬜ | |
+| E41 | #243 | *Inventory Health* on a night the verifier does not pass (or run by hand with `BASE_URL` pointed at a page that is not the application, on a throw-away branch) | *Check the application is up* runs (skipped on a healthy night); an application not up gives "The application is not up — inventory NOT checked" with what was shown; a failed login on an application that is up points at the credentials; `app_probe.json` in the artifact | ⬜ | |
 | E39 | #239 | Agent 4 on the next three runs (PRs and the nightly run), then the defects SCRUM-268 to SCRUM-271 | The cart scenarios pass; a step after a click-navigation acts only once the page has loaded (a slow page shows as a longer step, not a lost click); the four defects get the "passing" label and comment; any later row-wait failure lists the page's action requests; a slow page shows as a longer step, never `Page.goto: Timeout ... waiting until "load"`, and a page truly not served is reported as an outage, not a failure | ⬜ | |
 
 ## Not built yet: rows to add when each is built
@@ -306,6 +312,8 @@ proves them.
 | #236 | The App's settings named `GH_APP_*` | | E36a (the run finds them) | |
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
+| #243 | Inventory Health asks whether the application was up | | E41 | Old and new summaries compared (unit) |
+| #242 | The application health check; every failure retried; a defect only after a failed rerun | | E40a-e, E31a | Health check proven in Chromium (unit) |
 | #239 | Every action waits for the page to load; navigation needs the document, not every resource; row waits name the requests | | E39 | Race and slow load proven in Chromium (unit) |
 
 Cited in `CHANGES.md` but never merged (evidence, not changes): #178 (replaced

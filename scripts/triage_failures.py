@@ -7,7 +7,11 @@ ran the E2E, a manual run on main), on the junit.xml Agent 4 finalised:
 
   failures  one defect per test and cause (core/defects.py)
   outages   one pipeline health alert while main runs hit the application's
-            unavailability; it closes on the next run without one
+            unavailability, with what the application health check found
+            (reports/app_probe.json) when it found the application not up;
+            it closes on the next run without one
+  not run   one health alert for failures that were not run again: only a
+  again     test that failed twice raises a defect (defects.only_after_retry)
   flakes    recorded on the pipeline health issue (core/flaky_tests.py)
   no report one health alert: the run on main produced nothing to read
   refused   one health alert when the tracker refused a defect write
@@ -31,6 +35,21 @@ NO_REPORT = "main-run-no-report"
 NOT_WRITTEN = "defects-not-written"
 OUTAGE = "application-unavailable-on-main"
 CAPPED = "defects-capped"
+NOT_RETRIED = "failures-not-retried"
+
+
+def _probe_finding(junit: Path) -> str:
+    """What the application health check found, when it found the application
+    not up - the evidence for the outage alert."""
+    try:
+        import json
+        probe = json.loads((junit.parent / "app_probe.json").read_text(encoding="utf-8"))
+    except Exception:                                              # noqa: BLE001
+        return ""
+    if not isinstance(probe, dict) or probe.get("available") is not False:
+        return ""
+    return "\n\nThe application health check found: " + str(
+        probe.get("summary") or probe.get("problem") or "the application not up")[:800]
 
 
 def run(tracker, junit: Path, run_url: str, features_dir: Path, dry_run: bool = False) -> dict:
@@ -52,6 +71,7 @@ def run(tracker, junit: Path, run_url: str, features_dir: Path, dry_run: bool = 
         alert(tracker, OUTAGE, f"{n} test(s) could not run on main: the application was "
                                "unavailable",
               f"Run: {run_url}\n\n" + "\n".join(f"- `{t}`" for t in result["outages"][:25])
+              + _probe_finding(junit)
               + "\n\nNo defect is raised for these. This alert closes on the next run on "
                 "main without an outage.")
     else:
@@ -65,6 +85,17 @@ def run(tracker, junit: Path, run_url: str, features_dir: Path, dry_run: bool = 
                 "environment problem - look at the run first.")
     else:
         resolve(tracker, CAPPED, f"Every failing test on main has a defect again: {run_url}")
+    if result.get("not_retried"):
+        alert(tracker, NOT_RETRIED, f"{len(result['not_retried'])} failing test(s) on main "
+                                    "were not run again - no defect raised",
+              f"Run: {run_url}\n\n" + "\n".join(f"- `{t}`" for t in result["not_retried"][:25])
+              + "\n\nA defect is raised only for a test that fails, is run again and fails "
+                "again. These were not run again - usually more failures than the retry takes "
+                "(MAX_RETRIED_TESTS in agent4_runner.yml), or a retry that did not run. Look "
+                "at the run, then re-run the workflow. This alert closes on the next run on "
+                "main where every failure was run again.")
+    else:
+        resolve(tracker, NOT_RETRIED, f"Every failing test on main was run again: {run_url}")
     if result["errors"]:
         alert(tracker, NOT_WRITTEN, f"The tracker refused {len(result['errors'])} defect "
                                     "write(s) after a run on main",

@@ -376,9 +376,10 @@ Pydantic's `max_length=10` translates to JSON Schema `maxItems`, which some prov
 2. Installs Python deps and Playwright (with browser caching for speed)
 3. Runs `pytest` — the offline unit suite and the BDD tests — with JUnit XML, HTML and Allure output; a failed test keeps its screenshot, video and Playwright trace. A BDD test whose failure names a temporary HTTP error from the application (5xx or 429) is re-run up to twice, 20 s apart (`pytest-rerunfailures`, `--only-rerun`); a failure in a test whose own request the server refused that way, and never answered afterwards, is restated to name it (`tests/conftest.py`), so it is re-run too; nothing else is re-run, and `scripts/collapse_junit_reruns.py` then keeps only each test's final attempt in `junit.xml`, so Agent 5's counts and Agent 3's per-scenario evidence see one result per test. Page loads are retried earlier still, inside `BasePage.navigate()`. Then every test still failing is **retried once** (`--last-failed`, at most 10; F-19), and `scripts/finalise_junit.py` writes what was learned into `junit.xml` (`core/junit_marks.py`): a pass on the retry is `flaky` (counts as passed, named, recorded on the pipeline health issue) or `outage_recovered`; a failure whose text says the application was unavailable is `outage` (F-7) - reported apart from test failures everywhere. The run step itself never fails the job; the last step, *Decide the E2E result*, does - on anything still failing after the retry (outages included: such a test was not tested), an interrupted run, a collection error, or no tests. On a pull request that changes only `prompts/`, `docs/` or Markdown the browser run and Agent 5 are skipped (see *What runs, per event*); on a push to `main` the browser runs only when a runtime file changed
 4. On a pull request and on the nightly run, before the browser run: waits while a run of another PR (or the nightly run) that started earlier has not finished (first come, first served, `scripts/e2e_turn.py`). Every PR tests the same live application with the same accounts, and saved state such as a cart would otherwise leak between them. Capped at 15 minutes, then it runs anyway; if the runs cannot be read it does not wait.
-5. Uploads `reports/` as a workflow artifact (so Agent 5 can read it in the next job)
-6. Writes a markdown test summary to the GitHub Actions job summary page - failures, tests the application's outage stopped and flaky tests each in their own section
-7. After a run on `main` (nightly, a push that ran the E2E, a manual run on main): the `triage` job raises defects for what still fails (F-22, see *Operating the pipeline*)
+5. After a run with failures: **checks that the application is up** (`scripts/app_probe.py`) - opens the pages in `app_under_test.health_check` and looks for elements always on them, waiting up to `app_health.wait_minutes` for it to come back. Not up: every failure is an outage (not judged, never a defect), with what the browser was shown instead. Up: **every failed test is run again** once (F-19; capped at 100); a pass is a flake, a second failure is a failure - and only that can become a defect
+6. Uploads `reports/` as a workflow artifact (so Agent 5 can read it in the next job)
+7. Writes a markdown test summary to the GitHub Actions job summary page - failures, tests the application's outage stopped and flaky tests each in their own section
+8. After a run on `main` (nightly, a push that ran the E2E, a manual run on main): the `triage` job raises defects for what failed twice (F-22, see *Operating the pipeline*)
 
 **Triggers:** PR opened, synchronized (new commits), reopened; a push to `main` touching framework paths; manual `workflow_dispatch`; every night at 03:10 IST on `main` (F-21: the whole suite, no story report).
 
@@ -1241,7 +1242,11 @@ pipeline_health:                    # the watched issue and its checks (F-23)
 flaky_tests: { enabled: true, window_days: 30 }                         # F-19
 defects:                            # failures on main (F-22)
   { enabled, issue_type: "Bug", label: "ai-defect", passing_label: "ai-defect-passing",
-    open_statuses: [To Do, In Progress, In Review], max_new_per_run: 10 }
+    open_statuses: [To Do, In Progress, In Review], max_new_per_run: 10,
+    only_after_retry: true }        # a defect only for a test that failed twice
+app_health:                         # the application health check's timing
+  { wait_minutes: 8, interval_seconds: 60, element_timeout_ms: 15000 }
+                                    # WHAT it checks: app_under_test.health_check
 budget:                             # model spend (F-24); every selection excludes hold_label
   { enabled, per_story_usd: 8, per_day_usd: 12, warn_at: 0.5, timezone: "UTC",
     hold_label: "budget-hold" }
@@ -1681,7 +1686,8 @@ rewritten on each change - edits to it are not kept.
 | `workflow-failing:<file>` | health check | a scheduled workflow failed `consecutive_failures` scheduled runs in a row | its next scheduled run succeeds, or the workflow is no longer scheduled |
 | `credential:repo-host`, `credential:model` | health check | the repo host token, or the model key, was refused (a spent key budget included, with `model_check: completion`) | the next check succeeds |
 | `credential-expiry:repo-host` | health check | the token expires within `expiry_warn_days` (where GitHub gives the date) | a new token is further away, or has no expiry |
-| `application-unavailable-on-main` | triage | tests on `main` could not run: the application was unavailable | the next run on `main` without an outage |
+| `application-unavailable-on-main` | triage | tests on `main` could not run: the application was unavailable - including a night the health check found it not itself, with what was served instead | the next run on `main` without an outage |
+| `failures-not-retried` | triage | failures on `main` that were not run again, so no defect was raised (more than the retry takes, or a retry that did not run) | a run on `main` where every failure was run again |
 | `defects-capped` | triage | more new failures on `main` than `max_new_per_run` | a run on `main` where every failing test has its defect |
 | `main-run-no-report` | triage | a run on `main` produced no readable report (not for a run a newer push cancelled) | the next run on `main` with a report |
 | `defects-not-written` | triage | the tracker refused a defect write - usually a field the defect's create screen requires, or a permission; the triage job also goes red | a run on `main` whose writes all succeed |
@@ -1699,6 +1705,11 @@ the E2E with the retry, the summary and the artifact; no story report. It takes
 its turn with pull requests for the live application. After any run on `main`
 the `triage` job (`scripts/triage_failures.py`, `core/defects.py`):
 
+- considers only a test that **failed twice**: it failed, the application was
+  then found up (the health check), it was run again and failed again
+  (`defects.only_after_retry`). A failure the application's outage explains is
+  an outage; a failure that was not run again raises nothing and is listed in
+  one `failures-not-retried` alert;
 - raises **one defect per test and cause** (`defects.issue_type`, labels
   `defects.label` and `defects.label-<hash>`) with the test, its test case and
   owning story (from the `# JIRA:` marker), the diagnosed cause and fix, the
@@ -1903,6 +1914,19 @@ click, one a change story removed and one not deployed yet read as expected
 rather than as a fault - a removed element on the page again reads as drift
 (`BACK`), a planned one found as `LIVE`, and a `planned_page` not deployed yet as
 `PLANNED PAGE`.
+
+When the verifier does not pass, `Inventory Health` asks whether the
+application itself was up - the same application health check Agent 4 uses
+(`scripts/app_probe.py`: the pages and elements in
+`app_under_test.health_check`, a browser and no model, so no token is spent).
+Its summary (`scripts/inventory_health_report.py`) then reads:
+
+| Summary | Means | Do |
+|---|---|---|
+| ✅ Inventory healthy | every selector resolved to exactly one element | nothing |
+| ❌ Selector drift detected | stale or ambiguous selectors on an application that is up (or the check could not run) | fix the inventory by hand, as the summary says |
+| ⚠️ Login failed — inventory NOT checked | the verifier could not sign in; the check found the application up | check `APP_USER_REGISTERED` / `APP_PASSWORD` and the login form's selectors |
+| ⚠️ The application is not up — inventory NOT checked | the check found the application not serving its own pages; the summary says what the browser was shown | **change nothing** - neither drift nor credentials; the next night checks again |
 
 ### Every section of the inventory JSON, and what to do with it
 

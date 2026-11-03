@@ -1,6 +1,7 @@
 """Write what Agent 4 learned about each test into junit.xml (core/junit_marks.py).
 
     python -m scripts.finalise_junit reports/junit.xml [--retry reports/junit-retry.xml]
+                                     [--app-probe reports/app_probe.json]
     python -m scripts.finalise_junit --count-failed reports/junit.xml
     python -m scripts.finalise_junit --verdict reports/junit.xml --exit-code 1
 
@@ -12,6 +13,12 @@ Runs after scripts/collapse_junit_reruns.py.
              application's outage (not a flake: the test did nothing wrong);
              `first_failure` keeps the first failure's first line. A test that
              failed again takes the retry's failure and is marked `retried`.
+  --app-probe  the application health check made after the first run
+             (scripts/app_probe.py). When it found the application NOT up,
+             every failure of the run is marked `outage`, with the check's
+             finding as `outage_reason`: the application was not itself, so
+             nothing was tested (30 Oct 2026: 17 of 17 failed, every page
+             served without its content). An `unknown` check marks nothing.
   (always)   marks every failure whose text says the application was
              unavailable (core.failure_diagnosis.is_outage) `outage` (F-7).
   --verdict  the job's E2E result: exit 1 when anything still fails (outages
@@ -84,12 +91,42 @@ def merge_retry(root: ET.Element, retry: ET.Element) -> dict:
     return out
 
 
-def finalise(root: ET.Element, retry: ET.Element | None = None) -> dict:
+def mark_app_down(root: ET.Element, probe: dict | None) -> list:
+    """Every failure an outage when the health check found the application
+    not up. Returns the test ids marked. A check that is missing, `unknown` or
+    found the application up marks nothing."""
+    if not isinstance(probe, dict) or probe.get("available") is not False:
+        return []
+    reason = (probe.get("summary") or probe.get("problem") or
+              "the application health check found the application not up")[:500]
+    marked = []
+    for case in jm.cases(root):
+        if jm.outcome(case) in ("failed", "error") and not jm.is_outage(case):
+            jm.set_prop(case, "outage", "1")
+            jm.set_prop(case, "outage_reason", reason)
+            marked.append(jm.case_id(case))
+    return marked
+
+
+def finalise(root: ET.Element, retry: ET.Element | None = None,
+             probe: dict | None = None) -> dict:
     """Every mark, in place."""
     result = merge_retry(root, retry) if retry is not None else \
         {"flaky": [], "outage_recovered": [], "retried": []}
     result["outage"] = mark_outages(root)
+    result["app_down"] = mark_app_down(root, probe)      # the failures not marked already
+    result["outage"] += result["app_down"]
     return result
+
+
+def _load_probe(path: str | None) -> dict | None:
+    if not path:
+        return None
+    try:
+        import json
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception:                                              # noqa: BLE001
+        return None
 
 
 def _load(path: Path, quiet: bool = False):
@@ -142,6 +179,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("path", nargs="?", default="reports/junit.xml")
     ap.add_argument("--retry", help="junit report of the one retry of the failed tests")
+    ap.add_argument("--app-probe", help="the application health check's report (JSON)")
     ap.add_argument("--count-failed", action="store_true",
                     help="print how many tests failed or errored, and stop")
     ap.add_argument("--verdict", action="store_true",
@@ -162,7 +200,9 @@ def main(argv=None) -> int:
     if tree is None:
         return 0
     retry_tree = _load(Path(args.retry), quiet=True) if args.retry else None
-    result = finalise(tree.getroot(), retry_tree.getroot() if retry_tree is not None else None)
+    probe = _load_probe(args.app_probe)
+    result = finalise(tree.getroot(), retry_tree.getroot() if retry_tree is not None else None,
+                      probe)
     tree.write(path, encoding="utf-8", xml_declaration=True)
     for test in result["flaky"]:
         print(f"flaky - failed, then passed on the retry: {test}")
@@ -170,6 +210,9 @@ def main(argv=None) -> int:
         print(f"passed on the retry after the application's outage: {test}")
     for test in result["retried"]:
         print(f"failed again on the retry: {test}")
+    if result["app_down"]:
+        print(f"the application was not up (health check): {len(result['app_down'])} "
+              f"failure(s) reported as not judged - {(probe or {}).get('problem')}")
     for test in result["outage"]:
         print(f"application unavailable (reported apart from test failures): {test}")
     if not any(result.values()):

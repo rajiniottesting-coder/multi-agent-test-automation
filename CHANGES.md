@@ -4,6 +4,33 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — the nightly inventory check says when the application was not up (#243)
+
+**Why:** the *Inventory Health* run of 31 Oct found the login page loaded with none of its 11 elements, refused to report (correctly) and headlined "Login failed — inventory NOT checked: check the credentials". The night before, the application had served the nightly test run its pages without their content. Nothing in the check asked whether the application was up, so a site problem read as a credential problem. Asked by the repository owner: the same check on the nightly run, with no token spent, generic for any application.
+
+- `inventory_health.yml`: when the verifier does not pass, *Check the application is up* runs `scripts/app_probe.py` (#242: the pages and elements in `app_under_test.health_check`, a browser and no model). Job timeout 20 → 30 minutes for its wait; its report goes into the artifact
+- `scripts/inventory_health_report.py` (new): the summary the inline script wrote, plus two readings - **the application is not up** (neither drift nor credentials, change nothing; what the browser was shown), and a failed login on an application found **up** (the credentials or the login form). Every other summary is byte-for-byte what the inline script wrote (proven by running the old script beside the new one)
+- `tests/unit/test_inventory_health_summary.py` (19)
+- Verification: 5 deliberate breaks (the finding ignored, the credentials hint never used, the check run every night, the report not given the finding, a healthy night overridden) - each fails a test. Full unit suite passed; actionlint clean
+- Not tested live yet: E41 - a night the application is not up
+
+## November 2026 — an application that is not itself is an outage, not 17 failures; a defect only after a failed rerun (#242)
+
+**Why:** on 30 Oct every one of the 17 tests failed in the nightly run on `main`: the login form, the search box, the product list and the newsletter field never appeared - on four different pages that were served (no HTTP error, no navigation timeout) without their content. The next night all 17 passed with no change. Nothing told "the application was not itself" from "17 tests are broken": more than ten failures switched the retry off (`MAX_RETRIED_TESTS` = 10, on the theory that so many meant an outage), and the triage then raised ten defects (SCRUM-272 to SCRUM-281) from the first run alone, plus a `defects-capped` alert for the other seven. Asked by the repository owner: rerun the failed tests, and raise a defect only after the rerun.
+
+- **The application health check** - `core/app_probe.py`, `scripts/app_probe.py`: opens the pages in `app_under_test.health_check` (inventory page keys and elements always shown on them; this application: the home page's logo and newsletter field, the login form's email field, the products page's search box - exactly what was missing on 30 Oct) through `BasePage.navigate`, and checks each element is visible. Not up: checked again every `app_health.interval_seconds` for up to `app_health.wait_minutes` (8), so a short outage is waited out. The report says what the browser was shown instead (URL, title, the start of the page text, redacted). A wrong setting, or no browser, is `unknown`: the run carries on as before. Nothing configured: the base URL only (status), which cannot catch a page served without its content
+- **Agent 4** (`agent4_runner.yml`): after a run with failures, *Check the application is up* runs before the retry.
+  - Not up: the retry is skipped and `finalise_junit --app-probe` marks every failure `outage`, with the finding as `outage_reason` - not judged, never a defect; the check stays red (nothing was tested)
+  - Up (or `unknown`): **every** failed test is run again - the cap is 100, a guard against doubling a huge run, no longer a guess that many failures mean an outage
+- **Defects only after a rerun** - `core/defects.py` (`defects.only_after_retry`, on): a defect is raised or updated only for a test that failed, was run again and failed again (`retried`). A failure that was not run again raises nothing, and one `failures-not-retried` health alert lists it. The `application-unavailable-on-main` alert now carries what the check found
+- `tests/unit/test_app_health_and_retry.py` (23) and `test_defects_after_rerun.py` (4), including:
+  - three checks in a real Chromium against a local site: serving itself is up; served without its content (a "back soon" page with HTTP 200) is not up, with its title and text as evidence; an HTTP 503 is not up
+  - a replay of 30 Oct: 17 failures and an application found not up raise no defect and one outage alert naming what was served
+  - the shipped setting resolves against the shipped inventory, and names no conditional element
+- `tests/unit/test_defect_triage.py`: a failure in its fixtures is now one that was run again and failed again (the realistic state)
+- Verification: 11 deliberate breaks (the retry not gated by the check, the cap back at 10, the finding not read, an `unknown` check marking outages, an application found down marking nothing, defects from the first run again, no alert for failures not run again, the outage alert without its evidence, elements not checked, no waiting, an unknown element silently skipped) - each fails a test. The script run end to end in Chromium against a local site that comes back during the wait (`available=true` after 2 checks) and one that stays down (`available=false`, title and text named). Full unit suite 3837 passed; actionlint clean
+- Not tested live yet: E40 - a real night where the application is not itself, and a real failure that fails twice
+
 ## October 2026 (end) — one redaction rule for PR comments and alerts; GitHub App tokens and keys covered (#238)
 
 **Why:** found while the agents' GitHub App (F-30) was set up - GitHub announced that App installation tokens are moving to a longer `ghs_` format (about 520 characters, with dots). Agent 3's failure note and the pipeline health alerts each had their own copy of the redaction rules, and both missed things:
