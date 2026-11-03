@@ -87,8 +87,8 @@ For more diagrams — component view, Agent 2 sequence, and the labels-as-state-
 
 | # | Agent | Implementation | Trigger | Model calls |
 |:-:|---|---|---|---|
-| 0 | Impact Analyst | `agents/agent0_impact.py` + `core/impact_*.py` | `impact-check` scan (weekdays 10:45 IST), PRs touching `pages/` or `app_inventory/`, nightly drift (or on demand, `mode` = `drift`) | 2 to analyse (more only past 300 candidates); up to 2 for the context update (none for a `new_behaviour` story); 1 for a merged story's notes addition; 0 on code-change and drift runs |
-| 1 | Test Designer | `agents/agent1_analyst.py`, `agents/agent1_impact.py` | cron, every 30 min, weekdays 10:00–19:00 IST; started by Agent 0 when a story reaches it, and by itself while stories wait (hand-off) | 1 (+1 if a rule fails) |
+| 0 | Impact Analyst | `agents/agent0_impact.py` + `core/impact_*.py` | `impact-check` scan (every 30 min, weekdays 10:02–19:02 IST), PRs touching `pages/` or `app_inventory/`, nightly drift (or on demand, `mode` = `drift`) | 2 to analyse (more only past 300 candidates); up to 2 for the context update (none for a `new_behaviour` story); 1 for a merged story's notes addition; 0 on code-change and drift runs |
+| 1 | Test Designer | `agents/agent1_analyst.py`, `agents/agent1_impact.py` | cron, every 30 min, weekdays 10:07–19:07 IST; started by Agent 0 when a story reaches it, and by itself while stories wait (hand-off) | 1 (+1 if a rule fails) |
 | 2 | Coder | `agents/agent2_coder.py`, `agents/agent2_impact.py`, `agents/agent2_coverage.py` | cron, same window; by itself while stories wait; optionally a tracker rule on approval (hand-off) | 1 plan + 1 per file (+ repairs); a change story adds 1 per revised scenario and up to 1 per owner step file |
 | 3 | Reviewer | `agents/agent3_reviewer.py` | PR opened / synchronize / reopened | 1 |
 | 4 | Runner | `.github/workflows/agent4_runner.yml` | same PR events; a push to `main` touching framework paths | 0 |
@@ -540,7 +540,7 @@ hands a person the decision.
 
 | Trigger | When | Model? | Output |
 |---|---|---|---|
-| Story scan | stories labelled `impact-check`; weekdays 10:45 IST or dispatch (optionally one `story_key`) | 2 calls (+1 per batch past 300 candidates); up to 2 more for the context update (none for a `new_behaviour` story) | report, or Impact Review. A full scan (`story_key` blank) also hands over decided reviews; a one-story run does not |
+| Story scan | stories labelled `impact-check`; every 30 min, weekdays 10:02–19:02 IST (and 10:45 with reconcile), or dispatch (optionally one `story_key`) | 2 calls (+1 per batch past 300 candidates); up to 2 more for the context update (none for a `new_behaviour` story) | report, or Impact Review. A full scan (`story_key` blank) also hands over decided reviews; a one-story run does not |
 | Code change | any PR touching `pages/**` or `app_inventory/**` | none | methods and selectors changed or removed → the affected tests, posted on the PR |
 | Nightly drift | 07:15 IST, after the inventory staleness check, or dispatch with `mode` = `drift` | none | a selector that stopped matching → the affected tests; live mode opens one maintenance story; then the inventory-update PR (below) |
 | Reconcile | its own job: weekdays 10:45 IST and every manual run in `scan` mode, whatever the Agent 0 mode (off, shadow, live) | none | settles stories labelled `impact-applied`, and sets back a coded story whose PR closed unmerged |
@@ -1628,7 +1628,8 @@ Selection rules come from `config.yaml`'s `agents.<name>.selection` block.
 
 | Workflow | Schedule (IST) | Also |
 |---|---|---|
-| Agent 1, Agent 2 | every 30 min, weekdays 10:00–19:00 - **GitHub starts only some of these** (below) | Run workflow; started by the hand-off; `repository_dispatch` (`agent1_analyst` / `agent2_coder`) |
+| Agent 1, Agent 2 | every 30 min, weekdays: Agent 1 10:07–19:07, Agent 2 10:12–19:12 - **GitHub starts only some of these** (below) | Run workflow; started by the hand-off; `repository_dispatch` (`agent1_analyst` / `agent2_coder`) |
+| Agent 0 story scan | every 30 min, weekdays 10:02–19:02 | — |
 | Agent 0 scan + reconcile | weekdays 10:45 | Run workflow (`mode` = `scan`, the default; optional `story_key` - analyse and reconcile that story only; `dry_run` - every job prints its writes and makes none) |
 | Agent 0 nightly drift | daily 07:15 | Run workflow with `mode` = `drift` (optional `dry_run`; a `story_key` stops the run with an error, since drift analyses the inventory, not a story) |
 | Agent 0 code change | on PRs touching `pages/**`, `app_inventory/**` | — |
@@ -1642,8 +1643,12 @@ Selection rules come from `config.yaml`'s `agents.<name>.selection` block.
 ### Hand-off between agents (`core/handoff.py`, settings `handoff`)
 
 GitHub drops or delays most scheduled runs of a quiet repository: on 3 Nov 2026
-none of Agent 1's half-hourly runs had started by 14:00 IST, and over the two
-weeks before about 4 of its 19 daily runs started, some hours late. So an agent
+none of Agent 1's or Agent 2's half-hourly runs had started by 17:00 IST, and
+since at least 8 Sep GitHub started 4 of their 19 weekday runs a day, in two
+clusters (about 16:30 and 22:30–00:15 IST). Runs set for the start of an hour
+or half hour are dropped first, so the schedules sit off :00 and :30, each
+agent on its own minutes (Agent 0 :02/:32, Agent 1 :07/:37, Agent 2 :12/:42) -
+and they are only the safety net. So an agent
 that leaves work for another starts it (`python -m scripts.start_agent`):
 
 | After | Starts | When |

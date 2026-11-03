@@ -251,6 +251,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E45b | #248 | Three or more stories released to ai-ready at once (or labelled by hand, then Agent 1 run once) | Agent 1 takes 2, then starts itself again (`chain` 2) for the rest; no run when none waits | ⬜ | |
 | E45c | #248 | An Agent 0 run with nothing released, and an Agent 1 run that fails | "no story waits for it" - nothing started; the failed Agent 1 run has no hand-off step run (the schedule retries) | ⬜ | |
 | E45d | #248 | Optional: the Jira Automation rule on `human-approved` (GUIDE, "Hand-off between agents") | Approving a story starts Agent 2 (event `repository_dispatch`) within a minute, in scan mode | ⬜ | |
+| E47 | #252 | The next weekday's runs (Actions, filter by event `schedule`) | Agent 0, 1 and 2 scheduled runs at :02/:32, :07/:37, :12/:42; count how many of the 19 per agent GitHub started (was 4); Agent 0's 30-minute runs run the scan job only, reconcile once (10:45) | ⬜ | |
 | E46 | #250 | `python -m scripts.tidy_defect_labels`, then `--apply` (locally with the Jira credentials), then the next defect the nightly triage raises or updates | The listing names each defect and why; after `--apply` Jira's label picker offers no `ai-defect-<code>` (only `ai-defect`, `-passing`, `-unmapped`); a new defect has the label `ai-defect` only; a repeat failure updates its defect, no duplicate | ⬜ | |
 | E44 | #247 | The next new-feature story Agent 0 analyses (dispatch with its `story_key`), then a change story (Wave 4) | New feature: the report shows "Change type: new_behaviour"; one "No context update needed ... new_behaviour" comment; no context-update PR; Agent 0's cost two calls lower. Change story: the context update runs as before (wording / passage rewrites proposed) | ⬜ | |
 | E43 | #245 | The next pull request's Agent 4 run (and one whose branch is older than a change on main) | *Checkout repository* fetches `refs/pull/<n>/merge`; the tests run on the merge result; an older branch no longer fails on main's workflow | ✅ | PR #247, run 41601050788 (3 Nov): `ref: refs/pull/247/merge` fetched; 3900 unit + 17 E2E passed. The older-branch case not seen yet |
@@ -324,6 +325,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
+| #252 | Agents 0, 1 and 2 every 30 minutes, off :00 and :30 | | E47 | |
 | #250 | A raised defect carries no code label | | E46 | |
 | #249 | The chain cap warns only when a story is left waiting | | E45b | |
 | #247 | A new-behaviour story rewrites no reference note | | E44 | |

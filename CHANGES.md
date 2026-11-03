@@ -4,6 +4,19 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — Agents 0, 1 and 2 scan every 30 minutes, off :00 and :30 (#252)
+
+**Why:** the repository owner (3 Nov): stories approved at 15:58 were still waiting at 17:04 - "is it started to break apart?". Nothing broke: since at least 8 Sep GitHub started 4 of Agent 1's and Agent 2's 19 weekday runs a day (two clusters, about 16:30 and 22:30-00:15 IST); that day none before 17:00. GitHub drops scheduled runs of a quiet repository, those at the start of an hour or half hour first - ours were on :00 and :30. Agent 0's story scan ran once a day. Asked: all three scan every 30 minutes in working hours.
+
+- `agent0_impact.yml`: a story scan every 30 minutes, weekdays 10:02-19:02 IST (:02/:32); the `scan` job runs on every schedule but the nightly drift. Reconcile keeps its one daily run (10:45) - its two-scan rule counts scans, so every 30 minutes would undo a change within an hour
+- `agent1_analyst.yml` :07/:37 (10:07-19:07), `agent2_coder.yml` :12/:42 (10:12-19:12): never on :00/:30, never together, in pipeline order
+- An idle scan costs no model call (Agent 0's stage 0, Agents 1 and 2 find nothing) and about 30 runner seconds; the repository is public, so Actions minutes are free
+- The schedules stay the safety net; the hand-off (#248) and the tracker rule are what start the agents when work arrives
+- `tests/unit/test_schedules_off_peak.py` (11) and three rows in Agent 0's trigger table; 5 deliberate breaks (Agent 1 back on :00/:30, a gap in Agent 0's, reconcile every 30 minutes, the scan on the drift run, Agents 1 and 2 together) each fail tests
+- Not tested live yet: E47
+
+---
+
 ## November 2026 — a raised defect carries no code label (#250)
 
 **Why:** the repository owner (3 Nov): Jira's label picker listed `ai-defect-ff8881ed6e`, `ai-defect-21bf9029c9`, ... - one meaningless code per failing test and cause, kept by the 14 closed defects too - "clumsy, and we don't know what that defect is". The code was the triage's fingerprint (sha1 of test and cause), and every defect's triage data already names both.
