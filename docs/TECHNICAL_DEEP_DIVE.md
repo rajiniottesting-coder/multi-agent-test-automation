@@ -1396,15 +1396,19 @@ The two selections exclude each other:
 ### Cron schedules in workflows
 
 ```yaml
-# .github/workflows/agent1_analyst.yml and agent2_coder.yml (UTC; IST = UTC+5:30)
-schedule:
-  - cron: "30 4 * * 1-5"        # 10:00 IST
-  - cron: "0,30 5-12 * * 1-5"   # 10:30 - 18:00 IST, every 30 min
-  - cron: "0,30 13 * * 1-5"     # 18:30 and 19:00 IST
+# Every 30 minutes, weekdays 10:00-19:00 IST, never on :00/:30 (UTC; IST = UTC+5:30)
+# .github/workflows/agent0_impact.yml - story scan only (job `scan`)
+  - cron: "32 4 * * 1-5"        # 10:02 IST
+  - cron: "2,32 5-12 * * 1-5"   # 10:32 - 18:02 IST
+  - cron: "2,32 13 * * 1-5"     # 18:32 and 19:02 IST
+# .github/workflows/agent1_analyst.yml
+  - cron: "37 4 * * 1-5"  /  "7,37 5-12 * * 1-5"  /  "7,37 13 * * 1-5"    # 10:07 - 19:07 IST
+# .github/workflows/agent2_coder.yml
+  - cron: "42 4 * * 1-5"  /  "12,42 5-12 * * 1-5"  /  "12,42 13 * * 1-5"  # 10:12 - 19:12 IST
 
 # .github/workflows/agent0_impact.yml
 schedule:
-  - cron: "15 5 * * 1-5"        # scan + reconcile, 10:45 IST, weekdays
+  - cron: "15 5 * * 1-5"        # scan + reconcile, 10:45 IST, weekdays (reconcile's only run)
   - cron: "45 1 * * *"          # nightly drift, 07:15 IST
 
 # .github/workflows/inventory_health.yml
