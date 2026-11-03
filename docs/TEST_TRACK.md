@@ -247,6 +247,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E42b | #244 | A failing login reference test on `main` (a throw-away branch merged and reverted breaking one) | Its defect relates to SCRUM-282 (`defects.trace_owners`), component Login, no `ai-defect-unmapped` | ⬜ | |
 | E42c | #244 | A failing test nothing traces (a throw-away feature file without markers) | `ai-defect-unmapped`, "NOT TRACED" in the description, one `defects-unmapped` alert; adding a marker links it on the next failure and clears both | ⬜ | |
 | E42d | #244 | A defect raised before #244 failing again | Its links and components are added on that update | ⬜ | |
+| E43 | #245 | The next pull request's Agent 4 run (and one whose branch is older than a change on main) | *Checkout repository* fetches `refs/pull/<n>/merge`; the tests run on the merge result; an older branch no longer fails on main's workflow | ⬜ | |
 | E39 | #239 | Agent 4 on the next three runs (PRs and the nightly run), then the defects SCRUM-268 to SCRUM-271 | The cart scenarios pass; a step after a click-navigation acts only once the page has loaded (a slow page shows as a longer step, not a lost click); the four defects get the "passing" label and comment; any later row-wait failure lists the page's action requests; a slow page shows as a longer step, never `Page.goto: Timeout ... waiting until "load"`, and a page truly not served is reported as an outage, not a failure | ⬜ | |
 
 ## Not built yet: rows to add when each is built
@@ -316,9 +317,11 @@ proves them.
 | #236 | The App's settings named `GH_APP_*` | | E36a (the run finds them) | |
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
+| #245 | Agent 4 tests the pull request merged with main | | E43 | |
 | #244 | Every defect linked to its test case and story | | E42a-d | Sandbox (fake Jira) only |
 | #243 | Inventory Health asks whether the application was up | | E41 | Old and new summaries compared (unit) |
 | #242 | The application health check; every failure retried; a defect only after a failed rerun | | E40a-e, E31a | Health check proven in Chromium (unit) |
+| #241 | The nightly inventory proposal, edited: the cart's empty message by its id, the cart section named | Inventory Health (cart page) on the branch, run 41591912714; its Agent 4 run green (3 Nov) | | |
 | #239 | Every action waits for the page to load; navigation needs the document, not every resource; row waits name the requests | | E39 | Race and slow load proven in Chromium (unit) |
 
 Cited in `CHANGES.md` but never merged (evidence, not changes): #178 (replaced

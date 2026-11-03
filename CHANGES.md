@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — Agent 4 tests a pull request merged with main, not the branch alone (#245)
+
+**Why:** PR #241 went red on "unrecognized arguments: --app-probe" while every one of its tests passed. On a pull request GitHub takes the workflow file from the PR merged with main; Agent 4 then checked out the branch alone, so a branch cut before #242 ran main's new workflow step with its own older script. Any pull request open while main changes a workflow and its script together hit the same false red. Agreed with the repository owner.
+
+- `agent4_runner.yml`: the `test` and `report` jobs check out `github.ref` - `refs/pull/<n>/merge` on a pull request (the same commit as the workflow, and what main will hold after the merge), the event's own ref otherwise. One run per push, as before. A pull request that conflicts with main gets no run at all - GitHub's rule, before and after: update it with main. The branch name is still read from the event (`github.head_ref`, `GITHUB_HEAD_REF`)
+- `tests/unit/test_agent4_tests_the_merge_result.py` (4); 2 deliberate breaks (either job back on the branch) each fail a test
+- Not tested live yet: E43
+
+---
+
 ## November 2026 — every auto-raised defect is linked to its test case and story (#244)
 
 **Why:** a defect the nightly triage raised named its test case and owning story in its description only - neither the test case nor the story showed it, and nothing could be filtered by feature. Closing the 14 defects of 28 and 30 Oct showed the worse half: five of them (the login reference tests) read "test case: not marked" and traced to nothing - the reference files carry no `# JIRA:` markers on purpose, since a marker would make them a target for `ai-update` and Agent 0's revisions. Asked by the repository owner: map every auto defect to its test or story.
