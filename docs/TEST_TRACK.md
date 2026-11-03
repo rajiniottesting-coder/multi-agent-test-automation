@@ -242,6 +242,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E40c | #242 | A failure on `main` that fails again on the retry | Its defect is raised (or updated) as before; no `failures-not-retried` alert | ⬜ | |
 | E40d | #242 | `MAX_RETRIED_TESTS` lowered to 1 on a throw-away branch merged and reverted, with two failures | No defect for the failure not run again; one `failures-not-retried` alert naming it; resolved by the next run on `main` | ⬜ | |
 | E40e | #242 | A wrong `app_under_test.health_check` (a page not in the inventory), on a throw-away branch | The check says `unknown` with the reason; the run retries as before; nothing marked an outage | ⬜ | |
+| E41 | #243 | *Inventory Health* on a night the verifier does not pass (or run by hand with `BASE_URL` pointed at a page that is not the application, on a throw-away branch) | *Check the application is up* runs (skipped on a healthy night); an application not up gives "The application is not up — inventory NOT checked" with what was shown; a failed login on an application that is up points at the credentials; `app_probe.json` in the artifact | ⬜ | |
 | E39 | #239 | Agent 4 on the next three runs (PRs and the nightly run), then the defects SCRUM-268 to SCRUM-271 | The cart scenarios pass; a step after a click-navigation acts only once the page has loaded (a slow page shows as a longer step, not a lost click); the four defects get the "passing" label and comment; any later row-wait failure lists the page's action requests; a slow page shows as a longer step, never `Page.goto: Timeout ... waiting until "load"`, and a page truly not served is reported as an outage, not a failure | ⬜ | |
 
 ## Not built yet: rows to add when each is built
@@ -311,6 +312,7 @@ proves them.
 | #236 | The App's settings named `GH_APP_*` | | E36a (the run finds them) | |
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
+| #243 | Inventory Health asks whether the application was up | | E41 | Old and new summaries compared (unit) |
 | #242 | The application health check; every failure retried; a defect only after a failed rerun | | E40a-e, E31a | Health check proven in Chromium (unit) |
 | #239 | Every action waits for the page to load; navigation needs the document, not every resource; row waits name the requests | | E39 | Race and slow load proven in Chromium (unit) |
 
