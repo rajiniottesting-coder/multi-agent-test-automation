@@ -174,7 +174,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref }}
+          # On a pull request, github.ref is refs/pull/<n>/merge: the pull
+          # request MERGED WITH MAIN - exactly what main will hold after the
+          # merge, and the same commit GitHub took this workflow file from.
+          # It used to be the branch alone (pull_request.head.ref), so an
+          # older branch ran main's workflow with its own, older scripts:
+          # #241 (3 Nov 2026) went red on "unrecognized arguments:
+          # --app-probe" while every test passed, because main had changed
+          # the workflow and its script together after the branch was cut.
+          # A pull request that conflicts with main gets no run at all
+          # (GitHub's rule, before and after this): update it with main.
+          # Every other event (push, schedule, manual) checks out its own ref.
+          ref: ${{ github.ref }}
           # Two commits is enough for the inventory diff below; a full clone
           # would slow every run for no benefit.
           fetch-depth: 2
@@ -910,7 +921,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref }}
+          # The same code the test job ran (the merge result on a pull
+          # request): Agent 5 reads the features and junit of that run.
+          ref: ${{ github.ref }}
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
