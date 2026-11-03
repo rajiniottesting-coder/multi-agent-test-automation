@@ -4,6 +4,15 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — the hand-off's chain cap warns only when a story is left waiting (#249)
+
+**Why:** Agent 3's review of #248: `core/handoff.start()` applied `handoff.max_chain` before asking what waits, so a chain ending with an empty queue - the normal end - printed a `::warning::`.
+
+- `core/handoff.py`: what waits is asked first; the cap is reported (and warned) only when it leaves a story for the schedule
+- `tests/unit/test_agents_start_the_next_agent.py` +1 (25); the old order fails it
+
+---
+
 ## November 2026 — an agent that leaves work for another starts it (#248)
 
 **Why:** in end-to-end validation (3 Nov) SCRUM-283 and SCRUM-284 reached ai-ready at 13:22 IST; at 14:10 not one of Agent 1's half-hourly scheduled runs had started that day. Over the two weeks before, GitHub started about 4 of its 19 daily runs, some hours late (one at 03:34 IST); Agent 2's schedule showed the same. GitHub drops scheduled runs of a quiet repository, so a story waited hours, not the 30 minutes the schedule promised. Agreed with the repository owner: Agent 0 starts Agent 1; the schedules stay as the safety net.

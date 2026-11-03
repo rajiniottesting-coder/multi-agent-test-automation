@@ -323,6 +323,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
+| #249 | The chain cap warns only when a story is left waiting | | E45b | |
 | #247 | A new-behaviour story rewrites no reference note | | E44 | |
 | #245 | Agent 4 tests the pull request merged with main | | E43 ✅ | |
 | #244 | Every defect linked to its test case and story | | E42a-d | Sandbox (fake Jira) only |
