@@ -157,6 +157,10 @@ def _runs(condition: str, event: str, schedule: str = "", mode: str = "") -> boo
 @pytest.mark.parametrize("event, schedule, mode, expected", [
     ("schedule", "15 5 * * 1-5", "", {"scan", "reconcile"}),
     ("schedule", "45 1 * * *", "", {"drift"}),
+    # The 30-minute story scans: the scan only - reconcile stays daily (#252).
+    ("schedule", "32 4 * * 1-5", "", {"scan"}),
+    ("schedule", "2,32 5-12 * * 1-5", "", {"scan"}),
+    ("schedule", "2,32 13 * * 1-5", "", {"scan"}),
     ("workflow_dispatch", "", "", {"scan", "reconcile"}),          # no mode: as before
     ("workflow_dispatch", "", "scan", {"scan", "reconcile"}),
     ("workflow_dispatch", "", "drift", {"drift"}),
