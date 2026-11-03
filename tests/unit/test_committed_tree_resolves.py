@@ -351,6 +351,19 @@ def test_every_agent_prompt_is_scanned_by_the_golden_rule():
     assert not any(s.startswith("prompts/app_context/") for s in scanned)
 
 
+def _leak_pattern(token: str):
+    """Where `token` names the application in a line of a framework file.
+
+    A class or id fragment (`.banner`, `#total`) after `)` or `]` is a Python
+    attribute (`checks["size"].banner`), not a selector: an inventory page
+    added on 3 Nov 2026 used a CSS class that is also a common attribute name,
+    and every such attribute in the framework's tests read as a leak. In a
+    string, after a space, quote or paren-open it is still one."""
+    import re
+    before = r"(?<![\w\-)\]])" if token[:1] in ".#" else r"(?<![\w\-])"
+    return re.compile(before + re.escape(token) + r"(?![\w\-])")
+
+
 def test_no_framework_file_names_anything_the_application_coins():
     import re
 
@@ -363,7 +376,7 @@ def test_no_framework_file_names_anything_the_application_coins():
 
     offences = []
     for token, kind in coined.items():
-        pattern = re.compile(rf"(?<![\w\-]){re.escape(token)}(?![\w\-])")
+        pattern = _leak_pattern(token)
         for path in files:
             text = path.read_text(encoding="utf-8", errors="replace")
             for number, line in enumerate(text.splitlines(), 1):
@@ -396,7 +409,19 @@ def test_the_scan_would_notice_a_leak():
     )
 
     sample = sorted(coined)[0]
-    pattern = re.compile(rf"(?<![\w\-]){re.escape(sample)}(?![\w\-])")
+    pattern = _leak_pattern(sample)
     assert pattern.search(f"    self.click(self.sel(\"{sample}\"))"), (
         "the pattern does not match its own token in a realistic line"
     )
+
+@pytest.mark.parametrize("line, leak", [
+    ('    self.click(self.sel(".banner"))', True),
+    ("    page.locator('.banner').click()", True),
+    ("    css = .banner", True),
+    ('    assert checks["size"].banner == WARN', False),       # attribute access
+    ("    assert result().banner == OK", False),
+    ("    assert obj.banner", False),
+])
+def test_a_dotted_fragment_is_a_selector_not_an_attribute(line, leak):
+    assert bool(_leak_pattern(".banner").search(line)) is leak
+    assert _leak_pattern("banner_key").search("x = banner_key") is not None
