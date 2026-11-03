@@ -59,6 +59,14 @@ on:
         description: "Optional: sprint name to scan (e.g. 'Sprint 10'). Leave blank to use config.yaml value. Use 'openSprints' for the currently active sprint."
         required: false
         default: ""
+      chain:
+        description: "Set by the hand-off (core/handoff.py): runs started in a row. Leave blank."
+        required: false
+        default: ""
+  # Started by a tracker rule (an automation calling GitHub's repository_dispatch
+  # with this event type, e.g. when a person approves) - scan mode, as on schedule.
+  repository_dispatch:
+    types: [agent1_analyst]
   schedule:
     # Every 30 minutes on the hour and half-hour, Mon-Fri 04:30-13:30 UTC
     # (= 10:00-19:00 IST). Deliberately NOT */15: GitHub throttles
@@ -75,12 +83,16 @@ on:
     - cron: "0,30 13 * * 1-5"     # 18:30 and 19:00 IST
 
 # ──── NO push: TRIGGER (intentional) ────
-# Per user direction, Agent 1 runs on cron ONLY. See agent2_coder.yml
-# for the full rationale.
+# No push trigger (see agent2_coder.yml). Besides the schedule, Agent 1 is
+# started by Agent 0 when a story reaches it, by itself while stories wait
+# past max_stories_per_run (the last step, core/handoff.py), and by a tracker
+# rule through repository_dispatch: GitHub drops most scheduled runs of a
+# quiet repository (3 Nov 2026: none had started by 14:00 IST).
 
 # Agent 1 only writes to Jira — no contents/pull-requests permissions needed.
 permissions:
   contents: read
+  actions: write        # start the next scan while stories wait (core/handoff.py)
 
 # Prevent overlapping scans. If a previous scan is still running when the
 # next cron fires, the new run waits in a queue rather than starting in
@@ -162,3 +174,21 @@ jobs:
             echo "Trigger: ${{ github.event_name }}"
             python -m agents.agent1_analyst --scan $DRY_RUN_FLAG $SPRINT_FLAG
           fi
+
+      - name: Start Agent 1 again while stories wait
+        # More stories waited than max_stories_per_run: the next run starts
+        # now instead of at a schedule GitHub may drop (core/handoff.py). On
+        # success only - a failing story is retried by the schedule, not in a
+        # loop - and bounded by handoff.max_chain.
+        if: success() && github.event.inputs.dry_run != 'true'
+        continue-on-error: true
+        env:
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          JIRA_BOARD_ID: ${{ vars.JIRA_BOARD_ID }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPO: ${{ github.repository }}
+          CHAIN: ${{ github.event.inputs.chain }}
+        run: python -m scripts.start_agent --agent agent1_analyst --previous-chain "$CHAIN"

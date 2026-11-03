@@ -173,6 +173,17 @@ class GitHubClient:
             logger.warning(f"Could not read runs for {workflow_file}: {e}")
             return []
 
+    def dispatch_workflow(self, workflow_file: str, ref: str = "main",
+                          inputs: Optional[dict] = None) -> None:
+        """Start a run of a workflow (workflow_dispatch) on `ref`. Raises when
+        GitHub refuses - the caller decides whether that matters. The token
+        needs `actions: write`; a run started with the built-in GITHUB_TOKEN
+        still runs (workflow_dispatch is exempt from its no-recursion rule)."""
+        ok = self.repo.get_workflow(workflow_file).create_dispatch(
+            ref, {k: str(v) for k, v in (inputs or {}).items()}, throw=True)
+        if ok is False:
+            raise RuntimeError(f"GitHub refused to start {workflow_file} on {ref}")
+
     def check_access(self) -> dict:
         """Optional capability (the credential check): prove the token can
         read the repository, and say when it expires where GitHub tells us

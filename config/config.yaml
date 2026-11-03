@@ -145,6 +145,18 @@ app_health:
   interval_seconds: 60
   element_timeout_ms: 15000
 
+# Hand-off between agents (core/handoff.py). GitHub drops most scheduled runs
+# of a quiet repository, so Agent 0 starts Agent 1 when a story waits for it,
+# and Agents 1 and 2 start themselves again while stories wait past
+# max_stories_per_run. Only with work (asked with the agent's own selections);
+# never after a failed run; the schedules stay.
+handoff:
+  enabled: true
+  max_chain: 5                       # runs one hand-off may start in a row
+  workflows:                         # agents.<key> -> its workflow file
+    agent1_analyst: agent1_analyst.yml
+    agent2_coder: agent2_coder.yml
+
 defects:
   enabled: true
   issue_type: "Bug"

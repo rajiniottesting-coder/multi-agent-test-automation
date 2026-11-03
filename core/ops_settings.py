@@ -76,6 +76,22 @@ DEFAULTS: dict = {
         # How long each checked element may take to show.
         "element_timeout_ms": 15000,
     },
+    # Hand-off between agents (core/handoff.py). GitHub drops or delays most
+    # scheduled runs of a quiet repository (3 Nov 2026: none of Agent 1's
+    # ~10 scheduled runs that day had started by 14:00 IST), so an agent that
+    # leaves work for another starts it: Agent 0 starts Agent 1 when a story
+    # reaches it, and Agents 1 and 2 start themselves again while stories wait
+    # past max_stories_per_run. The schedules stay as the safety net.
+    "handoff": {
+        "enabled": True,
+        # Runs one hand-off may start in a row - a bound, never reached by a
+        # normal queue (each run takes max_stories_per_run stories).
+        "max_chain": 5,
+        # Agent config key (agents.<key> in config.yaml) -> its workflow file.
+        # Only these agents are ever started.
+        "workflows": {"agent1_analyst": "agent1_analyst.yml",
+                      "agent2_coder": "agent2_coder.yml"},
+    },
     # Where a story's model-cost ledger is kept (F-31, core/usage_ledger.py):
     # "auto" - hidden issue properties and one cost comment per attempt, edited
     # in place, when the tracker can; "comments" - one [LLM-USAGE] comment per

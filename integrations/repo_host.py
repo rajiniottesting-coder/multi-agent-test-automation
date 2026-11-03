@@ -60,6 +60,10 @@ OPTIONAL CAPABILITY: `check_access() -> {"ok", "who", "expires"}` proves the
 credentials work and, where the host says, when they expire (the pipeline
 health check). Without it the repo host's credentials are checked by the first
 real call that needs them.
+
+OPTIONAL CAPABILITY: `dispatch_workflow(workflow_file, ref, inputs) -> None`
+starts a workflow run (core/handoff.py: an agent starting the next one).
+Without it no agent starts another; the schedules still run them.
 """
 from __future__ import annotations
 

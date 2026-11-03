@@ -50,6 +50,14 @@ on:
         description: "Optional: sprint name to scan (e.g. 'Sprint 10'). Leave blank to use config.yaml value. Use 'openSprints' for the currently active sprint."
         required: false
         default: ""
+      chain:
+        description: "Set by the hand-off (core/handoff.py): runs started in a row. Leave blank."
+        required: false
+        default: ""
+  # Started by a tracker rule (an automation calling GitHub's repository_dispatch
+  # with this event type, e.g. when a person approves) - scan mode, as on schedule.
+  repository_dispatch:
+    types: [agent2_coder]
   schedule:
     # Every 30 minutes on the hour and half-hour, Mon-Fri 04:30-13:30 UTC
     # (= 10:00-19:00 IST). Deliberately NOT */15: GitHub throttles
@@ -68,7 +76,10 @@ on:
 
 # ──── NO push: TRIGGER (intentional) ────
 # We previously added a push failsafe when GitHub Actions cron was
-# silently throttled. Per user direction, Agent 2 now runs on cron ONLY.
+# silently throttled. Agent 2 runs on its schedule, starts itself again while
+# stories wait past max_stories_per_run (the last step, core/handoff.py), and
+# can be started by a tracker rule when a person approves (repository_dispatch
+# `agent2_coder` - GUIDE, "Hand-off between agents"). Still no push trigger.
 # If cron throttling returns (a known platform issue for free personal
 # accounts), regular agent activity (PRs, commits) keeps the scheduler
 # alive. For a one-shot manual run, use the `workflow_dispatch` button
@@ -79,6 +90,7 @@ on:
 permissions:
   contents: write       # Agent 2 creates branches and commits
   pull-requests: write  # Agent 2 opens PRs
+  actions: write        # start the next scan while stories wait (core/handoff.py)
 
 # Prevent overlapping scans. Without this, two concurrent runs could
 # race to create the same branch / push the same files / open the
@@ -190,3 +202,21 @@ jobs:
             echo "Mode: scan (process all stories matching config.yaml selection)"
             python -m agents.agent2_coder --scan $DRY_RUN_FLAG $SPRINT_FLAG
           fi
+
+      - name: Start Agent 2 again while stories wait
+        # More stories waited than max_stories_per_run: the next run starts
+        # now instead of at a schedule GitHub may drop (core/handoff.py). On
+        # success only - a failing story is retried by the schedule, not in a
+        # loop - and bounded by handoff.max_chain.
+        if: success() && github.event.inputs.dry_run != 'true'
+        continue-on-error: true
+        env:
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          JIRA_BOARD_ID: ${{ vars.JIRA_BOARD_ID }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPO: ${{ github.repository }}
+          CHAIN: ${{ github.event.inputs.chain }}
+        run: python -m scripts.start_agent --agent agent2_coder --previous-chain "$CHAIN"
