@@ -31,6 +31,10 @@ class NavPage(BasePage):
         """Open the Signup / Login page."""
         self.click(self.sel("signup_login_link"))
 
+    def go_to_contact_us(self) -> None:
+        """Open the Contact Us page."""
+        self.click(self.sel("contact_us_link"))
+
     def logout(self) -> None:
         """Log out, returning to the Signup / Login page."""
         self.click(self.sel("logout_link"))
