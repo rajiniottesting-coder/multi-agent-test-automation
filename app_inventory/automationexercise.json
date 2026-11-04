@@ -276,7 +276,6 @@
       "components": [
         "Contact Us"
       ],
-      "planned_page": true,
       "elements": {
         "contact_heading": "text=\"Get In Touch\"",
         "contact_name_input": "[data-qa='name']",
@@ -285,16 +284,14 @@
         "contact_message_input": "[data-qa='message']",
         "contact_submit_button": "[data-qa='submit-button']",
         "contact_success_message": ".status.alert-success",
-        "contact_home_button": "a.btn-success"
+        "contact_home_button": "a.btn-success",
+        "contact_form_element": "#contact-us-form",
+        "contact_page_element": "#contact-page",
+        "feedback_automationexercise_com_link": "role=link[name='feedback@automationexercise.com']",
+        "form_section_element": "#form-section",
+        "upload_file_input": "input[name='upload_file']"
       },
       "planned": [
-        "contact_heading",
-        "contact_name_input",
-        "contact_email_input",
-        "contact_subject_input",
-        "contact_message_input",
-        "contact_submit_button",
-        "contact_success_message",
         "contact_home_button"
       ],
       "conditional": [
@@ -313,15 +310,15 @@
       "components": [
         "Test Cases"
       ],
-      "planned_page": true,
       "elements": {
         "test_cases_heading": "h2:has-text('Test Cases')",
         "test_case_titles": ".panel-group .panel-title a",
         "test_case_steps": ".panel-collapse .list-group-item",
-        "test_case_search_input": "#search_test_cases"
+        "test_case_search_input": "#search_test_cases",
+        "feedback_automationexercise_com_link": "role=link[name='feedback@automationexercise.com']",
+        "feedback_element": "#feedback"
       },
       "planned": [
-        "test_cases_heading",
         "test_case_titles",
         "test_case_steps",
         "test_case_search_input"
