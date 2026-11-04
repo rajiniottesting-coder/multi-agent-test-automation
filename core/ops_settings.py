@@ -32,6 +32,11 @@ DEFAULTS: dict = {
         "model_check": "completion",
         # Day-spend records older than this are deleted by the health check.
         "spend_keep_days": 35,
+        # A scheduled workflow whose schedule asked for at least
+        # `schedule_min_expected` runs in the last `schedule_window_hours`,
+        # none of which the repository host started, is reported.
+        "schedule_window_hours": 24,
+        "schedule_min_expected": 3,
     },
     # A test that failed and then passed when retried once (F-19).
     "flaky_tests": {
