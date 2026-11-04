@@ -105,3 +105,41 @@ class CartPage(BasePage):
     def product_names(self) -> list[str]:
         """Return the names of every product currently in the cart."""
         return self.get_all_texts(self.sel("cart_product_names"))
+
+    def product_row_text(self, product_name: str) -> str:
+        """Return the full concatenated text of `product_name`'s cart row.
+
+        WAITS for the row first. The row family holds whole rows, so the
+        returned string contains every cell — name, price, quantity, total —
+        run together. Callers assert CONTAINMENT (e.g. the price is in this
+        text), never equality against a single field: see rule 16.
+        """
+        self.wait_for_row(self.sel("cart_rows"), product_name, present=True)
+        return self.row_containing(self.sel("cart_rows"), product_name).inner_text()
+
+    def has_product_with_price(self, product_name: str, price: str) -> bool:
+        """True once `product_name`'s row is present AND shows `price`.
+
+        WAITS for the row, then checks the price text is contained in the row.
+        Price here is the formatted value as rendered, e.g. 'Rs. 500'. Call
+        this only where the product is EXPECTED present — it waits for the row
+        and times out if it never appears.
+        """
+        row_text = self.product_row_text(product_name)
+        return price in row_text
+
+    def has_quantity_column(self) -> bool:
+        """True if the cart table still shows a 'Quantity' column header.
+
+        Non-waiting glance built for a BRANCHING / absence question: a story
+        removed the Quantity column, so the step asserts this is False. Waiting
+        for an absent header would cost the full timeout before the assertion
+        was reached, so this reads the table once. The table's own readiness is
+        proven by is_loaded() in the step before the assertion.
+        """
+        headers = self.get_all_texts(self.sel("cart_table"))
+        # The cart table text includes its header row; a removed Quantity
+        # column means the word 'Quantity' no longer appears as a header.
+        return any("Quantity" == h.strip() for h in self.get_all_texts(
+            self.sel("cart_table") + " thead td"
+        ))
