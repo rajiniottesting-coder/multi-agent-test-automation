@@ -278,21 +278,46 @@ Older rows name the sessions S1-S8 of the first plan: **S1** is Run A, **S2** is
 
 ## Not built yet: rows to add when each is built
 
-| Planned | Rows to add when it is built |
-|---|---|
-| F-6 snapshot-count validator | A signed-in test asserting a snapshot count or membership is refused by Agent 2's gate (L11) |
-| F-14 story edited after drafting or coding | Edited before coding → a re-draft suggested; after coding → `impact-check` suggested; a comment only |
-| F-15 test case edited or deleted in Jira | The scheduled comparison comments on the owning story suggesting `ai-update`; nothing applied |
-| F-17 deployment signal | A change story's failures marked expected until deployment; the context-update reminder |
-| F-18 tests selected by the graph on a PR | A PR runs the linked tests plus the smoke set; the full suite nightly and before merge |
-| F-20 bug flow | A Bug through the configured flow gets a regression test |
-| F-25 stale or conflicting agent PRs | A PR behind or conflicting with `main` gets a comment with the cause and the suggested label; no force-push |
-| F-26 required Run Tests check | A red story PR cannot merge; a change story before deployment is not blocked (with F-17) |
-| F-27 per-run test data, parallel runs | Seeded data per run or worker; parallel run green; turn-taking off |
-| F-28 environments and browsers | A run against a second profile; a browser matrix run |
-| F-29 metrics report | The scheduled report's pass, flake, coverage, cost and Agent 0 accuracy figures match the sources |
+Everything still to implement, in one place: the planned fixes (from [VALIDATION_AND_KNOWN_GAPS.md](./VALIDATION_AND_KNOWN_GAPS.md) §4), the small backlog found while validating, and the steps that are a person's to take. Each item adds its rows above when it is built, and leaves this section.
 
----
+### Planned fixes
+
+| Planned | Rows to add when it is built | When (recommended, 4 Nov 2026) |
+|---|---|---|
+| F-6 snapshot-count validator | A signed-in test asserting a snapshot count or membership is refused by Agent 2's gate (L11) | After Run C - a validator, cheap |
+| F-14 story edited after drafting or coding | Edited before coding → a re-draft suggested; after coding → `impact-check` suggested; a comment only | After Run C |
+| F-15 test case edited or deleted in Jira | The scheduled comparison comments on the owning story suggesting `ai-update`; nothing applied | After Run C, with F-14 |
+| F-17 deployment signal | A change story's failures marked expected until deployment; the context-update reminder | Later - needs a deployment source |
+| F-18 tests selected by the graph on a PR | A PR runs the linked tests plus the smoke set; the full suite nightly and before merge | Later - once the suite outgrows a PR run |
+| F-20 bug flow | A Bug through the configured flow gets a regression test | Later |
+| F-25 stale or conflicting agent PRs | A PR behind or conflicting with `main` gets a comment with the cause and the suggested label; no force-push | After Run C |
+| F-26 required Run Tests check | A red story PR cannot merge; a change story before deployment is not blocked (with F-17) | Later, with F-17 |
+| F-27 per-run test data, parallel runs | Seeded data per run or worker; parallel run green; turn-taking off | Later |
+| F-28 environments and browsers | A run against a second profile; a browser matrix run | Later |
+| F-29 metrics report | The scheduled report's pass, flake, coverage, cost and Agent 0 accuracy figures match the sources | Later |
+
+### Small backlog (one pull request, before Run C)
+
+Found during SCRUM-283, SCRUM-284 and the reviews of #257-#265. None needs a live run beyond the row it touches.
+
+| **Item** | **Where** | **Why** | **Proven by** |
+|---|---|---|---|
+| **Repair edits the feature file as it stands** | `agents/agent2_coder.py` repair loop | The repair regenerates a feature file from scratch instead of editing its current content; #258 refuses the result when scenarios change, but the repair should not try | E52 (Run C) |
+| **Say why the two write-access rules differ** | `agents/agent2_review_fix.py` | A line comment from a host that cannot say who wrote it is trusted; a recovered request is not. On purpose, not yet said in the code (Agent 3 on #265) | Unit suite |
+| **Name the sort key of the first page-object call** | `validators/opening_step.py` | `min(calls)` compares names on a tie that cannot happen; `key=` makes the intent plain (Agent 3 on #265) | Unit suite |
+| **Dead code in the duplicate-step check** | `validators/gherkin_analyzer.validate_no_duplicate_step_definitions` | Code that no longer runs (an Agent 3 note, #257-#265) | Unit suite |
+| **One bot filter for review comments** | `integrations/github_client.get_review_comments` | Bots are filtered differently for replies and for first comments (an Agent 3 note, #257-#265) | Unit suite |
+| **A return type on `get_property`** | `integrations/jira_client.py` | Readers rely on plain JSON since #260; the signature should say so (an Agent 3 note) | Unit suite |
+| **Register the `@reviews` mark** | `pytest.ini` | "Unknown pytest mark" warning on every run | Agent 4's log |
+| **Quiet the Jira link warning** | `core/defects.py` / `integrations/jira_client.py` | A noisy warning logged when a defect's Jira links are created | Run D's triage log |
+| **A trace for the cart and login retries** | Agent 4 | The cart and login flakes repeat; a Playwright trace of the failed attempt is needed to diagnose them | E39, I8 (Run D) |
+
+### A person's steps
+
+| **Step** | **Who** | **Row** |
+|---|---|---|
+| `python -m scripts.tidy_defect_labels`, then `--apply`, before Run D's first night | Repository owner (local Jira credentials) | E46 |
+| Optional: the Jira Automation rule that starts Agent 2 on `human-approved` (GUIDE, *Hand-off between agents*) | Jira administrator | E45d |
 
 ## Every merged change and where it is proven
 
