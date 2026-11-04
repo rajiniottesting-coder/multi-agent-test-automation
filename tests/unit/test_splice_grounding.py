@@ -286,3 +286,8 @@ def test_a_stopped_update_tells_the_story_once_and_takes_the_label_off(monkeypat
     src = __import__("inspect").getsource(coder.run_update)
     assert "_hand_back_update(jira, story_id, stop)" in src
 
+
+def test_the_notes_addition_body_claims_nothing_about_the_tests():
+    from core import context_update as cu
+    body = cu.render_addition_body("AB-1", cu.Additions())
+    assert "its tests passed" not in body and "once the story's tests pass on main" in body
