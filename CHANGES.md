@@ -4,6 +4,17 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a new page object may not borrow another's inventory page (#289)
+
+**Why:** SCRUM-292's page is not in the app inventory. The refused page object (printed in the log since #288) set `INVENTORY_PAGE` to the navigation entry, navigated by a hard-coded path and resolved no element, so no check named the missing page and the story was refused after every repair with advice to change its test case.
+
+- `validators/method_resolution_validator`: a page object naming a page another committed page object implements, in another file, and resolving none of its elements, is refused (repairable); the repair names its own page, and a page missing from the inventory then stops the run (E49)
+- `core.blocked`: if that error survives, the comment says the page is likely missing and gives the `plan_inventory page` command
+- `config.yaml`: `reconcile.closed_scans` back to 2 (validation step B5 done)
+- Tests in `test_run_c_findings.py`; TEST_TRACK E86. Not tested live yet: E86
+
+---
+
 ## November 2026 — tests own their settings; a refused story names its errors; scans spend only on work (#288)
 
 **Why:** step B5 of the validation sets `reconcile.closed_scans: 1`, and nine unit tests went red because they read the shipped config; and SCRUM-292 (4 Nov 2026) was refused with a one-line summary blaming the method names, while the eight errors under it - two of them methods a reserved page object lacks - never reached the person; and scans paid a plan for every repeat of the same wait, gave their places to stories that did nothing, and ran a story given by key in the wrong mode.
