@@ -620,12 +620,42 @@ def render_body(story_key: str, prop: Proposal) -> str:
     return "\n".join(lines)
 
 
+def free_branch(host, branch: str) -> Optional[str]:
+    """`branch`, or the first `<branch>-<n>` free for a new proposal; None
+    while a proposal is still open (its pull request is open) or when the
+    open pull requests cannot be read.
+
+    A pull request closed unmerged leaves its branch behind - the repository
+    may forbid deleting branches - and an existing branch used to mean
+    "proposed before" for good: on 4 Nov 2026 a story analysed again after
+    its context-update PR was closed could never be proposed again."""
+    if not host.branch_exists(branch):
+        return branch
+    try:
+        open_heads = {pr.get("head_ref") for pr in host.list_open_prs(strict=True)}
+    except Exception as e:                                         # noqa: BLE001
+        logger.info("context update: branch %s exists and the open pull requests cannot "
+                    "be read (%s) - not proposed again", branch, e)
+        return None
+    candidates = [branch] + [f"{branch}-{n}" for n in range(2, 10)]
+    if open_heads & set(candidates):
+        logger.info("context update: a proposal for %s is still open - not proposed again",
+                    branch)
+        return None
+    for candidate in candidates[1:]:
+        if not host.branch_exists(candidate):
+            logger.info("context update: %s was proposed before and closed - proposing on %s",
+                        branch, candidate)
+            return candidate
+    return None
+
+
 def _open_branch_pr(host, branch: str, edits: dict, message: str, title: str,
                     body: str) -> Optional[str]:
     """Branch from main, commit each edited file, open the PR. Returns its URL,
-    or None when the branch already exists (proposed before)."""
-    if host.branch_exists(branch):
-        logger.info("context update: branch %s exists - not proposed again", branch)
+    or None while an earlier proposal is still open (free_branch)."""
+    branch = free_branch(host, branch)
+    if branch is None:
         return None
     host.create_branch(branch, "main")
     try:

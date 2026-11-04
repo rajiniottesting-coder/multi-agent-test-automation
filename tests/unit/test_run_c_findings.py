@@ -271,3 +271,31 @@ def _world(tmp_path, monkeypatch):
     monkeypatch.setattr(paths, "PROJECT_ROOT", root)
     a0._GRAPHS.clear()
     return fake, jira, root, build_impact_graph(root)
+
+
+# ── a proposal closed unmerged can be proposed again ────────────────────
+
+class _Branches:
+    def __init__(self, existing, open_heads, readable=True):
+        self.existing, self.open_heads, self.readable = set(existing), list(open_heads), readable
+
+    def branch_exists(self, b):
+        return b in self.existing
+
+    def list_open_prs(self, strict=False):
+        if not self.readable:
+            raise RuntimeError("down")
+        return [{"head_ref": h} for h in self.open_heads]
+
+
+@pytest.mark.parametrize("existing, open_heads, readable, expected", [
+    ([], [], True, "cu/ab-1"),                                   # never proposed
+    (["cu/ab-1"], ["cu/ab-1"], True, None),                      # still open
+    (["cu/ab-1"], [], True, "cu/ab-1-2"),                        # closed: a new branch
+    (["cu/ab-1", "cu/ab-1-2"], [], True, "cu/ab-1-3"),
+    (["cu/ab-1", "cu/ab-1-2"], ["cu/ab-1-2"], True, None),       # the second one open
+    (["cu/ab-1"], [], False, None),                              # cannot tell: as before
+])
+def test_a_closed_proposal_frees_a_new_branch(existing, open_heads, readable, expected):
+    from core.context_update import free_branch
+    assert free_branch(_Branches(existing, open_heads, readable), "cu/ab-1") == expected
