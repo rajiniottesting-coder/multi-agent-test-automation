@@ -4,6 +4,21 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a scenario opens a page before it acts on one; Agent 3 sees the page-object methods a pull request calls (#265)
+
+**Why:** SCRUM-284's first run (its pull request, 4 Nov) failed both scenarios: the test case said "navigate to the home page, then click Contact us", and the generated Background only clicked. Every test starts on the browser's empty page, so each waited 30 seconds for a link that could never appear, and the failure read as a selector problem. Every check passed - the method existed, the selector was right. Agent 3 then blocked the pull request over `go_to_contact_us()` "possibly not existing": it was on `main`, merged the hour before, outside the diff. A person's line comment and `/fix` repaired it.
+
+- `validators/opening_step.py` (new): `validate_scenarios_open_a_page_first()` - the first Given/When step each scenario runs (its Background's, else its own) must make, as its first page-object call, a call to a method that navigates (`self.navigate` / `goto`, directly or through another method of its class). Only what can be read is judged: no page-object call, an unknown class or method, an unmatched step, or a scenario that opens on a Then is left alone. One error per step, not per scenario. Repairable: in `_collect_repairable_errors()` (28 calls; 33 distinct checks)
+- `validators/gherkin_analyzer.step_functions()`: the step functions of a file with their decorator phrases, as Python reads them (the AST reader of #253, now public)
+- `pages/base_page.py`: `_refuse_the_empty_starting_page()` - an action on `about:blank` with nothing in it fails at once with "No page is open ... the scenario's first step must open a page"; a page a test filled itself (`set_content`) and anything unreadable are left alone. `core/failure_diagnosis.py`: diagnosed as *no page opened before acting*
+- `agents/agent3_reviewer.py`: `page_object_methods_called()` - every page-object method the changed step definitions call (BasePage helpers excluded: they have their own section), with signature and first docstring line, from the pull request's version of the page file or else `main`'s; the prompt's new *Page-Object Methods Called* section says they exist and are never reported missing
+- `tests/unit/test_a_scenario_opens_a_page_first.py` (17, two in a real Chromium); 7 deliberate breaks (navigate not recognised, no helper recursion, no de-duplication, no Then scope, the guard removed, the guard on every empty page, Agent 3 reading only the diff) each fail a test. The full suite caught two faults of the first draft, both fixed: the validator imported inside the function (the routing contract patches module names) and the rule applied to a scenario that opens on a Then (the gate-agreement contract)
+- Checked on the real case: SCRUM-284's branch before its fix gives one error, after it none; every feature on `main` passes
+- TEST_TRACK: E56; E48 confirmed by SCRUM-284's pull request
+- Not tested live yet: E56
+
+---
+
 ## November 2026 — the hand-off restarts an agent only after progress; the top menu reaches the contact page (#262)
 
 **Why:** overnight (3-4 Nov) SCRUM-284 carried `human-approved` but was blocked (its earlier refusal). Agent 2 skips it, yet it matched Agent 2's selection, so after each delayed scheduled run the hand-off started Agent 2 again - five empty runs, twice - until `max_chain` stopped it. And SCRUM-284's test cases open the contact page from the top menu, which `NavPage` (reserved for Agent 2) could not do.
