@@ -189,10 +189,13 @@ jobs:
 
       - name: Start Agent 1 again while stories wait
         # More stories waited than max_stories_per_run: the next run starts
-        # now instead of at a schedule GitHub may drop (core/handoff.py). On
-        # success only - a failing story is retried by the schedule, not in a
-        # loop - and bounded by handoff.max_chain.
-        if: success() && github.event.inputs.dry_run != 'true'
+        # now instead of at a schedule GitHub may drop (core/handoff.py).
+        # Also after a red run: a run is red when one story needs a person,
+        # and on 4 Nov 2026 that stopped the chain for every other story
+        # waiting (the schedule, its only other path, rarely starts). No retry
+        # loop: it starts again only if the run took a story that waited
+        # (core/handoff.py), and handoff.max_chain bounds it.
+        if: ${{ !cancelled() && github.event.inputs.dry_run != 'true' }}
         continue-on-error: true
         env:
           JIRA_URL: ${{ vars.JIRA_URL }}
