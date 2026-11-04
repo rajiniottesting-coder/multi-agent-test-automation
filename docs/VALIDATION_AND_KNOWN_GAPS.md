@@ -121,7 +121,7 @@ code, the scenario markers and the inventory, not the notes.
 | ID | Situation | What happens today | Status |
 |---|---|---|---|
 | L30 | A test case Agent 2 cannot automate is **reported, not automated** | Since F-13 it is named with its reason in the PR and on the story (`ai-incomplete`); generating it still needs its cause fixed by a person, then `ai-update`. The reason is only as good as the plan's `Skipped:` line - a test case the model drops without one is reported with "no reason given" | Limit |
-| L31 | The coverage check proves a scenario **carries the test case's marker**, not that it tests what the test case says | Markers are placed by title pairing: greedy best match with a 0.3 similarity floor, and a lone scenario paired with the first test case unconditionally (existing behaviour). A scenario paired with the wrong test case counts as covering it, and the right one is reported as missing or not at all. Agent 3's review and E24 (b) are the check today | Limit |
+| L31 | The coverage check proves a scenario **carries the test case's marker**, not that it tests what the test case says | Markers are placed by title pairing: greedy best match with a 0.3 similarity floor, and a lone scenario paired with the first test case unconditionally (existing behaviour). A scenario paired with the wrong test case counts as covering it, and the right one is reported as missing or not at all. Agent 3's review and E24 (b) are the check today; since #297 Agent 2's coverage audit names each expected result a scenario does not check (a model's judgement, advice to a person) | Limit |
 
 ### 3.7 Change detection after coding
 
