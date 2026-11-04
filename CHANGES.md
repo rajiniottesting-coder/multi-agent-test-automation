@@ -4,6 +4,15 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a committed page object the steps need a method on joins the repair (#292)
+
+**Why:** SCRUM-293's step definitions called a method the home page object did not have; the plan had not named that file, so only the step definitions were repaired, and after three attempts the story was refused.
+
+- `agents/agent2_coder._bring_in_page_objects()`: a committed, non-reserved page object the steps call a missing method on joins the batch as an extension, with its own feedback (add the named methods through its inventory keys, keep every existing one), repaired before the step definitions
+- Tests in `test_run_c_findings.py`; TEST_TRACK E90. Not tested live yet: E90
+
+---
+
 ## November 2026 — the health probe asks the output room the agents ask (#291)
 
 **Why:** the model gateway reserves a request's cost from its `max_tokens`: with its credit low it answered 4,096-token requests and refused 16,384-token ones with HTTP 402, while the health check, asking for 1 token, reported the model as answering.
