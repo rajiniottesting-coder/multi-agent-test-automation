@@ -60,6 +60,8 @@ literally, for example `Demo Reviewer` and `reviewer@example.com`. Nothing here
 records whether a submitted review is displayed on the page afterwards, so do
 not write a test case asserting that it is.
 
+- The form carries the heading **"Write Your Review"** and is available without signing in: no login prompt appears on the products listing or the detail page.
+
 ## Every product card is a FAMILY
 
 Each card renders its price, its name and its "Add to cart" control TWICE —
