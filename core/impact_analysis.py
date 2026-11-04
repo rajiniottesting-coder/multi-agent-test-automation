@@ -301,12 +301,18 @@ def structural_candidates(graph, seeds: Seeds) -> list:
         for page, key in sorted(seeds.elements & s.elements):
             users = sorted(f"{c}.{m}" for c, m in s.methods | s.shared_methods
                            if _reads(graph, c, m, key))
+            # The selector, so the judge can tell locating an element from
+            # checking its text: a wording change cannot break a selector that
+            # does not contain the words (4 Nov 2026: review rows "if the step
+            # locates it by text" for a button found by its CSS class).
+            sel = (getattr(graph, "selectors", None) or {}).get((page, key))
+            where = f"element {page}:{key}" + (f" (selector `{sel}`)" if sel else "")
             if _asserted(graph, s, key):
-                paths.append(f"element {page}:{key} <- {', '.join(users) or 'a page method'} "
+                paths.append(f"{where} <- {', '.join(users) or 'a page method'} "
                              "<- Then step (assertion) <- scenario")
                 score = max(score, ASSERTED_ELEMENT)
             else:
-                paths.append(f"element {page}:{key} <- {', '.join(users) or 'a page method'} "
+                paths.append(f"{where} <- {', '.join(users) or 'a page method'} "
                              "<- scenario")
                 score = max(score, DIRECT_ELEMENT)
         for cls, name in sorted(seeds.methods):

@@ -11,6 +11,9 @@ For EVERY candidate below, decide one tier:
 A scenario that exercises the same behaviour the story also USES, and would still pass unchanged once the story ships, is `unaffected` - however close its topic or pages are to the story. For `must-update` and `review`, `reason` must name what the scenario does or checks that the change makes different; if you cannot name it, the tier is `unaffected`.
 When the behaviours it changes are "(none)", the story changes no existing behaviour: every candidate is `unaffected` unless one of its steps contradicts the story text - and then `reason` names that step.
 
+# Finding an element is not reading its text
+A path names each element with its selector. When the change is to a text - a label, a message, a heading - a step that only FINDS or clicks the element is unaffected unless its selector contains that text; only a step that checks or reads the text is affected. Never write "if the step locates it by text": the selector shows whether it does.
+
 # Evidence rule - strictly enforced
 Each assessment must cite evidence in `evidence_refs`, and every item must be EITHER a path id listed for that candidate (for example `P1`) OR a step quoted exactly as written in that candidate's scenario. An assessment without checkable evidence is discarded. Use only the candidate ids given; you cannot add a scenario.
 

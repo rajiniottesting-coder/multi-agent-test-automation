@@ -130,6 +130,7 @@ class ImpactGraph:
     class_pages: dict = field(default_factory=dict)        # {cls: inventory page}
     inventory_elements: frozenset = frozenset()            # frozenset[Element]
     page_components: dict = field(default_factory=dict)    # {page: frozenset[str]}
+    selectors: dict = field(default_factory=dict)          # {Element: selector}
     gaps: list = field(default_factory=list)               # [Gap]
 
     # ── reverse lookups: change -> scenarios ──────────────────
@@ -394,6 +395,9 @@ def build_impact_graph(project_root: Path | str,
         (page, key) for page, spec in inventory.items() for key in spec.get("elements", {}))
     graph.page_components = {page: frozenset(spec.get("components", []) or [])
                              for page, spec in inventory.items()}
+    graph.selectors = {(page, key): sel for page, spec in inventory.items()
+                       for key, sel in (spec.get("elements") or {}).items()
+                       if isinstance(sel, str)}
 
     by_class = _read_pages(root, graph, inventory)
     fixtures = _page_fixtures(root, by_class)
