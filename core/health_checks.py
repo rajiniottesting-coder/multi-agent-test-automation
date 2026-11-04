@@ -264,12 +264,37 @@ def repo_host_findings(host_factory, now: _dt.datetime, warn_days: int,
     return out + ([exp] if exp else [])
 
 
-def check_model(mode: str) -> Finding | None:
-    """The model endpoint answers with the pipeline's key. None when off."""
+def check_model(mode: str, models=None) -> Finding | None:
+    """The model endpoint answers with the pipeline's key. None when off.
+
+    `models`: every model the agents use (blank -> LLM_MODEL). 4 Nov 2026: the
+    check probed the light model and reported "answers" while the gateway
+    refused the coding model with HTTP 402 - a refusal can be per model."""
     mode = (mode or "off").strip().lower()
     if mode == "off":
         return None
     alert = "credential:model"
+    names = list(dict.fromkeys(m.strip() for m in (models or []) if m and m.strip())) or [None]
+    refused, unknown = [], 0
+    for name in names:
+        problem = _probe_model(mode, name)
+        if problem is None:
+            unknown += 1
+        elif problem:
+            refused.append(f"{name or os.getenv('LLM_MODEL', 'the model')}: {problem}")
+    if refused:
+        return Finding(alert, True, "The model endpoint refused the pipeline's request",
+                       "; ".join(refused)[:800] + ". Agents that call the model stop until "
+                       "this is fixed: check the key, its spend limit at the provider (per "
+                       "model, if the provider sets one), and OPENAI_API_BASE.")
+    if unknown == len(names):
+        return None
+    return Finding(alert, False, "The model endpoint answers")
+
+
+def _probe_model(mode: str, name: str | None):
+    """"" when `name` answers, the refusal (redacted) when it does not, None
+    when nothing is known (the pipeline's own budget stopped the probe)."""
     try:
         if mode == "models":
             import requests
@@ -280,24 +305,31 @@ def check_model(mode: str) -> Finding | None:
                 raise RuntimeError(f"HTTP {resp.status_code}")
         else:
             from core import llm_client
-            client = llm_client.LLMClient(temperature=0.0, max_output_tokens=1)
-            response = client._call_with_quota_check(client.llm.invoke,
-                                                     [("user", "Reply with OK.")])
+            saved = os.environ.get("LLM_MODEL")
+            if name:
+                os.environ["LLM_MODEL"] = name
+            try:
+                client = llm_client.LLMClient(temperature=0.0, max_output_tokens=1)
+                response = client._call_with_quota_check(client.llm.invoke,
+                                                         [("user", "Reply with OK.")])
+            finally:
+                if saved is None:
+                    os.environ.pop("LLM_MODEL", None)
+                else:
+                    os.environ["LLM_MODEL"] = saved
             llm_client._record_usage(response, "health check")
     except BaseException as e:                                     # noqa: BLE001
         if isinstance(e, (KeyboardInterrupt, SystemExit)):
             raise
-        from core.spend_budget import BudgetExceeded
-        if isinstance(e, BudgetExceeded):
+        from core.spend_budget import PROVIDER, BudgetExceeded
+        if isinstance(e, BudgetExceeded) and e.scope != PROVIDER:
             # The pipeline's own budget stopped the check: nothing is known
-            # about the key, so the alert is left as it is.
+            # about the key, so the alert is left as it is. The provider
+            # refusing for money IS what this check is for.
             logger.info("Model endpoint not checked: %s", e)
             return None
-        return Finding(alert, True, "The model endpoint refused the pipeline's request",
-                       f"{type(e).__name__}: {_redact(str(e))[:400]}. Agents that call the "
-                       "model stop until this is fixed: check the key, its spend limit at "
-                       "the provider, and OPENAI_API_BASE.")
-    return Finding(alert, False, "The model endpoint answers")
+        return f"{type(e).__name__}: {_redact(str(e))[:400]}"
+    return ""
 
 
 def _client_default_base() -> str:

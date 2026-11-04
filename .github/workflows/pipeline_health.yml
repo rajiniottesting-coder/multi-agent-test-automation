@@ -81,6 +81,9 @@ jobs:
           OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
           # The cheapest model the agents use: a one-token request.
           LLM_MODEL: ${{ vars.LLM_MODEL_LIGHT || vars.LLM_MODEL || 'claude-opus-4-6' }}
+          # Every model the agents use is probed: a provider can refuse one
+          # model (its own budget) and answer another.
+          LLM_MODELS_TO_CHECK: ${{ vars.LLM_MODEL_LIGHT }},${{ vars.LLM_MODEL || 'claude-opus-4-6' }}
           LLM_PRICE_INPUT_PER_1M: ${{ vars.LLM_PRICE_INPUT_PER_1M }}
           LLM_PRICE_OUTPUT_PER_1M: ${{ vars.LLM_PRICE_OUTPUT_PER_1M }}
         run: |

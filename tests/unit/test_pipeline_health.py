@@ -509,3 +509,39 @@ def test_the_jira_sdk_still_offers_what_the_property_calls_use():
         assert callable(getattr(JIRA, name, None)), f"jira.JIRA.{name} is gone"
     import inspect
     assert "_session" in inspect.getsource(JIRA.__init__), "JIRA no longer keeps a _session"
+
+
+# ── F30: every model the agents use is probed; a provider refusal alerts ──
+
+def test_each_model_is_probed_and_one_refused_model_is_an_alert(monkeypatch):
+    """4 Nov 2026: the check probed the light model and said "answers" while
+    the gateway refused the coding model with HTTP 402."""
+    from core import llm_client
+    from core import spend_budget as sb
+    probed = []
+
+    class Client:
+        def __init__(self, *a, **k):
+            self.model = __import__("os").environ.get("LLM_MODEL")
+            probed.append(self.model)
+            self.llm = SimpleNamespace(invoke=lambda m: SimpleNamespace(usage_metadata={}))
+
+        def _call_with_quota_check(self, fn, *a):
+            if self.model == "big-model":
+                raise sb.BudgetExceeded(sb.PROVIDER, "the provider refuses: Error code: 402")
+            return fn(*a)
+    monkeypatch.setattr(llm_client, "LLMClient", Client)
+    monkeypatch.setenv("LLM_MODEL", "light-model")
+    f = hc.check_model("completion", ["light-model", "big-model", "light-model", ""])
+    assert probed == ["light-model", "big-model"]
+    assert f.alert_id == "credential:model" and f.problem
+    assert "big-model: BudgetExceeded" in f.detail and "light-model" not in f.detail
+    assert __import__("os").environ["LLM_MODEL"] == "light-model", "the env is restored"
+    probed.clear()
+    assert hc.check_model("completion", ["light-model"]).problem is False
+
+
+def test_the_workflow_lists_every_model_the_agents_use():
+    wf = (ROOT / ".github" / "workflows" / "pipeline_health.yml").read_text(encoding="utf-8")
+    line = next(l for l in wf.splitlines() if "LLM_MODELS_TO_CHECK:" in l)
+    assert "vars.LLM_MODEL_LIGHT" in line and "vars.LLM_MODEL ||" in line

@@ -51,7 +51,11 @@ def findings(tracker, host_factory, root: Path, now: _dt.datetime) -> list:
     # expiry to warn about; the workflow says which token it gave.
     per_run = os.getenv("REPO_HOST_TOKEN_PER_RUN", "").strip().lower() == "true"
     out += hc.repo_host_findings(host_factory, now, int(s["expiry_warn_days"]), per_run=per_run)
-    model = hc.check_model(s.get("model_check", "completion"))
+    # Every model the agents use (the workflow lists them): a provider can
+    # refuse one model and answer another.
+    models = [m for m in os.getenv("LLM_MODELS_TO_CHECK", "").split(",") if m.strip()]
+    mode = s.get("model_check", "completion")
+    model = hc.check_model(mode, models) if models else hc.check_model(mode)
     if model:
         out.append(model)
     return out
