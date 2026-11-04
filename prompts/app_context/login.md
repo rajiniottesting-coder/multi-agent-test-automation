@@ -28,7 +28,7 @@ not deleting it. Use the shared `registered` role and assert relatively. See
 
 ## Failure messages
 
-- Wrong credentials → "Your email or password is incorrect!"
+- Wrong credentials → "Your email or password is incorrect. If you forgot your password, you can reset it." (the email address stays filled in and the shopper stays on the login page)
 - Signing up with an address that already exists → "Email Address already
   exist!"
 
