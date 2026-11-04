@@ -37,9 +37,15 @@ from core.inventory_proposals import refusal_reason
 _PAGE_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
-def add_planned_element(inventory: dict, page: str, key: str, selector: str) -> tuple:
+def add_planned_element(inventory: dict, page: str, key: str, selector: str,
+                        family: bool = False) -> tuple:
     """(new_inventory, refusal) - the element added to `page` and declared
-    `planned`, or the input unchanged with the reason it cannot be."""
+    `planned`, or the input unchanged with the reason it cannot be.
+
+    `family`: the selector names a list of like elements (rows, titles,
+    links), so it is also declared `multi_match`. Without it, several live
+    matches read as an ambiguous selector, and the planned element is never
+    confirmed (4 Nov 2026: a planned list of 27 titles stayed unconfirmed)."""
     reason = refusal_reason(inventory, page, key, selector)
     if reason:
         return inventory, reason
@@ -47,6 +53,8 @@ def add_planned_element(inventory: dict, page: str, key: str, selector: str) -> 
     entry = out["pages"][page]
     entry.setdefault("elements", {})[key] = selector
     entry["planned"] = list(entry.get("planned") or []) + [key]
+    if family and key not in (entry.get("multi_match") or []):
+        entry["multi_match"] = list(entry.get("multi_match") or []) + [key]
     return out, ""
 
 
@@ -59,7 +67,7 @@ def _url_taken(inventory: dict, url: str) -> str:
 
 
 def add_planned_page(inventory: dict, page: str, url: str, elements: dict,
-                     components=()) -> tuple:
+                     components=(), families=()) -> tuple:
     """(new_inventory, refusal) - a page declared `planned_page` with its
     elements, every one `planned`. At least one element is required: finding
     one live is the only evidence the page is deployed (a 404 or a redirect may
@@ -79,8 +87,12 @@ def add_planned_page(inventory: dict, page: str, url: str, elements: dict,
     out = copy.deepcopy(inventory)
     out.setdefault("pages", {})[page] = {"url": url, "components": list(components),
                                          "planned_page": True, "elements": {}, "planned": []}
+    unknown = sorted(set(families or ()) - set(elements))
+    if unknown:
+        return inventory, f"--family names no element of the page: {', '.join(unknown)}"
     for key, selector in elements.items():
-        out, reason = add_planned_element(out, page, key, selector)
+        out, reason = add_planned_element(out, page, key, selector,
+                                          family=key in set(families or ()))
         if reason:
             return inventory, f"{key}: {reason}"
     return out, ""

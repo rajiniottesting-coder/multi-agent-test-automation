@@ -2,9 +2,13 @@
 
     python -m scripts.plan_inventory element --page <page> --key <key> --selector "<selector>"
     python -m scripts.plan_inventory page --page <page> --url /<path> \\
-        --component "<Component>" --element <key>="<selector>" [--element ...]
+        --component "<Component>" --element <key>="<selector>" [--element ...] \\
+        [--family <key> ...]
 
-`element` adds one element to an existing page and declares it `planned`.
+`element` adds one element to an existing page and declares it `planned`;
+`--family` (element) or `--family <key>` (page) declares a selector that names
+a list of like elements - rows, titles, links - `multi_match` too, so its
+several live matches confirm it instead of reading as an ambiguous selector.
 `page` adds a page not deployed yet (`planned_page: true`) with at least one
 planned element the design names - finding one live is what confirms the page.
 
@@ -44,11 +48,15 @@ def main(argv=None) -> int:
     el.add_argument("--page", required=True)
     el.add_argument("--key", required=True)
     el.add_argument("--selector", required=True)
+    el.add_argument("--family", action="store_true",
+                    help="the selector names a list of like elements (declared multi_match)")
     pg = sub.add_parser("page", help="a planned page with its planned elements")
     pg.add_argument("--page", required=True)
     pg.add_argument("--url", required=True)
     pg.add_argument("--component", action="append", default=[])
     pg.add_argument("--element", action="append", default=[], metavar="KEY=SELECTOR")
+    pg.add_argument("--family", action="append", default=[], metavar="KEY",
+                    help="an element whose selector names a list of like elements")
     for p in (el, pg):
         p.add_argument("--dry-run", action="store_true", help="print; write nothing")
     args = ap.parse_args(argv)
@@ -58,11 +66,12 @@ def main(argv=None) -> int:
     original = path.read_text(encoding="utf-8")
     inventory = json.loads(original)
     if args.what == "element":
-        new, refused = add_planned_element(inventory, args.page, args.key, args.selector)
+        new, refused = add_planned_element(inventory, args.page, args.key, args.selector,
+                                           family=args.family)
         what = f"{args.page}.{args.key}"
     else:
         new, refused = add_planned_page(inventory, args.page, args.url,
-                                        _pairs(args.element), args.component)
+                                        _pairs(args.element), args.component, args.family)
         what = f"page {args.page} ({args.url})"
     if refused:
         print(f"Refused: {refused}", file=sys.stderr)
