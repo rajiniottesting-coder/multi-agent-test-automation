@@ -564,3 +564,56 @@ def test_after_the_budget_a_fix_comment_takes_every_comment(monkeypatch):
         "stopped", not_done=True))
     items = rf.collect_items(host, 5, None, "", rf.handled_comment_ids(host.comments))
     assert [i.comment_id for i in items] == [11, 12]
+
+
+# ── a review change stays inside the approved test cases (4 Nov 2026) ───
+#
+# On SCRUM-283's pull request a comment asked to reword a step the approved
+# test case states ("no login prompt is shown"). The reworded file dropped
+# that check; the repair loop then regenerated the whole feature file in the
+# ordinary mode - invented marker hashes, no owner, a new title, an outline -
+# and it was pushed: the identity check ran only before the repair.
+
+def test_a_repair_that_rewrites_the_feature_pushes_nothing(wired):
+    def rewrite(batch):
+        return [f.model_copy(update={"content": f.content.replace("hash: aaaaaaaa", "hash: 1a2b3c4d")})
+                if f.file_path == "features/checkout.feature" else f for f in batch]
+    wired["repair"] = rewrite
+    host = FakeHost(inline=[_inline()])
+    llm = FakeLLM([{"comment": 1, "action": "fix", "files": ["pages/checkout_page.py"], "reason": "x"}])
+    out = _run(host, llm)
+    assert out["status"] == "refused" and host.pushed == {}
+    assert "scenarios, titles or markers" in host.comments[-1]
+    assert "features/checkout.feature" in host.comments[-1]
+
+
+def test_a_repair_that_keeps_the_feature_still_pushes(wired):
+    wired["repair"] = lambda batch: batch
+    host = FakeHost(inline=[_inline()])
+    llm = FakeLLM([{"comment": 1, "action": "fix", "files": ["pages/checkout_page.py"], "reason": "x"}])
+    assert _run(host, llm)["status"] == "fixed" and "pages/checkout_page.py" in host.pushed
+
+
+def test_a_comment_cannot_drop_what_a_test_case_asserts(wired, monkeypatch):
+    def absence(files, test_cases):
+        return [f"Absence claim error in '{f.file_path}': S-9 asserts \"the payment error is "
+                f"shown\" and its scenario no longer checks it"
+                for f in files if "the payment error should be shown" not in f.content]
+    monkeypatch.setattr(a2, "_absence_claim_errors", absence)
+    wired["new"]["features/checkout.feature"] = FEATURE.replace(
+        "    And the payment error should be shown\n", "    And the page should stay open\n")
+    host = FakeHost(inline=[_inline(path="features/checkout.feature", body="Drop the error check")])
+    llm = FakeLLM([{"comment": 1, "action": "fix", "files": ["features/checkout.feature"], "reason": "x"}])
+    _run(host, llm)
+    assert host.pushed == {}
+    reply = host.replies[0][1]
+    assert "drop what an approved test case asserts" in reply and "ai-regenerate" in reply
+
+
+def test_a_feature_already_missing_a_check_is_not_blamed_on_the_comment(wired, monkeypatch):
+    monkeypatch.setattr(a2, "_absence_claim_errors",
+                        lambda files, tcs: [f"Absence claim error in '{f.file_path}': old" for f in files])
+    wired["new"]["features/checkout.feature"] = FEATURE.replace("my saved card", "the saved card")
+    host = FakeHost(inline=[_inline(path="features/checkout.feature", body="'the' not 'my'")])
+    llm = FakeLLM([{"comment": 1, "action": "fix", "files": ["features/checkout.feature"], "reason": "x"}])
+    assert _run(host, llm)["status"] == "fixed", "only what the change adds counts"
