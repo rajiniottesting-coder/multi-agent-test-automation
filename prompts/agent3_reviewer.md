@@ -183,6 +183,10 @@ The PR body lists test case keys (e.g., SCRUM-7, SCRUM-9). Each one should have 
 
 {base_page_helpers_section}
 
+## Page-Object Methods Called (reference - not under review)
+
+{page_object_methods_section}
+
 # Final Instructions
 
 1. ONLY report issues about files in the "Changed Files" section above.
