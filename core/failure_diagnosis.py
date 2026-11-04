@@ -81,6 +81,18 @@ _SIGNATURES: list[tuple[re.Pattern, Diagnosis]] = [
         ),
     ),
     (
+        # BasePage refuses an action on the browser's empty starting page
+        # (_wait_for_page_scripts): the scenario never opened one.
+        re.compile(r"No page is open\b[^\n]*?first step must open", re.I),
+        Diagnosis(
+            "no page opened before acting",
+            "The test acted on the browser's empty starting page: no step "
+            "opened a page first. Every test starts on a blank page.",
+            "Make the scenario's first step open a page - a page-object method "
+            "that calls navigate() - before it clicks or fills anything.",
+        ),
+    ),
+    (
         # A page load that was not served in time on any attempt
         # (BasePage.navigate retries it like a 5xx). Tried before the generic
         # "timed out" reading, whose advice - an element present but not
