@@ -865,6 +865,74 @@ def base_page_helpers_called(changed_files: list[dict], project_root=None) -> st
             "with its docstring here.\n\n" + "\n\n".join(blocks))
 
 
+# A step definition calling a page-object method that is NOT in the diff
+# (it was already on main) was blocked as "this method may not exist": on
+# 4 Nov 2026 a pull request was refused over a menu method merged the hour
+# before. Agent 2's method-resolution check had already proven it. Each such method is now shown with its signature, read from the real
+# file - the pull request's version when it changes that file, else main's.
+_MAX_METHODS_SHOWN = 40
+
+
+def page_object_methods_called(changed_files: list[dict], project_root=None) -> str:
+    """Signature and first docstring line of every page-object method the
+    changed step definitions call, as a prompt section; "" when there are none."""
+    import ast
+    from pathlib import Path
+
+    from config.paths import PROJECT_ROOT
+    root = Path(project_root) if project_root else PROJECT_ROOT
+    changed = {(f.get("filename") or "").replace("\\", "/"): f.get("content") or ""
+               for f in changed_files or []}
+    classes: dict = {}
+
+    def add(source: str):
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef) and node.name not in classes:
+                classes[node.name] = node
+
+    for name, content in changed.items():
+        if name.startswith("pages/") and name.endswith(".py"):
+            add(content)
+    for py in sorted((root / "pages").glob("*.py")) if (root / "pages").is_dir() else []:
+        if f"pages/{py.name}" not in changed:
+            try:
+                add(py.read_text(encoding="utf-8"))
+            except OSError:
+                continue
+    fixtures = {re.sub(r"(?<!^)(?=[A-Z])", "_", n).lower(): n for n in classes}
+
+    called: list = []
+    for name, content in changed.items():
+        if not (name.startswith("tests/step_defs/") and name.endswith(".py")):
+            continue
+        for m in re.finditer(r"\b([a-z_][a-z0-9_]*)\.([A-Za-z_]\w*)\s*\(", content):
+            cls = fixtures.get(m.group(1))
+            if cls and (cls, m.group(2)) not in called:
+                called.append((cls, m.group(2)))
+    blocks = []
+    for cls, method in called[:_MAX_METHODS_SHOWN]:
+        node = next((n for n in classes[cls].body
+                     if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == method),
+                    None)
+        if node is None:
+            # Inherited (BasePage) or truly missing: Agent 2's own check decides.
+            continue
+        args = ast.unparse(node.args).replace("self, ", "").replace("self", "").strip()
+        returns = f" -> {ast.unparse(node.returns)}" if node.returns is not None else ""
+        doc = ((ast.get_docstring(node) or "").strip().splitlines() or [""])[0]
+        blocks.append(f"- `{cls}.{method}({args}){returns}`" + (f" - {doc}" if doc else ""))
+    if not blocks:
+        return ""
+    return ("These page-object methods, called by the changed step definitions, EXIST - read "
+            "from the real files (the pull request's version where it changes the file, "
+            "main's otherwise). Never report one of them as missing or undefined.\n\n"
+            + "\n".join(blocks))
+
+
 # The changed-files section's share of the review prompt. The model's context
 # also holds the reference files, the page inventory and the instructions; a
 # PR that changed the large guides in full measured ~241k tokens and the
@@ -1049,6 +1117,9 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
         .replace("{changed_files_section}", format_changed_files_for_prompt(changed_files))
         .replace("{base_page_helpers_section}",
                  base_page_helpers_called(changed_files) or "(The changed page objects call no BasePage helper.)")
+        .replace("{page_object_methods_section}",
+                 page_object_methods_called(changed_files)
+                 or "(The changed step definitions call no page-object method defined outside BasePage.)")
     )
 
     prompt_chars = len(user_prompt)
