@@ -248,12 +248,19 @@ class GitHubClient:
 
     def get_review_comments(self, pr_number: int,
                             review_id: Optional[int] = None) -> list[dict]:
-        """Inline review comments (file + line), replies left out, oldest first.
-        Raises when the PR cannot be read: the caller must not fix a review it
-        could not see."""
+        """Inline review comments (file + line), oldest first: each thread's
+        first comment, and a PERSON's later reply in a thread - a reviewer
+        iterates by answering in the thread, and on SCRUM-283's pull request
+        (4 Nov 2026) such a reply was never seen. A reply carries `reply_to`,
+        the thread's first comment. Bots' replies (Agent 2's own answers) are
+        left out. Raises when the PR cannot be read: the caller must not fix a
+        review it could not see."""
         out = []
         for c in self.repo.get_pull(pr_number).get_review_comments():
-            if getattr(c, "in_reply_to_id", None):
+            reply_to = getattr(c, "in_reply_to_id", None)
+            author = getattr(getattr(c, "user", None), "login", "") or ""
+            if reply_to and (author.endswith("[bot]")
+                             or getattr(getattr(c, "user", None), "type", "") == "Bot"):
                 continue
             if review_id is not None and getattr(c, "pull_request_review_id", None) != review_id:
                 continue
@@ -264,6 +271,7 @@ class GitHubClient:
                 "body": c.body or "",
                 "author": getattr(getattr(c, "user", None), "login", ""),
                 "review_id": getattr(c, "pull_request_review_id", None),
+                "reply_to": reply_to,
             })
         return out
 
