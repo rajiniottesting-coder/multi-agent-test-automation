@@ -348,7 +348,8 @@ def run(story_id: str, dry_run: bool = False) -> dict:
         from agents.agent1_impact import run_impact_aware
         logger.info(f"{story_id} impacts {len(impacted)} approved test case(s): "
                     f"impact-aware mode")
-        llm = LLMClient(temperature=0.3, max_output_tokens=12288)
+        from agents.agent1_impact import output_budget
+        llm = LLMClient(temperature=0.3, max_output_tokens=output_budget(len(impacted)))
         result = run_impact_aware(
             jira, story_id, story,
             {"app_name": ctx.name, "app_base_url": ctx.base_url,

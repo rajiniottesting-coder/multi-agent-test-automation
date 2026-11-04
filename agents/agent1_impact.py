@@ -52,6 +52,20 @@ NEAR_MATCH = 0.6
 PURPOSE_KEPT = 0.4
 
 
+# The output budget of the impact-aware draft. One answer revises every
+# approved test case in full, and the model reasons before it answers from the
+# same budget: on 4 Nov 2026 seven approved cases spent all 12,288 tokens on
+# reasoning, twice, and no answer began. The budget grows with the cases,
+# within the model's ceiling.
+BASE_OUTPUT_TOKENS = 12288
+PER_CASE_TOKENS = 2048
+MAX_OUTPUT_TOKENS = 32768
+
+
+def output_budget(approved_cases: int) -> int:
+    return min(MAX_OUTPUT_TOKENS, BASE_OUTPUT_TOKENS + PER_CASE_TOKENS * max(0, approved_cases))
+
+
 def _norm(title: str) -> str:
     return normalize_scenario_name(plain_test_case_title(title))
 
