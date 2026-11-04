@@ -5197,6 +5197,17 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
         show_refused_files(generated_files)
         raise
 
+    # 4e. WHAT A SCENARIO LEAVES OUT (F39): a marker proves pairing, not that
+    # the scenario checks what its test case states. One call, after the gate,
+    # names each expected result left unchecked - on the PR and the story.
+    if load_agent_config().get("coverage_audit", True) and new_test_cases:
+        partial = agent2_coverage.audit_partial(
+            llm, generated_files, list(new_test_cases),
+            load_prompt("agent2_coverage_audit.md"))
+        if partial:
+            coverage_gaps = coverage_gaps + partial
+            agent2_coverage.log_gaps(story_id, partial, [])
+
     # 4f. LAST IN-FLIGHT CHECK (F-1): every file the batch commits, whoever
     # wrote it, against a fresh snapshot of the other open pull requests.
     if gh is None:

@@ -457,6 +457,10 @@ agents:
     completion_label: "ai-coded"
     regenerate_label: "ai-regenerate"
     update_label: "ai-update"
+    # After the gate passes, one model call names each expected result a
+    # scenario does not check (a marker proves pairing, not content): such a
+    # test case is listed "covered, but needing a person" on the PR and story.
+    coverage_audit: true
     # Set beside ai-coded when an approved test case has no scenario of its own
     # (agents/agent2_coverage.py): the pull request and one story comment list
     # each one with its reason. Removed by the next run - ai-update after the
