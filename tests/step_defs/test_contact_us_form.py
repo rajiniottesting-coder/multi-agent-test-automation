@@ -67,11 +67,12 @@ def assert_success_shown(contact_us_page):
         "Expected the contact success message to be shown"
 
 
-@then("I should not see the contact success message")
-def assert_success_absent(contact_us_page):
-    """Non-waiting probe: absence is the expected case, so nothing may wait."""
-    assert contact_us_page.is_success_message_absent(), \
-        "Contact success message was shown but should not be"
+# AI-ORPHAN: no scenario in features/contact_us_form.feature uses this step after SCRUM-284 revised or retired SCRUM-289. Review before deleting.
+# @then("I should not see the contact success message")
+# def assert_success_absent(contact_us_page):
+    # """Non-waiting probe: absence is the expected case, so nothing may wait."""
+    # assert contact_us_page.is_success_message_absent(), \
+        # "Contact success message was shown but should not be"
 
 
 @then("I should be returned to the home page")
@@ -85,6 +86,7 @@ def assert_on_home_page(home_page, base_url):
         f"Expected home path, got {current.path!r}"
 
 
-@then("I should remain on the Contact Us page")
-def assert_still_on_contact_us(contact_us_page):
-    assert contact_us_page.is_loaded(), "Expected to stay on the Contact Us page"
+# AI-ORPHAN: no scenario in features/contact_us_form.feature uses this step after SCRUM-284 revised or retired SCRUM-289. Review before deleting.
+# @then("I should remain on the Contact Us page")
+# def assert_still_on_contact_us(contact_us_page):
+    # assert contact_us_page.is_loaded(), "Expected to stay on the Contact Us page"
