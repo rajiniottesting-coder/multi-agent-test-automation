@@ -52,11 +52,29 @@ def test_a_story_on_one_page_changes_that_page_only():
     src = _sources()
     p = cu.propose(src, _change(), offered={CORE, FORMS}, pages={"menu", "form"}, narrowed=True)
     assert _sends(p.edits["inv/app.json"]) == {"form"}
-    assert ORDERS not in p.edits and "Submit button posts" in p.edits[FORMS]
-    assert json.loads(p.edits["inv/app.json"])["pages"]["menu"]["elements"]["help"] == "text=Submit"
+    assert set(p.edits) == {"inv/app.json"} and ORDERS not in p.edits
     outside = {o["where"] for o in p.outside}
     assert outside == {ORDERS, "inv/app.json page order"}
-    assert "not changed" in cu.render_body("AB-1", p) and "page order" in cu.render_body("AB-1", p)
+    body = cu.render_body("AB-1", p)
+    assert "not changed" in body and "page order" in body
+
+
+def test_with_the_text_on_other_pages_notes_and_shared_places_are_listed_not_changed():
+    """Real data, 4 Nov 2026: a rename on one page also rewrote a core.md line
+    about another page. A notes line, a shared value or an `always` page cannot
+    say which page it means while the text is on pages outside the scope."""
+    p = cu.propose(_sources(), _change(), offered={CORE, FORMS}, pages={"menu", "form"},
+                   narrowed=True)
+    assert json.loads(p.edits["inv/app.json"])["pages"]["menu"]["elements"]["help"] == "text=Send"
+    assert {r["where"] for r in p.review} == {FORMS, "inv/app.json page menu"}
+    assert "cannot say which page they mean" in cu.render_body("AB-1", p)
+
+
+def test_text_only_inside_the_scope_changes_its_notes_too():
+    src = _sources()
+    p = cu.propose(src, _change("posts the form", "sends the form"),
+                   offered={CORE, FORMS}, pages={"menu", "form"}, narrowed=True)
+    assert set(p.edits) == {"inv/app.json", FORMS} and not p.review
 
 
 def test_text_found_only_outside_the_components_is_not_changed():
@@ -214,8 +232,28 @@ def test_the_seeds_scope_a_story_with_no_component(monkeypatch, notes_root):
     out, host, _ = _story_run(monkeypatch, notes_root, [], {"elements": ["form:send"], "pages": []})
     assert out["context"] == "proposed"
     assert _sends(host.files["inv/app.json"]) == {"form"} and ORDERS not in host.files
-    assert FORMS in host.files
+    assert FORMS not in host.files, "the text is on another page too: the notes are listed"
     assert "impact analysis found it changes the inventory page(s) form" in host.body
+
+
+def test_the_seeds_never_widen_to_pages_sharing_a_component(monkeypatch, notes_root):
+    """Real data, 4 Nov 2026: a details-page seed widened through a shared
+    Component to the listing page and rewrote the listing's selector."""
+    inv = json.loads(_sources()["inv/app.json"])
+    inv["pages"]["order"]["components"] = ["Forms", "Orders"]
+    src = dict(_sources(), **{"inv/app.json": json.dumps(inv, indent=2) + "\n"})
+    monkeypatch.setattr(cu, "context_sources", lambda r: src)
+    monkeypatch.setattr(cu, "code_sources", lambda r: {})
+    monkeypatch.setattr(cu, "extract_changes", lambda llm, story: _change())
+    monkeypatch.setattr(cu, "extract_note_rewrites", lambda *a, **k: ([], []))
+    from types import SimpleNamespace
+    tracker = SimpleNamespace(get_story=lambda k: {"summary": "R", "description": "d",
+                                                   "components": []},
+                              get_comments=lambda k: [], add_comment=lambda k, b: None)
+    host = _Host()
+    cu.propose_for_story(tracker, host, None, "AB-31", {"context_update": {"enabled": True}},
+                         notes_root, seeds={"elements": ["form:send"]})
+    assert _sends(host.files["inv/app.json"]) == {"form"}
 
 
 def test_without_seeds_a_story_with_no_component_is_judged_as_before(monkeypatch, notes_root):

@@ -71,6 +71,7 @@ class Proposal:
     rewrites: list = field(default_factory=list)    # {"path","before","after","reason"}
     declared_removed: list = field(default_factory=list)  # ["page.key"] added to `removed`
     outside: list = field(default_factory=list)     # {"old","path","where"} left alone: out of scope
+    review: list = field(default_factory=list)      # {"old","where"} in scope, but not attributable
     note: str = ""                                  # how the scope was chosen, when not by the story
 
     @property
@@ -355,9 +356,10 @@ def _in_scope(relpath: str, where: str, offered, pages) -> bool:
     return offered is None or relpath in offered
 
 
-def _scoped_value_replace(text: str, old: str, new: str, pages) -> Optional[str]:
+def _scoped_value_replace(text: str, old: str, new: str, pages,
+                          shared: bool = True) -> Optional[str]:
     """`old` -> `new` in the inventory's string values, only under `pages`
-    (and outside the page map). None when nothing changes."""
+    (and, with `shared`, outside the page map). None when nothing changes."""
     try:
         data = json.loads(text)
     except ValueError:
@@ -369,8 +371,9 @@ def _scoped_value_replace(text: str, old: str, new: str, pages) -> Optional[str]
             return {k: walk(v, path + (str(k),)) for k, v in node.items()}
         if isinstance(node, list):
             return [walk(v, path + (str(i),)) for i, v in enumerate(node)]
-        if isinstance(node, str) and old in node and not (
-                len(path) >= 2 and path[0] == "pages" and path[1] not in pages):
+        on_page = len(path) >= 2 and path[0] == "pages"
+        if isinstance(node, str) and old in node and (
+                (on_page and path[1] in pages) or (not on_page and shared)):
             hit.append(path)
             return node.replace(old, new)
         return node
@@ -422,13 +425,32 @@ def propose(sources: dict, changes, code: dict | None = None, rewrites=(),
                                  + ", ".join(dict.fromkeys(w for _r, w, _p in outside))
                                  + ") - not changed"))
             continue
+        # The same text on a page OUTSIDE the scope: a notes line, core.md, a
+        # shared inventory value or an `always` page cannot say which page it
+        # means - real data, 4 Nov 2026: a rename on one page also rewrote a
+        # core.md line about another page's cards. Only the in-scope pages'
+        # own values change; every other place is listed for a person.
+        elsewhere = any(part and part[0] == "page" for _r, _w, part in outside)
+        if elsewhere:
+            own = [pl for pl in inside if pl[2] and pl[2][0] == "page"]
+            prop.review += [{"old": old, "where": w} for _r, w, _p in inside if (_r, w, _p) not in own]
+            inside = own
+            if not inside:
+                prop.outside += [{"old": old, "path": rel, "where": w} for rel, w, _p in outside]
+                prop.dropped.append((old, new, "on the story's pages only in notes that cannot "
+                                     "say which page they mean, while the same text is on pages "
+                                     "outside the story's scope - not changed"))
+                continue
         matched = False
         for relpath, text in current.items():
             if not any(rel == relpath for rel, _w, _p in inside):
                 continue
-            if relpath.endswith(".json") and pages is not None and any(
-                    rel == relpath for rel, _w, _p in outside):
-                updated = _scoped_value_replace(text, old, new, pages)
+            if relpath.endswith(".json") and pages is not None and (elsewhere or any(
+                    rel == relpath for rel, _w, _p in outside)):
+                own_pages = {w.rsplit(" page ", 1)[1] for rel, w, _p in inside
+                             if rel == relpath and " page " in w}
+                updated = (_scoped_value_replace(text, old, new, own_pages, shared=False)
+                           if elsewhere else _scoped_value_replace(text, old, new, pages))
                 if updated is not None:
                     try:
                         before_vals = dict(_walk(json.loads(text)))
@@ -520,6 +542,11 @@ def render_body(story_key: str, prop: Proposal) -> str:
         lines += ["", "The same text outside the story's Components - **not changed** (the story "
                       "does not touch those parts; change them by hand if it does):"]
         lines += [f"- `{o['old']}` in {o['where']}" for o in prop.outside[:40]]
+    if prop.review:
+        lines += ["", "In notes that cannot say which page they mean, while the same text is on "
+                      "pages outside the story's scope - **not changed**: change each one that "
+                      "means the story's page:"]
+        lines += [f"- `{o['old']}` in {o['where']}" for o in prop.review[:40]]
     if prop.dropped:
         lines += ["", "Not applied:"]
         lines += [f"- `{o}` → `{n}`: {why}" for o, n, why in prop.dropped]
@@ -669,14 +696,22 @@ def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: 
         return {"story": story_key, "context": "none", "why": NEW_BEHAVIOUR}
     sources = context_sources(root)
     components, note = story.get("components") or [], ""
+    used: list = []
     if not components:
         inventory = next((json.loads(t) for p, t in sources.items() if p.endswith(".json")), {})
         components, used = components_of_pages(inventory, seed_pages(seeds))
         if components:
             note = (f"The story has no Component; Agent 0's impact analysis found it changes the "
-                    f"inventory page(s) {', '.join(used)}, so the update covers "
-                    f"{', '.join(components)}.")
+                    f"inventory page(s) {', '.join(used)}, so the update covers those pages and "
+                    f"the notes of {', '.join(components)}.")
     offered, pages = scoped_sources(sources, components, root)
+    if used and pages is not None:
+        # The pages the analysis found - not every page sharing their
+        # Components: on real data, a details-page rename widened to the
+        # listing page through a shared Component and rewrote its selector.
+        page_map = (inventory or {}).get("pages") or {}
+        pages = {p for p in pages if p in used
+                 or (isinstance(page_map.get(p), dict) and page_map[p].get("always"))}
     changes = extract_changes(llm, story)
     try:
         rewrites, removed = extract_note_rewrites(llm, story, story_key, offered, pages)
