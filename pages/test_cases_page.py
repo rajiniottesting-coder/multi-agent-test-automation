@@ -28,13 +28,14 @@ SCRUM-312 cannot be asserted from this page object. The feature verifies the
 heading and the title-links layout only; the Feedback section is recorded in
 `notes` for a human to add an inventory key.
 
-NOTE on showing a test case's steps (SCRUM-313): `test_case_steps` is a
-multi_match family — one step item per step, across every (collapsed) panel —
-so wait_visible() on the family raises a strict-mode violation. Instead this
-page confirms the first test case's steps became visible by waiting for AT
-LEAST ONE member of the family to appear (wait_for_any), which is a legal,
-read-only family operation. Steps live inside a collapsible panel that expands
-in place after the first title is clicked; clicking does not navigate.
+NOTE on showing a test case's steps (SCRUM-313 / SCRUM-314): `test_case_steps`
+is a multi_match family — one step item per step, across every (collapsed)
+panel — so wait_visible() on the family raises a strict-mode violation. Instead
+this page confirms a test case's steps became visible by waiting for AT LEAST
+ONE member of the family to appear (wait_for_any), which is a legal, read-only
+family operation. Steps live inside a collapsible panel that expands in place
+after a title is clicked; clicking does not navigate — the browser stays on the
+Test Cases page, which remaining_on_page() confirms via the URL.
 """
 from typing import Optional
 
@@ -120,6 +121,19 @@ class TestCasesPage(BasePage):
         self.wait_for_any(self.sel("test_case_steps"))
         return True
 
+    def remaining_on_page(self) -> bool:
+        """True if the browser is still on the Test Cases page. WAITS for it.
+
+        Clicking a title expands a panel in place rather than navigating, so
+        the URL must be unchanged after the click. Built on is_loaded() (a
+        waiting heading probe) and a trailing-slash-tolerant URL comparison, so
+        it answers "yes, still here" reliably even while the panel is still
+        expanding.
+        """
+        return self.is_loaded() and self.url_matches(
+            f"{self.get_url().split('?')[0]}"
+        ) and self.get_path().rstrip("/") == self.page_url().rstrip("/")
+
     # ── actions ──────────────────────────────────────────────
     def open_first_test_case(self) -> None:
         """Click the first test case title to expand its steps in place.
@@ -130,3 +144,13 @@ class TestCasesPage(BasePage):
         """
         self.require_own_page()
         self.click_nth(self.sel("test_case_titles"), 0)
+
+    def open_second_test_case(self) -> None:
+        """Click the second test case title to expand its steps in place.
+
+        The title family matches one link per test case; this acts on the
+        second member (index 1) by position. Like the first, clicking does not
+        navigate — the panel below the title expands to reveal its steps.
+        """
+        self.require_own_page()
+        self.click_nth(self.sel("test_case_titles"), 1)
