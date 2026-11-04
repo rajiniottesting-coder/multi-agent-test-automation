@@ -8,11 +8,12 @@ Feature: Automation Exercise Test Cases page
     Given I am on the home page
 
   @smoke @test_cases
-  # JIRA: SCRUM-312 (hash: 5e7948bc) owner: SCRUM-293
+  # JIRA: SCRUM-312 (hash: f97f1aa6) owner: SCRUM-293
   Scenario: Open the Test Cases page from the top menu and verify its layout
     When I click "Test Cases" in the top navigation menu
     Then the Test Cases page should be headed "Test Cases"
     And each test case title should be shown as a link
+    And a "Feedback for Us" section should display an email address link
 
   @smoke @test_cases
   # JIRA: SCRUM-313 (hash: 3f300ca1) owner: SCRUM-293
