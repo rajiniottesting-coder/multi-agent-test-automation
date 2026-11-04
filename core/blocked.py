@@ -71,6 +71,12 @@ _RESERVED_CALL = re.compile(r"calls `\w+\.(\w+)\(\)`, but `(\w+)` does not defin
                             r"`([^`]+)` is a RESERVED file")
 
 
+# The selector check's wording for a new page object that borrows another
+# page object's inventory page (validators/method_resolution_validator.py).
+_BORROWED_PAGE = re.compile(r"class (\w+) sets INVENTORY_PAGE = '[^']+', the page \w+ "
+                            r"\([^)]+\) implements, and resolves none of its elements")
+
+
 def _reserved_capabilities(errors) -> list:
     """`Class.method (file)` for each method a reserved page object would need.
     No repair can add one: Agent 2 may not edit a reserved file."""
@@ -105,6 +111,17 @@ def blocked_comment(story_id: str, fp: str, errors) -> str:
                    "(a page already live is confirmed and crawled by the next nightly "
                    "inventory update, which proposes its other elements). The other "
                    "errors above follow from the missing page.")]
+        return "\n".join(lines)
+    borrowed = sorted({m for e in errors for m in _BORROWED_PAGE.findall(e)})
+    if borrowed:
+        lines += ["",
+                  (f"A new page object ({', '.join(borrowed)}) has no inventory page of "
+                   "its own: it names a page another page object implements and uses none "
+                   "of its elements - usually because the page the story is about is not in "
+                   "the app inventory. No repair can add a page - the inventory is curated "
+                   "by a person. Add it (`python -m scripts.plan_inventory page --page <page> "
+                   "--url /<path> --component \"<Component>\" --element <key>=\"<selector>\"`), "
+                   "then run Agent 2 with this story's key.")]
         return "\n".join(lines)
     reserved = _reserved_capabilities(errors)
     if reserved:

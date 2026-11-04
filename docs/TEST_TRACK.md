@@ -290,6 +290,7 @@ Older rows name the sessions S1-S8 of the first plan: **S1** is Run A, **S2** is
 | E45b | #248 | Three or more stories released to ai-ready at once (or labelled by hand, then Agent 1 run once) | Agent 1 takes 2, then starts itself again (`chain` 2) for the rest; no run when none waits | ⬜ | |
 | E45c | #248 | An Agent 0 run with nothing released, and an Agent 1 run that fails | "no story waits for it" - nothing started; the failed Agent 1 run has no hand-off step run (the schedule retries) | ⬜ | Partly: "no story waits for it" on idle runs (3-4 Nov); the cap held at 5 - and exposed restarts for a blocked story (#262) |
 | E45d | #248 | Optional: the Jira Automation rule on `human-approved` (GUIDE, "Hand-off between agents") | Approving a story starts Agent 2 (event `repository_dispatch`) within a minute, in scan mode | ⬜ | |
+| E86 | Run C fixes | SCRUM-292 run again by key (its page is not in the app inventory) | A new page object naming another page object's inventory page and using none of its elements is refused by the selector check; the repair names the page it is for, the run stops as a missing page (E49), and the `[agent2:blocked]` comment gives the `plan_inventory page` command | ⬜ | |
 | E85 | Run C fixes | A scan with more candidates than `max_stories_per_run` where some are blocked or still waiting (SCRUM-292 blocked, SCRUM-293 waiting, SCRUM-201 `ai-update`) | The blocked and still-waiting stories make no model call and use up no place; SCRUM-201 is taken in the same scan instead of `[DEFER]` | ⬜ | |
 | E84 | Run C fixes | Agent 2 run with `story_key` for a story labelled `ai-update` (SCRUM-201), and one labelled `ai-regenerate` | The run logs UPDATE mode (REGENERATE for the other), as a scan would; not "no work needed" in normal mode; both labels at once is refused | ⬜ | |
 | E83 | Run C fixes | The second and later scans while a story waits on a file another open PR changes (SCRUM-293 on #286) | "the wait of the last scan still holds - no plan, no model call"; no new `Agent 2 (Coder, waiting)` cost row; an edit to the story or a test case, or the PR merged or closed, and it is planned again | ⬜ | |
@@ -417,6 +418,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
+| #289 | A new page object may not borrow another page object's inventory page | | E86 | |
 | #288 | Tests own their settings; nothing-affected report without a table; a refused story names the gate's errors and a reserved page's missing method; a still-valid wait costs no plan; a story run by key follows its mode label; a story that did nothing frees its scan place | | E80-E85 | |
 | #285 | A start never cancels a run already waiting to start; a yes/no predicate is not a misnamed reader | | E78, E79 | |
 | #284 | What validation Run C found: scheduled runs never started are reported, a planned list declared a family, a test case about the prompt sent back, a red run still hands off, a story needing a person handed back | | E70-E77 | |

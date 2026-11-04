@@ -1468,6 +1468,30 @@ def _strict_uses_of_sel(class_node: ast.ClassDef) -> list[tuple[str, str, int]]:
     return found
 
 
+def _norm_path(path: str) -> str:
+    return (path or "").replace("\\", "/").lstrip("./")
+
+
+def _committed_inventory_pages(project_root) -> dict:
+    """{inventory page: (class name, file)} for the page objects on disk."""
+    found: dict = {}
+    root = Path(project_root or ".") / "pages"
+    for file in sorted(root.glob("*.py")) if root.is_dir() else []:
+        rel = f"pages/{file.name}"
+        if not _is_page_object_path(rel):
+            continue
+        try:
+            tree = ast.parse(file.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError, UnicodeDecodeError):
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                page = _class_inventory_page(node)
+                if page and page not in found:
+                    found[page] = (node.name, rel)
+    return found
+
+
 def validate_page_object_selectors(
     generated_files: Iterable,
     project_root: Path,
@@ -1613,6 +1637,30 @@ def validate_page_object_selectors(
                     f"INVENTORY_PAGE = '{inv_page}', which is not a page in "
                     f"the app inventory. Available pages: "
                     f"{', '.join(sorted(pages)[:_MAX_KEYS_LISTED])}."
+                )
+                continue
+
+            # A page another committed page object already implements is not
+            # this class's page. 4 Nov 2026: a page object for a page the
+            # inventory lacked set INVENTORY_PAGE to the navigation entry
+            # (its only mention of the path) and navigated by a hard-coded
+            # URL, so no check named the missing page; its step definitions
+            # called methods it could not have, and the story was refused
+            # after every repair with advice to change the test case.
+            # Resolving none of that page's elements is the sign: the class
+            # names the page only to pass this check.
+            claimed = _committed_inventory_pages(project_root).get(inv_page)
+            if (claimed and not sel_keys
+                    and _norm_path(claimed[1]) != _norm_path(path)):
+                errors.append(
+                    f"{_ERROR_PREFIX} in '{path}': class {node.name} sets "
+                    f"INVENTORY_PAGE = '{inv_page}', the page {claimed[0]} "
+                    f"({claimed[1]}) implements, and resolves none of its "
+                    f"elements. A page object implements its own page: set "
+                    f"INVENTORY_PAGE to the key of the page this class is for. "
+                    f"If that page is not in the app inventory, set the key it "
+                    f"would have - a person adds the page; do not borrow another "
+                    f"page's."
                 )
                 continue
 

@@ -543,7 +543,7 @@ agents:
     thresholds: {must_update: 0.6, review: 0.3}
     max_candidates: 300      # most candidates one adjudication call judges
     reconcile:
-      closed_scans: 1        # closed-without-merge must be seen on this many scans
+      closed_scans: 2        # closed-without-merge must be seen on this many scans
       no_pr_days: 14         # impact-applied with no PR this long -> ask a person
       # On undo: labels the closed PR made untrue, removed so a retry is just
       # "remove impact-reverted, add impact-check".

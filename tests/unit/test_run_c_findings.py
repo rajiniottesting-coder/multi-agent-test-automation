@@ -415,3 +415,44 @@ def test_refused_files_are_printed_with_workflow_commands_off(capsys):
     token = out[1].split("::stop-commands::")[1]
     assert out[2:4] == ["::add-mask::boom", "class X: pass"]
     assert out[4] == f"::{token}::" and out[5] == "::endgroup::"
+
+
+# ── a new page object may not borrow another page object's page ─────────
+
+def _po(path, cls, page, body="    def open_it(self, base_url: str) -> None:\n        self.navigate(base_url)\n"):
+    from types import SimpleNamespace as NS
+    return NS(file_path=path, content=(f"from pages.base_page import BasePage\n\n\nclass {cls}(BasePage):\n"
+                                       f'    INVENTORY_PAGE = "{page}"\n\n' + body))
+
+
+@pytest.fixture
+def menu_project(tmp_path):
+    (tmp_path / "pages").mkdir()
+    (tmp_path / "pages" / "menu_page.py").write_text(
+        'from pages.base_page import BasePage\n\n\nclass MenuPage(BasePage):\n    INVENTORY_PAGE = "menu"\n')
+    return tmp_path, {"pages": {"menu": {"elements": {"reports_link": "a.r"}}}}
+
+
+def test_a_new_page_object_borrowing_a_page_it_does_not_use_is_refused(menu_project):
+    """4 Nov 2026, SCRUM-292: the page was not in the inventory; the new page
+    object set INVENTORY_PAGE to the navigation entry and navigated by a
+    hard-coded path, so the missing page was never named."""
+    from validators.method_resolution_validator import validate_page_object_selectors
+    root, inv = menu_project
+    (err,) = validate_page_object_selectors([_po("pages/reports_page.py", "ReportsPage", "menu")], root, inv)
+    assert "MenuPage (pages/menu_page.py) implements, and resolves none of its elements" in err
+    using = "    def open_reports(self) -> None:\n        self.click(self.sel(\"reports_link\"))\n"
+    assert validate_page_object_selectors(
+        [_po("pages/reports_page.py", "ReportsPage", "menu", using)], root, inv) == []
+    assert validate_page_object_selectors(
+        [_po("pages/menu_page.py", "MenuPage", "menu")], root, inv) == []    # its own file
+
+
+def test_a_borrowed_page_is_reported_as_a_missing_page():
+    from core.blocked import blocked_comment
+    err = ("Selector inventory error in 'pages/reports_page.py': class ReportsPage sets "
+           "INVENTORY_PAGE = 'menu', the page MenuPage (pages/menu_page.py) implements, and "
+           "resolves none of its elements. A page object ...")
+    text = blocked_comment("AB-1", "0" * 16, [err])
+    assert "A new page object (ReportsPage) has no inventory page of its own" in text
+    assert "plan_inventory page" in text and "cannot show" not in text
