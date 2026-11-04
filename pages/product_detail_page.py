@@ -86,6 +86,27 @@ class ProductDetailPage(BasePage):
         """The current value typed in the quantity field (DOM value, not text)."""
         return self.get_input_value(self.sel("quantity_input"))
 
+    def has_quantity_input(self) -> bool:
+        """True once the quantity input is on screen. WAITS for it.
+
+        A waiting presence predicate — call it only where the field IS expected.
+        To assert the field has been REMOVED, use is_quantity_input_absent(),
+        which does not wait for a presence that will never happen.
+        """
+        return self.is_showing(self.sel("quantity_input"))
+
+    def is_quantity_input_absent(self) -> bool:
+        """True once the page is loaded AND the quantity input is NOT on it.
+
+        For the story that removed the quantity field. quantity_input is a
+        PERMANENT inventory element (not listed under `conditional`), so an
+        absence check alone would also pass before the page had rendered or on
+        the wrong page entirely. Proving is_loaded() first anchors the absence
+        to this product page. is_gone() returns True at once when the element is
+        absent, waiting only while it is still shown.
+        """
+        return self.is_loaded() and self.is_gone(self.sel("quantity_input"))
+
     # ── review: queries ──────────────────────────────────────
     def has_review_form(self) -> bool:
         """True once the Write Your Review form is on screen. WAITS for it.
