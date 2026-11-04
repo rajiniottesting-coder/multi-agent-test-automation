@@ -488,15 +488,21 @@ def test_the_health_view_and_housekeeping(monkeypatch, world):
     fake, jira = world
     _limits(monkeypatch, per_day_usd=12.0)      # independent of the shipped value
     now = dt.datetime.now(dt.timezone.utc)
-    ph.record(jira, "spend", [_today(), 2_500_000], {})
+    ph.record(jira, "spend", [_today(), 7_500_000], {})
     ph.record(jira, "spend", ["20000101", 1], {})
     ph.raise_alert(jira, "budget-day-20000101", "old day")
     ph.raise_alert(jira, f"budget-warn-{_today()}", "today")
+    # opened today under a lower limit: $7.50 is below today's $12 limit (F32)
+    ph.raise_alert(jira, f"budget-day-{_today()}", "today, under a lower limit")
     script.housekeeping(jira, now)
-    assert set(ph.open_alerts(jira)) == {f"budget-warn-{_today()}"}
+    assert set(ph.open_alerts(jira)) == {f"budget-warn-{_today()}"}, \
+        "past 50% of $12 it still holds; the day limit does not"
     assert [k.split(".")[1] for k in ph.record_keys(jira, "spend")] == [_today()]
     ph.refresh_view(jira, now)
-    assert "$2.50 of the $12.00 daily budget" in fake.issues[ph.issue_key(jira)]["description"]
+    assert "$7.50 of the $12.00 daily budget" in fake.issues[ph.issue_key(jira)]["description"]
+    _limits(monkeypatch, per_day_usd=50.0)                   # raised again: the warning goes too
+    script.housekeeping(jira, now)
+    assert set(ph.open_alerts(jira)) == set()
 
 
 def test_the_health_checks_model_probe_is_not_a_credential_alert_when_the_budget_stops_it(
