@@ -192,7 +192,7 @@ File sizes change with almost every pull request, so they are not listed here; `
   - another open PR changes a planned file → waits (plan call spent); next scan retries
   - Validates plan against path policy (reserved/extendable)
   - Stage 2: LLM generates each file (feature → page objects → step defs)
-  - 32 static checks; the repair loop regenerates only broken files (up to 4 attempts)
+  - 33 static checks; the repair loop regenerates only broken files (up to 4 attempts)
   - Injects JIRA marker comments above each scenario
   - Branch: auto/<STORY-KEY>-<feature-name>
   - Commits files, opens PR, adds 'ai-coded' label
@@ -1440,9 +1440,9 @@ pushes to main conflicted with branch protection (GH013).
 
 ## 14. Validators — the safety net
 
-32 distinct checks: `validate_paths_against_policy` on the plan, 10 hard gates in
+33 distinct checks: `validate_paths_against_policy` on the plan, 10 hard gates in
 `_validate_generated_files()` (run in order, cheapest first, so an
-expensive AST walk only runs if the basic checks pass), 27 validator calls
+expensive AST walk only runs if the basic checks pass), 28 validator calls
 in `_collect_repairable_errors()` — the set the repair loop uses — of which 7
 are also hard gates, and `_absence_claim_errors()`, which needs the approved
 test cases and so runs beside the collector in the repair loop and the final gate. `validate_page_object_methods()` wraps further page-object
