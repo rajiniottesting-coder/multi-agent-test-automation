@@ -205,7 +205,7 @@ usage_ledger:
 budget:
   enabled: true
   per_story_usd: 8
-  per_day_usd: 12
+  per_day_usd: 35
   warn_at: 0.5
   timezone: "UTC"
   hold_label: "budget-hold"

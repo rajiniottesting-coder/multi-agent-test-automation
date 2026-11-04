@@ -1288,7 +1288,7 @@ app_health:                         # the application health check's timing
   { wait_minutes: 8, interval_seconds: 60, element_timeout_ms: 15000 }
                                     # WHAT it checks: app_under_test.health_check
 budget:                             # model spend (F-24); every selection excludes hold_label
-  { enabled, per_story_usd: 8, per_day_usd: 12, warn_at: 0.5, timezone: "UTC",
+  { enabled, per_story_usd: 8, per_day_usd: 35, warn_at: 0.5, timezone: "UTC",
     hold_label: "budget-hold" }
 usage_ledger: { store: "auto" }     # F-31: hidden properties + one cost comment per
                                     # attempt; "comments" = [LLM-USAGE] per run
