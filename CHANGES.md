@@ -4,6 +4,20 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — the hand-off restarts an agent only after progress; the top menu reaches the contact page (#262)
+
+**Why:** overnight (3-4 Nov) SCRUM-284 carried `human-approved` but was blocked (its earlier refusal). Agent 2 skips it, yet it matched Agent 2's selection, so after each delayed scheduled run the hand-off started Agent 2 again - five empty runs, twice - until `max_chain` stopped it. And SCRUM-284's test cases open the contact page from the top menu, which `NavPage` (reserved for Agent 2) could not do.
+
+- `core/handoff.start(waiting_before=)`: an agent starting itself starts again only if its run took at least one of the stories that waited when it began; progress is judged on up to `PROGRESS_LIMIT` (50) waiting stories. Agent 0 starting Agent 1 passes nothing (new work)
+- `scripts/start_agent.py --record-waiting PATH` / `--waiting-before PATH`; a missing or unreadable record decides as before; recording never fails the run
+- `agent1_analyst.yml`, `agent2_coder.yml`: *Record the stories waiting before the run* right before the agent; the restart passes it
+- `pages/nav_page.py` (application page object, a person's change): `go_to_contact_us()`, as `go_to_products()` / `go_to_cart()` - `nav.contact_us_link` was already in the inventory
+- TEST_TRACK: the live evidence of 4 Nov (E51-E54 and parts of E45c, E47, E48, E52)
+- `tests/unit/test_agents_start_the_next_agent.py` +9 (35); 4 deliberate breaks (restart without progress, progress judged on one story, the record not passed by the script or the workflow) each fail a test
+- Not tested live yet: E55
+
+---
+
 ## November 2026 — a Jira issue property reads back as the JSON that was stored (#260)
 
 **Why:** Agent 5's second report on SCRUM-283's pull request (4 Nov) crashed - "'PropertyHolder' object has no attribute 'get'" - reading its own last-report fingerprint; *Post Results to Jira* went red with every test passing. The jira SDK parses an object value into a PropertyHolder (attributes, no `.get()`), and `JiraClient.get_property()` returned it. Every reader that treats the value as the dict it stored was affected: Agent 5's repeat check crashed; the flaky-test names and Agent 0's outcome check fell back silently (their reads are wrapped).
