@@ -270,6 +270,7 @@ class GitHubClient:
                 "line": getattr(c, "line", None) or getattr(c, "original_line", None),
                 "body": c.body or "",
                 "author": getattr(getattr(c, "user", None), "login", ""),
+                "association": getattr(c, "author_association", None),
                 "review_id": getattr(c, "pull_request_review_id", None),
                 "reply_to": reply_to,
             })
@@ -279,6 +280,25 @@ class GitHubClient:
                                 body: str) -> None:
         """Answer an inline review comment in its own thread."""
         self.repo.get_pull(pr_number).create_review_comment_reply(comment_id, body)
+
+    @staticmethod
+    def _who(obj) -> dict:
+        user = getattr(obj, "user", None)
+        login = getattr(user, "login", "") or ""
+        return {"author": login, "association": getattr(obj, "author_association", None),
+                "bot": login.endswith("[bot]") or getattr(user, "type", "") == "Bot"}
+
+    def get_pr_reviews(self, pr_number: int) -> list[dict]:
+        """Submitted reviews, oldest first. Raises when the PR cannot be read."""
+        return [{"id": r.id, "state": (getattr(r, "state", "") or "").upper(),
+                 "body": getattr(r, "body", "") or "", **self._who(r)}
+                for r in self.repo.get_pull(pr_number).get_reviews()]
+
+    def get_pr_comment_records(self, pr_number: int) -> list[dict]:
+        """Conversation comments with their authors, oldest first. Raises when
+        the PR cannot be read."""
+        return [{"id": c.id, "body": c.body or "", **self._who(c)}
+                for c in self.repo.get_pull(pr_number).get_issue_comments()]
 
     def delete_branch(self, branch_name: str) -> bool:
         """Delete a branch. Returns True if it was deleted, False otherwise.

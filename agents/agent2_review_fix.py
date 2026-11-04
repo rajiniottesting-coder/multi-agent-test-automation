@@ -69,6 +69,14 @@ _CODE_DIRS = ("features/", "tests/step_defs/", "pages/")
 _FRAMEWORK_FILES = {"pages/base_page.py", "tests/step_defs/conftest.py", "tests/conftest.py"}
 _SCENARIO_LINE = re.compile(r"^\s*Scenario(?: Outline)?:\s*(.+?)\s*$", re.M)
 _HANDLED_IDS = re.compile(r"comments:\s*([\d,\s]+)")
+_ALSO_HANDLED = re.compile(re.escape(MARKER) + r" also handled: ([^\n]+)")
+
+# Who may steer Agent 2: the same list as the workflow's `if`
+# (.github/workflows/agent2_review_fix.yml) - people with write access. The
+# workflow checked who STARTED a run, but every line comment was taken, so on
+# a public repository anyone could steer a fix by commenting before a reviewer
+# typed `/fix`.
+WRITE_ACCESS = ("OWNER", "MEMBER", "COLLABORATOR")
 
 
 @dataclass
@@ -82,10 +90,12 @@ class Item:
     # A reply in a thread: the thread's first comment. GitHub answers a
     # thread through its first comment, so Agent 2 replies there.
     thread: int | None = None
+    # The text of an earlier review or `/fix` no run handled ("review 12").
+    source: str | None = None
 
     def where(self) -> str:
         if not self.path:
-            return "the pull request"
+            return f"the pull request ({self.source})" if self.source else "the pull request"
         return f"{self.path}:{self.line}" if self.line else self.path
 
 
@@ -196,8 +206,55 @@ def review_key(review_id: int | None, comment_id: int | None) -> str:
 
 
 def handled(comments: list[str], key: str) -> bool:
-    """True when a summary comment for this review or comment already exists."""
-    return any(f"{MARKER} {key} comments:" in (c or "") for c in comments)
+    """True when a summary comment for this review or comment already exists -
+    its own, or another run's that took its text (`also handled`)."""
+    for c in comments:
+        c = c or ""
+        if f"{MARKER} {key} comments:" in c:
+            return True
+        if any(key in [k.strip() for k in m.split(",")] for m in _ALSO_HANDLED.findall(c)):
+            return True
+    return False
+
+
+def unhandled_requests(host, pr_number: int, key: str, earlier: list[str],
+                       command: str) -> list[tuple[str, str]]:
+    """[(key, text)] of every "Request changes" review and `/fix` comment, by
+    a person with write access, that no run handled - other than `key`.
+
+    GitHub keeps one WAITING run per pull request: with a fix running, a
+    second reviewer's request waits, and a third's cancels it. The cancelled
+    run's line comments were taken by the next run (they are not marked
+    handled), but its own text - the review's summary, the words after `/fix`
+    - was lost. Each run now takes what such a request said. A request with
+    no text of its own is listed too: this run takes every line comment not
+    handled, which is all it asked for."""
+    out: list = []
+    for name, kind in (("get_pr_reviews", "review"), ("get_pr_comment_records", "comment")):
+        read = getattr(host, name, None)
+        if read is None:
+            continue
+        try:
+            records = read(pr_number) or []
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning("Could not read the %ss of PR #%s: %s", kind, pr_number, e)
+            continue
+        for r in records:
+            if r.get("bot") or (r.get("association") or "") not in WRITE_ACCESS:
+                continue
+            body = (r.get("body") or "").strip()
+            if kind == "review":
+                if (r.get("state") or "").upper() != "CHANGES_REQUESTED":
+                    continue
+                text = body
+            else:
+                if not body.lower().startswith(command.lower()):
+                    continue
+                text = strip_command(body, command)
+            k = review_key(r.get("id"), None) if kind == "review" else review_key(None, r.get("id"))
+            if k != key and not handled(earlier, k) and k not in [x for x, _t in out]:
+                out.append((k, text))
+    return out
 
 
 def handled_comment_ids(comments: list[str]) -> set:
@@ -219,7 +276,7 @@ def strip_command(text: str, command: str) -> str:
 
 
 def collect_items(host, pr_number: int, review_id: int | None, text: str,
-                  already: set) -> list[Item]:
+                  already: set, ignored: list | None = None) -> list[Item]:
     """A review: its inline comments, then every earlier inline comment not
     handled before, then its own text. A `/fix` comment: every inline comment
     not handled before, then the comment's own text, if any.
@@ -230,6 +287,10 @@ def collect_items(host, pr_number: int, review_id: int | None, text: str,
     review of its own, and the "Request changes" that follows carries only its
     text - on SCRUM-283's pull request (3 Nov 2026) the two line comments
     were never seen.
+
+    A comment by someone without write access is not taken (WRITE_ACCESS);
+    its author is added to `ignored`. A host that cannot say (no
+    `association`) is trusted, as before.
     """
     inline = host.get_review_comments(pr_number, review_id)
     if review_id is not None:
@@ -241,6 +302,10 @@ def collect_items(host, pr_number: int, review_id: int | None, text: str,
         if (c.get("author") or "").endswith("[bot]") or not (c.get("body") or "").strip():
             continue
         if review_id is None and c.get("id") in already:
+            continue
+        if c.get("association") is not None and c.get("association") not in WRITE_ACCESS:
+            if ignored is not None:
+                ignored.append(c.get("author") or "?")
             continue
         items.append(Item(len(items) + 1, c["body"].strip(), c.get("id"),
                           _norm(c.get("path") or "") or None, c.get("line"),
@@ -370,14 +435,17 @@ def _reply(host, pr_number: int, outcome: Outcome, pushed: bool) -> None:
 
 
 def summary_comment(key: str, outcomes: list[Outcome], pushed: list, problem: str = "",
-                    not_done: bool = False) -> str:
+                    not_done: bool = False, also: list = (), ignored: list = ()) -> str:
     """`not_done`: the run was stopped before deciding or changing anything
     (the model budget) - nothing is recorded as handled, so a re-run of the
     same review, or a later `/fix`, takes every comment again."""
     ids = ",".join(str(o.item.comment_id) for o in outcomes if o.item.comment_id is not None)
     first = (f"{NOT_DONE_MARKER} {key}" if not_done
              else f"{MARKER} {key} comments: {ids or '-'}")
-    lines = [first, "", "## 🤖 Agent 2 - review fix", ""]
+    lines = [first]
+    if also and not not_done:
+        lines.append(f"{MARKER} also handled: {', '.join(also)}")
+    lines += ["", "## 🤖 Agent 2 - review fix", ""]
     if pushed:
         lines.append(f"Pushed {len(pushed)} file(s) to this branch: {', '.join(pushed)}. "
                      "Agents 3, 4 and 5 run again on the new commit.")
@@ -389,6 +457,11 @@ def summary_comment(key: str, outcomes: list[Outcome], pushed: list, problem: st
     for o in outcomes:
         reason = o.reason.replace("|", "/").replace("\n", " ")
         lines.append(f"| {o.item.n} | {o.item.where()} | {o.action} | {reason} |")
+    if ignored:
+        names = ", ".join(dict.fromkeys(ignored))
+        lines += ["", f"_Not taken: {len(ignored)} line comment(s) by people without write access "
+                      f"to this repository ({names}). Someone with write access can repeat what "
+                      "they ask._"]
     if not_done:
         lines += ["", "_Nothing was recorded as handled: re-run this workflow run, or comment "
                       "`/fix`, once the budget allows - every comment above is taken again._"]
@@ -439,8 +512,13 @@ def run(pr_number: int, review_id: int | None = None, comment_id: int | None = N
     if handled(earlier, key):
         return {**result, "status": "skipped", "reason": f"{key} was handled before"}
 
+    ignored: list = []
     items = collect_items(host, pr_number, review_id, strip_command(text, cfg["command"]),
-                          handled_comment_ids(earlier))
+                          handled_comment_ids(earlier), ignored)
+    also = unhandled_requests(host, pr_number, key, earlier, cfg["command"])
+    for k, t in also:
+        if t:
+            items.append(Item(len(items) + 1, t, source=k))
     if not items:
         return {**result, "status": "skipped", "reason": "nothing to act on"}
 
@@ -508,7 +586,8 @@ def run(pr_number: int, review_id: int | None = None, comment_id: int | None = N
 
     for o in outcomes:
         _reply(host, pr_number, o, bool(pushed))
-    host.post_pr_comment(pr_number, summary_comment(key, outcomes, pushed, problem, not_done))
+    host.post_pr_comment(pr_number, summary_comment(key, outcomes, pushed, problem, not_done,
+                                                    [k for k, _t in also], ignored))
 
     usage = log_usage_summary(f"PR #{pr_number} review fix")
     reset_usage()
