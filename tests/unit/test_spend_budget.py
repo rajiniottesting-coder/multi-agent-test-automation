@@ -467,7 +467,7 @@ def test_the_budget_block_is_shipped():
     from core.ops_settings import DEFAULTS
     shipped = yaml.safe_load(CONFIG_YAML.read_text(encoding="utf-8"))["budget"]
     assert set(shipped) == set(DEFAULTS["budget"])
-    assert (shipped["per_story_usd"], shipped["per_day_usd"], shipped["warn_at"]) == (8, 12, 0.5)
+    assert (shipped["per_story_usd"], shipped["per_day_usd"], shipped["warn_at"]) == (8, 35, 0.5)
 
 
 def test_agent5_cost_line():
@@ -486,6 +486,7 @@ def test_agent5_cost_line():
 def test_the_health_view_and_housekeeping(monkeypatch, world):
     from scripts import pipeline_health_check as script
     fake, jira = world
+    _limits(monkeypatch, per_day_usd=12.0)      # independent of the shipped value
     now = dt.datetime.now(dt.timezone.utc)
     ph.record(jira, "spend", [_today(), 2_500_000], {})
     ph.record(jira, "spend", ["20000101", 1], {})
