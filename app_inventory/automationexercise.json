@@ -307,6 +307,25 @@
         "contact_submit_button": "Submitting opens a native browser confirmation dialog ('Press OK to proceed!'): call accept_next_dialog() BEFORE clicking, or the submit waits forever.",
         "contact_email_input": "Required (browser validation): with it empty the browser blocks the submit, so no dialog opens and no success message is shown."
       }
+    },
+    "test_cases": {
+      "url": "/test_cases",
+      "components": [
+        "Test Cases"
+      ],
+      "planned_page": true,
+      "elements": {
+        "test_cases_heading": "h2.title.text-center",
+        "test_case_titles": ".panel-group .panel-title a",
+        "test_case_steps": ".panel-collapse .list-group-item",
+        "test_case_search_input": "#search_test_cases"
+      },
+      "planned": [
+        "test_cases_heading",
+        "test_case_titles",
+        "test_case_steps",
+        "test_case_search_input"
+      ]
     }
   },
   "_starting_state": {
