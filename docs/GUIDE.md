@@ -141,7 +141,10 @@ A person with write access asks for a change on Agent 2's open pull request - a
 not handled yet - "Add single comment" posts each line comment as a review of
 its own - and its text), or a comment
 **`/fix <what to change>`** - every inline comment not handled yet, plus that
-text (a bare `/fix` takes the inline comments alone). Bots never trigger it.
+text (a bare `/fix` takes the inline comments alone). A person's **reply in a
+thread** counts as a comment of its own - iterate by answering in the thread,
+then `/fix`; Agent 2 answers in that thread. Bots never trigger it, and Agent
+2's own replies are never read as requests.
 1. One structured call (`ReviewFixPlan`, `prompts/agent2_review_triage.md`)
    decides per comment: **fix**, **decline** or **no_change**. The approved test
    cases are the specification: a comment about how the code checks them is
