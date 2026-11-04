@@ -4,6 +4,20 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — tests own their settings; a refused story names its errors (#288)
+
+**Why:** step B5 of the validation sets `reconcile.closed_scans: 1`, and nine unit tests went red because they read the shipped config; and SCRUM-292 (4 Nov 2026) was refused with a one-line summary blaming the method names, while the eight errors under it - two of them methods a reserved page object lacks - never reached the person.
+
+- Reconcile tests fix the scan count they walk (`pin_closed_scans`); the Agent 0 settings guard checks every key is present with a value of the right kind, not its value
+- Agent 0's report writes its table only when there are rows ("Affected: 0" had an empty header)
+- Every specific final-gate check in Agent 2 raises `GateFailure` with its errors: the `[agent2:blocked]` comment and the review fix's refusal list them
+- `core.blocked`: a method a reserved page object lacks is listed (`<Class>.<method>`, file) with a person's step - add it or reword the test case - instead of "the test case asks what the application cannot show"
+- Each file the final gate refuses is printed in a folded group of the run log, workflow commands stopped while it prints
+- `config.yaml`: `reconcile.closed_scans: 1` for B5 (back to 2 after Run B)
+- Tests in `test_run_b_findings.py`, `test_run_c_findings.py`; TEST_TRACK E80-E82. Not tested live yet: E81, E82
+
+---
+
 ## November 2026 — a start never cancels a run already waiting to start; a yes/no predicate is not a misnamed reader (#285)
 
 **Why:** the repository host keeps one waiting run per workflow: a second start replaces the first, cancelled without a word. On 4 Nov 2026 a run started by hand for SCRUM-296, and a run Agent 0's hand-off started, were both cancelled by later hand-off starts.
