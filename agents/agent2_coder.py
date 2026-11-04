@@ -3167,6 +3167,29 @@ def _print_dry_run_preview(output: CodeGenerationOutput) -> None:
             print(f"   ... (and {len(lines) - 30} more lines)")
 
 
+_CALL = re.compile(r"\.(\w+)\s*\(")
+
+
+def methods_called_in_open_prs(host, dirs=("tests/", "pages/")) -> set | None:
+    """Every method name an open pull request's added lines call (`.name(`),
+    in its step definitions and page objects. None when the open pull
+    requests cannot be read - the caller then orphans nothing."""
+    found: set = set()
+    try:
+        for pr in host.list_open_prs(strict=True):
+            for f in host.get_pr_changed_files(pr["number"]) or []:
+                if not str(f.get("filename", "")).startswith(dirs):
+                    continue
+                for line in (f.get("patch") or "").splitlines():
+                    if line.startswith("+") and not line.startswith("+++"):
+                        found |= set(_CALL.findall(line))
+    except Exception as e:                                         # noqa: BLE001
+        logger.warning(f"Open pull requests could not be read ({e}); no page method "
+                       "is orphaned this run.")
+        return None
+    return found
+
+
 def unchanged_files_dropped(host, files) -> tuple:
     """(files to commit, paths left out): an existing file whose generated
     content equals main's is left out. A file that cannot be read is kept."""
@@ -4266,6 +4289,15 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
 
             reserved = {"pages/base_page.py"}  # universal helpers — never orphan
 
+            # A page method no step definition on main calls may still be
+            # called by a story in flight (4 Nov 2026: an owner's update
+            # orphaned a method an open story pull request had just started
+            # using). Unreadable open pull requests: no page method is
+            # orphaned this run.
+            called_in_prs = methods_called_in_open_prs(gh)
+            if called_in_prs is None:
+                page_object_files = {}
+
             (
                 _,
                 updated_pages,
@@ -4278,6 +4310,7 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
                 step_def_files=all_step_def_files,
                 page_object_files=page_object_files,
                 reserved_file_paths=reserved,
+                called_elsewhere=called_in_prs or set(),
             )
 
             # If any page object files were modified, record them for the PR.

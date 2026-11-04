@@ -506,8 +506,13 @@ def cleanup_orphans_after_removal(
     step_def_files: dict[str, str],
     page_object_files: dict[str, str],
     reserved_file_paths: Optional[set[str]] = None,
+    called_elsewhere: Optional[set[str]] = None,
 ) -> tuple[dict[str, str], dict[str, str], list[OrphanStepDef], list[OrphanPageMethod]]:
     """Find and comment out orphan step defs and page methods.
+
+    `called_elsewhere`: method names that code not on main calls - an open
+    pull request's step definitions. Such a method is not an orphan: the
+    story in flight would break once both merge.
 
     Top-level entry point. Call this from run_update() AFTER removing
     orphan scenarios from the feature file.
@@ -566,6 +571,11 @@ def cleanup_orphans_after_removal(
         step_def_files=step_def_files,
         page_object_files=examinable_pages,
     )
+    kept = [m for m in orphan_methods if m.method_name in (called_elsewhere or set())]
+    if kept:
+        logger.info("Orphan page-method detection: kept %s - an open pull request calls them.",
+                    sorted(f"{m.class_name}.{m.method_name}" for m in kept))
+        orphan_methods = [m for m in orphan_methods if m not in kept]
     logger.info(
         f"Orphan page-method detection: {len(orphan_methods)} found."
     )
