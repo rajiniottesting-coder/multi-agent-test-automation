@@ -15,6 +15,12 @@ the heading (test_cases_heading), which is present in every state the page can
 be in — there is no search-driven view that replaces it, and only the title /
 step lists change when a title is clicked.
 
+NOTE on the heading's case (SCRUM-293): the page renders the heading in capitals
+via CSS (text-transform), so the DOM text reads "TEST CASES" while the test case
+says "Test Cases". heading_matches() therefore compares case-insensitively; the
+raw heading_text() reader is left unchanged for any caller that wants the exact
+rendered text.
+
 NOTE on the "Feedback for Us" section (SCRUM-312): the inventory for the
 `test_cases` page lists NO element for the Feedback section or its email
 address. There is therefore no legal selector to read it, so that part of
@@ -61,9 +67,23 @@ class TestCasesPage(BasePage):
         return self.is_showing(self.sel("test_cases_heading"), timeout_ms=timeout_ms)
 
     def heading_text(self) -> str:
-        """Visible text of the page heading. WAITS for it to appear."""
+        """Visible text of the page heading. WAITS for it to appear.
+
+        Returns the raw rendered text, which CSS renders in capitals
+        ("TEST CASES"). Use heading_matches() when comparing against an
+        expected heading that is not upper-cased.
+        """
         self.wait_visible(self.sel("test_cases_heading"))
         return self.get_text(self.sel("test_cases_heading"))
+
+    def heading_matches(self, expected: str) -> bool:
+        """True if the page heading matches `expected`, ignoring letter case.
+
+        The heading is rendered in capitals via CSS, so the DOM text differs
+        from the test case ("TEST CASES" vs "Test Cases") in case only. WAITS
+        for the heading, then compares case-insensitively.
+        """
+        return self.heading_text().strip().casefold() == expected.strip().casefold()
 
     def has_title_links(self) -> bool:
         """True once at least one test case title link is rendered. WAITS.
