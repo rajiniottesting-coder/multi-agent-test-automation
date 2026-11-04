@@ -152,3 +152,15 @@ class ProductsPage(BasePage):
         """
         self.wait_for_any(self.sel("product_cards"), present=False)
         return True
+
+    def wait_for_product_in_results(self, product_name: str, timeout_ms: Optional[int] = None) -> bool:
+        """True once a card for `product_name` is in the search results. WAITS.
+
+        The search reloads the page, so the result cards are still settling at
+        the moment this is asked. Waiting for the card that contains the name
+        avoids snapshotting the name family before the response lands. Scopes
+        to the card family rather than negating a presence probe, so it answers
+        the positive 'is this product in the results?' case directly.
+        """
+        self.wait_for_row(self.sel("product_cards"), product_name, present=True, timeout_ms=timeout_ms)
+        return True
