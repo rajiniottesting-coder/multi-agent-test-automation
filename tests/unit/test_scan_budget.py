@@ -172,3 +172,30 @@ def test_main_runs_a_keyed_story_in_its_mode(monkeypatch):
     called.clear()
     a2.main()
     assert called == [("run", "A-1", {"dry_run": False, "is_regenerate": True})]
+
+
+def test_a_provider_refusal_stops_the_scan_red(monkeypatch):
+    from core.spend_budget import PROVIDER, BudgetExceeded
+    ran, summary, code = [], [], None
+    tracker = MagicMock()
+    tracker.find_stories_to_process.side_effect = [S("A-1", "A-2", "A-3"), [], []]
+    monkeypatch.setattr(a2, "get_tracker", lambda: tracker)
+    monkeypatch.setattr(a2, "validate_required_env", lambda *a: None)
+    monkeypatch.setattr(a2, "load_agent_config", lambda: {
+        "selection": {"x": 1}, "regenerate_selection": {"x": 1}, "update_selection": {"x": 1},
+        "max_stories_per_run": 5, "scan_deadline_minutes": 12})
+
+    def run(key, **kw):
+        ran.append(key)
+        if key == "A-2":
+            raise BudgetExceeded(PROVIDER, "the provider refuses")
+        return {"story_id": key, "status": "pr_opened"}
+    monkeypatch.setattr(a2, "run", run)
+    monkeypatch.setattr(a2, "_print_scan_summary", lambda r: summary.extend(r))
+    monkeypatch.setattr(sys, "argv", ["agent2", "--scan"])
+    with pytest.raises(SystemExit) as out:
+        a2.main()
+    assert out.value.code == 1 and ran == ["A-1", "A-2"]
+    assert [(r["story_id"], r["status"]) for r in summary] == [
+        ("A-1", "pr_opened"), ("A-2", "failed"), ("A-3", "deferred")]
+    assert "provider refuses" in summary[-1]["error"]

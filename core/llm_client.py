@@ -70,6 +70,23 @@ def _is_quota_error(exc: Exception) -> bool:
     return "429" in msg or "rate" in msg or "quota" in msg or "resource_exhausted" in msg
 
 
+# A provider refusing a call for money, not for rate: its key's credit or
+# budget is used up. Waiting does not help; a person raises it.
+_CREDIT_REFUSAL = ("payment required", "insufficient_quota", "insufficient credit",
+                   "insufficient balance", "budget has been exceeded", "exceededbudget",
+                   "budget exceeded", "credit balance is too low")
+
+
+def _is_credit_refusal(exc: Exception) -> bool:
+    """HTTP 402, or a provider's credit / budget message (4 Nov 2026: the
+    gateway answered 402 Payment Required to every call; the scan failed story
+    after story with a traceback each)."""
+    if getattr(exc, "status_code", None) == 402:
+        return True
+    msg = str(exc).lower()
+    return "error code: 402" in msg or any(m in msg for m in _CREDIT_REFUSAL)
+
+
 def _strip_markdown_fences(text: str) -> str:
     """Remove markdown code fences (```json ... ```) if the model wrapped its output.
 
@@ -664,6 +681,12 @@ class LLMClient:
         try:
             return callable_fn(*args, **kwargs)
         except Exception as e:
+            if _is_credit_refusal(e):
+                raise spend_budget.BudgetExceeded(spend_budget.PROVIDER, (
+                    f"The model provider refuses calls for model '{self.model_name}': the "
+                    "key's own credit or budget is used up. No model call can run until a "
+                    "person raises it with the provider (budget.per_day_usd is a different "
+                    f"limit and does not help). Original error: {e}")) from e
             if _is_quota_error(e):
                 raise QuotaExhaustedError(
                     f"LLM API rate limit / quota exhausted for model '{self.model_name}'. "

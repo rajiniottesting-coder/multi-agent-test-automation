@@ -540,3 +540,71 @@ def test_a_held_story_is_not_selected_again_until_the_label_goes(monkeypatch, wo
     assert STORY not in picked()
     fake.issues[STORY]["labels"].remove("budget-hold")
     assert STORY in picked()
+
+
+# ── F29: the provider refusing for money stops the run, red ─────────────
+
+class _Refused(Exception):
+    def __init__(self, msg, status_code=None):
+        super().__init__(msg)
+        self.status_code = status_code
+
+
+@pytest.mark.parametrize("error", [
+    _Refused("Error code: 402", status_code=402),
+    _Refused("Error code: 402 - Payment Required"),
+    _Refused("Error code: 400 - {'error': 'Budget has been exceeded! Current cost: 50'}"),
+    _Refused("Error code: 429 - insufficient_quota: You exceeded your current quota")])
+def test_a_provider_refusing_for_money_stops_the_run(error, monkeypatch):
+    """4 Nov 2026: the gateway answered 402 Payment Required to every call; the
+    scan failed story after story, each with a traceback."""
+    monkeypatch.setattr(sb, "check_before_call", lambda: None)
+    client = llm_client.LLMClient.__new__(llm_client.LLMClient)
+    client.model_name = "m"
+    with pytest.raises(sb.BudgetExceeded) as stop:
+        client._call_with_quota_check(lambda: (_ for _ in ()).throw(error))
+    assert stop.value.scope == sb.PROVIDER and stop.value.stops_the_run
+    assert "raises it with the provider" in str(stop.value)
+
+
+def test_a_rate_limit_is_still_a_quota_error_and_a_story_stop_does_not_stop_the_run(monkeypatch):
+    monkeypatch.setattr(sb, "check_before_call", lambda: None)
+    client = llm_client.LLMClient.__new__(llm_client.LLMClient)
+    client.model_name = "m"
+    with pytest.raises(llm_client.QuotaExhaustedError):
+        client._call_with_quota_check(
+            lambda: (_ for _ in ()).throw(_Refused("Error code: 429 - rate limit", 429)))
+    assert not sb.BudgetExceeded("story", "x").stops_the_run
+    assert sb.BudgetExceeded("day", "x").stops_the_run
+
+
+def test_agent1_scan_stops_red_when_the_provider_refuses(monkeypatch, capsys):
+    import agents.agent1_analyst as a1
+    tracker = SimpleNamespace(find_stories_to_process=lambda *a, **k: [
+        {"key": "A-1", "status": "To Do", "summary": "s"},
+        {"key": "A-2", "status": "To Do", "summary": "s"}])
+    monkeypatch.setattr(a1, "get_tracker", lambda: tracker)
+    monkeypatch.setattr(a1, "validate_required_env", lambda *a: None)
+    ran = []
+
+    def run(key, dry_run=False):
+        ran.append(key)
+        raise sb.BudgetExceeded(sb.PROVIDER, "the provider refuses")
+    monkeypatch.setattr(a1, "run", run)
+    monkeypatch.setattr(a1, "hand_back", lambda *a, **k: pytest.fail("never handed back"))
+    monkeypatch.setattr(sys, "argv", ["agent1", "--scan"])
+    with pytest.raises(SystemExit) as out:
+        a1.main()
+    assert out.value.code and ran == ["A-1"]
+    assert "[BUDGET] the provider refuses" in capsys.readouterr().out
+
+
+def test_agent0_scan_raises_a_provider_refusal_to_main(monkeypatch):
+    import agents.agent0_impact as a0
+    tracker = SimpleNamespace(find_stories_to_process=lambda *a, **k: [{"key": "A-1"}, {"key": "A-2"}])
+    monkeypatch.setattr(a0, "analyse_and_publish", lambda *a, **k: (_ for _ in ()).throw(
+        sb.BudgetExceeded(sb.PROVIDER, "the provider refuses")))
+    with pytest.raises(sb.BudgetExceeded) as stop:
+        a0.scan(tracker, None, None, {"enabled": True, "shadow_mode": False, "selection": {}},
+                root=".")
+    assert stop.value.scope == sb.PROVIDER

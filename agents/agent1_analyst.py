@@ -684,8 +684,14 @@ def main():
                 # F-24: a held story needs a person (red once, then no longer
                 # selected); the daily budget stops the scan until tomorrow.
                 logger.error(f"{story['key']}: {stop}")
-                if stop.scope == "day":
+                if stop.stops_the_run:
                     print(f"[BUDGET] {stop} The remaining stories wait for the next scan.")
+                    if stop.scope == "day":
+                        break
+                    results.append({                      # a provider refusal: red
+                        "story_id": story["key"], "story_summary": story["summary"],
+                        "test_cases_generated": 0, "test_case_keys": [],
+                        "status": "failed: model provider refuses calls"})
                     break
                 results.append({
                     "story_id": story["key"],
