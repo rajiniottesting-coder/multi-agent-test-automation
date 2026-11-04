@@ -160,7 +160,9 @@ in ten turned PRs red with no record of it.
 
 - A person watches one issue instead of the Actions tab.
 - The nightly run costs browser minutes, no model calls; the health check
-  costs one one-token call per run (or none with `model_check: models`).
+  costs one short call per model the agents use (or none with `model_check:
+  models`); it asks the output room the agents ask, so a provider that refuses
+  a request its remaining credit cannot cover refuses the probe too (#291).
 - Concurrent runs can overshoot the daily budget by what each spends (L36);
   stopping earlier would need a lock the tracker does not offer.
 - A test failing with a new cause opens a new defect; the old one waits for a

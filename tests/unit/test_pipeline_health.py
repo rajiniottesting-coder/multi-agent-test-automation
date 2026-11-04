@@ -307,7 +307,9 @@ def test_the_model_check_completion(monkeypatch):
 
     class Client:
         def __init__(self, temperature, max_output_tokens):
-            assert max_output_tokens == 1
+            # the room the agents ask for: a provider may refuse a request it
+            # cannot cover from max_tokens (E89)
+            assert max_output_tokens == llm_client._code_gen_max_output_tokens("")
             self.llm = SimpleNamespace(invoke=lambda m: SimpleNamespace(usage_metadata={
                 "input_tokens": 5, "output_tokens": 1}))
 

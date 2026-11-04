@@ -1753,7 +1753,7 @@ rewritten on each change - edits to it are not kept.
 | Alert id | Opened by | Means | Closes when |
 |---|---|---|---|
 | `workflow-failing:<file>` | health check | a scheduled workflow failed `consecutive_failures` scheduled runs in a row | its next scheduled run succeeds, or the workflow is no longer scheduled |
-| `credential:repo-host`, `credential:model` | health check | the repo host token, or the model key, was refused (a spent key budget included, with `model_check: completion`) | the next check succeeds |
+| `credential:repo-host`, `credential:model` | health check | the repo host token, or the model key, was refused (a spent key budget included, with `model_check: completion` - each model in `LLM_MODELS_TO_CHECK`, asking the output room the agents ask) | the next check succeeds |
 | `credential-expiry:repo-host` | health check | the token expires within `expiry_warn_days` (where GitHub gives the date) | a new token is further away, or has no expiry |
 | `application-unavailable-on-main` | triage | tests on `main` could not run: the application was unavailable - including a night the health check found it not itself, with what was served instead | the next run on `main` without an outage |
 | `defects-unmapped` | triage | defects nothing traces to a test case or a story, or traced to an issue that no longer exists | a run on `main` with no untraced defect |
