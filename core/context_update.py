@@ -71,6 +71,7 @@ class Proposal:
     rewrites: list = field(default_factory=list)    # {"path","before","after","reason"}
     declared_removed: list = field(default_factory=list)  # ["page.key"] added to `removed`
     outside: list = field(default_factory=list)     # {"old","path","where"} left alone: out of scope
+    note: str = ""                                  # how the scope was chosen, when not by the story
 
     @property
     def empty(self) -> bool:
@@ -482,6 +483,7 @@ def _cell(text: str, limit: int = 120) -> str:
 
 def render_body(story_key: str, prop: Proposal) -> str:
     lines = [f"Context update proposed by Agent 0 for **{story_key}**.", "",
+             *([f"_{prop.note}_", ""] if prop.note else []),
              "**Merge only after the change is deployed.** Before that, a selector below "
              "no longer matches the live application. Re-run this PR's checks after "
              "deployment; the nightly inventory check also confirms the selectors.", "",
@@ -621,8 +623,17 @@ def extract_note_rewrites(llm, story: dict, story_key: str, sources: dict, pages
 NEW_BEHAVIOUR = "new_behaviour"
 
 
+def seed_pages(seeds: dict | None) -> list:
+    """The inventory pages Agent 0's impact analysis found the story changes:
+    the page of each `page:key` element seed, and each page seed."""
+    seeds = seeds or {}
+    pages = [e.split(":", 1)[0].strip() for e in seeds.get("elements") or [] if ":" in str(e)]
+    pages += [str(p).strip() for p in seeds.get("pages") or []]
+    return sorted({p for p in pages if p})
+
+
 def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: Path,
-                      change_type: str | None = None) -> dict:
+                      change_type: str | None = None, seeds: dict | None = None) -> dict:
     """Propose the context update for one change story, once.
 
     `change_type` is Agent 0's classification of the story (ChangeSeeds). A
@@ -633,7 +644,14 @@ def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: 
     correct, fuller note to the story's own sentence (found in validation,
     3 Nov 2026 - see CHANGES.md, #247). What such a story ADDS reaches the
     notes when its tests merge (propose_addition_for_story). Any other value,
-    or none (an older report, another trigger), runs the update as before."""
+    or none (an older report, another trigger), runs the update as before.
+
+    `seeds` - the report's `seeds` (`elements` as `page:key`, `pages`). A story
+    with no Component is scoped by the pages they name, through each page's
+    `components` in the inventory: a control repeated on several pages, changed
+    on one, then changes there only, instead of being listed for a person.
+    Without seeds (an older report) a story with no Component is judged as
+    before: text in one part is changed, text in several is listed."""
     cfg = settings.get("context_update") or {}
     if not cfg.get("enabled", False):
         return {"story": story_key, "context": "disabled"}
@@ -650,7 +668,15 @@ def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: 
                             f"\n(story: {chash})")
         return {"story": story_key, "context": "none", "why": NEW_BEHAVIOUR}
     sources = context_sources(root)
-    offered, pages = scoped_sources(sources, story.get("components") or [], root)
+    components, note = story.get("components") or [], ""
+    if not components:
+        inventory = next((json.loads(t) for p, t in sources.items() if p.endswith(".json")), {})
+        components, used = components_of_pages(inventory, seed_pages(seeds))
+        if components:
+            note = (f"The story has no Component; Agent 0's impact analysis found it changes the "
+                    f"inventory page(s) {', '.join(used)}, so the update covers "
+                    f"{', '.join(components)}.")
+    offered, pages = scoped_sources(sources, components, root)
     changes = extract_changes(llm, story)
     try:
         rewrites, removed = extract_note_rewrites(llm, story, story_key, offered, pages)
@@ -662,12 +688,14 @@ def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: 
         unchecked = f"\nBehaviour notes were not checked ({type(e).__name__})."
     prop = propose(sources, changes, code_sources(root), rewrites, set(offered), removed, pages,
                    narrowed=_narrowed(sources, offered, pages))
+    prop.note = note
     if prop.empty:
         tracker.add_comment(story_key, f"{MARKER} No context update needed: the story replaces "
                             "no wording, makes no passage untrue and removes no element, in the "
                             "inventory or the context notes."
                             + ("".join(f"\nNot applied: {o} -> {n} ({why})"
                                        for o, n, why in prop.dropped)) + unchecked
+                            + (f"\n{note}" if note else "")
                             + f"\n(story: {chash})")
         return {"story": story_key, "context": "none"}
     url = open_pull_request(host, story_key, prop, cfg.get("branch_prefix", "context-update/"))
@@ -1033,10 +1061,16 @@ def components_from_tests(root: Path, keys, inventory: dict) -> tuple[list, list
                 m = _INVENTORY_PAGE.search(ast.get_source_segment(source, node) or "")
                 if m:
                     by_fixture[re.sub(r"(?<!^)(?=[A-Z])", "_", node.name).lower()] = m.group(1)
+    return components_of_pages(inventory, [by_fixture.get(fx) for fx in sorted(fixtures)])
+
+
+def components_of_pages(inventory: dict, names) -> tuple[list, list]:
+    """(Components, pages): the inventory `components` of each named page, in
+    order, and the pages that gave them. `always` pages (the menu - every
+    story uses them) and names that are not inventory pages are left out."""
     page_map = (inventory or {}).get("pages") or {}
     pages, comps = [], []
-    for fx in sorted(fixtures):
-        name = by_fixture.get(fx)
+    for name in names or []:
         spec = page_map.get(name) if name else None
         if not isinstance(spec, dict) or spec.get("always"):
             continue

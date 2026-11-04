@@ -299,7 +299,8 @@ def _propose_context(tracker, host, llm, story_key: str, settings: dict, root: P
                                "read (%s) - change type unknown.", story_key, e)
                 report = None
         out = propose_for_story(tracker, host, llm, story_key, settings, Path(root),
-                                change_type=(report or {}).get("change_type"))
+                                change_type=(report or {}).get("change_type"),
+                                seeds=(report or {}).get("seeds"))
         return {"context": out.get("context"), "context_pr": out.get("url")}
     except Exception as e:                                         # noqa: BLE001
         logger.error("context update for %s failed: %s", story_key, e, exc_info=True)
