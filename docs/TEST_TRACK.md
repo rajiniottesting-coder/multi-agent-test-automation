@@ -251,6 +251,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E45b | #248 | Three or more stories released to ai-ready at once (or labelled by hand, then Agent 1 run once) | Agent 1 takes 2, then starts itself again (`chain` 2) for the rest; no run when none waits | ⬜ | |
 | E45c | #248 | An Agent 0 run with nothing released, and an Agent 1 run that fails | "no story waits for it" - nothing started; the failed Agent 1 run has no hand-off step run (the schedule retries) | ⬜ | |
 | E45d | #248 | Optional: the Jira Automation rule on `human-approved` (GUIDE, "Hand-off between agents") | Approving a story starts Agent 2 (event `repository_dispatch`) within a minute, in scan mode | ⬜ | |
+| E54 | #260 | Re-run *Post Results to Jira* on PR #251's latest run (or the next report on any story that already has one) | Agent 5 posts (or says "Same commit and the same results ... not posted again"); no PropertyHolder error | ⬜ | |
 | E53 | #259 | PR #251: the reply "compare for equality" in the line-52 thread, then `/fix` | The reply is taken (the thread's first comment is not taken again); Agent 2 answers in that thread; only the step definition changes | ⬜ | |
 | E52 | #258 | PR #251 after the reset: one line comment on `assert_review_confirmation` ("compare for exact equality"), then `/fix` | Only the step definition changes; the feature file's markers (`hash:` and `owner: SCRUM-283`) and titles are untouched; a comment asking to drop what a test case states would be declined with "update the test case, then ai-regenerate" | ⬜ | |
 | E51 | #257 | PR #251 after the budget reset: comment `/fix` (or re-run the stopped review-fix run) | Both line comments are taken (made with "Add single comment"), Agent 2 pushes, replies in each thread; the earlier budget-stopped summary reads `[agent2:review-fix:not-done]` style from now on | ⬜ | |
@@ -331,6 +332,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
+| #260 | A Jira issue property reads back as the JSON that was stored | | E54 | Real SDK class in the tests |
 | #259 | Review fix reads a person's reply in a thread | | E53 | |
 | #258 | Review fix keeps scenarios through the repair; declines dropping an approved check | | E52 | |
 | #257 | Review fix: earlier line comments; a budget stop records nothing | | E51 | |

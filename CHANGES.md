@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a Jira issue property reads back as the JSON that was stored (#260)
+
+**Why:** Agent 5's second report on SCRUM-283's pull request (4 Nov) crashed - "'PropertyHolder' object has no attribute 'get'" - reading its own last-report fingerprint; *Post Results to Jira* went red with every test passing. The jira SDK parses an object value into a PropertyHolder (attributes, no `.get()`), and `JiraClient.get_property()` returned it. Every reader that treats the value as the dict it stored was affected: Agent 5's repeat check crashed; the flaky-test names and Agent 0's outcome check fell back silently (their reads are wrapped).
+
+- `integrations/jira_client.get_property()`: the value from the response's raw JSON (dict, list, str, number), as stored; a missing property is None, other errors raise, as before
+- `tests/unit/test_jira_property_values.py` (9) against the SDK's real `IssueProperty`, including Agent 5's `_last_report()` and a test that fails if the SDK stops wrapping; the old method fails 3 of them
+- Not tested live yet: E54
+
+---
+
 ## November 2026 — review fix reads a person's reply in a thread (#259)
 
 **Why:** iterating on SCRUM-283's pull request (4 Nov), the reviewer answered in the existing thread - the usual way to ask again. `get_review_comments()` left every reply out, and the thread's first comment was already handled, so `/fix` would have found nothing to act on.
