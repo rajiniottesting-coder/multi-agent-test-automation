@@ -851,7 +851,7 @@ def _run_mode(args, ap, settings, tracker, host, uncovered) -> int:
         elif _posted_on_pr(host, args.pr, report["content_hash"]):
             print(f"PR #{args.pr}: unchanged since the last report")   # stage 0
         else:
-            host.post_pr_comment(args.pr, body)
+            host.post_pr_comment(args.pr, for_pull_request(body))
         return 0
     drift = json.loads(Path(args.drift_report).read_text(encoding="utf-8"))
     report = analyse_drift(drift, PROJECT_ROOT, settings, tracker, host)
@@ -890,6 +890,30 @@ def _drift_components(report: dict, root: Path) -> list:
     graph, _sha = load_graph(root)
     pages = {e.split(":", 1)[0] for e in report["seeds"]["elements"]} | set(report["seeds"]["pages"])
     return sorted({c for p in pages for c in graph.page_components.get(p, ())})
+
+
+def for_pull_request(body: str) -> str:
+    """The report in the repository host's markdown. It is written in the
+    tracker's markup - a `||Tier||...||` header row and a `{code:json}` data
+    block - which a pull request shows as raw text (4 Nov 2026). The header
+    row gets its separator row; the data block becomes a fenced block folded
+    away under a summary. The first line, which the repeat check reads, is
+    kept as it is."""
+    lines = []
+    for line in body.split("\n"):
+        if line.startswith("||") and line.endswith("||"):
+            cells = [c for c in line.strip("|").split("||")]
+            lines += ["| " + " | ".join(cells) + " |", "|" + "---|" * len(cells)]
+        else:
+            lines.append(line)
+    text = "\n".join(lines)
+    start = text.find(ia.REPORT_OPEN)
+    end = text.rfind(ia.REPORT_CLOSE)
+    if start != -1 and end > start:
+        text = (text[:start] + "<details><summary>Agent 0 data</summary>\n\n```json"
+                + text[start + len(ia.REPORT_OPEN):end] + "```\n</details>"
+                + text[end + len(ia.REPORT_CLOSE):])
+    return text
 
 
 def _posted_on_pr(host, pr_number: int, chash: str) -> bool:
