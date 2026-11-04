@@ -402,6 +402,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
+| #276 | What validation Runs A and B found: truncation evidence, a failed draft handed back, existing scenarios shown, an unchanged planned file not claimed, orphan clean-up vs the page-object contract, labelled stories told why they wait, `force`, markdown PR report, selectors for the judge, no invented quotes, the changed part of a rewrite | | E59-E69 | 13 deliberate breaks, one per fix |
 | #267 | A notes change touches only the story's own pages; the small backlog | | E57 | Real-data check of both flows before Run A |
 | #265 | A scenario opens a page before it acts on one; Agent 3 sees the page-object methods a pull request calls; a notes change reaches only its page; several reviewers on one pull request | | E56, E57, E58 | Agent 2's check proven on SCRUM-284's branch before and after its fix |
 | #262 | The hand-off restarts an agent only after progress; the top menu reaches the contact page | | E55 | |

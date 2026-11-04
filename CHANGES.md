@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — what Run B of the validation found (#PRNUM)
+## November 2026 — what Run B of the validation found (#276)
 
 **Why:** Run B drove SCRUM-291 and SCRUM-296 through the agents on 4 Nov 2026. The flaws it found, with those from Run A, were each a place where something went wrong without anything saying so or stopping it. Some were silent: a story never selected, a truncated answer with no evidence, a PR table whose two cells read the same. Some repeated: a failed draft paid for every 30 minutes. Some were contradictions: the orphan clean-up against the page-object contract, a quote the story never stated, a copy of an existing test.
 
