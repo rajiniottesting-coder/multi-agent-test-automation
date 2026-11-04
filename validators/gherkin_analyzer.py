@@ -736,6 +736,14 @@ def _decorators_from_ast(step_def_content: str):
     (SCRUM-284, 3 Nov 2026). A decorator with keyword arguments
     (target_fixture=...) was not seen at all. The parser joins the pieces,
     resolves escapes and drops comments, exactly as at runtime."""
+    found = step_functions(step_def_content)
+    return None if found is None else [(kind, phrase, ptype) for kind, phrase, ptype, _f in found]
+
+
+def step_functions(step_def_content: str):
+    """[(kind, phrase, parser_type, function node)] in source order - the step
+    decorators with the function each registers - or None if the file does
+    not parse. Read as _decorators_from_ast reads them."""
     try:
         tree = ast.parse(step_def_content)
     except (SyntaxError, ValueError):
@@ -750,14 +758,14 @@ def _decorators_from_ast(step_def_content: str):
             arg = dec.args[0] if dec.args else next(
                 (k.value for k in dec.keywords if k.arg in ("name", "step_name")), None)
             if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                found.append((dec.lineno, _callee(dec.func), arg.value, "string"))
+                found.append((dec.lineno, _callee(dec.func), arg.value, "string", node))
             elif (isinstance(arg, ast.Call) and _callee(arg.func) in _PARSER_KINDS
                   and arg.args and isinstance(arg.args[0], ast.Constant)
                   and isinstance(arg.args[0].value, str)):
                 found.append((dec.lineno, _callee(dec.func), arg.args[0].value,
-                              _callee(arg.func)))
+                              _callee(arg.func), node))
     found.sort(key=lambda d: d[0])
-    return [(kind, phrase, ptype) for _line, kind, phrase, ptype in found]
+    return [(kind, phrase, ptype, node) for _line, kind, phrase, ptype, node in found]
 
 
 def _phrase_matches(feature_phrase: str, decorator_phrase: str, parser_type: str) -> bool:

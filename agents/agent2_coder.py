@@ -57,6 +57,7 @@ from core.board_status import move_card_for_label
 from integrations.repo_host import get_repo_host
 from validators.import_validator import validate_imports_resolvable
 from validators.page_object_contract import validate_extended_page_objects_keep_methods
+from validators.opening_step import validate_scenarios_open_a_page_first
 from validators.method_resolution_validator import (
     pages_missing_from_inventory,
     validate_method_resolution,
@@ -2750,6 +2751,9 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     errors.extend(validate_row_index_is_not_a_cell_index(generated_files, PROJECT_ROOT))
     errors.extend(validate_examples_hold_data_not_placeholders(generated_files))
     errors.extend(validate_fills_confirm_their_page(generated_files, PROJECT_ROOT))
+    # Every test starts on an empty page: a scenario's first step opens one
+    # before acting (validators/opening_step.py).
+    errors.extend(validate_scenarios_open_a_page_first(generated_files, PROJECT_ROOT))
     # Two stories editing one page object branch from main independently, so
     # neither sees the other's work and both may add their own name for one
     # behaviour. Git merges the additions cleanly when they land apart, and
