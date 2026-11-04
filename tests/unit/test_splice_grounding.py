@@ -245,3 +245,44 @@ def test_run_hands_its_files_to_the_owner_splice():
     calls = [c for c in ast.walk(run) if isinstance(c, ast.Call)
              and ast.unparse(c.func).endswith("splice_owner_files")]
     assert calls and all(any(k.arg == "batch_files" for k in c.keywords) for c in calls)
+
+
+# ── 5. a step no page-object method checks is never given another check ─
+
+NEEDS = '''@then(parsers.parse('the basket should list "{name}" with count {n:d}'))
+def _(widget_page, name, n):
+    raise NotImplementedError("needs a page-object method: the count of a named item")
+'''
+
+
+def test_the_writer_is_told_not_to_substitute_an_unrelated_check():
+    llm = ScriptedLLM(GOOD)
+    _splice(llm)
+    assert "do NOT substitute one that checks something else" in llm.prompts[0]
+    assert coder.NEEDS_PAGE_METHOD in llm.prompts[0]
+    assert "assert with one that does" not in llm.prompts[0]
+
+
+def test_a_step_no_method_checks_stops_the_update_with_the_remedy():
+    """5 Nov 2026, SCRUM-293: the spliced feedback step asserted title links."""
+    import pytest
+    llm = ScriptedLLM(NEEDS)
+    with pytest.raises(coder.GateFailure) as stop:
+        _splice(llm)
+    assert "ai-regenerate" in str(stop.value)
+    (err,) = stop.value.errors
+    assert "the count of a named item" in err and "test_fake_basket.py" in err
+
+
+def test_a_stopped_update_tells_the_story_once_and_takes_the_label_off(monkeypatch):
+    from unittest.mock import MagicMock
+    monkeypatch.setattr(coder, "load_agent_config", lambda *a: {"update_label": "go-update"})
+    jira = MagicMock()
+    stop = coder.GateFailure("needs a method", errors=["Step needs a page-object method ..."])
+    coder._hand_back_update(jira, "AB-1", stop)
+    body = jira.add_comment.call_args[0][1]
+    assert body.startswith(coder.UPDATE_STOPPED) and "Step needs a page-object method" in body
+    jira.remove_label.assert_called_once_with("AB-1", "go-update")
+    src = __import__("inspect").getsource(coder.run_update)
+    assert "_hand_back_update(jira, story_id, stop)" in src
+
