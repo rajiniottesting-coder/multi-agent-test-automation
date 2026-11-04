@@ -290,6 +290,7 @@ Older rows name the sessions S1-S8 of the first plan: **S1** is Run A, **S2** is
 | E45b | #248 | Three or more stories released to ai-ready at once (or labelled by hand, then Agent 1 run once) | Agent 1 takes 2, then starts itself again (`chain` 2) for the rest; no run when none waits | ⬜ | |
 | E45c | #248 | An Agent 0 run with nothing released, and an Agent 1 run that fails | "no story waits for it" - nothing started; the failed Agent 1 run has no hand-off step run (the schedule retries) | ⬜ | Partly: "no story waits for it" on idle runs (3-4 Nov); the cap held at 5 - and exposed restarts for a blocked story (#262) |
 | E45d | #248 | Optional: the Jira Automation rule on `human-approved` (GUIDE, "Hand-off between agents") | Approving a story starts Agent 2 (event `repository_dispatch`) within a minute, in scan mode | ⬜ | |
+| E94 | Run C fixes | A blocked story run again by key and refused for another reason (SCRUM-293 after #292) | A second `[agent2:blocked]` comment with the new reason (`reasons:` digest differs); the same refusal again posts nothing; the scheduled scan still skips it with no model call | ⬜ | |
 | E93 | Run C fixes | A story labelled `ai-ready` in the backlog - no sprint at all (SCRUM-326) - then the next Agent 1 scans | One `[pipeline:not-selected]` comment: "it is not in the sprint '<active sprint>'"; later scans post nothing more | ⬜ | |
 | E92 | Run C fixes | Agent 0 with `force` on a story whose earlier context verdict was "no update needed" (SCRUM-207) | The context update runs again (a PR or a new verdict), not `already-proposed`; with its PR open, another forced run proposes nothing | ⬜ | |
 | E91 | Run E fixes | `budget.per_day_usd` raised during a day whose budget alerts are open, then *Pipeline health* | Today's `budget-day` alert closes with a note naming the new limit; `budget-warn` closes once the spend is under `warn_at` of it | ⬜ | |
@@ -425,7 +426,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
-| #293 | Today's budget alerts follow a raised limit; a forced re-analysis retries the context update; a labelled story with no sprint is told why it waits | | E91, E92, E93 | |
+| #293 | Today's budget alerts follow a raised limit; a forced re-analysis retries the context update; a labelled story with no sprint is told why it waits; a retry refused for a new reason says so | | E91-E94 | |
 | #292 | A committed page object the steps need a method on joins the repair | | E90 | |
 | #291 | The health probe asks the output room the agents ask | | E89 | |
 | #290 | A provider refusing calls for money stops the run, red; the health check probes every model the agents use | | E87, E88 | |
