@@ -71,6 +71,22 @@ def parse_chain(raw) -> int:
 PROGRESS_LIMIT = 50
 
 
+_NOT_STARTED = {"queued", "pending", "waiting", "requested"}
+
+
+def _run_waiting_to_start(host, workflow: str) -> bool:
+    """A run of `workflow` the host has not started yet. False when the host
+    cannot say - a start then goes ahead, as before."""
+    runs = getattr(host, "get_workflow_runs", None)
+    if runs is None:
+        return False
+    try:
+        return any((r.get("status") or "") in _NOT_STARTED
+                   for r in runs(workflow, "main", limit=10) or [])
+    except Exception:                                              # noqa: BLE001
+        return False
+
+
 def start(tracker, host, agent_key: str, previous_chain=0, settings: dict | None = None,
           config: dict | None = None, dry_run: bool = False,
           waiting_before: list | None = None) -> dict:
@@ -102,6 +118,13 @@ def start(tracker, host, agent_key: str, previous_chain=0, settings: dict | None
         return {**out, "error": True, "why": f"could not ask the tracker what waits ({type(e).__name__}: {e})"}
     if not out["waiting"]:
         return {**out, "why": "no story waits for it"}
+    if _run_waiting_to_start(host, workflow):
+        # The repository host keeps ONE waiting run per workflow: a second
+        # start replaces the first, cancelled without a word - on 4 Nov 2026
+        # a run started by hand for one story was lost that way. The waiting
+        # run takes the waiting stories; its own end starts the next.
+        return {**out, "why": f"a run of {workflow} is already waiting to start - it takes "
+                              "them (a second start would cancel it)"}
     if waiting_before is not None and not set(waiting_before) - set(out["waiting"]):
         return {**out, "why": "the run took none of the stories that waited when it began - "
                               "starting again would only repeat it (a story the agent skips, "

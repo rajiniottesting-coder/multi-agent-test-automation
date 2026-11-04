@@ -233,4 +233,11 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPO: ${{ github.repository }}
           CHAIN: ${{ github.event.inputs.chain }}
-        run: python -m scripts.start_agent --agent agent2_coder --previous-chain "$CHAIN" --waiting-before reports/handoff_waiting.json
+          STORY_KEY: ${{ github.event.inputs.story_key }}
+        # A one-story run took only its own story: judged by what waited
+        # before it, it would never start the scan the waiting stories need
+        # (its own start may have stood back for this run - core/handoff.py).
+        run: |
+          WAITED="--waiting-before reports/handoff_waiting.json"
+          if [ -n "$STORY_KEY" ]; then WAITED=""; fi
+          python -m scripts.start_agent --agent agent2_coder --previous-chain "$CHAIN" $WAITED

@@ -4113,6 +4113,20 @@ def _returns_a_value(func: ast.AST) -> bool:
     return False
 
 
+_PREDICATE_PREFIXES = ("is_", "has_", "are_", "can_", "contains_", "shows_", "does_")
+
+
+def _is_predicate(func) -> bool:
+    """A method that answers yes or no: annotated `-> bool`, or named as a
+    question (is_, has_, ...) with no other return annotation."""
+    annotation = getattr(func, "returns", None)
+    if isinstance(annotation, ast.Name) and annotation.id == "bool":
+        return True
+    if annotation is not None:
+        return False
+    return func.name.startswith(_PREDICATE_PREFIXES)
+
+
 def _promised_nouns(method_name: str) -> set:
     """The words a reader's name promises to return."""
     parts = [w for w in method_name.strip("_").split("_") if w]
@@ -4193,6 +4207,14 @@ def validate_readers_return_what_they_name(
                 # verb phrases, so the framework was rejecting the names it
                 # mandates. A run spent all four repair attempts on it.
                 if not _returns_a_value(fn):
+                    continue
+                # A PREDICATE is not a reader either: it returns True or
+                # False, never the row's text, so no caller can compare that
+                # text against one field. `has_product_with_price()` checking
+                # that the row it found holds the name and the price is right
+                # - and on 4 Nov 2026 it was refused through every repair
+                # attempt, its "has" read as a promised field.
+                if _is_predicate(fn):
                     continue
 
                 promised = _promised_nouns(fn.name)
