@@ -45,6 +45,7 @@ import hashlib
 import logging
 import re
 import time
+import uuid
 from pathlib import Path
 import sys
 from dataclasses import dataclass, field
@@ -2385,6 +2386,30 @@ class GateFailure(ValueError):
         self.errors = list(errors or [])
 
 
+_REFUSED_FILE_CHARS = 20000
+
+
+def show_refused_files(generated_files) -> None:
+    """Print each file the final gate refused, folded in the run log.
+
+    The errors name a file and a line, but the file itself was never kept: a
+    refused page object (4 Nov 2026, a page the inventory lacked) could not be
+    read afterwards, so why its methods were missing stayed a guess. The run
+    has already paid for the files; the log keeps them for the person."""
+    for f in generated_files or []:
+        content = getattr(f, "content", "") or ""
+        if len(content) > _REFUSED_FILE_CHARS:
+            content = content[:_REFUSED_FILE_CHARS] + "\n... (cut)"
+        # Generated text is not trusted: a line of it must never be read as a
+        # workflow command, so commands are off while it prints.
+        token = uuid.uuid4().hex
+        print(f"::group::Refused by the final gate: {getattr(f, 'file_path', '?')}")
+        print(f"::stop-commands::{token}")
+        print(content)
+        print(f"::{token}::")
+        print("::endgroup::", flush=True)
+
+
 def _validate_generated_files(
     generated_files: list[GeneratedFile],
     story_id: str,
@@ -2397,7 +2422,9 @@ def _validate_generated_files(
       - PR #9: feature steps without matching @given/@when/@then decorators
       - SCRUM-13: imports referencing modules that don't exist
 
-    Raises ValueError if any validator finds problems.
+    Raises GateFailure (a ValueError) if any validator finds problems, carrying
+    that validator's errors: the blocked comment names them (core.blocked),
+    not only this function's one-line summary of them.
 
     NOTE: This is the FINAL validation, run after any retry attempts.
     By the time this raises, the LLM has already been given a chance
@@ -2411,10 +2438,11 @@ def _validate_generated_files(
         )
         for err in consistency_errors:
             logger.error(f"  - {err}")
-        raise ValueError(
+        raise GateFailure(
             f"Filename consistency validation failed for {story_id}: "
             f"{len(consistency_errors)} mismatch(es) between feature files "
-            f"and step definitions. See logs for details."
+            f"and step definitions. See logs for details.",
+            errors=consistency_errors,
         )
 
     structure_errors = validate_feature_file_structure(generated_files)
@@ -2425,20 +2453,22 @@ def _validate_generated_files(
         )
         for err in structure_errors:
             logger.error(f"  - {err}")
-        raise ValueError(
+        raise GateFailure(
             f"Feature file structure validation failed for {story_id}: "
             f"{len(structure_errors)} step(s) appear outside any "
             f"Scenario/Background/Examples block. pytest-bdd would fail at "
-            f"test collection time. See logs for details."
+            f"test collection time. See logs for details.",
+            errors=structure_errors,
         )
 
     removed = validate_extended_page_objects_keep_methods(generated_files, PROJECT_ROOT)
     if removed:
         for err in removed:
             logger.error(f"  - {err}")
-        raise ValueError(
+        raise GateFailure(
             f"Committed page object(s) lost methods for {story_id} even after "
-            f"repair: other stories' tests call them. See logs for details.")
+            f"repair: other stories' tests call them. See logs for details.",
+            errors=removed)
 
     coverage_errors = validate_step_definitions_complete(generated_files)
     if coverage_errors:
@@ -2448,14 +2478,15 @@ def _validate_generated_files(
         )
         for err in coverage_errors:
             logger.error(f"  - {err}")
-        raise ValueError(
+        raise GateFailure(
             f"Step definition coverage validation failed for {story_id}: "
             f"{len(coverage_errors)} feature step(s) without matching "
             f"@given/@when/@then decorator(s) — even after the LLM was "
             f"given the validator's feedback for self-correction. This "
             f"usually means the LLM model is too weak (try a more capable "
             f"model) or the feature file has unusually complex "
-            f"steps. See logs for details."
+            f"steps. See logs for details.",
+            errors=coverage_errors,
         )
 
     duplicate_step_errors = validate_no_duplicate_step_definitions(
@@ -2468,11 +2499,12 @@ def _validate_generated_files(
         )
         for err in duplicate_step_errors:
             logger.error(f"  - {err}")
-        raise ValueError(
+        raise GateFailure(
             f"Duplicate step-definition validation failed for {story_id}: "
             f"{len(duplicate_step_errors)} step(s) are declared in more than "
             f"one step-def file. NOTE (ADR-013): this path is unreachable — "
-            f"cross-file duplication is safe in pytest-bdd. See logs."
+            f"cross-file duplication is safe in pytest-bdd. See logs.",
+            errors=duplicate_step_errors,
         )
 
     import_errors = validate_imports_resolvable(generated_files, PROJECT_ROOT)
@@ -2483,13 +2515,14 @@ def _validate_generated_files(
         )
         for err in import_errors:
             logger.error(f"  - {err}")
-        raise ValueError(
+        raise GateFailure(
             f"Import resolution validation failed for {story_id}: "
             f"{len(import_errors)} import(s) reference module(s) that don't "
             f"exist in the repo, in this generation batch, or in "
             f"requirements.txt — even after the LLM was given the "
             f"validator's feedback for self-correction. The LLM likely "
-            f"hallucinated a page object class import. See logs for details."
+            f"hallucinated a page object class import. See logs for details.",
+            errors=import_errors,
         )
 
     method_errors = validate_method_resolution(generated_files, PROJECT_ROOT)
@@ -2500,7 +2533,7 @@ def _validate_generated_files(
         )
         for err in method_errors:
             logger.error(f"  - {err}")
-        raise ValueError(
+        raise GateFailure(
             f"Method resolution validation failed for {story_id}: "
             f"{len(method_errors)} step-def method call(s) reference page-object "
             f"method(s) that don't exist on the corresponding class — even "
@@ -2508,7 +2541,8 @@ def _validate_generated_files(
             f"correction. The LLM likely used inconsistent method names "
             f"between the page object and the step def file (e.g., defined "
             f"`click_logout()` in the page object but called "
-            f"`click_logout_link()` in the step def). See logs for details."
+            f"`click_logout_link()` in the step def). See logs for details.",
+            errors=method_errors,
         )
 
     selector_errors = validate_page_object_selectors(
@@ -2521,7 +2555,7 @@ def _validate_generated_files(
         )
         for err in selector_errors:
             logger.error(f"  - {err}")
-        raise ValueError(
+        raise GateFailure(
             f"Page-object selector validation failed for {story_id}: "
             f"{len(selector_errors)} selector(s) in the generated page "
             f"object(s) are hard-coded literals or reference an inventory key "
@@ -2532,7 +2566,8 @@ def _validate_generated_files(
             f"would fail Agent 4's unit gate on the story PR instead. If the "
             f"element is genuinely missing from the inventory, add it there "
             f"(and verify it with `python -m scripts.verify_locators`) rather "
-            f"than letting a literal through. See logs for details."
+            f"than letting a literal through. See logs for details.",
+            errors=selector_errors,
         )
 
     # These two were previously wired only into the repair loop. That meant a
@@ -2548,13 +2583,14 @@ def _validate_generated_files(
         )
         for err in unused_step_errors:
             logger.error(f"  - {err}")
-        raise ValueError(
+        raise GateFailure(
             f"Unused step-definition validation failed for {story_id}: "
             f"{len(unused_step_errors)} decorator(s) are defined but no "
             f"scenario uses them — even after the LLM was given the "
             f"validator's feedback. This usually means the LLM emitted two "
             f"phrasings of the same step and wired only one into the feature "
-            f"file. See logs for details."
+            f"file. See logs for details.",
+            errors=unused_step_errors,
         )
 
     fixture_errors = validate_fixtures_exist(generated_files, PROJECT_ROOT)
@@ -2565,14 +2601,15 @@ def _validate_generated_files(
         )
         for err in fixture_errors:
             logger.error(f"  - {err}")
-        raise ValueError(
+        raise GateFailure(
             f"Fixture resolution validation failed for {story_id}: "
             f"{len(fixture_errors)} step definition(s) request a fixture that "
             f"no conftest declares and no page object provides. pytest "
             f"resolves fixtures at collection time, so every scenario in the "
             f"file would error before running. If the fixture should come "
             f"from a page object, that page object must be in the plan; if it "
-            f"needs custom setup, add it to conftest by hand. See logs."
+            f"needs custom setup, add it to conftest by hand. See logs.",
+            errors=fixture_errors,
         )
 
 
@@ -5072,6 +5109,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
         if not dry_run:
             blocked.post_blocked_once(jira, story_id, input_fp,
                                       getattr(e, "errors", None) or [str(e)])
+        show_refused_files(generated_files)
         raise
 
     # 4f. LAST IN-FLIGHT CHECK (F-1): every file the batch commits, whoever
