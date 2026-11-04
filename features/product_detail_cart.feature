@@ -18,18 +18,18 @@ Feature: Product detail display and add-to-cart quantity
     And the product detail page should show the brand label
 
   @smoke @products
-  # JIRA: SCRUM-220 (hash: ec665267) owner: SCRUM-201
-  Scenario: Choose a quantity and add product to cart, then view cart to confirm quantity
+  # JIRA: SCRUM-220 (hash: 9b7f99eb) owner: SCRUM-201 impacted-by: SCRUM-296
+  Scenario: Product detail page has no quantity field and adding once puts one item in the cart
     When I view the product "Men Tshirt"
     Then the product detail page should show the name "Men Tshirt"
     And the product detail page should show the price "Rs. 400"
-    When I set the quantity to 3
-    And I add the product to the cart
+    And the product detail page should not show a quantity input field
+    When I add the product to the cart
     And I click View Cart in the confirmation modal
-    Then the cart should contain "Men Tshirt" with quantity 3
+    Then the cart should contain "Men Tshirt" with price "Rs. 400"
 
   @products
-  # JIRA: SCRUM-221 (hash: a6105dc1) owner: SCRUM-201
+  # JIRA: SCRUM-221 (hash: 13123ce4) owner: SCRUM-201 impacted-by: SCRUM-296
   Scenario: Add product to cart and continue shopping, then verify it is in the cart
     When I view the product "Blue Top"
     Then the product detail page should show the name "Blue Top"
@@ -39,15 +39,16 @@ Feature: Product detail display and add-to-cart quantity
     And I click Continue Shopping in the confirmation modal
     Then I should remain on the "Blue Top" product detail page
     When I go to the cart via the navigation
-    Then the cart should contain "Blue Top" with quantity 2
+    Then the cart should contain "Blue Top" with price "Rs. 500"
 
   @products
-  # JIRA: SCRUM-222 (hash: 216020c2) owner: SCRUM-201
-  Scenario: Add a large boundary quantity of a product and verify the cart reflects it accurately
+  # JIRA: SCRUM-222 (hash: 12c158ff) owner: SCRUM-201 impacted-by: SCRUM-296
+  Scenario: Add a large boundary quantity of a product and verify the cart no longer shows a Quantity column
     When I view the product "Sleeveless Dress"
     Then the product detail page should show the name "Sleeveless Dress"
     And the product detail page should show the price "Rs. 1000"
     When I set the quantity to 50
     And I add the product to the cart
     And I click View Cart in the confirmation modal
-    Then the cart should contain "Sleeveless Dress" with quantity 50
+    Then the cart should not show a Quantity column
+    And the cart should contain "Sleeveless Dress" with price "Rs. 1000"
