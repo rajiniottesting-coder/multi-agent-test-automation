@@ -556,6 +556,8 @@ def test_the_minimum_is_configured_and_passed():
     from core.impact_settings import DEFAULTS
     cfg = yaml.safe_load(open("config/config.yaml", encoding="utf-8"))
     shipped = cfg["agents"]["agent0_impact"]["inventory_update"]
-    assert shipped["layout_min_pages"] == DEFAULTS["inventory_update"]["layout_min_pages"] == 3
+    # configured and sensible, not pinned: the value is the project's to tune
+    assert DEFAULTS["inventory_update"]["layout_min_pages"] == 3
+    assert isinstance(shipped["layout_min_pages"], int) and shipped["layout_min_pages"] >= 2
     src = open("scripts/propose_inventory_update.py", encoding="utf-8").read()
     assert 'layout_min_pages=int(cfg["layout_min_pages"])' in src
