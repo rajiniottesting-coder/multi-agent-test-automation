@@ -131,6 +131,8 @@ SHOWN, not what it says.
 
     /  →  /products  →  /product_details/<id>  →  cart  →  checkout  →  payment
 
+- 'Contact us' in the top navigation opens the Contact Us page, which shows a form with Name, Email, Subject and Message fields. After a successful submission the Home button returns to the home page (`/`).
+
 ## Global rules
 
 - **Server-rendered, not a single-page app.** Every navigation is a full page
