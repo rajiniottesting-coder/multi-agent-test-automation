@@ -658,6 +658,30 @@ class BasePage:
         except Exception:                                      # noqa: BLE001
             return False
 
+    @staticmethod
+    def _refuse_the_empty_starting_page(page) -> None:
+        """Fail at once when an action is aimed at the browser's empty starting
+        page - `about:blank` with nothing in it: no step opened a page.
+
+        Every test starts there. A scenario whose first step clicks a link
+        without opening a page (4 Nov 2026: a top-menu link clicked first)
+        waited the full timeout for an element that could never appear, and
+        the failure blamed the selector. A page a test filled itself
+        (set_content) is not empty and is left alone; anything that cannot be
+        read is left to the action, as before."""
+        url = getattr(page, "url", None)
+        if not isinstance(url, str) or url not in ("about:blank", ""):
+            return
+        try:
+            filled = page.evaluate("document.body ? document.body.childElementCount : 0")
+        except Exception:                                      # noqa: BLE001
+            return
+        if filled == 0:
+            raise AssertionError(
+                "No page is open (the browser is still on its empty starting page): "
+                "the scenario's first step must open a page - a page-object method "
+                "that calls navigate() - before it clicks or fills anything.")
+
     def _wait_for_page_scripts(self) -> None:
         """Before an action: let the document finish loading, so the page's
         own scripts are listening when the control is used.
@@ -678,13 +702,16 @@ class BasePage:
 
         Costs one round trip when the document is already loaded - the usual
         case, and always the case in a single-page app after its first load.
-        Never raises and never blocks for good: a page whose load event does
+        Raises only for the browser's empty starting page (no page was ever
+        opened - _refuse_the_empty_starting_page). Otherwise never raises and
+        never blocks for good: a page whose load event does
         not come within the timeout is acted on anyway, as before, with a
         warning, and that same document is not waited for again. A page in
         the middle of navigating (its context destroyed) is left to the
         action's own wait.
         """
         page = getattr(self, "page", None)
+        self._refuse_the_empty_starting_page(page)
         try:
             state = page.evaluate("document.readyState")
         except Exception:                                      # noqa: BLE001
