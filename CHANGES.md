@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — no test pins a tunable config value (#296)
+
+**Why:** lowering `context_update.module_budget_chars` for validation step C1 turned the unit suite red - a test pinned the shipped value to the default, the flaw #288 fixed in two other tests.
+
+- `test_notes_budget`, `test_inventory_planned_shared`, `test_run_c_findings`: the shipped `module_budget_chars`, `layout_min_pages`, `schedule_window_hours` and `schedule_min_expected` are checked for being configured and sensible, not for equalling the default; tests comparing names or structure are unchanged
+- `config.yaml`: `module_budget_chars: 7800` for E23 (back to 8000 after Run C)
+- TEST_TRACK E95
+
+---
+
 ## November 2026 — budget alerts follow the limit; a forced re-analysis retries the context update; a backlog story is told why it waits; a new refusal reason is posted (#293)
 
 **Why:** found while running the validation on 4 Nov 2026: today's budget alerts stayed open all day after `per_day_usd` was raised; a forced Agent 0 run on SCRUM-207 could not retry its context update because an earlier "no update needed" verdict stood; and the not-selected notice of #276 never found a story with no sprint at all - the very case it was built for.
