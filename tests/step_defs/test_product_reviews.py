@@ -66,7 +66,7 @@ def assert_review_form_shown(product_detail_page):
 @then(parsers.re(r'I should see the review confirmation message "(?P<expected_message>[^"]*)"'))
 def assert_review_confirmation(product_detail_page, expected_message):
     actual = product_detail_page.get_review_success()
-    assert expected_message in actual, f"Expected {expected_message!r} in {actual!r}"
+    assert actual == expected_message, f"Expected {expected_message!r}, got {actual!r}"
 
 
 @then("the review thank-you message should not be shown")
