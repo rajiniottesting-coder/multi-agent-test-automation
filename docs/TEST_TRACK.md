@@ -290,6 +290,7 @@ Older rows name the sessions S1-S8 of the first plan: **S1** is Run A, **S2** is
 | E45b | #248 | Three or more stories released to ai-ready at once (or labelled by hand, then Agent 1 run once) | Agent 1 takes 2, then starts itself again (`chain` 2) for the rest; no run when none waits | ⬜ | |
 | E45c | #248 | An Agent 0 run with nothing released, and an Agent 1 run that fails | "no story waits for it" - nothing started; the failed Agent 1 run has no hand-off step run (the schedule retries) | ⬜ | Partly: "no story waits for it" on idle runs (3-4 Nov); the cap held at 5 - and exposed restarts for a blocked story (#262) |
 | E45d | #248 | Optional: the Jira Automation rule on `human-approved` (GUIDE, "Hand-off between agents") | Approving a story starts Agent 2 (event `repository_dispatch`) within a minute, in scan mode | ⬜ | |
+| E78 | Run C fixes | A one-story Agent 1 or 2 run started by hand while another run of it is going, then a hand-off start while it waits | The hand-off says "a run ... is already waiting to start" and starts nothing; the one-story run is not cancelled; at its end it starts a scan when stories wait | ⬜ | |
 | E77 | Run C fixes | A change story analysed again (`force`) after its context-update PR was closed unmerged (SCRUM-207 after #269) | A new PR on `context-update/<key>-2`; while that one is open, another run proposes nothing | ⬜ | |
 | E76 | Run C fixes | A story analysed again (`force`) when the new analysis finds nothing, while its earlier Impact Review is open (SCRUM-295 / SCRUM-300 again) | The review is rewritten with no rows and a *Superseded* line; `impact-proposed` off, `ai-ready` on; Agent 1 then takes the story | ⬜ | |
 | E75 | F-32, Run C fixes | SCRUM-296's impact-aware draft run again (7 approved test cases) | Asked with a 26,624-token budget; the draft is written (7 revisions and the absence test), or a stop names reasoning, not a loop | ⬜ | |
@@ -409,6 +410,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
+| #PRNUM | A start never cancels a run already waiting to start | | E78 | |
 | #284 | What validation Run C found: scheduled runs never started are reported, a planned list declared a family, a test case about the prompt sent back, a red run still hands off, a story needing a person handed back | | E70-E77 | |
 | #276 | What validation Runs A and B found: truncation evidence, a failed draft handed back, existing scenarios shown, an unchanged planned file not claimed, orphan clean-up vs the page-object contract, labelled stories told why they wait, `force`, markdown PR report, selectors for the judge, no invented quotes, the changed part of a rewrite | | E59-E69 | 13 deliberate breaks, one per fix |
 | #267 | A notes change touches only the story's own pages; the small backlog | | E57 | Real-data check of both flows before Run A |

@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a start never cancels a run already waiting to start (#PRNUM)
+
+**Why:** the repository host keeps one waiting run per workflow: a second start replaces the first, cancelled without a word. On 4 Nov 2026 a run started by hand for SCRUM-296, and a run Agent 0's hand-off started, were both cancelled by later hand-off starts.
+
+- `core/handoff.start()`: a workflow with a run not started yet (queued, pending, waiting, requested) is not started again - that run takes the waiting stories; a host that cannot say starts as before
+- Agents 1 and 2: a one-story run's restart step leaves out the progress rule (it took only its own story), so it starts the scan the waiting stories need
+- `tests/unit/test_run_c_findings.py`; TEST_TRACK E78. Not tested live yet: E78
+
+---
+
 ## November 2026 — what Run C of the validation found (#284)
 
 **Why:** starting Run C on 4 Nov 2026 showed seven more places (and #276's evidence explained an eighth) where work stopped or went wrong with nothing reporting it: the repository host started almost none of the agents' scheduled runs and no check noticed; a planned list of titles was never confirmed; a new story was drafted as one test case saying its page "is not defined in the Application Under Test"; one story needing a person turned the run red, and the hand-off then left every other waiting story to a schedule that rarely starts; and that story was taken first again on every scan.
