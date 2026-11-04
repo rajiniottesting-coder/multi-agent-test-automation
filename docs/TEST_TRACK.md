@@ -410,7 +410,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
-| #PRNUM | A start never cancels a run already waiting to start | | E78 | |
+| #285 | A start never cancels a run already waiting to start | | E78 | |
 | #284 | What validation Run C found: scheduled runs never started are reported, a planned list declared a family, a test case about the prompt sent back, a red run still hands off, a story needing a person handed back | | E70-E77 | |
 | #276 | What validation Runs A and B found: truncation evidence, a failed draft handed back, existing scenarios shown, an unchanged planned file not claimed, orphan clean-up vs the page-object contract, labelled stories told why they wait, `force`, markdown PR report, selectors for the judge, no invented quotes, the changed part of a rewrite | | E59-E69 | 13 deliberate breaks, one per fix |
 | #267 | A notes change touches only the story's own pages; the small backlog | | E57 | Real-data check of both flows before Run A |

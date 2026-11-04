@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — a start never cancels a run already waiting to start (#PRNUM)
+## November 2026 — a start never cancels a run already waiting to start (#285)
 
 **Why:** the repository host keeps one waiting run per workflow: a second start replaces the first, cancelled without a word. On 4 Nov 2026 a run started by hand for SCRUM-296, and a run Agent 0's hand-off started, were both cancelled by later hand-off starts.
 
