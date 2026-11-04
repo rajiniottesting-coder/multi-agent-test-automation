@@ -467,7 +467,7 @@ def test_the_budget_block_is_shipped():
     from core.ops_settings import DEFAULTS
     shipped = yaml.safe_load(CONFIG_YAML.read_text(encoding="utf-8"))["budget"]
     assert set(shipped) == set(DEFAULTS["budget"])
-    assert (shipped["per_story_usd"], shipped["per_day_usd"], shipped["warn_at"]) == (8, 35, 0.5)
+    assert (shipped["per_story_usd"], shipped["per_day_usd"], shipped["warn_at"]) == (8, 50, 0.5)
 
 
 def test_agent5_cost_line():
