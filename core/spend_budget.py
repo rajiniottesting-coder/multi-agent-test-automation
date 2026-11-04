@@ -74,6 +74,21 @@ class BudgetExceeded(BaseException):
         super().__init__(message)
         self.scope, self.story, self.spent, self.limit = scope, story, spent, limit
 
+    @property
+    def stops_the_run(self) -> bool:
+        """No later model call of this run can succeed: the day's budget is
+        reached (`day`), or the model provider refuses every call because its
+        own key's credit is used up (`provider`, core.llm_client). A `story`
+        stop holds that story only."""
+        return self.scope in ("day", PROVIDER)
+
+
+# The model provider refused the call for money (HTTP 402, or its budget /
+# credit message): the key's own budget, outside this pipeline's. Every later
+# call is refused too, so the run stops like a day stop - but red, because a
+# person must act with the provider (raising per_day_usd changes nothing).
+PROVIDER = "provider"
+
 
 def _fresh_state() -> dict:
     return {"tracker": None, "tracker_failed": False, "day": None, "day_prior": None,

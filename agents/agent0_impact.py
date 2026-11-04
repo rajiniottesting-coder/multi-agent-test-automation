@@ -778,7 +778,9 @@ def scan(tracker, host, llm, settings: dict | None = None, root: Path | None = N
             # (the hand-overs below call the model too, so they wait as well).
             logger.error("Agent 0 stopped on %s: %s", s["key"], stop)
             results.append({"story": s["key"], "action": "budget", "error": str(stop)})
-            if stop.scope == "day":
+            if stop.stops_the_run:
+                if stop.scope != "day":
+                    raise                  # the provider refuses: main() says so, red
                 return results
         except Exception as e:                                 # noqa: BLE001
             logger.error("Agent 0 failed on %s: %s", s["key"], e, exc_info=True)

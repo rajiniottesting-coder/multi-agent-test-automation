@@ -5691,12 +5691,18 @@ def main():
                 # person - red once; the next scan no longer selects it. A day
                 # over its budget stops the scan: the rest wait for tomorrow.
                 logger.error(f"{story['key']} ({mode}): {stop}")
-                if stop.scope != "day":
+                if not stop.stops_the_run:
                     results.append({"story_id": story["key"], "status": "failed",
                                     "mode": mode, "error": str(stop)})
                     continue
-                deferred += [(m, s_, "the daily model budget is reached")
-                             for m, s_ in to_run[i:]]
+                if stop.scope == "day":
+                    deferred += [(m, s_, "the daily model budget is reached")
+                                 for m, s_ in to_run[i:]]
+                else:                                 # the provider refuses: red, the rest wait
+                    results.append({"story_id": story["key"], "status": "failed",
+                                    "mode": mode, "error": str(stop)})
+                    deferred += [(m, s_, "the model provider refuses calls")
+                                 for m, s_ in to_run[i + 1:]]
                 break
             except Exception as e:
                 logger.error(f"Failed processing {story['key']} ({mode}): {e}", exc_info=True)
