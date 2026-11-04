@@ -162,6 +162,7 @@ def _draft_test_cases(llm, user_prompt: str, criteria=None) -> TestCaseList:
     """
     from core.acceptance_coverage import coverage_problems, index_cases
     from core.test_case_rules import (
+        DraftRejected,
         draft_problems,
         load_persistent_pages,
         load_shared_accounts,
@@ -187,7 +188,7 @@ def _draft_test_cases(llm, user_prompt: str, criteria=None) -> TestCaseList:
         output_schema=TestCaseList)
     problems = check(draft)
     if problems:
-        raise ValueError("test case draft rejected twice; nothing was written: "
+        raise DraftRejected("test case draft rejected twice; nothing was written: "
                          + "; ".join(problems))
     return draft
 
@@ -451,6 +452,50 @@ def run(story_id: str, dry_run: bool = False) -> dict:
 # ─────────────────────────────────────────────────────────────
 # Statuses that need a person before the story can go on. Anything else that
 # is not a failure is a normal outcome.
+STOPPED = "[agent1:stopped]"
+
+
+def stops_retrying(error: Exception) -> bool:
+    """True for a failure the next scheduled run would only repeat, at the
+    same cost: the answer did not fit its output budget, or the draft broke
+    the test-case rules twice. A network error, a quota or a budget stop is
+    not one of them - the next run may well succeed."""
+    from core.llm_client import OutputTruncatedError
+    from core.test_case_rules import DraftRejected
+    return isinstance(error, (OutputTruncatedError, DraftRejected))
+
+
+def hand_back(tracker, story_id: str, error: Exception, agent_config: dict) -> list:
+    """Take the story out of the scan and say why, on the story itself.
+
+    Agent 1 runs on a schedule. A story left with its trigger label after such
+    a failure is drafted again on every run - each paying for the same failed
+    answer - until its spend budget holds it (4 Nov 2026: a 7-case revision
+    ran out of output room, $0.38 a run, every 30 minutes). Removes the
+    trigger label(s) and posts one comment; adding the label again retries.
+    Returns the labels removed. Never raises."""
+    labels = agent_config.get("trigger_labels_to_remove",
+                              agent_config.get("selection", {}).get("required_labels", []))
+    removed = []
+    for label in labels:
+        try:
+            tracker.remove_label(story_id, label)
+            removed.append(label)
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning(f"Could not remove '{label}' from {story_id}: {e}")
+    reason = str(error).split(" To re-run", 1)[0]
+    again = " or ".join(f"`{label}`" for label in labels) or "the trigger label"
+    body = (f"{STOPPED} Agent 1 stopped on this story and will not retry it on its own: "
+            f"the next run would repeat the same answer at the same cost.\n\n"
+            f"Reason: {reason[:600]}\n\nNothing was written to the tracker. "
+            f"Add {again} again to retry; the run log says more.")
+    try:
+        tracker.add_comment(story_id, body)
+    except Exception as e:                                         # noqa: BLE001
+        logger.warning(f"Could not comment on {story_id}: {e}")
+    return removed
+
+
 _NEEDS_A_PERSON = {"partial_test_cases"}
 
 
@@ -595,6 +640,10 @@ def main():
                 })
             except Exception as e:
                 logger.error(f"Failed processing {story['key']}: {e}", exc_info=True)
+                if stops_retrying(e) and not args.dry_run:
+                    removed = hand_back(jira, story["key"], e, agent_config)
+                    logger.error(f"{story['key']}: handed back to a person - removed "
+                                 f"{removed or 'no label'}, the next scan skips it.")
                 results.append({
                     "story_id": story["key"],
                     "story_summary": story["summary"],

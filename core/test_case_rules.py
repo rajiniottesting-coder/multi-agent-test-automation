@@ -30,6 +30,7 @@ Generic on purpose: the dependency phrases are plain English about tests, and th
 persistent pages and shared accounts come from the inventory, so nothing here
 names an application.
 """
+
 from __future__ import annotations
 
 import re
@@ -81,6 +82,13 @@ _CLAUSE = re.compile(r"[;,()]|\s+(?:and|but|while|whereas)\s+", re.IGNORECASE)
 # "the user's cart ... the shopper's list" never pair up into a fake name.
 _QUOTED = re.compile(r"(?<![A-Za-z])['\"\u2018\u2019\u201c\u201d]([^'\"\u2018\u2019\u201c\u201d]{2,}?)"
                      r"['\"\u2018\u2019\u201c\u201d](?![A-Za-z])")
+
+
+
+class DraftRejected(ValueError):
+    """A drafted set of test cases failed these rules twice - once as drafted,
+    once after the problems were sent back. Retrying the same story on the next
+    schedule repeats the same draft; it is handed back to a person."""
 
 
 def _named_entries(tc) -> set[str]:
