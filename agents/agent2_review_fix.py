@@ -259,6 +259,24 @@ def scenario_identity(content: str) -> list:
     return out
 
 
+def _drops_an_approved_assertion(new: str, prior: str, path: str, test_cases, a2) -> str:
+    """What an approved test case asserts that `new` no longer checks and
+    `prior` did ("" when nothing). A review comment cannot remove a check the
+    test cases state - only the test case can (SCRUM-283, 4 Nov 2026: "reword
+    the step" dropped the test case's "no login prompt is shown", and the
+    repair that restored it rewrote the whole file)."""
+    from core.schemas import GeneratedFile
+    def errors(content):
+        return set(a2._absence_claim_errors(
+            [GeneratedFile(file_path=path, content=content)], test_cases))
+    try:
+        added = errors(new) - errors(prior)
+    except Exception as e:                                         # noqa: BLE001
+        logger.warning("Absence check on the review change to %s skipped: %s", path, e)
+        return ""
+    return "; ".join(sorted(e.split(": ", 1)[-1][:200] for e in added))
+
+
 def degraded(new: str, prior: str, path: str) -> bool:
     """Stage 2's degraded-output test, without its absolute size floor for a
     file that was already below it: a short page object is not a stub."""
@@ -539,6 +557,12 @@ def _fix(host, pr_number, key, head, meta, contents, editable, protected, to_fix
             elif path.endswith(".feature") and scenario_identity(new) != scenario_identity(prior):
                 why_not = ("the change would alter the scenarios, titles or markers, which come "
                            "from the approved test cases")
+            elif path.endswith(".feature"):
+                dropped = _drops_an_approved_assertion(new, prior, path, test_cases, a2)
+                if dropped:
+                    why_not = ("the change would drop what an approved test case asserts - "
+                               f"{dropped}. To change what is checked, update the test case, "
+                               "then add `ai-regenerate`")
             if why_not:
                 for o in about:
                     o.action, o.reason = "decline", f"Not changed: {why_not}."
@@ -566,6 +590,20 @@ def _fix(host, pr_number, key, head, meta, contents, editable, protected, to_fix
                 if reached:
                     raise ValueError(f"the repair would change files that are not editable here: "
                                      f"{reached}")
+                # The repair loop regenerates whole files in the ordinary mode:
+                # on SCRUM-283's pull request (4 Nov 2026) it rewrote the
+                # feature file after the review change - invented marker
+                # hashes, dropped the owner, a new title - and the identity
+                # check above, made before the repair, never saw it.
+                rewritten = [f.file_path for f in batch
+                             if f.file_path.endswith(".feature")
+                             and f.file_path in contents
+                             and scenario_identity(f.content)
+                             != scenario_identity(contents[f.file_path])]
+                if rewritten:
+                    raise ValueError(
+                        "the repair would alter the scenarios, titles or markers of "
+                        f"{rewritten}, which come from the approved test cases")
                 a2._validate_generated_files(batch, story_key, test_cases)
             except Exception as e:                                 # noqa: BLE001
                 problem = f"The changed files did not pass the checks every pull request passes: {e}"
