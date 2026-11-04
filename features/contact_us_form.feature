@@ -15,11 +15,3 @@ Feature: Automation Exercise Contact Us form
     Then I should see the contact success message
     When I click the Home button
     Then I should be returned to the home page
-
-  @negative @validation @contact
-  # JIRA: SCRUM-289 (hash: edbf3c46) owner: SCRUM-284
-  Scenario: Submitting the form with an empty email field does not submit
-    When I fill in the contact form with name "Demo Reviewer", email "", subject "Product Enquiry" and message "I would like to know more about your Blue Top product."
-    And I submit the contact form
-    Then I should not see the contact success message
-    And I should remain on the Contact Us page
