@@ -28,7 +28,7 @@ not deleting it. Use the shared `registered` role and assert relatively. See
 
 ## Failure messages
 
-- Wrong credentials → "Your email or password is incorrect!"
+- Wrong credentials → a message saying the email or password is incorrect and how to reset the password
 - Signing up with an address that already exists → "Email Address already
   exist!"
 
