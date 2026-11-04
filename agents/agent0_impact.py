@@ -334,7 +334,8 @@ def _render_report(report: dict, title: str, data_in: str | None = None) -> str:
             f"{owner}: {', '.join(refs)}" for owner, refs in report["by_owner"].items()))
     if report["seeds"]["dropped"]:
         lines.append("Dropped invented element keys: " + ", ".join(report["seeds"]["dropped"]))
-    lines += ["", "||Tier||Score||Test||Owner||Scenario||Evidence||"]
+    if report["ranked"]:                       # no rows: no empty table under "Affected: 0"
+        lines += ["", "||Tier||Score||Test||Owner||Scenario||Evidence||"]
     for r in report["ranked"]:
         lines.append(f"|{r['tier']}|{r['score']}|{r['key'] or '-'}|{r['owner'] or '-'}|"
                      f"{r['title']}|{short_evidence(r).replace('|', '/')}|")
