@@ -590,10 +590,10 @@ def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool
             # Agent 1 skips - beside ai-ready, and approving the stale rows
             # later would hand over revisions nothing calls for (4 Nov 2026,
             # a story analysed again).
-            tracker.set_description(review["key"], impact_review.render(
-                story_key, [], intro=(f"Superseded: the analysis with hash {report['content_hash']} finds "
-                                      "no test this change affects - nothing to decide here."))
-                + "\n\n" + ia.embed(report))
+            note = (f"Superseded: the analysis with hash {report['content_hash']} finds no "
+                    "test this change affects - nothing to decide here.")
+            superseded = impact_review.render(story_key, [], intro=note) + "\n\n" + ia.embed(report)
+            tracker.set_description(review["key"], superseded)
             tracker.remove_label(story_key, labels["proposed"])
             settled = review["key"]
         tracker.add_label(story_key, labels["ready"])
