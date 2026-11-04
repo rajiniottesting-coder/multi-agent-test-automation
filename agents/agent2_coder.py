@@ -85,7 +85,7 @@ from validators.method_resolution_validator import (
     validate_page_method_names_are_specific,
 )
 from core.llm_client import QuotaExhaustedError, LLMClient, OutputTruncatedError
-from core.schemas import CodePlan, GeneratedFile, CodeGenerationOutput
+from core.schemas import CodePlan, FilePlan, GeneratedFile, CodeGenerationOutput
 from validators.absence_claims import (
     absence_claims,
     absence_claims_missing,
@@ -2908,6 +2908,68 @@ def _route_to_generated_file(errors: list, generated_files) -> list:
     return routed
 
 
+_MISSING_METHOD = re.compile(
+    r"Method resolution error in '[^']+': line \d+ calls `\w+\.(\w+)\(\)`, "
+    r"but `(\w+)` does not define `\w+`")
+
+
+def _bring_in_page_objects(generated_files, plan, errors, root=None) -> list[str]:
+    """Feedback for committed page objects the step definitions need a method on.
+
+    4 Nov 2026, SCRUM-293: the steps called `HomePage.go_to_test_cases()`; the
+    plan had not named pages/home_page.py, so the repair could only rewrite
+    the step definitions - which kept the call, as the page offered no other
+    way to the page - and the story was refused after every attempt. A
+    committed page object that is not reserved is extendable: it joins the
+    batch with its current content and gets its own feedback naming the
+    methods to add (through its inventory keys). Reserved page objects stay
+    out (their error already says a person adds the method)."""
+    from validators.method_resolution_validator import (_page_file_for_class,
+                                                        _reserved_page_files)
+    root = Path(root or PROJECT_ROOT)
+    in_batch = {_normalize_path(f.file_path) for f in generated_files}
+    reserved = {_normalize_path(r) for r in _reserved_page_files()}
+    wanted: dict = {}
+    for err in errors or []:
+        for method, cls in _MISSING_METHOD.findall(str(err)):
+            path = _page_file_for_class(cls)
+            if _normalize_path(path) in reserved or not (root / path).is_file():
+                continue
+            wanted.setdefault(path, (cls, []))
+            if method not in wanted[path][1]:
+                wanted[path][1].append(method)
+    feedback = []
+    for path, (cls, methods) in wanted.items():
+        if _normalize_path(path) not in in_batch:
+            content = (root / path).read_text(encoding="utf-8")
+            generated_files.insert(0, GeneratedFile(
+                file_path=path, content=content, is_new_file=False,
+                purpose=f"extend: add the methods the step definitions call on {cls}"))
+            if not any(_normalize_path(fp.file_path) == _normalize_path(path)
+                       for fp in plan.files_to_create):
+                plan.files_to_create.insert(0, FilePlan(
+                    file_path=path, file_type="page_object", is_new_file=False,
+                    purpose=f"Extend {cls} with the methods this story's step "
+                            f"definitions call: {', '.join(methods)}."))
+            in_batch.add(_normalize_path(path))
+            logger.info(f"  {path} joins the batch: the step definitions call "
+                        f"{', '.join(methods)} on {cls}, which it does not define.")
+        else:
+            # Already in the batch as an extension this function made: keep
+            # telling its repair what is still missing.
+            if not any(_normalize_path(f.file_path) == _normalize_path(path)
+                       and not f.is_new_file and f.purpose.startswith("extend: add the methods")
+                       for f in generated_files):
+                continue
+        feedback.append(
+            f"Page object error in '{path}': the step definitions call "
+            f"{', '.join(f'`{m}()`' for m in methods)} on `{cls}`, which does not define "
+            f"{'it' if len(methods) == 1 else 'them'}. Add each as a method of {cls} that "
+            f"acts through this page's inventory keys (self.sel(...)) and a BasePage "
+            f"helper; keep every existing method exactly as it is.")
+    return feedback
+
+
 def _attempt_step_coverage_repair(
     generated_files: list[GeneratedFile],
     llm: LLMClient,
@@ -2961,6 +3023,10 @@ def _attempt_step_coverage_repair(
                 "page ...). Not repairing; the final validation gate will report it.",
                 ", ".join(missing_pages))
             return generated_files
+        # Committed, extendable page objects the steps need a method on join
+        # the batch (their feedback first, so the step definitions' repair
+        # sees the new methods).
+        all_errors = _bring_in_page_objects(generated_files, plan, all_errors) + all_errors
         current = set(all_errors)
         if previous_errors is not None and current and current == previous_errors:
             logger.warning(

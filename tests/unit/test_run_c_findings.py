@@ -456,3 +456,96 @@ def test_a_borrowed_page_is_reported_as_a_missing_page():
     text = blocked_comment("AB-1", "0" * 16, [err])
     assert "A new page object (ReportsPage) has no inventory page of its own" in text
     assert "plan_inventory page" in text and "cannot show" not in text
+
+
+# ── a committed page object the steps need a method on joins the repair ─
+
+def test_a_committed_page_object_missing_a_called_method_joins_the_batch(tmp_path, monkeypatch):
+    """4 Nov 2026, SCRUM-293: the steps called HomePage.go_to_test_cases(); the
+    plan had not named home_page.py, so only the step definitions were
+    repaired, and the story was refused after every attempt."""
+    import agents.agent2_coder as a2
+    import validators.method_resolution_validator as v
+    from core.schemas import CodePlan, GeneratedFile
+    (tmp_path / "pages").mkdir()
+    (tmp_path / "pages" / "front_page.py").write_text("class FrontPage: ...\n")
+    (tmp_path / "pages" / "menu_page.py").write_text("class MenuPage: ...\n")
+    monkeypatch.setattr(v, "_reserved_page_files", lambda: {"pages/menu_page.py"})
+    steps = GeneratedFile(file_path="tests/step_defs/test_x.py", content="# steps")
+    from core.schemas import FilePlan
+    own = FilePlan(file_path="tests/step_defs/test_x.py", file_type="step_definitions",
+                   purpose="steps")
+    plan = CodePlan(feature_name="x", branch_name="auto/AB-1-x", pr_title="t", pr_body="b",
+                    notes="", files_to_create=[own])
+    err = ("Method resolution error in 'tests/step_defs/test_x.py': line {n} calls "
+           "`front.{m}()`, but `FrontPage` does not define `{m}`. Did you mean ...")
+    errors = [err.format(n=3, m="go_to_reports"), err.format(n=9, m="has_reports_link"),
+              ("Method resolution error in 'tests/step_defs/test_x.py': line 5 calls "
+               "`menu.open_reports()`, but `MenuPage` does not define `open_reports`. ...")]
+    batch = [steps]
+    feedback = a2._bring_in_page_objects(batch, plan, errors, root=tmp_path)
+    assert [f.file_path for f in batch] == ["pages/front_page.py", "tests/step_defs/test_x.py"]
+    assert batch[0].content == "class FrontPage: ...\n" and batch[0].is_new_file is False
+    assert [fp.file_path for fp in plan.files_to_create] == ["pages/front_page.py",
+                                                             "tests/step_defs/test_x.py"]
+    (fb,) = feedback
+    assert fb.startswith("Page object error in 'pages/front_page.py':")
+    assert "`go_to_reports()`, `has_reports_link()`" in fb and "keep every existing method" in fb
+    assert list(a2._group_validator_errors_by_file(feedback)) == ["pages/front_page.py"]
+    # next attempt: still missing -> the feedback again, the file not added twice
+    again = a2._bring_in_page_objects(batch, plan, errors[:1], root=tmp_path)
+    assert len(again) == 1 and len(batch) == 2 and len(plan.files_to_create) == 2
+
+
+def test_a_page_object_the_model_planned_is_not_given_extra_feedback(tmp_path, monkeypatch):
+    import agents.agent2_coder as a2
+    import validators.method_resolution_validator as v
+    from core.schemas import CodePlan, GeneratedFile
+    (tmp_path / "pages").mkdir()
+    (tmp_path / "pages" / "front_page.py").write_text("class FrontPage: ...\n")
+    monkeypatch.setattr(v, "_reserved_page_files", lambda: set())
+    batch = [GeneratedFile(file_path="pages/front_page.py", content="planned", is_new_file=False,
+                           purpose="the plan's own extension")]
+    from core.schemas import FilePlan
+    plan = CodePlan(feature_name="x", branch_name="b", pr_title="t", pr_body="b", notes="",
+                    files_to_create=[FilePlan(file_path="pages/front_page.py",
+                                              file_type="page_object", purpose="p")])
+    err = ("Method resolution error in 'tests/step_defs/test_x.py': line 3 calls "
+           "`front.go()`, but `FrontPage` does not define `go`.")
+    assert a2._bring_in_page_objects(batch, plan, [err], root=tmp_path) == []
+    assert len(batch) == 1
+
+
+def test_the_repair_loop_extends_the_page_object_and_the_error_goes(tmp_path, monkeypatch):
+    import agents.agent2_coder as a2
+    import validators.method_resolution_validator as v
+    from core.schemas import CodePlan, FilePlan, GeneratedFile
+    (tmp_path / "pages").mkdir()
+    (tmp_path / "pages" / "front_page.py").write_text("class FrontPage:\n    pass\n")
+    monkeypatch.setattr(a2, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(v, "_reserved_page_files", lambda: set())
+    err = ("Method resolution error in 'tests/step_defs/test_x.py': line 3 calls "
+           "`front.go_to_reports()`, but `FrontPage` does not define `go_to_reports`.")
+
+    def errors(files):
+        page = next((f for f in files if f.file_path == "pages/front_page.py"), None)
+        return [] if page and "def go_to_reports" in page.content else [err]
+    monkeypatch.setattr(a2, "_collect_repairable_errors", errors)
+    monkeypatch.setattr(a2, "_absence_claim_errors", lambda *a: [])
+    repaired = []
+
+    def generate(llm, fp, plan, *a, previous_attempt="", **k):
+        repaired.append(fp.file_path)
+        if fp.file_path == "pages/front_page.py":
+            return previous_attempt + "\n    def go_to_reports(self):\n        pass\n"
+        return previous_attempt
+    monkeypatch.setattr(a2, "generate_file_content", generate)
+    monkeypatch.setattr(a2, "_is_degraded_regeneration", lambda *a: False)
+    steps = GeneratedFile(file_path="tests/step_defs/test_x.py", content="# steps")
+    plan = CodePlan(feature_name="x", branch_name="b", pr_title="t", pr_body="b", notes="",
+                    files_to_create=[FilePlan(file_path="tests/step_defs/test_x.py",
+                                              file_type="step_definitions", purpose="s")])
+    out = a2._attempt_step_coverage_repair([steps], None, plan, [], {}, "", None)
+    assert repaired[0] == "pages/front_page.py", "the page object is repaired first"
+    page = next(f for f in out if f.file_path == "pages/front_page.py")
+    assert "def go_to_reports" in page.content and errors(out) == []

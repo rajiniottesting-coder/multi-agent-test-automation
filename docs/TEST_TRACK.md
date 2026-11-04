@@ -290,6 +290,7 @@ Older rows name the sessions S1-S8 of the first plan: **S1** is Run A, **S2** is
 | E45b | #248 | Three or more stories released to ai-ready at once (or labelled by hand, then Agent 1 run once) | Agent 1 takes 2, then starts itself again (`chain` 2) for the rest; no run when none waits | ⬜ | |
 | E45c | #248 | An Agent 0 run with nothing released, and an Agent 1 run that fails | "no story waits for it" - nothing started; the failed Agent 1 run has no hand-off step run (the schedule retries) | ⬜ | Partly: "no story waits for it" on idle runs (3-4 Nov); the cap held at 5 - and exposed restarts for a blocked story (#262) |
 | E45d | #248 | Optional: the Jira Automation rule on `human-approved` (GUIDE, "Hand-off between agents") | Approving a story starts Agent 2 (event `repository_dispatch`) within a minute, in scan mode | ⬜ | |
+| E90 | Run C fixes | SCRUM-293 run again by key (its steps reach the Test Cases page through a committed page object the plan did not name) | The log says the page object joins the batch; it is repaired first with only the named methods added; the PR opens with it as an extension; no committed method lost | ⬜ | |
 | E89 | Run E fixes | *Pipeline health* while the provider still answers small requests but refuses one as large as the agents' (4 Nov 2026: max_tokens 1 and 4,096 answered, 16,384 got HTTP 402) | The probe asks the agents' output room: a `credential:model` alert naming the model; the probe's cost stays a one-word reply | ⬜ | |
 | E88 | Run E fixes | *Pipeline health* while the provider refuses one model the agents use (4 Nov 2026: the coding model, HTTP 402) and answers another | A `credential:model` alert naming the refused model; every distinct model in `LLM_MODELS_TO_CHECK` probed once; resolved once it answers | ⬜ | |
 | E87 | Run E fixes | The model provider refuses calls for money (HTTP 402 or its budget message - 4 Nov 2026, the gateway key's credit) during an Agent 0, 1 or 2 scan | One `[BUDGET]` line naming the provider refusal (not `per_day_usd`); the scan stops at the first refusal, the rest deferred; the run is red; no story is handed back, held or blocked | ⬜ | |
@@ -421,6 +422,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
+| #292 | A committed page object the steps need a method on joins the repair | | E90 | |
 | #291 | The health probe asks the output room the agents ask | | E89 | |
 | #290 | A provider refusing calls for money stops the run, red; the health check probes every model the agents use | | E87, E88 | |
 | #289 | A new page object may not borrow another page object's inventory page | | E86 | |
