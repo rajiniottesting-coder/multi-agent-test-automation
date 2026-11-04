@@ -16,6 +16,13 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
+class _DropLinkTypeWarning(logging.Filter):
+    """Drops the jira library's false 'link type not present' warning."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "Specified issue link type is not present" not in record.getMessage()
+
+
 class JiraClient:
     """Thin wrapper around the `jira` library, scoped to our project."""
 
@@ -373,9 +380,22 @@ class JiraClient:
             inward, outward = from_key, to_key
         else:
             inward, outward = to_key, from_key
-        self.client.create_issue_link(
-            type=lt["name"], inwardIssue=inward, outwardIssue=outward,
-        )
+        # The jira library compares the type NAME with its IssueLinkType
+        # objects, never equal, so it logs "Specified issue link type is not
+        # present" for every valid name (seen on every Agent 1 run). The name
+        # comes from config and a wrong one fails the POST itself, so that one
+        # message is dropped around this call.
+        log = getattr(self.client, "log", None)
+        quiet = _DropLinkTypeWarning()
+        if log is not None:
+            log.addFilter(quiet)
+        try:
+            self.client.create_issue_link(
+                type=lt["name"], inwardIssue=inward, outwardIssue=outward,
+            )
+        finally:
+            if log is not None:
+                log.removeFilter(quiet)
 
     def _find_links(self, from_key: str, to_key: str, kind: str) -> list:
         """Links of type `kind` between the two issues, either direction."""
@@ -787,7 +807,7 @@ class JiraClient:
         if status >= 400:
             raise RuntimeError(f"setting property {key} on {issue_key}: HTTP {status}")
 
-    def get_property(self, issue_key: str, key: str):
+    def get_property(self, issue_key: str, key: str) -> dict | list | str | int | float | bool | None:
         """The stored value as plain JSON (dict, list, str, number), or None
         when the issue has no such property.
 

@@ -170,8 +170,8 @@ class RepoHost(Protocol):
         line - as [{"id", "path", "line", "body", "author", "association",
         "review_id"}, ...],
         oldest first: each thread's first comment and a person's reply in a
-        thread (`reply_to`: the thread's first comment); bots' replies are left
-        out. With `review_id`,
+        thread (`reply_to`: the thread's first comment); every bot comment is
+        left out. With `review_id`,
         only that review's comments. `line` may be None when the diff the
         comment was made on has moved. Used by Agent 2's review fix."""
         ...

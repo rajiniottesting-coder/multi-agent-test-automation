@@ -125,7 +125,7 @@ def _first_page_object_call(func, fixtures: dict):
             calls.append((node.lineno, node.col_offset, node.func.value.id, node.func.attr))
     if not calls:
         return None
-    _l, _c, fixture, method = min(calls)
+    _l, _c, fixture, method = min(calls, key=lambda c: (c[0], c[1]))
     return fixture, method
 
 

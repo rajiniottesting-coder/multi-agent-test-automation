@@ -1626,6 +1626,18 @@ def _summarize_validator_feedback(errors: list[str]) -> str:
     )
 
 
+def _previous_attempt_worth_showing(path: str, content: str) -> bool:
+    """Whether a repair is shown the file as it stands.
+
+    A feature file is not Python, so `_looks_like_useful_python` always hid it
+    and every repair of a feature file regenerated it from nothing - with new
+    marker hashes and owners, which the review fix then had to refuse (#258).
+    A feature file that reads as Gherkin is shown, like a parseable .py file."""
+    if path.endswith(".feature"):
+        return bool(content) and "Feature:" in content and "Scenario" in content
+    return _looks_like_useful_python(content)
+
+
 def _looks_like_useful_python(content: str) -> bool:
     """Quick check: does this look like real, parseable Python code?
 
@@ -2094,12 +2106,16 @@ def generate_file_content(
         # syntactically-broken previous attempt only confuses the LLM further;
         # better to ask for a fresh generation guided by the feedback alone.
         prev_attempt_block = ""
-        if previous_attempt and _looks_like_useful_python(previous_attempt):
+        if previous_attempt and _previous_attempt_worth_showing(file_plan.file_path,
+                                                                previous_attempt):
             prev_attempt_block = (
                 f"\n\n## Your previous attempt (which had the issues above):\n"
                 f"```\n{previous_attempt}\n```\n"
                 f"\nProduce a CORRECTED version of this file. Keep what was "
                 f"right; fix what the validator flagged."
+                + ("\nKeep every scenario's title, its `# JIRA:` marker line and "
+                   "its tags exactly as they are: they come from the approved "
+                   "test cases." if file_plan.file_path.endswith(".feature") else "")
             )
 
         # Backlog 2.3 — targeted guidance for the exact failure class(es) the

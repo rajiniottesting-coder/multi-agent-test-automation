@@ -240,6 +240,10 @@ def unhandled_requests(host, pr_number: int, key: str, earlier: list[str],
             logger.warning("Could not read the %ss of PR #%s: %s", kind, pr_number, e)
             continue
         for r in records:
+            # Stricter than collect_items on purpose: a line comment from a
+            # host that cannot say who wrote it is trusted, as before #265; a
+            # recovered request is new, so it is taken only when its author's
+            # access can be checked. GitHub always reports it.
             if r.get("bot") or (r.get("association") or "") not in WRITE_ACCESS:
                 continue
             body = (r.get("body") or "").strip()
