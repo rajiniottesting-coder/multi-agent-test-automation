@@ -217,22 +217,27 @@ def _already_analysed(tracker, story_key: str, chash: str, settings: dict) -> bo
 
 
 def analyse_and_publish(tracker, story_key: str, llm, settings: dict, root: Path,
-                        host=None, dry_run: bool = False, uncovered: dict | None = None) -> dict:
+                        host=None, dry_run: bool = False, uncovered: dict | None = None,
+                        force: bool = False) -> dict:
     """The requirement trigger, stage 0 first: an unchanged story costs no
     model call. Its impact-check label is consumed either way.
+
+    `force` (one story, by hand) skips stage 0 and analyses anyway: without
+    it an unchanged story can never be analysed again - after a framework
+    change, or to check a result - short of editing the story's text.
 
     `uncovered` (the nightly uncovered-element snapshot) feeds the optional
     hint. It is not part of the stage-0 hash: a new snapshot alone does not
     re-analyse a story, because that would cost model calls every night."""
     _start_usage()
     story = tracker.get_story(story_key)
-    if _already_analysed(tracker, story_key, requirement_hash(story), settings):
+    if not force and _already_analysed(tracker, story_key, requirement_hash(story), settings):
         if not dry_run:
             tracker.remove_label(story_key, settings["labels"]["check"])
         return {"story": story_key, "action": "unchanged"}
     report = analyse_requirement(tracker, story_key, llm, settings, root, host,
                                  uncovered=uncovered)
-    result = publish(tracker, story_key, report, settings, dry_run=dry_run)
+    result = publish(tracker, story_key, report, settings, dry_run=dry_run, force=force)
     if result.get("action") == "nothing-to-review":
         # Released straight to ai-ready: no hand-over will follow, so the
         # context update is proposed now.
@@ -546,11 +551,12 @@ def _with_delta(body: str, change: dict | None) -> str:
     return f"{head}\n{text}\n{rest}" if rest else f"{head}\n{text}"
 
 
-def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool = False) -> dict:
+def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool = False,
+            force: bool = False) -> dict:
     """Shadow: one report comment. Live: the Impact Review (or ai-ready when
     there is nothing to review), with D4's delta against an earlier report."""
     labels = settings["labels"]
-    if _already_analysed(tracker, story_key, report["content_hash"], settings):
+    if not force and _already_analysed(tracker, story_key, report["content_hash"], settings):
         if not dry_run:                                              # stage 0 guard
             tracker.remove_label(story_key, labels["check"])
         return {"story": story_key, "action": "unchanged"}
@@ -791,12 +797,16 @@ def main(argv=None) -> int:
     ap.add_argument("--head", help="--code-change: checkout of the pull request")
     ap.add_argument("--pr", type=int, help="--code-change: pull request number to comment on")
     ap.add_argument("--dry-run", action="store_true", help="print the report; write nothing")
+    ap.add_argument("--force", action="store_true",
+                    help="--story: analyse even when the story is unchanged since its last report")
     ap.add_argument("--uncovered-snapshot", metavar="PATH",
                     help="--scan / --story: a check_inventory_staleness --compare report. "
                          "Used only when uncovered_hint is on and the report is fresh.")
     args = ap.parse_args(argv)
 
     settings = impact_settings()
+    if args.force and not args.story:
+        ap.error("--force is for one story: use it with --story")
     if not settings["enabled"] and not args.dry_run:
         print("agents.agent0_impact.enabled is false - nothing to do (use --dry-run to preview).")
         return 0
@@ -828,7 +838,7 @@ def _run_mode(args, ap, settings, tracker, host, uncovered) -> int:
         with story_usage(args.story.upper(), IMPACT_ANALYST, jira=tracker, dry_run=args.dry_run):
             print(analyse_and_publish(tracker, args.story.upper(), LLMClient(temperature=0.0),
                                       settings, PROJECT_ROOT, host, dry_run=args.dry_run,
-                                      uncovered=uncovered))
+                                      uncovered=uncovered, force=args.force))
         return 0
     if args.code_change:
         if not (args.base and args.head):
@@ -841,7 +851,7 @@ def _run_mode(args, ap, settings, tracker, host, uncovered) -> int:
         elif _posted_on_pr(host, args.pr, report["content_hash"]):
             print(f"PR #{args.pr}: unchanged since the last report")   # stage 0
         else:
-            host.post_pr_comment(args.pr, body)
+            host.post_pr_comment(args.pr, for_pull_request(body))
         return 0
     drift = json.loads(Path(args.drift_report).read_text(encoding="utf-8"))
     report = analyse_drift(drift, PROJECT_ROOT, settings, tracker, host)
@@ -880,6 +890,30 @@ def _drift_components(report: dict, root: Path) -> list:
     graph, _sha = load_graph(root)
     pages = {e.split(":", 1)[0] for e in report["seeds"]["elements"]} | set(report["seeds"]["pages"])
     return sorted({c for p in pages for c in graph.page_components.get(p, ())})
+
+
+def for_pull_request(body: str) -> str:
+    """The report in the repository host's markdown. It is written in the
+    tracker's markup - a `||Tier||...||` header row and a `{code:json}` data
+    block - which a pull request shows as raw text (4 Nov 2026). The header
+    row gets its separator row; the data block becomes a fenced block folded
+    away under a summary. The first line, which the repeat check reads, is
+    kept as it is."""
+    lines = []
+    for line in body.split("\n"):
+        if line.startswith("||") and line.endswith("||"):
+            cells = [c for c in line.strip("|").split("||")]
+            lines += ["| " + " | ".join(cells) + " |", "|" + "---|" * len(cells)]
+        else:
+            lines.append(line)
+    text = "\n".join(lines)
+    start = text.find(ia.REPORT_OPEN)
+    end = text.rfind(ia.REPORT_CLOSE)
+    if start != -1 and end > start:
+        text = (text[:start] + "<details><summary>Agent 0 data</summary>\n\n```json"
+                + text[start + len(ia.REPORT_OPEN):end] + "```\n</details>"
+                + text[end + len(ia.REPORT_CLOSE):])
+    return text
 
 
 def _posted_on_pr(host, pr_number: int, chash: str) -> bool:

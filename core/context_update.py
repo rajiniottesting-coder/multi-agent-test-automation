@@ -241,9 +241,35 @@ def _apply_json_notes(text: str, old: str, new: str) -> str | None:
     return json.dumps(expected, indent=2, ensure_ascii=False) + "\n"
 
 
-def _apply_rewrites(current: dict, rewrites, prop: Proposal, offered=None) -> None:
+_QUOTED = re.compile(r'"([^"\n]{3,}?)"|“([^”\n]{3,}?)”|(?<![\w])\'([^\'\n]{3,}?)\'(?![\w])|`([^`\n]{3,}?)`'
+                     r'|\*\*([^*\n]{3,}?)\*\*')
+
+
+def invented_quotes(old: str, new: str, known: str) -> list:
+    """The quoted texts of `new` that `old` and `known` (the story and the
+    notes) never state. A rewrite that puts a message or a label in quotes
+    tells every agent the application shows exactly those words; when the
+    story only describes the text, the quote is made up (4 Nov 2026: a full
+    error message, in quotes, from a story that only said what the message
+    should explain). Whitespace is not significant."""
+    def norm(text: str) -> str:
+        return " ".join((text or "").split())
+    seen = norm(old) + "\n" + norm(known)
+    out = []
+    for m in _QUOTED.finditer(new or ""):
+        quote = norm(next(g for g in m.groups() if g))
+        if quote and quote not in seen and quote not in out:
+            out.append(quote)
+    return out
+
+
+def _apply_rewrites(current: dict, rewrites, prop: Proposal, offered=None,
+                    story_text: str | None = None) -> None:
     """Apply each rewrite; `offered` (when given) is the set of files the model
-    was shown - a rewrite of any other file is dropped, never applied blind."""
+    was shown - a rewrite of any other file is dropped, never applied blind.
+    With `story_text`, a rewrite quoting a text that neither the story nor any
+    note states is dropped (invented_quotes)."""
+    known = None if story_text is None else story_text + "\n" + "\n".join(current.values())
     for rw in rewrites or []:
         path = (getattr(rw, "path", "") or "").strip()
         old = (getattr(rw, "old", "") or "").strip()
@@ -258,6 +284,12 @@ def _apply_rewrites(current: dict, rewrites, prop: Proposal, offered=None) -> No
         if offered is not None and path not in offered:
             prop.dropped.append((old[:60], new[:60],
                                  f"{path} was not among the notes the story's Components select"))
+            continue
+        invented = invented_quotes(old, new, known) if known is not None else []
+        if invented:
+            prop.dropped.append((old[:60], new[:60], "it quotes a text the story does not state: "
+                                 + "; ".join(f"'{q[:80]}'" for q in invented)
+                                 + " - describe it without quotes, or quote the story"))
             continue
         text = current[path]
         if path.endswith(".json"):
@@ -385,7 +417,8 @@ def _scoped_value_replace(text: str, old: str, new: str, pages,
 
 
 def propose(sources: dict, changes, code: dict | None = None, rewrites=(),
-            offered=None, removed=(), pages=None, narrowed: bool | None = None) -> Proposal:
+            offered=None, removed=(), pages=None, narrowed: bool | None = None,
+            story_text: str | None = None) -> Proposal:
     """Apply each old -> new, then each passage rewrite, then each removed
     element's declaration, to the sources. `offered`: the notes files the
     story's Components select (None: all); `pages`: the inventory pages they
@@ -477,7 +510,7 @@ def propose(sources: dict, changes, code: dict | None = None, rewrites=(),
             for n, line in enumerate(text.splitlines(), 1):
                 if old in line:
                     prop.code_mentions.append({"path": relpath, "line": n, "text": line.strip()})
-    _apply_rewrites(current, rewrites, prop, offered)
+    _apply_rewrites(current, rewrites, prop, offered, story_text)
     _declare_removed(current, removed, pages, prop)
     prop.edits = {p: t for p, t in current.items() if t != sources.get(p)}
     return prop
@@ -503,6 +536,37 @@ def _cell(text: str, limit: int = 120) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+def changed_part(before: str, after: str, context: int = 40) -> tuple:
+    """(before, after) cut to where they differ, with a little context.
+
+    A rewritten passage is often long and changed near its end; cut from the
+    start, both cells of the PR table read the same and the reviewer cannot
+    see the change (4 Nov 2026: both rows of a context-update PR). The common
+    start and end are dropped - at a word boundary, marked with "…" - so each
+    cell opens on the first difference and closes after the last."""
+    before, after = " ".join(before.split()), " ".join(after.split())
+    if before == after:
+        return before, after
+    start = 0
+    while start < min(len(before), len(after)) and before[start] == after[start]:
+        start += 1
+    end = 0
+    while (end < min(len(before), len(after)) - start
+           and before[-1 - end] == after[-1 - end]):
+        end += 1
+    cut = max(0, start - context)
+    while cut > 0 and before[cut - 1] != " ":
+        cut -= 1
+    tail = max(0, end - context)
+    while tail > 0 and before[len(before) - tail] != " ":
+        tail -= 1
+
+    def trim(text: str) -> str:
+        middle = text[cut:len(text) - tail] if tail else text[cut:]
+        return ("…" if cut else "") + middle.strip() + ("…" if tail else "")
+    return trim(before), trim(after)
+
+
 def render_body(story_key: str, prop: Proposal) -> str:
     lines = [f"Context update proposed by Agent 0 for **{story_key}**.", "",
              *([f"_{prop.note}_", ""] if prop.note else []),
@@ -522,8 +586,9 @@ def render_body(story_key: str, prop: Proposal) -> str:
                        "application. Check each against the story before merging:"),
                   "", "| File | Before | After | Why |", "|---|---|---|---|"]
         for r in prop.rewrites:
-            lines.append(f"| `{r['path']}` | {_cell(r['before'], 200)} | "
-                         f"{_cell(r['after'], 200)} | {_cell(r['reason'], 160)} |")
+            before, after = changed_part(r["before"], r["after"])
+            lines.append(f"| `{r['path']}` | {_cell(before, 300)} | "
+                         f"{_cell(after, 300)} | {_cell(r['reason'], 160)} |")
     if prop.declared_removed:
         lines += ["", "Elements the story removes, declared `removed` in the inventory - after "
                       "deployment the nightly check reads each missing element as expected "
@@ -722,7 +787,8 @@ def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: 
         rewrites, removed = [], []
         unchecked = f"\nBehaviour notes were not checked ({type(e).__name__})."
     prop = propose(sources, changes, code_sources(root), rewrites, set(offered), removed, pages,
-                   narrowed=_narrowed(sources, offered, pages))
+                   narrowed=_narrowed(sources, offered, pages),
+                   story_text=f"{story['summary']}\n{story.get('description') or ''}")
     prop.note = note
     if prop.empty:
         tracker.add_comment(story_key, f"{MARKER} No context update needed: the story replaces "

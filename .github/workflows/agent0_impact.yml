@@ -30,6 +30,11 @@ on:
         required: false
         type: boolean
         default: false
+      force:
+        description: "With story_key: analyse the story even if it is unchanged since its last report"
+        required: false
+        type: boolean
+        default: false
       mode:
         description: "scan = analyse stories and reconcile (default); drift = run the nightly inventory check and its impact now"
         required: false
@@ -156,8 +161,10 @@ jobs:
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then DRY="--dry-run"; fi
           SNAP=""
           if [ -f reports/drift.json ]; then SNAP="--uncovered-snapshot reports/drift.json"; fi
+          FORCE=""
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then FORCE="--force"; fi
           if [ -n "${{ github.event.inputs.story_key }}" ]; then
-            python -m agents.agent0_impact --story "${{ github.event.inputs.story_key }}" $DRY $SNAP
+            python -m agents.agent0_impact --story "${{ github.event.inputs.story_key }}" $DRY $FORCE $SNAP
           else
             python -m agents.agent0_impact --scan $DRY $SNAP
           fi

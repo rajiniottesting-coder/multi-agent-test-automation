@@ -39,7 +39,8 @@ from core.acceptance_coverage import (coverage_problems, criteria_block, extract
                                       index_cases, render_coverage)
 from core.impact_settings import impact_settings
 from core.schemas import ImpactAwareDraft
-from core.test_case_rules import draft_problems, load_persistent_pages, load_shared_accounts
+from core.test_case_rules import (DraftRejected, draft_problems, load_persistent_pages,
+                                  load_shared_accounts)
 from validators.gherkin_analyzer import normalize_scenario_name
 
 logger = logging.getLogger("agent1_impact")
@@ -160,7 +161,7 @@ def _draft(llm, prompt: str, approved_keys: set, existing_titles: set,
     errors, near = validate_draft(draft, approved_keys, existing_titles, persistent,
                                   approved_titles, criteria, accounts)
     if errors:
-        raise ValueError("impact-aware draft rejected twice; nothing was written: "
+        raise DraftRejected("impact-aware draft rejected twice; nothing was written: "
                          + "; ".join(errors))
     return draft, near
 

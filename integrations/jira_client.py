@@ -157,6 +157,26 @@ class JiraClient:
             "components": components,
         }
 
+    def _effective_sprint(self, selection_config: dict, sprint_override: str | None):
+        """The sprint a selection is scoped to, or None for every sprint.
+        Priority: CLI override > config value > no filter. Special values:
+          "auto"        -> resolve the active sprint from Jira via JIRA_BOARD_ID
+          "openSprints" -> Jira's dynamic JQL alias for the active sprint
+        Anything else is an exact sprint name (or numeric ID)."""
+        effective_sprint = sprint_override or selection_config.get("sprint")
+        if effective_sprint and str(effective_sprint).lower() == "auto":
+            resolved = self.get_active_sprint_name()
+            if resolved:
+                effective_sprint = resolved
+                logger.info(f"Sprint 'auto' resolved to: {effective_sprint!r}")
+            else:
+                logger.warning(
+                    "Sprint 'auto' could not resolve the active sprint — "
+                    "scanning across all sprints this run."
+                )
+                effective_sprint = None
+        return effective_sprint
+
     def find_stories_to_process(
         self,
         selection_config: dict,
@@ -211,19 +231,7 @@ class JiraClient:
         #   "openSprints" → Jira's dynamic JQL alias for the active sprint
         # Anything else is treated as an exact sprint name (or numeric ID).
         # When absent the query spans all sprints (backward-compatible).
-        effective_sprint = sprint_override or selection_config.get("sprint")
-
-        if effective_sprint and str(effective_sprint).lower() == "auto":
-            resolved = self.get_active_sprint_name()
-            if resolved:
-                effective_sprint = resolved
-                logger.info(f"Sprint 'auto' resolved to: {effective_sprint!r}")
-            else:
-                logger.warning(
-                    "Sprint 'auto' could not resolve the active sprint — "
-                    "scanning across all sprints this run."
-                )
-                effective_sprint = None
+        effective_sprint = self._effective_sprint(selection_config, sprint_override)
 
         if effective_sprint:
             if str(effective_sprint).lower() == "opensprints":
@@ -252,6 +260,50 @@ class JiraClient:
         ]
         logger.info(f"Found {len(results)} stories matching criteria")
         return results
+
+    def find_unselected_stories(self, selection_config: dict, sprint_override: str | None = None,
+                                max_results: int = 20) -> list[dict]:
+        """Stories that carry the selection's trigger labels (and none of its
+        excluded ones) but that its status or sprint filter leaves out, each
+        with why: [{"key", "status", "why"}]. Optional capability.
+
+        The scan never sees them, so without this nothing says why a labelled
+        story is not taken (4 Nov 2026: stories created outside the active
+        sprint were released to Agent 1 and silently never drafted)."""
+        statuses = list(selection_config.get("allowed_statuses") or [])
+        sprint = self._effective_sprint(selection_config, sprint_override)
+        if not statuses and not sprint:
+            return []
+        parts = [f"project = {self.project_key}"]
+        if issue_type := selection_config.get("issue_type"):
+            parts.append(f'issuetype = "{issue_type}"')
+        parts += [f'labels = "{label}"' for label in selection_config.get("required_labels", [])]
+        parts += [f'labels != "{label}"' for label in selection_config.get("excluded_labels", [])]
+        if not selection_config.get("required_labels"):
+            return []
+        status_in = "status in ({})".format(", ".join(f'"{x}"' for x in statuses))
+        sprint_in = ("sprint in openSprints()" if str(sprint).lower() == "opensprints"
+                     else f'sprint = "{sprint}"') if sprint else None
+        inside = " AND ".join(x for x in (status_in if statuses else None, sprint_in) if x)
+        relaxed = " AND ".join(parts)
+        found = self.client.enhanced_search_issues(f"{relaxed} AND NOT ({inside})",
+                                                   maxResults=max_results)
+        in_sprint = set()
+        if sprint_in and found:
+            keys = ", ".join(i.key for i in found)
+            in_sprint = {i.key for i in self.client.enhanced_search_issues(
+                f"key in ({keys}) AND {sprint_in}", maxResults=max_results)}
+        out = []
+        for issue in found:
+            status = issue.fields.status.name
+            whys = []
+            if statuses and status not in statuses:
+                whys.append(f"its status '{status}' is not one of: {', '.join(statuses)}")
+            if sprint_in and issue.key not in in_sprint:
+                whys.append(f"it is not in the sprint '{sprint}'")
+            if whys:
+                out.append({"key": issue.key, "status": status, "why": "; and ".join(whys)})
+        return out
 
     # ─────────────────────────────────────────────────────────────
     # Test case creation

@@ -13,6 +13,7 @@ The agents that write and code tests read the notes below to learn how the appli
 - `removed`: every element the story takes out of the application, as `page.key` exactly from the "elements" lists under the inventory file - also when the element has no note. Only elements the story says are removed; an element merely changed is not removed.
 - Wording the story merely replaces (an old label or message becoming a new one) is handled elsewhere - do not include it.
 - Only passages the story makes untrue. Never guess: if the story does not say how something behaves now, leave the passage alone.
+- Never put in quotes a text the story does not state word for word - a message, a label, a heading. When the story only describes it ("the message explains what to do next"), describe it the same way, without quotes. A quoted text that is in neither the story nor the notes is discarded.
 - If nothing becomes untrue, return an empty list.
 
 # Story {story_key}

@@ -327,6 +327,43 @@ def _finish_reason(response) -> "str | None":
     return None
 
 
+_EVIDENCE_TAIL = 800
+_REPEAT_MIN = 40
+
+
+def truncation_evidence(content) -> list:
+    """Lines that say why an output ran out of room: how much of it repeats,
+    the most repeated passage, and its last characters. Never raises.
+
+    The text is cut into pieces at line breaks, or every 200 characters when
+    it has few (a JSON answer is often one line); a piece seen several times
+    is what a repetition loop leaves behind."""
+    try:
+        text = content if isinstance(content, str) else (
+            "".join(p.get("text", "") if isinstance(p, dict) else str(p) for p in content or []))
+    except Exception:                                              # noqa: BLE001
+        return ["  output text    : not available"]
+    if not text:
+        return ["  output text    : empty"]
+    pieces = [p.strip() for p in text.splitlines() if p.strip()]
+    if len(pieces) < 20:
+        pieces = [text[i:i + 200] for i in range(0, len(text), 200)]
+    counted: dict = {}
+    for p in pieces:
+        if len(p) >= _REPEAT_MIN:
+            counted[p] = counted.get(p, 0) + 1
+    repeated = sum(n for n in counted.values() if n > 1)
+    top = max(counted.items(), key=lambda kv: kv[1], default=("", 0))
+    lines = [f"  output text    : {len(text):,} characters, {len(pieces):,} pieces",
+             f"  repetition     : {repeated:,} of {len(pieces):,} pieces repeat"
+             + (" - LIKELY A LOOP" if pieces and repeated * 4 >= len(pieces) else
+                " - no loop seen; the content is probably genuinely large")]
+    if top[1] > 1:
+        lines.append(f"  most repeated  : x{top[1]} {top[0][:160]!r}")
+    lines.append(f"  last characters: {text[-_EVIDENCE_TAIL:]!r}")
+    return lines
+
+
 def _check_output_not_truncated(response, *, label: str, cap: int, knob: str) -> None:
     """Raise OutputTruncatedError if the model stopped at the output cap.
 
@@ -356,11 +393,18 @@ def _check_output_not_truncated(response, *, label: str, cap: int, knob: str) ->
     logger.error("  tokens produced : %s", produced_str)
     logger.error("Nothing was parsed and nothing was written.")
     logger.error("")
+    # The output itself is the only evidence of WHY it ran out: a repetition
+    # loop, or genuinely large content. A structured answer is never logged
+    # elsewhere, so without this the advice below could not be followed
+    # (4 Nov 2026: a truncated draft left no way to tell which it was).
+    for line in truncation_evidence(getattr(response, "content", None)):
+        logger.error("%s", line)
+    logger.error("")
     logger.error("TO RE-RUN WITH MORE ROOM: %s", knob)
     logger.error("")
     logger.error(
-        "BEFORE RAISING THE CAP: scan the log above for repeated content. A "
-        "repetition loop fills any budget you give it, so a larger cap would "
+        "BEFORE RAISING THE CAP: read the repetition line and the tail above. "
+        "A repetition loop fills any budget you give it, so a larger cap would "
         "only cost more and truncate later. Raise the cap only if the output "
         "was genuinely large and non-repetitive."
     )

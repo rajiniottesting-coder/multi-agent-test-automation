@@ -4,6 +4,23 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — what Run B of the validation found (#276)
+
+**Why:** Run B drove SCRUM-291 and SCRUM-296 through the agents on 4 Nov 2026. The flaws it found, with those from Run A, were each a place where something went wrong without anything saying so or stopping it. Some were silent: a story never selected, a truncated answer with no evidence, a PR table whose two cells read the same. Some repeated: a failed draft paid for every 30 minutes. Some were contradictions: the orphan clean-up against the page-object contract, a quote the story never stated, a copy of an existing test.
+
+- `core/llm_client.truncation_evidence()`: an answer that runs out of output room is logged - its size, how much of it repeats (*LIKELY A LOOP* at a quarter or more), the most repeated piece and its last 800 characters - so a loop can be told from genuine size before a cap is raised
+- `agents/agent1_analyst`: `stops_retrying()` / `hand_back()` - a scheduled scan whose draft ran out of room or broke the test-case rules twice (`core.test_case_rules.DraftRejected`, a `ValueError`) removes the trigger label and posts one `[agent1:stopped]` comment, instead of paying for the same failure on every scan. Other failures keep the label
+- Agent 1's normal draft is shown the scenarios that exist (`existing_scenario_titles()`, the impact-aware block): a criterion one already verifies unchanged cites it; a new test titled as one is sent back (`repeats_of_existing()`)
+- `agents/agent2_coder`: a planned file generated exactly as on `main` is not committed (`unchanged_files_dropped()`), and the PR lists it under *Planned, but unchanged*; every file unchanged stops before a branch is made
+- `core/selection_notice.py` (new) and the optional tracker capability `find_unselected_stories()`: a story carrying an agent's trigger label that the scan's status or sprint filter leaves out gets one `[pipeline:not-selected]` comment per agent and reason (Agents 1 and 2, every selection). `JiraClient._effective_sprint()` is the one sprint resolution
+- Agent 0: `--force` / the workflow input `force` analyses one unchanged story again; its code-change comment is markdown on the pull request (`for_pull_request()`: the table's separator row, the data folded away); each element path names the element's selector, and the judge is told that finding an element is not reading its text
+- `core/context_update`: a rewrite that puts in quotes a text neither the story nor the notes state is not applied (`invented_quotes()`, and a prompt rule); the PR table shows each rewrite from its first difference to its last (`changed_part()`)
+- `validators/page_object_contract.orphaned_on_purpose()`: a method the orphan clean-up commented out under `# AI-ORPHAN:` is not a lost method. `cleanup_orphans_after_removal(called_elsewhere=)` with `agent2_coder.methods_called_in_open_prs()`: a page method an open pull request calls is not orphaned; unreadable open pull requests orphan no page method
+- `tests/unit/test_run_b_findings.py` (28). TEST_TRACK: E59-E69; the impact-aware output budget (F-32) waits for E59's evidence
+- Not tested live yet: E59-E69
+
+---
+
 ## November 2026 — a notes change touches only the story's own pages; the small backlog (#267)
 
 **Why:** before Run A, the rename update was run on the real inventory and notes for the two validation stories (SCRUM-295 with Component Cart, SCRUM-290 with none). With the Component, a `core.md` line about the all-products cards was renamed too - `core.md` is always in scope. Without one, the seeded details page widened through its Components (Products, Cart) to every page sharing them, and the all-products selector `text=Add to cart` was rewritten - the listing's tests would have broken after merge. Both came from #265.
