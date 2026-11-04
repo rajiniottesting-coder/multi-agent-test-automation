@@ -104,4 +104,5 @@ class CartPage(BasePage):
 
     def product_names(self) -> list[str]:
         """Return the names of every product currently in the cart."""
-        return self.get_all_texts(self.sel("cart_product_names"))
+        names = self.get_all_texts(self.sel("cart_product_names"))
+        return names
