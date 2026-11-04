@@ -97,6 +97,41 @@ def test_the_job_timeout_fits_the_deadline_and_one_slow_story():
     assert cfg["max_stories_per_run"] >= 1
 
 
+# ── F27: a story that did nothing hands its place on ─────────────────────
+
+def test_a_blocked_or_still_waiting_story_does_not_use_up_a_place(monkeypatch):
+    """4 Nov 2026: a blocked story and a waiting one took both places on every
+    scan; the third, SCRUM-201, was deferred every time."""
+    ran = []
+    tracker = MagicMock()
+    tracker.find_stories_to_process.side_effect = [S("A-1", "A-2", "A-3", "A-4"), [], []]
+    monkeypatch.setattr(a2, "get_tracker", lambda: tracker)
+    monkeypatch.setattr(a2, "validate_required_env", lambda *a: None)
+    monkeypatch.setattr(a2, "load_agent_config", lambda: {
+        "selection": {"x": 1}, "regenerate_selection": {"x": 1}, "update_selection": {"x": 1},
+        "max_stories_per_run": 2, "scan_deadline_minutes": 12})
+    outcome = {"A-1": {"status": "blocked", "free": True},
+               "A-2": {"status": "waiting_for_open_pr", "free": True},
+               "A-3": {"status": "pr_opened"}, "A-4": {"status": "pr_opened"}}
+
+    def run(key, **kw):
+        ran.append(key)
+        return {"story_id": key, **outcome[key]}
+    summary = []
+    monkeypatch.setattr(a2, "run", run)
+    monkeypatch.setattr(a2, "_print_scan_summary", lambda r: summary.extend(r))
+    monkeypatch.setattr(sys, "argv", ["agent2", "--scan"])
+    a2.main()
+    assert ran == ["A-1", "A-2", "A-3", "A-4"], "two places of work: A-3 and A-4"
+    assert not [r for r in summary if r["status"] == "deferred"]
+    outcome["A-1"] = {"status": "waiting_for_open_pr"}          # a wait that cost a plan
+    ran.clear(); summary.clear()
+    tracker.find_stories_to_process.side_effect = [S("A-1", "A-2", "A-3", "A-4"), [], []]
+    a2.main()
+    assert ran == ["A-1", "A-2", "A-3"]
+    assert [r["story_id"] for r in summary if r["status"] == "deferred"] == ["A-4"]
+
+
 # ── F26: a story run by key runs in the mode its labels ask for ─────────
 
 @pytest.mark.parametrize("labels, mode", [
