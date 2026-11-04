@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — what Run C of the validation found (#PRNUM)
+## November 2026 — what Run C of the validation found (#284)
 
 **Why:** starting Run C on 4 Nov 2026 showed six more places (and #276's evidence explained a seventh) where work stopped or went wrong with nothing reporting it: the repository host started almost none of the agents' scheduled runs and no check noticed; a planned list of titles was never confirmed; a new story was drafted as one test case saying its page "is not defined in the Application Under Test"; one story needing a person turned the run red, and the hand-off then left every other waiting story to a schedule that rarely starts; and that story was taken first again on every scan.
 
