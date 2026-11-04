@@ -163,3 +163,77 @@ def test_a_fact_the_target_or_core_states_is_still_dropped():
         res = cu.propose_additions(_sources(), [NoteAddition(path=FORMS, heading="", text=line,
                                                              reason="AC")], {CORE, FORMS}, {})
         assert res.empty and res.repeated
+
+
+# ── a story with no Component: Agent 0's impact analysis says which page ──
+
+def test_the_pages_of_the_seeds():
+    assert cu.seed_pages({"elements": ["form:send", "order:send", "bad"], "pages": ["menu"]}) \
+        == ["form", "menu", "order"]
+    assert cu.seed_pages(None) == [] and cu.seed_pages({}) == []
+
+
+class _Host:
+    def __init__(self):
+        self.files, self.body = {}, ""
+    def branch_exists(self, b): return False
+    def create_branch(self, b, base): pass
+    def create_or_update_file(self, path, text, msg, branch): self.files[path] = text
+    def open_pull_request(self, title, body, head, base="main"):
+        self.body = body
+        return "https://host.example/pr/7"
+    def delete_branch(self, b): return True
+
+
+@pytest.fixture
+def notes_root(tmp_path):
+    for rel, text in _sources().items():
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text(text)
+    return tmp_path
+
+
+def _story_run(monkeypatch, root, components, seeds):
+    from types import SimpleNamespace
+    monkeypatch.setattr(cu, "context_sources", lambda r: _sources())
+    monkeypatch.setattr(cu, "code_sources", lambda r: {})
+    monkeypatch.setattr(cu, "extract_changes", lambda llm, story: _change())
+    monkeypatch.setattr(cu, "extract_note_rewrites", lambda *a, **k: ([], []))
+    comments = []
+    tracker = SimpleNamespace(
+        get_story=lambda k: {"summary": "Rename", "description": "Send becomes Submit",
+                             "components": components},
+        get_comments=lambda k: [], add_comment=lambda k, body: comments.append(body))
+    host = _Host()
+    out = cu.propose_for_story(tracker, host, None, "AB-30",
+                               {"context_update": {"enabled": True}}, root, seeds=seeds)
+    return out, host, comments
+
+
+def test_the_seeds_scope_a_story_with_no_component(monkeypatch, notes_root):
+    out, host, _ = _story_run(monkeypatch, notes_root, [], {"elements": ["form:send"], "pages": []})
+    assert out["context"] == "proposed"
+    assert _sends(host.files["inv/app.json"]) == {"form"} and ORDERS not in host.files
+    assert FORMS in host.files
+    assert "impact analysis found it changes the inventory page(s) form" in host.body
+
+
+def test_without_seeds_a_story_with_no_component_is_judged_as_before(monkeypatch, notes_root):
+    out, host, comments = _story_run(monkeypatch, notes_root, [], None)
+    assert out["context"] == "none" and "no Component to say which" in comments[-1]
+
+
+def test_the_storys_own_component_wins_over_the_seeds(monkeypatch, notes_root):
+    out, host, _ = _story_run(monkeypatch, notes_root, ["Orders"], {"elements": ["form:send"]})
+    assert _sends(host.files["inv/app.json"]) == {"order"} and "impact analysis" not in host.body
+
+
+def test_a_seed_on_an_always_page_scopes_nothing(monkeypatch, notes_root):
+    out, _host, comments = _story_run(monkeypatch, notes_root, [], {"elements": ["menu:help"]})
+    assert out["context"] == "none" and "no Component to say which" in comments[-1]
+
+
+def test_agent0_passes_its_seeds():
+    import inspect
+    from agents import agent0_impact
+    assert 'seeds=(report or {}).get("seeds")' in inspect.getsource(agent0_impact._propose_context)
