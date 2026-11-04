@@ -4,6 +4,17 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — review fix reads a person's reply in a thread (#259)
+
+**Why:** iterating on SCRUM-283's pull request (4 Nov), the reviewer answered in the existing thread - the usual way to ask again. `get_review_comments()` left every reply out, and the thread's first comment was already handled, so `/fix` would have found nothing to act on.
+
+- `integrations/github_client.get_review_comments()`: each thread's first comment and a person's reply (`reply_to`: the thread's first comment); bots' replies - Agent 2's own answers - still left out
+- `agents/agent2_review_fix`: a reply is an item of its own, recorded as handled by its id; Agent 2 answers in its thread (GitHub replies through a thread's first comment)
+- `tests/unit/test_agent2_review_fix.py` +2 (43); 3 deliberate breaks (replies dropped again, bots' replies read as requests, answering on the reply) each fail a test
+- Not tested live yet: E53
+
+---
+
 ## November 2026 — review fix keeps the feature file's scenarios through the repair, and declines dropping an approved check (#258)
 
 **Why:** the first live review loop (SCRUM-283's pull request, 4 Nov). A comment asked to reword a step that the approved test case states ("no login prompt is shown"); the reworded file dropped that check, the absence-claims rule flagged it, and the repair loop regenerated the whole feature file in the ordinary mode - invented marker hashes (`1a2b3c4d`, ...), no `owner:`, a new title, a Scenario Outline - which was pushed. The rule "a feature file keeps its scenarios, titles and markers" was checked on the review change only, before the repair. The branch was reset by hand.
