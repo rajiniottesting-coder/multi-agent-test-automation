@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — Agent 2 names what a scenario does not check; text compared without letter case (#298)
+
+**Why:** SCRUM-293's pull request left out one expected result of a test case (an element the inventory lacked) and still claimed it automated - a marker proves pairing, not content (L31) - and its heading checks failed because the page shows the heading in capitals.
+
+- `agents/agent2_coverage.audit_partial()` with `prompts/agent2_coverage_audit.md`: after the gate, one structured call per batch lists, per test case, each expected result its scenario (with the Background) does not check; each becomes "covered, but needing a person" on the PR and the story. Fails open; `agents.agent2_coder.coverage_audit` switches it off
+- `prompts/agent2_coder_generate.md` rule 6a: compare displayed text case-insensitively unless case is what the test case checks; `core.failure_diagnosis`: a case-only mismatch reads `CAUSE (letter case)`
+- Tests in `test_run_c_findings.py`; TEST_TRACK E96, E97. Not tested live yet: E96, E97
+
+---
+
 ## November 2026 — no test pins a tunable config value (#296)
 
 **Why:** lowering `context_update.module_budget_chars` for validation step C1 turned the unit suite red - a test pinned the shipped value to the default, the flaw #288 fixed in two other tests.
