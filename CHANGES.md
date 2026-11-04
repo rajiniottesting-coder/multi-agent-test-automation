@@ -4,17 +4,20 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — tests own their settings; a refused story names its errors (#288)
+## November 2026 — tests own their settings; a refused story names its errors; scans spend only on work (#288)
 
-**Why:** step B5 of the validation sets `reconcile.closed_scans: 1`, and nine unit tests went red because they read the shipped config; and SCRUM-292 (4 Nov 2026) was refused with a one-line summary blaming the method names, while the eight errors under it - two of them methods a reserved page object lacks - never reached the person.
+**Why:** step B5 of the validation sets `reconcile.closed_scans: 1`, and nine unit tests went red because they read the shipped config; and SCRUM-292 (4 Nov 2026) was refused with a one-line summary blaming the method names, while the eight errors under it - two of them methods a reserved page object lacks - never reached the person; and scans paid a plan for every repeat of the same wait, gave their places to stories that did nothing, and ran a story given by key in the wrong mode.
 
 - Reconcile tests fix the scan count they walk (`pin_closed_scans`); the Agent 0 settings guard checks every key is present with a value of the right kind, not its value
 - Agent 0's report writes its table only when there are rows ("Affected: 0" had an empty header)
 - Every specific final-gate check in Agent 2 raises `GateFailure` with its errors: the `[agent2:blocked]` comment and the review fix's refusal list them
 - `core.blocked`: a method a reserved page object lacks is listed (`<Class>.<method>`, file) with a person's step - add it or reword the test case - instead of "the test case asks what the application cannot show"
 - Each file the final gate refuses is printed in a folded group of the run log, workflow commands stopped while it prints
+- `core.in_flight.still_waiting()`: a story whose last wait (same inputs, same open pull request, same file) still holds waits again before the plan - SCRUM-293 had been planned seven times ($0.79) to reach the same wait
+- Agent 2 `--story` (the workflow's `story_key`) runs the mode the story's labels ask for (`ai-update`, `ai-regenerate`); SCRUM-201 with `ai-update` had run in normal mode and been marked coded with "no work needed"
+- A scan story that did nothing (blocked, or a wait before any model call) hands its place to the next deferred story - a blocked and a waiting story had taken both places on every scan
 - `config.yaml`: `reconcile.closed_scans: 1` for B5 (back to 2 after Run B)
-- Tests in `test_run_b_findings.py`, `test_run_c_findings.py`; TEST_TRACK E80-E82. Not tested live yet: E81, E82
+- Tests in `test_run_b_findings.py`, `test_run_c_findings.py`, `test_in_flight.py`, `test_scan_budget.py`; TEST_TRACK E80-E85. Not tested live yet: E81-E85
 
 ---
 
