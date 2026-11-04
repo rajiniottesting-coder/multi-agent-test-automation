@@ -241,9 +241,35 @@ def _apply_json_notes(text: str, old: str, new: str) -> str | None:
     return json.dumps(expected, indent=2, ensure_ascii=False) + "\n"
 
 
-def _apply_rewrites(current: dict, rewrites, prop: Proposal, offered=None) -> None:
+_QUOTED = re.compile(r'"([^"\n]{3,}?)"|“([^”\n]{3,}?)”|(?<![\w])\'([^\'\n]{3,}?)\'(?![\w])|`([^`\n]{3,}?)`'
+                     r'|\*\*([^*\n]{3,}?)\*\*')
+
+
+def invented_quotes(old: str, new: str, known: str) -> list:
+    """The quoted texts of `new` that `old` and `known` (the story and the
+    notes) never state. A rewrite that puts a message or a label in quotes
+    tells every agent the application shows exactly those words; when the
+    story only describes the text, the quote is made up (4 Nov 2026: a full
+    error message, in quotes, from a story that only said what the message
+    should explain). Whitespace is not significant."""
+    def norm(text: str) -> str:
+        return " ".join((text or "").split())
+    seen = norm(old) + "\n" + norm(known)
+    out = []
+    for m in _QUOTED.finditer(new or ""):
+        quote = norm(next(g for g in m.groups() if g))
+        if quote and quote not in seen and quote not in out:
+            out.append(quote)
+    return out
+
+
+def _apply_rewrites(current: dict, rewrites, prop: Proposal, offered=None,
+                    story_text: str | None = None) -> None:
     """Apply each rewrite; `offered` (when given) is the set of files the model
-    was shown - a rewrite of any other file is dropped, never applied blind."""
+    was shown - a rewrite of any other file is dropped, never applied blind.
+    With `story_text`, a rewrite quoting a text that neither the story nor any
+    note states is dropped (invented_quotes)."""
+    known = None if story_text is None else story_text + "\n" + "\n".join(current.values())
     for rw in rewrites or []:
         path = (getattr(rw, "path", "") or "").strip()
         old = (getattr(rw, "old", "") or "").strip()
@@ -258,6 +284,12 @@ def _apply_rewrites(current: dict, rewrites, prop: Proposal, offered=None) -> No
         if offered is not None and path not in offered:
             prop.dropped.append((old[:60], new[:60],
                                  f"{path} was not among the notes the story's Components select"))
+            continue
+        invented = invented_quotes(old, new, known) if known is not None else []
+        if invented:
+            prop.dropped.append((old[:60], new[:60], "it quotes a text the story does not state: "
+                                 + "; ".join(f"'{q[:80]}'" for q in invented)
+                                 + " - describe it without quotes, or quote the story"))
             continue
         text = current[path]
         if path.endswith(".json"):
@@ -385,7 +417,8 @@ def _scoped_value_replace(text: str, old: str, new: str, pages,
 
 
 def propose(sources: dict, changes, code: dict | None = None, rewrites=(),
-            offered=None, removed=(), pages=None, narrowed: bool | None = None) -> Proposal:
+            offered=None, removed=(), pages=None, narrowed: bool | None = None,
+            story_text: str | None = None) -> Proposal:
     """Apply each old -> new, then each passage rewrite, then each removed
     element's declaration, to the sources. `offered`: the notes files the
     story's Components select (None: all); `pages`: the inventory pages they
@@ -477,7 +510,7 @@ def propose(sources: dict, changes, code: dict | None = None, rewrites=(),
             for n, line in enumerate(text.splitlines(), 1):
                 if old in line:
                     prop.code_mentions.append({"path": relpath, "line": n, "text": line.strip()})
-    _apply_rewrites(current, rewrites, prop, offered)
+    _apply_rewrites(current, rewrites, prop, offered, story_text)
     _declare_removed(current, removed, pages, prop)
     prop.edits = {p: t for p, t in current.items() if t != sources.get(p)}
     return prop
@@ -754,7 +787,8 @@ def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: 
         rewrites, removed = [], []
         unchecked = f"\nBehaviour notes were not checked ({type(e).__name__})."
     prop = propose(sources, changes, code_sources(root), rewrites, set(offered), removed, pages,
-                   narrowed=_narrowed(sources, offered, pages))
+                   narrowed=_narrowed(sources, offered, pages),
+                   story_text=f"{story['summary']}\n{story.get('description') or ''}")
     prop.note = note
     if prop.empty:
         tracker.add_comment(story_key, f"{MARKER} No context update needed: the story replaces "
