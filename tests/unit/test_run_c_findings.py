@@ -232,3 +232,42 @@ def test_an_empty_truncated_answer_is_named_as_reasoning():
     lines = truncation_evidence("", {"output_token_details": {"reasoning": 12288}})
     assert "the answer never began" in lines[0] and "12,288 tokens" in lines[1]
     assert "not a loop" in truncation_evidence(None)[1]
+
+
+# ── a re-analysis that finds nothing settles the open review ────────────
+
+def test_an_empty_reanalysis_supersedes_the_open_review(tmp_path, monkeypatch):
+    import agents.agent0_impact as a0
+    from core import impact_review
+    from tests.unit.test_agent0 import FakeModel, TITLE_12, _only_in, _settings
+    fake, jira, root, g = _world(tmp_path, monkeypatch)
+    s = _settings(shadow_mode=False)
+    page, key = _only_in(g, "SBX-12", "SBX-11")
+    first = a0.analyse_requirement(jira, "SBX-5", FakeModel([f"{page}:{key}"], must={TITLE_12}),
+                                   _settings(), root)
+    assert a0.publish(jira, "SBX-5", first, s)["action"] == "review-created"
+    review = jira.get_subtasks("SBX-5")[0]
+    again = a0.analyse_requirement(jira, "SBX-5", FakeModel([]), _settings(), root)
+    again["ranked"], again["content_hash"] = [], "f" * 12
+    out = a0.publish(jira, "SBX-5", again, s, force=True)
+    assert out == {"story": "SBX-5", "action": "nothing-to-review", "review_superseded": review["key"]}
+    labels = fake.issues["SBX-5"]["labels"]
+    assert "ai-ready" in labels and "impact-proposed" not in labels
+    text = jira.get_subtasks("SBX-5")[0]["description"]
+    assert "Superseded" in text and impact_review.parse_rows(text) == {}
+
+
+def _world(tmp_path, monkeypatch):
+    import agents.agent0_impact as a0
+    import config.paths as paths
+    from core.impact_graph import build_impact_graph
+    from tests.unit.test_agent0 import build_repo, jira_client_over, seed_jira
+    fake = seed_jira()
+    fake.add("Story", "A story", key="SBX-5", labels=["impact-check"], components=["Login"],
+             description="When the password is wrong, the error message also links to reset.")
+    jira = jira_client_over(fake, monkeypatch)
+    root = build_repo(tmp_path / "repo")
+    monkeypatch.setattr(paths, "FEATURES_DIR", root / "features")
+    monkeypatch.setattr(paths, "PROJECT_ROOT", root)
+    a0._GRAPHS.clear()
+    return fake, jira, root, build_impact_graph(root)
