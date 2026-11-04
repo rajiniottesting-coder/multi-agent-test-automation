@@ -33,22 +33,30 @@ grouped sessions below**, so one story run proves as many items as possible.
 
 ---
 
-## Sessions (in this order)
+## Validation plan (4 Nov 2026): six runs, one story merged
 
-| Session | Setup | Groups and rows | Notes |
-|---|---|---|---|
-| **S1** Agent 0 analysis, cheapest first | Label SCRUM-205, SCRUM-204, SCRUM-207 and new held-out stories H1, H2, H3, H5 `impact-check`; one full scan; a hand-made PR touching a page object and an inventory selector; one manual Agent 0 run with `mode` = `drift`; the manual-input runs of E33 | TG-1, TG-0 (R7), TG-9 (E35g, E35i) | Analysis only: no PRs merged. SCRUM-187 is checked with `python -m agents.agent0_impact --story SCRUM-187 --dry-run` |
-| **S2** A change story to the end | SCRUM-229 (2 owners) re-run from its review; then SCRUM-206 retried | TG-2, part of TG-4, TG-0 (R6), TG-9 (E35c, E35d, E35f) | Was UC-2 and UC-6 |
-| **S3** Two new stories in flight | P1 (labelled `impact-check`), P2 (same page object as P1) | TG-3 (E4, E9), TG-4 (E6-E8), TG-1 (H4), TG-0 (R1-R5, R10), TG-9 (E35a, E35b, E35e) | Was UC-3 |
-| **S4** Several stories in one scan | Three stories eligible in one Agent 1/2 scan (the first set up to fail), a regeneration, two change stories touching one test case, a new story's PR closed | TG-4 (M1-M3, G1, G2), TG-3 (E26) | Was UC-5 |
-| **S5** The consolidated run | One new story whose feature is not in the inventory or the notes yet (ideally a new page too), one change story removing an element; the nights around its deployment | TG-3, TG-5, the rest of TG-2, TG-0 (R3), TG-9 (E35j) | Was UC-7. Runs over several days: drift nights before and after deployment |
-| **S6** Nights on `main` | Nothing to set up - the nightly run; one night with a test broken on purpose on a throw-away branch merged and reverted, or an existing failure; the induced triage cases of E31i-E31k | TG-7, TG-0 (R8) | Runs in parallel with S5's nights |
-| **S7** Operations | The health issue created by hand first; induced failures one at a time (below); the budget lowered for one story and one day, then restored | TG-8, TG-0 (R9), TG-9 (E35h, E35k), TG-10 (E36a, E36f, E36g) | Each induced failure is undone right after its row |
-| **S8** Opportunistic | Any PR or nightly run during a 5xx burst from the site, or with a flaky test | TG-6 | Checked whenever it happens; I8 watched throughout |
+The rows are grouped into six runs so that one story or one induced failure proves as many rows as possible, **without growing the repository**. 147 rows are open; each is in exactly one run.
+
+**Keeping the repository small**
+1. **One new story is merged in the whole plan:** Run C's P1, which adds one feature file, one step-definition file and its page-object methods. Every other story's PR is **closed unmerged**. Change stories describe changes the application under test never deploys, and closing their PRs is itself what E2, R6 and E26 check: reconcile undoes them.
+2. Analysis rows run as **Agent 0 only** (no PR) or `--dry-run`.
+3. An induced failure is a **throw-away commit**, reverted within its night window, with its branch deleted. A config or secret change is made through a repository variable or a workflow input where possible, and undone right after its row.
+4. Held-out Jira stories and their test cases are closed as *Won't do* afterwards.
+
+| **Run** | **When** | **Stories and setup** | **Rows** | **Repo growth** |
+|---|---|---|---|---|
+| **A** Analysis day | Day 1, about an hour | Label SCRUM-204, SCRUM-205 and SCRUM-207 `impact-check`. Create held-out stories: **H1a/H1b** rename a text that is on several pages, H1a with a Component and H1b without; **H2** a new validation rule on an existing form; **H3** a field removed on another page. One full scan, then a second one. A hand-made PR changing a page-object method and an inventory selector, closed. Agent 0 with `mode` = `drift`, with `dry_run`, with one `story_key`. SCRUM-187 with `--dry-run`. Close every context-update PR unmerged. | A4, A5, A6, H1, H2, H3, P6, B, C, S1-R, E33a-c, R7, E35g, E35i, E44 (change half; the new-feature half is Run C's P1), E5 (H2's notes-only PR), E57 (H1a/H1b) - **19** | none |
+| **B** One change story, full cycle | Days 2-3 | H2 (from A) and SCRUM-206 (removes a field) through Agents 1-5. A person edits H2's Impact Review. `ai-update` on an owner while the story PR changes its files. H2 handed over before SCRUM-206 is analysed (G2). Both PRs closed unmerged with `reconcile.closed_scans: 1`. Agent 3 re-run on #211. | E1, E2, E3, E10-E14, E16, E20, E22, R3, R6, G2, E35c, E35d, E35f, E36e - **18** | none |
+| **C** New stories in flight | Days 3-6, with D's nights | Four new stories released together. **P1** (merged): a page reached through the menu, live but added as `planned_page`; test cases: one plain, one `[Positive] <title of an unmarked scenario on main>` (E9), one repeating another story's marked title (E24c), one needing an element not in the inventory (E24a, then E24d with `ai-update`). On P1's PR: two reviewers at once plus a line comment from an account without write access (E58); a comment asking to drop an approved check (E52); Approve, then merge while Agent 4 runs (E50). **P2** (closed unmerged): the same page object as P1, a test case whose scenario P1's PR adds, a `planned` element that is not live; `ai-regenerate` once; the day budget set just above the day's spend during its review fix. **P3**: needs a page the inventory lacks; keep `human-approved` over a scheduled Agent 2 run. **P4**: given a partial set of linked test cases (Agent 1 fails it). `max_stories_per_run: 2`. | R2, R4, R10, E6-E9, E21, E23, E24a, E24c-e, E25a, E26, M1-M3, G1, E32b, E32c, E35a, E35b, E35e, E36d, E45a-c, E47, E49-E52, E55, E56, E58 - **36** | P1 only |
+| **D** Nights on `main` | The nights of B and C | Mostly nothing: the nightly runs, drift and Inventory Health. Before night 1 you run `tidy_defect_labels`. **Night 1:** one throw-away commit breaking two existing tests (a login reference test and a cart test with an old defect) and adding an unmarked feature file, `defects.max_new_per_run: 1`, pushed twice in a row. **Night 2:** unchanged. **Night 3:** reverted. **Night 4:** one break back, with `MAX_RETRIED_TESTS=1`. **One more night:** a broken report path. Jira's defect type briefly given a required field. Inventory Health once by hand with `BASE_URL` elsewhere. | E19a-g, E25b-f, E30a-c, E31a-e, E31g-k, E37, E39, E40a, E40c, E40d, E41, E42a-d, E46, I8, R8 - **38** | none |
+| **E** Operations | One sitting, after B | The health issue, then induced failures one at a time, each undone: failed scheduled runs, refused or expiring credentials, the App's key, the App id emptied, budgets per story and day. A throw-away PR with a syntax error, and one with a wrong `app_under_test.health_check`, both closed. Agent 3's log on the next docs PR. Optionally, the Jira Automation rule. | E27a-k, E32a, E32e-g, E35h, E35k, E36a, E36f, E36g, E38, R9, E29f, E34, E40e, E45d - **26** | none |
+| **F** Opportunistic | Throughout | Nothing: read Agent 4's summary whenever a 5xx burst, an outage or a flaky test happens | E15, E17, E28, E28b, E29a-c, E29e, E29g, E40b - **10** | none |
+
+Older rows name the sessions S1-S8 of the first plan: **S1** is Run A, **S2** is Run B, the stories of **S3-S5** are Run C's P1-P4, **S6** is Run D, **S7** is Run E and **S8** is Run F.
 
 ---
 
-## TG-0 · Regression: what was proven before P1-P4 still works (S1-S7)
+## TG-0 · Regression: what was proven before P1-P4 still works (Runs A-E)
 
 | ID | Built in | Check | Expected result | Status | Evidence |
 |---|---|---|---|---|---|
@@ -63,7 +71,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | R9 | #134, #135, #136 | The inventory tools by hand | `check_inventory_staleness --compare` lists uncovered live elements; `--propose` writes a proposals file; `apply_inventory_proposals --dry-run` writes nothing; `scripts.onboarding_check` is clean | ⬜ | |
 | R10 | #160 | Agent 1 on a story with a partial set of test cases (S3) | The run summary is red and says what to do (delete or retire the linked cases, then `ai-ready` again) | ⬜ | |
 
-## TG-1 · Change stories: Agent 0's analysis (S1)
+## TG-1 · Change stories: Agent 0's analysis (Run A)
 
 | ID | Built in | Check | Expected result | Status | Evidence |
 |---|---|---|---|---|---|
@@ -83,7 +91,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E33b | #205 (G4) | A manual run with one `story_key` | Only that story is reconciled; other `impact-applied` stories untouched | ⬜ | |
 | E33c | #205 (L13) | `mode` = `drift` with a `story_key` | Refused with a message; nothing run | ⬜ | |
 
-## TG-2 · Change stories: the full cycle (S2, S5)
+## TG-2 · Change stories: the full cycle (Run B)
 
 | ID | Built in | Check | Expected result | Status | Evidence |
 |---|---|---|---|---|---|
@@ -100,7 +108,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E20 | F-10, #225 | S5's change story: `[agent0:context-update]` run | Reads only `core.md`, its Component modules and their pages' notes (prompt in the run log); no rewrite of another module in the PR | ⬜ | |
 | E22 | F-11, #225 | S5's removal story | Context-update PR declares the element in `removed` (note `REMOVED by …`); after deployment the nightly check shows `GONE`, not `STALE`; Agent 0 raises no affected test for it; once the absence test is retired the next inventory-update PR deletes the key | ⬜ | |
 
-## TG-3 · New stories: Agents 1-5 (S3, S4, S5)
+## TG-3 · New stories: Agents 1-5 (Run C)
 
 | ID | Built in | Check | Expected result | Status | Evidence |
 |---|---|---|---|---|---|
@@ -109,7 +117,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E16 | #215 | SCRUM-187 on the next scan (persistent-state rule) | One `[agent2:blocked]` comment naming the rule, then `[BLOCK]` with no model call on later scans; a new signed-in draft stating a cart quantity is sent back by Agent 1 | ➖ | Coding once step 7 was fixed: V8 |
 | E21 | F-8, #225 | S5's new story merged | Story Done on merge moves it to Done; one `context-update/<key>-notes-<hash>` PR adds its facts under its Component module (a new module for a new Component) and one `[agent0:context-addition]` comment; nothing repeated; a second run does nothing; a merged `ai-update` of its test cases proposes again; cost on the story | ⬜ | Partly: SCRUM-283 and SCRUM-284 (4 Nov): Done on merge; one notes PR each (#261 into the Products module; #264, no Component, into core.md and home.md - see #265) and one `[agent0:context-addition]` comment; a repeated line left out on #264; cost on the story. A second run and an `ai-update` re-proposal not seen yet |
 | E23 | F-9, #225 | A notes addition that pushes a module over `module_budget_chars` | The PR body says so and its unit-suite check fails until the module is condensed in the same PR; `scripts.onboarding_check` reports `notes: size` / `notes: repetition` | ⬜ | |
-| E34 | #225 (G13) | Agent 3 on a PR that edits the large guides (any docs PR) | A review is posted: docs shown as diffs, the changed-files section capped; a review that fails says so on the PR with secrets redacted, not a bare red check | ⬜ | |
+| E34 | #225 (G13) | Agent 3 on a PR that edits the large guides (any docs PR) | A review is posted: docs shown as diffs, the changed-files section capped; a review that fails says so on the PR with secrets redacted, not a bare red check | ⬜ | Partly: Agent 3 reviewed #265, which edits the guides (4 Nov; prompt 307,315 characters); docs shown as diffs and the cap not checked in its prompt |
 | E24a | F-13, #227 | S5's story: one test case needs an element not in the inventory | The PR opens with the others; the body lists it under *Approved test cases not automated* with the plan's `Skipped:` reason (or "no reason given" - note which); one `[agent2:incomplete]` comment; `ai-incomplete` beside `ai-coded`; the scan summary says `not automated: <KEY>` | ⬜ | |
 | E24b | F-13, #227 | The PR's feature file | Each `# JIRA:` marker sits on the scenario that tests that test case (L31) | ✅ | `features/product_reviews.feature` (SCRUM-285 to 287) and `features/contact_us_form.feature` (SCRUM-288, 289): each marker on the scenario that tests it |
 | E24c | F-13, #227 | One more test case whose summary repeats another story's marked scenario title on `main` | Listed as a title clash naming that test case; counted as not automated | ⬜ | |
@@ -118,7 +126,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E25a | F-12, #229 | Before deployment: `scripts.plan_inventory element ...` (and `page ...`) | The onboarding check is clean; Agent 2 uses the keys and its PR lists *Uses planned elements - not deployed yet*; its browser run is red on exactly those steps | ⬜ | Partly: SCRUM-284 - the contact page planned with `plan_inventory page` (#256); Agent 2 used its keys and PR #263 listed *Uses planned elements - not deployed yet*. The page was already live, so the "red until deployed" part was not shown |
 | E26 | F-16, #230 | A new story's PR closed without merging | First scan: one `closed-unmerged` comment, nothing else; reopen → nothing; close again for two scans → `story-reset` comment, `human-approved` / `ai-coded` / `ai-incomplete` / `tests-run` off, `ai-processed` kept, card in To Do, test cases unchanged; not picked by Agent 2; add `human-approved` → coded again in a new PR | ⬜ | |
 
-## TG-4 · Stories in flight and scans (S3, S4)
+## TG-4 · Stories in flight and scans (Run C; G2 in Run B)
 
 | ID | Built in | Check | Expected result | Status | Evidence |
 |---|---|---|---|---|---|
@@ -131,7 +139,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | G1 | F-1, #230 | A regeneration whose orphan cleanup edits a page object another open PR changes | `[WAIT]` naming that file, no branch | ⬜ | |
 | G2 | F-2, #230 | Change story A handed over (no PR yet), change story B analysed after | B's row for the shared test reads "blocked by A"; B's hand-over of an approved row waits ("being revised by another change in progress") until A's PR merges or is undone | ⬜ | |
 
-## TG-5 · Inventory and app knowledge, nightly (S5)
+## TG-5 · Inventory and app knowledge, nightly (Run D)
 
 | ID | Built in | Check | Expected result | Status | Evidence |
 |---|---|---|---|---|---|
@@ -148,7 +156,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E25e | L25, #229 | Unlisted pages | The PR lists pages the application links to that the inventory lacks | ⬜ | |
 | E25f | F-12, #229 | A placeholder at a planned page's url (no planned element on it) | That page is not changed | ⬜ | |
 
-## TG-6 · Test runs: retries, outages, flakes (S8)
+## TG-6 · Test runs: retries, outages, flakes (Run F; E29f in Run E)
 
 | ID | Built in | Check | Expected result | Status | Evidence |
 |---|---|---|---|---|---|
@@ -165,7 +173,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E29g | F-19, #231 | A scenario Agent 3 predicted to fail that passed only on the retry | The prediction keeps blocking (log: "passed only on the retry (flaky)") | ⬜ | |
 | I8 | Open defect, root cause found (#239) | The live-site add-to-cart flake | Not seen again on the nightly runs since #239 (actions wait for the page to load); if it is, the failure lists the action requests and a pass on the retry is recorded as flaky | ⬜ | Nightly runs 31 Oct - 3 Nov green |
 
-## TG-7 · Runs on `main` and defects (S6)
+## TG-7 · Runs on `main` and defects (Run D)
 
 | ID | Built in | Check | Expected result | Status | Evidence |
 |---|---|---|---|---|---|
@@ -184,7 +192,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E31j | F-22, #231 | A run on `main` that leaves no readable `junit.xml` (a broken report path on a throw-away branch merged and reverted) | One `main-run-no-report` alert; resolved by the next run with a report | ⬜ | |
 | E31k | F-22, #231 | Where triage runs | Skipped on a PR run; runs on a manual run of Agent 4 on `main` | ➖ | Skipped on PR #233's run (27 Oct); the manual run on `main` not yet |
 
-## TG-8 · Operations: health issue and budgets (S7)
+## TG-8 · Operations: health issue and budgets (Run E; E32b, E32c in Run C)
 
 | ID | Built in | Check | Expected result | Status | Evidence |
 |---|---|---|---|---|---|
@@ -207,7 +215,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E32f | F-19, F-24, #231 | Flake records older than `flaky_tests.window_days` | Pruned by the health check; the *Flaky tests* table no longer counts them | ⬜ | |
 | E32g | F-24, #231 | A scan that fails on an error (not its timeout) after model calls | Its spend is still recorded for the day (L36: a run killed by its timeout records nothing) | ⬜ | |
 
-## TG-9 · Story comments: each thing said once (S1-S7)
+## TG-9 · Story comments: each thing said once (Runs A-E)
 
 | ID | Built in | Check | Expected result | Status | Evidence |
 |---|---|---|---|---|---|
@@ -223,7 +231,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E35j | F-31 | S5's new story end to end | Comments on the story counted against a story before F-31 (SCRUM-202: 14 for 3 reports) - expected 3 reports + 1 cost comment; record the numbers | ✅ | SCRUM-283: 7 comments (2 Agent 5 reports, 1 cost comment); SCRUM-284: 8 (2 reports, 1 cost comment, 1 blocked) - against 14 for SCRUM-202's 3 reports |
 | E35k | F-31 | `usage_ledger.store: comments` for one story run, then back | The original comments and Agent 5's table return; back on `auto` the story's next cost comment counts both | ⬜ | |
 
-## TG-10 · The agents' identity (F-30) (S7, then any session)
+## TG-10 · The agents' identity (F-30) and later fixes (see the plan for each row)
 
 | ID | Built in | Check | Expected result | Status | Evidence |
 |---|---|---|---|---|---|
