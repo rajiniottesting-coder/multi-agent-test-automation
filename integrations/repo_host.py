@@ -168,7 +168,9 @@ class RepoHost(Protocol):
                             review_id: Optional[int] = None) -> list[dict]:
         """Inline review comments on a PR - the ones anchored to a file and a
         line - as [{"id", "path", "line", "body", "author", "review_id"}, ...],
-        oldest first. Replies to a comment are left out. With `review_id`,
+        oldest first: each thread's first comment and a person's reply in a
+        thread (`reply_to`: the thread's first comment); bots' replies are left
+        out. With `review_id`,
         only that review's comments. `line` may be None when the diff the
         comment was made on has moved. Used by Agent 2's review fix."""
         ...

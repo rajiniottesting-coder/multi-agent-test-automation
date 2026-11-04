@@ -617,3 +617,44 @@ def test_a_feature_already_missing_a_check_is_not_blamed_on_the_comment(wired, m
     host = FakeHost(inline=[_inline(path="features/checkout.feature", body="'the' not 'my'")])
     llm = FakeLLM([{"comment": 1, "action": "fix", "files": ["features/checkout.feature"], "reason": "x"}])
     assert _run(host, llm)["status"] == "fixed", "only what the change adds counts"
+
+
+# ── iterating in a thread (4 Nov 2026) ──────────────────────────────────
+#
+# On SCRUM-283's pull request the reviewer answered in an existing thread -
+# the usual way to iterate on a review. The client left every reply out, so
+# `/fix` found nothing to act on: the thread's first comment was handled.
+
+def _reply_c(cid, to, body="Compare for equality.", author="person", review_id=120):
+    return {**_inline(cid=cid, body=body, author=author, review_id=review_id), "reply_to": to}
+
+
+def test_a_persons_reply_in_a_handled_thread_is_taken_and_answered_in_the_thread(wired):
+    host = FakeHost(inline=[_inline(cid=11), _reply_c(21, 11, author="agent[bot]"),
+                            _reply_c(31, 11)],
+                    comments=[f"{rf.MARKER} comment 5 comments: 11\n"])
+    llm = FakeLLM([{"comment": 1, "action": "fix", "files": ["pages/checkout_page.py"], "reason": "x"}])
+    out = _run(host, llm, review_id=None, comment_id=77, text="/fix")
+    assert out["outcomes"] == [(1, "fix")], "only the person's reply, not the bot's"
+    assert host.replies and host.replies[0][0] == 11, "answered in its thread"
+    assert "comments: 31" in host.comments[-1], "the reply is recorded as handled"
+    again = rf.collect_items(host, 5, None, "", rf.handled_comment_ids(host.comments))
+    assert again == [], "not taken twice"
+
+
+def test_the_client_keeps_a_persons_reply_and_leaves_a_bots_out(monkeypatch):
+    from types import SimpleNamespace as NS
+    from integrations.github_client import GitHubClient
+    monkeypatch.setenv("GITHUB_TOKEN", "t")
+    monkeypatch.setenv("GITHUB_REPO", "o/r")
+    gh = GitHubClient()
+
+    def c(cid, reply_to=None, login="person", kind="User"):
+        return NS(id=cid, in_reply_to_id=reply_to, path="pages/a_page.py", line=3,
+                  original_line=3, body=f"b{cid}", user=NS(login=login, type=kind),
+                  pull_request_review_id=7)
+    pull = NS(get_review_comments=lambda: [c(1), c(2, 1, "agent[bot]", "Bot"),
+                                           c(3, 1), c(4, 1, "x-app", "Bot")])
+    gh._repo = NS(get_pull=lambda n: pull)
+    got = gh.get_review_comments(5)
+    assert [(g["id"], g["reply_to"]) for g in got] == [(1, None), (3, 1)]

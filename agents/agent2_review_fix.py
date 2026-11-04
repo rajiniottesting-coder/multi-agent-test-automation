@@ -79,6 +79,9 @@ class Item:
     comment_id: int | None = None
     path: str | None = None
     line: int | None = None
+    # A reply in a thread: the thread's first comment. GitHub answers a
+    # thread through its first comment, so Agent 2 replies there.
+    thread: int | None = None
 
     def where(self) -> str:
         if not self.path:
@@ -240,7 +243,8 @@ def collect_items(host, pr_number: int, review_id: int | None, text: str,
         if review_id is None and c.get("id") in already:
             continue
         items.append(Item(len(items) + 1, c["body"].strip(), c.get("id"),
-                          _norm(c.get("path") or "") or None, c.get("line")))
+                          _norm(c.get("path") or "") or None, c.get("line"),
+                          c.get("reply_to")))
     if text.strip():
         items.append(Item(len(items) + 1, text.strip()))
     return items
@@ -359,7 +363,8 @@ def _reply(host, pr_number: int, outcome: Outcome, pushed: bool) -> None:
     else:
         text = f"Agent 2: not changed - {outcome.reason}"
     try:
-        host.reply_to_review_comment(pr_number, outcome.item.comment_id, text)
+        host.reply_to_review_comment(pr_number, outcome.item.thread or outcome.item.comment_id,
+                                     text)
     except Exception as e:                                         # noqa: BLE001
         logger.warning("Could not reply to review comment %s: %s", outcome.item.comment_id, e)
 
