@@ -252,15 +252,15 @@ class GitHubClient:
         first comment, and a PERSON's later reply in a thread - a reviewer
         iterates by answering in the thread, and on SCRUM-283's pull request
         (4 Nov 2026) such a reply was never seen. A reply carries `reply_to`,
-        the thread's first comment. Bots' replies (Agent 2's own answers) are
-        left out. Raises when the PR cannot be read: the caller must not fix a
-        review it could not see."""
+        the thread's first comment. Every bot comment is left out - Agent 2's
+        answers in a thread, an agent's own line comment - one rule here, where
+        the author is known, instead of one for replies here and another for
+        first comments in the caller. Raises when the PR cannot be read: the
+        caller must not fix a review it could not see."""
         out = []
         for c in self.repo.get_pull(pr_number).get_review_comments():
             reply_to = getattr(c, "in_reply_to_id", None)
-            author = getattr(getattr(c, "user", None), "login", "") or ""
-            if reply_to and (author.endswith("[bot]")
-                             or getattr(getattr(c, "user", None), "type", "") == "Bot"):
+            if self._who(c)["bot"]:
                 continue
             if review_id is not None and getattr(c, "pull_request_review_id", None) != review_id:
                 continue

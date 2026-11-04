@@ -882,58 +882,15 @@ def validate_no_duplicate_step_definitions(
         list[str]: one message per phrase declared twice in a single file.
         Empty list means no same-file duplicates.
     """
-    from pathlib import Path as _Path
-
-    # (keyword, parser_type, phrase) -> list of file paths declaring it
-    registry: dict[tuple, list[str]] = {}
-
-    def _index(path: str, content: str) -> None:
-        for kind, phrase, parser_type in _extract_decorator_phrases(content):
-            key = (kind, parser_type, phrase.strip())
-            registry.setdefault(key, [])
-            if path not in registry[key]:
-                registry[key].append(path)
-
-    # 1) Index every generated step-def file in this batch.
+    # Only declarations WITHIN one file are counted. Cross-file duplication is
+    # safe (ADR-013): steps are module-scoped fixtures. `project_root` and
+    # `repair_format` are accepted for the callers' sake; the message is
+    # already in the repair loop's `... error in '<path>':` form.
     step_def_files = [
         f for f in generated_files
         if _gf_path(f).startswith("tests/step_defs/")
         and _gf_path(f).endswith(".py")
     ]
-    for f in step_def_files:
-        _index(_gf_path(f), _gf_content(f))
-
-    # 2) Also index the reference step-def file(s) already on disk — the
-    #    generated code shares pytest-bdd's global namespace with them. Only
-    #    read files that are NOT themselves being regenerated in this batch
-    #    (a regenerated file's new content is already indexed above).
-    if project_root is not None:
-        root = _Path(project_root)
-        generated_paths = {_gf_path(f) for f in step_def_files}
-        step_defs_dir = root / "tests" / "step_defs"
-        if step_defs_dir.is_dir():
-            for py in sorted(step_defs_dir.glob("*.py")):
-                rel = f"tests/step_defs/{py.name}"
-                if rel in generated_paths:
-                    continue  # superseded by generated content
-                if py.name == "__init__.py":
-                    continue
-                try:
-                    _index(rel, py.read_text(encoding="utf-8"))
-                except OSError:
-                    continue  # unreadable file — skip, don't crash the validator
-
-    # 3) Report any key declared in more than one file.
-    #    Determine which of the colliding files are GENERATED in this batch —
-    #    those are the repairable targets (the reference is reserved/correct).
-    generated_paths_set = {
-        _gf_path(f) for f in generated_files
-        if _gf_path(f).startswith("tests/step_defs/") and _gf_path(f).endswith(".py")
-    }
-
-    # Cross-file duplication is safe (ADR-013) - the registry above spans
-    # files and is deliberately NOT reported on. What follows counts declarations
-    # WITHIN each file, which is the half that was never safe.
     errors: list[str] = []
     for f in step_def_files:
         path = _gf_path(f)
@@ -955,38 +912,6 @@ def validate_no_duplicate_step_definitions(
                 f"declaration; if the two do different things, they need "
                 f"different step text in the feature file."
             )
-    return errors
-
-    for (kind, parser_type, phrase), paths in sorted(registry.items()):
-        if len(paths) <= 1:
-            continue
-        kind_disp = f"@{kind}"
-        phrase_disp = phrase if len(phrase) <= 80 else phrase[:77] + "..."
-        files_disp = ", ".join(sorted(paths))
-        # Prefer to blame a generated file (repairable). If none of the
-        # colliding files are generated (both on disk), there is nothing this
-        # batch can repair — fall back to a plain message.
-        repair_target = next(
-            (p for p in sorted(paths) if p in generated_paths_set), None
-        )
-        guidance = (
-            "UNREACHABLE (ADR-013): this validator returns [] — pytest-bdd steps "
-            "are module-scoped fixtures, so cross-file duplication never collides."
-        )
-        if repair_format and repair_target is not None:
-            # Repair-loop-targetable format: '... error in \'<path>\':'
-            errors.append(
-                f"Duplicate step-definition error in '{repair_target}': "
-                f'{kind_disp}("{phrase_disp}") [{parser_type}] is also defined in '
-                f"{files_disp}. {guidance}"
-            )
-        else:
-            errors.append(
-                f"Duplicate step definition {kind_disp}"
-                f'("{phrase_disp}") [{parser_type}] is declared in multiple '
-                f"files: {files_disp}. {guidance}"
-            )
-
     return errors
 
 
