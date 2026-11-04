@@ -578,14 +578,28 @@ def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool
 
     change = ia.delta(previous, report) if previous else None
     rows = _review_rows(report)
+    prefix = settings["review"]["summary_prefix"]
+    done = settings["review"]["done_status"].strip().lower()
     if not rows:
         tracker.add_comment(story_key, _with_delta(_render_report(report, title), change))
         tracker.remove_label(story_key, labels["check"])
+        settled = None
+        if review and review["status"].strip().lower() != done:
+            # An OPEN review from an earlier analysis: its rows no longer
+            # hold. Left as it was, the story kept impact-proposed - which
+            # Agent 1 skips - beside ai-ready, and approving the stale rows
+            # later would hand over revisions nothing calls for (4 Nov 2026,
+            # a story analysed again).
+            tracker.set_description(review["key"], impact_review.render(
+                story_key, [], intro=(f"Superseded: the analysis with hash {report['content_hash']} finds "
+                                      "no test this change affects - nothing to decide here."))
+                + "\n\n" + ia.embed(report))
+            tracker.remove_label(story_key, labels["proposed"])
+            settled = review["key"]
         tracker.add_label(story_key, labels["ready"])
-        return {"story": story_key, "action": "nothing-to-review"}
+        out = {"story": story_key, "action": "nothing-to-review"}
+        return {**out, "review_superseded": settled} if settled else out
 
-    prefix = settings["review"]["summary_prefix"]
-    done = settings["review"]["done_status"].strip().lower()
     if review and review["status"].strip().lower() != done:
         # An open review: replace it, keeping decisions already made on rows
         # that did not change.
