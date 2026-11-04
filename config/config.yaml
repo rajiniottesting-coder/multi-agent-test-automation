@@ -126,6 +126,8 @@ pipeline_health:
   expiry_warn_days: 14           # where the provider gives a credential's expiry
   model_check: "completion"      # completion (1-token call) | models (list, free) | off
   spend_keep_days: 35            # day-spend records kept this long
+  schedule_window_hours: 24      # a scheduled workflow whose schedule asked for
+  schedule_min_expected: 3       #   at least this many runs in the window, none started
 
 # Flaky tests (F-19): a test that failed and then passed when Agent 4 retried
 # it once counts as passed and is recorded on the pipeline health issue; its

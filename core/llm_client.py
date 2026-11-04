@@ -331,7 +331,7 @@ _EVIDENCE_TAIL = 800
 _REPEAT_MIN = 40
 
 
-def truncation_evidence(content) -> list:
+def truncation_evidence(content, usage=None) -> list:
     """Lines that say why an output ran out of room: how much of it repeats,
     the most repeated passage, and its last characters. Never raises.
 
@@ -344,7 +344,21 @@ def truncation_evidence(content) -> list:
     except Exception:                                              # noqa: BLE001
         return ["  output text    : not available"]
     if not text:
-        return ["  output text    : empty"]
+        # Every token went somewhere the answer does not show: a model that
+        # reasons before answering spends the same budget on it (4 Nov 2026:
+        # 12,288 tokens produced, an empty answer, twice).
+        reasoning = None
+        try:
+            details = (usage or {}).get("output_token_details") or {}
+            reasoning = details.get("reasoning")
+        except Exception:                                          # noqa: BLE001
+            pass
+        return ["  output text    : empty - the answer never began",
+                "  reasoning      : "
+                + (f"{reasoning:,} tokens" if isinstance(reasoning, int) else
+                   "not reported; the budget went to the model's reasoning before any answer")
+                + " - not a loop: the reasoning and the answer share the cap, so the cap "
+                  "must leave room for both"]
     pieces = [p.strip() for p in text.splitlines() if p.strip()]
     if len(pieces) < 20:
         pieces = [text[i:i + 200] for i in range(0, len(text), 200)]
@@ -397,7 +411,8 @@ def _check_output_not_truncated(response, *, label: str, cap: int, knob: str) ->
     # loop, or genuinely large content. A structured answer is never logged
     # elsewhere, so without this the advice below could not be followed
     # (4 Nov 2026: a truncated draft left no way to tell which it was).
-    for line in truncation_evidence(getattr(response, "content", None)):
+    for line in truncation_evidence(getattr(response, "content", None),
+                                    getattr(response, "usage_metadata", None)):
         logger.error("%s", line)
     logger.error("")
     logger.error("TO RE-RUN WITH MORE ROOM: %s", knob)

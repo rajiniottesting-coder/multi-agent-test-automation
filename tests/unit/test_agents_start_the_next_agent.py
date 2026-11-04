@@ -221,7 +221,9 @@ def test_agents_1_and_2_start_again_while_stories_wait(name, agent):
     (job,) = wf["jobs"].values()
     (step,) = _start_steps(job)
     assert job["steps"][-1] is step, "after the agent ran"
-    assert step["if"].startswith("success()"), "a failed run starts nothing: no retry loop"
+    assert step["if"].startswith("${{ !cancelled()"), \
+        "also after a red run (one story needing a person must not strand the rest); " \
+        "no loop: the restart needs progress (core/handoff.py)"
     assert step.get("continue-on-error") is True
     assert f"--agent {agent}" in step["run"] and '--previous-chain "$CHAIN"' in step["run"]
     assert step["env"]["CHAIN"] == "${{ github.event.inputs.chain }}", \

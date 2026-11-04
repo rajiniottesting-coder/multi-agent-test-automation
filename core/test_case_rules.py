@@ -35,6 +35,20 @@ from __future__ import annotations
 
 import re
 
+# A test case about the prompt, not the application: "<thing> is not defined
+# in the Application Under Test", "not described in the application context".
+# The context describes the application BEFORE the story; a page or control a
+# new story asks for is missing from it by definition. 4 Nov 2026: a story
+# asking for a search box on a page drafted one test case asserting the page
+# and its search "are not defined in the Application Under Test" - its coverage
+# map cited it for every criterion, and every other check passed.
+_ABOUT_THE_PROMPT = re.compile(
+    r"\b(?:not|never|nowhere)\s+(?:\w+\s+){0,2}(?:defined|described|documented|listed|"
+    r"mentioned|specified|present|available)\s+(?:in|by)\s+(?:the\s+)?"
+    r"(?:application\s+under\s+test|app(?:lication)?\s+(?:notes|context|inventory)|"
+    r"reference\s+notes|provided\s+context)\b",
+    re.IGNORECASE)
+
 # Phrases that tie one test case to another. Checked in every text field.
 _DEPENDENCY = [
     (re.compile(r"\b(previous|prior|preceding|earlier)\b[^.\n]{0,40}?\b(tests?|scenarios?|cases?|runs?)\b",
@@ -263,6 +277,15 @@ def test_case_problems(tc, persistent: dict[str, list[str]] | None = None,
     signed-in quantity rule is off, exactly as before it existed."""
     title = getattr(tc, "title", "") if isinstance(getattr(tc, "title", ""), str) else ""
     problems: list[str] = []
+    for text in [title] + _texts(tc):
+        m = _ABOUT_THE_PROMPT.search(text)
+        if m:
+            problems.append(
+                f"'{title}': tests what the prompt describes, not the application "
+                f"(\"{_short(text)}\"). The Application Under Test section describes the "
+                f"application BEFORE this story; what the story asks for is missing from it "
+                f"by definition. Write the test cases for the behaviour the story describes.")
+            break
     for text in _texts(tc):
         for pattern, why in _DEPENDENCY:
             m = pattern.search(text)

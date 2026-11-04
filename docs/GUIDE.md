@@ -712,8 +712,12 @@ heading's text):
 ```
 python -m scripts.plan_inventory element --page <page> --key <key> --selector "<selector>"
 python -m scripts.plan_inventory page --page <page> --url /<path> --component "<Component>" \
-    --element <key>="<selector>" [--element ...]
+    --element <key>="<selector>" [--element ...] [--family <key> ...]
 ```
+
+A selector that names a list of like elements (rows, titles, links) is a family:
+`--family` (element) or `--family <key>` (page) also declares it `multi_match`,
+so its several live matches confirm it instead of reading as ambiguous.
 
 It is declared `planned` (a page also `planned_page: true`, with at least one
 planned element - finding one live is what confirms the page). Agent 2 may use
@@ -2945,7 +2949,7 @@ any run can find it again. All are plain Jira comments.
 | `[agent0:reconcile]` `closed-unmerged` / `reverted` / `no-pr` / `ask-a-person` | story | reconcile | Reconcile's memory between scans |
 | `[agent0:outcome]` | story | Agent 5 | Comment ledger only: Agent 0's prediction scored against what the PR changed and failed. With the property ledger it is a line of Agent 5's report for that PR, kept as the hidden `agent0.outcome.<hash>` |
 | `[agent1:coverage]` | story | Agent 1 | Each acceptance criterion and the test case(s) that verify it, with the step that proves it |
-| `[agent1:stopped]` | story | Agent 1 scan | The draft ran out of output room or broke the rules twice; the trigger label was removed - add it again to retry |
+| `[agent1:stopped]` | story | Agent 1 scan | The draft ran out of output room or broke the rules twice, or the story needs a person first (a partial set of test cases); the trigger label was removed - add it again to retry |
 | `[pipeline:not-selected]` | story | Agents 1 and 2 scans | The story carries the agent's trigger label but its status or sprint is outside the selection; once per agent and reason |
 | `[agent1:impact-draft]` | story | Agent 1 impact-aware | Before/after of each revision, new tests, the coverage map, `Change applied at: <UTC>` |
 | `[agent2:waiting]` | story | Agent 2 | Why the story is waiting for another open PR (once per reason) |

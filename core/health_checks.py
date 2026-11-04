@@ -9,6 +9,11 @@ schedule.
                scheduled runs all failed. The workflows are read from the
                repository's own workflow files, so a new scheduled workflow is
                watched without a code change.
+  schedules    a scheduled workflow none of whose scheduled runs the repo
+               host started in the last `schedule_window_hours`, although its
+               cron lines asked for at least `schedule_min_expected`. A host
+               may drop scheduled runs of a quiet repository; a run never
+               started fails nothing, so the failure check cannot see it.
   credentials  the repo host's token (and its expiry, where the host says),
                and the model endpoint. The tracker's own credentials are
                checked first by the script: without them no alert can be posted.
@@ -96,6 +101,114 @@ def workflow_findings(host, root: Path, threshold: int, exclude=()) -> list:
             + (f"Latest: {url}. " if url else "")
             + "Open the run to read why; it closes by itself after the next successful "
               "scheduled run."))
+    return out
+
+
+# ── scheduled runs the host never started ────────────────────
+
+_DOW_SUNDAY = 7
+
+
+def _field(text: str, low: int, high: int) -> set | None:
+    """The values a cron field allows: `*`, `a`, `a-b`, `*/n`, `a-b/n`, lists.
+    None when it cannot be read."""
+    out: set = set()
+    for part in text.split(","):
+        rng, _sep, step = part.partition("/")
+        try:
+            n = int(step) if step else 1
+            if rng == "*":
+                a, b = low, high
+            elif "-" in rng:
+                a, b = (int(x) for x in rng.split("-", 1))
+            else:
+                a = b = int(rng)
+        except ValueError:
+            return None
+        if n < 1 or a > b or a < low or b > high:
+            return None
+        out.update(range(a, b + 1, n))
+    return out
+
+
+def cron_fires(expr: str, start: _dt.datetime, end: _dt.datetime) -> int | None:
+    """How many minutes in (start, end] a five-field cron line (UTC) names.
+    None when the line cannot be read. Day of month and day of week, both
+    restricted, match either - the usual cron rule."""
+    parts = (expr or "").split()
+    if len(parts) != 5:
+        return None
+    fields = [_field(parts[0], 0, 59), _field(parts[1], 0, 23), _field(parts[2], 1, 31),
+              _field(parts[3], 1, 12), _field(parts[4], 0, _DOW_SUNDAY)]
+    if any(f is None for f in fields):
+        return None
+    minute, hour, dom, month, dow = fields
+    dow = {d % 7 for d in dow}
+    dom_any, dow_any = parts[2] == "*", parts[4] == "*"
+    t = start.replace(second=0, microsecond=0) + _dt.timedelta(minutes=1)
+    count = 0
+    while t <= end:
+        if t.minute in minute and t.hour in hour and t.month in month:
+            day_ok = t.day in dom
+            week_ok = (t.isoweekday() % 7) in dow
+            if (day_ok and week_ok) if (dom_any or dow_any) else (day_ok or week_ok):
+                count += 1
+        t += _dt.timedelta(minutes=1)
+    return count
+
+
+def schedule_lines(path: Path) -> list:
+    """The cron lines of one workflow file."""
+    import yaml
+    try:
+        on = _triggers(yaml.safe_load(Path(path).read_text(encoding="utf-8")))
+    except Exception:                                              # noqa: BLE001
+        return []
+    sched = on.get("schedule") if isinstance(on, dict) else None
+    return [s["cron"] for s in sched or [] if isinstance(s, dict) and s.get("cron")]
+
+
+def _when(stamp) -> _dt.datetime | None:
+    try:
+        t = _dt.datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return t if t.tzinfo else t.replace(tzinfo=_dt.timezone.utc)
+
+
+def schedule_findings(host, root: Path, now: _dt.datetime, window_hours: float,
+                      min_expected: int) -> list:
+    """One Finding per scheduled workflow whose runs can be judged: its cron
+    lines asked for `expected` runs in the window; `started` of them began.
+    No finding (the alert stays as it is) when the runs read do not reach
+    back to the window's start, or a cron line cannot be read."""
+    out = []
+    start = now - _dt.timedelta(hours=window_hours)
+    for name in scheduled_workflows(root):
+        counts = [cron_fires(c, start, now)
+                  for c in schedule_lines(Path(root) / ".github" / "workflows" / name)]
+        if not counts or any(c is None for c in counts):
+            continue
+        expected = sum(counts)
+        try:
+            runs = host.get_workflow_runs(name, "main", limit=100)
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning("Runs of %s not read: %s", name, e)
+            continue
+        times = [(_when(r.get("created_at")), r.get("event")) for r in runs or []]
+        started = sum(1 for t, ev in times if ev == "schedule" and t and t > start)
+        reaches = len(times) < 100 or any(t and t <= start for t, _ev in times)
+        if not started and not reaches:
+            continue                          # cannot tell: more runs than were read
+        silent = expected >= min_expected and started == 0
+        out.append(Finding(
+            f"workflow-not-starting:{name}", silent,
+            f"No scheduled run of {name} started in the last {window_hours:g} hours" if silent
+            else f"Scheduled runs of {name} start again",
+            f"Its schedule asked for {expected} runs in the last {window_hours:g} hours and the "
+            "repository host started none. Nothing failed, so no other check sees it. Work "
+            "still starts through the hand-offs and by hand; check the workflow is enabled and "
+            "the schedule unchanged. It closes by itself once a scheduled run starts."))
     return out
 
 

@@ -4,6 +4,23 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — what Run C of the validation found (#284)
+
+**Why:** starting Run C on 4 Nov 2026 showed seven more places (and #276's evidence explained an eighth) where work stopped or went wrong with nothing reporting it: the repository host started almost none of the agents' scheduled runs and no check noticed; a planned list of titles was never confirmed; a new story was drafted as one test case saying its page "is not defined in the Application Under Test"; one story needing a person turned the run red, and the hand-off then left every other waiting story to a schedule that rarely starts; and that story was taken first again on every scan.
+
+- `core/health_checks.schedule_findings()` with a five-field cron reader (`cron_fires`): a scheduled workflow whose cron lines asked for at least `pipeline_health.schedule_min_expected` (3) runs in the last `schedule_window_hours` (24), none of which the host started, raises `workflow-not-starting:<file>`; one started run closes it
+- `scripts.plan_inventory --family`: a planned selector naming a list is declared `multi_match` too, so its several live matches confirm it instead of reading as AMBIG
+- `core/test_case_rules`: a test case saying something is not defined / described / present in the Application Under Test, the app context, notes or inventory, the reference notes or the provided context is sent back; both Agent 1 prompts say a thing the story asks for that the section lacks is new
+- Agents 1 and 2 start themselves again after a red run too (`!cancelled()`); the progress rule of #262 still stops a run that took no waiting story, and `handoff.max_chain` bounds the chain
+- Agent 1's scan hands back a story that needs a person (a partial set of test cases): `ai-ready` off, one `[agent1:stopped]` comment saying what to do
+- F-32: #276's evidence on SCRUM-296 was an empty answer after 12,288 tokens - the model reasoned through the whole budget before answering. The impact-aware budget is 12,288 + 2,048 per approved case (at most 32,768); `truncation_evidence()` names an empty truncated answer as reasoning
+- Agent 0: an analysis that finds nothing while an earlier Impact Review is open rewrites that review with no rows and a *Superseded* line and takes `impact-proposed` off (SCRUM-295 kept both `ai-ready` and `impact-proposed`, and its stale review stayed open)
+- `core/context_update.free_branch()`: a context update or notes addition whose earlier pull request was closed unmerged is proposed on `<branch>-<n>` (the closed branch stays - the repository forbids deleting it); while one is open, nothing is proposed
+- `tests/unit/test_run_c_findings.py`; TEST_TRACK E70-E77
+- Not tested live yet: E70-E77
+
+---
+
 ## November 2026 — what Run B of the validation found (#276)
 
 **Why:** Run B drove SCRUM-291 and SCRUM-296 through the agents on 4 Nov 2026. The flaws it found, with those from Run A, were each a place where something went wrong without anything saying so or stopping it. Some were silent: a story never selected, a truncated answer with no evidence, a PR table whose two cells read the same. Some repeated: a failed draft paid for every 30 minutes. Some were contradictions: the orphan clean-up against the page-object contract, a quote the story never stated, a copy of an existing test.

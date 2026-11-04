@@ -348,7 +348,8 @@ def run(story_id: str, dry_run: bool = False) -> dict:
         from agents.agent1_impact import run_impact_aware
         logger.info(f"{story_id} impacts {len(impacted)} approved test case(s): "
                     f"impact-aware mode")
-        llm = LLMClient(temperature=0.3, max_output_tokens=12288)
+        from agents.agent1_impact import output_budget
+        llm = LLMClient(temperature=0.3, max_output_tokens=output_budget(len(impacted)))
         result = run_impact_aware(
             jira, story_id, story,
             {"app_name": ctx.name, "app_base_url": ctx.base_url,
@@ -499,7 +500,7 @@ def stops_retrying(error: Exception) -> bool:
     return isinstance(error, (OutputTruncatedError, DraftRejected))
 
 
-def hand_back(tracker, story_id: str, error: Exception, agent_config: dict) -> list:
+def hand_back(tracker, story_id: str, error, agent_config: dict) -> list:
     """Take the story out of the scan and say why, on the story itself.
 
     Agent 1 runs on a schedule. A story left with its trigger label after such
@@ -507,6 +508,8 @@ def hand_back(tracker, story_id: str, error: Exception, agent_config: dict) -> l
     answer - until its spend budget holds it (4 Nov 2026: a 7-case revision
     ran out of output room, $0.38 a run, every 30 minutes). Removes the
     trigger label(s) and posts one comment; adding the label again retries.
+    `error` is the exception, or - for a story that needs a person before any
+    draft (_NEEDS_A_PERSON) - the text saying what to do.
     Returns the labels removed. Never raises."""
     labels = agent_config.get("trigger_labels_to_remove",
                               agent_config.get("selection", {}).get("required_labels", []))
@@ -519,8 +522,11 @@ def hand_back(tracker, story_id: str, error: Exception, agent_config: dict) -> l
             logger.warning(f"Could not remove '{label}' from {story_id}: {e}")
     reason = str(error).split(" To re-run", 1)[0]
     again = " or ".join(f"`{label}`" for label in labels) or "the trigger label"
+    why = ("the next run would repeat the same answer at the same cost"
+           if isinstance(error, Exception) else
+           "the next run would stop on it again, and take a place another story waits for")
     body = (f"{STOPPED} Agent 1 stopped on this story and will not retry it on its own: "
-            f"the next run would repeat the same answer at the same cost.\n\n"
+            f"{why}.\n\n"
             f"Reason: {reason[:600]}\n\nNothing was written to the tracker. "
             f"Add {again} again to retry; the run log says more.")
     try:
@@ -531,6 +537,11 @@ def hand_back(tracker, story_id: str, error: Exception, agent_config: dict) -> l
 
 
 _NEEDS_A_PERSON = {"partial_test_cases"}
+NEEDS_A_PERSON_WHY = {
+    "partial_test_cases": ("a previous run stopped part-way: {n} test case(s) are linked but "
+                           "the story has no completion label, so the set is incomplete. "
+                           "Delete (or retire) the linked test cases first."),
+}
 
 
 def print_summary(results: list[dict]) -> bool:
@@ -662,6 +673,13 @@ def main():
                                  dry_run=args.dry_run):
                     result = run(story["key"], dry_run=args.dry_run)
                 results.append(result)
+                # A story that needs a person keeps its trigger label otherwise:
+                # every scan takes it first and stops on it again, a place
+                # another story waits for (4 Nov 2026).
+                if result.get("status") in _NEEDS_A_PERSON and not args.dry_run:
+                    hand_back(jira, story["key"], NEEDS_A_PERSON_WHY.get(
+                        result["status"], result["status"]).format(
+                        n=result.get("existing_test_cases", "some")), agent_config)
             except BudgetExceeded as stop:
                 # F-24: a held story needs a person (red once, then no longer
                 # selected); the daily budget stops the scan until tomorrow.
