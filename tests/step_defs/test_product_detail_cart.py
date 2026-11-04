@@ -85,13 +85,14 @@ def assert_brand_label(product_detail_page):
     assert product_detail_page.has_brand_label(), "Expected the Brand label"
 
 
-@then(parsers.parse('the cart should contain "{product_name}" with quantity {quantity:d}'))
-def assert_cart_contains(cart_page, product_name, quantity):
-    cart_page.wait_for_product(product_name, present=True)
-    actual = cart_page.quantity_for(product_name)
-    assert actual == quantity, (
-        f"Expected quantity {quantity} for {product_name!r}, got {actual}"
-    )
+# AI-ORPHAN: no scenario in features/product_detail_cart.feature uses this step after SCRUM-296 revised or retired SCRUM-222, SCRUM-221, SCRUM-220. Review before deleting.
+# @then(parsers.parse('the cart should contain "{product_name}" with quantity {quantity:d}'))
+# def assert_cart_contains(cart_page, product_name, quantity):
+    # cart_page.wait_for_product(product_name, present=True)
+    # actual = cart_page.quantity_for(product_name)
+    # assert actual == quantity, (
+        # f"Expected quantity {quantity} for {product_name!r}, got {actual}"
+    # )
 
 
 @then(parsers.parse('I should remain on the "{product_name}" product detail page'))
@@ -100,4 +101,26 @@ def assert_remain_on_detail(product_detail_page, product_name):
     actual = product_detail_page.product_name()
     assert product_name in actual, (
         f"Expected to remain on {product_name!r} detail page, name was {actual!r}"
+    )
+
+
+@then("the product detail page should not show a quantity input field")
+def assert_no_quantity_input(product_detail_page):
+    assert product_detail_page.is_quantity_input_absent(), (
+        "Expected no quantity input field on the product detail page"
+    )
+
+
+@then(parsers.parse('the cart should contain "{product_name}" with price "{price}"'))
+def assert_cart_contains_price(cart_page, product_name, price):
+    cart_page.wait_for_product(product_name, present=True)
+    assert cart_page.has_product_with_price(product_name, price), (
+        f"Expected cart to contain {product_name!r} with price {price!r}"
+    )
+
+
+@then("the cart should not show a Quantity column")
+def assert_no_quantity_column(cart_page):
+    assert not cart_page.has_quantity_column(), (
+        "Expected the cart to not show a Quantity column"
     )
