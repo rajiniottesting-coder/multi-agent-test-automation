@@ -39,7 +39,7 @@ REPO_HOST_READS = frozenset({
     "branch_exists", "get_file_content", "list_files_in_directory",
     "find_open_pr_for_story", "list_open_prs", "find_prs_for_story",
     "get_pr_metadata", "get_pr_changed_files", "get_pr_comments", "get_workflow_runs",
-    "get_run_artifact_file", "get_review_comments",
+    "get_run_artifact_file", "get_review_comments", "get_pr_reviews", "get_pr_comment_records",
 })
 REPO_HOST_WRITES = frozenset({
     "create_branch", "delete_branch", "create_or_update_file", "open_pull_request",

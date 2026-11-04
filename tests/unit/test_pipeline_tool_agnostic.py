@@ -328,6 +328,8 @@ class SourceHub:
     def get_run_artifact_file(self, run_id, artifact_prefix, filename): return None
     def get_review_comments(self, pr_number, review_id=None): return []
     def reply_to_review_comment(self, pr_number, comment_id, body): pass
+    def get_pr_reviews(self, pr_number): return []
+    def get_pr_comment_records(self, pr_number): return []
 
 
 def test_full_pipeline_runs_on_neither_jira_nor_github(tracker, tmp_path):

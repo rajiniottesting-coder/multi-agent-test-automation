@@ -167,7 +167,8 @@ class RepoHost(Protocol):
     def get_review_comments(self, pr_number: int,
                             review_id: Optional[int] = None) -> list[dict]:
         """Inline review comments on a PR - the ones anchored to a file and a
-        line - as [{"id", "path", "line", "body", "author", "review_id"}, ...],
+        line - as [{"id", "path", "line", "body", "author", "association",
+        "review_id"}, ...],
         oldest first: each thread's first comment and a person's reply in a
         thread (`reply_to`: the thread's first comment); bots' replies are left
         out. With `review_id`,
@@ -178,6 +179,19 @@ class RepoHost(Protocol):
     def reply_to_review_comment(self, pr_number: int, comment_id: int,
                                 body: str) -> None:
         """Answer an inline review comment in its own thread."""
+        ...
+
+    def get_pr_reviews(self, pr_number: int) -> list[dict]:
+        """Submitted reviews, oldest first: [{"id", "state", "body", "author",
+        "association", "bot"}]. `state` upper case (CHANGES_REQUESTED,
+        APPROVED, COMMENTED, DISMISSED); `association` the author's relation
+        to the repository (OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR, NONE...).
+        Used by Agent 2's review fix to find a request no run handled."""
+        ...
+
+    def get_pr_comment_records(self, pr_number: int) -> list[dict]:
+        """Conversation comments, oldest first: [{"id", "body", "author",
+        "association", "bot"}] - get_pr_comments with who wrote each."""
         ...
 
     # ── CI status ────────────────────────────────────────────
