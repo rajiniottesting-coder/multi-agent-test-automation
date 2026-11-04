@@ -89,9 +89,17 @@ def _reserved_capabilities(errors) -> list:
     return found
 
 
+def _reasons_digest(errors) -> str:
+    """8 hex characters over the refusal's errors. A retry on the same inputs
+    that is refused for another reason (after a framework fix, say) is a new
+    comment; the same refusal again is not."""
+    text = "\x1e".join(sorted(str(e) for e in errors or []))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:8]
+
+
 def blocked_comment(story_id: str, fp: str, errors) -> str:
     errors = list(dict.fromkeys(str(e) for e in errors or [] if str(e).strip()))
-    lines = [f"{BLOCKED_MARKER} inputs: {fp}",
+    lines = [f"{BLOCKED_MARKER} inputs: {fp} reasons: {_reasons_digest(errors)}",
              (f"Agent 2 could not code {story_id}: the final gate refused the generated "
               "code for the reasons below (a rule still broken after every repair "
               "attempt, or no approved test case automated), so no pull request was "
@@ -144,10 +152,17 @@ def blocked_comment(story_id: str, fp: str, errors) -> str:
 
 
 def post_blocked_once(tracker, story_id: str, fp: str, errors) -> bool:
-    """Post the blocked comment unless one for this input is already there.
+    """Post the blocked comment unless one for this input AND these reasons is
+    already there. 4 Nov 2026: SCRUM-293, run again by key after a framework
+    fix, was refused for a new reason (a reserved page object lacked the
+    method) and the person was never told - the comment from the first
+    refusal, on the same inputs, still blamed the old one. The scheduled scan
+    skips a blocked story on its inputs alone (blocked_on), so the same
+    refusal is never posted twice by it.
     Best-effort: returns whether it was posted, never raises."""
     try:
-        if blocked_on(tracker.get_comments(story_id), fp):
+        head = f"{BLOCKED_MARKER} inputs: {fp} reasons: {_reasons_digest(errors)}"
+        if any((c or "").startswith(head) for c in tracker.get_comments(story_id)):
             return False
         tracker.add_comment(story_id, blocked_comment(story_id, fp, errors))
         return True

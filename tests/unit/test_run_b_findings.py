@@ -205,7 +205,8 @@ def test_the_tracker_finds_labelled_stories_outside_the_scope():
     out = c.find_unselected_stories({"issue_type": "Story", "allowed_statuses": ["To Do"],
                                      "required_labels": ["go"], "excluded_labels": ["done"],
                                      "sprint": "auto"})
-    assert 'AND NOT (status in ("To Do") AND sprint = "Sprint 7")' in jql[0]
+    assert ('AND (NOT (status in ("To Do")) OR sprint is EMPTY OR NOT (sprint = "Sprint 7"))'
+            in jql[0]), "a story with no sprint at all is asked for too (F35)"
     assert 'labels = "go"' in jql[0] and 'labels != "done"' in jql[0]
     assert out[0] == {"key": "AB-1", "status": "To Do", "why": "it is not in the sprint 'Sprint 7'"}
     assert out[1]["key"] == "AB-2" and "status 'Done' is not one of: To Do" in out[1]["why"]

@@ -755,7 +755,8 @@ def seed_pages(seeds: dict | None) -> list:
 
 
 def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: Path,
-                      change_type: str | None = None, seeds: dict | None = None) -> dict:
+                      change_type: str | None = None, seeds: dict | None = None,
+                      force: bool = False) -> dict:
     """Propose the context update for one change story, once.
 
     `change_type` is Agent 0's classification of the story (ChangeSeeds). A
@@ -779,7 +780,12 @@ def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: 
         return {"story": story_key, "context": "disabled"}
     story = tracker.get_story(story_key)
     chash = _story_hash(story)
-    if _already_proposed(tracker.get_comments(story_key), chash, _pr_is_open(host)):
+    # `force` (Agent 0 run by hand for one story) proposes again even after a
+    # "no update needed" verdict or a closed pull request for this text - 4 Nov
+    # 2026: SCRUM-207's earlier verdict stood, so a forced re-analysis could
+    # never retry the update. A pull request still open always stands: never two.
+    if _already_proposed(tracker.get_comments(story_key), chash, _pr_is_open(host),
+                         only_open_pr=force):
         return {"story": story_key, "context": "already-proposed"}
     if change_type == NEW_BEHAVIOUR:
         tracker.add_comment(story_key, f"{MARKER} No context update needed: Agent 0 classified "
@@ -883,7 +889,8 @@ def _pr_is_open(host):
     return is_open
 
 
-def _already_proposed(comments: list, chash: str, pr_is_open=None) -> bool:
+def _already_proposed(comments: list, chash: str, pr_is_open=None,
+                      only_open_pr: bool = False) -> bool:
     """A proposal stands only for this attempt, this text of the story, and -
     when it opened a pull request - only while that pull request is open.
 
@@ -908,6 +915,8 @@ def _already_proposed(comments: list, chash: str, pr_is_open=None) -> bool:
             pr = _PR_NUMBER.search(c)
             if pr and pr_is_open is not None and not pr_is_open(int(pr.group(1))):
                 continue
+            if only_open_pr and not pr:
+                continue                  # a verdict without a PR: forced, it is asked again
             return True
     return False
 

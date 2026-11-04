@@ -242,7 +242,7 @@ def analyse_and_publish(tracker, story_key: str, llm, settings: dict, root: Path
         # Released straight to ai-ready: no hand-over will follow, so the
         # context update is proposed now.
         result.update(_propose_context(tracker, host, llm, story_key, settings, root,
-                                       report=report))
+                                       report=report, force=force))
     if not dry_run:
         _post_usage(tracker, story_key)
     return result
@@ -284,7 +284,7 @@ def _post_usage(tracker, story_key: str) -> None:
 
 
 def _propose_context(tracker, host, llm, story_key: str, settings: dict, root: Path,
-                     report: dict | None = None) -> dict:
+                     report: dict | None = None, force: bool = False) -> dict:
     """The context-update pull request (core.context_update). Never fails the
     hand-over it follows: that is already done and must stand.
 
@@ -305,7 +305,7 @@ def _propose_context(tracker, host, llm, story_key: str, settings: dict, root: P
                 report = None
         out = propose_for_story(tracker, host, llm, story_key, settings, Path(root),
                                 change_type=(report or {}).get("change_type"),
-                                seeds=(report or {}).get("seeds"))
+                                seeds=(report or {}).get("seeds"), force=force)
         return {"context": out.get("context"), "context_pr": out.get("url")}
     except Exception as e:                                         # noqa: BLE001
         logger.error("context update for %s failed: %s", story_key, e, exc_info=True)

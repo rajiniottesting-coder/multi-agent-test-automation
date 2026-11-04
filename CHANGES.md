@@ -4,6 +4,19 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — budget alerts follow the limit; a forced re-analysis retries the context update; a backlog story is told why it waits; a new refusal reason is posted (#293)
+
+**Why:** found while running the validation on 4 Nov 2026: today's budget alerts stayed open all day after `per_day_usd` was raised; a forced Agent 0 run on SCRUM-207 could not retry its context update because an earlier "no update needed" verdict stood; and the not-selected notice of #276 never found a story with no sprint at all - the very case it was built for.
+
+- `scripts/pipeline_health_check.housekeeping`: today's `budget-day` / `budget-warn` alert closes when today's spend is below the current limit / warning share
+- `core.context_update.propose_for_story(force=)`: forced, a verdict or a closed PR no longer stands; an open PR still does; Agent 0 passes `--force` through
+- `integrations/jira_client.find_unselected_stories`: outside the scope includes `sprint is EMPTY` (JQL never matches an empty sprint in a negated condition)
+- `core.blocked`: the blocked comment carries a digest of its reasons; a retry by key refused for another reason posts it (the scan's skip still reads the inputs only)
+- `pages/nav_page.py` (application code, a person's step): `go_to_test_cases()` - the remedy SCRUM-293's refusal asks for
+- Tests in `test_spend_budget.py`, `test_change_story_retry.py`, `test_run_b_findings.py`, `test_blocked_story.py`; TEST_TRACK E91-E94. Not tested live yet: E91-E94
+
+---
+
 ## November 2026 — a committed page object the steps need a method on joins the repair (#292)
 
 **Why:** SCRUM-293's step definitions called a method the home page object did not have; the plan had not named that file, so only the step definitions were repaired, and after three attempts the story was refused.

@@ -184,6 +184,27 @@ def test_a_marker_from_before_an_undo_does_not_count():
     assert cu._already_proposed(comments + [f"{cu.MARKER} again.\n(story: {h})"], h)
 
 
+def test_forced_a_verdict_is_asked_again_but_an_open_pr_still_stands():
+    """4 Nov 2026: SCRUM-207's earlier "no update needed" stood, so a forced
+    re-analysis could never retry the context update."""
+    h = cu._story_hash(STORY)
+    verdict = f"{cu.MARKER} No context update needed.\n(story: {h})"
+    assert cu._already_proposed([verdict], h)
+    assert not cu._already_proposed([verdict], h, only_open_pr=True)
+    opened = f"{cu.MARKER} proposed https://host/o/r/pull/12\n(story: {h})"
+    assert cu._already_proposed([opened], h, lambda n: n == 12, only_open_pr=True)
+    assert not cu._already_proposed([opened], h, lambda n: False, only_open_pr=True)
+
+
+def test_agent0_passes_force_to_the_context_update(monkeypatch):
+    import agents.agent0_impact as a0
+    seen = {}
+    monkeypatch.setattr(cu, "propose_for_story", lambda *a, **k: seen.update(k) or {})
+    a0._propose_context(MagicMock(), MagicMock(), MagicMock(), "AB-9",
+                        {"context_update": {"enabled": True}}, ".", report={}, force=True)
+    assert seen["force"] is True
+
+
 def test_a_marker_without_a_story_hash_cannot_vouch_for_the_text():
     assert not cu._already_proposed([f"{cu.MARKER} No context update needed."], "abc123")
 

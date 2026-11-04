@@ -54,8 +54,13 @@ def test_the_comment_is_posted_once_per_input_and_names_the_rules():
     errors = ["Persistent state error in 'features/x.feature': ...", "Second rule ..."]
     assert blocked.post_blocked_once(tracker, "PROJ-5", fp, errors)
     assert not blocked.post_blocked_once(tracker, "PROJ-5", fp, errors)
+    # the same inputs refused for another reason (a retry by key after a fix)
+    assert blocked.post_blocked_once(tracker, "PROJ-5", fp, ["a different rule"])
+    assert not blocked.post_blocked_once(tracker, "PROJ-5", fp, ["a different rule"])
+    assert blocked.blocked_on(tracker.get_comments("PROJ-5"), fp), "the scan still skips it"
     body = tracker.comments[0]
-    assert body.splitlines()[0] == f"{blocked.BLOCKED_MARKER} inputs: {fp}"
+    assert body.splitlines()[0] == (f"{blocked.BLOCKED_MARKER} inputs: {fp} "
+                                    f"reasons: {blocked._reasons_digest(errors)}")
     assert "Persistent state error" in body and "Second rule" in body
     assert blocked.blocked_on(tracker.comments, fp)
     assert not blocked.blocked_on(tracker.comments, blocked.fingerprint(STORY, CASES[:1]))

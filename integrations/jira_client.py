@@ -284,9 +284,17 @@ class JiraClient:
         status_in = "status in ({})".format(", ".join(f'"{x}"' for x in statuses))
         sprint_in = ("sprint in openSprints()" if str(sprint).lower() == "opensprints"
                      else f'sprint = "{sprint}"') if sprint else None
-        inside = " AND ".join(x for x in (status_in if statuses else None, sprint_in) if x)
+        # Outside the scope = a status not allowed, OR no sprint at all, OR
+        # another sprint. `NOT (sprint = X)` never matches an empty sprint in
+        # JQL (4 Nov 2026: a backlog story labelled ai-ready - the very case
+        # this notice exists for - was not found), so EMPTY is asked for apart.
+        outside = []
+        if statuses:
+            outside.append(f"NOT ({status_in})")
+        if sprint_in:
+            outside += ["sprint is EMPTY", f"NOT ({sprint_in})"]
         relaxed = " AND ".join(parts)
-        found = self.client.enhanced_search_issues(f"{relaxed} AND NOT ({inside})",
+        found = self.client.enhanced_search_issues(f"{relaxed} AND ({' OR '.join(outside)})",
                                                    maxResults=max_results)
         in_sprint = set()
         if sprint_in and found:

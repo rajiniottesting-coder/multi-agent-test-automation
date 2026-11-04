@@ -98,6 +98,20 @@ def housekeeping(tracker, now: _dt.datetime) -> None:
         ph.resolve_where(tracker, lambda a: bool(re.fullmatch(r"budget-(day|warn)-\d{8}", a))
                          and a.rsplit("-", 1)[1] < today,
                          "A new day: the daily budget starts again.")
+        # Today's, when the limit has since been raised above today's spend
+        # (4 Nov 2026: per_day_usd went from 12 to 35 to 50 and the day's
+        # "reached $12.00 of $12.00" alert stayed open all day).
+        spent = spend_budget.day_spent(tracker, today)
+        if spent is not None:
+            limits = spend_budget.settings()
+            per_day = float(limits["per_day_usd"])
+            below = {"day": spent < per_day,
+                     "warn": spent < float(limits["warn_at"]) * per_day}
+            ph.resolve_where(
+                tracker, lambda a: bool(re.fullmatch(rf"budget-(day|warn)-{today}", a))
+                and below[a.split("-")[1]],
+                f"The daily budget is now ${per_day:.2f}: today's spend "
+                f"(${spent:.2f}) is below it.")
     except Exception as e:                                         # noqa: BLE001
         logger.warning("Housekeeping skipped: %s", e)
 
