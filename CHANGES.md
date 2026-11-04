@@ -4,6 +4,19 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a notes change touches only the story's own pages; the small backlog (#267)
+
+**Why:** before Run A, the rename update was run on the real inventory and notes for the two validation stories (SCRUM-295 with Component Cart, SCRUM-290 with none). With the Component, a `core.md` line about the all-products cards was renamed too - `core.md` is always in scope. Without one, the seeded details page widened through its Components (Products, Cart) to every page sharing them, and the all-products selector `text=Add to cart` was rewritten - the listing's tests would have broken after merge. Both came from #265.
+
+- `core/context_update.propose()`: when the old text is also on a page outside the scope, only the in-scope pages' own inventory values change; notes lines, `core.md`, shared inventory values and `always` pages holding it are listed for review (`Proposal.review`), not changed. Text only inside the scope changes its notes as before
+- `propose_for_story(seeds=)`: the inventory pages are the seeded pages (plus `always` pages), never every page sharing their Components; the Components still choose the notes modules
+- Checked on the real repository, both flows: with the Component and without, only the details page's own notes change; the listing's selector and `products.md` are listed *not changed*, `cart.md` and `core.md` for review. The notes addition offers `core.md` + `products.md` with a Component (SCRUM-283) and `core.md` + `home.md` plus a new `contact_us.md` without one
+- The small backlog: a repair is shown a feature file as it stands and told to keep titles, markers and tags (`_previous_attempt_worth_showing`); `get_review_comments` leaves out every bot comment, not only replies; the jira library's false "link type is not present" warning, logged on every link, is dropped around the call; Gherkin tags are free markers (`filterwarnings` in pytest.ini); the duplicate-step check loses its unreachable half; `get_property` returns plain JSON by its signature; the review fix says why its two write-access rules differ; `opening_step` names its sort key
+- TEST_TRACK: the runbook - one ordered sequence with the validation stories (SCRUM-290 to SCRUM-298), every open row in one step (checked by script); E14 re-targeted (PR #211 is closed); E57's expectation updated; the small backlog closed
+- `tests/unit/test_notes_follow_the_page.py` (20), `tests/unit/test_small_backlog_fixes.py` (11)
+
+---
+
 ## November 2026 — a notes change reaches only the page it is about; several reviewers on one pull request (#265)
 
 **Why:** before merging SCRUM-284's notes addition the question was asked: the same text sits in several notes files and pages - does a change for one page stay on that page, especially with no Component tagged? And does the review fix still work with several reviewers? Reading the code: (1) a change story's wording replacement was applied to **every** notes module and **every** inventory value, selectors on pages the story never touched included; (2) a story with no Component had every module offered for its new facts and none could be started for its own page - SCRUM-284's went into the home page's module; (3) a new fact was dropped as "already stated" when **another** page's module used the same words; (4) GitHub keeps one waiting run per pull request, so with a fix running, a second reviewer's request could be cancelled by a third's, and its own text (the review's summary, the words after `/fix`) was lost; (5) the workflow checked who **started** a run, but line comments were taken from anyone.
