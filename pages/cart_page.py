@@ -85,6 +85,17 @@ class CartPage(BasePage):
         self.wait_for_row(self.sel("cart_rows"), product_name, present=True)
         return True
 
+    def is_product_absent(self, product_name: str) -> bool:
+        """True once no row for `product_name` is in the cart. WAITS while one is.
+
+        Built on wait_for_row(present=False), which re-checks until the row has
+        gone, so a removal that is still settling is given time to complete
+        rather than reported as a false failure. Returns True once the row is
+        genuinely absent; the wait raises if it never leaves.
+        """
+        self.wait_for_row(self.sel("cart_rows"), product_name, present=False)
+        return True
+
     def quantity_for(self, product_name: str) -> int:
         """Return the quantity shown in `product_name`'s row, as an int.
 
