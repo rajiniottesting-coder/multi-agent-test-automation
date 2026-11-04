@@ -26,8 +26,9 @@ scenarios(str(feature_path("contact_us_form")))
 # ─────────────────────────────────────────────────────────────
 
 @given("I am on the Contact Us page")
-def open_contact_us(contact_us_page, nav_page, base_url):
-    """Reach the Contact Us page via the top-nav Contact us link."""
+def open_contact_us(contact_us_page, nav_page, home_page, base_url):
+    """Open the home page first, then reach Contact Us via the top-nav link."""
+    home_page.open_home_page(base_url)
     nav_page.go_to_contact_us()
     assert contact_us_page.is_loaded(), "Contact Us page did not load"
 
