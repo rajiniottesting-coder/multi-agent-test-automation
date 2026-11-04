@@ -155,10 +155,15 @@ text (a bare `/fix` takes the inline comments alone). Bots never trigger it.
    modifies files that already existed) with their step definitions, and page
    objects it extends; a file holding another story's scenario, reserved and
    framework files never. A feature file must keep its
-   scenarios, titles and markers; a degraded answer is discarded.
+   scenarios, titles and markers, and may not drop a check an approved test
+   case states (a "not shown" it asserts) - such a comment is declined with the
+   way to get it: change the test case, then `ai-regenerate`. A degraded answer
+   is discarded.
 3. The repair loop and the final gate run over every code file of the pull
-   request. Anything still failing, or a repair that reaches a file that is not
-   editable: **nothing is pushed**, and the summary says why, listing each rule still broken.
+   request. Anything still failing, a repair that reaches a file that is not
+   editable, or one that changes a feature file's scenarios, titles or markers
+   (the repair regenerates whole files): **nothing is pushed**, and the summary
+   says why, listing each rule still broken.
 4. Otherwise the files are pushed to the **same branch**, so Agents 3, 4 and 5
    run again; each comment gets a reply in its thread, the pull request one
    `[agent2:review-fix]` summary (which also stops a second run on the same
