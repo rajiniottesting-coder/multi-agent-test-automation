@@ -751,12 +751,19 @@ def test_every_repairable_check_can_stop_a_pull_request():
     assert "STORY-1" in str(excinfo.value), "name the story that was stopped"
 
 
-def test_a_clean_batch_still_passes_the_gate():
+def test_a_clean_batch_still_passes_the_gate(monkeypatch):
     """Break the thing the guard guards.
 
     A backstop that raised on everything would stop every story. The same file
     with a method that says what it opens must pass.
+
+    The sample borrows a real inventory page and resolves none of its elements,
+    which the selector check refuses when a committed page object implements
+    that page (tested in test_run_c_findings); that rule is set aside here so
+    the sample stays the smallest clean file whatever pages are committed.
     """
+    import validators.method_resolution_validator as v
+    monkeypatch.setattr(v, "_committed_inventory_pages", lambda root: {})
     from agents.agent2_coder import _collect_repairable_errors, _validate_generated_files
 
     batch = [_page_object_with("open_widget")]
