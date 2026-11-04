@@ -4,6 +4,20 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a notes change reaches only the page it is about; several reviewers on one pull request (#265)
+
+**Why:** before merging SCRUM-284's notes addition the question was asked: the same text sits in several notes files and pages - does a change for one page stay on that page, especially with no Component tagged? And does the review fix still work with several reviewers? Reading the code: (1) a change story's wording replacement was applied to **every** notes module and **every** inventory value, selectors on pages the story never touched included; (2) a story with no Component had every module offered for its new facts and none could be started for its own page - SCRUM-284's went into the home page's module; (3) a new fact was dropped as "already stated" when **another** page's module used the same words; (4) GitHub keeps one waiting run per pull request, so with a fix running, a second reviewer's request could be cancelled by a third's, and its own text (the review's summary, the words after `/fix`) was lost; (5) the workflow checked who **started** a run, but line comments were taken from anyone.
+
+- `core/context_update.propose(narrowed=)`: the wording replacement is applied inside what the story's Components select (`core.md` and their modules; their pages, `always` pages and shared inventory values); the same text elsewhere is listed under *not changed*. With no Component (`narrowed` False), text on more than one inventory page or in more than one notes module is listed as *not applied* - nothing says which the story means. A caller without a story (`narrowed` None) replaces everywhere, as before
+- `components_from_tests()`: a story with no Component takes its Components from the inventory pages its merged tests use (feature files by `# JIRA:` marker → step-definition fixtures → `INVENTORY_PAGE` → the page's `components`; `always` pages left out). Checked on main: SCRUM-284 gives Contact Us + Home (and so a new `contact_us.md`), SCRUM-283 gives Products, Cart, Search
+- `propose_additions()`: a new line is compared with the target module, `core.md` and the story's earlier additions only
+- `agents/agent2_review_fix.py`: `unhandled_requests()` - each run also takes the text of every earlier Request-changes review and `/fix` comment, by a person with write access, that no run handled; the summary records them (`also handled: …`), and `handled()` reads that line. `WRITE_ACCESS` (the workflow's own list): a line comment by anyone else is not taken, and the summary names its author. A host that cannot say (no `association`) is trusted, as before
+- `RepoHost.get_pr_reviews()`, `get_pr_comment_records()` (GitHub: PyGithub reviews and issue comments with `author_association`); `get_review_comments()` now carries `association`; both are reads for the dry run
+- `tests/unit/test_notes_follow_the_page.py` (11), `tests/unit/test_several_reviewers.py` (8); the two fake hosts of the host-abstraction tests implement the two new methods; 8 deliberate breaks each fail a test; full suite 4047 passed
+- Not tested live yet: E57, E58
+
+---
+
 ## November 2026 — a scenario opens a page before it acts on one; Agent 3 sees the page-object methods a pull request calls (#265)
 
 **Why:** SCRUM-284's first run (its pull request, 4 Nov) failed both scenarios: the test case said "navigate to the home page, then click Contact us", and the generated Background only clicked. Every test starts on the browser's empty page, so each waited 30 seconds for a link that could never appear, and the failure read as a selector problem. Every check passed - the method existed, the selector was right. Agent 3 then blocked the pull request over `go_to_contact_us()` "possibly not existing": it was on `main`, merged the hour before, outside the diff. A person's line comment and `/fix` repaired it.

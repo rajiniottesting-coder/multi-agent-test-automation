@@ -601,7 +601,7 @@ inventory update (next section) for what the live application shows, and this
 one for what a change story changes. A change story makes the material
 stale. At hand-over Agent 0 proposes the update as a pull request:
 
-- **Wording** the story replaces (a label, a message) — one model call lists old → new (`prompts/agent0_wording.md`); the replacement is applied exactly to the inventory's values and the notes. A change whose old text appears nowhere is dropped and reported.
+- **Wording** the story replaces (a label, a message) — one model call lists old → new (`prompts/agent0_wording.md`); the replacement is applied exactly to the inventory's values and the notes **that the story's Components select** (the same rule as Agent 1: `core.md` and their modules, their pages plus `always` pages and shared values). The same text elsewhere - another page's selector, another module - is listed under *not changed*, never edited. A story with **no Component** gets the replacement only when the text is on one inventory page and in one notes module; on two pages or in two modules nothing says which the story means, so it is listed as *not applied*: edit by hand, or tag the Component(s) - a changed story is checked again. A change whose old text appears nowhere is dropped and reported.
 - **Passages the story makes untrue** — behaviour, rules, removed elements. One more call rewrites each such passage (`prompts/agent0_context_notes.md`). A passage not found verbatim is dropped and reported. **A rewrite never touches a selector**: the element is live until the change is deployed. (A *wording* change, above, does update a selector that matches on the old text - which is why the PR waits for deployment.) The call reads only what the story's Components select - `core.md`, their modules and their pages' inventory notes, by the same rule as Agent 1 (all of them when none match) - and a rewrite of a file it was not shown is dropped.
 - **Elements the story removes** — the same call names them (`removed`, as `page.key`, from the element keys it is shown - never selectors). Each one that exists on a page the story's Components select is added to that page's `removed` list in the inventory: after deployment the nightly checks read the missing element as expected (present again: drift), Agent 0 seeds nothing from it, and the nightly inventory update deletes the key once no test names it. A reference that is not such an element is dropped and reported.
 - Code mentioning the old text is listed, not edited — code changes go through the story's own PR.
@@ -629,8 +629,17 @@ feature is live and its tests passed), the Story Done on merge workflow runs
 - Each addition goes under an existing heading of a selected module, as a new
   section at its end, or into a **new module** for a Component that has none
   yet - never anywhere else, never into the inventory.
+- **A story with no Component** takes its Components from the pages its merged
+  tests use: the feature files holding its scenarios, their step definitions'
+  page-object fixtures, each class's `INVENTORY_PAGE` and that page's
+  `components` in the inventory (`always` pages left out). So a new page's facts
+  go into its own module, not another page's. The PR says which pages were read;
+  when nothing can be read, every module is offered, as before.
 - **Every line the notes already state is dropped** (same words, or contained
-  in an existing line - a deterministic check), and an addition longer than
+  in an existing line - a deterministic check) - compared with the target
+  module, `core.md` and the story's earlier additions only. Another module is
+  read only for its own Components, so the same words there may describe another
+  page and do not count. An addition longer than
   `max_addition_chars` is refused; the PR lists both.
 - A pull request on `context-update/<key>-notes-<hash>` (no issue key, so
   merging it moves nothing) and an `[agent0:context-addition]` marker on the
@@ -834,7 +843,16 @@ changes on it: leave the inline comments with **Comment** and then post a bare
 `/fix`.
 Agent 2 replies in each comment's thread, pushes what it fixed to the same
 branch, and posts one `[agent2:review-fix]` summary listing every comment's
-outcome. Nothing is pushed unless the whole pull request passes the validator
+outcome.
+
+**Several reviewers.** Every reviewer's line comments and thread replies are
+taken, one run at a time per pull request, each on the latest commit. GitHub
+keeps one *waiting* run per pull request, so a request made while a fix runs
+can be cancelled by the next one; each run therefore also takes the text of
+every earlier **Request changes** review and `/fix` comment no run handled, and
+lists them in its summary (`also handled: review …, comment …`) so they are
+never taken twice. Only people with **write access** steer a fix: a line
+comment by anyone else is not taken, and the summary names its author. Nothing is pushed unless the whole pull request passes the validator
 gate again. A comment that asks the tests to check something the approved test
 cases do not state is declined: change the test case, then add `ai-regenerate`.
 
@@ -2348,7 +2366,10 @@ qualify. The `[agent2:review-fix]` comment on the PR lists each comment's
 outcome: **declined** names the reason (a file another story owns, a reserved or
 framework file, or a change to what the test cases state), and **Nothing was
 pushed** quotes the check that failed. Each review is handled once; ask again
-with a new review or another `/fix`. If **Request changes** is greyed out, you
+with a new review or another `/fix`. A request whose own run was cancelled (two
+reviewers at once) is taken by the next run - its summary lists it under
+*also handled*. A line comment by someone without write access is never taken;
+the summary says so and names them. If **Request changes** is greyed out, you
 are the pull request's author: the agents still write with `GH_PAT`, your
 account, and GitHub does not let an author request changes - use `/fix`, or set
 up the agents' GitHub App ([Agent identity](#agent-identity-the-agents-github-app-f-30)).
