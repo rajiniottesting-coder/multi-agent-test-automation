@@ -788,13 +788,25 @@ class JiraClient:
             raise RuntimeError(f"setting property {key} on {issue_key}: HTTP {status}")
 
     def get_property(self, issue_key: str, key: str):
-        """The stored value, or None when the issue has no such property."""
+        """The stored value as plain JSON (dict, list, str, number), or None
+        when the issue has no such property.
+
+        From the response's raw JSON, not the SDK's `.value`: the jira SDK turns
+        an object value into a PropertyHolder - attributes, no .get() - so
+        every reader that treats the value as the dict it stored failed or fell
+        back silently. Agent 5's second report on a story (4 Nov 2026,
+        SCRUM-283) crashed on `'PropertyHolder' object has no attribute
+        'get'` reading its own last-report fingerprint."""
         try:
-            return getattr(self.client.issue_property(issue_key, key), "value", None)
+            prop = self.client.issue_property(issue_key, key)
         except Exception as e:                                     # noqa: BLE001
             if getattr(e, "status_code", None) == 404:
                 return None
             raise
+        raw = getattr(prop, "raw", None)
+        if isinstance(raw, dict) and "value" in raw:
+            return raw["value"]
+        return getattr(prop, "value", None)
 
     def properties(self, issue_key: str, prefix: str = "") -> dict:
         """Every property on the issue whose key starts with `prefix`, with its
