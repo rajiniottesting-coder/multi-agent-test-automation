@@ -188,7 +188,9 @@ def _wf(name):
 
 
 def _start_steps(job):
-    return [s for s in job.get("steps") or [] if "scripts.start_agent" in str(s.get("run", ""))]
+    """The steps that may start an agent (recording what waits starts nothing)."""
+    return [s for s in job.get("steps") or [] if "scripts.start_agent" in str(s.get("run", ""))
+            and "--record-waiting" not in str(s.get("run", ""))]
 
 
 def test_agent0_starts_agent1_after_its_story_analysis():
@@ -226,3 +228,91 @@ def test_agents_1_and_2_start_again_while_stories_wait(name, agent):
         "the input reaches the script as data, never pasted into it"
     assert wf["concurrency"]["cancel-in-progress"] is False, \
         "a start while a run is going waits for it"
+
+
+# ── restart only after progress (3-4 Nov 2026) ─────────────────────────
+#
+# SCRUM-284 carried human-approved but was blocked (its earlier refusal): Agent
+# 2 skips it, yet it matched the selection, so the hand-off restarted Agent 2
+# five times per scheduled run until max_chain stopped it - ten empty runs.
+
+def test_a_run_that_took_none_of_what_waited_starts_nothing():
+    host = Host()
+    out = _start(Tracker({"ready": ["S-9"]}), host, previous="1", waiting_before=["S-9"])
+    assert not out["started"] and host.started == [] and not out.get("error")
+    assert "took none of the stories" in out["why"]
+
+
+def test_a_run_that_took_one_starts_again_for_the_rest():
+    host = Host()
+    out = _start(Tracker({"ready": ["S-9", "S-3"]}), host, previous="1",
+                 waiting_before=["S-1", "S-9"])
+    assert out["started"] and host.started[0][2] == {"chain": "2"}
+
+
+def test_progress_is_judged_on_every_waiting_story_not_the_first():
+    t = Tracker({"ready": [f"S-{i}" for i in range(1, 8)]})
+    _start(t, Host(), waiting_before=["S-1"])
+    assert t.asked and all(n == handoff.PROGRESS_LIMIT for _, n in t.asked)
+
+
+def test_without_a_record_the_start_is_decided_as_before():
+    host = Host()
+    assert _start(Tracker({"ready": ["S-9"]}), host, waiting_before=None)["started"]
+
+
+def test_the_record_round_trips_and_a_bad_one_means_unknown(tmp_path, monkeypatch):
+    from scripts import start_agent as sa
+    path = tmp_path / "w.json"
+    monkeypatch.setattr(handoff, "waiting", lambda tracker, agent, config=None, limit=1: ["S-1", "S-2"])
+    monkeypatch.setattr("integrations.tracker.get_tracker", lambda: object())
+    assert sa.main(["--agent", "agent_a", "--record-waiting", str(path)]) == 0
+    assert sa._read_record(str(path)) == ["S-1", "S-2"]
+    path.write_text("{not json")
+    assert sa._read_record(str(path)) is None
+    assert sa._read_record(str(tmp_path / "missing.json")) is None
+    assert sa._read_record("") is None
+
+
+def test_recording_never_fails_the_run(tmp_path, monkeypatch):
+    from scripts import start_agent as sa
+
+    def down():
+        raise RuntimeError("tracker down")
+    monkeypatch.setattr("integrations.tracker.get_tracker", down)
+    assert sa.main(["--agent", "agent_a", "--record-waiting", str(tmp_path / "w.json")]) == 0
+    assert not (tmp_path / "w.json").exists()
+
+
+@pytest.mark.parametrize("name, agent, run_step", [("agent1_analyst.yml", "agent1_analyst", "Run Agent 1"),
+                                                   ("agent2_coder.yml", "agent2_coder", "Run Agent 2")])
+def test_the_workflow_records_before_and_passes_it_to_the_restart(name, agent, run_step):
+    (job,) = _wf(name)["jobs"].values()
+    names = [s.get("name") or "" for s in job["steps"]]
+    rec = job["steps"][names.index("Record the stories waiting before the run")]
+    assert names.index("Record the stories waiting before the run") == names.index(run_step) - 1
+    assert f"--agent {agent} --record-waiting reports/handoff_waiting.json" in rec["run"]
+    assert rec.get("continue-on-error") is True
+    (restart,) = _start_steps(job)[-1:]
+    assert "--waiting-before reports/handoff_waiting.json" in restart["run"]
+
+
+def test_agent0_starting_agent1_passes_no_record():
+    (step,) = _start_steps(_wf("agent0_impact.yml")["jobs"]["scan"])
+    assert "--waiting-before" not in step["run"], "a story released to Agent 1 is new work"
+
+
+def test_the_script_passes_the_record_to_the_decision(tmp_path, monkeypatch):
+    from scripts import start_agent as sa
+    record = tmp_path / "w.json"
+    record.write_text('["S-9"]')
+    seen = {}
+
+    def start(tracker, host, agent, previous, dry_run=False, waiting_before=None):
+        seen["before"] = waiting_before
+        return {"agent": agent, "started": False, "why": "x", "waiting": []}
+    monkeypatch.setattr(handoff, "start", start)
+    monkeypatch.setattr("integrations.tracker.get_tracker", lambda: object())
+    monkeypatch.setattr("integrations.repo_host.get_repo_host", lambda: object())
+    sa.main(["--agent", "agent_a", "--previous-chain", "1", "--waiting-before", str(record)])
+    assert seen["before"] == ["S-9"]

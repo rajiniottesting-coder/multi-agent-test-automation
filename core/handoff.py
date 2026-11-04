@@ -47,11 +47,11 @@ def selections(agent_key: str, config: dict | None = None) -> list:
     return [block[k] for k in names]
 
 
-def waiting(tracker, agent_key: str, config: dict | None = None) -> list:
-    """Keys of stories waiting for the agent: the first of each selection."""
+def waiting(tracker, agent_key: str, config: dict | None = None, limit: int = 1) -> list:
+    """Keys of stories waiting for the agent: up to `limit` per selection."""
     found = []
     for sel in selections(agent_key, config):
-        for story in tracker.find_stories_to_process(sel, max_results=1) or []:
+        for story in tracker.find_stories_to_process(sel, max_results=limit) or []:
             key = story.get("key") if isinstance(story, dict) else None
             if key and key not in found:
                 found.append(key)
@@ -66,9 +66,23 @@ def parse_chain(raw) -> int:
         return 0
 
 
+# Enough to see every story an agent's run could have taken (max_stories_per_run
+# is single digits) plus the ones it left: progress is judged on this list.
+PROGRESS_LIMIT = 50
+
+
 def start(tracker, host, agent_key: str, previous_chain=0, settings: dict | None = None,
-          config: dict | None = None, dry_run: bool = False) -> dict:
+          config: dict | None = None, dry_run: bool = False,
+          waiting_before: list | None = None) -> dict:
     """Start `agent_key`'s workflow when stories wait for it.
+
+    `waiting_before` - an agent starting ITSELF again passes what waited when
+    its run began. It starts again only if that run took at least one of them
+    (it is no longer waiting) and stories still wait: a story the agent skips -
+    a blocked one, say - stays waiting, and starting again only repeats the
+    skip. 3-4 Nov 2026: a blocked story kept Agent 2 restarting, five empty
+    runs per scheduled run, until max_chain stopped it. Agent 0 starting Agent
+    1 passes nothing: a story released to it is new work.
 
     {"started", "why", "chain", "waiting": [keys], "error" when a start was
     due and did not happen}. Never raises."""
@@ -81,12 +95,17 @@ def start(tracker, host, agent_key: str, previous_chain=0, settings: dict | None
     workflow = (s.get("workflows") or {}).get(agent_key)
     if not workflow:
         return {**out, "why": f"no workflow for {agent_key} in handoff.workflows"}
+    limit = 1 if waiting_before is None else PROGRESS_LIMIT
     try:
-        out["waiting"] = waiting(tracker, agent_key, config)
+        out["waiting"] = waiting(tracker, agent_key, config, limit)
     except Exception as e:                                         # noqa: BLE001
         return {**out, "error": True, "why": f"could not ask the tracker what waits ({type(e).__name__}: {e})"}
     if not out["waiting"]:
         return {**out, "why": "no story waits for it"}
+    if waiting_before is not None and not set(waiting_before) - set(out["waiting"]):
+        return {**out, "why": "the run took none of the stories that waited when it began - "
+                              "starting again would only repeat it (a story the agent skips, "
+                              "a blocked one say, stays waiting); the schedule tries again"}
     # Asked after what waits: the cap is a warning only when it leaves a story
     # waiting for the schedule - a chain that ends with an empty queue is the
     # normal end (Agent 3's review of #248).

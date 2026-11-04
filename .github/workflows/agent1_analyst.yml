@@ -123,6 +123,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Record the stories waiting before the run
+        # The restart step below starts this agent again only if the run took
+        # one of these: a story it skips (a blocked one) stays waiting, and
+        # restarting would repeat the skip (core/handoff.py).
+        if: github.event.inputs.dry_run != 'true'
+        continue-on-error: true
+        env:
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          JIRA_BOARD_ID: ${{ vars.JIRA_BOARD_ID }}
+        run: python -m scripts.start_agent --agent agent1_analyst --record-waiting reports/handoff_waiting.json
+
       - name: Run Agent 1
         env:
           # LLM credentials (any OpenAI-compatible endpoint)
@@ -189,4 +203,4 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPO: ${{ github.repository }}
           CHAIN: ${{ github.event.inputs.chain }}
-        run: python -m scripts.start_agent --agent agent1_analyst --previous-chain "$CHAIN"
+        run: python -m scripts.start_agent --agent agent1_analyst --previous-chain "$CHAIN" --waiting-before reports/handoff_waiting.json
