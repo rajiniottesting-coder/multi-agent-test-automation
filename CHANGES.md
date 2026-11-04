@@ -4,6 +4,18 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — review fix keeps the feature file's scenarios through the repair, and declines dropping an approved check (#258)
+
+**Why:** the first live review loop (SCRUM-283's pull request, 4 Nov). A comment asked to reword a step that the approved test case states ("no login prompt is shown"); the reworded file dropped that check, the absence-claims rule flagged it, and the repair loop regenerated the whole feature file in the ordinary mode - invented marker hashes (`1a2b3c4d`, ...), no `owner:`, a new title, a Scenario Outline - which was pushed. The rule "a feature file keeps its scenarios, titles and markers" was checked on the review change only, before the repair. The branch was reset by hand.
+
+- `agents/agent2_review_fix._fix()`: after the repair loop, every changed feature file must still have its scenarios, titles and markers; otherwise nothing is pushed and the summary says which file
+- `_drops_an_approved_assertion()`: a review change to a feature file that adds an absence-claims error (drops a check an approved test case states) is declined with the way to get it - change the test case, then `ai-regenerate`; a gap that was already there is not blamed on the comment
+- GUIDE: both
+- `tests/unit/test_agent2_review_fix.py` +4 (41); 3 deliberate breaks each fail a test
+- Not tested live yet: E52
+
+---
+
 ## November 2026 — review fix: a review takes the earlier line comments; a budget stop records nothing (#257)
 
 **Why:** validating the review loop on SCRUM-283's pull request (3 Nov). The reviewer added two line comments with GitHub's "Add single comment" - each became a review of its own - then submitted "Request changes" with a text only: the review fix saw only the text. And the day's model budget was spent: the run's summary read "Nothing needed a code change" and recorded the review as handled, so neither a re-run nor a later `/fix` would have taken those comments again.

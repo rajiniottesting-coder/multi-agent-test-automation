@@ -251,6 +251,7 @@ grouped sessions below**, so one story run proves as many items as possible.
 | E45b | #248 | Three or more stories released to ai-ready at once (or labelled by hand, then Agent 1 run once) | Agent 1 takes 2, then starts itself again (`chain` 2) for the rest; no run when none waits | ⬜ | |
 | E45c | #248 | An Agent 0 run with nothing released, and an Agent 1 run that fails | "no story waits for it" - nothing started; the failed Agent 1 run has no hand-off step run (the schedule retries) | ⬜ | |
 | E45d | #248 | Optional: the Jira Automation rule on `human-approved` (GUIDE, "Hand-off between agents") | Approving a story starts Agent 2 (event `repository_dispatch`) within a minute, in scan mode | ⬜ | |
+| E52 | #258 | PR #251 after the reset: one line comment on `assert_review_confirmation` ("compare for exact equality"), then `/fix` | Only the step definition changes; the feature file's markers (`hash:` and `owner: SCRUM-283`) and titles are untouched; a comment asking to drop what a test case states would be declined with "update the test case, then ai-regenerate" | ⬜ | |
 | E51 | #257 | PR #251 after the budget reset: comment `/fix` (or re-run the stopped review-fix run) | Both line comments are taken (made with "Add single comment"), Agent 2 pushes, replies in each thread; the earlier budget-stopped summary reads `[agent2:review-fix:not-done]` style from now on | ⬜ | |
 | E50 | #255 | A pull request merged while its Agent 4 run is still going (merge right after *Run Tests* starts) | *Checkout repository* in both jobs fetches the commit by SHA; *Post Results to Jira* succeeds after the merge | ⬜ | |
 | E49 | #254 | Agent 2 with SCRUM-284's key before its page is added (or any story needing a page the inventory lacks) | The run stops after the first validation ("needs page(s) the app inventory does not have"), no repair attempt; the `[agent2:blocked]` comment names the page and the `plan_inventory page` command; a few calls spent, not ~$1.50 | ⬜ | |
@@ -329,6 +330,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
+| #258 | Review fix keeps scenarios through the repair; declines dropping an approved check | | E52 | |
 | #257 | Review fix: earlier line comments; a budget stop records nothing | | E51 | |
 | #255 | Agent 4 checks out the event's commit by SHA | | E50 | |
 | #254 | A page missing from the inventory stops Agent 2 at once | | E49 | |
