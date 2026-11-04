@@ -95,3 +95,45 @@ def test_the_job_timeout_fits_the_deadline_and_one_slow_story():
     assert cfg["scan_deadline_minutes"] + slowest_story + setup <= timeout < 30, \
         "the deadline plus one slow story fits; the job ends before the next 30-minute cron"
     assert cfg["max_stories_per_run"] >= 1
+
+
+# ── F26: a story run by key runs in the mode its labels ask for ─────────
+
+@pytest.mark.parametrize("labels, mode", [
+    (["ai-processed", "human-approved"], "normal"),
+    (["ai-processed", "human-approved", "ai-update"], "update"),
+    (["ai-processed", "human-approved", "ai-regenerate"], "regenerate")])
+def test_a_story_run_by_key_takes_its_mode_from_its_labels(labels, mode):
+    tracker = MagicMock()
+    tracker.get_story.return_value = {"key": "A-1", "labels": labels}
+    cfg = {"update_label": "ai-update", "regenerate_label": "ai-regenerate"}
+    assert a2.story_mode("A-1", tracker, cfg) == mode
+
+
+def test_both_mode_labels_are_refused_and_unreadable_labels_mean_normal():
+    tracker = MagicMock()
+    tracker.get_story.return_value = {"labels": ["ai-update", "ai-regenerate"]}
+    with pytest.raises(ValueError, match="both"):
+        a2.story_mode("A-1", tracker, {})
+    tracker.get_story.side_effect = RuntimeError("down")
+    assert a2.story_mode("A-1", tracker, {}) == "normal"
+
+
+def test_main_runs_a_keyed_story_in_its_mode(monkeypatch):
+    called = []
+    monkeypatch.setattr(a2, "validate_required_env", lambda *a: None)
+    monkeypatch.setattr(a2, "story_mode", lambda key: "update")
+    monkeypatch.setattr(a2, "run_update", lambda key, **kw: called.append(("update", key))
+                        or {"story_id": key, "status": "pr_opened"})
+    monkeypatch.setattr(a2, "run", lambda key, **kw: called.append(("run", key, kw))
+                        or {"story_id": key, "status": "pr_opened"})
+    import core.usage_ledger as ul
+    from contextlib import nullcontext
+    monkeypatch.setattr(ul, "story_usage", lambda *a, **k: nullcontext())
+    monkeypatch.setattr(sys, "argv", ["agent2", "--story", "A-1"])
+    a2.main()
+    assert called == [("update", "A-1")]
+    monkeypatch.setattr(a2, "story_mode", lambda key: "regenerate")
+    called.clear()
+    a2.main()
+    assert called == [("run", "A-1", {"dry_run": False, "is_regenerate": True})]

@@ -5439,6 +5439,33 @@ def _print_scan_summary(results: list[dict]) -> None:
 _clock = time.monotonic          # the scan deadline's clock; replaced in tests
 
 
+def story_mode(story_id: str, jira=None, agent_config=None) -> str:
+    """The mode a story asks for by its labels - what a scan would run it in:
+    "update" (update_label), "regenerate" (regenerate_label) or "normal".
+
+    4 Nov 2026: a story run by key (the workflow's story_key) always ran in
+    normal mode. SCRUM-201 carried `ai-update`; the run found every scenario
+    already there, reported "no work needed", told the person to add
+    `ai-update` - already on the story - and marked it coded. Both labels at
+    once is refused, as a scan takes neither. The labels cannot be read ->
+    normal, as before."""
+    agent_config = agent_config if agent_config is not None else load_agent_config()
+    update = agent_config.get("update_label", "ai-update")
+    regenerate = agent_config.get("regenerate_label", "ai-regenerate")
+    try:
+        jira = jira or get_tracker()
+        labels = set(jira.get_story(story_id).get("labels") or [])
+    except Exception as e:                                     # noqa: BLE001
+        logger.warning(f"Could not read the labels of {story_id} ({e}) - normal mode.")
+        return "normal"
+    if update in labels and regenerate in labels:
+        raise ValueError(f"{story_id} has both `{update}` and `{regenerate}`: a scan takes "
+                         "neither. Remove one, then run it again.")
+    if update in labels:
+        return "update"
+    return "regenerate" if regenerate in labels else "normal"
+
+
 def plan_scan(passes, max_stories: int) -> tuple:
     """(to_run, deferred) for one scan (F-4).
 
@@ -5502,13 +5529,16 @@ def main():
     try:
         from core.usage_ledger import story_usage
         if args.story:
-            label = ("Agent 2 (Coder, incremental update)" if args.update
-                     else "Agent 2 (Coder, initial)")
+            mode = "update" if args.update else story_mode(args.story)
+            label = {"normal": "Agent 2 (Coder, initial)",
+                     "regenerate": "Agent 2 (Coder, regenerate)",
+                     "update": "Agent 2 (Coder, incremental update)"}[mode]
             with story_usage(args.story, label, dry_run=args.dry_run):
-                if args.update:
+                if mode == "update":
                     result = run_update(args.story, dry_run=args.dry_run)
                 else:
-                    result = run(args.story, dry_run=args.dry_run)
+                    result = run(args.story, dry_run=args.dry_run,
+                                 is_regenerate=(mode == "regenerate"))
             print("\n" + "=" * 60)
             print(f"[OK] Agent 2 finished -- story: {result['story_id']}")
             print(f"   Files generated: {result.get('files_generated', 0)}")
