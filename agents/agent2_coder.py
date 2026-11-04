@@ -5173,7 +5173,6 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
 
     gh.create_branch(output.branch_name, from_branch="main")
 
-
     for f in output.files:
         commit_msg = f"[Agent 2] {'Add' if f.is_new_file else 'Update'} {f.file_path}"
         gh.create_or_update_file(
