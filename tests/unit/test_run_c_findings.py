@@ -299,3 +299,38 @@ class _Branches:
 def test_a_closed_proposal_frees_a_new_branch(existing, open_heads, readable, expected):
     from core.context_update import free_branch
     assert free_branch(_Branches(existing, open_heads, readable), "cu/ab-1") == expected
+
+
+# ── a start never cancels a run already waiting to start ────────────────
+
+def test_a_run_waiting_to_start_is_not_replaced():
+    from tests.unit.test_agents_start_the_next_agent import Host, Tracker, _start
+
+    class Waiting(Host):
+        def __init__(self, statuses):
+            super().__init__()
+            self.statuses = statuses
+
+        def get_workflow_runs(self, workflow, branch, limit=20):
+            return [{"status": s} for s in self.statuses]
+    host = Waiting(["queued", "in_progress"])
+    out = _start(Tracker({"ready": ["S-1"]}), host)
+    assert not out["started"] and host.started == [] and not out.get("error")
+    assert "already waiting to start" in out["why"]
+    host = Waiting(["in_progress", "completed"])                 # the run asking is going
+    assert _start(Tracker({"ready": ["S-1"]}), host)["started"]
+
+    class Broken(Host):
+        def get_workflow_runs(self, *a, **k):
+            raise RuntimeError("down")
+    assert _start(Tracker({"ready": ["S-1"]}), Broken())["started"], "cannot tell: as before"
+
+
+@pytest.mark.parametrize("name", ["agent1_analyst.yml", "agent2_coder.yml"])
+def test_a_one_story_run_starts_the_scan_without_the_progress_rule(name):
+    import yaml
+    wf = yaml.safe_load((ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8"))
+    (job,) = wf["jobs"].values()
+    step = next(s for s in job["steps"] if "again while stories wait" in s.get("name", ""))
+    assert step["env"]["STORY_KEY"] == "${{ github.event.inputs.story_key }}"
+    assert 'if [ -n "$STORY_KEY" ]; then WAITED=""; fi' in step["run"]
