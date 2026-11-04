@@ -550,3 +550,82 @@ def test_the_repair_loop_extends_the_page_object_and_the_error_goes(tmp_path, mo
     assert repaired[0] == "pages/front_page.py", "the page object is repaired first"
     page = next(f for f in out if f.file_path == "pages/front_page.py")
     assert "def go_to_reports" in page.content and errors(out) == []
+
+
+# ── F39: what a scenario leaves out of its test case is named ───────────
+
+def _batch_with_marked_scenario():
+    from core.schemas import GeneratedFile
+    return [GeneratedFile(file_path="features/reports.feature", content=(
+        "Feature: Reports\n\n  Background:\n    Given I am on the home page\n\n"
+        "  # JIRA: AB-1 (hash: 00000000) owner: AB-9\n"
+        "  Scenario: Open the reports page\n    When I open reports\n"
+        "    Then the reports heading is shown\n"))]
+
+
+def test_a_scenario_that_leaves_out_an_expected_result_is_named():
+    from agents import agent2_coverage as cov
+    seen = {}
+
+    class LLM:
+        def invoke_structured(self, system_prompt, user_prompt, output_schema):
+            seen["prompt"] = user_prompt
+            return cov.CoverageAudit(cases=[
+                cov.CaseCheck(key="AB-1", not_checked=["a contact section with an email address"]),
+                cov.CaseCheck(key="AB-7", not_checked=["not in this batch"])])
+    cases = [{"key": "AB-1", "summary": "[Positive] Open reports",
+              "description": "1. Open reports\nExpected: heading; a contact section with an email"},
+             {"key": "AB-2", "summary": "no scenario", "description": "x"}]
+    (gap,) = cov.audit_partial(LLM(), _batch_with_marked_scenario(), cases, "rules")
+    assert gap.key == "AB-1" and gap.blocking is False
+    assert "does not check: a contact section with an email address" in gap.reason
+    assert "Given I am on the home page" in seen["prompt"], "the Background is judged too"
+    assert "AB-2" not in seen["prompt"], "a test case with no scenario is not asked about"
+    section = cov.pr_section([gap], [], {})
+    assert "Covered, but needing a person" in section and "AB-1" in section
+
+
+def test_the_audit_never_stops_the_run():
+    from agents import agent2_coverage as cov
+
+    class Down:
+        def invoke_structured(self, **k):
+            raise RuntimeError("model down")
+    assert cov.audit_partial(Down(), _batch_with_marked_scenario(), [{"key": "AB-1"}], "r") == []
+    called = []
+
+    class Never:
+        def invoke_structured(self, **k):
+            called.append(1)
+    assert cov.audit_partial(Never(), _batch_with_marked_scenario(), [{"key": "AB-5"}], "r") == []
+    assert called == [], "nothing to judge, no call"
+
+    class Other:
+        def invoke_structured(self, **k):
+            return object()                     # an answer of another shape
+    assert cov.audit_partial(Other(), _batch_with_marked_scenario(), [{"key": "AB-1"}], "r") == []
+
+
+def test_agent2_runs_the_audit_after_the_gate_and_before_the_pull_request():
+    import inspect
+    import agents.agent2_coder as a2
+    src = inspect.getsource(a2.run)
+    assert src.index("_validate_generated_files(generated_files") < src.index("audit_partial(") \
+        < src.index("pr_body_with_footer += agent2_coverage.pr_section")
+    assert (a2.PROMPTS_DIR / "agent2_coverage_audit.md").is_file()
+
+
+# ── F40: a text differing only in letter case is diagnosed as such ──────
+
+def test_a_case_only_difference_is_diagnosed():
+    from core.failure_diagnosis import diagnose
+    d = diagnose("AssertionError: Expected heading 'Test Cases' in 'TEST CASES'")
+    assert d.label == "letter case" and "casefold" in d.remedy
+    assert diagnose("AssertionError: Expected heading 'Test Cases' in 'Products'").label != "letter case"
+    assert diagnose("assert 2 == 1").label == "count assertion", "other readings unchanged"
+
+
+def test_the_generation_rules_say_to_compare_displayed_text_case_insensitively():
+    import agents.agent2_coder as a2
+    text = (a2.PROMPTS_DIR / "agent2_coder_generate.md").read_text(encoding="utf-8")
+    assert "letter case" in text and "casefold" in text

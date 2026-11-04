@@ -620,9 +620,36 @@ _UNKNOWN = Diagnosis(
 )
 
 
+_QUOTED = re.compile(r"'([^'\n]{3,200})'|\"([^\"\n]{3,200})\"")
+
+_LETTER_CASE = Diagnosis(
+    "letter case",
+    "The text expected and the text read differ only in letter case. The "
+    "page shows it in another case than the source - CSS text-transform "
+    "(uppercase headings and buttons are common) - and the readers return the "
+    "text as displayed.",
+    "Compare displayed text case-insensitively (casefold both sides) unless "
+    "the letter case is what the test case checks.",
+)
+
+
+def _differs_only_in_case(text: str) -> bool:
+    """Two quoted strings in the message that match apart from letter case."""
+    quoted = [a or b for a, b in _QUOTED.findall(text[:4000])]
+    for want in quoted:
+        for got in quoted:
+            if want != got and want not in got and want.casefold() in got.casefold():
+                return True
+    return False
+
+
 def diagnose(error_text: str) -> Diagnosis:
     """Best reading of a failure message. Never raises, always returns one."""
     text = error_text or ""
+    # 4 Nov 2026, SCRUM-293: "Expected heading 'Test Cases' in 'TEST CASES'"
+    # read as unclassified; the heading was uppercased by CSS.
+    if _differs_only_in_case(text):
+        return _LETTER_CASE
     for pattern, diagnosis in _SIGNATURES:
         if pattern.search(text):
             return diagnosis
