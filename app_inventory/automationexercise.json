@@ -315,7 +315,7 @@
       ],
       "planned_page": true,
       "elements": {
-        "test_cases_heading": "h2.title.text-center",
+        "test_cases_heading": "h2:has-text('Test Cases')",
         "test_case_titles": ".panel-group .panel-title a",
         "test_case_steps": ".panel-collapse .list-group-item",
         "test_case_search_input": "#search_test_cases"

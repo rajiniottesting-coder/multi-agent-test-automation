@@ -230,6 +230,10 @@ _CONVENTIONAL = frozenset({
     "login_page", "nav_page", "home_page", "base_page",
     "login_as", "is_loaded", "page_url", "open_login_page", "clear_credentials",
     "data-qa", "data-test", "data-testid", "data-cy",
+    # The framework's own vocabulary: an application may name a page after it
+    # (4 Nov 2026: a "test_cases" page), which does not make the framework's
+    # TestCaseList.test_cases the application's.
+    "test_cases",
 })
 
 _FRAMEWORK_PATHS = (
