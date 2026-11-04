@@ -4,6 +4,15 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — the health probe asks the output room the agents ask (#291)
+
+**Why:** the model gateway reserves a request's cost from its `max_tokens`: with its credit low it answered 4,096-token requests and refused 16,384-token ones with HTTP 402, while the health check, asking for 1 token, reported the model as answering.
+
+- `core.health_checks`: the completion probe asks the code-generation output room for each model; billed on the tokens used, it still costs a one-word reply
+- Tests in `test_pipeline_health.py`; TEST_TRACK E89. Not tested live yet: E89
+
+---
+
 ## November 2026 — a provider refusing calls for money stops the run; the health check probes every model (#290)
 
 **Why:** on 4 Nov 2026 the model gateway answered HTTP 402 Payment Required to every call of the coding model: Agent 2 failed with a traceback, a scan would have failed story after story, and Pipeline health reported the model as answering - it probed only the light model.
