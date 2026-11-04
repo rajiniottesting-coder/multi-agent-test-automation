@@ -147,7 +147,7 @@ def load_agent_config(agent_key: str = "agent1_analyst") -> dict:
 # ─────────────────────────────────────────────────────────────
 # Core agent workflow (Read → Reason → Act → Return)
 # ─────────────────────────────────────────────────────────────
-def _draft_test_cases(llm, user_prompt: str, criteria=None) -> TestCaseList:
+def _draft_test_cases(llm, user_prompt: str, criteria=None, existing=()) -> TestCaseList:
     """Draft, check against core.test_case_rules, send back once, then stop.
 
     `criteria` are the story's acceptance criteria (core.acceptance_coverage):
@@ -172,7 +172,8 @@ def _draft_test_cases(llm, user_prompt: str, criteria=None) -> TestCaseList:
     def check(d) -> list:
         return (draft_problems(d.test_cases, persistent, accounts)
                 + coverage_problems(criteria or [], list(getattr(d, "coverage", None) or []),
-                                    index_cases([], d.test_cases)))
+                                    index_cases([], d.test_cases, existing))
+                + repeats_of_existing(d.test_cases, existing))
 
     system ="You are a meticulous, expert QA test analyst."
     persistent = load_persistent_pages()
@@ -193,11 +194,41 @@ def _draft_test_cases(llm, user_prompt: str, criteria=None) -> TestCaseList:
     return draft
 
 
-def _coverage_lines(criteria, draft) -> list[str]:
+def existing_scenario_titles() -> set:
+    """Every scenario title in the feature files, normalised as the impact-
+    aware draft compares them (a leading [Type] tag dropped)."""
+    from agents.agent2_coder import build_marker_index, plain_test_case_title
+    from config.paths import FEATURES_DIR
+    from validators.gherkin_analyzer import normalize_scenario_name
+    try:
+        index = build_marker_index(FEATURES_DIR)
+    except Exception as e:                                         # noqa: BLE001
+        logger.warning(f"Could not read the existing scenarios ({e}); drafting without them.")
+        return set()
+    titles = [e.title for e in index.by_key.values()] + [t for _f, t in index.unmarked]
+    return {normalize_scenario_name(plain_test_case_title(t)) for t in titles if t}
+
+
+def repeats_of_existing(test_cases, existing) -> list:
+    """A drafted test case whose title IS an existing scenario's repeats it.
+    (4 Nov 2026: a story's "works as before" criterion was drafted as a new
+    test that copied an existing scenario step for step - the draft had never
+    been shown the scenarios that exist.)"""
+    from agents.agent2_coder import plain_test_case_title
+    from validators.gherkin_analyzer import normalize_scenario_name
+    taken = set(existing or ())
+    return [f"new test case '{tc.title}' repeats an existing scenario; cite that scenario "
+            "in `coverage` instead of drafting it again"
+            for tc in test_cases
+            if normalize_scenario_name(plain_test_case_title(tc.title)) in taken]
+
+
+def _coverage_lines(criteria, draft, existing=()) -> list[str]:
     """The draft's coverage map as readable lines, [] when it carries none."""
     from core.acceptance_coverage import index_cases, render_coverage
     coverage = list(getattr(draft, "coverage", None) or [])
-    return render_coverage(criteria, coverage, index_cases([], draft.test_cases)) if coverage else []
+    return (render_coverage(criteria, coverage, index_cases([], draft.test_cases, existing))
+            if coverage else [])
 
 
 def run(story_id: str, dry_run: bool = False) -> dict:
@@ -352,6 +383,9 @@ def run(story_id: str, dry_run: bool = False) -> dict:
         .replace("{criteria_block}", criteria_block(criteria))
         .replace("{story_text}", story_text)
     )
+    existing = existing_scenario_titles()
+    user_prompt = user_prompt.replace(
+        "{existing_titles_block}", "\n".join(f"- {t}" for t in sorted(existing)) or "(none)")
 
     # max_output_tokens=12288 (not the default 4096): a TestCaseList of 7
     # detailed test cases (each with 5-10 steps carrying action + expected
@@ -362,14 +396,14 @@ def run(story_id: str, dry_run: bool = False) -> dict:
     # NOTE: if you raise the "3-7 test cases" target in
     # prompts/agent1_analyst.md, revisit this cap in the same commit.
     llm = LLMClient(temperature=0.3, max_output_tokens=12288)
-    test_case_list = _draft_test_cases(llm, user_prompt, criteria)
+    test_case_list = _draft_test_cases(llm, user_prompt, criteria, existing)
 
     logger.info(f"LLM generated {len(test_case_list.test_cases)} test cases:")
     for i, tc in enumerate(test_case_list.test_cases, 1):
         prefix = f"[{tc.test_type}]"
         label = tc.title if tc.title.startswith(prefix) else f"{prefix} {tc.title}"
         logger.info(f"  {i}. {label}")
-    coverage_lines = _coverage_lines(criteria, test_case_list)
+    coverage_lines = _coverage_lines(criteria, test_case_list, existing)
     for line in coverage_lines:
         logger.info(f"  coverage {line}")
 

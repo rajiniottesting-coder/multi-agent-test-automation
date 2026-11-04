@@ -41,6 +41,8 @@ Every acceptance criterion must be verified by a test that would FAIL if the cri
 
 Return a `coverage` entry for each criterion: its number (AC1, AC2, ...), the title of each test case in THIS answer that verifies it, and one line naming the step that proves it. One test case may cover several criteria. A criterion that no test case verifies means a test case is missing: write it.
 
+A criterion that an existing scenario already verifies UNCHANGED - "as before", "still works" - may cite that scenario by its title exactly as listed under "Scenarios that already exist"; do not draft a copy of it. That is never enough for a criterion marked REMOVED, RESTRICTION or RULE: a test case in THIS answer must verify it.
+
 A criterion marked below as REMOVED, RESTRICTION or RULE is checked: the test case you cite for it must contain a step whose expected result states the absence, the refusal or the rejection. Your answer is sent back if it does not.
 
 **Prove the OLD state is gone, not only that the NEW state works.** A test that simply stops using something the story removes passes whether or not it was removed, so it proves nothing about that criterion. Whenever a criterion changes something that already exists, one step must OBSERVE that the old behaviour is gone, with an expected result that says so ("... is not present", "... is no longer shown") and that names the thing in the story's own words:
@@ -70,6 +72,9 @@ You will return structured output matching the provided schema. Do not include a
 
 # Story to Analyze
 {story_text}
+
+# Scenarios that already exist
+{existing_titles_block}
 
 # Acceptance Criteria To Account For
 {criteria_block}
