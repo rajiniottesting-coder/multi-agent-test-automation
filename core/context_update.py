@@ -503,6 +503,37 @@ def _cell(text: str, limit: int = 120) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+def changed_part(before: str, after: str, context: int = 40) -> tuple:
+    """(before, after) cut to where they differ, with a little context.
+
+    A rewritten passage is often long and changed near its end; cut from the
+    start, both cells of the PR table read the same and the reviewer cannot
+    see the change (4 Nov 2026: both rows of a context-update PR). The common
+    start and end are dropped - at a word boundary, marked with "…" - so each
+    cell opens on the first difference and closes after the last."""
+    before, after = " ".join(before.split()), " ".join(after.split())
+    if before == after:
+        return before, after
+    start = 0
+    while start < min(len(before), len(after)) and before[start] == after[start]:
+        start += 1
+    end = 0
+    while (end < min(len(before), len(after)) - start
+           and before[-1 - end] == after[-1 - end]):
+        end += 1
+    cut = max(0, start - context)
+    while cut > 0 and before[cut - 1] != " ":
+        cut -= 1
+    tail = max(0, end - context)
+    while tail > 0 and before[len(before) - tail] != " ":
+        tail -= 1
+
+    def trim(text: str) -> str:
+        middle = text[cut:len(text) - tail] if tail else text[cut:]
+        return ("…" if cut else "") + middle.strip() + ("…" if tail else "")
+    return trim(before), trim(after)
+
+
 def render_body(story_key: str, prop: Proposal) -> str:
     lines = [f"Context update proposed by Agent 0 for **{story_key}**.", "",
              *([f"_{prop.note}_", ""] if prop.note else []),
@@ -522,8 +553,9 @@ def render_body(story_key: str, prop: Proposal) -> str:
                        "application. Check each against the story before merging:"),
                   "", "| File | Before | After | Why |", "|---|---|---|---|"]
         for r in prop.rewrites:
-            lines.append(f"| `{r['path']}` | {_cell(r['before'], 200)} | "
-                         f"{_cell(r['after'], 200)} | {_cell(r['reason'], 160)} |")
+            before, after = changed_part(r["before"], r["after"])
+            lines.append(f"| `{r['path']}` | {_cell(before, 300)} | "
+                         f"{_cell(after, 300)} | {_cell(r['reason'], 160)} |")
     if prop.declared_removed:
         lines += ["", "Elements the story removes, declared `removed` in the inventory - after "
                       "deployment the nightly check reads each missing element as expected "
