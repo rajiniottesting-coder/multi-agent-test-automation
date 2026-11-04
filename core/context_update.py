@@ -70,6 +70,7 @@ class Proposal:
     dropped: list = field(default_factory=list)     # [(old, new, why)]
     rewrites: list = field(default_factory=list)    # {"path","before","after","reason"}
     declared_removed: list = field(default_factory=list)  # ["page.key"] added to `removed`
+    outside: list = field(default_factory=list)     # {"old","path","where"} left alone: out of scope
 
     @property
     def empty(self) -> bool:
@@ -305,11 +306,91 @@ def _declare_removed(current: dict, removed, pages, prop: Proposal) -> None:
         current[path] = dump_like(current[path], data)
 
 
+# The same words can be on several pages while a story changes one of them
+# ("Submit" on two forms). The replacement was applied to every notes file and
+# every inventory value - selectors on pages the story never touched included -
+# and only the pull request's reviewer stood in the way. Now it follows the
+# story's Components, the rule every other reader of the notes uses; and a
+# story whose Components select nothing narrower (none tagged) gets the
+# replacement only where the text is on ONE page of the inventory and in ONE
+# notes module: on two pages, or in two modules, nothing says which one the
+# story means.
+
+def _locations(text: str, relpath: str, old: str) -> list:
+    """[(where, part)] of each place `old` is in one source. `part` is
+    ("page", name) for an inventory page, ("module", relpath) for a notes
+    module, and None for a place the whole application shares (core.md, a
+    single app_context.md, an inventory value outside the pages, an `always`
+    page)."""
+    if not relpath.endswith(".json"):
+        if old not in text:
+            return []
+        stem = Path(relpath).stem
+        return [(relpath, None if stem == "core" or relpath.endswith("app_context.md")
+                 else ("module", relpath))]
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return []
+    page_map = data.get("pages") if isinstance(data, dict) else None
+    out = []
+    for path, value in _walk(data):
+        if old not in value:
+            continue
+        if len(path) >= 2 and path[0] == "pages" and isinstance(page_map, dict):
+            spec = page_map.get(path[1]) or {}
+            part = None if isinstance(spec, dict) and spec.get("always") else ("page", path[1])
+            out.append((f"{relpath} page {path[1]}", part))
+        else:
+            out.append((f"{relpath} {'.'.join(path)}", None))
+    return out
+
+
+def _in_scope(relpath: str, where: str, offered, pages) -> bool:
+    if relpath.endswith(".json"):
+        if pages is None or " page " not in where:
+            return True
+        return where.rsplit(" page ", 1)[1] in pages
+    return offered is None or relpath in offered
+
+
+def _scoped_value_replace(text: str, old: str, new: str, pages) -> Optional[str]:
+    """`old` -> `new` in the inventory's string values, only under `pages`
+    (and outside the page map). None when nothing changes."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return None
+    hit = []
+
+    def walk(node, path):
+        if isinstance(node, dict):
+            return {k: walk(v, path + (str(k),)) for k, v in node.items()}
+        if isinstance(node, list):
+            return [walk(v, path + (str(i),)) for i, v in enumerate(node)]
+        if isinstance(node, str) and old in node and not (
+                len(path) >= 2 and path[0] == "pages" and path[1] not in pages):
+            hit.append(path)
+            return node.replace(old, new)
+        return node
+    expected = walk(data, ())
+    if not hit:
+        return None
+    from core.inventory_update import dump_like
+    return dump_like(text, expected)
+
+
 def propose(sources: dict, changes, code: dict | None = None, rewrites=(),
-            offered=None, removed=(), pages=None) -> Proposal:
+            offered=None, removed=(), pages=None, narrowed: bool | None = None) -> Proposal:
     """Apply each old -> new, then each passage rewrite, then each removed
-    element's declaration, to the sources. `offered`: the files the rewrite
-    call was shown (None: all); `pages`: the inventory pages it was shown.
+    element's declaration, to the sources. `offered`: the notes files the
+    story's Components select (None: all); `pages`: the inventory pages they
+    select (None: all). A replacement is applied inside them only; a place
+    outside is listed, never changed. `narrowed` False - the Components select
+    nothing narrower than everything (none tagged) - applies a replacement only
+    when its text is in one part of the application; found in several, it is
+    listed for a person to decide. None (a caller without a story) applies it
+    everywhere, as before.
     Pure: nothing is written."""
     prop = Proposal()
     current = dict(sources)
@@ -322,13 +403,49 @@ def propose(sources: dict, changes, code: dict | None = None, rewrites=(),
         if old in seen:
             continue
         seen.add(old)
+        places = [(rel, where, part) for rel, text in current.items()
+                  for where, part in _locations(text, rel, old)]
+        inside = [pl for pl in places if _in_scope(pl[0], pl[1], offered, pages)]
+        outside = [pl for pl in places if pl not in inside]
+        if narrowed is False:
+            parts = {part for _r, _w, part in inside if part is not None}
+            if any(len({n for k, n in parts if k == kind}) > 1 for kind in ("page", "module")):
+                spread = ", ".join(dict.fromkeys(w for _r, w, p in inside if p is not None))
+                prop.dropped.append((old, new, "found in several parts of the application "
+                                     f"({spread}) and the story has no Component to say which - "
+                                     "not changed: edit by hand, or tag the story's Component(s) "
+                                     "and it is checked again"))
+                continue
+        if places and not inside:
+            prop.dropped.append((old, new, "found only outside the story's Components ("
+                                 + ", ".join(dict.fromkeys(w for _r, w, _p in outside))
+                                 + ") - not changed"))
+            continue
         matched = False
         for relpath, text in current.items():
-            apply = _apply_json if relpath.endswith(".json") else _apply_text
-            updated = apply(text, old, new, relpath, prop)
+            if not any(rel == relpath for rel, _w, _p in inside):
+                continue
+            if relpath.endswith(".json") and pages is not None and any(
+                    rel == relpath for rel, _w, _p in outside):
+                updated = _scoped_value_replace(text, old, new, pages)
+                if updated is not None:
+                    try:
+                        before_vals = dict(_walk(json.loads(text)))
+                        for path, value in _walk(json.loads(updated)):
+                            if before_vals.get(path) != value:
+                                prop.findings.append({
+                                    "path": relpath, "where": ".".join(path),
+                                    "kind": _json_kind(path), "before": before_vals.get(path, ""),
+                                    "after": value})
+                    except ValueError:
+                        pass
+            else:
+                apply = _apply_json if relpath.endswith(".json") else _apply_text
+                updated = apply(text, old, new, relpath, prop)
             if updated is not None and updated != text:
                 current[relpath] = updated
                 matched = True
+        prop.outside += [{"old": old, "path": rel, "where": w} for rel, w, _p in outside]
         if not matched:
             prop.dropped.append((old, new, "the old text appears in none of the context files"))
             continue
@@ -397,6 +514,10 @@ def render_body(story_key: str, prop: Proposal) -> str:
                       "through the story's own pull request:"]
         lines += [f"- `{m['path']}:{m['line']}` {_cell(m['text'], 100)}"
                   for m in prop.code_mentions[:40]]
+    if prop.outside:
+        lines += ["", "The same text outside the story's Components - **not changed** (the story "
+                      "does not touch those parts; change them by hand if it does):"]
+        lines += [f"- `{o['old']}` in {o['where']}" for o in prop.outside[:40]]
     if prop.dropped:
         lines += ["", "Not applied:"]
         lines += [f"- `{o}` → `{n}`: {why}" for o, n, why in prop.dropped]
@@ -539,7 +660,8 @@ def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: 
         logger.warning("context update for %s: behaviour notes not checked: %s", story_key, e)
         rewrites, removed = [], []
         unchecked = f"\nBehaviour notes were not checked ({type(e).__name__})."
-    prop = propose(sources, changes, code_sources(root), rewrites, set(offered), removed, pages)
+    prop = propose(sources, changes, code_sources(root), rewrites, set(offered), removed, pages,
+                   narrowed=_narrowed(sources, offered, pages))
     if prop.empty:
         tracker.add_comment(story_key, f"{MARKER} No context update needed: the story replaces "
                             "no wording, makes no passage untrue and removes no element, in the "
@@ -557,6 +679,23 @@ def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: 
                             "Merge it after this change is deployed."
                             f"\n(story: {chash})")
     return {"story": story_key, "context": "proposed" if url else "branch-exists", "url": url}
+
+
+def _narrowed(sources: dict, offered: dict, pages) -> bool:
+    """True when the story's Components selected less than everything - fewer
+    notes modules, or fewer inventory pages."""
+    notes = {p for p in sources if p.startswith("prompts/app_context/")}
+    if notes - set(offered):
+        return True
+    for rel, text in sources.items():
+        if rel.endswith(".json") and pages is not None:
+            try:
+                every = set((json.loads(text).get("pages") or {}))
+            except (ValueError, AttributeError):
+                continue
+            if every - set(pages):
+                return True
+    return False
 
 
 def _story_hash(story: dict) -> str:
@@ -781,13 +920,27 @@ def new_module_paths(components, root: Path) -> dict:
     return out
 
 
+def _read_with(path: str, current: dict) -> list:
+    """The units a new line in `path` is compared with: `path` itself and the
+    notes always read with it (core.md, or a single app_context.md). Another
+    module is read only for its own Components, so the same words there may
+    describe another page: a fact true for a new page was dropped because
+    another page's module said it in the same words."""
+    shared = [p for p in current
+              if Path(p).stem == "core" or p.endswith("prompts/app_context.md")]
+    return [u for p in dict.fromkeys([path, *shared]) if p in current for u in _units(current[p])]
+
+
 def propose_additions(sources: dict, additions, offered: set, new_modules: dict,
                       max_chars: int = 1500) -> Additions:
     """Place each addition (pure). Refused, and reported: a file the story's
     Components do not select (or the inventory - not a notes module), an
-    empty or over-long addition, and every line the notes already state."""
+    empty or over-long addition, and every line the notes already state - in
+    the target module or the notes always read with it, or in an earlier
+    addition of this story."""
     res = Additions()
     current = {p: t for p, t in sources.items() if not p.endswith(".json")}
+    batch: list = []
     for add in additions or []:
         path = (getattr(add, "path", "") or "").strip()
         text = (getattr(add, "text", "") or "").strip()
@@ -803,7 +956,7 @@ def propose_additions(sources: dict, additions, offered: set, new_modules: dict,
         if len(text) > max_chars:
             res.dropped.append((path, snippet, f"longer than {max_chars} characters"))
             continue
-        existing = [u for t in current.values() for u in _units(t)]
+        existing = _read_with(path, current) + batch
         kept = []
         for line in text.splitlines():
             if not line.strip() or _HEADING.match(line):
@@ -832,8 +985,64 @@ def propose_additions(sources: dict, additions, offered: set, new_modules: dict,
             current[path] = _append_section(current[path], block)
         res.added.append({"path": path, "heading": heading, "text": block, "reason": reason,
                           "new_file": new_file})
+        batch += _units(block)
     res.edits = {p: t for p, t in current.items() if t != sources.get(p)}
     return res
+
+
+_INVENTORY_PAGE = re.compile(r"^\s*INVENTORY_PAGE\s*(?::\s*\w+\s*)?=\s*[\"']([^\"']+)[\"']", re.M)
+
+
+def components_from_tests(root: Path, keys, inventory: dict) -> tuple[list, list]:
+    """(Components, pages) for a story with no Component, read from what its
+    merged tests use: the feature files holding its test cases' scenarios,
+    their step definitions' page-object fixtures (class `XyzPage` <-> fixture
+    `xyz_page`), each class's INVENTORY_PAGE, and that inventory page's
+    `components`. `always` pages (the menu) are left out - every story uses
+    them. ([], []) when nothing can be read: the caller keeps every module."""
+    import ast
+    root = Path(root)
+    keys = {k.upper() for k in keys or [] if k}
+    stems = []
+    for path in sorted(root.glob("features/**/*.feature")):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if any(re.search(rf"#\s*JIRA:\s*{re.escape(k)}\b", text, re.I) for k in keys):
+            stems.append(path.stem)
+    fixtures: set = set()
+    for stem in stems:
+        sd = root / "tests" / "step_defs" / f"test_{stem}.py"
+        try:
+            tree = ast.parse(sd.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError):
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                fixtures |= {a.arg for a in node.args.args}
+    by_fixture = {}
+    for py in sorted((root / "pages").glob("*.py")):
+        try:
+            source = py.read_text(encoding="utf-8")
+            tree = ast.parse(source)
+        except (OSError, SyntaxError):
+            continue
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef):
+                m = _INVENTORY_PAGE.search(ast.get_source_segment(source, node) or "")
+                if m:
+                    by_fixture[re.sub(r"(?<!^)(?=[A-Z])", "_", node.name).lower()] = m.group(1)
+    page_map = (inventory or {}).get("pages") or {}
+    pages, comps = [], []
+    for fx in sorted(fixtures):
+        name = by_fixture.get(fx)
+        spec = page_map.get(name) if name else None
+        if not isinstance(spec, dict) or spec.get("always"):
+            continue
+        pages.append(name)
+        comps += [c for c in spec.get("components") or [] if c and c not in comps]
+    return comps, sorted(set(pages))
 
 
 def story_scenarios(root: Path, keys) -> str:
@@ -928,6 +1137,17 @@ def propose_addition_for_story(tracker, host, llm, story_key: str, settings: dic
         return {"story": story_key, "addition": "already-proposed"}
     sources = context_sources(root)
     components = story.get("components") or []
+    derived = ""
+    if not components:
+        # No Component: every module is offered and none can be started for the
+        # feature's own page - on 4 Nov 2026 a new page's facts went into another
+        # page's module. The pages its merged tests use say which.
+        inventory = next((json.loads(t) for p, t in sources.items() if p.endswith(".json")), {})
+        components, used = components_from_tests(root, [tc.get("key", "") for tc in cases],
+                                                 inventory)
+        if components:
+            derived = (f"The story has no Component; its merged tests use the inventory pages "
+                       f"{', '.join(used)}, so the notes for {', '.join(components)} were offered.")
     offered, pages = scoped_sources(sources, components, root)
     new_modules = new_module_paths(components, root)
     scenarios = story_scenarios(root, [tc.get("key", "") for tc in cases])
@@ -942,6 +1162,8 @@ def propose_addition_for_story(tracker, host, llm, story_key: str, settings: dic
     report = {"over": [o for o in report["over"] if o[0] in touched],
               "duplicates": [d for d in report["duplicates"] if d[0] in touched or d[2] in touched]}
     body = render_addition_body(story_key, res, render_notes_report(report, budget))
+    if derived:
+        body = body.rstrip() + "\n\n_" + derived + "_\n"
     if dry_run:
         return {"story": story_key, "addition": "dry-run", "body": body,
                 "files": sorted(res.edits)}
