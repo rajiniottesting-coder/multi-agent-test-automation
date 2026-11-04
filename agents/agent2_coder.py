@@ -45,6 +45,7 @@ import hashlib
 import logging
 import re
 import time
+import uuid
 from pathlib import Path
 import sys
 from dataclasses import dataclass, field
@@ -2385,6 +2386,30 @@ class GateFailure(ValueError):
         self.errors = list(errors or [])
 
 
+_REFUSED_FILE_CHARS = 20000
+
+
+def show_refused_files(generated_files) -> None:
+    """Print each file the final gate refused, folded in the run log.
+
+    The errors name a file and a line, but the file itself was never kept: a
+    refused page object (4 Nov 2026, a page the inventory lacked) could not be
+    read afterwards, so why its methods were missing stayed a guess. The run
+    has already paid for the files; the log keeps them for the person."""
+    for f in generated_files or []:
+        content = getattr(f, "content", "") or ""
+        if len(content) > _REFUSED_FILE_CHARS:
+            content = content[:_REFUSED_FILE_CHARS] + "\n... (cut)"
+        # Generated text is not trusted: a line of it must never be read as a
+        # workflow command, so commands are off while it prints.
+        token = uuid.uuid4().hex
+        print(f"::group::Refused by the final gate: {getattr(f, 'file_path', '?')}")
+        print(f"::stop-commands::{token}")
+        print(content)
+        print(f"::{token}::")
+        print("::endgroup::", flush=True)
+
+
 def _validate_generated_files(
     generated_files: list[GeneratedFile],
     story_id: str,
@@ -2397,7 +2422,9 @@ def _validate_generated_files(
       - PR #9: feature steps without matching @given/@when/@then decorators
       - SCRUM-13: imports referencing modules that don't exist
 
-    Raises ValueError if any validator finds problems.
+    Raises GateFailure (a ValueError) if any validator finds problems, carrying
+    that validator's errors: the blocked comment names them (core.blocked),
+    not only this function's one-line summary of them.
 
     NOTE: This is the FINAL validation, run after any retry attempts.
     By the time this raises, the LLM has already been given a chance
@@ -2411,10 +2438,11 @@ def _validate_generated_files(
         )
         for err in consistency_errors:
             logger.error(f"  - {err}")
-        raise ValueError(
+        raise GateFailure(
             f"Filename consistency validation failed for {story_id}: "
             f"{len(consistency_errors)} mismatch(es) between feature files "
-            f"and step definitions. See logs for details."
+            f"and step definitions. See logs for details.",
+            errors=consistency_errors,
         )
 
     structure_errors = validate_feature_file_structure(generated_files)
@@ -2425,20 +2453,22 @@ def _validate_generated_files(
         )
         for err in structure_errors:
             logger.error(f"  - {err}")
-        raise ValueError(
+        raise GateFailure(
             f"Feature file structure validation failed for {story_id}: "
             f"{len(structure_errors)} step(s) appear outside any "
             f"Scenario/Background/Examples block. pytest-bdd would fail at "
-            f"test collection time. See logs for details."
+            f"test collection time. See logs for details.",
+            errors=structure_errors,
         )
 
     removed = validate_extended_page_objects_keep_methods(generated_files, PROJECT_ROOT)
     if removed:
         for err in removed:
             logger.error(f"  - {err}")
-        raise ValueError(
+        raise GateFailure(
             f"Committed page object(s) lost methods for {story_id} even after "
-            f"repair: other stories' tests call them. See logs for details.")
+            f"repair: other stories' tests call them. See logs for details.",
+            errors=removed)
 
     coverage_errors = validate_step_definitions_complete(generated_files)
     if coverage_errors:
@@ -2448,14 +2478,15 @@ def _validate_generated_files(
         )
         for err in coverage_errors:
             logger.error(f"  - {err}")
-        raise ValueError(
+        raise GateFailure(
             f"Step definition coverage validation failed for {story_id}: "
             f"{len(coverage_errors)} feature step(s) without matching "
             f"@given/@when/@then decorator(s) — even after the LLM was "
             f"given the validator's feedback for self-correction. This "
             f"usually means the LLM model is too weak (try a more capable "
             f"model) or the feature file has unusually complex "
-            f"steps. See logs for details."
+            f"steps. See logs for details.",
+            errors=coverage_errors,
         )
 
     duplicate_step_errors = validate_no_duplicate_step_definitions(
@@ -2468,11 +2499,12 @@ def _validate_generated_files(
         )
         for err in duplicate_step_errors:
             logger.error(f"  - {err}")
-        raise ValueError(
+        raise GateFailure(
             f"Duplicate step-definition validation failed for {story_id}: "
             f"{len(duplicate_step_errors)} step(s) are declared in more than "
             f"one step-def file. NOTE (ADR-013): this path is unreachable — "
-            f"cross-file duplication is safe in pytest-bdd. See logs."
+            f"cross-file duplication is safe in pytest-bdd. See logs.",
+            errors=duplicate_step_errors,
         )
 
     import_errors = validate_imports_resolvable(generated_files, PROJECT_ROOT)
@@ -2483,13 +2515,14 @@ def _validate_generated_files(
         )
         for err in import_errors:
             logger.error(f"  - {err}")
-        raise ValueError(
+        raise GateFailure(
             f"Import resolution validation failed for {story_id}: "
             f"{len(import_errors)} import(s) reference module(s) that don't "
             f"exist in the repo, in this generation batch, or in "
             f"requirements.txt — even after the LLM was given the "
             f"validator's feedback for self-correction. The LLM likely "
-            f"hallucinated a page object class import. See logs for details."
+            f"hallucinated a page object class import. See logs for details.",
+            errors=import_errors,
         )
 
     method_errors = validate_method_resolution(generated_files, PROJECT_ROOT)
@@ -2500,7 +2533,7 @@ def _validate_generated_files(
         )
         for err in method_errors:
             logger.error(f"  - {err}")
-        raise ValueError(
+        raise GateFailure(
             f"Method resolution validation failed for {story_id}: "
             f"{len(method_errors)} step-def method call(s) reference page-object "
             f"method(s) that don't exist on the corresponding class — even "
@@ -2508,7 +2541,8 @@ def _validate_generated_files(
             f"correction. The LLM likely used inconsistent method names "
             f"between the page object and the step def file (e.g., defined "
             f"`click_logout()` in the page object but called "
-            f"`click_logout_link()` in the step def). See logs for details."
+            f"`click_logout_link()` in the step def). See logs for details.",
+            errors=method_errors,
         )
 
     selector_errors = validate_page_object_selectors(
@@ -2521,7 +2555,7 @@ def _validate_generated_files(
         )
         for err in selector_errors:
             logger.error(f"  - {err}")
-        raise ValueError(
+        raise GateFailure(
             f"Page-object selector validation failed for {story_id}: "
             f"{len(selector_errors)} selector(s) in the generated page "
             f"object(s) are hard-coded literals or reference an inventory key "
@@ -2532,7 +2566,8 @@ def _validate_generated_files(
             f"would fail Agent 4's unit gate on the story PR instead. If the "
             f"element is genuinely missing from the inventory, add it there "
             f"(and verify it with `python -m scripts.verify_locators`) rather "
-            f"than letting a literal through. See logs for details."
+            f"than letting a literal through. See logs for details.",
+            errors=selector_errors,
         )
 
     # These two were previously wired only into the repair loop. That meant a
@@ -2548,13 +2583,14 @@ def _validate_generated_files(
         )
         for err in unused_step_errors:
             logger.error(f"  - {err}")
-        raise ValueError(
+        raise GateFailure(
             f"Unused step-definition validation failed for {story_id}: "
             f"{len(unused_step_errors)} decorator(s) are defined but no "
             f"scenario uses them — even after the LLM was given the "
             f"validator's feedback. This usually means the LLM emitted two "
             f"phrasings of the same step and wired only one into the feature "
-            f"file. See logs for details."
+            f"file. See logs for details.",
+            errors=unused_step_errors,
         )
 
     fixture_errors = validate_fixtures_exist(generated_files, PROJECT_ROOT)
@@ -2565,14 +2601,15 @@ def _validate_generated_files(
         )
         for err in fixture_errors:
             logger.error(f"  - {err}")
-        raise ValueError(
+        raise GateFailure(
             f"Fixture resolution validation failed for {story_id}: "
             f"{len(fixture_errors)} step definition(s) request a fixture that "
             f"no conftest declares and no page object provides. pytest "
             f"resolves fixtures at collection time, so every scenario in the "
             f"file would error before running. If the fixture should come "
             f"from a page object, that page object must be in the plan; if it "
-            f"needs custom setup, add it to conftest by hand. See logs."
+            f"needs custom setup, add it to conftest by hand. See logs.",
+            errors=fixture_errors,
         )
 
 
@@ -4093,8 +4130,8 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
         stem = feature_file_path.split("/")[-1].rsplit(".", 1)[0]
         clashes = in_flight.file_conflicts(
             {feature_file_path, f"tests/step_defs/test_{stem}.py"}, flight)
-        if clashes:
-            return _wait_for_in_flight(jira, story_id, dry_run, files=clashes)
+        if clashes:                                  # before any model call: free (F27)
+            return {**_wait_for_in_flight(jira, story_id, dry_run, files=clashes), "free": True}
 
     # A key marked in another file is not new here: appending it would
     # write a second copy of that scenario into this file.
@@ -4648,7 +4685,8 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
                     f"its test cases have changed since ({blocked.BLOCKED_MARKER} "
                     f"inputs: {input_fp}). Skipped - no model call. Edit a test case or "
                     f"the story, or run Agent 2 with its key, to try again.")
-                return {"story_id": story_id, "status": "blocked", "files_generated": 0}
+                return {"story_id": story_id, "status": "blocked", "files_generated": 0,
+                        "free": True}
         except Exception as e:                                 # noqa: BLE001
             logger.warning(f"Could not read {story_id}'s comments ({e}); running it.")
 
@@ -4719,7 +4757,24 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
         dupes = in_flight.duplicate_scenarios(new_test_cases, flight, _feature_titles,
                                               case_title=plain_test_case_title)
         if dupes:
-            return _wait_for_in_flight(jira, story_id, dry_run, scenarios=dupes)
+            return {**_wait_for_in_flight(jira, story_id, dry_run, scenarios=dupes,
+                                          inputs=input_fp), "free": True}   # no call yet (F27)
+
+    # 1d. STILL WAITING (F25). A story that waited on a file another open pull
+    # request changes, with nothing changed since - same inputs, the same pull
+    # request still changing that file - waits again here, before the plan:
+    # planning it again would cost a model call to reach the same wait.
+    if flight:
+        try:
+            comments = jira.get_comments(story_id)
+        except Exception:                                  # noqa: BLE001
+            comments = []
+        again = in_flight.still_waiting(comments, flight, input_fp)
+        if again:
+            logger.info(f"{story_id}: the wait of the last scan still holds - no plan, "
+                        "no model call.")
+            return {**_wait_for_in_flight(jira, story_id, dry_run, files=again,
+                                          inputs=input_fp), "free": True}
 
     # 2. CONTEXT — read references and inventory once
     references = ctx.load_reference_files()
@@ -4750,7 +4805,8 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
             writes |= {path, owner_file.step_defs_path}
         clashes = in_flight.file_conflicts(writes, flight)
         if clashes:
-            return _wait_for_in_flight(jira, story_id, dry_run, files=clashes)
+            return _wait_for_in_flight(jira, story_id, dry_run, files=clashes,
+                                       inputs=input_fp)
 
     # 4. STAGE 2: GENERATE PER-FILE CONTENT
     # Order page objects BEFORE step definitions so the step-def prompt
@@ -5072,13 +5128,14 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
         if not dry_run:
             blocked.post_blocked_once(jira, story_id, input_fp,
                                       getattr(e, "errors", None) or [str(e)])
+        show_refused_files(generated_files)
         raise
 
     # 4f. LAST IN-FLIGHT CHECK (F-1): every file the batch commits, whoever
     # wrote it, against a fresh snapshot of the other open pull requests.
     if gh is None:
         gh = get_repo_host()
-    waiting = _last_in_flight_check(gh, jira, story_id, output.files, dry_run)
+    waiting = _last_in_flight_check(gh, jira, story_id, output.files, dry_run, input_fp)
     if waiting:
         return waiting
 
@@ -5271,7 +5328,8 @@ def _feature_titles(content: str) -> list[str]:
     return [t for t in (_scenario_title(b) for b in blocks) if t]
 
 
-def _wait_for_in_flight(jira, story_id: str, dry_run: bool, files=(), scenarios=()) -> dict:
+def _wait_for_in_flight(jira, story_id: str, dry_run: bool, files=(), scenarios=(),
+                        inputs: str = "") -> dict:
     """Stop this story for now: another open pull request is changing what it
     needs (core/in_flight.py). Nothing is generated or committed and no label
     changes, so the next scan retries it. One Jira comment says why - posted
@@ -5290,7 +5348,7 @@ def _wait_for_in_flight(jira, story_id: str, dry_run: bool, files=(), scenarios=
     usage = log_usage_summary(f"story {story_id} (waiting)")
     reset_usage()
     if not dry_run:
-        post_wait_once(jira, story_id, files, scenarios)
+        post_wait_once(jira, story_id, files, scenarios, inputs)
         if usage.get("llm_calls"):
             from core.usage_ledger import post_usage_to_story
             post_usage_to_story(story_id, "Agent 2 (Coder, waiting)", usage, jira=jira)
@@ -5298,7 +5356,7 @@ def _wait_for_in_flight(jira, story_id: str, dry_run: bool, files=(), scenarios=
             "files_generated": 0}
 
 
-def _last_in_flight_check(gh, jira, story_id: str, files, dry_run: bool):
+def _last_in_flight_check(gh, jira, story_id: str, files, dry_run: bool, inputs: str = ""):
     """The wait result if another open pull request changes ANY file this run is
     about to commit, else None (F-1).
 
@@ -5312,7 +5370,8 @@ def _last_in_flight_check(gh, jira, story_id: str, files, dry_run: bool):
     from core import in_flight
     clashes = in_flight.file_conflicts([f.file_path for f in files],
                                        in_flight.snapshot(gh, story_id))
-    return _wait_for_in_flight(jira, story_id, dry_run, files=clashes) if clashes else None
+    return (_wait_for_in_flight(jira, story_id, dry_run, files=clashes, inputs=inputs)
+            if clashes else None)
 
 
 # ---------------------------------------------------------------------------
@@ -5401,6 +5460,33 @@ def _print_scan_summary(results: list[dict]) -> None:
 _clock = time.monotonic          # the scan deadline's clock; replaced in tests
 
 
+def story_mode(story_id: str, jira=None, agent_config=None) -> str:
+    """The mode a story asks for by its labels - what a scan would run it in:
+    "update" (update_label), "regenerate" (regenerate_label) or "normal".
+
+    4 Nov 2026: a story run by key (the workflow's story_key) always ran in
+    normal mode. SCRUM-201 carried `ai-update`; the run found every scenario
+    already there, reported "no work needed", told the person to add
+    `ai-update` - already on the story - and marked it coded. Both labels at
+    once is refused, as a scan takes neither. The labels cannot be read ->
+    normal, as before."""
+    agent_config = agent_config if agent_config is not None else load_agent_config()
+    update = agent_config.get("update_label", "ai-update")
+    regenerate = agent_config.get("regenerate_label", "ai-regenerate")
+    try:
+        jira = jira or get_tracker()
+        labels = set(jira.get_story(story_id).get("labels") or [])
+    except Exception as e:                                     # noqa: BLE001
+        logger.warning(f"Could not read the labels of {story_id} ({e}) - normal mode.")
+        return "normal"
+    if update in labels and regenerate in labels:
+        raise ValueError(f"{story_id} has both `{update}` and `{regenerate}`: a scan takes "
+                         "neither. Remove one, then run it again.")
+    if update in labels:
+        return "update"
+    return "regenerate" if regenerate in labels else "normal"
+
+
 def plan_scan(passes, max_stories: int) -> tuple:
     """(to_run, deferred) for one scan (F-4).
 
@@ -5464,13 +5550,16 @@ def main():
     try:
         from core.usage_ledger import story_usage
         if args.story:
-            label = ("Agent 2 (Coder, incremental update)" if args.update
-                     else "Agent 2 (Coder, initial)")
+            mode = "update" if args.update else story_mode(args.story)
+            label = {"normal": "Agent 2 (Coder, initial)",
+                     "regenerate": "Agent 2 (Coder, regenerate)",
+                     "update": "Agent 2 (Coder, incremental update)"}[mode]
             with story_usage(args.story, label, dry_run=args.dry_run):
-                if args.update:
+                if mode == "update":
                     result = run_update(args.story, dry_run=args.dry_run)
                 else:
-                    result = run(args.story, dry_run=args.dry_run)
+                    result = run(args.story, dry_run=args.dry_run,
+                                 is_regenerate=(mode == "regenerate"))
             print("\n" + "=" * 60)
             print(f"[OK] Agent 2 finished -- story: {result['story_id']}")
             print(f"   Files generated: {result.get('files_generated', 0)}")
@@ -5569,6 +5658,8 @@ def main():
         deadline_s = float(agent_config.get("scan_deadline_minutes", 12)) * 60
         started = _clock()
         results = []
+        # to_run may grow while it runs (a free result hands its place on), and
+        # a list iterator sees what is appended.
         for i, (mode, story) in enumerate(to_run):
             if _clock() - started > deadline_s:
                 deferred += [(m, s_, "the scan deadline passed") for m, s_ in to_run[i:]]
@@ -5585,6 +5676,16 @@ def main():
                                      is_regenerate=(mode == "regenerate"),
                                      skip_if_blocked=(mode == "normal"))
                 results.append(result)
+                # A story that did nothing - blocked, or still waiting, with no
+                # model call - does not use up a place (F27): the next deferred
+                # story takes it. 4 Nov 2026: a blocked and a waiting story took
+                # both places on every scan and SCRUM-201 was never reached.
+                if result.get("free"):
+                    taken = next((n for n, d in enumerate(deferred)
+                                  if d[2].startswith("over max_stories_per_run")), None)
+                    if taken is not None:
+                        m, s_, _why = deferred.pop(taken)
+                        to_run.append((m, s_))
             except BudgetExceeded as stop:
                 # F-24. A story over its budget is held (labelled) and needs a
                 # person - red once; the next scan no longer selects it. A day

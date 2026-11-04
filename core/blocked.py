@@ -65,6 +65,24 @@ def _missing_pages(errors) -> list:
         return []
 
 
+# The method-resolution validator's wording for a call to a method a RESERVED
+# page object lacks (validators/method_resolution_validator.py).
+_RESERVED_CALL = re.compile(r"calls `\w+\.(\w+)\(\)`, but `(\w+)` does not define `\w+`\. "
+                            r"`([^`]+)` is a RESERVED file")
+
+
+def _reserved_capabilities(errors) -> list:
+    """`Class.method (file)` for each method a reserved page object would need.
+    No repair can add one: Agent 2 may not edit a reserved file."""
+    found = []
+    for err in errors or []:
+        for method, cls, path in _RESERVED_CALL.findall(str(err)):
+            item = f"`{cls}.{method}` ({path})"
+            if item not in found:
+                found.append(item)
+    return found
+
+
 def blocked_comment(story_id: str, fp: str, errors) -> str:
     errors = list(dict.fromkeys(str(e) for e in errors or [] if str(e).strip()))
     lines = [f"{BLOCKED_MARKER} inputs: {fp}",
@@ -87,6 +105,16 @@ def blocked_comment(story_id: str, fp: str, errors) -> str:
                    "(a page already live is confirmed and crawled by the next nightly "
                    "inventory update, which proposes its other elements). The other "
                    "errors above follow from the missing page.")]
+        return "\n".join(lines)
+    reserved = _reserved_capabilities(errors)
+    if reserved:
+        lines += ["",
+                  ("The generated steps need what a reserved page object does not offer: "
+                   f"{', '.join(reserved)}. Agent 2 may not edit a reserved file, so no "
+                   "repair can add it. A person adds the method (its element must be in "
+                   "the app inventory), or rewords the test case to use what the page "
+                   "already offers; then run Agent 2 with this story's key (an edit to a "
+                   "test case lets the next scheduled scan try again by itself).")]
         return "\n".join(lines)
     lines += ["",
               ("A rule that survives every repair usually means a test case asks for "

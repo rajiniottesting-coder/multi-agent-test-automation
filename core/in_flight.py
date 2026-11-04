@@ -117,13 +117,17 @@ def duplicate_scenarios(test_cases, state: InFlight, titles_of,
     return out
 
 
-def wait_comment(story_id: str, files: list[dict], scenarios: list[dict]) -> str:
+def wait_comment(story_id: str, files: list[dict], scenarios: list[dict],
+                 inputs: str = "") -> str:
     """The Jira comment. Its first line is a stable signature of WHY the story
-    waits, so a scan every 30 minutes posts it once, not every time."""
+    waits, so a scan every 30 minutes posts it once, not every time. `inputs`
+    (the story's input fingerprint, core.blocked) lets the next scan wait again
+    without a new plan while nothing has changed (still_waiting)."""
     prs = sorted({c["pr"] for c in files} | {s["pr"] for s in scenarios})
     signature = (f"{WAITING_MARKER} prs: {','.join(map(str, prs))} "
                  f"files: {','.join(sorted({c['path'] for c in files})) or '-'} "
-                 f"scenarios: {','.join(sorted(str(s['key']) for s in scenarios)) or '-'}")
+                 f"scenarios: {','.join(sorted(str(s['key']) for s in scenarios)) or '-'}"
+                 + (f" inputs: {inputs}" if inputs else ""))
     lines = [signature,
              (f"Agent 2 is waiting before coding {story_id}: another open pull request "
               "is already changing what this story needs."), ""]
@@ -138,10 +142,11 @@ def wait_comment(story_id: str, files: list[dict], scenarios: list[dict]) -> str
     return "\n".join(lines)
 
 
-def post_wait_once(tracker, story_id: str, files: list[dict], scenarios: list[dict]) -> bool:
+def post_wait_once(tracker, story_id: str, files: list[dict], scenarios: list[dict],
+                   inputs: str = "") -> bool:
     """Post the waiting comment unless the same one is already on the story.
     Best-effort: returns whether a comment was posted, never raises."""
-    body = wait_comment(story_id, files, scenarios)
+    body = wait_comment(story_id, files, scenarios, inputs)
     signature = body.splitlines()[0]
     try:
         if any(signature in (c or "") for c in tracker.get_comments(story_id)):
@@ -151,3 +156,37 @@ def post_wait_once(tracker, story_id: str, files: list[dict], scenarios: list[di
     except Exception as e:                                     # noqa: BLE001
         logger.warning("Could not post the waiting note on %s: %s", story_id, e)
         return False
+
+
+_FILE_WAIT = re.compile(rf"^{re.escape(WAITING_MARKER)} prs: ([0-9,]+) files: (\S+) "
+                        r"scenarios: - inputs: ([0-9a-f]+)$", re.M)
+
+
+def still_waiting(comments, state: InFlight, inputs: str) -> list[dict]:
+    """The file clashes of an earlier wait that still hold, else [].
+
+    A story waiting on a file another open pull request changes was planned
+    again on every scan - a model call each time, to reach the same wait (4 Nov
+    2026: about $0.11 a scan while it waited). When a waiting comment for THESE
+    inputs names files that the same pull requests still change, the story
+    waits again before the plan. Any change - the story or a test case edited,
+    the pull request merged or closed, the file no longer in it - and the
+    story is planned as usual."""
+    if not inputs or not state:
+        return []
+    changing = {_norm(p): refs for p, refs in state.by_path.items()}
+    for comment in reversed(list(comments or [])):
+        for prs, files, fp in _FILE_WAIT.findall(comment or ""):
+            if fp != inputs:
+                continue
+            numbers = {int(n) for n in prs.split(",") if n}
+            clashes = []
+            for path in files.split(","):
+                refs = [r for r in changing.get(_norm(path), []) if r[0] in numbers]
+                if not refs:
+                    clashes = []
+                    break
+                clashes += [{"path": _norm(path), "pr": n, "url": u} for n, u in refs]
+            if clashes:
+                return clashes
+    return []

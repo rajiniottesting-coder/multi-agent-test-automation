@@ -64,15 +64,28 @@ def test_settings_defaults_are_off_and_shadow():
     s = impact_settings({})
     assert s["enabled"] is False and s["shadow_mode"] is True
     assert impact_settings({"labels": {"check": "x"}})["labels"]["proposed"] == "impact-proposed"
-    # The shipped config equals the defaults apart from the mode switches
-    # (enabled, shadow_mode), which a project sets for itself - see the
-    # comment in config.yaml. The framework DEFAULTS above stay off and shadow,
-    # so a project that never sets them can never run live by accident.
-    switches = {"enabled", "shadow_mode"}
-    shipped = impact_settings()
-    assert {k: v for k, v in shipped.items() if k not in switches} == \
-        {k: v for k, v in DEFAULTS.items() if k not in switches}
-    assert isinstance(shipped["shadow_mode"], bool)
+    # The shipped config names every setting the defaults have, with a value of
+    # the same kind, and nothing they lack (a misspelt key would otherwise be
+    # ignored). The values are the project's to tune - the validation runbook
+    # itself sets reconcile.closed_scans to 1 - so they are not pinned here.
+    # The framework DEFAULTS above stay off and shadow, so a project that never
+    # sets the mode switches can never run live by accident.
+    import yaml
+    from config.paths import CONFIG_YAML
+    raw = (yaml.safe_load(CONFIG_YAML.read_text(encoding="utf-8"))["agents"]["agent0_impact"])
+    assert _shape(raw) == _shape(DEFAULTS)
+    assert isinstance(impact_settings()["shadow_mode"], bool)
+
+
+def _shape(value):
+    """Keys and value kinds, not values: {"a": {"b": 2}} -> {"a": {"b": "number"}}."""
+    if isinstance(value, dict):
+        return {k: _shape(v) for k, v in value.items()}
+    if isinstance(value, bool):
+        return "bool"
+    if isinstance(value, (int, float)):
+        return "number"
+    return type(value).__name__
 
 
 # ─────────────────────────────────────────────────────────────────

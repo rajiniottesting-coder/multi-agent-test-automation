@@ -16,6 +16,28 @@ from tests.unit.test_agent2_impact import _hand_over_and_draft, _run_agent2, wor
 NOW = datetime(2026, 10, 10, tzinfo=timezone.utc)
 
 
+def pin_closed_scans(monkeypatch, scans=2):
+    """These tests walk the two-scan undo, so they fix reconcile.closed_scans
+    themselves instead of reading the shipped config (a deployment, or a
+    validation run, may change it without breaking the suite)."""
+    import core.impact_reconcile as rc
+    import core.impact_settings as s
+    real = s.impact_settings
+
+    def pinned(raw=None):
+        merged = real(raw)
+        if raw is None:
+            merged["reconcile"]["closed_scans"] = scans
+        return merged
+    monkeypatch.setattr(s, "impact_settings", pinned)
+    monkeypatch.setattr(rc, "impact_settings", pinned)
+
+
+@pytest.fixture(autouse=True)
+def _two_scans(monkeypatch):
+    pin_closed_scans(monkeypatch)
+
+
 def _impact_labels(fake, story="SBX-5"):
     return sorted(l for l in fake.issues[story]["labels"] if l.startswith("impact-"))
 

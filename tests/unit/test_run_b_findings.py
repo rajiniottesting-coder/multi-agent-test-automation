@@ -303,6 +303,19 @@ def test_the_pull_request_copy_is_markdown():
     assert out.rstrip().endswith("</details>")
 
 
+def test_a_report_with_nothing_affected_has_no_empty_table():
+    """PR #287 (4 Nov): "Affected: 0" was followed by a table header with no rows."""
+    from agents.agent0_impact import _render_report
+    report = {"content_hash": "h", "graph_sha": "g", "no_component": False, "ranked": [],
+              "unaffected": [], "not_judged": [], "by_owner": {},
+              "seeds": {"elements": [], "methods": [], "pages": [], "dropped": []}}
+    empty = _render_report(report, "Impact of PR #1 (code change)")
+    assert "Affected: 0" in empty and "||Tier||" not in empty
+    report["ranked"] = [{"tier": "review", "score": 0.4, "key": "AB-1", "owner": "AB-2",
+                         "title": "t", "evidence": "e"}]
+    assert "||Tier||Score||Test||Owner||Scenario||Evidence||" in _render_report(report, "x")
+
+
 # ── a notes rewrite quotes only what the story states ───────────────────
 
 def test_a_quote_nobody_stated_is_found():

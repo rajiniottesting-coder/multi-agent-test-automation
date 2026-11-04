@@ -181,6 +181,40 @@ def test_a_file_another_open_pr_changes_makes_the_story_wait(sandbox):
     assert result["status"] == "pr_opened"
 
 
+def test_a_wait_that_still_holds_costs_no_new_plan(sandbox):
+    """F25, 4 Nov 2026: SCRUM-293 was planned again on every scan while PR #286
+    stayed open - seven model calls to reach the same wait."""
+    fake, jira, root = sandbox
+    _ready(fake, jira)
+    gh = FakeRepoHost(repo_files(root))
+    _other_story_pr(gh, {OWN_STEPS: "# the other story's step definitions\n"})
+    _result, bp, _gen = _run(jira, gh)
+    bp.assert_called_once()                      # the first wait needs the plan
+    result, bp, gen = _run(jira, gh)             # the next scan
+    assert result["status"] == "waiting_for_open_pr" and result["free"] is True
+    bp.assert_not_called()
+    gen.assert_not_called()
+    assert len([c for c in fake.comments["SBX-5"] if in_flight.WAITING_MARKER in c]) == 1
+
+    fake.issues["SBX-5"]["description"] += " (edited)"     # an input changed: plan again
+    _result, bp, _gen = _run(jira, gh)
+    bp.assert_called_once()
+
+
+def test_still_waiting_needs_the_same_inputs_pr_and_file():
+    state = in_flight.InFlight(by_path={"pages/a_page.py": [(7, "u7")]})
+    files = [{"path": "pages/a_page.py", "pr": 7, "url": "u7"}]
+    note = in_flight.wait_comment("P-1", files, [], inputs="abc123")
+    assert in_flight.still_waiting([note], state, "abc123") == files
+    assert in_flight.still_waiting([note], state, "other") == []          # inputs changed
+    assert in_flight.still_waiting([note], in_flight.InFlight(
+        by_path={"pages/a_page.py": [(8, "u8")]}), "abc123") == []         # another PR
+    assert in_flight.still_waiting([note], in_flight.InFlight(
+        by_path={"pages/b_page.py": [(7, "u7")]}), "abc123") == []         # file left the PR
+    old = in_flight.wait_comment("P-1", files, [])                         # before F25
+    assert in_flight.still_waiting([old], state, "abc123") == []
+
+
 def test_a_scenario_another_open_pr_adds_waits_before_any_model_call(sandbox):
     fake, jira, root = sandbox
     _ready(fake, jira)

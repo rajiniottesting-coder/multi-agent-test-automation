@@ -366,3 +366,52 @@ def test_a_reader_returning_row_text_under_a_field_name_is_still_refused(rows_in
             '        return self.get_text(self.sel("item_rows"))\n')
     (err,) = rows_inventory.validate_readers_return_what_they_name([_rows_page(body)], ROOT)
     assert err.startswith("Reader naming error") and "cost" in err
+
+
+# ── a refused story is told which rule failed, not only a summary ───────
+
+_GATES = ["validate_filename_consistency", "validate_feature_file_structure",
+          "validate_extended_page_objects_keep_methods", "validate_step_definitions_complete",
+          "validate_no_duplicate_step_definitions", "validate_imports_resolvable",
+          "validate_method_resolution", "validate_page_object_selectors",
+          "validate_no_unused_step_definitions", "validate_fixtures_exist"]
+
+
+@pytest.mark.parametrize("gate", _GATES)
+def test_every_gate_hands_its_errors_to_the_blocked_comment(gate, monkeypatch):
+    """4 Nov 2026, SCRUM-292: the blocked comment carried one summary line
+    ("the LLM likely used inconsistent method names") and lost the eight errors
+    under it - among them that a reserved page object lacked the method."""
+    import inspect
+    import agents.agent2_coder as a2
+    src = inspect.getsource(a2._validate_generated_files)
+    for name in _GATES:
+        assert name in src
+        monkeypatch.setattr(a2, name, lambda *a, **k: [])
+    monkeypatch.setattr(a2, gate, lambda *a, **k: [f"{gate} error in 'x.py'"])
+    with pytest.raises(a2.GateFailure) as raised:
+        a2._validate_generated_files([], "AB-1")
+    assert raised.value.errors == [f"{gate} error in 'x.py'"]
+
+
+def test_a_method_a_reserved_page_lacks_is_a_person_s_step():
+    from core.blocked import blocked_comment
+    err = ("Method resolution error in 'tests/step_defs/test_x.py': line 4 calls "
+           "`menu.go_to_reports()`, but `MenuPage` does not define `go_to_reports`. "
+           "`pages/menu_page.py` is a RESERVED file - Agent 2 must not modify it, so ...")
+    text = blocked_comment("AB-1", "0" * 16, [err, "Method resolution error in 'y': other"])
+    assert "`MenuPage.go_to_reports` (pages/menu_page.py)" in text
+    assert "A person adds the method" in text and "cannot show" not in text
+    plain = blocked_comment("AB-1", "0" * 16, ["Method resolution error in 'y': other"])
+    assert "cannot show" in plain and "reserved page object" not in plain
+
+
+def test_refused_files_are_printed_with_workflow_commands_off(capsys):
+    from types import SimpleNamespace as NS
+    from agents.agent2_coder import show_refused_files
+    show_refused_files([NS(file_path="pages/x_page.py", content="::add-mask::boom\nclass X: pass")])
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "::group::Refused by the final gate: pages/x_page.py"
+    token = out[1].split("::stop-commands::")[1]
+    assert out[2:4] == ["::add-mask::boom", "class X: pass"]
+    assert out[4] == f"::{token}::" and out[5] == "::endgroup::"
