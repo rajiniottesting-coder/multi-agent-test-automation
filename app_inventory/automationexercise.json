@@ -325,7 +325,12 @@
         "test_case_titles",
         "test_case_steps",
         "test_case_search_input"
-      ]
+      ],
+      "multi_match": [
+        "test_case_titles",
+        "test_case_steps"
+      ],
+      "multi_match_note": "Lists: one title link per test case, one step item per step (inside collapsed panels until a title is clicked)."
     }
   },
   "_starting_state": {
