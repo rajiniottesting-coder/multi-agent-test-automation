@@ -77,7 +77,7 @@ def test_reads_pass_through_and_writes_are_recorded_not_sent():
 # Reconcile: same decision as a live run, no write
 # ─────────────────────────────────────────────────────────────
 from tests.unit.test_agent2_impact import world  # noqa: F401
-from tests.unit.test_impact_reconcile import NOW, opened  # noqa: F401
+from tests.unit.test_impact_reconcile import NOW, _two_scans, opened  # noqa: F401
 
 
 def _state(fake):

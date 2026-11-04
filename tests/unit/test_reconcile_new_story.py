@@ -18,9 +18,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from core import impact_reconcile as rc
-from core.impact_settings import impact_settings
 from tests.sandbox.fake_jira import FakeRepoHost, jira_client_over
 from tests.sandbox.seed import seed_jira
+from tests.unit.test_impact_reconcile import pin_closed_scans
 
 STORY = "SBX-90"
 PIPELINE = ["ai-processed", "human-approved", "ai-coded", "ai-incomplete", "tests-run"]
@@ -28,6 +28,7 @@ PIPELINE = ["ai-processed", "human-approved", "ai-coded", "ai-incomplete", "test
 
 @pytest.fixture
 def world(monkeypatch):
+    pin_closed_scans(monkeypatch)
     fake = seed_jira()
     fake.add("Story", "A shopper saves an address", key=STORY, status="In Review",
              labels=list(PIPELINE))
@@ -41,7 +42,7 @@ def world(monkeypatch):
 
 
 def _settings(**reconcile):
-    s = impact_settings()
+    s = rc.impact_settings()
     s["reconcile"] = {**s["reconcile"], **reconcile}
     return s
 
