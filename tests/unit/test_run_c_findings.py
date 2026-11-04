@@ -613,3 +613,19 @@ def test_agent2_runs_the_audit_after_the_gate_and_before_the_pull_request():
     assert src.index("_validate_generated_files(generated_files") < src.index("audit_partial(") \
         < src.index("pr_body_with_footer += agent2_coverage.pr_section")
     assert (a2.PROMPTS_DIR / "agent2_coverage_audit.md").is_file()
+
+
+# ── F40: a text differing only in letter case is diagnosed as such ──────
+
+def test_a_case_only_difference_is_diagnosed():
+    from core.failure_diagnosis import diagnose
+    d = diagnose("AssertionError: Expected heading 'Test Cases' in 'TEST CASES'")
+    assert d.label == "letter case" and "casefold" in d.remedy
+    assert diagnose("AssertionError: Expected heading 'Test Cases' in 'Products'").label != "letter case"
+    assert diagnose("assert 2 == 1").label == "count assertion", "other readings unchanged"
+
+
+def test_the_generation_rules_say_to_compare_displayed_text_case_insensitively():
+    import agents.agent2_coder as a2
+    text = (a2.PROMPTS_DIR / "agent2_coder_generate.md").read_text(encoding="utf-8")
+    assert "letter case" in text and "casefold" in text
