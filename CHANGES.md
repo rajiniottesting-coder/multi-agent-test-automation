@@ -4,6 +4,17 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a provider refusing calls for money stops the run; the health check probes every model (#290)
+
+**Why:** on 4 Nov 2026 the model gateway answered HTTP 402 Payment Required to every call of the coding model: Agent 2 failed with a traceback, a scan would have failed story after story, and Pipeline health reported the model as answering - it probed only the light model.
+
+- `core.llm_client`: HTTP 402 or a provider's credit / budget message raises `BudgetExceeded` with scope `provider` (`stops_the_run`, like a day stop); a plain rate limit is still `QuotaExhaustedError`
+- Agents 0, 1 and 2 stop their scans at the first refusal, red, with one `[BUDGET]` line saying a person must raise the provider's budget; no story is handed back, held or blocked
+- `core.health_checks.check_model`: every model in `LLM_MODELS_TO_CHECK` (the workflow lists `LLM_MODEL_LIGHT` and `LLM_MODEL`) probed once; one `credential:model` alert naming each refused model; a provider refusal is an alert, the pipeline's own budget still is not
+- Tests in `test_spend_budget.py`, `test_scan_budget.py`, `test_pipeline_health.py`; TEST_TRACK E87, E88. Not tested live yet: E87, E88
+
+---
+
 ## November 2026 — a new page object may not borrow another's inventory page (#289)
 
 **Why:** SCRUM-292's page is not in the app inventory. The refused page object (printed in the log since #288) set `INVENTORY_PAGE` to the navigation entry, navigated by a hard-coded path and resolved no element, so no check named the missing page and the story was refused after every repair with advice to change its test case.
