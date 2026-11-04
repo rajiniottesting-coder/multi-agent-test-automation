@@ -642,6 +642,10 @@ def main():
             sprint_override=args.sprint,
         )
 
+        from core.selection_notice import notify_unselected
+        notify_unselected(jira, selection, "Agent 1 (Test Designer)",
+                          sprint_override=args.sprint, dry_run=args.dry_run)
+
         if not stories:
             logger.info("No stories match selection criteria. Nothing to do.")
             print("\n✅ Scan complete — 0 stories needed processing.")

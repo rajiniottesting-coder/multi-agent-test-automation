@@ -5537,6 +5537,12 @@ def main():
                 "Add 'agents.agent2_coder.update_selection' to enable incremental updates."
             )
 
+        from core.selection_notice import notify_unselected
+        for name, sel in (("Agent 2 (Coder)", normal_selection),
+                          ("Agent 2 (Coder, regenerate)", regen_selection),
+                          ("Agent 2 (Coder, incremental update)", update_selection)):
+            notify_unselected(jira, sel, name, sprint_override=args.sprint, dry_run=args.dry_run)
+
         total_count = len(normal_stories) + len(regen_stories) + len(update_stories)
         if total_count == 0:
             logger.info(
