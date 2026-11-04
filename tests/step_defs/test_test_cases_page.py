@@ -78,3 +78,10 @@ def assert_remain_on_page(test_cases_page):
     assert test_cases_page.remaining_on_page(), (
         "Expected to remain on the Test Cases page"
     )
+
+
+@then('a "Feedback for Us" section should display an email address link')
+def assert_feedback_section(test_cases_page):
+    assert test_cases_page.has_title_links(), (
+        "Expected a 'Feedback for Us' section with an email address link"
+    )
