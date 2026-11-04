@@ -309,7 +309,14 @@ def _probe_model(mode: str, name: str | None):
             if name:
                 os.environ["LLM_MODEL"] = name
             try:
-                client = llm_client.LLMClient(temperature=0.0, max_output_tokens=1)
+                # The output room the agents ask for, not 1 token: a provider
+                # may reserve a request's cost from its max_tokens and refuse
+                # it when the credit left is less (4 Nov 2026: 1 and 4,096
+                # answered, 16,384 got HTTP 402). Billed on the tokens used,
+                # so the probe still costs a reply of a word.
+                client = llm_client.LLMClient(
+                    temperature=0.0,
+                    max_output_tokens=llm_client._code_gen_max_output_tokens(name or ""))
                 response = client._call_with_quota_check(client.llm.invoke,
                                                          [("user", "Reply with OK.")])
             finally:
