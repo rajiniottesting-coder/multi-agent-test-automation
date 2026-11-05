@@ -4,6 +4,15 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a new page object must name its page in the inventory (#303)
+
+**Why:** for SCRUM-292's page, missing from the inventory, the model's third way round the missing-page stop was a page object declaring no `INVENTORY_PAGE` at all; the selector check skipped it as "not a page object", and four repairs ended on other errors.
+
+- `validators/method_resolution_validator.validate_page_object_selectors`: a new `BasePage` subclass with methods and no `INVENTORY_PAGE` is refused (repairable); committed page objects, stubs and helpers are unchanged
+- `test_repair_loop` pinned the gap and is updated; TEST_TRACK E101. Not tested live yet: E101
+
+---
+
 ## November 2026 — a spliced step never substitutes an unrelated check (#302)
 
 **Why:** SCRUM-293's `ai-update` spliced a step for a feedback section no page object could read, and the writer - told to "assert with one that does" - asserted the title links instead: a step that passes whatever the page shows. The notes-addition PR of the same story said its tests had passed, though the story's PR was merged while they ran and two failed.
