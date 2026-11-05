@@ -319,8 +319,6 @@
         "feedback_element": "#feedback"
       },
       "planned": [
-        "test_case_titles",
-        "test_case_steps",
         "test_case_search_input"
       ],
       "multi_match": [
