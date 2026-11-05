@@ -256,7 +256,7 @@
         "continue_shopping_button",
         "review_success"
       ],
-      "conditional_note": "The add-to-cart modal does not exist until Add to cart is clicked, and review_success not until a review is submitted. A tool that only navigates always reads these as absent - that is its reach, not a broken selector.",
+      "conditional_note": "The add-to-cart modal does not exist until Add to basket is clicked, and review_success not until a review is submitted. A tool that only navigates always reads these as absent - that is its reach, not a broken selector.",
       "elements_notes": {
         "_url": "TEMPLATE, not an address: one page per product. Open it with page_url(product_id=...), or better, reach it by clicking a product's View Product link on the listing - that href already carries the id, so the test never invents one.",
         "add_to_cart_button": "The single add-to-cart control for THIS product. Unlike the listing page's family of 68, this one is unique - which is why a cart scenario should add a product from here rather than from the listing.",
@@ -264,7 +264,7 @@
         "added_modal": "Adding to cart opens a MODAL rather than navigating, and it blocks the page underneath. A scenario adding two products must dismiss it between them or the second click lands on the overlay.",
         "product_price": "Rendered as 'Rs. 500'. Assert on the number, not the format.",
         "_naming": "No page object exists for this page yet. Agent 2 chooses its method names, guided by the naming rule in the generation prompt: a bare verb such as open() or submit() collides with the first specific method that shares it, so a method must say WHAT it acts on - open_product(), not open(). Every later story reads the real signatures back from the file, so the names are chosen once. Do not fill key_methods back in.",
-        "view_cart_link_in_modal": "INSIDE the add-to-cart modal, which appears only after Add to cart is clicked on this page. Navigates to the cart.",
+        "view_cart_link_in_modal": "INSIDE the add-to-cart modal, which appears only after Add to basket is clicked on this page. Navigates to the cart.",
         "continue_shopping_button": "INSIDE the add-to-cart modal. Dismisses it and stays on this product. Needed before any further interaction with the page underneath, because the modal blocks it.",
         "review_success": "Appears only after a review is submitted successfully. A review needs a name, an email and review text; submitting an incomplete form is blocked by the browser's own validation, so nothing app-authored appears and this element never renders."
       },
