@@ -1,11 +1,16 @@
 """Step definitions for features/test_cases_page.feature.
 
-Binds the Test Cases page scenarios to page-object methods. Every step the
-feature uses is declared here — steps are module-scoped, so a step defined in
-another module is not visible to this one. No selectors appear here; the step
-definitions interact with the UI only through page-object methods.
+Binds the Test Cases page scenarios to page-object methods. Navigation into the
+page goes through NavPage (the shared top menu); everything on the page itself
+is read through TestCasesPage.
+
+Conventions followed from the reference suite:
+  - every step the feature uses is declared in THIS module (steps are
+    module-scoped, so a step defined elsewhere is invisible here)
+  - step definitions call page-object methods only; no selectors appear here
+  - presence is asserted with waiting readers on the page object
 """
-from pytest_bdd import given, when, then, scenarios
+from pytest_bdd import given, when, then, parsers, scenarios
 
 from config.paths import feature_path
 
@@ -31,50 +36,46 @@ def click_test_cases_nav(nav_page):
 
 
 @when("I click the title of the first test case")
-def click_first_test_case(test_cases_page):
+def click_first_test_case_title(test_cases_page):
     test_cases_page.open_first_test_case()
-
-
-@when("I click the title of the second test case")
-def click_second_test_case(test_cases_page):
-    test_cases_page.open_second_test_case()
 
 
 # ─────────────────────────────────────────────────────────────
 # Then
 # ─────────────────────────────────────────────────────────────
 
-@then('the Test Cases page should be headed "Test Cases"')
-def assert_heading(test_cases_page):
+@then('the Test Cases page should be displayed headed "Test Cases"')
+def assert_test_cases_page_heading(test_cases_page):
+    assert test_cases_page.is_loaded(), "Test Cases page did not load"
     assert test_cases_page.heading_matches("Test Cases"), (
-        f"Expected the Test Cases heading, got {test_cases_page.heading_text()!r}"
+        f"Expected heading 'Test Cases', got {test_cases_page.heading_text()!r}"
     )
 
 
-@then("each test case title should be shown as a link")
+@then("each test case title should be rendered as a clickable link")
 def assert_titles_are_links(test_cases_page):
-    assert test_cases_page.has_title_links(), "Expected test case titles to be shown"
+    assert test_cases_page.has_title_links(), "No test case title links were found"
     assert test_cases_page.all_titles_are_links(), (
-        "Expected every test case title to be rendered as a link"
+        "Not every test case title is rendered as a clickable link"
     )
 
 
-@then("the steps for the first test case should be shown")
-def assert_first_steps_shown(test_cases_page):
+@then("the Feedback for Us section should display an email address link")
+def assert_feedback_email_link(test_cases_page):
+    assert test_cases_page.has_feedback_email_link(), (
+        "Expected a Feedback for Us email address link"
+    )
+
+
+@then("the steps of that test case should be shown")
+def assert_steps_shown(test_cases_page):
     assert test_cases_page.has_visible_steps(), (
-        "Expected the first test case's steps to be shown"
+        "No test case steps are visible after opening the title"
     )
 
 
-@then("the steps for the second test case should be shown")
-def assert_second_steps_shown(test_cases_page):
-    assert test_cases_page.has_visible_steps(), (
-        "Expected the second test case's steps to be shown"
-    )
-
-
-@then("I should remain on the Test Cases page")
-def assert_remain_on_page(test_cases_page):
+@then("the page should remain the Test Cases page")
+def assert_still_on_test_cases_page(test_cases_page):
     assert test_cases_page.remaining_on_page(), (
-        "Expected to remain on the Test Cases page"
+        "Navigated away from the Test Cases page"
     )

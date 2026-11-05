@@ -22,11 +22,10 @@ raw heading_text() reader is left unchanged for any caller that wants the exact
 rendered text.
 
 NOTE on the "Feedback for Us" section (SCRUM-312): the inventory for the
-`test_cases` page lists NO element for the Feedback section or its email
-address. There is therefore no legal selector to read it, so that part of
-SCRUM-312 cannot be asserted from this page object. The feature verifies the
-heading and the title-links layout only; the Feedback section is recorded in
-`notes` for a human to add an inventory key.
+`test_cases` page DOES carry a key for the Feedback email link
+(feedback_automationexercise_com_link) and the Feedback section container
+(feedback_element). SCRUM-312 can therefore be fully asserted: the feedback
+email link is reached through the inventory key, no invented selector required.
 
 NOTE on showing a test case's steps (SCRUM-313 / SCRUM-314): `test_case_steps`
 is a multi_match family — one step item per step, across every (collapsed)
@@ -57,6 +56,17 @@ class TestCasesPage(BasePage):
     """
 
     INVENTORY_PAGE = "test_cases"
+
+    # ── navigation ───────────────────────────────────────────
+    def open_test_cases(self, base_url: str) -> None:
+        """Navigate directly to the Test Cases page.
+
+        Args:
+            base_url: application base URL from the `base_url` fixture. The path
+                      comes from the inventory, so it is never duplicated here.
+        """
+        self.navigate(f"{base_url.rstrip('/')}{self.page_url()}")
+        self.confirm_arrival()
 
     # ── queries ──────────────────────────────────────────────
     def is_loaded(self, timeout_ms: Optional[int] = None) -> bool:
@@ -109,6 +119,16 @@ class TestCasesPage(BasePage):
                 return False
         return True
 
+    def has_feedback_email_link(self) -> bool:
+        """True once the Feedback for Us email link is displayed. WAITS for it.
+
+        The inventory carries feedback_automationexercise_com_link, an ARIA
+        link named for the feedback email address, so this asserts the section
+        offers an email address as a link. Call this where the link is the
+        expected state; it waits up to the timeout and times out if absent.
+        """
+        return self.is_showing(self.sel("feedback_automationexercise_com_link"))
+
     def has_visible_steps(self) -> bool:
         """True once at least one step item is present. WAITS for the family.
 
@@ -130,9 +150,7 @@ class TestCasesPage(BasePage):
         it answers "yes, still here" reliably even while the panel is still
         expanding.
         """
-        return self.is_loaded() and self.url_matches(
-            f"{self.get_url().split('?')[0]}"
-        ) and self.get_path().rstrip("/") == self.page_url().rstrip("/")
+        return self.is_loaded() and self.get_path().rstrip("/") == self.page_url().rstrip("/")
 
     # ── actions ──────────────────────────────────────────────
     def open_first_test_case(self) -> None:
