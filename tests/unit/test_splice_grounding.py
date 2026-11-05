@@ -291,3 +291,24 @@ def test_the_notes_addition_body_claims_nothing_about_the_tests():
     from core import context_update as cu
     body = cu.render_addition_body("AB-1", cu.Additions())
     assert "its tests passed" not in body and "once the story's tests pass on main" in body
+
+
+# ── F45: a page missing from the inventory is what the gate reports ─────
+
+def test_a_missing_page_is_reported_before_any_other_gate(monkeypatch):
+    """5 Nov 2026, SCRUM-292: the repair stopped on a page the inventory lacks,
+    then the gate refused an undefined step and the blocked comment named
+    that, with advice to edit the test case."""
+    import pytest
+    from core.blocked import blocked_comment
+    page_err = ("Selector inventory error in 'pages/reports_list_page.py': class "
+                "ReportsListPage sets INVENTORY_PAGE = 'reports_list_zz', which is not a "
+                "page in the app inventory. Available pages: home.")
+    monkeypatch.setattr(coder, "validate_page_object_selectors", lambda *a, **k: [page_err])
+    monkeypatch.setattr(coder, "validate_step_definitions_complete",
+                        lambda *a, **k: ["Step coverage error in 'tests/step_defs/x.py': ..."])
+    with pytest.raises(coder.GateFailure) as stop:
+        coder._validate_generated_files([], "AB-1")
+    assert "reports_list_zz" in str(stop.value) and stop.value.errors == [page_err]
+    text = blocked_comment("AB-1", "0" * 16, stop.value.errors)
+    assert "plan_inventory page" in text and "reports_list_zz" in text

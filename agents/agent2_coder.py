@@ -2430,6 +2430,24 @@ def _validate_generated_files(
     By the time this raises, the LLM has already been given a chance
     to self-correct via _attempt_step_coverage_repair.
     """
+    # A page the inventory does not have is checked FIRST (F45). The repair
+    # loop stops on it - no repair can add a page - and leaves the files as
+    # they were, so a later check (a step left undefined, say) used to refuse
+    # them and the blocked comment named that instead of the page (5 Nov 2026,
+    # SCRUM-292: "Step coverage error ..." with advice to edit the test case).
+    page_errors = [e for e in validate_page_object_selectors(generated_files, PROJECT_ROOT)
+                   if pages_missing_from_inventory([e], PROJECT_ROOT)]
+    if page_errors:
+        missing = pages_missing_from_inventory(page_errors, PROJECT_ROOT)
+        for err in page_errors:
+            logger.error(f"  - {err}")
+        raise GateFailure(
+            f"Inventory gate failed for {story_id}: the generated code needs page(s) the "
+            f"app inventory does not have: {', '.join(missing)}. A person adds each page "
+            f"(scripts.plan_inventory page ...); no repair can.",
+            errors=page_errors,
+        )
+
     consistency_errors = validate_filename_consistency(generated_files)
     if consistency_errors:
         logger.error(
