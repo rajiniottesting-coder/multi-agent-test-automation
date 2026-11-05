@@ -2430,6 +2430,24 @@ def _validate_generated_files(
     By the time this raises, the LLM has already been given a chance
     to self-correct via _attempt_step_coverage_repair.
     """
+    # A page the inventory does not have is checked FIRST (F45). The repair
+    # loop stops on it - no repair can add a page - and leaves the files as
+    # they were, so a later check (a step left undefined, say) used to refuse
+    # them and the blocked comment named that instead of the page (5 Nov 2026,
+    # SCRUM-292: "Step coverage error ..." with advice to edit the test case).
+    page_errors = [e for e in validate_page_object_selectors(generated_files, PROJECT_ROOT)
+                   if pages_missing_from_inventory([e], PROJECT_ROOT)]
+    if page_errors:
+        missing = pages_missing_from_inventory(page_errors, PROJECT_ROOT)
+        for err in page_errors:
+            logger.error(f"  - {err}")
+        raise GateFailure(
+            f"Inventory gate failed for {story_id}: the generated code needs page(s) the "
+            f"app inventory does not have: {', '.join(missing)}. A person adds each page "
+            f"(scripts.plan_inventory page ...); no repair can.",
+            errors=page_errors,
+        )
+
     consistency_errors = validate_filename_consistency(generated_files)
     if consistency_errors:
         logger.error(
@@ -3899,6 +3917,12 @@ def _ensure_parsers_import(content: str) -> str:
     return "\n".join(lines)
 
 
+# What a spliced step function says when no page-object method checks its
+# sentence (F43). The splice stops on it: ai-update writes step definitions
+# only, a regeneration also extends the page objects.
+NEEDS_PAGE_METHOD = "needs a page-object method"
+
+
 def _generate_missing_step_functions(
     llm: LLMClient,
     existing_step_defs: str,
@@ -3937,9 +3961,11 @@ def _generate_missing_step_functions(
         "existing file (they are in scope). Use parsers.parse() for parameterised "
         "steps, a plain string otherwise.\n"
         "  4. Declare every step the feature uses; steps are module-scoped, so duplicates are safe.\n"
-        "  5. Call ONLY page-object methods listed below, by their exact names. "
-        "If no listed method reads what a step asserts, assert with one that "
-        "does - never invent a method.\n"
+        "  5. Call ONLY page-object methods listed below, by their exact names - "
+        "never invent a method. Each function checks exactly what its own "
+        "sentence states. If NO listed method checks that, do NOT substitute one "
+        "that checks something else: write the function with the single body line "
+        f"`raise NotImplementedError(\"{NEEDS_PAGE_METHOD}: <what the step checks>\")`.\n"
     )
     if page_objects_block:
         user += "\n" + page_objects_block
@@ -4080,6 +4106,21 @@ def _splice_step_defs_incremental(
                 "Splice: LLM returned no usable step function(s) — regenerating whole."
             )
             return _whole()
+        # 5 Nov 2026, SCRUM-293: told to "assert with one that does" when no
+        # page-object method read the new step, the writer reused an unrelated
+        # check (title links for a feedback section) - a step that passes
+        # whatever the page shows. Now it says so, and the update stops.
+        needs = [m.group(1).strip() for f in new_funcs
+                 for m in re.finditer(re.escape(NEEDS_PAGE_METHOD) + r":\s*([^\"']+)", f)]
+        if needs:
+            raise GateFailure(
+                f"Incremental update of {step_defs_path}: {len(needs)} new step(s) need a "
+                f"page-object method no page object has. `ai-update` writes step "
+                f"definitions only; add `ai-regenerate` to the story instead - a "
+                f"regeneration also extends the page objects.",
+                errors=[f"Step needs a page-object method in '{step_defs_path}': {n}. "
+                        f"No page object offers a method that checks it; `ai-update` "
+                        f"cannot add one - add `ai-regenerate` to the story." for n in needs])
 
         spliced = existing.rstrip() + "\n\n\n" + "\n\n\n".join(new_funcs) + "\n"
         if "parsers." in "\n".join(new_funcs) and "parsers" not in existing:
@@ -4132,6 +4173,26 @@ def _splice_step_defs_incremental(
         "untouched.", len(new_funcs), step_defs_path,
     )
     return spliced, "spliced"
+
+
+UPDATE_STOPPED = "[agent2:update-stopped]"
+
+
+def _hand_back_update(jira, story_id: str, stop: Exception) -> None:
+    """One comment with what the update could not do, and the update label off
+    (adding it again retries). Never raises."""
+    label = load_agent_config().get("update_label", "ai-update")
+    errors = getattr(stop, "errors", None) or [str(stop)]
+    try:
+        jira.add_comment(story_id, "\n".join(
+            [f"{UPDATE_STOPPED} {stop}", ""] + [f"- {e}" for e in errors]
+            + ["", f"`{label}` was removed so the scheduled scan does not repeat this stop."]))
+    except Exception as e:                                         # noqa: BLE001
+        logger.warning(f"Could not tell {story_id} why the update stopped: {e}")
+    try:
+        jira.remove_label(story_id, label)
+    except Exception as e:                                         # noqa: BLE001
+        logger.warning(f"Could not remove '{label}' from {story_id}: {e}")
 
 
 def run_update(story_id: str, dry_run: bool = False) -> dict:
@@ -4329,10 +4390,17 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
     logger.info(f"Updating {step_defs_path} for the spliced feature file...")
     # Backlog 2.4 — splice only the new step functions in (keeping passing ones
     # untouched); falls back to a whole regeneration on any ambiguity.
-    new_step_defs_content, step_defs_mode = _splice_step_defs_incremental(
-        llm, gh, feature_file_path, spliced_content,
-        step_defs_path, ctx, references, page_inventory,
-    )
+    try:
+        new_step_defs_content, step_defs_mode = _splice_step_defs_incremental(
+            llm, gh, feature_file_path, spliced_content,
+            step_defs_path, ctx, references, page_inventory,
+        )
+    except GateFailure as stop:
+        # The update cannot do this (F43): say so once and take the label
+        # off, so the schedule does not pay for the same stop every scan.
+        if not dry_run:
+            _hand_back_update(jira, story_id, stop)
+        raise
     logger.info(f"Step-def update mode: {step_defs_mode}")
 
     # ════════════════════════════════════════════════════════════════════

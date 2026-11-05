@@ -4,6 +4,17 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a spliced step never substitutes an unrelated check (#302)
+
+**Why:** SCRUM-293's `ai-update` spliced a step for a feedback section no page object could read, and the writer - told to "assert with one that does" - asserted the title links instead: a step that passes whatever the page shows. The notes-addition PR of the same story said its tests had passed, though the story's PR was merged while they ran and two failed.
+
+- `agents/agent2_coder._generate_missing_step_functions`: a step no listed method checks is written as `raise NotImplementedError("needs a page-object method: ...")`, never with another check; the splice stops with the step named and `ai-regenerate` as the remedy; `run_update` posts one `[agent2:update-stopped]` comment and removes the update label
+- `core.context_update.render_addition_body`: claims nothing about the story's tests; merge once they pass on main
+- `_validate_generated_files`: a page the inventory does not have is checked first, so the blocked comment names the page and the `plan_inventory page` command, not whichever later check failed (SCRUM-292)
+- Tests in `test_splice_grounding.py`; TEST_TRACK E98-E100. Not tested live yet: E98-E100
+
+---
+
 ## November 2026 — Agent 2 names what a scenario does not check; text compared without letter case (#298)
 
 **Why:** SCRUM-293's pull request left out one expected result of a test case (an element the inventory lacked) and still claimed it automated - a marker proves pairing, not content (L31) - and its heading checks failed because the page shows the heading in capitals.

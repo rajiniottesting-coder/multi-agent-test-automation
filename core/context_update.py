@@ -1256,8 +1256,12 @@ def extract_note_additions(llm, story: dict, story_key: str, test_cases: list, s
 
 
 def render_addition_body(story_key: str, res: Additions, notes_report: str = "") -> str:
+    # Merged is all this run knows: a pull request may merge before its tests
+    # finish, or red (5 Nov 2026: SCRUM-293's merged during its run, two tests
+    # then failing on main) - so the body claims nothing about them.
     lines = [f"Notes addition proposed by Agent 0 for **{story_key}**, whose pull request "
-             "merged: its feature is live and its tests passed.", "",
+             "merged. Its facts come from the story and its approved test cases; merge "
+             "this once the story's tests pass on main.", "",
              "Each addition is a fact a future story on this feature needs and the notes did "
              "not state. **Check every line against the story and its test cases**, edit or "
              "drop any you do not want, then merge.", ""]

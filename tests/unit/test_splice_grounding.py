@@ -245,3 +245,70 @@ def test_run_hands_its_files_to_the_owner_splice():
     calls = [c for c in ast.walk(run) if isinstance(c, ast.Call)
              and ast.unparse(c.func).endswith("splice_owner_files")]
     assert calls and all(any(k.arg == "batch_files" for k in c.keywords) for c in calls)
+
+
+# ── 5. a step no page-object method checks is never given another check ─
+
+NEEDS = '''@then(parsers.parse('the basket should list "{name}" with count {n:d}'))
+def _(widget_page, name, n):
+    raise NotImplementedError("needs a page-object method: the count of a named item")
+'''
+
+
+def test_the_writer_is_told_not_to_substitute_an_unrelated_check():
+    llm = ScriptedLLM(GOOD)
+    _splice(llm)
+    assert "do NOT substitute one that checks something else" in llm.prompts[0]
+    assert coder.NEEDS_PAGE_METHOD in llm.prompts[0]
+    assert "assert with one that does" not in llm.prompts[0]
+
+
+def test_a_step_no_method_checks_stops_the_update_with_the_remedy():
+    """5 Nov 2026, SCRUM-293: the spliced feedback step asserted title links."""
+    import pytest
+    llm = ScriptedLLM(NEEDS)
+    with pytest.raises(coder.GateFailure) as stop:
+        _splice(llm)
+    assert "ai-regenerate" in str(stop.value)
+    (err,) = stop.value.errors
+    assert "the count of a named item" in err and "test_fake_basket.py" in err
+
+
+def test_a_stopped_update_tells_the_story_once_and_takes_the_label_off(monkeypatch):
+    from unittest.mock import MagicMock
+    monkeypatch.setattr(coder, "load_agent_config", lambda *a: {"update_label": "go-update"})
+    jira = MagicMock()
+    stop = coder.GateFailure("needs a method", errors=["Step needs a page-object method ..."])
+    coder._hand_back_update(jira, "AB-1", stop)
+    body = jira.add_comment.call_args[0][1]
+    assert body.startswith(coder.UPDATE_STOPPED) and "Step needs a page-object method" in body
+    jira.remove_label.assert_called_once_with("AB-1", "go-update")
+    src = __import__("inspect").getsource(coder.run_update)
+    assert "_hand_back_update(jira, story_id, stop)" in src
+
+
+def test_the_notes_addition_body_claims_nothing_about_the_tests():
+    from core import context_update as cu
+    body = cu.render_addition_body("AB-1", cu.Additions())
+    assert "its tests passed" not in body and "once the story's tests pass on main" in body
+
+
+# ── F45: a page missing from the inventory is what the gate reports ─────
+
+def test_a_missing_page_is_reported_before_any_other_gate(monkeypatch):
+    """5 Nov 2026, SCRUM-292: the repair stopped on a page the inventory lacks,
+    then the gate refused an undefined step and the blocked comment named
+    that, with advice to edit the test case."""
+    import pytest
+    from core.blocked import blocked_comment
+    page_err = ("Selector inventory error in 'pages/reports_list_page.py': class "
+                "ReportsListPage sets INVENTORY_PAGE = 'reports_list_zz', which is not a "
+                "page in the app inventory. Available pages: home.")
+    monkeypatch.setattr(coder, "validate_page_object_selectors", lambda *a, **k: [page_err])
+    monkeypatch.setattr(coder, "validate_step_definitions_complete",
+                        lambda *a, **k: ["Step coverage error in 'tests/step_defs/x.py': ..."])
+    with pytest.raises(coder.GateFailure) as stop:
+        coder._validate_generated_files([], "AB-1")
+    assert "reports_list_zz" in str(stop.value) and stop.value.errors == [page_err]
+    text = blocked_comment("AB-1", "0" * 16, stop.value.errors)
+    assert "plan_inventory page" in text and "reports_list_zz" in text
