@@ -39,20 +39,14 @@ that never signs in starts with an empty cart on every run, with nothing to
 clean up - the one way in this application to own the cart's starting state
 without a clearing step.
 
-Use it whenever a scenario depends on a quantity. As a logged-out shopper, add
-3 of `Men Tshirt` and the cart shows `Men Tshirt` with quantity 3. Signed in as
-the shared `registered` account, the same scenario can find a quantity left
-behind by an earlier run.
-
-Even so, phrase cart outcomes RELATIVELY - "the cart contains `Men Tshirt` with
-quantity 3" - never "the cart contains only...", "exactly...", or "the cart is
-empty". The inventory marks the cart persistent: code generation accepts an
-exact quantity only in a scenario that never signs in, and the test-case check
+Even so, phrase cart outcomes RELATIVELY - "the cart contains `Men Tshirt`" -
+never "the cart contains only...", "exactly...", or "the cart is
+empty". The inventory marks the cart persistent: and the test-case check
 rejects "only", "exactly", a row count and "empty" on the cart in every case.
 
 ## Cart rows are a family
 
-Each row shows product name, price, quantity and total, plus a delete control.
+Each row shows product name and price, plus a delete control.
 Row selectors match every row, so narrow to the product the test added rather
 than assuming a row index.
 
