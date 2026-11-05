@@ -1472,6 +1472,14 @@ def _norm_path(path: str) -> str:
     return (path or "").replace("\\", "/").lstrip("./")
 
 
+def _subclasses_base_page(node) -> bool:
+    return any(isinstance(b, ast.Name) and b.id == "BasePage" for b in node.bases)
+
+
+def _defines_methods(node) -> bool:
+    return any(isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) for n in node.body)
+
+
 def _committed_inventory_pages(project_root) -> dict:
     """{inventory page: (class name, file)} for the page objects on disk."""
     found: dict = {}
@@ -1614,8 +1622,22 @@ def validate_page_object_selectors(
             inv_page = _class_inventory_page(node)
 
             # A class that never calls sel() and declares no INVENTORY_PAGE is
-            # not a page object (a helper, an enum, a mixin) — skip it.
+            # not a page object (a helper, an enum, a mixin) — skip it. Unless
+            # it is a NEW BasePage subclass with methods: that is a page object
+            # anchored to nothing (5 Nov 2026, SCRUM-292: for a page the
+            # inventory lacked, the model declared no INVENTORY_PAGE and
+            # navigated by a hard-coded path, so no check named the missing
+            # page - the third way round it, after an unknown key and
+            # borrowing another page object's page).
             if inv_page is None and not sel_keys:
+                if (_subclasses_base_page(node) and _defines_methods(node)
+                        and not (Path(project_root or ".") / path).is_file()):
+                    errors.append(
+                        f"{_ERROR_PREFIX} in '{path}': class {node.name} is a new page "
+                        f"object with no INVENTORY_PAGE. A page object implements a page "
+                        f"of the app inventory: set INVENTORY_PAGE to its key. If the "
+                        f"page is not in the inventory, set the key it would have - a "
+                        f"person adds the page; never work around it.")
                 continue
 
             if inv_page is None:
