@@ -542,22 +542,31 @@ class TestSelectorErrorsAreRepairable:
         )
         errors = _collect_repairable_errors([_gf("pages/ghost_page.py", page)])
         selector = [e for e in errors if "Selector inventory error" in e]
-        assert len(selector) == 1
+        # the literal selector, and (since F46) the missing INVENTORY_PAGE
+        assert any("literal selector" in e for e in selector)
         assert list(_group_validator_errors_by_file(selector)) == [
             "pages/ghost_page.py"]
 
-    def test_a_clean_page_object_adds_no_repair_work(self):
-        """A page object that declares no INVENTORY_PAGE and resolves no
-        selectors is not a selector problem, whatever the configured app."""
-        clean = (
+    def test_a_new_page_object_naming_no_page_is_a_selector_problem(self):
+        """F46 (5 Nov 2026, SCRUM-292): a NEW page object with methods that
+        declares no INVENTORY_PAGE anchors nothing - the model's way round a
+        page missing from the inventory. A class that is not a page object
+        (no BasePage, or no methods) is still left alone."""
+        quiet = (
             'from pages.base_page import BasePage\n\n\n'
             'class QuietPage(BasePage):\n'
-            '    """A helper page object that resolves nothing."""\n\n'
+            '    """A page object that resolves nothing."""\n\n'
             '    def describe(self) -> str:\n'
             '        return "nothing to see here"\n'
         )
-        errors = _collect_repairable_errors([_gf("pages/quiet_page.py", clean)])
-        assert [e for e in errors if "Selector inventory error" in e] == []
+        errors = _collect_repairable_errors([_gf("pages/quiet_page.py", quiet)])
+        (err,) = [e for e in errors if "Selector inventory error" in e]
+        assert "new page object with no INVENTORY_PAGE" in err
+        helper = 'class Helper:\n    def describe(self) -> str:\n        return "x"\n'
+        stub = 'from pages.base_page import BasePage\n\n\nclass Stub(BasePage):\n    pass\n'
+        for name, body in (("pages/helper_page.py", helper), ("pages/stub_page.py", stub)):
+            assert [e for e in _collect_repairable_errors([_gf(name, body)])
+                    if "Selector inventory error" in e] == []
 
 
 # =====================================================================

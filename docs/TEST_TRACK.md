@@ -290,6 +290,7 @@ Older rows name the sessions S1-S8 of the first plan: **S1** is Run A, **S2** is
 | E45b | #248 | Three or more stories released to ai-ready at once (or labelled by hand, then Agent 1 run once) | Agent 1 takes 2, then starts itself again (`chain` 2) for the rest; no run when none waits | ⬜ | |
 | E45c | #248 | An Agent 0 run with nothing released, and an Agent 1 run that fails | "no story waits for it" - nothing started; the failed Agent 1 run has no hand-off step run (the schedule retries) | ⬜ | Partly: "no story waits for it" on idle runs (3-4 Nov); the cap held at 5 - and exposed restarts for a blocked story (#262) |
 | E45d | #248 | Optional: the Jira Automation rule on `human-approved` (GUIDE, "Hand-off between agents") | Approving a story starts Agent 2 (event `repository_dispatch`) within a minute, in scan mode | ⬜ | |
+| E101 | Run C fixes | SCRUM-292 run again by key (a page the inventory lacks; the model writes a page object naming no page) | The new page object with no INVENTORY_PAGE is refused; the repair names the page; the run stops as a missing page and the blocked comment gives the `plan_inventory page` command | ⬜ | |
 | E100 | Run C fixes | SCRUM-292 run again by key (its page is not in the inventory; its steps also break another rule) | The `[agent2:blocked]` comment names the missing page and the `plan_inventory page` command - not the other rule; a new `reasons:` digest, so it is posted | ⬜ | |
 | E99 | Run C fixes | The next notes-addition PR after a story merges | The body says the PR merged and to merge it once the story's tests pass on main; it never says the tests passed | ⬜ | |
 | E98 | Run C fixes | `ai-update` on a story whose edited test case needs a check no page object offers (SCRUM-293's feedback step before a page-object method exists) | No step function asserts something else instead; the update stops with the step named and `ai-regenerate` as the remedy; one `[agent2:update-stopped]` comment; `ai-update` removed | ⬜ | |
@@ -432,6 +433,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
+| #303 | A new page object must name its page in the inventory | | E101 | |
 | #302 | A spliced step never substitutes an unrelated check; the notes PR claims nothing about tests; a missing page is what the gate reports | | E98-E100 | |
 | #298 | Agent 2 names each expected result a scenario does not check; displayed text compared without letter case | | E96, E97 | |
 | #296 | No test pins a tunable config value (three more after #288); module_budget_chars lowered for E23 | | E95 | |
