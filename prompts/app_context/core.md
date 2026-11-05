@@ -132,6 +132,7 @@ SHOWN, not what it says.
     /  →  /products  →  /product_details/<id>  →  cart  →  checkout  →  payment
 
 - 'Contact us' in the top navigation opens the Contact Us page, which shows a form with Name, Email, Subject and Message fields. After a successful submission the Home button returns to the home page (`/`).
+- 'Test Cases' in the top navigation opens the Test Cases page (headed "Test Cases"); clicking a listed test case's title reveals its steps in place without navigating away. See `test_cases.md`.
 
 ## Global rules
 
