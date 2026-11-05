@@ -10,7 +10,8 @@ This document records substantive changes to the framework in reverse-chronologi
 
 - `agents/agent2_coder._generate_missing_step_functions`: a step no listed method checks is written as `raise NotImplementedError("needs a page-object method: ...")`, never with another check; the splice stops with the step named and `ai-regenerate` as the remedy; `run_update` posts one `[agent2:update-stopped]` comment and removes the update label
 - `core.context_update.render_addition_body`: claims nothing about the story's tests; merge once they pass on main
-- Tests in `test_splice_grounding.py`; TEST_TRACK E98, E99. Not tested live yet: E98, E99
+- `_validate_generated_files`: a page the inventory does not have is checked first, so the blocked comment names the page and the `plan_inventory page` command, not whichever later check failed (SCRUM-292)
+- Tests in `test_splice_grounding.py`; TEST_TRACK E98-E100. Not tested live yet: E98-E100
 
 ---
 
