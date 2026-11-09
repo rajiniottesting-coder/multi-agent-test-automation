@@ -4,6 +4,21 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — the golden-rule guard sees issue keys, UI text and the app's name; the leaks it found are gone (#318)
+
+**Why:** a review of this run's fixes against the golden rule found framework comments, unit tests and one agent prompt naming the application. The harvest-based guard (`test_no_framework_file_names_anything_the_application_coins`) did not see these, because it harvested only element keys, class names, selector fragments and file stems:
+- the Jira project's issue keys (258 in 59 files)
+- a page heading and other UI text quoted in selectors
+- the app's host
+- story history written in plain words (a page's sections, its headings)
+
+- `tests/unit/test_committed_tree_resolves.py`: the guard also harvests the issue-key prefix from the markers of the application's own feature files, multi-word or address UI text quoted in inventory selectors, and the configured app name and host; a key matches only as `KEY-<number>`; "Test Cases" joins the framework's conventional vocabulary (the issue type Agent 1 creates); a test fails if the new sources stop being harvested
+- Framework files: issue keys replaced by the neutral `PRJ-` (comments, docstrings, help text, fixtures; none was functional); story-history comments rewritten without the app's pages, sections or texts; the letter-case prompt example and its test use a neutral heading; a test that read the inventory by its file name reads it from `config.yaml`
+- GUIDE, README and TECHNICAL_DEEP_DIVE examples use `PRJ-`; CHANGES, VALIDATION, TEST_TRACK, AI_CONCEPTS and DECISIONS keep their history
+- TEST_TRACK E105. Not tested live yet: E105
+
+---
+
 ## November 2026 — a story never regenerates another story's test files (#314)
 
 **Why:** SCRUM-330 (a new story on the Test Cases page) was planned into the existing Test Cases feature file and its step definitions, which SCRUM-293 owns. Agent 2 writes whole files, so its pull request deleted both of SCRUM-293's scenarios and their steps. No gate, review or test run noticed: Agent 0 saw no affected test, Agent 3 approved, and the suite passed with fewer tests.
