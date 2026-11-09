@@ -320,8 +320,7 @@
         "test_case_panels": ".panel-group .panel"
       },
       "planned": [
-        "test_case_search_input",
-        "test_case_panels"
+        "test_case_search_input"
       ],
       "multi_match": [
         "test_case_titles",
