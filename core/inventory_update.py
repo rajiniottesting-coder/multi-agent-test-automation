@@ -486,9 +486,12 @@ def render_body(upd: InventoryUpdate, inventory_path: str, digest: str,
     lines += _table("Selectors replaced - the element is still there, its selector changed",
                     upd.replaced, [el, ("Old", lambda r: f"`{r['old']}`"),
                                    ("New", lambda r: f"`{r['new']}`")])
+    # The Page column says a whole planned page went live; when none did it
+    # would be an empty column, so it is shown only when a row uses it.
+    page_col = [("Page", lambda r: "page confirmed live" if r.get("page_confirmed") else "")]
     lines += _table("Planned elements now live - confirmed", upd.confirmed,
-                    [el, sel, ("Page", lambda r: "page confirmed live" if r.get("page_confirmed")
-                               else "")],
+                    [el, sel] + (page_col if any(r.get("page_confirmed")
+                                                 for r in upd.confirmed) else []),
                     "Each was declared `planned` from the design; tonight's crawl found it, so "
                     "it leaves the `planned` list. A test using it can now pass.")
     lines += _table("Added - live elements no selector covered", upd.added, [el, sel])
