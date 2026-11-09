@@ -242,7 +242,10 @@ def test_a_planned_key_found_live_is_confirmed():
     assert upd.inventory["pages"]["p"]["elements"]["coupon"] == "[data-test='coupon']"
     assert upd.confirmed == [{"page": "p", "element": "coupon",
                               "selector": "[data-test='coupon']", "page_confirmed": False}]
-    assert "Planned elements now live - confirmed (1)" in iu.render_body(upd, "inv.json", "d")
+    body = iu.render_body(upd, "inv.json", "d")
+    assert "Planned elements now live - confirmed (1)" in body
+    # No planned page went live, so the table has no (empty) Page column.
+    assert "| Element | Selector |" in body and "| Element | Selector | Page |" not in body
 
 
 def test_a_planned_key_still_waiting_is_never_removed():
