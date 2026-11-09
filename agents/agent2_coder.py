@@ -61,6 +61,7 @@ from validators.page_object_contract import validate_extended_page_objects_keep_
 from validators.opening_step import validate_scenarios_open_a_page_first
 from validators.method_resolution_validator import (
     pages_missing_from_inventory,
+    elements_missing_from_inventory,
     validate_method_resolution,
     validate_page_object_selectors,
     validate_no_duplicate_page_object_methods,
@@ -3079,6 +3080,7 @@ def _attempt_step_coverage_repair(
     page_inventory: str,
     ctx: AppContext,
     max_retries: int = 4,
+    missing_elements: dict | None = None,
 ) -> list[GeneratedFile]:
     """If validators find issues in the generated files, give the LLM up to
     `max_retries` chances to fix them with explicit feedback.
@@ -3115,6 +3117,14 @@ def _attempt_step_coverage_repair(
         # inventory is curated by a person. Repairs only delete what the page
         # object cannot anchor (PRJ-284). Stop before spending; the final
         # gate reports it and the blocked comment says how to add the page.
+        # An element the inventory does not have is recorded with the
+        # validator's own message: a repair may drop the behaviour that used
+        # it (a partial pull request), but when the story is refused in the
+        # end, that element is the cause the person is told (F49).
+        if missing_elements is not None:
+            for err in all_errors:
+                for name in elements_missing_from_inventory([err], PROJECT_ROOT):
+                    missing_elements.setdefault(name, err)
         missing_pages = pages_missing_from_inventory(all_errors, PROJECT_ROOT)
         if missing_pages:
             logger.warning(
@@ -5096,6 +5106,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
     # If validator finds missing decorators, give the LLM up to 2 chances
     # to fix the broken step def file with explicit feedback. Only the
     # broken file is regenerated (cheap), and the cap bounds total cost.
+    missing_elements: dict = {}
     generated_files = _attempt_step_coverage_repair(
         generated_files,
         llm,
@@ -5105,6 +5116,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
         page_inventory,
         ctx,
         max_retries=4,
+        missing_elements=missing_elements,
     )
     output = CodeGenerationOutput(
         feature_name=plan.feature_name,
@@ -5342,6 +5354,16 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
                 "there is nothing to open a pull request for.",
                 errors=[f"{g.key}: {g.reason}" for g in batch_gaps])
     except ValueError as e:
+        # An element the inventory lacks, seen during the repair, is the cause
+        # named first (F49): the repair can only delete what used it, and the
+        # errors left at the end (calls to the deleted methods) blame the model.
+        if missing_elements:
+            e = GateFailure(
+                f"Inventory gate failed for {story_id}: the test cases need element(s) the "
+                f"app inventory does not have: {', '.join(missing_elements)}. A person adds "
+                "each (scripts.plan_inventory element ...); no repair can.",
+                errors=list(missing_elements.values()) + list(getattr(e, "errors", None) or [str(e)]))
+            logger.error(str(e))
         # Tell the person once which rules could not be met, so the story stops
         # being retried on unchanged input (core.blocked). Every gate refusal is
         # a ValueError; the final gate's carries the remaining errors.
@@ -5349,7 +5371,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
             blocked.post_blocked_once(jira, story_id, input_fp,
                                       getattr(e, "errors", None) or [str(e)])
         show_refused_files(generated_files)
-        raise
+        raise e
 
     # 4e. WHAT A SCENARIO LEAVES OUT (F39): a marker proves pairing, not that
     # the scenario checks what its test case states. One call, after the gate,

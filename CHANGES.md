@@ -4,6 +4,17 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a story refused after its element was missing is told so (#319)
+
+**Why:** a story needed an element the inventory did not have. The repair loop spent four attempts (about $0.80): each time the validator said the key was on no page, and the model deleted the page-object methods that used it. The step definitions still called them, and the story was refused for *method resolution*. The blocked comment blamed the model and the test case. #302 (F45) gave the missing **page** this treatment; a missing **element** had none.
+
+- `validators/method_resolution_validator.elements_missing_from_inventory`: `page.key` for each element a page object uses that is on no inventory page (a near-miss spelling stays repairable)
+- `agents/agent2_coder`: the repair loop records each missing element with the validator's message; it still repairs, since dropping the behaviour can leave a partial pull request. If the story is refused in the end, the refusal names the missing element(s) first, with the remaining errors after
+- `core/blocked`: the blocked comment names the element(s) and gives the `scripts.plan_inventory element` command instead of blaming the test case
+- Tests in `test_page_missing_from_inventory.py`; TEST_TRACK E106. Not tested live yet: E106
+
+---
+
 ## November 2026 — the golden-rule guard sees issue keys, UI text and the app's name; the leaks it found are gone (#318)
 
 **Why:** a review of this run's fixes against the golden rule found framework comments, unit tests and one agent prompt naming the application. The harvest-based guard (`test_no_framework_file_names_anything_the_application_coins`) did not see these, because it harvested only element keys, class names, selector fragments and file stems:
