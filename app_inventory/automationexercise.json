@@ -321,8 +321,7 @@
         "test_case_panel_headings": ".panel-group .panel-heading"
       },
       "planned": [
-        "test_case_search_input",
-        "test_case_panel_headings"
+        "test_case_search_input"
       ],
       "multi_match": [
         "test_case_titles",
@@ -330,7 +329,7 @@
         "test_case_panels",
         "test_case_panel_headings"
       ],
-      "multi_match_note": "Lists: one title link per test case, one step item per step (inside collapsed panels until a title is clicked)."
+      "multi_match_note": "Lists: one panel, one panel heading and one title link per test case, one step item per step (inside collapsed panels until a title is clicked)."
     }
   },
   "_starting_state": {
