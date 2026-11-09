@@ -597,8 +597,8 @@ def log_usage_summary(context: str) -> dict:
     """Log token-usage and cost as two separate lines; return the summary dict.
 
     Example log output:
-        LLM TOKEN USAGE [story SCRUM-20]: 5 calls, 48,213 input + 9,877 output = 58,090 total tokens
-        LLM COST [story SCRUM-20]: $0.2928 total (input $0.1446 + output $0.1482)
+        LLM TOKEN USAGE [story PRJ-20]: 5 calls, 48,213 input + 9,877 output = 58,090 total tokens
+        LLM COST [story PRJ-20]: $0.2928 total (input $0.1446 + output $0.1482)
     """
     s = _tracker.summary()
     # Token usage and cost are logged as SEPARATE lines: tokens are exact

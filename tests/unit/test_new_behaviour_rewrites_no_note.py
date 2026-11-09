@@ -1,6 +1,6 @@
 """A story that changes nothing existing rewrites no reference note.
 
-3 Nov 2026, validation of SCRUM-283 ("Write a review for a product" - coverage
+3 Nov 2026, validation of PRJ-283 ("Write a review for a product" - coverage
 of a review form the application already has): the story went straight to
 ai-ready, so Agent 0 ran the hand-over context update at once. Asked which
 notes the story makes UNTRUE, the model narrowed a correct, fuller note

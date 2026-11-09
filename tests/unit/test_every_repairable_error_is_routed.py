@@ -1,6 +1,6 @@
 """Every error the repair loop collects reaches a file the model is asked to fix.
 
-Validation story SCRUM-187 (20 Oct 2026): a new rule worded its errors
+Validation story PRJ-187 (20 Oct 2026): a new rule worded its errors
 `<path>: step ...`. The grouper reads `<rule> in '<path>':`, so it dropped the
 error, no repair was attempted, and the story failed at the final gate on
 feedback the model was never shown. The format contract in test_repair_loop.py
@@ -64,7 +64,7 @@ def test_a_routable_error_is_left_unchanged_and_one_naming_no_file_too():
 
 
 def test_the_reused_step_rule_itself_reaches_the_repair_loop(tmp_path):
-    """The exact SCRUM-187 failure: a re-defined Then that checks more than
+    """The exact PRJ-187 failure: a re-defined Then that checks more than
     the committed one. Its error must land on the generated step file."""
     d = tmp_path / "tests" / "step_defs"
     d.mkdir(parents=True)

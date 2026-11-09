@@ -13,7 +13,7 @@ NOTHING IS WRITTEN WITHOUT CONFIRMATION
              file (default reports/marker_backfill.json). No file is changed.
 
                  python scripts/backfill_markers.py propose
-                 python scripts/backfill_markers.py propose --story SCRUM-187
+                 python scripts/backfill_markers.py propose --story PRJ-187
 
              --story (repeatable) limits the candidates to test cases owned by
              those stories. Use it when the project holds test cases from

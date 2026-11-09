@@ -52,7 +52,7 @@ class _Scope:
 
 @pytest.mark.parametrize("selector,expected", [
     ("placeholder=Some hint text", "get_by_placeholder"),
-    ("label=Email Address", "get_by_label"),
+    ("label=Work email", "get_by_label"),
     ("alt=Company logo", "get_by_alt_text"),
     ("title=Close", "get_by_title"),
 ])

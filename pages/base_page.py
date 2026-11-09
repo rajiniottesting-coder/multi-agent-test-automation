@@ -1042,8 +1042,8 @@ class BasePage:
             # WAIT for the row before calling it missing. This is usually the
             # first call after a navigation - open the listing, follow a link
             # to it - and counting at once reads the page before its rows are
-            # drawn. A run followed "View Cart" and immediately asked for a
-            # product's row: zero, failed, while the next scenario's waiting
+            # drawn. A run followed a link to a listing and immediately asked for a
+            # item's row: zero, failed, while the next scenario's waiting
             # reader found the same row on the same kind of page. A row that
             # is really absent still fails, after the default timeout, with
             # the message below.

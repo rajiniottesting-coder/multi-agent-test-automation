@@ -603,7 +603,7 @@ def resolve_story_key(cli_arg: str | None, pr_branch: str | None = None) -> str:
          like PROJ-123, e.g., 'auto/PROJ-123-feature' or 'feature/PROJ-99-foo')
       4. Raise — we can't guess
 
-    Branch names like 'auto/SCRUM-23-...' embed the *test case* key, not the
+    Branch names like 'auto/PRJ-23-...' embed the *test case* key, not the
     user story. After the initial resolution we ask Jira whether that key is
     a Test Case linked to a parent Story; if so we escalate to the Story so
     run-summary comments land where humans expect to read them.
@@ -619,7 +619,7 @@ def resolve_story_key(cli_arg: str | None, pr_branch: str | None = None) -> str:
 
     if pr_branch:
         # Use the centralized extractor from config — works for any
-        # Jira project prefix (SCRUM, PROD, MOBILE, BACKEND, etc.).
+        # Jira project prefix (PRJ, PROD, MOBILE, BACKEND, etc.).
         from config import extract_jira_key
         key = extract_jira_key(pr_branch)
         if key:
@@ -912,7 +912,7 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
 # ─────────────────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(description="Agent 5 (Reporter): post test results to Jira",
-        epilog=("example:\n  --story SCRUM-5"),
+        epilog=("example:\n  --story PRJ-5"),
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--story",

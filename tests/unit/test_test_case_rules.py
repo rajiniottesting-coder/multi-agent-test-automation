@@ -214,7 +214,7 @@ def test_impact_aware_draft_bad_twice_raises():
 # ─────────────────────────────────────────────────────────────
 # The rejection tells the model: "what it added is present, or what it removed
 # is gone". A rule that rejects that phrasing can never be satisfied (validation
-# story SCRUM-187 was rejected twice for "No row for '<item>' is present"). The
+# story PRJ-187 was rejected twice for "No row for '<item>' is present"). The
 # rule decides by MEANING - does the clause name an entry this test handles? -
 # not by a list of neighbouring words, so any word order and any wording works.
 

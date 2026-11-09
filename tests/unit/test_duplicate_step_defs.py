@@ -6,7 +6,7 @@ definitions are pytest FIXTURES and are MODULE-SCOPED, so two step-def modules
 declaring the same step text each resolve their own copy — they never collide.
 Verified empirically.
 
-The original SCRUM-54 belief ("pytest-bdd registers step definitions globally
+The original PRJ-54 belief ("pytest-bdd registers step definitions globally
 across the step_defs package") was false. The validator is now a no-op, which
 is what lets every generated step-def file be SELF-CONTAINED.
 

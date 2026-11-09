@@ -1,6 +1,6 @@
 """A Jira issue property reads back as the plain JSON that was stored.
 
-4 Nov 2026: Agent 5's second report on SCRUM-283 crashed - "'PropertyHolder'
+4 Nov 2026: Agent 5's second report on PRJ-283 crashed - "'PropertyHolder'
 object has no attribute 'get'" - reading its last-report fingerprint. The jira
 SDK parses an object value into a PropertyHolder (attributes, no .get()), and
 JiraClient.get_property returned that. Every reader that treats the value as

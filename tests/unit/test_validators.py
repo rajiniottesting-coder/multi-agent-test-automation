@@ -577,7 +577,7 @@ class TestPathPolicy:
 
 
 # =============================================================================
-# 5. Import resolution (Hotfix v3 — SCRUM-13 regression)
+# 5. Import resolution (Hotfix v3 — PRJ-13 regression)
 # =============================================================================
 class TestImportResolution:
     """The LLM hallucinated `from pages.record_detail_page import
@@ -615,7 +615,7 @@ class TestImportResolution:
 
 
 # =============================================================================
-# 6. Method resolution (Hotfix v5 — SCRUM-23 regression)
+# 6. Method resolution (Hotfix v5 — PRJ-23 regression)
 # =============================================================================
 class TestMethodResolution:
     """The LLM defines `click_logout()` in inventory_page.py but calls
@@ -886,7 +886,7 @@ def _widgets_page(body: str):
 
 
 class TestPageObjectSelectors:
-    """SCRUM-104: Agent 2 shipped a page object holding four raw CSS literals.
+    """PRJ-104: Agent 2 shipped a page object holding four raw CSS literals.
 
     The rule was enforced only by tests/unit/test_page_object_selectors.py,
     which runs in Agent 4 — after the LLM spend, after the PR, and reported
@@ -895,7 +895,7 @@ class TestPageObjectSelectors:
     """
 
     def test_literal_selectors_in_a_page_object_are_caught(self, project_root: Path):
-        """The exact SCRUM-104 shape: selectors as class constants."""
+        """The exact PRJ-104 shape: selectors as class constants."""
         page_obj = gf("pages/widgets_page.py", textwrap.dedent("""
             from pages.base_page import BasePage
 
@@ -1051,7 +1051,7 @@ def _configured_inventory() -> dict:
 
 
 class TestMultiMatchEnforcement:
-    """SCRUM-104 again, one layer up.
+    """PRJ-104 again, one layer up.
 
     The first fix stopped page objects inventing selectors. It did not stop
     them using a legitimate inventory key that happens to match a whole family
@@ -1084,7 +1084,7 @@ class TestMultiMatchEnforcement:
         assert "rows_first" in errors[0]
 
     def test_an_async_family_is_never_offered_an_index_pin(self, project_root: Path):
-        """SCRUM-104, 31 Jul 2026. `autocomplete_option_first` (>> nth=0) was
+        """PRJ-104, 31 Jul 2026. `autocomplete_option_first` (>> nth=0) was
         added as the 'safe' way to pick a suggestion. The app renders a loading
         row while its request is in flight, so nth=0 WAS that placeholder:
         waiting for it succeeded, clicking it selected nothing, the form was
@@ -1148,7 +1148,7 @@ class TestMultiMatchEnforcement:
                 assert key in families, f"{page}.{key} async but not multi_match"
 
     def test_the_error_never_tells_the_model_to_invent_a_key(self, project_root: Path):
-        """SCRUM-103, 31 Jul 2026: the remedy used to read "add a '<key>_first'
+        """PRJ-103, 31 Jul 2026: the remedy used to read "add a '<key>_first'
         key to the inventory". The model cannot edit the inventory and rule 15
         forbids inventing keys, so it wrote self.sel('autocomplete_option_first')
         for a key that did not exist and the run died on the next check. The
@@ -1181,7 +1181,7 @@ class TestMultiMatchEnforcement:
             project_root, inventory=_INV_MM) == []
 
     def test_the_family_consuming_helper_is_allowed(self, project_root: Path):
-        """SCRUM-103, 31 Jul 2026. select_autocomplete_suggestion takes the
+        """PRJ-103, 31 Jul 2026. select_autocomplete_suggestion takes the
         family selector BY DESIGN - it resolves the async list to one real
         suggestion internally, which is the whole reason it exists. It was not
         whitelisted, so the validator rejected the exact call the inventory and

@@ -47,7 +47,7 @@ def patched_agent1(fake_test_case_list):
     }
     # Each create_test_case returns an issue with a .key
     mock_jira.create_test_case.side_effect = [
-        MagicMock(key="SCRUM-100"), MagicMock(key="SCRUM-101"),
+        MagicMock(key="PRJ-100"), MagicMock(key="PRJ-101"),
     ]
 
     mock_llm = MagicMock()
@@ -65,18 +65,18 @@ class TestTriggerLabelCleanup:
         """After a successful Agent 1 run, the trigger label `ai-ready` must
         be removed from the story so the label state is clean."""
         mock_jira, run = patched_agent1
-        run("SCRUM-1", dry_run=False)
+        run("PRJ-1", dry_run=False)
 
         # add_label called for 'ai-processed' (completion marker)
-        mock_jira.add_label.assert_called_once_with("SCRUM-1", "ai-processed")
+        mock_jira.add_label.assert_called_once_with("PRJ-1", "ai-processed")
 
         # remove_label called for 'ai-ready' (trigger cleanup)
-        mock_jira.remove_label.assert_any_call("SCRUM-1", "ai-ready")
+        mock_jira.remove_label.assert_any_call("PRJ-1", "ai-ready")
 
     def test_dry_run_does_not_touch_labels(self, patched_agent1):
         """Dry-run mode must not create test cases AND must not modify labels."""
         mock_jira, run = patched_agent1
-        run("SCRUM-1", dry_run=True)
+        run("PRJ-1", dry_run=True)
 
         mock_jira.create_test_case.assert_not_called()
         mock_jira.add_label.assert_not_called()
@@ -90,7 +90,7 @@ class TestTriggerLabelCleanup:
         mock_jira.remove_label.side_effect = Exception("Jira API hiccup")
 
         # Should not raise — non-fatal warning instead
-        result = run("SCRUM-1", dry_run=False)
+        result = run("PRJ-1", dry_run=False)
         assert result["status"] == "tests_drafted"
         # And the completion label was still added (run did succeed)
-        mock_jira.add_label.assert_called_once_with("SCRUM-1", "ai-processed")
+        mock_jira.add_label.assert_called_once_with("PRJ-1", "ai-processed")

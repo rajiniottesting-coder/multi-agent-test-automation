@@ -568,7 +568,7 @@ def test_after_the_budget_a_fix_comment_takes_every_comment(monkeypatch):
 
 # ── a review change stays inside the approved test cases (4 Nov 2026) ───
 #
-# On SCRUM-283's pull request a comment asked to reword a step the approved
+# On PRJ-283's pull request a comment asked to reword a step the approved
 # test case states ("no login prompt is shown"). The reworded file dropped
 # that check; the repair loop then regenerated the whole feature file in the
 # ordinary mode - invented marker hashes, no owner, a new title, an outline -
@@ -621,7 +621,7 @@ def test_a_feature_already_missing_a_check_is_not_blamed_on_the_comment(wired, m
 
 # ── iterating in a thread (4 Nov 2026) ──────────────────────────────────
 #
-# On SCRUM-283's pull request the reviewer answered in an existing thread -
+# On PRJ-283's pull request the reviewer answered in an existing thread -
 # the usual way to iterate on a review. The client left every reply out, so
 # `/fix` found nothing to act on: the thread's first comment was handled.
 

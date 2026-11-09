@@ -185,7 +185,7 @@ def test_a_marker_from_before_an_undo_does_not_count():
 
 
 def test_forced_a_verdict_is_asked_again_but_an_open_pr_still_stands():
-    """4 Nov 2026: SCRUM-207's earlier "no update needed" stood, so a forced
+    """4 Nov 2026: PRJ-207's earlier "no update needed" stood, so a forced
     re-analysis could never retry the context update."""
     h = cu._story_hash(STORY)
     verdict = f"{cu.MARKER} No context update needed.\n(story: {h})"

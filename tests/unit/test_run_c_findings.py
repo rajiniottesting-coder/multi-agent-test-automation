@@ -380,7 +380,7 @@ _GATES = ["validate_filename_consistency", "validate_feature_file_structure",
 
 @pytest.mark.parametrize("gate", _GATES)
 def test_every_gate_hands_its_errors_to_the_blocked_comment(gate, monkeypatch):
-    """4 Nov 2026, SCRUM-292: the blocked comment carried one summary line
+    """4 Nov 2026, PRJ-292: the blocked comment carried one summary line
     ("the LLM likely used inconsistent method names") and lost the eight errors
     under it - among them that a reserved page object lacked the method."""
     import inspect
@@ -435,7 +435,7 @@ def menu_project(tmp_path):
 
 
 def test_a_new_page_object_borrowing_a_page_it_does_not_use_is_refused(menu_project):
-    """4 Nov 2026, SCRUM-292: the page was not in the inventory; the new page
+    """4 Nov 2026, PRJ-292: the page was not in the inventory; the new page
     object set INVENTORY_PAGE to the navigation entry and navigated by a
     hard-coded path, so the missing page was never named."""
     from validators.method_resolution_validator import validate_page_object_selectors
@@ -462,8 +462,8 @@ def test_a_borrowed_page_is_reported_as_a_missing_page():
 # ── a committed page object the steps need a method on joins the repair ─
 
 def test_a_committed_page_object_missing_a_called_method_joins_the_batch(tmp_path, monkeypatch):
-    """4 Nov 2026, SCRUM-293: the steps called HomePage.go_to_test_cases(); the
-    plan had not named home_page.py, so only the step definitions were
+    """4 Nov 2026: the steps called a method missing from a committed page
+    object; the plan had not named that page object, so only the step definitions were
     repaired, and the story was refused after every attempt."""
     import agents.agent2_coder as a2
     import validators.method_resolution_validator as v
@@ -636,9 +636,9 @@ def test_agent2_runs_the_audit_after_the_gate_and_before_the_pull_request():
 
 def test_a_case_only_difference_is_diagnosed():
     from core.failure_diagnosis import diagnose
-    d = diagnose("AssertionError: Expected heading 'Test Cases' in 'TEST CASES'")
+    d = diagnose("AssertionError: Expected heading 'Order History' in 'ORDER HISTORY'")
     assert d.label == "letter case" and "casefold" in d.remedy
-    assert diagnose("AssertionError: Expected heading 'Test Cases' in 'Products'").label != "letter case"
+    assert diagnose("AssertionError: Expected heading 'Order History' in 'Settings'").label != "letter case"
     assert diagnose("assert 2 == 1").label == "count assertion", "other readings unchanged"
 
 

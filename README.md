@@ -391,21 +391,21 @@ Runs the five login scenarios in Chromium.
 
 ```bash
 # Agent 0: analyse one change story (labelled impact-check)
-python -m agents.agent0_impact --story SCRUM-3 --dry-run
+python -m agents.agent0_impact --story PRJ-3 --dry-run
 # Agent 0: full scan - analyses, then hands over decided Impact Reviews (dry run prints the writes)
 python -m agents.agent0_impact --scan --dry-run
 # Agent 0: reconcile (finish or undo) stories labelled impact-applied
-python -m scripts.impact_reconcile --story SCRUM-3 --dry-run
+python -m scripts.impact_reconcile --story PRJ-3 --dry-run
 
 # Agent 1: test cases for one story
-python -m agents.agent1_analyst --story SCRUM-3 --dry-run
-python -m agents.agent1_analyst --story SCRUM-3
+python -m agents.agent1_analyst --story PRJ-3 --dry-run
+python -m agents.agent1_analyst --story PRJ-3
 
 # Approve in Jira (label: human-approved)
 
 # Agent 2: code + PR  (--update for an incremental splice)
-python -m agents.agent2_coder --story SCRUM-3 --dry-run
-python -m agents.agent2_coder --story SCRUM-3
+python -m agents.agent2_coder --story PRJ-3 --dry-run
+python -m agents.agent2_coder --story PRJ-3
 
 # Agent 3: review a PR
 python -m agents.agent3_reviewer --pr 5 --dry-run

@@ -30,8 +30,8 @@ no key is different: Agent 2 always names its branches after the story, so a
 keyless one is a real fault and still fails with exit 2.
 
 Usage:
-    python -m scripts.close_merged_story --branch auto/SCRUM-5-login --merged true
-    python -m scripts.close_merged_story --story SCRUM-5 --merged true
+    python -m scripts.close_merged_story --branch auto/PRJ-5-login --merged true
+    python -m scripts.close_merged_story --story PRJ-5 --merged true
 """
 from __future__ import annotations
 
@@ -59,16 +59,16 @@ def main() -> int:
         prog="python -m scripts.close_merged_story",
         description="Move a story to the Done column after its PR is merged.",
         epilog=("examples:\n"
-                "  from a branch name   --branch auto/SCRUM-5-login --merged true\n"
-                "  from a story key     --story SCRUM-5 --merged true\n"
-                "  rejected PR (no-op)  --branch auto/SCRUM-5-login --merged false\n"
+                "  from a branch name   --branch auto/PRJ-5-login --merged true\n"
+                "  from a story key     --story PRJ-5 --merged true\n"
+                "  rejected PR (no-op)  --branch auto/PRJ-5-login --merged false\n"
                 "\nexit codes: 0=done (or correctly skipped, incl. a non-story branch)"
                 "\n            2=a pipeline (auto/) branch carries no story key"),
         formatter_class=argparse.RawDescriptionHelpFormatter)
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--branch",
                      help="Head branch of the PR; the story key is parsed out of it.")
-    src.add_argument("--story", help="Story key directly, e.g. SCRUM-5.")
+    src.add_argument("--story", help="Story key directly, e.g. PRJ-5.")
     ap.add_argument("--merged", default="false",
                     help="'true' only if the PR was actually MERGED. A PR closed "
                          "without merging is a rejection and must not move the card.")

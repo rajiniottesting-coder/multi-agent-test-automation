@@ -250,7 +250,7 @@ class GitHubClient:
                             review_id: Optional[int] = None) -> list[dict]:
         """Inline review comments (file + line), oldest first: each thread's
         first comment, and a PERSON's later reply in a thread - a reviewer
-        iterates by answering in the thread, and on SCRUM-283's pull request
+        iterates by answering in the thread, and on PRJ-283's pull request
         (4 Nov 2026) such a reply was never seen. A reply carries `reply_to`,
         the thread's first comment. Every bot comment is left out - Agent 2's
         answers in a thread, an agent's own line comment - one rule here, where

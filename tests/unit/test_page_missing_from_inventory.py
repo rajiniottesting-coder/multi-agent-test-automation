@@ -1,7 +1,7 @@
 """A story that needs a page the inventory does not have stops at once, and
 says how to add it.
 
-3 Nov 2026, SCRUM-284 (Contact Us): the inventory had no contact page. The
+3 Nov 2026: the inventory had no entry for the page a story needed. The
 page object was refused ("not a page in the app inventory"), the repair loop
 "fixed" it by deleting what it could not anchor, the step definitions then
 called methods that no longer existed, and after four attempts ($1.50) the

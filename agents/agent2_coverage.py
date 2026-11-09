@@ -243,9 +243,9 @@ def log_gaps(story_id: str, gaps, unmarked) -> None:
 # ── what a scenario leaves out of its test case (F39) ───────────────────
 #
 # A marker proves a scenario was paired with its test case, not that it checks
-# what the test case states (L31). 4 Nov 2026, SCRUM-293: the page lacked an
-# inventory element for one expected result ("a Feedback for Us section with
-# an email address"); the scenario left it out, the pull request claimed the
+# what the test case states (L31). 4 Nov 2026, PRJ-293: the page lacked an
+# inventory element for one expected result (a section with a contact
+# link); the scenario left it out, the pull request claimed the
 # test case automated, and only Agent 3 noticed - as advice. One structured
 # call per batch names each expected result a scenario does not check; each
 # such test case is "covered, but needing a person" on the PR and the story.

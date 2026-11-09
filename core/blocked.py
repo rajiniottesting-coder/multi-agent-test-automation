@@ -153,7 +153,7 @@ def blocked_comment(story_id: str, fp: str, errors) -> str:
 
 def post_blocked_once(tracker, story_id: str, fp: str, errors) -> bool:
     """Post the blocked comment unless one for this input AND these reasons is
-    already there. 4 Nov 2026: SCRUM-293, run again by key after a framework
+    already there. 4 Nov 2026: a story run again by key after a framework
     fix, was refused for a new reason (a reserved page object lacked the
     method) and the person was never told - the comment from the first
     refusal, on the same inputs, still blamed the old one. The scheduled scan

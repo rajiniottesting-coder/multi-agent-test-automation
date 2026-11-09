@@ -1,6 +1,6 @@
 """Splice writers get the same grounding as the full-file writers.
 
-SCRUM-206 (a change story) failed at Agent 2's final gate: the owner splice
+PRJ-206 (a change story) failed at Agent 2's final gate: the owner splice
 rewrote a scenario around a value no element holds (a cart total), its new
 step function called a page-object method that does not exist, and because
 the splice runs after the repair loop the error could not be repaired.
@@ -264,7 +264,7 @@ def test_the_writer_is_told_not_to_substitute_an_unrelated_check():
 
 
 def test_a_step_no_method_checks_stops_the_update_with_the_remedy():
-    """5 Nov 2026, SCRUM-293: the spliced feedback step asserted title links."""
+    """5 Nov 2026: a spliced step for a section no method reads asserted an unrelated list."""
     import pytest
     llm = ScriptedLLM(NEEDS)
     with pytest.raises(coder.GateFailure) as stop:
@@ -296,7 +296,7 @@ def test_the_notes_addition_body_claims_nothing_about_the_tests():
 # ── F45: a page missing from the inventory is what the gate reports ─────
 
 def test_a_missing_page_is_reported_before_any_other_gate(monkeypatch):
-    """5 Nov 2026, SCRUM-292: the repair stopped on a page the inventory lacks,
+    """5 Nov 2026, PRJ-292: the repair stopped on a page the inventory lacks,
     then the gate refused an undefined step and the blocked comment named
     that, with advice to edit the test case."""
     import pytest

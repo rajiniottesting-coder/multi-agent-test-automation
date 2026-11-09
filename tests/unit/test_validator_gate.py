@@ -144,7 +144,7 @@ def test_both_new_validators_are_wired_into_the_gate():
 
 
 def test_selector_validator_is_wired_into_the_gate():
-    """SCRUM-104: the no-literal-selectors rule lived only in
+    """PRJ-104: the no-literal-selectors rule lived only in
     tests/unit/test_page_object_selectors.py, so it was enforced in Agent 4 —
     after the tokens were spent and the PR was open. If this assertion ever
     fails, that regression is back.

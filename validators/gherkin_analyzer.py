@@ -9,7 +9,7 @@ Agent 2 generates code for a new test case, it asks the inventory:
 
 WHY THIS EXISTS:
     Earlier versions of Agent 2 had no awareness of existing tests. When
-    SCRUM-5 was reprocessed, Agent 2 generated `test_login_validation.py`
+    PRJ-5 was reprocessed, Agent 2 generated `test_login_validation.py`
     alongside the existing `test_login.py` — duplicating coverage of the
     login feature area. This module solves that by parsing existing
     .feature files and exposing a clean lookup API.
@@ -256,8 +256,8 @@ def filter_duplicate_test_cases(
     INPUT SHAPE:
         test_cases is the list Agent 2 already produces from Jira:
             [
-                {"key": "SCRUM-9", "summary": "...", "description": "..."},
-                {"key": "SCRUM-10", "summary": "...", "description": "..."},
+                {"key": "PRJ-9", "summary": "...", "description": "..."},
+                {"key": "PRJ-10", "summary": "...", "description": "..."},
                 ...
             ]
         We match against the `summary` field, which is the test case title.
@@ -733,7 +733,7 @@ def _decorators_from_ast(step_def_content: str):
     first piece plus quotes and indentation. Every check then reported the
     step undefined, the decorator unused and the wording drifted, for a step
     pytest-bdd resolves; the repair loop "fixed" it until it gave up
-    (SCRUM-284, 3 Nov 2026). A decorator with keyword arguments
+    (PRJ-284, 3 Nov 2026). A decorator with keyword arguments
     (target_fixture=...) was not seen at all. The parser joins the pieces,
     resolves escapes and drops comments, exactly as at runtime."""
     found = step_functions(step_def_content)
@@ -826,7 +826,7 @@ def _phrase_matches(feature_phrase: str, decorator_phrase: str, parser_type: str
 
 
 # ─────────────────────────────────────────────────────────────
-# Cross-file duplicate step-definition validator (SCRUM-54 lesson)
+# Cross-file duplicate step-definition validator (PRJ-54 lesson)
 #
 # CORRECTED (ADR-013): pytest-bdd steps are MODULE-SCOPED fixtures, not global.
 # A step declared in a sibling step-def module is NOT available to another

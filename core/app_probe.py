@@ -2,7 +2,7 @@
 
 WHY
     On 30 Oct 2026 every one of the 17 tests failed in the nightly run on main:
-    the login form, the search box, the product list and the newsletter field
+    the forms, lists and fields the tests looked for
     never appeared, on four different pages. Every page was SERVED (no HTTP
     error, no navigation timeout) - just not the application's content. The
     next night all 17 passed with no change. The run had no way to tell "the

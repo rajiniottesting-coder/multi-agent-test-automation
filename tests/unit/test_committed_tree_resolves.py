@@ -232,8 +232,9 @@ _CONVENTIONAL = frozenset({
     "data-qa", "data-test", "data-testid", "data-cy",
     # The framework's own vocabulary: an application may name a page after it
     # (4 Nov 2026: a "test_cases" page), which does not make the framework's
-    # TestCaseList.test_cases the application's.
-    "test_cases",
+    # TestCaseList.test_cases the application's. "Test Cases" likewise is
+    # the framework's Jira issue type, whatever page an application has.
+    "test_cases", "Test Cases",
 })
 
 _FRAMEWORK_PATHS = (
@@ -329,6 +330,29 @@ def _coined_by_the_application() -> dict:
         for value in re.findall(r"`([A-Z][A-Za-z0-9]*(?: [A-Za-z0-9]+)+)`",
                                 md.read_text(encoding="utf-8")):
             add(value, "application data value")
+
+    # ...and through its UI TEXT, its NAME and its TRACKER (9 Nov 2026: framework
+    # comments and tests quoted a page heading, a link's email address and the
+    # project's issue keys, none of which the harvest above sees).
+    # UI text a selector quotes (an ARIA name, a has-text value): only several
+    # words or an address - a single word ("Submit") is ordinary vocabulary.
+    if inventory_path.is_file():
+        for entry in (inventory.get("pages") or {}).values():
+            for selector in ((entry or {}).get("elements") or {}).values():
+                for text in re.findall(r"""['"]([^'"]{3,})['"]""", str(selector)):
+                    if " " in text.strip() or "@" in text:
+                        add(text.strip(), "UI text in a selector")
+    # The application's own name and host.
+    add(str(app.get("name", "")), "application name")
+    host = re.sub(r"^\w+://(www\.)?", "", str(app.get("base_url", ""))).split("/")[0]
+    if host:
+        coined.setdefault(host.split(".")[0], "application host")
+    # Its tracker's issue keys: the project key on the markers of its own
+    # feature files. Framework fixtures use invented keys (AB-1, PROJ-7).
+    for path in sorted((_PROJECT / "features").glob("*.feature")):
+        for prefix in re.findall(r"#\s*JIRA:\s*([A-Z][A-Z0-9]+)-\d+",
+                                 path.read_text(encoding="utf-8")):
+            coined.setdefault(f"{prefix}-", "issue key of the application's project")
     return coined
 
 
@@ -364,6 +388,8 @@ def _leak_pattern(token: str):
     and every such attribute in the framework's tests read as a leak. In a
     string, after a space, quote or paren-open it is still one."""
     import re
+    if token.endswith("-"):                     # an issue-key prefix: KEY-<number>
+        return re.compile(r"(?<![\w\-])" + re.escape(token) + r"\d+")
     before = r"(?<![\w\-)\]])" if token[:1] in ".#" else r"(?<![\w\-])"
     return re.compile(before + re.escape(token) + r"(?![\w\-])")
 
@@ -411,6 +437,14 @@ def test_the_scan_would_notice_a_leak():
         f"only {len(coined)} coined token(s) harvested - the scan is too thin "
         f"to be protecting anything"
     )
+
+    kinds = set(coined.values())
+    for kind in ("issue key of the application's project", "application name",
+                 "application host"):
+        assert kind in kinds, f"the harvest no longer sees the application's {kind}"
+    key = next(t for t, k in coined.items() if k.startswith("issue key"))
+    assert _leak_pattern(key).search(f"# seen on {key}293's pull request")
+    assert not _leak_pattern(key).search(f"x = '{key}'"), "a bare prefix is not a key"
 
     sample = sorted(coined)[0]
     pattern = _leak_pattern(sample)

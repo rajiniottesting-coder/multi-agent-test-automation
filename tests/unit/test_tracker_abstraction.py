@@ -36,7 +36,7 @@ def test_protocol_covers_every_operation_the_agents_use():
 def test_jira_client_satisfies_the_protocol():
     from integrations.jira_client import JiraClient
     inst = JiraClient.__new__(JiraClient)
-    inst.project_key = "SCRUM"
+    inst.project_key = "PRJ"
     assert isinstance(inst, Tracker)
 
 

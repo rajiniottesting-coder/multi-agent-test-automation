@@ -7,7 +7,7 @@ restored from their snapshots (unless edited since), links and retired
 labels removed, story labelled impact-reverted. See core/impact_reconcile.py.
 
     python -m scripts.impact_reconcile
-    python -m scripts.impact_reconcile --story SCRUM-210
+    python -m scripts.impact_reconcile --story PRJ-210
     python -m scripts.impact_reconcile --dry-run     # print the writes; make none
 
 Runs whatever agents.agent0_impact.enabled and shadow_mode say: it acts only

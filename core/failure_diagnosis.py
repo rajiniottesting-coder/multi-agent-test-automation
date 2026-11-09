@@ -646,7 +646,7 @@ def _differs_only_in_case(text: str) -> bool:
 def diagnose(error_text: str) -> Diagnosis:
     """Best reading of a failure message. Never raises, always returns one."""
     text = error_text or ""
-    # 4 Nov 2026, SCRUM-293: "Expected heading 'Test Cases' in 'TEST CASES'"
+    # 4 Nov 2026: "Expected heading 'Order History' in 'ORDER HISTORY'"
     # read as unclassified; the heading was uppercased by CSS.
     if _differs_only_in_case(text):
         return _LETTER_CASE

@@ -1,6 +1,6 @@
 """A review stops a pull request only by naming how the code fails.
 
-PR #148 (SCRUM-111): the review filed a `blocking` / `functional_bug` whose
+PR #148 (PRJ-111): the review filed a `blocking` / `functional_bug` whose
 own description walked the flow and ended "This flow is valid. No blocking
 bug - downgrading." The severity was never changed, the gate went red, and
 every test had passed. Blocking now needs positive evidence - a non-empty

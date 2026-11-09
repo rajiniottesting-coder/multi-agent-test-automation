@@ -37,25 +37,25 @@ class TestJiraMarker:
 
     def test_format_and_parse_roundtrip(self):
         from agents.agent2_coder import format_marker, parse_marker
-        m = format_marker("SCRUM-42", "Verify thing works correctly")
+        m = format_marker("PRJ-42", "Verify thing works correctly")
         parsed = parse_marker(m)
         assert parsed is not None
         key, h = parsed
-        assert key == "SCRUM-42"
+        assert key == "PRJ-42"
         assert len(h) == 8
 
     def test_parse_rejects_non_marker(self):
         from agents.agent2_coder import parse_marker
         assert parse_marker("Scenario: foo") is None
         assert parse_marker("# random comment") is None
-        assert parse_marker("# JIRA: SCRUM-1") is None  # no hash → reject
+        assert parse_marker("# JIRA: PRJ-1") is None  # no hash → reject
         assert parse_marker("") is None
         assert parse_marker(None) is None
 
     def test_parse_tolerates_leading_whitespace(self):
         from agents.agent2_coder import parse_marker
-        result = parse_marker("    # JIRA: SCRUM-7 (hash: abcd1234)")
-        assert result == ("SCRUM-7", "abcd1234")
+        result = parse_marker("    # JIRA: PRJ-7 (hash: abcd1234)")
+        assert result == ("PRJ-7", "abcd1234")
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -68,12 +68,12 @@ class TestFeatureFileSurgeon:
         "  Background:\n"
         "    Given the site is reachable\n"
         "\n"
-        "  # JIRA: SCRUM-21 (hash: aaaaaaaa)\n"
+        "  # JIRA: PRJ-21 (hash: aaaaaaaa)\n"
         "  Scenario: Successful logout\n"
         "    When I click logout\n"
         "    Then I am redirected\n"
         "\n"
-        "  # JIRA: SCRUM-22 (hash: bbbbbbbb)\n"
+        "  # JIRA: PRJ-22 (hash: bbbbbbbb)\n"
         "  Scenario: Logout clears session\n"
         "    When I logout\n"
         "    Then session is empty\n"
@@ -84,8 +84,8 @@ class TestFeatureFileSurgeon:
         _header, blocks = parse_feature_file(self.SAMPLE_FILE)
         kinds = [b.kind for b in blocks]
         assert kinds == ["background", "scenario", "scenario"]
-        assert blocks[1].jira_key == "SCRUM-21"
-        assert blocks[2].jira_key == "SCRUM-22"
+        assert blocks[1].jira_key == "PRJ-21"
+        assert blocks[2].jira_key == "PRJ-22"
 
     def test_parse_roundtrip_is_lossless(self):
         from agents.agent2_coder import parse_feature_file
@@ -96,37 +96,37 @@ class TestFeatureFileSurgeon:
     def test_classify_detects_unchanged_modified_new_orphan(self):
         from agents.agent2_coder import classify_test_cases, format_marker
 
-        desc_21 = "the SCRUM-21 description"
-        desc_22_old = "the OLD SCRUM-22 description"
-        desc_22_new = "the NEW SCRUM-22 description"
+        desc_21 = "the PRJ-21 description"
+        desc_22_old = "the OLD PRJ-22 description"
+        desc_22_new = "the NEW PRJ-22 description"
 
         file_content = (
             "Feature: x\n\n"
-            f"  {format_marker('SCRUM-21', desc_21)}\n"
+            f"  {format_marker('PRJ-21', desc_21)}\n"
             "  Scenario: a\n    Then a\n\n"
-            f"  {format_marker('SCRUM-22', desc_22_old)}\n"
+            f"  {format_marker('PRJ-22', desc_22_old)}\n"
             "  Scenario: b\n    Then b\n\n"
-            f"  {format_marker('SCRUM-99', 'old orphan')}\n"
+            f"  {format_marker('PRJ-99', 'old orphan')}\n"
             "  Scenario: c\n    Then c\n"
         )
         current_jira = [
-            {"key": "SCRUM-21", "summary": "a", "description": desc_21},
-            {"key": "SCRUM-22", "summary": "b", "description": desc_22_new},
-            {"key": "SCRUM-50", "summary": "new", "description": "brand new"},
+            {"key": "PRJ-21", "summary": "a", "description": desc_21},
+            {"key": "PRJ-22", "summary": "b", "description": desc_22_new},
+            {"key": "PRJ-50", "summary": "new", "description": "brand new"},
         ]
         result = classify_test_cases(current_jira, file_content)
-        assert [tc["key"] for tc in result["unchanged"]] == ["SCRUM-21"]
-        assert [tc["key"] for tc in result["modified"]] == ["SCRUM-22"]
-        assert [tc["key"] for tc in result["new"]] == ["SCRUM-50"]
-        assert result["orphan_keys"] == ["SCRUM-99"]
+        assert [tc["key"] for tc in result["unchanged"]] == ["PRJ-21"]
+        assert [tc["key"] for tc in result["modified"]] == ["PRJ-22"]
+        assert [tc["key"] for tc in result["new"]] == ["PRJ-50"]
+        assert result["orphan_keys"] == ["PRJ-99"]
 
     def test_classify_on_empty_file_marks_all_new(self):
         from agents.agent2_coder import classify_test_cases
         result = classify_test_cases(
-            [{"key": "SCRUM-1", "summary": "x", "description": "y"}],
+            [{"key": "PRJ-1", "summary": "x", "description": "y"}],
             "",
         )
-        assert [tc["key"] for tc in result["new"]] == ["SCRUM-1"]
+        assert [tc["key"] for tc in result["new"]] == ["PRJ-1"]
         assert result["unchanged"] == []
         assert result["modified"] == []
         assert result["orphan_keys"] == []
@@ -137,13 +137,13 @@ class TestFeatureFileSurgeon:
         )
         new_desc = "rewritten description"
         replacement = (
-            f"  {format_marker('SCRUM-22', new_desc)}\n"
+            f"  {format_marker('PRJ-22', new_desc)}\n"
             "  Scenario: Logout clears session (NEW)\n"
             "    When I sign out\n"
             "    Then session is destroyed\n"
         )
         out = splice_scenario(
-            self.SAMPLE_FILE, "SCRUM-22", replacement,
+            self.SAMPLE_FILE, "PRJ-22", replacement,
             compute_description_hash(new_desc),
         )
         assert "Logout clears session (NEW)" in out
@@ -154,41 +154,41 @@ class TestFeatureFileSurgeon:
     def test_splice_refuses_mismatched_marker(self):
         from agents.agent2_coder import splice_scenario, format_marker
         bogus = (
-            f"  {format_marker('SCRUM-77', 'whatever')}\n"
+            f"  {format_marker('PRJ-77', 'whatever')}\n"
             "  Scenario: liar\n    Then x\n"
         )
         with pytest.raises(ValueError, match="orphan"):
-            splice_scenario(self.SAMPLE_FILE, "SCRUM-22", bogus, "deadbeef")
+            splice_scenario(self.SAMPLE_FILE, "PRJ-22", bogus, "deadbeef")
 
     def test_splice_with_missing_target_returns_original(self):
         from agents.agent2_coder import (
             splice_scenario, format_marker, compute_description_hash
         )
         replacement = (
-            f"  {format_marker('SCRUM-999', 'x')}\n"
+            f"  {format_marker('PRJ-999', 'x')}\n"
             "  Scenario: nope\n    Then x\n"
         )
         out = splice_scenario(
-            self.SAMPLE_FILE, "SCRUM-999", replacement,
+            self.SAMPLE_FILE, "PRJ-999", replacement,
             compute_description_hash("x"),
         )
         assert out == self.SAMPLE_FILE
 
     def test_remove_takes_out_only_target(self):
         from agents.agent2_coder import remove_scenario
-        out = remove_scenario(self.SAMPLE_FILE, "SCRUM-22")
+        out = remove_scenario(self.SAMPLE_FILE, "PRJ-22")
         assert "Logout clears session" not in out
         assert "Successful logout" in out
 
     def test_remove_missing_key_is_noop(self):
         from agents.agent2_coder import remove_scenario
-        out = remove_scenario(self.SAMPLE_FILE, "SCRUM-999")
+        out = remove_scenario(self.SAMPLE_FILE, "PRJ-999")
         assert out == self.SAMPLE_FILE
 
     def test_append_adds_to_end(self):
         from agents.agent2_coder import append_scenario, format_marker
         new_block = (
-            f"  {format_marker('SCRUM-50', 'new test')}\n"
+            f"  {format_marker('PRJ-50', 'new test')}\n"
             "  Scenario: Brand new\n    Then it works\n"
         )
         out = append_scenario(self.SAMPLE_FILE, new_block)
@@ -222,15 +222,15 @@ class TestMarkerInjection:
     )
 
     TEST_CASES = [
-        {"key": "SCRUM-1", "summary": "first scenario title", "description": "first desc"},
-        {"key": "SCRUM-2", "summary": "second scenario title", "description": "second desc"},
+        {"key": "PRJ-1", "summary": "first scenario title", "description": "first desc"},
+        {"key": "PRJ-2", "summary": "second scenario title", "description": "second desc"},
     ]
 
     def test_injects_markers_on_unmarkered_file(self):
         from agents.agent2_coder import _inject_markers_into_feature
         out = _inject_markers_into_feature(self.SCENARIOS_WITHOUT_MARKERS, self.TEST_CASES)
-        assert "# JIRA: SCRUM-1" in out
-        assert "# JIRA: SCRUM-2" in out
+        assert "# JIRA: PRJ-1" in out
+        assert "# JIRA: PRJ-2" in out
 
     def test_marker_appears_above_scenario_with_same_indent(self):
         from agents.agent2_coder import _inject_markers_into_feature
@@ -239,7 +239,7 @@ class TestMarkerInjection:
         for i, line in enumerate(lines):
             if "Scenario: First" in line:
                 indent = line[: len(line) - len(line.lstrip())]
-                assert lines[i - 1].startswith(f"{indent}# JIRA: SCRUM-1"), \
+                assert lines[i - 1].startswith(f"{indent}# JIRA: PRJ-1"), \
                     f"Expected marker before scenario; got: {lines[i-1]!r}"
                 break
         else:
@@ -252,15 +252,15 @@ class TestMarkerInjection:
         )
         content = (
             "Feature: T\n\n"
-            f"  {format_marker('SCRUM-1', 'OLD description')}\n"
+            f"  {format_marker('PRJ-1', 'OLD description')}\n"
             "  Scenario: first scenario title\n    Then x\n"
         )
         test_cases = [
-            {"key": "SCRUM-1", "summary": "first scenario title", "description": "NEW description"}
+            {"key": "PRJ-1", "summary": "first scenario title", "description": "NEW description"}
         ]
         out = _inject_markers_into_feature(content, test_cases)
         # Marker refreshed, not duplicated
-        assert out.count("# JIRA: SCRUM-1") == 1
+        assert out.count("# JIRA: PRJ-1") == 1
         old_h = compute_description_hash("OLD description")
         new_h = compute_description_hash("NEW description")
         assert new_h in out
@@ -277,8 +277,8 @@ class TestMarkerInjection:
         )
         # Test cases whose summaries don't match scenario titles at all
         test_cases = [
-            {"key": "SCRUM-99", "summary": "user logs into the system", "description": "z"},
-            {"key": "SCRUM-100", "summary": "checkout flow completes successfully", "description": "z"},
+            {"key": "PRJ-99", "summary": "user logs into the system", "description": "z"},
+            {"key": "PRJ-100", "summary": "checkout flow completes successfully", "description": "z"},
         ]
         out = _inject_markers_into_feature(content, test_cases)
         # With 2 pairs of low similarity, both skip rather than mislabel
@@ -298,12 +298,12 @@ class TestMarkerInjection:
         )
         # Jira summaries (the originals)
         test_cases = [
-            {"key": "SCRUM-21", "summary": "Successful logout from the inventory page", "description": "a"},
-            {"key": "SCRUM-22", "summary": "User cannot access inventory page after logging out", "description": "b"},
+            {"key": "PRJ-21", "summary": "Successful logout from the inventory page", "description": "a"},
+            {"key": "PRJ-22", "summary": "User cannot access inventory page after logging out", "description": "b"},
         ]
         out = _inject_markers_into_feature(content, test_cases)
-        assert "# JIRA: SCRUM-21" in out, "Paraphrased title should still match SCRUM-21 positionally"
-        assert "# JIRA: SCRUM-22" in out, "Paraphrased title should still match SCRUM-22 positionally"
+        assert "# JIRA: PRJ-21" in out, "Paraphrased title should still match PRJ-21 positionally"
+        assert "# JIRA: PRJ-22" in out, "Paraphrased title should still match PRJ-22 positionally"
 
     def test_single_pair_always_accepted_no_similarity_gate(self):
         """If there's only one scenario and one test case, accept the pairing
@@ -311,10 +311,10 @@ class TestMarkerInjection:
         from agents.agent2_coder import _inject_markers_into_feature
         content = "Feature: T\n\n  Scenario: complete nonsense\n    Then x\n"
         test_cases = [
-            {"key": "SCRUM-1", "summary": "completely different summary", "description": "z"}
+            {"key": "PRJ-1", "summary": "completely different summary", "description": "z"}
         ]
         out = _inject_markers_into_feature(content, test_cases)
-        assert "# JIRA: SCRUM-1" in out
+        assert "# JIRA: PRJ-1" in out
 
     def test_count_mismatch_uses_min_with_warning(self):
         """If scenario count != test case count, pair the first min(N, M)."""
@@ -327,12 +327,12 @@ class TestMarkerInjection:
             "  Scenario: extra scenario the llm invented\n    Then z\n"
         )
         test_cases = [
-            {"key": "SCRUM-1", "summary": "logout flow", "description": "a"},
-            {"key": "SCRUM-2", "summary": "session cleared", "description": "b"},
+            {"key": "PRJ-1", "summary": "logout flow", "description": "a"},
+            {"key": "PRJ-2", "summary": "session cleared", "description": "b"},
         ]
         out = _inject_markers_into_feature(content, test_cases)
-        assert "# JIRA: SCRUM-1" in out
-        assert "# JIRA: SCRUM-2" in out
+        assert "# JIRA: PRJ-1" in out
+        assert "# JIRA: PRJ-2" in out
         # Third scenario must stay unmarkered (no test case for it)
         scenario_3_line = "Scenario: extra scenario"
         before_s3 = out[: out.find(scenario_3_line)]
@@ -340,47 +340,47 @@ class TestMarkerInjection:
         assert out.count("# JIRA:") == 2
 
     def test_existing_marker_preserves_its_key_not_position(self):
-        """REGRESSION-PREP: If a scenario already carries marker SCRUM-22,
-        and test_cases are provided in order [SCRUM-21, SCRUM-22, SCRUM-23],
-        the marker should stay SCRUM-22 (refresh hash) even if the scenario
+        """REGRESSION-PREP: If a scenario already carries marker PRJ-22,
+        and test_cases are provided in order [PRJ-21, PRJ-22, PRJ-23],
+        the marker should stay PRJ-22 (refresh hash) even if the scenario
         appears at position 0. Protects against ai-update reorders relabelling."""
         from agents.agent2_coder import _inject_markers_into_feature, format_marker
         content = (
             "Feature: T\n\n"
-            f"  {format_marker('SCRUM-22', 'old desc')}\n"
+            f"  {format_marker('PRJ-22', 'old desc')}\n"
             "  Scenario: session cleared\n    Then x\n\n"
             "  Scenario: logout flow\n    Then y\n"
         )
         test_cases = [
-            # Note: SCRUM-21 listed FIRST positionally, but the scenario
-            # already says SCRUM-22 via its marker. We expect SCRUM-22 to
+            # Note: PRJ-21 listed FIRST positionally, but the scenario
+            # already says PRJ-22 via its marker. We expect PRJ-22 to
             # stick.
-            {"key": "SCRUM-21", "summary": "logout flow", "description": "a"},
-            {"key": "SCRUM-22", "summary": "session cleared", "description": "new desc"},
+            {"key": "PRJ-21", "summary": "logout flow", "description": "a"},
+            {"key": "PRJ-22", "summary": "session cleared", "description": "new desc"},
         ]
         out = _inject_markers_into_feature(content, test_cases)
-        # SCRUM-22 still attached to "session cleared", hash refreshed
+        # PRJ-22 still attached to "session cleared", hash refreshed
         idx_s22 = out.find("Scenario: session cleared")
         marker_region = out[:idx_s22]
-        assert "# JIRA: SCRUM-22" in marker_region
-        assert "# JIRA: SCRUM-21" not in marker_region
+        assert "# JIRA: PRJ-22" in marker_region
+        assert "# JIRA: PRJ-21" not in marker_region
 
     def test_orphan_marker_left_alone(self):
-        """If a scenario carries marker SCRUM-999 but SCRUM-999 isn't in
+        """If a scenario carries marker PRJ-999 but PRJ-999 isn't in
         test_cases (deleted from Jira), the orphan marker stays — let
         ai-update's remove_scenario handle cleanup."""
         from agents.agent2_coder import _inject_markers_into_feature, format_marker
         content = (
             "Feature: T\n\n"
-            f"  {format_marker('SCRUM-999', 'orphan')}\n"
+            f"  {format_marker('PRJ-999', 'orphan')}\n"
             "  Scenario: orphan scenario\n    Then x\n"
         )
         test_cases = [
-            {"key": "SCRUM-1", "summary": "different one", "description": "a"}
+            {"key": "PRJ-1", "summary": "different one", "description": "a"}
         ]
         out = _inject_markers_into_feature(content, test_cases)
         # Orphan stays — ai-update flow handles orphan cleanup, not injection
-        assert "# JIRA: SCRUM-999" in out
+        assert "# JIRA: PRJ-999" in out
 
     def test_non_feature_files_passed_through(self):
         from agents.agent2_coder import _ensure_jira_markers_on_feature_files

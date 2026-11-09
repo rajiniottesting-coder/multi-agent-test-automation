@@ -1,6 +1,6 @@
 """An exact quantity on persistent state is refused by BOTH gates, in the same place.
 
-SCRUM-187 (validation, 26 Oct 2026): Agent 1 drafted "the cart page shows a row
+PRJ-187 (validation, 26 Oct 2026): Agent 1 drafted "the cart page shows a row
 for '<item>' with quantity 1" in a test case that signs in as the inventory's
 shared account. Agent 1's check let it through - it looked only for "exactly",
 "only", a row count and "empty" - a person approved it, and Agent 2's gate then
