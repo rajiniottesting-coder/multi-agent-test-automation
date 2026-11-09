@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — validation close-out: notes budget restored; no empty Page column (#307)
+
+**Why:** `module_budget_chars` was lowered to 7800 in #296 only to drive E23 live; that is proven (the SCRUM-293 notes PR named `core.md` at 7924 characters), so the shipped value goes back. The nightly inventory PR of 5 Nov confirmed two planned elements and showed a `Page` column empty in every row - the column is only for a whole planned page going live.
+
+- `config/config.yaml`: `context_update.module_budget_chars` back to 8000
+- `core/inventory_update.render_body`: the `Page` column of "Planned elements now live" is shown only when a row has its page confirmed
+- `test_inventory_planned_shared` checks the column is left out; TEST_TRACK E102 and the evidence of Runs A-C. Not tested live yet: E102
+
+---
+
 ## November 2026 — a new page object must name its page in the inventory (#303)
 
 **Why:** for SCRUM-292's page, missing from the inventory, the model's third way round the missing-page stop was a page object declaring no `INVENTORY_PAGE` at all; the selector check skipped it as "not a page object", and four repairs ended on other errors.
