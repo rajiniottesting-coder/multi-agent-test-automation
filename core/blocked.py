@@ -57,6 +57,14 @@ def _short(error: str) -> str:
     return text if len(text) <= _MAX_ERROR_CHARS else text[:_MAX_ERROR_CHARS - 3] + "..."
 
 
+def _missing_elements(errors) -> list:
+    try:
+        from validators.method_resolution_validator import elements_missing_from_inventory
+        return elements_missing_from_inventory(errors)
+    except Exception:                                              # noqa: BLE001
+        return []
+
+
 def _missing_pages(errors) -> list:
     try:
         from validators.method_resolution_validator import pages_missing_from_inventory
@@ -119,6 +127,17 @@ def blocked_comment(story_id: str, fp: str, errors) -> str:
                    "(a page already live is confirmed and crawled by the next nightly "
                    "inventory update, which proposes its other elements). The other "
                    "errors above follow from the missing page.")]
+        return "\n".join(lines)
+    elements = _missing_elements(errors)
+    if elements:
+        lines += ["",
+                  (f"The story needs element(s) the app inventory does not have: "
+                   f"{', '.join(elements)}. No repair can add one - the inventory is "
+                   "curated by a person. Add each one, then run Agent 2 with this "
+                   "story's key: `python -m scripts.plan_inventory element --page <page> "
+                   "--key <key> --selector \"<selector>\"` (the next nightly inventory "
+                   "update confirms it once it is live). The other errors above follow "
+                   "from the missing element.")]
         return "\n".join(lines)
     borrowed = sorted({m for e in errors for m in _BORROWED_PAGE.findall(e)})
     if borrowed:

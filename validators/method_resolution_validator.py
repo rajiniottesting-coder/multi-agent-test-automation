@@ -1289,6 +1289,38 @@ def pages_missing_from_inventory(errors, project_root=None, pages=None) -> list:
     return [p for p in named if p not in known
             and not difflib.get_close_matches(p, known, n=1, cutoff=0.8)]
 
+_UNKNOWN_ELEMENT = re.compile(r"self\.sel\('([^']+)'\), but '[^']+' is not an element on "
+                              r"inventory page '([^']+)', nor on any other page")
+
+
+def elements_missing_from_inventory(errors, project_root=None, pages=None) -> list:
+    """`page.key` for each element a generated page object needs that the
+    inventory does not have on any page - not a misspelling of a key its page
+    has (no close match), so no repair can supply it: the inventory is curated
+    by a person, never by Agent 2. The element counterpart of
+    pages_missing_from_inventory (9 Nov 2026: a story's element was missing;
+    the repair deleted the methods that used it, and the story was refused for
+    the step definitions' calls to them, which named the wrong cause)."""
+    import difflib
+    named = []
+    for err in errors or []:
+        for key, page in _UNKNOWN_ELEMENT.findall(str(err)):
+            if (page, key) not in named:
+                named.append((page, key))
+    if not named:
+        return []
+    if pages is None:
+        inventory = _load_configured_inventory(project_root)
+        pages = (inventory or {}).get("pages")
+    out = []
+    for page, key in named:
+        entry = (pages or {}).get(page)
+        keys = list(((entry or {}).get("elements") or {}) if isinstance(entry, dict) else [])
+        if key not in keys and not difflib.get_close_matches(key, keys, n=1, cutoff=0.8):
+            out.append(f"{page}.{key}")
+    return out
+
+
 # How many inventory keys to name when reporting an unknown one. Enough to be
 # actionable, few enough that the repair prompt does not drown in them.
 _MAX_KEYS_LISTED = 25

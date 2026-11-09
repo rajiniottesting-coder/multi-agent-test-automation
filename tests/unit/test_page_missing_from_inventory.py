@@ -121,3 +121,67 @@ def test_other_refusals_read_as_before(monkeypatch):
     monkeypatch.setattr(mrv, "_load_configured_inventory", lambda root=None: {"pages": PAGES})
     text = blocked.blocked_comment("T-1", "0" * 16, ["Step coverage error in 'x': ..."])
     assert "usually means a test case asks" in text and "plan_inventory" not in text
+
+
+# ── F49: an element the inventory lacks is named as the cause ───────────────
+
+EL_PAGES = {"home": {"elements": {"brand_mark": "img", "search_box": "#q"}}, "basket": {}}
+
+
+def _el_err(key, page="home"):
+    return (f"Selector inventory error in 'pages/{page}_page.py': class XPage calls "
+            f"self.sel('{key}'), but '{key}' is not an element on inventory page '{page}', "
+            "nor on any other page in the inventory. Use one of the keys on this page: x.")
+
+
+@pytest.mark.parametrize("errors, missing", [
+    ([_el_err("back_to_top")], ["home.back_to_top"]),
+    ([_el_err("back_to_top"), _el_err("back_to_top")], ["home.back_to_top"]),
+    ([_el_err("search_bx")], []),                 # a misspelling: the repair can fix it
+    ([_el_err("brand_mark")], []),                 # known (the inventory changed since)
+    ([_err("enquiry"), "Method resolution error in 'x': ..."], []),
+])
+def test_which_elements_are_missing(errors, missing):
+    from validators.method_resolution_validator import elements_missing_from_inventory
+    assert elements_missing_from_inventory(errors, pages=EL_PAGES) == missing
+
+
+def test_the_repair_records_a_missing_element_with_its_message(ctx, plan, monkeypatch):
+    """The repair still runs (it may drop the behaviour: a partial pull request),
+    but the element and the validator's own message are kept for the gate."""
+    import agents.agent2_coder as a2
+    import validators.method_resolution_validator as mrv
+    monkeypatch.setattr(mrv, "_load_configured_inventory", lambda root=None: {"pages": EL_PAGES})
+    calls = iter([[_el_err("back_to_top")], []])
+    seen = {}
+    with patch("agents.agent2_coder._collect_repairable_errors", side_effect=lambda f: next(calls)), \
+         patch("agents.agent2_coder.generate_file_content", return_value="class X: pass\n") as gen:
+        home_plan = CodePlan(feature_name="h", branch_name="auto/T-1-h", pr_title="t",
+                             pr_body="b", files_to_create=[FilePlan(
+                                 file_path="pages/home_page.py", file_type="page_object",
+                                 purpose="p", is_new_file=False)])
+        _attempt_step_coverage_repair(
+            [GeneratedFile(file_path="pages/home_page.py", content="class X: pass\n")],
+            MagicMock(), home_plan, [], {}, "{}", ctx, max_retries=2, missing_elements=seen)
+    assert gen.call_count == 1, "not stopped: dropping the behaviour is still possible"
+    assert list(seen) == ["home.back_to_top"] and "back_to_top" in seen["home.back_to_top"]
+
+
+def test_a_refused_story_names_the_missing_element_first():
+    import inspect
+    import agents.agent2_coder as a2
+    src = inspect.getsource(a2.run)
+    assert "missing_elements=missing_elements" in src
+    wrap = src.index("if missing_elements:")
+    assert wrap < src.index("blocked.post_blocked_once(jira, story_id, input_fp") \
+        < src.index("raise e\n")
+
+
+def test_the_blocked_comment_names_the_element_and_how_to_add_it(monkeypatch):
+    import validators.method_resolution_validator as mrv
+    monkeypatch.setattr(mrv, "_load_configured_inventory", lambda root=None: {"pages": EL_PAGES})
+    text = blocked.blocked_comment("T-1", "0" * 16, [
+        _el_err("back_to_top"), "Method resolution error in 'tests/step_defs/test_x.py': y"])
+    assert "needs element(s) the app inventory does not have: home.back_to_top" in text
+    assert "scripts.plan_inventory element --page" in text
+    assert "usually means a test case asks" not in text, "not the test case's fault"
