@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — the coverage audit reads implied checks; its note asks for a look first (#312)
+
+**Why:** for SCRUM-293 the coverage audit (#298) reported that a scenario asserting "each test case title should be rendered as a clickable link" did not check "the page lists test cases". The note then told the person to add an inventory element. Asserting every item of a list already shows the list, so the finding was false and the advice wrong.
+
+- `prompts/agent2_coverage_audit.md`: a step that asserts something of every item of a list, or of part of an element, checks that the list or element is shown; a step that acts on an element checks that it is there
+- `agents/agent2_coverage.audit_partial`: the note says it is the model's reading - check the scenario first - before the inventory advice
+- Test in `test_run_c_findings.py`; TEST_TRACK E103. Not tested live yet: E103
+
+---
+
 ## November 2026 — validation close-out: notes budget restored; no empty Page column (#307)
 
 **Why:** `module_budget_chars` was lowered to 7800 in #296 only to drive E23 live; that is proven (the SCRUM-293 notes PR named `core.md` at 7924 characters), so the shipped value goes back. The nightly inventory PR of 5 Nov confirmed two planned elements and showed a `Page` column empty in every row - the column is only for a whole planned page going live.

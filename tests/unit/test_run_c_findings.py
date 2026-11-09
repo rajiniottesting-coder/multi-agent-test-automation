@@ -585,6 +585,23 @@ def test_a_scenario_that_leaves_out_an_expected_result_is_named():
     assert "Covered, but needing a person" in section and "AB-1" in section
 
 
+def test_the_audit_reads_implied_checks_and_its_note_asks_for_a_look_first():
+    """F47: 'each title is a link' was reported as not checking 'the page lists the
+    test cases'; the note then told the person to add an inventory element."""
+    from agents import agent2_coder as a2
+    from agents import agent2_coverage as cov
+    rules = (a2.PROMPTS_DIR / "agent2_coverage_audit.md").read_text(encoding="utf-8")
+    assert "every item of a list" in rules and "acts on an element" in rules
+
+    class LLM:
+        def invoke_structured(self, **k):
+            return cov.CoverageAudit(cases=[cov.CaseCheck(key="AB-1", not_checked=["x"])])
+    (gap,) = cov.audit_partial(LLM(), _batch_with_marked_scenario(),
+                               [{"key": "AB-1", "summary": "s", "description": "d"}], "r")
+    assert "check the scenario first" in gap.reason
+    assert gap.reason.index("check the scenario first") < gap.reason.index("inventory lacks")
+
+
 def test_the_audit_never_stops_the_run():
     from agents import agent2_coverage as cov
 
