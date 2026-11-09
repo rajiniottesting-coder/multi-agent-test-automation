@@ -77,6 +77,15 @@ class TestCasesPage(BasePage):
         """
         return self.is_showing(self.sel("test_cases_heading"), timeout_ms=timeout_ms)
 
+    def is_heading_shown(self, timeout_ms: Optional[int] = None) -> bool:
+        """True once the Test Cases heading is displayed. WAITS for it.
+
+        A thin alias over the readiness probe, named for the "page is headed
+        'Test Cases'" assertion so the step reads plainly. Call it only where
+        the heading is the expected state; it waits up to the timeout.
+        """
+        return self.is_showing(self.sel("test_cases_heading"), timeout_ms=timeout_ms)
+
     def heading_text(self) -> str:
         """Visible text of the page heading. WAITS for it to appear.
 
