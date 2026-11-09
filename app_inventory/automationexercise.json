@@ -321,8 +321,7 @@
         "test_case_panel_headings": ".panel-group .panel-heading"
       },
       "planned": [
-        "test_case_search_input",
-        "test_case_panel_headings"
+        "test_case_search_input"
       ],
       "multi_match": [
         "test_case_titles",
