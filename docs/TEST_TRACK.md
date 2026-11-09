@@ -290,6 +290,7 @@ Older rows name the sessions S1-S8 of the first plan: **S1** is Run A, **S2** is
 | E45b | #248 | Three or more stories released to ai-ready at once (or labelled by hand, then Agent 1 run once) | Agent 1 takes 2, then starts itself again (`chain` 2) for the rest; no run when none waits | ⬜ | |
 | E45c | #248 | An Agent 0 run with nothing released, and an Agent 1 run that fails | "no story waits for it" - nothing started; the failed Agent 1 run has no hand-off step run (the schedule retries) | ✅ | Partly: "no story waits for it" on idle runs (3-4 Nov); the cap held at 5 - and exposed restarts for a blocked story (#262); "no story waits for it" on idle runs; the failed Agent 1 run 41782458165 skipped *Start Agent 1 again while stories wait* (4 Nov) |
 | E45d | #248 | Optional: the Jira Automation rule on `human-approved` (GUIDE, "Hand-off between agents") | Approving a story starts Agent 2 (event `repository_dispatch`) within a minute, in scan mode | ⬜ | |
+| E104 | Run D fixes | SCRUM-330 run again by key after its first PR is closed (its plan names the Test Cases feature file SCRUM-293 owns) | The log says the story gets its own files; the PR adds a new feature file and step definitions and leaves SCRUM-293's scenarios untouched | ⬜ | |
 | E103 | Run D fixes | The next story PR whose test case states that a list is shown, checked by a step on each item ("each title is a link") | Agent 2's coverage audit does not list it as unchecked; any audit note says to check the scenario first | ⬜ | |
 | E102 | Run C fixes | The next nightly inventory PR that confirms planned elements of a page that was already live | Its "Planned elements now live" table has Element and Selector columns only - no empty Page column | ✅ | 9 Nov: inventory PR #309 table has only the Element and Selector columns |
 | E101 | Run C fixes | SCRUM-292 run again by key (a page the inventory lacks; the model writes a page object naming no page) | The new page object with no INVENTORY_PAGE is refused; the repair names the page; the run stops as a missing page and the blocked comment gives the `plan_inventory page` command | ⬜ | Partly: Unit-tested; live the model named api_list directly this time, so the no-INVENTORY_PAGE refusal did not need to fire |
@@ -435,6 +436,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
+| #314 | A story never regenerates another story's test files (F48) | | E104 | |
 | #312 | The coverage audit reads implied checks; its note asks for a look first (F47) | | E103 | |
 | #307 | Validation close-out: notes budget back to 8000; no empty Page column | E23 ✅, E95 ✅, E99 ✅ | E102 | |
 | #303 | A new page object must name its page in the inventory | | E101 | |

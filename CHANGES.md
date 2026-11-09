@@ -4,6 +4,15 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a story never regenerates another story's test files (#314)
+
+**Why:** SCRUM-330 (a new story on the Test Cases page) was planned into the existing Test Cases feature file and its step definitions, which SCRUM-293 owns. Agent 2 writes whole files, so its pull request deleted both of SCRUM-293's scenarios and their steps. No gate, review or test run noticed: Agent 0 saw no affected test, Agent 3 approved, and the suite passed with fewer tests.
+
+- `agents/agent2_coder._retarget_test_files_owned_elsewhere`: after the plan, a planned feature or step-definition file whose feature holds another story's scenarios (another `owner:`, a test case not this story's, or an unmarked scenario) is renamed for this story (stem + story key) before anything is generated; a story regenerating its own file keeps it
+- Tests in `test_auto_extend_page_objects.py`; TEST_TRACK E104. Not tested live yet: E104
+
+---
+
 ## November 2026 — the coverage audit reads implied checks; its note asks for a look first (#312)
 
 **Why:** for SCRUM-293 the coverage audit (#298) reported that a scenario asserting "each test case title should be rendered as a clickable link" did not check "the page lists test cases". The note then told the person to add an inventory element. Asserting every item of a list already shows the list, so the finding was false and the advice wrong.
