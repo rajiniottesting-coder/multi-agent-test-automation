@@ -226,3 +226,79 @@ def test_the_error_is_routed_to_its_own_repair_hint(committed):
     errors = _check(committed, "class WidgetPage:\n    pass\n")
     assert a2._classify_error(errors[0]) == "removed_method"
     assert "Keep EVERY existing method" in a2._build_error_type_guidance(errors)
+
+
+# ─────────────────────────────────────────────────────────────
+# Test files another story owns are never regenerated (F48)
+# ─────────────────────────────────────────────────────────────
+
+_OWNED = """\
+    Feature: Widgets
+      Background:
+        Given I am on the home page
+
+      # JIRA: AB-11 (hash: 11111111) owner: AB-10
+      Scenario: First widget check
+        Then the widget is shown
+
+      # JIRA: AB-12 (hash: 22222222) owner: AB-10
+      Scenario: Second widget check
+        Then the widget is blue
+    """
+
+
+def _test_plan(stem="widgets"):
+    return CodePlan(
+        feature_name="w", branch_name="auto/AB-20-w", pr_title="t", pr_body="b",
+        files_to_create=[
+            FilePlan(file_path=f"features/{stem}.feature", file_type="feature", purpose="p"),
+            FilePlan(file_path=f"tests/step_defs/test_{stem}.py",
+                     file_type="step_definitions", purpose="p"),
+            FilePlan(file_path="pages/widget_page.py", file_type="page_object",
+                     purpose="p", is_new_file=False)])
+
+
+def test_a_feature_file_another_story_owns_is_never_regenerated(tmp_path):
+    _w(tmp_path, "features/widgets.feature", _OWNED)
+    _w(tmp_path, "tests/step_defs/test_widgets.py", "x = 1\n")
+    plan = _test_plan()
+    renames = a2._retarget_test_files_owned_elsewhere(plan, "AB-20", {"AB-21"}, tmp_path)
+    assert renames == {"widgets": "widgets_ab_20"}
+    assert [fp.file_path for fp in plan.files_to_create] == [
+        "features/widgets_ab_20.feature", "tests/step_defs/test_widgets_ab_20.py",
+        "pages/widget_page.py"]
+    assert all(fp.is_new_file for fp in plan.files_to_create[:2])
+
+
+def test_the_story_regenerating_its_own_file_keeps_it(tmp_path):
+    _w(tmp_path, "features/widgets.feature", _OWNED)
+    plan = _test_plan()
+    assert a2._retarget_test_files_owned_elsewhere(plan, "AB-10", {"AB-11"}, tmp_path) == {}
+    assert plan.files_to_create[0].file_path == "features/widgets.feature"
+
+
+def test_unmarked_or_unowned_foreign_scenarios_count_as_others(tmp_path):
+    _w(tmp_path, "features/widgets.feature",
+       "Feature: W\n  Scenario: Legacy\n    Then it works\n")
+    assert a2._retarget_test_files_owned_elsewhere(_test_plan(), "AB-20", set(), tmp_path)
+    _w(tmp_path, "features/widgets.feature",
+       "Feature: W\n  # JIRA: AB-9 (hash: 99999999)\n  Scenario: Old\n    Then ok\n")
+    assert a2._retarget_test_files_owned_elsewhere(_test_plan(), "AB-20", {"AB-21"}, tmp_path)
+    assert not a2._retarget_test_files_owned_elsewhere(_test_plan(), "AB-20", {"AB-9"}, tmp_path)
+
+
+def test_a_new_name_never_collides_and_new_files_are_untouched(tmp_path):
+    _w(tmp_path, "features/widgets.feature", _OWNED)
+    _w(tmp_path, "features/widgets_ab_20.feature", _OWNED)
+    plan = _test_plan()
+    assert a2._retarget_test_files_owned_elsewhere(plan, "AB-20", set(), tmp_path) == {
+        "widgets": "widgets_ab_20_2"}
+    fresh = _test_plan("gadgets")
+    assert a2._retarget_test_files_owned_elsewhere(fresh, "AB-20", set(), tmp_path) == {}
+
+
+def test_agent2_retargets_after_the_plan_and_before_the_in_flight_check():
+    import inspect
+    src = inspect.getsource(a2.run)
+    assert src.index("build_plan(") < src.index("_retarget_test_files_owned_elsewhere(") \
+        < src.index("in_flight.file_conflicts(")

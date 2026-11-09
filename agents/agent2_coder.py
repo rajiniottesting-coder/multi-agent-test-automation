@@ -1807,6 +1807,88 @@ def _extend_existing_page_objects(plan: CodePlan, ctx: AppContext,
     return corrected
 
 
+def _holds_scenarios_of_others(content: str, story_id: str, own_keys: set) -> bool:
+    """True when a feature file holds a scenario this story does not own: a
+    marker naming another owner, a marked test case not this story's (no
+    owner recorded), or an unmarked scenario (nobody's to drop)."""
+    story = (story_id or "").upper()
+    _header, blocks = parse_feature_file(content)
+    for block in blocks:
+        if block.kind != "scenario":
+            continue
+        if not block.jira_key:
+            return True
+        owner = (getattr(block, "owner", None) or "").upper()
+        if owner:
+            if owner != story:
+                return True
+        elif block.jira_key.upper() not in own_keys:
+            return True
+    return False
+
+
+def _retarget_test_files_owned_elsewhere(plan: CodePlan, story_id: str, own_keys,
+                                         project_root: Path | None = None) -> dict:
+    """Give the story its own feature and step-definition files when the plan
+    names files that hold other stories' scenarios.
+
+    Agent 2 writes whole files, so a planned feature file that already holds
+    another story's scenarios would be regenerated with this story's only -
+    the other story's tests silently gone (9 Nov 2026: SCRUM-330's plan reused
+    the Test Cases page feature and its step definitions and dropped both of
+    SCRUM-293's scenarios; no gate, review or run noticed). Those files are
+    renamed in the plan (stem + the story key), feature and step definitions
+    together, before anything is generated. A file only this story's
+    scenarios fill (a regeneration) is left alone. Returns {old stem: new stem}.
+    """
+    root = project_root or PROJECT_ROOT
+    own = {str(k).upper() for k in (own_keys or ()) if k}
+    suffix = re.sub(r"[^a-z0-9]+", "_", (story_id or "story").lower()).strip("_")
+
+    def stem_of(path: str) -> Optional[str]:
+        p = Path(path)
+        if p.suffix == ".feature":
+            return p.stem
+        if path.startswith("tests/step_defs/") and p.suffix == ".py" \
+                and p.stem.startswith("test_"):
+            return p.stem[len("test_"):]
+        return None
+
+    renames: dict = {}
+    for fp in plan.files_to_create:
+        stem = stem_of(_normalize_path(fp.file_path))
+        if not stem or stem in renames:
+            continue
+        feature = root / "features" / f"{stem}.feature"
+        if not feature.is_file():
+            continue
+        try:
+            content = feature.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        if not _holds_scenarios_of_others(content, story_id, own):
+            continue
+        new, n = f"{stem}_{suffix}", 2
+        while (root / "features" / f"{new}.feature").exists():
+            new, n = f"{stem}_{suffix}_{n}", n + 1
+        renames[stem] = new
+    if not renames:
+        return {}
+    for fp in plan.files_to_create:
+        path = _normalize_path(fp.file_path)
+        stem = stem_of(path)
+        if stem not in renames:
+            continue
+        name = (f"{renames[stem]}.feature" if path.endswith(".feature")
+                else f"test_{renames[stem]}.py")
+        fp.file_path = str(Path(path).with_name(name).as_posix())
+        fp.is_new_file = True
+    logger.warning("The plan named test files that hold other stories' scenarios; "
+                   "this story gets its own instead, so none of theirs is lost: %s",
+                   ", ".join(f"{a} -> {b}" for a, b in renames.items()))
+    return renames
+
+
 # ---------------------------------------------------------------------------
 # STAGE 2: Generate each file's content
 # ---------------------------------------------------------------------------
@@ -4927,6 +5009,10 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
         agent2_impact.drop_owner_files(plan, owner_files, new_test_cases)
         validate_paths_against_policy(
             plan, ctx, protected_files=agent2_impact.protected_paths(owner_files))
+    # A feature file (and its step definitions) holding other stories'
+    # scenarios is never regenerated: this story gets files of its own.
+    _retarget_test_files_owned_elsewhere(
+        plan, story_id, {tc.get("key") for tc in new_test_cases})
 
     # 3b. IN FLIGHT, files. Agent 2 writes whole files from main's copy, so a
     # file another open pull request is changing would conflict on merge -
