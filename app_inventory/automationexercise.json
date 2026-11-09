@@ -317,15 +317,18 @@
         "test_case_search_input": "#search_test_cases",
         "feedback_automationexercise_com_link": "role=link[name='feedback@automationexercise.com']",
         "feedback_element": "#feedback",
-        "test_case_panels": ".panel-group .panel"
+        "test_case_panels": ".panel-group .panel",
+        "test_case_panel_headings": ".panel-group .panel-heading"
       },
       "planned": [
-        "test_case_search_input"
+        "test_case_search_input",
+        "test_case_panel_headings"
       ],
       "multi_match": [
         "test_case_titles",
         "test_case_steps",
-        "test_case_panels"
+        "test_case_panels",
+        "test_case_panel_headings"
       ],
       "multi_match_note": "Lists: one title link per test case, one step item per step (inside collapsed panels until a title is clicked)."
     }
