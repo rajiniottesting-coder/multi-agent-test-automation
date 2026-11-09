@@ -1,13 +1,12 @@
 """
 HomePage — the Automation Exercise landing page.
 
-New page object for the newsletter-subscription feature. Selectors come from
-the `home` entry in the app inventory; this file carries no literal selectors.
+Page object for the home page. Selectors come from the `home` entry in the app
+inventory; this file carries no literal selectors.
 
-The subscribe control is icon-only (an arrow glyph) with no accessible name,
-so the method is named for what it does — subscribe_to_newsletter(email) —
-rather than a bare verb. The success text is rendered in place after
-subscribing; there is no navigation and no toast.
+Two capabilities live here: the newsletter-subscription flow (footer) and the
+'Test Cases' button, which navigates away to the Test Cases page. The button
+is labelled, so it is addressed by ARIA role+name via the inventory key.
 
 App: https://automationexercise.com
 """
@@ -53,6 +52,17 @@ class HomePage(BasePage):
         self.scroll_to_bottom()
         self.fill(self.sel("subscribe_email_input"), email)
         self.click(self.sel("subscribe_button"))
+
+    def click_test_cases_button(self) -> None:
+        """Click the 'Test Cases' button, landing on the Test Cases page.
+
+        This leaves the home page, so it does NOT confirm arrival here — the
+        destination's own page object is responsible for proving it arrived.
+        A click is not a guarantee (an ad interstitial can swallow it), but the
+        destination page object is not this one, so recovery belongs there.
+        """
+        self.require_own_page()
+        self.click(self.sel("test_cases_button"))
 
     # ── queries ──────────────────────────────────────────────
     def is_loaded(self, timeout_ms: Optional[int] = None) -> bool:
