@@ -54,6 +54,17 @@ class HomePage(BasePage):
         self.fill(self.sel("subscribe_email_input"), email)
         self.click(self.sel("subscribe_button"))
 
+    def go_to_test_cases(self) -> None:
+        """Click the 'Test Cases' button on the home page.
+
+        This navigates AWAY from the home page to /test_cases, so the method
+        does NOT confirm arrival here — the TestCasesPage object owns that
+        assertion for its own URL. Confirms the browser is on THIS page before
+        clicking so the button is actually present.
+        """
+        self.require_own_page()
+        self.click(self.sel("test_cases_button"))
+
     # ── queries ──────────────────────────────────────────────
     def is_loaded(self, timeout_ms: Optional[int] = None) -> bool:
         """True once the home page is on screen. WAITS for it.
