@@ -77,6 +77,18 @@ class TestCasesPage(BasePage):
         """
         return self.is_showing(self.sel("test_cases_heading"), timeout_ms=timeout_ms)
 
+    def is_on_test_cases_page(self, timeout_ms: Optional[int] = None) -> bool:
+        """True once the browser is on the Test Cases page. WAITS.
+
+        Confirms both that this page's readiness heading is showing AND that
+        the URL path matches the one this page declares in the inventory, so a
+        step asserting "I should be on the Test Cases page" is answered
+        directly rather than by inference from some other element.
+        """
+        return self.is_loaded(timeout_ms=timeout_ms) and (
+            self.get_path().rstrip("/") == self.page_url().rstrip("/")
+        )
+
     def heading_text(self) -> str:
         """Visible text of the page heading. WAITS for it to appear.
 
