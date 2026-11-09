@@ -329,7 +329,7 @@
         "test_case_panels",
         "test_case_panel_headings"
       ],
-      "multi_match_note": "Lists: one title link per test case, one step item per step (inside collapsed panels until a title is clicked)."
+      "multi_match_note": "Lists: one panel, one panel heading and one title link per test case, one step item per step (inside collapsed panels until a title is clicked)."
     }
   },
   "_starting_state": {
