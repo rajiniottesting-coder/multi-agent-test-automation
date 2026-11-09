@@ -797,8 +797,8 @@ class JiraClient:
         """Return the parent Story key for a Test Case, or None if not applicable.
 
         Used by Agent 5 (Reporter) to ensure run-summary comments land on the
-        user-facing Story (e.g. SCRUM-20) instead of the implementation-detail
-        Test Case (e.g. SCRUM-23) extracted from a feature branch name.
+        user-facing Story (e.g. PRJ-20) instead of the implementation-detail
+        Test Case (e.g. PRJ-23) extracted from a feature branch name.
 
         Resolution logic:
           - If `issue_key` itself is a Story (or anything that's not a Test Case),
@@ -875,7 +875,7 @@ class JiraClient:
         an object value into a PropertyHolder - attributes, no .get() - so
         every reader that treats the value as the dict it stored failed or fell
         back silently. Agent 5's second report on a story (4 Nov 2026,
-        SCRUM-283) crashed on `'PropertyHolder' object has no attribute
+        PRJ-283) crashed on `'PropertyHolder' object has no attribute
         'get'` reading its own last-report fingerprint."""
         try:
             prop = self.client.issue_property(issue_key, key)

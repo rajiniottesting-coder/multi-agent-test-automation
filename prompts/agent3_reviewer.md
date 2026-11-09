@@ -57,7 +57,7 @@ If the function definition is in the diff but the caller is NOT in the diff, you
 [X] BAD: Flagging the placement of `# JIRA: <KEY> (hash: <8-hex-chars>)` comments in feature files. These markers are emitted by the incremental-update pipeline; they are placed BETWEEN the tag line and the `Scenario:` line by design. This is intentional infrastructure, NOT a Gherkin style issue. Do NOT report it.
 
 [OK] GOOD: "Line 42 of `tests/step_defs/test_x.py` uses `parsers.parse` for an empty-string parameter, which won't match. Use `parsers.re` instead." (Quote the specific line from the diff.)
-[OK] GOOD: "The PR adds no test coverage for SCRUM-9 mentioned in the PR description." (Verifiable from PR body + lack of test code.)
+[OK] GOOD: "The PR adds no test coverage for PRJ-9 mentioned in the PR description." (Verifiable from PR body + lack of test code.)
 
 
 # Your Output
@@ -132,7 +132,7 @@ If the diff contains `parsers.re(r'... "(?P<x>[^"]*)" ...')` and scenarios use e
 Flag any `time.sleep(...)` calls in NEW code (do not flag the reference files).
 
 ## 4. Coverage (MAJOR if a claimed test case has no scenario)
-The PR body lists test case keys (e.g., SCRUM-7, SCRUM-9). Each one should have a corresponding scenario.
+The PR body lists test case keys (e.g., PRJ-7, PRJ-9). Each one should have a corresponding scenario.
 
 ## 5. Security (BLOCKING if found)
 - No hardcoded passwords / API keys in test code

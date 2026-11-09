@@ -241,7 +241,7 @@ def _waives_itself(issue) -> bool:
 # A STOP NEEDS A FAILURE, NOT A LABEL.
 #
 # The waiver check above reads one phrase in one field, and exempts an
-# explicit `blocking` severity. A review on SCRUM-111 then filed a
+# explicit `blocking` severity. A review on PRJ-111 then filed a
 # `blocking` / `functional_bug` whose own description walked through the flow
 # and ended "This flow is valid. No blocking bug - downgrading." The severity
 # field was never changed, and the pull request went red while every test
@@ -339,7 +339,7 @@ def derive_verdict(report: ReviewReport) -> ReviewReport:
 #
 # "This test will fail" is a prediction, and this repository runs the tests:
 # Agent 4 executes every scenario on the same commit, in parallel with this
-# review. PR #148 (SCRUM-111) was blocked by a major/functional_bug whose
+# review. PR #148 (PRJ-111) was blocked by a major/functional_bug whose
 # failure_scenario read "if the site renders two separate rows ... the
 # assertion fails" and whose fix read "No code change needed if behaviour is
 # confirmed". The runner had already confirmed it: all four scenarios passed
@@ -353,7 +353,7 @@ def derive_verdict(report: ReviewReport) -> ReviewReport:
 # no evidence is never treated as good evidence. A finding that says the test
 # PASSES WRONGLY is never refuted by a pass, and security never waits.
 #
-# PER SCENARIO, NOT PER RUN (SCRUM-206, PR #211). A red run used to keep every
+# PER SCENARIO, NOT PER RUN (PRJ-206, PR #211). A red run used to keep every
 # prediction blocking, however unrelated the red test. That run had one test
 # fail on an HTTP 503 from the application, and a change story's PR is red
 # BY DESIGN until the change is deployed (its absence test fails). The
@@ -618,8 +618,8 @@ def _needs_runner_evidence(report: ReviewReport) -> bool:
 # THE REPORT MUST SAY ONE THING.
 #
 # The gate fixes made the VERDICT follow the findings, but the comment a human
-# reads kept contradicting itself. The final review of PR #148 (SCRUM-111)
-# was advisory - correct - yet its summary still announced "SCRUM-215 has a
+# reads kept contradicting itself. The final review of PR #148 (PRJ-111)
+# was advisory - correct - yet its summary still announced "PRJ-215 has a
 # functional bug", and it listed a major/functional_bug whose own fix read
 # "No change required ... Leaving as advisory." A reader trusts the summary
 # and the label, not the fine print, so the gate was right and the page was

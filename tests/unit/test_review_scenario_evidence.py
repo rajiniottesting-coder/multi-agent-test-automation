@@ -1,6 +1,6 @@
 """A predicted failure is judged on ITS scenario's result, not the whole run's.
 
-PR #211 (SCRUM-206): the reviewer blocked on "the add-from-card step will hit
+PR #211 (PRJ-206): the reviewer blocked on "the add-from-card step will hit
 two controls in one card". That scenario passed on the commit; the run was red
 only because ANOTHER test hit an HTTP 503 from the application - and a change
 story's PR is red by design until the change is deployed. A whole-run rule kept

@@ -3,7 +3,7 @@
 The loop routed only messages of the form `<rule> error in '<path>':`. Two
 rules are worded without the word "error" - `Row index used as a cell index
 in '<path>' line N:` and `Drifted step wording in '<path>':` - so they were
-dropped silently: the file never got a repair attempt, and SCRUM-111 failed at
+dropped silently: the file never got a repair attempt, and PRJ-111 failed at
 the final gate on a page-object defect the loop was never shown.
 """
 import os

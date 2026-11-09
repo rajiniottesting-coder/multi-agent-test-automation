@@ -40,7 +40,7 @@ Safety:
 
 Usage:
     python -m agents.agent0_impact --scan
-    python -m agents.agent0_impact --story SCRUM-210 --dry-run
+    python -m agents.agent0_impact --story PRJ-210 --dry-run
     python -m agents.agent0_impact --code-change --base <dir> --head <dir> [--pr 12]
     python -m agents.agent0_impact --drift-report reports/drift.json
 """

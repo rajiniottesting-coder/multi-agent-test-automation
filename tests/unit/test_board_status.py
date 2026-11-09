@@ -173,10 +173,10 @@ def test_closed_without_merge_does_not_mark_done():
     """A rejected PR must leave the story in In Review. The CLI is the gate."""
     import subprocess, sys, os
     env = dict(os.environ, JIRA_URL="x", JIRA_EMAIL="x",
-               JIRA_API_TOKEN="x", JIRA_PROJECT_KEY="SCRUM")
+               JIRA_API_TOKEN="x", JIRA_PROJECT_KEY="PRJ")
     r = subprocess.run(
         [sys.executable, "-m", "scripts.close_merged_story",
-         "--branch", "auto/SCRUM-5-login", "--merged", "false"],
+         "--branch", "auto/PRJ-5-login", "--merged", "false"],
         capture_output=True, text=True, env=env, cwd=str(
             __import__("pathlib").Path(__file__).resolve().parents[2]))
     assert r.returncode == 0
@@ -185,7 +185,7 @@ def test_closed_without_merge_does_not_mark_done():
 def _close_merged(*args):
     import subprocess, sys, os
     env = dict(os.environ, JIRA_URL="x", JIRA_EMAIL="x",
-               JIRA_API_TOKEN="x", JIRA_PROJECT_KEY="SCRUM")
+               JIRA_API_TOKEN="x", JIRA_PROJECT_KEY="PRJ")
     return subprocess.run(
         [sys.executable, "-m", "scripts.close_merged_story", *args],
         capture_output=True, text=True, env=env, cwd=str(
@@ -211,9 +211,9 @@ def test_merged_pipeline_branch_without_a_story_key_still_fails():
 def test_merged_non_pipeline_branch_with_a_key_is_still_a_story():
     """Teams name branches differently; a key anywhere still means a story.
     --dry-run stops before the tracker is called."""
-    r = _close_merged("--branch", "feature/SCRUM-5-fix", "--merged", "true", "--dry-run")
+    r = _close_merged("--branch", "feature/PRJ-5-fix", "--merged", "true", "--dry-run")
     assert r.returncode == 0
-    assert "SCRUM-5" in r.stdout and "not a story branch" not in r.stdout
+    assert "PRJ-5" in r.stdout and "not a story branch" not in r.stdout
 
 
 # ── NEGATIVE: malformed config must never crash an agent ─────

@@ -465,7 +465,7 @@ class TestEmptyOutputGuard:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# SCRUM-103, 31 Jul 2026 — the repair loop never saw the real error
+# PRJ-103, 31 Jul 2026 — the repair loop never saw the real error
 #
 # A run spent all four attempts repairing a step-def file for an unused step
 # definition, produced near-identical output each time, and died on a
@@ -548,7 +548,7 @@ class TestSelectorErrorsAreRepairable:
             "pages/ghost_page.py"]
 
     def test_a_new_page_object_naming_no_page_is_a_selector_problem(self):
-        """F46 (5 Nov 2026, SCRUM-292): a NEW page object with methods that
+        """F46 (5 Nov 2026, PRJ-292): a NEW page object with methods that
         declares no INVENTORY_PAGE anchors nothing - the model's way round a
         page missing from the inventory. A class that is not a page object
         (no BasePage, or no methods) is still left alone."""
@@ -589,7 +589,7 @@ class TestSelectorErrorsAreRepairable:
 #     Four validators were added over successive sessions emitting
 #     `<path> line N: ...` instead. Every one of them would have killed a story
 #     outright rather than repairing it, and nothing would have said why. The
-#     same hole cost a run before, under SCRUM-103, when the selector validator
+#     same hole cost a run before, under PRJ-103, when the selector validator
 #     added a line number the regex did not tolerate.
 #
 # WHY THIS TEST AND NOT A CONVENTION

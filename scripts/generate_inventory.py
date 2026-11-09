@@ -225,7 +225,7 @@ def main() -> int:
             "review_checklist": {
                 "1_WRITE": {
                     "components": "Jira Component name(s) this page serves, e.g. "
-                                  "['Products']. Left EMPTY by the crawler. Without "
+                                  "['Reports']. Left EMPTY by the crawler. Without "
                                   "it Agent 2 receives the whole inventory for every "
                                   "story instead of just this page.",
                     "elements_notes": "Per-key traps: what breaks, what to do "

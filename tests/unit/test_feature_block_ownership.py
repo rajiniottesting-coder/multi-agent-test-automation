@@ -158,15 +158,15 @@ class TestParseOwnership:
     def test_existing_untagged_layout_still_parses(self):
         content = (
             "Feature: Logout\n\n"
-            "  # JIRA: SCRUM-21 (hash: aaaaaaaa)\n"
+            "  # JIRA: PRJ-21 (hash: aaaaaaaa)\n"
             "  Scenario: a\n    Then a\n\n"
-            "  # JIRA: SCRUM-22 (hash: bbbbbbbb)\n"
+            "  # JIRA: PRJ-22 (hash: bbbbbbbb)\n"
             "  Scenario: b\n    Then b\n"
         )
         result = classify_test_cases(
-            [{"key": "SCRUM-21", "description": "x"}], content
+            [{"key": "PRJ-21", "description": "x"}], content
         )
-        assert result["orphan_keys"] == ["SCRUM-22"]
+        assert result["orphan_keys"] == ["PRJ-22"]
 
 
 # ─────────────────────────────────────────────────────────────────

@@ -1,8 +1,8 @@
 """click_in_row waits for the row before calling it missing.
 
-PR #215's Agent 4 run (26 Oct 2026): a scenario clicked "View Cart" and the
-very next step deleted a product's row with click_in_row(). It counted the rows
-at once - before the cart page had drawn them - found none, and failed, while
+PR #215's Agent 4 run (26 Oct 2026): a scenario followed a link to a listing and the
+very next step deleted an item's row with click_in_row(). It counted the rows
+at once - before the listing had drawn them - found none, and failed, while
 other scenarios' waiting readers found the same row. Counting is a snapshot;
 the first row action after a navigation has to wait.
 Generic names only; no browser.

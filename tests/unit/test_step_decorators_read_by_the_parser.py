@@ -1,6 +1,6 @@
 """Step decorators are read as Python reads them, not by a pattern.
 
-3 Nov 2026, SCRUM-284: the generated step definition wrapped a long phrase
+3 Nov 2026, PRJ-284: the generated step definition wrapped a long phrase
 over several string literals - Python's usual way to break a long line, joined
 into one string before pytest-bdd sees it:
 

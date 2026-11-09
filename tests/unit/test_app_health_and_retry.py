@@ -1,7 +1,7 @@
 """The application health check, the retry it gates, and defects only after a rerun.
 
-30 Oct 2026, the nightly run on main: 17 of 17 tests failed - the login form,
-the search box, the product list and the newsletter field never appeared, on
+30 Oct 2026, the nightly run on main: 17 of 17 tests failed - the forms, lists and
+fields the tests looked for never appeared, on
 four pages that were SERVED (no HTTP error, no timeout) without their content.
 The next night all 17 passed with no change. Nothing told "the application was
 not itself" from "17 tests are broken": more than ten failures switched the
@@ -73,7 +73,8 @@ def test_the_shipped_setting_matches_the_shipped_inventory():
     plan = app_probe.checks()
     assert plan and all(c.elements for c in plan), \
         "this application's check looks for content, not only a status"
-    inv = json.loads((ROOT / "app_inventory" / "automationexercise.json").read_text())
+    app = yaml.safe_load((ROOT / "config" / "config.yaml").read_text())["app_under_test"]
+    inv = json.loads((ROOT / app["inventory_file"]).read_text())
     for c in plan:
         page = inv["pages"][c.page]
         for key in c.elements:

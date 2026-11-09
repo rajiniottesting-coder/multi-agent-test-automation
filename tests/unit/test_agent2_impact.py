@@ -245,7 +245,7 @@ def test_one_definition_of_the_files_only_splicing_may_edit():
 
 
 def test_orphan_cleanup_is_committed_even_when_no_step_function_was_added(monkeypatch):
-    """A3 (SCRUM-206): retiring a scenario left its step function orphaned; the
+    """A3 (PRJ-206): retiring a scenario left its step function orphaned; the
     PR body said it was commented out, but the step-def file was not in the PR,
     because the file was committed only when the splice ADDED a function.
 

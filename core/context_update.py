@@ -782,7 +782,7 @@ def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: 
     chash = _story_hash(story)
     # `force` (Agent 0 run by hand for one story) proposes again even after a
     # "no update needed" verdict or a closed pull request for this text - 4 Nov
-    # 2026: SCRUM-207's earlier verdict stood, so a forced re-analysis could
+    # 2026: PRJ-207's earlier verdict stood, so a forced re-analysis could
     # never retry the update. A pull request still open always stands: never two.
     if _already_proposed(tracker.get_comments(story_key), chash, _pr_is_open(host),
                          only_open_pr=force):
@@ -1257,7 +1257,7 @@ def extract_note_additions(llm, story: dict, story_key: str, test_cases: list, s
 
 def render_addition_body(story_key: str, res: Additions, notes_report: str = "") -> str:
     # Merged is all this run knows: a pull request may merge before its tests
-    # finish, or red (5 Nov 2026: SCRUM-293's merged during its run, two tests
+    # finish, or red (5 Nov 2026: PRJ-293's merged during its run, two tests
     # then failing on main) - so the body claims nothing about them.
     lines = [f"Notes addition proposed by Agent 0 for **{story_key}**, whose pull request "
              "merged. Its facts come from the story and its approved test cases; merge "

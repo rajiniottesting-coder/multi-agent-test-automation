@@ -781,7 +781,7 @@ def validate_method_resolution(
 # A page object calling a method nothing defines
 #
 # Method resolution checked the step definitions' calls INTO page objects,
-# never a page object's calls on ITSELF. SCRUM-111 shipped
+# never a page object's calls on ITSELF. PRJ-111 shipped
 # `self.require_own_page_on(...)` and `self.sel_on(...)` - neither exists on
 # the class or on BasePage - passed every gate, and all four scenarios died
 # at runtime with AttributeError before touching the application.
@@ -1207,7 +1207,7 @@ def _find_similar_methods(target: str, available: set[str]) -> list[str]:
 # ═════════════════════════════════════════════════════════════════════════
 # Page-object selector validator
 #
-# WHY THIS EXISTS (SCRUM-104, 31 Jul 2026):
+# WHY THIS EXISTS (PRJ-104, 31 Jul 2026):
 #     `tests/unit/test_page_object_selectors.py` enforces the rule this whole
 #     design rests on — a page object resolves selectors through
 #     `self.sel("<key>")` against the app inventory, never from a literal
@@ -1269,7 +1269,7 @@ def pages_missing_from_inventory(errors, project_root=None, pages=None) -> list:
     have - not a misspelling of one it has (no close match), so no repair can
     fix it: the inventory is curated by a person, never by Agent 2.
 
-    3 Nov 2026, SCRUM-284: the page the story needed was not in the inventory. The
+    3 Nov 2026, PRJ-284: the page the story needed was not in the inventory. The
     repair loop was told the page did not exist and "repaired" the page object
     by deleting what it could not anchor; the step definitions then called
     methods that no longer existed, and four attempts later the story was
@@ -1624,7 +1624,7 @@ def validate_page_object_selectors(
             # A class that never calls sel() and declares no INVENTORY_PAGE is
             # not a page object (a helper, an enum, a mixin) — skip it. Unless
             # it is a NEW BasePage subclass with methods: that is a page object
-            # anchored to nothing (5 Nov 2026, SCRUM-292: for a page the
+            # anchored to nothing (5 Nov 2026, PRJ-292: for a page the
             # inventory lacked, the model declared no INVENTORY_PAGE and
             # navigated by a hard-coded path, so no check named the missing
             # page - the third way round it, after an unknown key and
@@ -3118,7 +3118,7 @@ def validate_persistent_state_assertions(
         # no storage, nothing carried over - and an exact count on it is as
         # safe as on a freshly registered account.
         #
-        # Refusing that sent SCRUM-111 (every scenario anonymous by its
+        # Refusing that sent PRJ-111 (every scenario anonymous by its
         # acceptance criteria) round the repair loop three times asking for a
         # remedy the scenario did not need, and failed the story.
         #
@@ -4787,7 +4787,7 @@ def validate_step_parameter_types(generated_files: list, project_root=None) -> l
 # pytest-bdd binds steps per module, so a phrase already defined for another
 # feature is written again for a new one. The new body must check what the
 # old one checks and nothing else: the sentence is the contract, and a reader
-# of either feature reads the same words. Validation story SCRUM-187: "the
+# of either feature reads the same words. Validation story PRJ-187: "the
 # search results should include X" was defined elsewhere as a containment
 # check; the new copy ALSO asserted that the search-results view was shown,
 # and its own scenario - an empty search, which keeps the unsearched view -

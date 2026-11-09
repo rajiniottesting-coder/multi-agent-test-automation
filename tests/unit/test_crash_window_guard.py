@@ -42,46 +42,46 @@ def _find(gh, repo, story):
 def test_returns_a_plain_dict_not_a_provider_object():
     """The adapter must not leak PyGithub objects - a GitLab/Azure adapter
     would otherwise have to impersonate PyGithub's `.head.ref` shape."""
-    gh, repo = _client([_pr("auto/SCRUM-5-login", 42)])
-    out = _find(gh, repo, "SCRUM-5")
+    gh, repo = _client([_pr("auto/PRJ-5-login", 42)])
+    out = _find(gh, repo, "PRJ-5")
     assert isinstance(out, dict)
     assert set(out) == {"number", "head_ref", "head_sha", "url", "title"}
 
 
 def test_finds_pr_for_the_story():
-    gh, repo = _client([_pr("auto/SCRUM-9-cart", 9),
-                        _pr("auto/SCRUM-5-login", 42)])
-    assert _find(gh, repo, "SCRUM-5")["number"] == 42
+    gh, repo = _client([_pr("auto/PRJ-9-cart", 9),
+                        _pr("auto/PRJ-5-login", 42)])
+    assert _find(gh, repo, "PRJ-5")["number"] == 42
 
 
 def test_ignores_other_stories():
-    gh, repo = _client([_pr("auto/SCRUM-5-login", 42)])
-    assert _find(gh, repo, "SCRUM-7") is None
+    gh, repo = _client([_pr("auto/PRJ-5-login", 42)])
+    assert _find(gh, repo, "PRJ-7") is None
 
 
 def test_matches_rev_and_update_branches():
     """-revN / -updateN belong to the same story."""
-    for ref in ("auto/SCRUM-5-login-rev2", "auto/SCRUM-5-login-update3"):
+    for ref in ("auto/PRJ-5-login-rev2", "auto/PRJ-5-login-update3"):
         gh, repo = _client([_pr(ref, 43)])
-        assert _find(gh, repo, "SCRUM-5")["number"] == 43
+        assert _find(gh, repo, "PRJ-5")["number"] == 43
 
 
 def test_ignores_non_auto_branches():
     """A human's hand-written branch must never be mistaken for agent output."""
-    gh, repo = _client([_pr("feature/SCRUM-5-manual-fix", 44)])
-    assert _find(gh, repo, "SCRUM-5") is None
+    gh, repo = _client([_pr("feature/PRJ-5-manual-fix", 44)])
+    assert _find(gh, repo, "PRJ-5") is None
 
 
 def test_prefix_is_not_a_substring_match():
-    """SCRUM-5 must not match SCRUM-50."""
-    gh, repo = _client([_pr("auto/SCRUM-50-checkout", 50)])
-    assert _find(gh, repo, "SCRUM-5") is None
+    """PRJ-5 must not match PRJ-50."""
+    gh, repo = _client([_pr("auto/PRJ-50-checkout", 50)])
+    assert _find(gh, repo, "PRJ-5") is None
 
 
 def test_api_failure_never_blocks():
     """A lookup problem must not stop the agent - degrade to 'no PR found'."""
     gh, repo = _client([], boom=True)
-    assert _find(gh, repo, "SCRUM-5") is None
+    assert _find(gh, repo, "PRJ-5") is None
 
 
 # ── WINDOW A: partial commits, no PR -> discard the branch ────
@@ -102,8 +102,8 @@ def test_delete_branch_removes_partial_branch():
     gh, repo = _gh_with_branch(exists=True)
     with patch.object(GitHubClient, "repo", new_callable=PropertyMock,
                       return_value=repo):
-        assert gh.delete_branch("auto/SCRUM-5-login") is True
-    repo.get_git_ref.assert_called_once_with("heads/auto/SCRUM-5-login")
+        assert gh.delete_branch("auto/PRJ-5-login") is True
+    repo.get_git_ref.assert_called_once_with("heads/auto/PRJ-5-login")
 
 
 def test_delete_branch_reports_failure_without_raising():
@@ -111,11 +111,11 @@ def test_delete_branch_reports_failure_without_raising():
     gh, repo = _gh_with_branch(exists=True, delete_ok=False)
     with patch.object(GitHubClient, "repo", new_callable=PropertyMock,
                       return_value=repo):
-        assert gh.delete_branch("auto/SCRUM-5-login") is False
+        assert gh.delete_branch("auto/PRJ-5-login") is False
 
 
 def test_delete_branch_on_missing_branch_is_not_an_error():
     gh, repo = _gh_with_branch(exists=False)
     with patch.object(GitHubClient, "repo", new_callable=PropertyMock,
                       return_value=repo):
-        assert gh.delete_branch("auto/SCRUM-5-nope") is False
+        assert gh.delete_branch("auto/PRJ-5-nope") is False

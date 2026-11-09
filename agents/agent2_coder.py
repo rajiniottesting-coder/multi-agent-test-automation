@@ -25,8 +25,8 @@ Defenses:
     - Windows-safe printing: ASCII-only output (no emoji) to work in cp1252.
 
 Usage:
-    python -m agents.agent2_coder --story SCRUM-5 --dry-run
-    python -m agents.agent2_coder --story SCRUM-5
+    python -m agents.agent2_coder --story PRJ-5 --dry-run
+    python -m agents.agent2_coder --story PRJ-5
     python -m agents.agent2_coder --scan
 
 FULL FLAG REFERENCE
@@ -130,7 +130,7 @@ logger = logging.getLogger("agent2_coder")
 # ═══════════════════════════════════════════════════════════════════════════
 # This section provides the building blocks for the surgical-update flow:
 #
-#   - JIRA marker comments: `# JIRA: SCRUM-22 (hash: a4f9c2e1)` above each
+#   - JIRA marker comments: `# JIRA: PRJ-22 (hash: a4f9c2e1)` above each
 #     Scenario, used to identify which scenario belongs to which Test Case
 #     and whether the Test Case description has changed since the scenario
 #     was last generated.
@@ -148,7 +148,7 @@ logger = logging.getLogger("agent2_coder")
 
 # Regex anchored on the JIRA marker comment. Tolerates extra whitespace.
 # Examples it matches:
-#   "# JIRA: SCRUM-22 (hash: a4f9c2e1)"
+#   "# JIRA: PRJ-22 (hash: a4f9c2e1)"
 #   "    # JIRA: PROJ-7 (hash: abcdef12)"
 #   "# JIRA: PROJ-7 (hash: abcdef12) owner: PROJ-1 impacted-by: PROJ-9,PROJ-12"
 # Does NOT match without the hash — we want to distinguish OUR markers
@@ -1834,9 +1834,9 @@ def _retarget_test_files_owned_elsewhere(plan: CodePlan, story_id: str, own_keys
 
     Agent 2 writes whole files, so a planned feature file that already holds
     another story's scenarios would be regenerated with this story's only -
-    the other story's tests silently gone (9 Nov 2026: SCRUM-330's plan reused
-    the Test Cases page feature and its step definitions and dropped both of
-    SCRUM-293's scenarios; no gate, review or run noticed). Those files are
+    the other story's tests silently gone (9 Nov 2026: a new story's plan reused
+    another story's feature file and step definitions and dropped both of its
+    scenarios; no gate, review or run noticed). Those files are
     renamed in the plan (stem + the story key), feature and step definitions
     together, before anything is generated. A file only this story's
     scenarios fill (a regeneration) is left alone. Returns {old stem: new stem}.
@@ -1976,7 +1976,7 @@ def _build_reused_then_steps_block(file_plan, already_generated,
 
     pytest-bdd binds steps per module, so a phrase another feature already
     defines is written again here. The prompt said "assert what that
-    definition asserts" but never showed it, and the model guessed: SCRUM-187
+    definition asserts" but never showed it, and the model guessed: PRJ-187
     re-defined a committed Then with an extra check, twice (20 Oct 2026).
     validate_reused_steps_keep_their_meaning() rejects that; this shows the
     definition first, so the rule is met when the file is written.
@@ -2502,7 +2502,7 @@ def _validate_generated_files(
     Catches the failure modes Agent 2 has historically had:
       - PR #7: kebab-case feature filename vs snake_case feature_path() ref
       - PR #9: feature steps without matching @given/@when/@then decorators
-      - SCRUM-13: imports referencing modules that don't exist
+      - PRJ-13: imports referencing modules that don't exist
 
     Raises GateFailure (a ValueError) if any validator finds problems, carrying
     that validator's errors: the blocked comment names them (core.blocked),
@@ -2516,7 +2516,7 @@ def _validate_generated_files(
     # loop stops on it - no repair can add a page - and leaves the files as
     # they were, so a later check (a step left undefined, say) used to refuse
     # them and the blocked comment named that instead of the page (5 Nov 2026,
-    # SCRUM-292: "Step coverage error ..." with advice to edit the test case).
+    # PRJ-292: "Step coverage error ..." with advice to edit the test case).
     page_errors = [e for e in validate_page_object_selectors(generated_files, PROJECT_ROOT)
                    if pages_missing_from_inventory([e], PROJECT_ROOT)]
     if page_errors:
@@ -2761,7 +2761,7 @@ def _group_validator_errors_by_file(
     The line-number segment is optional: the selector validator reports
     `... error in '<path>' line 125:` so it can point at the offending call,
     and without tolerating that the error matched nothing, was dropped here,
-    and the file never got a repair attempt (SCRUM-103, 31 Jul 2026).
+    and the file never got a repair attempt (PRJ-103, 31 Jul 2026).
 
     Returns: {file_path: [error_messages_for_that_file]}
 
@@ -2770,7 +2770,7 @@ def _group_validator_errors_by_file(
     worded `Row index used as a cell index in '<path>' line N:` or `Drifted
     step wording in '<path>':` was dropped here without a word: the file never
     got a repair attempt and the story failed at the final gate on a defect
-    the loop was never shown (SCRUM-111, 11 Oct 2026). Only the first quoted
+    the loop was never shown (PRJ-111, 11 Oct 2026). Only the first quoted
     path counts, so a message that mentions a second file later - "(in
     '<feature>')" - is still routed to the file it is about.
     """
@@ -2897,7 +2897,7 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     # Page-object selector errors ARE repairable and were missing here.
     # They were enforced only by the final gate, so the model got four
     # attempts at whatever else was wrong and ZERO at the page object, then
-    # the run died on feedback it had never been shown (SCRUM-103).
+    # the run died on feedback it had never been shown (PRJ-103).
     errors.extend(validate_page_object_selectors(generated_files, PROJECT_ROOT))
     errors.extend(validate_row_scoped_selectors(generated_files, PROJECT_ROOT))
     errors.extend(validate_helper_return_types_are_respected(generated_files, PROJECT_ROOT))
@@ -2967,7 +2967,7 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     # story may only ADD to it. Routed here so the page object is regenerated
     # with the list of methods to restore, not just refused at the gate.
     errors.extend(validate_extended_page_objects_keep_methods(generated_files, PROJECT_ROOT))
-    # Duplicate step-defs across files (SCRUM-54 lesson). repair_format=True so
+    # Duplicate step-defs across files (PRJ-54 lesson). repair_format=True so
     # the loop can target and regenerate the offending GENERATED file with the
     # feedback baked in, rather than only catching it at final validation.
     errors.extend(
@@ -2988,7 +2988,7 @@ def _route_to_generated_file(errors: list, generated_files) -> list:
 
     The grouper routes an error by `<rule> in '<path>':`. An error worded any
     other way was dropped there: the model never saw it, and the story died at
-    the final gate on feedback no repair was given (SCRUM-187, 20 Oct 2026 -
+    the final gate on feedback no repair was given (PRJ-187, 20 Oct 2026 -
     a rule worded `<path>: step ...`). A format convention per validator has
     failed more than once, so the routing is guaranteed here instead: an error
     already in the routable form is kept as it is; otherwise the generated
@@ -3016,8 +3016,8 @@ _MISSING_METHOD = re.compile(
 def _bring_in_page_objects(generated_files, plan, errors, root=None) -> list[str]:
     """Feedback for committed page objects the step definitions need a method on.
 
-    4 Nov 2026, SCRUM-293: the steps called `HomePage.go_to_test_cases()`; the
-    plan had not named pages/home_page.py, so the repair could only rewrite
+    4 Nov 2026: the steps called a navigation method missing from a committed
+    page object; the plan had not named that page object, so the repair could only rewrite
     the step definitions - which kept the call, as the page offered no other
     way to the page - and the story was refused after every attempt. A
     committed page object that is not reserved is extendable: it joins the
@@ -3113,7 +3113,7 @@ def _attempt_step_coverage_repair(
         # attempts only buy tokens. Stop and let the final gate report it.
         # A page the inventory does not have is not the model's to fix: the
         # inventory is curated by a person. Repairs only delete what the page
-        # object cannot anchor (SCRUM-284). Stop before spending; the final
+        # object cannot anchor (PRJ-284). Stop before spending; the final
         # gate reports it and the blocked comment says how to add the page.
         missing_pages = pages_missing_from_inventory(all_errors, PROJECT_ROOT)
         if missing_pages:
@@ -4188,9 +4188,9 @@ def _splice_step_defs_incremental(
                 "Splice: LLM returned no usable step function(s) — regenerating whole."
             )
             return _whole()
-        # 5 Nov 2026, SCRUM-293: told to "assert with one that does" when no
+        # 5 Nov 2026: told to "assert with one that does" when no
         # page-object method read the new step, the writer reused an unrelated
-        # check (title links for a feedback section) - a step that passes
+        # check (a list's links for a contact section) - a step that passes
         # whatever the page shows. Now it says so, and the update stops.
         needs = [m.group(1).strip() for f in new_funcs
                  for m in re.finditer(re.escape(NEEDS_PAGE_METHOD) + r":\s*([^\"']+)", f)]
@@ -4811,7 +4811,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
     """Main agent flow — Stage 1 plan, then Stage 2 per-file generation.
 
     Args:
-        story_id: Jira story key (e.g., "SCRUM-5")
+        story_id: Jira story key (e.g., "PRJ-5")
         dry_run: If True, don't create branch/commits/PR. Print preview.
         is_regenerate: If True, this is a REGENERATION run triggered by the
             `ai-regenerate` label. Skips dedup, uses -revN branch suffix,
@@ -5417,7 +5417,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
         output.branch_name = corrected
         assert_valid_branch_for_pipeline(output.branch_name)
 
-    # The same ambiguity reaches the TITLE: PR #157 went out as "... (SCRUM-223)",
+    # The same ambiguity reaches the TITLE: PR #157 went out as "... (PRJ-223)",
     # a test case's key, after its branch had been corrected to the story.
     output.pr_title = title_for_story(output.pr_title, story_id)
 
@@ -5696,7 +5696,7 @@ def story_mode(story_id: str, jira=None, agent_config=None) -> str:
     "update" (update_label), "regenerate" (regenerate_label) or "normal".
 
     4 Nov 2026: a story run by key (the workflow's story_key) always ran in
-    normal mode. SCRUM-201 carried `ai-update`; the run found every scenario
+    normal mode. PRJ-201 carried `ai-update`; the run found every scenario
     already there, reported "no work needed", told the person to add
     `ai-update` - already on the story - and marked it coded. Both labels at
     once is refused, as a scan takes neither. The labels cannot be read ->
@@ -5746,7 +5746,7 @@ def plan_scan(passes, max_stories: int) -> tuple:
 def main():
     parser = argparse.ArgumentParser(
         description="Agent 2 (Coder): Generate test code from Jira test cases",
-        epilog=("examples:\n  one story        --story SCRUM-5\n  preview only     --story SCRUM-5 --dry-run\n\nreads ref: main - a framework change only takes effect once MERGED."),
+        epilog=("examples:\n  one story        --story PRJ-5\n  preview only     --story PRJ-5 --dry-run\n\nreads ref: main - a framework change only takes effect once MERGED."),
         formatter_class=argparse.RawDescriptionHelpFormatter)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--story", help="Process all test cases of a specific story")
@@ -5910,7 +5910,7 @@ def main():
                 # A story that did nothing - blocked, or still waiting, with no
                 # model call - does not use up a place (F27): the next deferred
                 # story takes it. 4 Nov 2026: a blocked and a waiting story took
-                # both places on every scan and SCRUM-201 was never reached.
+                # both places on every scan and PRJ-201 was never reached.
                 if result.get("free"):
                     taken = next((n for n, d in enumerate(deferred)
                                   if d[2].startswith("over max_stories_per_run")), None)

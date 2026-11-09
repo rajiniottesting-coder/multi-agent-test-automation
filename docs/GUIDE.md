@@ -436,7 +436,7 @@ The architectural answer to "AI is fast but imperfect — how do we keep humans 
 ### End-to-end flow
 
 ```
-[1] Parent Story (e.g., SCRUM-5 "Login functionality")
+[1] Parent Story (e.g., PRJ-5 "Login functionality")
        label: ai-ready
               ↓
 [2] Agent 1 reads it (business-hours cron)
@@ -605,7 +605,7 @@ stale. At hand-over Agent 0 proposes the update as a pull request:
 - **Passages the story makes untrue** — behaviour, rules, removed elements. One more call rewrites each such passage (`prompts/agent0_context_notes.md`). A passage not found verbatim is dropped and reported. **A rewrite never touches a selector**: the element is live until the change is deployed. (A *wording* change, above, does update a selector that matches on the old text - which is why the PR waits for deployment.) The call reads only what the story's Components select - `core.md`, their modules and their pages' inventory notes, by the same rule as Agent 1 (all of them when none match) - and a rewrite of a file it was not shown is dropped.
 - **Elements the story removes** — the same call names them (`removed`, as `page.key`, from the element keys it is shown - never selectors). Each one that exists on a page the story's Components select is added to that page's `removed` list in the inventory: after deployment the nightly checks read the missing element as expected (present again: drift), Agent 0 seeds nothing from it, and the nightly inventory update deletes the key once no test names it. A reference that is not such an element is dropped and reported.
 - Code mentioning the old text is listed, not edited — code changes go through the story's own PR.
-- **A story that changes nothing existing** — Agent 0 classified it `new_behaviour` (new functionality, a new journey, or coverage of behaviour already there; its report shows "Change type") — gets no update and no model call: nothing it says can make a note untrue, and asked anyway the model narrowed correct notes to the story's own sentence (SCRUM-283). What it adds reaches the notes when its tests merge (next section). A report without a change type (written before #247) runs the update as before.
+- **A story that changes nothing existing** — Agent 0 classified it `new_behaviour` (new functionality, a new journey, or coverage of behaviour already there; its report shows "Change type") — gets no update and no model call: nothing it says can make a note untrue, and asked anyway the model narrowed correct notes to the story's own sentence. What it adds reaches the notes when its tests merge (next section). A report without a change type (written before #247) runs the update as before.
 
 The branch is `context-update/<story key in lower case>`, which no tool reads as
 an issue key, so merging it neither closes the story nor reports on it. **Merge it after the change is
@@ -822,7 +822,7 @@ Check out its branch and commit onto it:
 
 ```bash
 git fetch
-git checkout auto/SCRUM-42-search-products     # the branch on the open PR
+git checkout auto/PRJ-42-search-products     # the branch on the open PR
 # ...fix pages/products_page.py...
 git commit -am "fix: correct the search selector"
 git push
@@ -1170,7 +1170,7 @@ auto/<JIRA-KEY>-<feature-name>
 ```
 
 Examples:
-- `auto/SCRUM-5-login-validation`
+- `auto/PRJ-5-login-validation`
 - `auto/PROJ-123-cart-checkout`
 
 ### Why this convention
@@ -1182,7 +1182,7 @@ The regex is in `config/__init__.py`:
 JIRA_KEY_PATTERN = re.compile(r"\b([A-Z][A-Z0-9_]*-\d+)\b")
 ```
 
-Works for any project prefix: `SCRUM-1`, `PROJ-123`, `MOBILE-42`, `BACKEND-5678`, etc.
+Works for any project prefix: `PRJ-1`, `PROJ-123`, `MOBILE-42`, `BACKEND-5678`, etc.
 
 ### What the validator enforces
 
@@ -1579,7 +1579,7 @@ exact (reported by the API per call); cost is derived from the
 #### What gets tracked when a story goes through the pipeline
 
 Cost tracking is fully automatic — no per-story action is ever needed.
-For a fresh story (e.g. SCRUM-25) the lifecycle looks like this (property
+For a fresh story (e.g. PRJ-25) the lifecycle looks like this (property
 ledger; with the comment ledger each "entry" is an `[LLM-USAGE]` comment):
 
 | Stage | You do | Tracked automatically |
@@ -1633,22 +1633,22 @@ without them nothing is enforced, and the log says so once. See
 
 ```bash
 # 0. (change story only) Analyse the impact
-python -m agents.agent0_impact --story SCRUM-5 --dry-run     # print the report
+python -m agents.agent0_impact --story PRJ-5 --dry-run     # print the report
 
 # 1. Generate test cases
-python -m agents.agent1_analyst --story SCRUM-5 --dry-run    # preview
-python -m agents.agent1_analyst --story SCRUM-5              # commit to Jira
+python -m agents.agent1_analyst --story PRJ-5 --dry-run    # preview
+python -m agents.agent1_analyst --story PRJ-5              # commit to Jira
 
 # 2. Approve in Jira (add label: human-approved)
 
 # 3. Generate code + open PR
-python -m agents.agent2_coder --story SCRUM-5 --dry-run      # preview
-python -m agents.agent2_coder --story SCRUM-5                # opens real PR
+python -m agents.agent2_coder --story PRJ-5 --dry-run      # preview
+python -m agents.agent2_coder --story PRJ-5                # opens real PR
 
 # 4. Agents 3, 4, 5 run automatically when the PR opens (via GitHub Actions)
 #    Or trigger manually:
 python -m agents.agent3_reviewer --pr 12 --dry-run
-python -m agents.agent5_reporter --story SCRUM-5 --reports-dir reports/ --dry-run
+python -m agents.agent5_reporter --story PRJ-5 --reports-dir reports/ --dry-run
 ```
 
 ### Scan mode (production)
@@ -2319,7 +2319,7 @@ Same as above — Agent 2's filename validator catches most of these. If one sli
 
 ### Agent 5 doesn't post a comment
 
-Expected when the PR changes only `prompts/`, `docs/` or Markdown: no browser run, so no report. Otherwise the most common cause: PR branch doesn't contain a Jira key. Agent 5 extracts the story key from the branch name (e.g., `auto/SCRUM-5-foo` → `SCRUM-5`). Branches without a key cause Agent 5 to skip cleanly with a warning log. Manual fix: pass `--story KEY` explicitly, or rename the branch.
+Expected when the PR changes only `prompts/`, `docs/` or Markdown: no browser run, so no report. Otherwise the most common cause: PR branch doesn't contain a Jira key. Agent 5 extracts the story key from the branch name (e.g., `auto/PRJ-5-foo` → `PRJ-5`). Branches without a key cause Agent 5 to skip cleanly with a warning log. Manual fix: pass `--story KEY` explicitly, or rename the branch.
 
 ### A merged story got no notes-addition pull request
 
@@ -2692,7 +2692,7 @@ sequenceDiagram
     participant V as Validators
     participant G as GitHub
 
-    U->>A2: --story SCRUM-5
+    U->>A2: --story PRJ-5
     A2->>A2: AppContext.load()<br/>(config.yaml + inventory)
     A2->>J: get linked Test Cases
     J-->>A2: list of test cases
@@ -2901,7 +2901,7 @@ Labels track story-level state. Scenario-level state (which Test Case maps
 to which code, and whether it changed) lives in the feature files themselves:
 
 ```gherkin
-# JIRA: SCRUM-29 (hash: a4f9c2e1)
+# JIRA: PRJ-29 (hash: a4f9c2e1)
 Scenario: Verify default sort order
 ```
 

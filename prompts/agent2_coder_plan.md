@@ -64,7 +64,7 @@ Set `is_new_file: true` for these.
 # Your Output
 Return a `CodePlan` with:
 - `feature_name`: short kebab-case slug used for the BRANCH only (e.g., `login-validation`, `cart-checkout`). Feature FILES and step def files use the snake_case form of this same slug — see Naming Convention below.
-- `branch_name`: format `auto/<PARENT STORY KEY>-<feature-name>` (e.g., `auto/SCRUM-5-login-validation`). Use the key of the STORY you are implementing, **not** any of the test-case keys linked to it. The test cases appear first in your input, which makes one of them the easy thing to reach for - and then the branch, the pull request body and the board all name different issues, and the cost report lands on a test case instead of the story.
+- `branch_name`: format `auto/<PARENT STORY KEY>-<feature-name>` (e.g., `auto/PRJ-5-login-validation`). Use the key of the STORY you are implementing, **not** any of the test-case keys linked to it. The test cases appear first in your input, which makes one of them the easy thing to reach for - and then the branch, the pull request body and the board all name different issues, and the cost report lands on a test case instead of the story.
 - `pr_title`: concise PR title
 - `pr_body`: Markdown body explaining what's being added (list test cases automated)
 - `files_to_create`: list of `FilePlan` objects, each with:
@@ -74,7 +74,7 @@ Return a `CodePlan` with:
     an EXTENDABLE file (TIER 2). Setting `true` for an extendable path will
     be rejected (it would wipe existing methods).
   - `purpose`: one-sentence justification
-  - `related_test_cases`: list of Jira keys this file addresses (e.g., `["SCRUM-7", "SCRUM-9"]`)
+  - `related_test_cases`: list of Jira keys this file addresses (e.g., `["PRJ-7", "PRJ-9"]`)
 - `notes`: caveats, assumptions, and EVERY test case you leave out, by its key - one line each, `Skipped: <KEY> -- <reason>`. The system checks that every test case has a scenario and shows each one that has none, with this reason, in the pull request and on the story; a test case left out with no line here is reported with no reason
 
 # Reference Files (FOR STYLE REFERENCE ONLY -- DO NOT RECREATE)
@@ -127,7 +127,7 @@ Suppose you picked `login_validation`. Then:
 | Step def file path | `tests/step_defs/test_login_validation.py` | snake_case |
 | `feature_path()` argument | `feature_path("login_validation")` | snake_case (MUST MATCH FILENAME) |
 | Page object (if new) | `pages/login_validation_page.py` | snake_case |
-| Branch name | `auto/SCRUM-5-login-validation` | **kebab-case** (only place hyphens appear) |
+| Branch name | `auto/PRJ-5-login-validation` | **kebab-case** (only place hyphens appear) |
 | `feature_name` in CodePlan | `login-validation` | kebab-case (for branch only -- see below) |
 
 ## Step 3: Inside step def files, the feature_path() argument MUST EXACTLY MATCH the feature filename

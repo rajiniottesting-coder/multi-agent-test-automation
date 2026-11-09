@@ -1,6 +1,6 @@
 """A predicted test failure is checked against the run of that test.
 
-PR #148 (SCRUM-111), second review: a major/functional_bug predicted "if the
+PR #148 (PRJ-111), second review: a major/functional_bug predicted "if the
 site renders two separate rows ... the assertion fails", with the fix "No code
 change needed if behaviour is confirmed". Agent 4 had already run all four
 scenarios on that commit, green. The review now waits for the runner when a

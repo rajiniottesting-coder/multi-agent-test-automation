@@ -8,9 +8,9 @@ Agent 0 later calls the same core.impact_handover.handover() itself.
 Decisions come from the command line, or from the change story's Impact
 Review sub-task once it is Done:
 
-    python -m scripts.impact_handover --story SCRUM-210 --approve SCRUM-3,SCRUM-4 --retire SCRUM-6
-    python -m scripts.impact_handover --story SCRUM-210 --from-review
-    python -m scripts.impact_handover --story SCRUM-210 --approve SCRUM-3 --dry-run
+    python -m scripts.impact_handover --story PRJ-210 --approve PRJ-3,PRJ-4 --retire PRJ-6
+    python -m scripts.impact_handover --story PRJ-210 --from-review
+    python -m scripts.impact_handover --story PRJ-210 --approve PRJ-3 --dry-run
 
 exit codes: 0 handed over (or dry run)   2 refused, nothing written
 """
@@ -38,7 +38,7 @@ def main(argv=None) -> int:
 
     ap = argparse.ArgumentParser(prog="python -m scripts.impact_handover",
                                  description="Hand a decided impact over to the change story.")
-    ap.add_argument("--story", required=True, help="the change story, e.g. SCRUM-210")
+    ap.add_argument("--story", required=True, help="the change story, e.g. PRJ-210")
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--approve", help="comma-separated test case keys to revise")
     src.add_argument("--from-review", action="store_true",

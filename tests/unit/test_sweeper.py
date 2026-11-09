@@ -44,7 +44,7 @@ def test_settled_if_any_run_settled():
 
 # ── classify_pr ───────────────────────────────────────────────
 
-AUTO = "auto/SCRUM-5-login"
+AUTO = "auto/PRJ-5-login"
 SHA = "abc1234def"
 
 
@@ -105,7 +105,7 @@ def test_both_stalled_lists_both():
 
 def test_in_progress_run_is_not_stalled():
     """Agent 2 opens a PR; Agent 4 is mid-flight. Nudging would restart it."""
-    d = classify_pr("sha1", "auto/SCRUM-5-login", {
+    d = classify_pr("sha1", "auto/PRJ-5-login", {
         "agent3-reviewer.yml": [{"status": "completed", "conclusion": "success"}],
         "agent4_runner.yml": [{"status": "in_progress", "conclusion": None}],
     }, None)
@@ -115,7 +115,7 @@ def test_in_progress_run_is_not_stalled():
 
 def test_queued_run_is_not_stalled():
     """Queued behind another job is still 'something is happening'."""
-    d = classify_pr("sha1", "auto/SCRUM-5-login", {
+    d = classify_pr("sha1", "auto/PRJ-5-login", {
         "agent3-reviewer.yml": [{"status": "queued", "conclusion": None}],
         "agent4_runner.yml": [],
     }, None)
@@ -124,7 +124,7 @@ def test_queued_run_is_not_stalled():
 
 def test_genuinely_stalled_still_nudged():
     """Nothing running and nothing settled -> still a real stall."""
-    d = classify_pr("sha1", "auto/SCRUM-5-login", {
+    d = classify_pr("sha1", "auto/PRJ-5-login", {
         "agent3-reviewer.yml": [{"status": "completed", "conclusion": "cancelled"}],
         "agent4_runner.yml": [],
     }, None)

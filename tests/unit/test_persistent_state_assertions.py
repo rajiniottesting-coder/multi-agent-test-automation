@@ -767,7 +767,7 @@ def test_a_neutral_phrase_keeps_the_blame_on_the_step_definition(project):
     blamed = {e.split("'")[1] for e in errors}
     assert "tests/step_defs/test_f.py" in blamed, (
         "the step definition is at fault here and can fix itself - it must "
-        "be told, or this case deadlocks the way SCRUM-111 did"
+        "be told, or this case deadlocks the way PRJ-111 did"
     )
 
     feature_error = next(e for e in errors if "features/f.feature" in e)

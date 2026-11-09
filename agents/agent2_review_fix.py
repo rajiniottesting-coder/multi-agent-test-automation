@@ -62,7 +62,7 @@ logger = logging.getLogger(__name__)
 
 MARKER = "[agent2:review-fix]"
 # A run the model budget stopped: it records nothing as handled, so the same
-# review re-run, or a later `/fix`, does the work (3 Nov 2026, SCRUM-283).
+# review re-run, or a later `/fix`, does the work (3 Nov 2026, PRJ-283).
 NOT_DONE_MARKER = "[agent2:review-fix:not-done]"
 AGENT_NAME = "Agent 2 (Coder, review fix)"
 _CODE_DIRS = ("features/", "tests/step_defs/", "pages/")
@@ -289,7 +289,7 @@ def collect_items(host, pr_number: int, review_id: int | None, text: str,
     these`: the text must not hide the comments it refers to. The same holds
     for a review: GitHub's "Add single comment" posts each line comment as a
     review of its own, and the "Request changes" that follows carries only its
-    text - on SCRUM-283's pull request (3 Nov 2026) the two line comments
+    text - on PRJ-283's pull request (3 Nov 2026) the two line comments
     were never seen.
 
     A comment by someone without write access is not taken (WRITE_ACCESS);
@@ -335,7 +335,7 @@ def scenario_identity(content: str) -> list:
 def _drops_an_approved_assertion(new: str, prior: str, path: str, test_cases, a2) -> str:
     """What an approved test case asserts that `new` no longer checks and
     `prior` did ("" when nothing). A review comment cannot remove a check the
-    test cases state - only the test case can (SCRUM-283, 4 Nov 2026: "reword
+    test cases state - only the test case can (PRJ-283, 4 Nov 2026: "reword
     the step" dropped the test case's "no login prompt is shown", and the
     repair that restored it rewrote the whole file)."""
     from core.schemas import GeneratedFile
@@ -679,7 +679,7 @@ def _fix(host, pr_number, key, head, meta, contents, editable, protected, to_fix
                     raise ValueError(f"the repair would change files that are not editable here: "
                                      f"{reached}")
                 # The repair loop regenerates whole files in the ordinary mode:
-                # on SCRUM-283's pull request (4 Nov 2026) it rewrote the
+                # on PRJ-283's pull request (4 Nov 2026) it rewrote the
                 # feature file after the review change - invented marker
                 # hashes, dropped the owner, a new title - and the identity
                 # check above, made before the repair, never saw it.

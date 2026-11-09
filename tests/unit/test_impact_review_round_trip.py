@@ -78,7 +78,7 @@ def test_a_linked_table_hands_over_its_decisions():
     assert decisions_from_review(_Tracker(text), "AB-9") == ("AB-50", {"AB-12": "approve"})
 
 
-# ── machine data after a person edits the issue (A3, SCRUM-206) ────
+# ── machine data after a person edits the issue (A3, PRJ-206) ────
 
 def test_report_is_read_back_after_jira_rewrites_the_code_block():
     """Editing the Impact Review in Jira's editor stores the block again as

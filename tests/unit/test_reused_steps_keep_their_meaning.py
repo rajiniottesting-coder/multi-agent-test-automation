@@ -1,7 +1,7 @@
 """A step phrase means the same thing in every feature.
 
 pytest-bdd binds steps per module, so a phrase defined for one feature is
-written again for the next. Validation story SCRUM-187: "the search results
+written again for the next. Validation story PRJ-187: "the search results
 should include X" was committed as a containment check; Agent 2's new copy also
 asserted that the search-results view was shown, and its own empty-search
 scenario - which keeps the unsearched view - failed in the browser on that

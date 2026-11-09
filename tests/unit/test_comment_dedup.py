@@ -1,6 +1,6 @@
 """F-31: a story's comments say each thing once - nothing a person reads is lost.
 
-Found on the live board (27 Oct 2026): 41 of SCRUM-187's 71 comments were
+Found on the live board (27 Oct 2026): 41 of PRJ-187's 71 comments were
 `[LLM-USAGE]` / `[LEDGER-RESET]` bookkeeping, every agent run posted its cost
 and Agent 5's report repeated all of it as a growing table; Agent 0's report on
 a change story carried a second copy of the Impact Review's data; the delta of
@@ -429,7 +429,7 @@ def test_a_dry_run_reads_the_ledger_and_writes_nothing(world):
 # ── a whole story, end to end ────────────────────────────────────────────────
 
 def _a_story(jira, monkeypatch, fake):
-    """The run sequence of a real story (SCRUM-202 on 11 and 26 Oct): drafted,
+    """The run sequence of a real story (PRJ-202 on 11 and 26 Oct): drafted,
     coded, reviewed, reported; regenerated, reviewed, two review fixes, each
     reviewed and reported."""
     import agents.agent5_reporter as a5
@@ -464,6 +464,6 @@ def test_the_same_story_with_the_comment_ledger_is_unchanged(world, monkeypatch)
     fake, jira = world
     monkeypatch.setattr(ul, "_store_setting", lambda: "comments")
     _a_story(jira, monkeypatch, fake)
-    # as SCRUM-202 has today (14 comments), plus the job re-run reported again
+    # as PRJ-202 has today (14 comments), plus the job re-run reported again
     assert len(_bookkeeping(fake)) == 12 and len(_reports(fake)) == 4
     assert len([c for c in fake.comments[STORY] if c]) == 16

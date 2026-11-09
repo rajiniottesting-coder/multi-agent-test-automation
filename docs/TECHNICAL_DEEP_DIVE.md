@@ -429,7 +429,7 @@ Calls `LLMClient.invoke_structured(prompt, schema=CodePlan)`. Returns a `CodePla
 ```python
 class CodePlan(BaseModel):
     feature_name: str          # kebab-case slug for branch
-    branch_name: str           # full branch e.g. "auto/SCRUM-29-product-sorting"
+    branch_name: str           # full branch e.g. "auto/PRJ-29-product-sorting"
     pr_title: str
     pr_body: str
     files_to_create: list[FilePlan]
@@ -858,7 +858,7 @@ Walks a Python step-def file and returns `[(kind, phrase, parser_type), ...]`:
 - `kind` ∈ `'given'`, `'when'`, `'then'`
 - `parser_type` ∈ `'string'` (bare string decorator), `'parse'` (parsers.parse), `'cfparse'` (parsers.cfparse), `'re'` (parsers.re)
 
-Reads the file with `ast` (`_decorators_from_ast()`, #253): every function decorator that calls `given`/`when`/`then` (bare or module-qualified), its phrase from the first argument or `name=` - a string constant (`'string'`) or a `parse`/`cfparse`/`re` call on one - in source order. The parser joins a phrase wrapped over several string literals, resolves escapes and drops commented-out decorators, exactly as pytest-bdd will see them; decorators with keyword arguments (`target_fixture=`) are included. A phrase only known at runtime (a variable) is skipped. Only a file that does not parse falls back to the regexes `_DECORATOR_PARSER_PATTERN` / `_DECORATOR_STRING_PATTERN`, which read one-literal phrases only - they read a wrapped phrase up to its first closing quote, and SCRUM-284 was blocked on three false errors that way.
+Reads the file with `ast` (`_decorators_from_ast()`, #253): every function decorator that calls `given`/`when`/`then` (bare or module-qualified), its phrase from the first argument or `name=` - a string constant (`'string'`) or a `parse`/`cfparse`/`re` call on one - in source order. The parser joins a phrase wrapped over several string literals, resolves escapes and drops commented-out decorators, exactly as pytest-bdd will see them; decorators with keyword arguments (`target_fixture=`) are included. A phrase only known at runtime (a variable) is skipped. Only a file that does not parse falls back to the regexes `_DECORATOR_PARSER_PATTERN` / `_DECORATOR_STRING_PATTERN`, which read one-literal phrases only - they read a wrapped phrase up to its first closing quote, and PRJ-284 was blocked on three false errors that way.
 
 #### `_phrase_matches(feature_phrase, decorator_phrase, parser_type) -> bool`
 

@@ -149,7 +149,7 @@ class TestPostUsageDefensive:
         for var in ["JIRA_URL", "JIRA_EMAIL", "JIRA_API_TOKEN", "JIRA_PROJECT_KEY"]:
             monkeypatch.delenv(var, raising=False)
         # JiraClient() would raise RuntimeError; ledger must swallow it
-        assert post_usage_to_story("SCRUM-1", "Agent 3 (Reviewer)", usage()) is False
+        assert post_usage_to_story("PRJ-1", "Agent 3 (Reviewer)", usage()) is False
 
     def test_skips_on_empty_story_key(self):
         assert post_usage_to_story("", "Agent 1 (Test Designer)", usage()) is False
@@ -159,8 +159,8 @@ class TestPostUsageDefensive:
             def __init__(self): self.posted = []
             def add_comment(self, key, body): self.posted.append((key, body)); return "url"
         fj = FakeJira()
-        assert post_usage_to_story("SCRUM-9", "Agent 2 (Coder, initial)", usage(), jira=fj) is True
-        assert fj.posted[0][0] == "SCRUM-9"
+        assert post_usage_to_story("PRJ-9", "Agent 2 (Coder, initial)", usage(), jira=fj) is True
+        assert fj.posted[0][0] == "PRJ-9"
         assert "[LLM-USAGE]" in fj.posted[0][1]
 
 
@@ -195,7 +195,7 @@ def test_format_reset_comment_without_reason():
 
 def test_post_reset_to_story_posts_once():
     jira = _FakeJira()
-    assert post_reset_to_story("SCRUM-20", "restart", jira=jira) is True
+    assert post_reset_to_story("PRJ-20", "restart", jira=jira) is True
     assert len(jira.comments) == 1
     assert RESET_MARKER in jira.comments[0][1]
 
@@ -210,7 +210,7 @@ def test_post_reset_to_story_never_raises():
     class Broken:
         def add_comment(self, *a, **kw):
             raise RuntimeError("jira down")
-    assert post_reset_to_story("SCRUM-20", "restart", jira=Broken()) is False
+    assert post_reset_to_story("PRJ-20", "restart", jira=Broken()) is False
 
 
 def test_aggregate_ignores_usage_before_reset():

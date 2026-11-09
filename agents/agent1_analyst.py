@@ -581,7 +581,7 @@ def print_summary(results: list[dict]) -> bool:
 def main():
     parser = argparse.ArgumentParser(
         description="Agent 1 (Test Designer): Generate manual test cases from Jira stories",
-        epilog=("examples:\n  one story          --story SCRUM-5\n  scan for ai-ready  (no flags - uses config.yaml selection rules)\n  preview only       --story SCRUM-5 --dry-run\n\nNOTE: --story has no re-processing guard. Running it twice on the same\nstory creates DUPLICATE test cases in Jira."),
+        epilog=("examples:\n  one story          --story PRJ-5\n  scan for ai-ready  (no flags - uses config.yaml selection rules)\n  preview only       --story PRJ-5 --dry-run\n\nNOTE: --story has no re-processing guard. Running it twice on the same\nstory creates DUPLICATE test cases in Jira."),
         formatter_class=argparse.RawDescriptionHelpFormatter)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(

@@ -101,7 +101,7 @@ def test_the_job_timeout_fits_the_deadline_and_one_slow_story():
 
 def test_a_blocked_or_still_waiting_story_does_not_use_up_a_place(monkeypatch):
     """4 Nov 2026: a blocked story and a waiting one took both places on every
-    scan; the third, SCRUM-201, was deferred every time."""
+    scan; the third, PRJ-201, was deferred every time."""
     ran = []
     tracker = MagicMock()
     tracker.find_stories_to_process.side_effect = [S("A-1", "A-2", "A-3", "A-4"), [], []]

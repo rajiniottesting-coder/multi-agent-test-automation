@@ -6,7 +6,7 @@ the SIGNED-IN user and a shared account inherits every earlier run's
 leftovers. A scenario that never signs in has no such user: the `page`
 fixture opens a fresh browser context per test, so the state starts empty.
 
-SCRUM-111 (every acceptance criterion anonymous) failed Agent 2 because the
+PRJ-111 (every acceptance criterion anonymous) failed Agent 2 because the
 gate could not tell the two apart. Covered here:
   - anonymous: an exact count passes
   - any sign of signing in keeps the rule (credentials fixture, login method,

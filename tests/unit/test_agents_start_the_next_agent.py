@@ -1,6 +1,6 @@
 """An agent that leaves work for another starts it (core/handoff.py).
 
-3 Nov 2026: SCRUM-283 and SCRUM-284 reached ai-ready at 13:22 IST; by 14:10
+3 Nov 2026: PRJ-283 and PRJ-284 reached ai-ready at 13:22 IST; by 14:10
 not one of Agent 1's half-hourly scheduled runs had started that day. Over the
 two weeks before, GitHub started about 4 of its 19 daily runs, some hours
 late. Agent 2's schedule showed the same.
@@ -234,7 +234,7 @@ def test_agents_1_and_2_start_again_while_stories_wait(name, agent):
 
 # ── restart only after progress (3-4 Nov 2026) ─────────────────────────
 #
-# SCRUM-284 carried human-approved but was blocked (its earlier refusal): Agent
+# PRJ-284 carried human-approved but was blocked (its earlier refusal): Agent
 # 2 skips it, yet it matched the selection, so the hand-off restarted Agent 2
 # five times per scheduled run until max_chain stopped it - ten empty runs.
 

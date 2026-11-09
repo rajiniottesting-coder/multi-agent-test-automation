@@ -182,7 +182,7 @@ def test_a_file_another_open_pr_changes_makes_the_story_wait(sandbox):
 
 
 def test_a_wait_that_still_holds_costs_no_new_plan(sandbox):
-    """F25, 4 Nov 2026: SCRUM-293 was planned again on every scan while PR #286
+    """F25, 4 Nov 2026: PRJ-293 was planned again on every scan while PR #286
     stayed open - seven model calls to reach the same wait."""
     fake, jira, root = sandbox
     _ready(fake, jira)

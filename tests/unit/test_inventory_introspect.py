@@ -51,7 +51,7 @@ def test_rank_name_then_aria_then_placeholder():
 
 def test_rank_role_text_fallback():
     """A BUTTON with readable text still ranks by role+name."""
-    sel, strat = rank_selector("button", {}, text="Continue Shopping")
+    sel, strat = rank_selector("button", {}, text="Keep Browsing")
     assert strat == "role" and "button" in sel
 
 
@@ -68,10 +68,10 @@ def test_an_anchor_without_href_is_not_a_link():
 
 def test_an_anchor_prefers_its_href_over_its_name():
     """The destination is immune to the markup INSIDE the link; an accessible
-    name is not. An icon font rendering from ligature text turned 'Products'
-    into 'card_travel Products' and the role locator matched nothing."""
-    sel, strat = rank_selector("a", {"href": "/products"}, text="card_travel Products")
-    assert sel == "a[href='/products']" and strat == "href"
+    name is not. An icon font rendering from ligature text turned 'Reports'
+    into 'bar_chart Reports' and the role locator matched nothing."""
+    sel, strat = rank_selector("a", {"href": "/reports"}, text="bar_chart Reports")
+    assert sel == "a[href='/reports']" and strat == "href"
 
 
 def test_a_record_href_becomes_a_prefix_match():
@@ -738,7 +738,7 @@ def test_collision_still_reported_after_disambiguation():
 # The generator already knew which entries stood for a FAMILY of elements,
 # but only said so in `_ambiguous_selectors` / `family_members_seen` — draft
 # aids that are stripped during curation. Agent 2 therefore read an inventory
-# with the classification removed, and SCRUM-104 clicked a selector matching
+# with the classification removed, and PRJ-104 clicked a selector matching
 # three dropdown options. This is now a first-class field that survives.
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -881,7 +881,7 @@ def test_a_hidden_element_does_not_get_a_role_selector():
 def test_a_hidden_element_falls_back_to_a_css_path():
     """When it has no id, name or href, the structural path is the only handle
     that still resolves while the element is hidden."""
-    sel, strat = rank_selector("button", {"class": "close"}, text="Continue Shopping",
+    sel, strat = rank_selector("button", {"class": "close"}, text="Keep Browsing",
                                css_path="div.modal button.close", visible=False)
     assert sel == "div.modal button.close"
     assert strat == "css-path-hidden"
@@ -909,7 +909,7 @@ def test_hidden_elements_are_auto_declared_conditional():
     draft means verify_locators reads it as COND (expected) instead of adding
     it to a wall of STALE lines a human then has to triage by hand."""
     descs = [
-        {"tag": "a", "attrs": {"href": "/products"}, "text": "Products", "visible": True},
+        {"tag": "a", "attrs": {"href": "/reports"}, "text": "Reports", "visible": True},
         {"tag": "a", "attrs": {"href": "#Women"}, "text": "WOMEN", "visible": False,
          "cssPath": "div.panel a"},
     ]
@@ -920,7 +920,7 @@ def test_hidden_elements_are_auto_declared_conditional():
 
 
 def test_a_page_with_nothing_hidden_declares_no_conditional():
-    descs = [{"tag": "a", "attrs": {"href": "/products"}, "text": "Products", "visible": True}]
+    descs = [{"tag": "a", "attrs": {"href": "/reports"}, "text": "Reports", "visible": True}]
     e = build_page_entry("https://x.test/p", "P", descs, "https://x.test")
     assert "conditional" not in e
 
@@ -971,7 +971,7 @@ def test_capture_flags_third_party_content_without_dropping_it():
 
 def test_third_party_elements_are_surfaced_for_review():
     descs = [
-        {"tag": "a", "attrs": {"href": "/products"}, "text": "Products", "visible": True},
+        {"tag": "a", "attrs": {"href": "/reports"}, "text": "Reports", "visible": True},
         {"tag": "a", "attrs": {"href": "/x"}, "text": "Winter Wear",
          "visible": True, "thirdParty": True},
     ]
@@ -1086,7 +1086,7 @@ def test_deep_structural_paths_are_fragile(selector):
 
 @pytest.mark.parametrize("selector", [
     "#login-form",                 # a bare id IS a handle
-    "a[href='/products']",
+    "a[href='/reports']",
     "role=button[name='Save']",
     "label=Email",
     "div.panel button.cart",       # short, class-based

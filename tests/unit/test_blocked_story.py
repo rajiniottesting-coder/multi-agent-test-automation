@@ -1,6 +1,6 @@
 """A story the final gate refused is reported once and not retried on unchanged input.
 
-SCRUM-187 (validation, 26 Oct 2026): Agent 2's final gate refused the story
+PRJ-187 (validation, 26 Oct 2026): Agent 2's final gate refused the story
 after four repair attempts (about $2.50), wrote nothing to Jira, and the
 scheduled scan picked it up again every 30 minutes to fail the same way.
 core.blocked: one comment carrying a fingerprint of the input; the scan skips

@@ -28,7 +28,7 @@ def test_completed_run_is_reported_as_already_processed():
                       return_value=_jira(6, labels=["ai-processed"])), \
          patch.object(a1, "AppContext") as ctx:
         ctx.load.return_value = MagicMock(name="App", base_url="https://x")
-        out = a1.run("SCRUM-5")
+        out = a1.run("PRJ-5")
     assert out["status"] == "already_processed"
     assert out["existing_test_cases"] == 6
     assert out["test_cases_generated"] == 0 and out["test_case_keys"] == []
@@ -41,7 +41,7 @@ def test_interrupted_run_is_reported_as_partial():
                       return_value=_jira(4, labels=["ai-ready"])), \
          patch.object(a1, "AppContext") as ctx:
         ctx.load.return_value = MagicMock(name="App", base_url="https://x")
-        out = a1.run("SCRUM-5")
+        out = a1.run("PRJ-5")
     assert out["status"] == "partial_test_cases"
     assert out["existing_test_cases"] == 4
 
@@ -53,7 +53,7 @@ def test_guard_runs_before_any_llm_call():
          patch.object(a1, "AppContext") as ctx, \
          patch.object(a1, "LLMClient") as llm:
         ctx.load.return_value = MagicMock(name="App", base_url="https://x")
-        out = a1.run("SCRUM-5")
+        out = a1.run("PRJ-5")
     llm.assert_not_called()
     assert out["status"] == "partial_test_cases", "the guard returned early, before any model call"
 
@@ -65,10 +65,10 @@ def test_zero_existing_cases_proceeds():
          patch.object(a1, "AppContext") as ctx:
         ctx.load.return_value = MagicMock(name="App", base_url="https://x")
         try:
-            a1.run("SCRUM-5")
+            a1.run("PRJ-5")
         except Exception:
             pass                      # fails later on mocks - that is fine
-    jira.get_story.assert_called_once_with("SCRUM-5")
+    jira.get_story.assert_called_once_with("PRJ-5")
 
 
 def test_dry_run_is_not_blocked():
@@ -78,10 +78,10 @@ def test_dry_run_is_not_blocked():
          patch.object(a1, "AppContext") as ctx:
         ctx.load.return_value = MagicMock(name="App", base_url="https://x")
         try:
-            a1.run("SCRUM-5", dry_run=True)
+            a1.run("PRJ-5", dry_run=True)
         except Exception:
             pass
-    jira.get_story.assert_called_once_with("SCRUM-5")
+    jira.get_story.assert_called_once_with("PRJ-5")
 
 
 def test_lookup_failure_never_blocks():
@@ -91,10 +91,10 @@ def test_lookup_failure_never_blocks():
     client = MagicMock()
     client.enhanced_search_issues.side_effect = Exception("jira down")
     jc = JiraClient.__new__(JiraClient)
-    jc.project_key = "SCRUM"                      # plain attribute
+    jc.project_key = "PRJ"                      # plain attribute
     with patch.object(JiraClient, "client", new_callable=PropertyMock,
                       return_value=client):      # `client` is a property
-        assert jc.count_linked_test_cases("SCRUM-5") == 0
+        assert jc.count_linked_test_cases("PRJ-5") == 0
 
 # ── NEGATIVE: a broken junit.xml must say WHY ────────────────
 
