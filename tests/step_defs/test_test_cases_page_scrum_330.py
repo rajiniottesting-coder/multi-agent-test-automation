@@ -1,4 +1,4 @@
-"""Step definitions for features/test_cases_page_scrum_330.py.
+"""Step definitions for features/test_cases_page_scrum_330.feature.
 
 Binds the single SCRUM-331 scenario to the HomePage and TestCasesPage
 page objects. Steps are module-scoped in pytest-bdd, so every phrase the
