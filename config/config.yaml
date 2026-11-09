@@ -235,6 +235,8 @@ app_under_test:
       elements: [login_email_input]
     - page: products
       elements: [search_input]
+    - page: zz_not_in_the_inventory
+      elements: [anything]
 
   # Reference files: existing tests Agent 2 mimics for style and Agent 3
   # uses as the style baseline. These are NOT edited by the agents —
