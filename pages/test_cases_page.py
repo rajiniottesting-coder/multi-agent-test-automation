@@ -35,6 +35,14 @@ ONE member of the family to appear (wait_for_any), which is a legal, read-only
 family operation. Steps live inside a collapsible panel that expands in place
 after a title is clicked; clicking does not navigate — the browser stays on the
 Test Cases page, which remaining_on_page() confirms via the URL.
+
+NOTE on search (SCRUM-340 / SCRUM-341): the inventory carries
+`test_case_search_input`, positioned above the list of titles. The search box
+presence is a waiting predicate (has_search_box). Typing into it filters the
+title family client-side; filtered titles are read back through the title family
+with get_all_titles(), and the box's own value with search_box_value(). The
+title family is multi_match, so it is only ever read with family-aware helpers
+and never clicked/filled as a whole.
 """
 from typing import Optional
 
@@ -163,6 +171,79 @@ class TestCasesPage(BasePage):
         expanding.
         """
         return self.is_loaded() and self.get_path().rstrip("/") == self.page_url().rstrip("/")
+
+    # ── search (SCRUM-340 / SCRUM-341) ───────────────────────
+    def has_search_box(self) -> bool:
+        """True once the test case search box is displayed. WAITS for it.
+
+        Satisfies SCRUM-340: the search input sits above the list of titles.
+        Call this where the box is the expected state; it waits up to the
+        timeout and times out if the box never appears.
+        """
+        return self.is_showing(self.sel("test_case_search_input"))
+
+    def first_title_text(self) -> str:
+        """Visible text of the first test case title. WAITS for the family.
+
+        Reads one member of the title family by position (index 0). Used to
+        pick a distinctive word to search for. `test_case_titles` is
+        multi_match, so it is read with the family-aware get_nth_text(), never
+        clicked or waited on as a whole.
+        """
+        self.wait_for_any(self.sel("test_case_titles"))
+        return self.get_nth_text(self.sel("test_case_titles"), 0)
+
+    def search_for_test_case(self, term: str) -> None:
+        """Type `term` into the test case search box to filter the list.
+
+        The search box is the first action here, so confirm the browser is on
+        this page before filling — filling a field that is not on screen does
+        not fail fast; Playwright waits the full timeout and then blames the
+        locator, which reads like a broken selector when the page is simply
+        wrong. The box is a single element (not part of the title family), so
+        fill() is safe.
+        """
+        self.require_own_page()
+        self.fill(self.sel("test_case_search_input"), term)
+
+    def search_box_value(self) -> str:
+        """Current value typed into the test case search box.
+
+        Reads the DOM value of the single search input so a step can confirm
+        the typed word appears in the box.
+        """
+        return self.get_input_value(self.sel("test_case_search_input"))
+
+    def all_titles(self) -> list[str]:
+        """All currently shown test case titles as a list of strings. WAITS.
+
+        `test_case_titles` is multi_match, so it is read with the family-aware
+        get_all_texts(); this returns only the titles currently rendered (after
+        filtering, the non-matching titles are removed from the DOM). Waits for
+        at least one title so a filtered-but-non-empty list is read reliably.
+        """
+        self.wait_for_any(self.sel("test_case_titles"))
+        return self.get_all_texts(self.sel("test_case_titles"))
+
+    def shown_titles_all_contain(self, word: str) -> bool:
+        """True if every shown title contains `word`, ignoring letter case.
+
+        Reads the filtered title family and checks containment case-insensitively,
+        matching SCRUM-341's expected result that only titles containing the
+        typed word (case-insensitive) remain.
+        """
+        needle = word.strip().casefold()
+        return all(needle in title.casefold() for title in self.all_titles())
+
+    def shows_title(self, title: str) -> bool:
+        """True if a title matching `title` is shown, ignoring letter case.
+
+        Used to confirm the originally noted title is still present after
+        filtering. Compares case-insensitively against the filtered title
+        family.
+        """
+        needle = title.strip().casefold()
+        return any(needle == shown.strip().casefold() for shown in self.all_titles())
 
     # ── actions ──────────────────────────────────────────────
     def open_first_test_case(self) -> None:
