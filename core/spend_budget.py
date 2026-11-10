@@ -52,6 +52,7 @@ from __future__ import annotations
 import atexit
 import datetime as _dt
 import logging
+import math
 import os
 import re
 import sys
@@ -289,6 +290,19 @@ def begin_story(story_key: str, tracker=None) -> None:
                        "tracker": tracker}
 
 
+def unlimited(limit) -> bool:
+    """True for a budget set to .inf in config.yaml: nothing is enforced and
+    nothing reads "$inf" to a person."""
+    return math.isinf(float(limit))
+
+
+def more_after_release(per_story) -> str:
+    """What removing the hold label allows, in words."""
+    if unlimited(per_story):
+        return "spend without a limit (budget.per_story_usd is unlimited)"
+    return f"spend another ${float(per_story):.2f} (budget.per_story_usd)"
+
+
 def allowance(held_at: float | None, held: bool, per_story: float) -> float:
     """What a story may spend now: one per_story budget; after a hold, what it
     had spent then - plus one more budget once a person removed the label."""
@@ -333,9 +347,8 @@ def hold_story(tracker, exc: BudgetExceeded) -> bool:
             f"Model spend for this story reached its budget: ${exc.spent:.2f} of "
             f"${exc.limit:.2f}. No agent works on it while it carries the label "
             f"`{s['hold_label']}`.\n"
-            f"To continue: remove the label - the story may then spend another "
-            f"${float(s['per_story_usd']):.2f} (budget.per_story_usd). To stop: nothing more "
-            f"to do."))
+            f"To continue: remove the label - the story may then "
+            f"{more_after_release(s['per_story_usd'])}. To stop: nothing more to do."))
         tracker.add_label(exc.story, s["hold_label"])
         from core.usage_ledger import record_hold
         record_hold(exc.story, exc.spent, exc.limit, jira=tracker)   # read back with the ledger
@@ -402,8 +415,8 @@ def check_before_call() -> None:
             raise BudgetExceeded(
                 "story", f"Story {story['key']} reached its model budget: ${total:.2f} of "
                          f"${story['allowance']:.2f} (budget.per_story_usd). It is held "
-                         f"(label {s['hold_label']}); remove the label to allow it another "
-                         f"${float(s['per_story_usd']):.2f}.",
+                         f"(label {s['hold_label']}); remove the label to let it "
+                         f"{more_after_release(s['per_story_usd'])}.",
                 story=story["key"], spent=total, limit=story["allowance"])
 
 

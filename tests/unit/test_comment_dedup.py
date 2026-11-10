@@ -79,8 +79,11 @@ def test_the_setting_ships_on_auto():
 
 # ── the cost comment ─────────────────────────────────────────────────────────
 
-def test_each_run_is_hidden_and_one_cost_comment_is_edited_in_place(world):
+def test_each_run_is_hidden_and_one_cost_comment_is_edited_in_place(world, monkeypatch):
     fake, jira = world
+    from core import spend_budget             # a story limit, whatever config.yaml ships
+    real = spend_budget.section("budget")
+    monkeypatch.setattr(spend_budget, "settings", lambda: {**real, "per_story_usd": 8.0})
     runs = [("Agent 1 (Test Designer)", _usage(1, 10953, 1515, 0.092640)),
             ("Agent 2 (Coder, initial)", _usage(4, 126543, 2758, 0.585027)),
             ("Agent 3 (Reviewer)", _usage(1, 20064, 228, 0.106020)),

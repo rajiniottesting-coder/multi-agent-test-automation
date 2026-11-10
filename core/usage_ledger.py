@@ -498,7 +498,7 @@ def budget_line(total_cost: float | None, budget: dict | None, allowance: float 
         return ""
     per_story = float(budget.get("per_story_usd") or 0)
     limit = float(allowance) if allowance else per_story
-    if limit <= 0:
+    if limit <= 0 or limit == float("inf"):          # no limit: nothing to measure against
         return ""
     share = total_cost / limit
     mark = "⚠ " if share >= float(budget.get("warn_at", 0.5)) else ""

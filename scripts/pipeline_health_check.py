@@ -124,6 +124,7 @@ def housekeeping(tracker, now: _dt.datetime) -> None:
             ph.resolve_where(
                 tracker, lambda a: bool(re.fullmatch(rf"budget-(day|warn)-{today}", a))
                 and below[a.split("-")[1]],
+                "No daily budget is set now." if spend_budget.unlimited(per_day) else
                 f"The daily budget is now ${per_day:.2f}: today's spend "
                 f"(${spent:.2f}) is below it.")
     except Exception as e:                                         # noqa: BLE001
