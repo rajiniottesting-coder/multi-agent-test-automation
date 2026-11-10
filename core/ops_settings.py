@@ -5,6 +5,7 @@ of config/config.yaml. Each is merged over its defaults here, so a deployment
 whose config predates a block - or whose block is malformed - gets the
 defaults instead of an error. Never raises.
 """
+# VALIDATION E105 (throw-away, never merged): see SCRUM-354 on automationexercise.com
 from __future__ import annotations
 
 import copy
