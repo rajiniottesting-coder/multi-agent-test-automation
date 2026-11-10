@@ -185,3 +185,22 @@ def test_the_scope_is_logged_and_put_in_the_pull_request(repo, monkeypatch, capl
     logged = [r.getMessage() for r in caplog.records if "reads notes" in r.getMessage()]
     assert logged and "basket.md" in logged[0] and "user_profile.md" not in logged[0]
     assert "_Read for this update: notes prompts/app_context/basket.md, " in opened["body"]
+
+
+def test_a_note_quoted_with_the_notes_blocks_line_prefix_is_still_rewritten(repo):
+    """E136: the model copied an inventory note as the notes block shows it -
+    `- pages.<page>.elements_notes.<key>: <text>` - and the rewrite was dropped
+    as "not verbatim". The prefix is the block's, not the note's."""
+    sources = _sources(repo)
+    prop = cu.propose(sources, [], None, [NoteRewrite(
+        path="inv/app.json",
+        old="- pages.basket.elements_notes.pay: Paying needs an address.",
+        new="- pages.basket.elements_notes.pay: Paying needs an address and a phone number.",
+        reason="x")])
+    assert "Paying needs an address and a phone number." in prop.edits["inv/app.json"]
+    assert "#pay" in prop.edits["inv/app.json"], "selectors untouched"
+    mismatched = cu.propose(sources, [], None, [NoteRewrite(
+        path="inv/app.json",
+        old="- pages.basket.elements_notes.pay: Paying needs an address.",
+        new="- pages.profile.elements_notes.save: Saving shows a toast.", reason="x")])
+    assert mismatched.empty, "prefixes naming different notes are not stripped"
