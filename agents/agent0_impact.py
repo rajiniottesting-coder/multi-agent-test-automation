@@ -144,15 +144,26 @@ def _owners_and_blocks(tracker, host, story_key: str, candidates: list,
                               | set(claims.get(c.test_case_key, ())))
 
 
+def _proposed_selection(settings: dict) -> dict:
+    """The change stories with an Impact Review in progress: labelled
+    `impact-proposed` AND in a status a story is analysed in
+    (`selection.allowed_statuses`). 10 Nov 2026: the query had no status, so a
+    change a person dropped - the story closed, its review left as it was -
+    went on claiming its tests in every other story's in-flight guard, and a
+    Done review on it would still have been handed over (ai-ready, test cases
+    revised) for a change nobody makes any more."""
+    selection = {"issue_type": "Story", "required_labels": [settings["labels"]["proposed"]]}
+    statuses = (settings.get("selection") or {}).get("allowed_statuses")
+    return {**selection, "allowed_statuses": statuses} if statuses else selection
+
+
 def _claimed_by_open_reviews(tracker, story_key: str, settings: dict) -> dict:
     """{test case key: [change story]} - the rows of every OTHER story's open
     Impact Review (`impact-proposed`). Read from each story's latest report;
     a story whose report cannot be read claims nothing. Fails open."""
     claims: dict = {}
     try:
-        stories = tracker.find_stories_to_process(
-            {"issue_type": "Story", "required_labels": [settings["labels"]["proposed"]]},
-            max_results=50)
+        stories = tracker.find_stories_to_process(_proposed_selection(settings), max_results=50)
     except Exception as e:                                     # noqa: BLE001
         logger.warning("Could not list the open Impact Reviews (%s) - not checked.", e)
         return claims
@@ -655,9 +666,7 @@ def hand_over_decided(tracker, settings: dict, host=None, llm=None,
     update is not proposed, so a dry run costs no model call."""
     from core.impact_handover import HandoverRefused, decisions_from_review, handover
     out = []
-    for s in tracker.find_stories_to_process(
-            {"issue_type": "Story", "required_labels": [settings["labels"]["proposed"]]},
-            max_results=50):
+    for s in tracker.find_stories_to_process(_proposed_selection(settings), max_results=50):
         _start_usage()
         try:
             review_key, decisions = decisions_from_review(tracker, s["key"], settings)

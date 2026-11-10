@@ -142,3 +142,19 @@ def test_the_scan_keeps_a_refused_handover_waiting(world, monkeypatch):
     assert out == [{"story": "SBX-60", "action": "waiting",
                     "why": "being revised by another change in progress: SBX-12 by SBX-3 - "
                            "wait for it to merge or be undone, or reject the row"}]
+
+
+# ── a dropped change and a drift that is gone claim nothing (E113, E114) ─
+
+def test_a_closed_change_story_claims_no_test_and_is_never_handed_over(world, monkeypatch):
+    fake, jira = world
+    _publish_review(fake, jira, "SBX-70", "SBX-13")
+    assert _blocks(jira, keys=("SBX-13",)) == {"SBX-13": ["SBX-70"]}
+    fake.issues["SBX-70"]["status"] = "Done"              # a person dropped the change
+    assert _blocks(jira, keys=("SBX-13",)) == {"SBX-13": []}
+    monkeypatch.setattr("core.impact_handover.decisions_from_review",
+                        lambda tracker, story, settings=None: ("SBX-71", {"SBX-13": "approve"}))
+    assert a0.hand_over_decided(jira, SETTINGS) == [], "a closed story is not handed over"
+    fake.issues["SBX-70"]["status"] = "In Progress"
+    assert [o["story"] for o in a0.hand_over_decided(jira, SETTINGS)] == ["SBX-70"]
+
