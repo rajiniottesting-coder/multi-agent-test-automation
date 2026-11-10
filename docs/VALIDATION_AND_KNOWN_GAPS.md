@@ -297,6 +297,7 @@ Gaps found earlier and fixed, for reference (details in [AI_CONCEPTS.md → fail
 | Framework comments, tests and a prompt named the application's issue keys, UI text and pages; the golden-rule guard harvested none of those | #318 |
 | A story needing an element the inventory lacks was repaired four times and refused for the step definitions' calls to the methods the repair deleted; the blocked comment blamed the test case | #319 |
 | The E2E tests read a legacy top-level `base_url`; the agents and the application check read `app_under_test.base_url` - editing the documented one left the tests on the previous application | #324 |
+| A defect flagged passing kept suggesting it be closed while its test failed again for another cause (a new defect was raised for that cause) | #326 |
 | An `ai-update` splice asserted an unrelated check for a step no page object could read (SCRUM-293's feedback step asserted title links); the notes-addition PR said the story's tests had passed when two were failing; a story stopped for a missing page was told about an undefined step instead (SCRUM-292) | #302 |
 | A scenario left out an expected result its test case states (an element the inventory lacked) and the pull request still claimed the test case automated; only Agent 3 noticed, as advice (SCRUM-293); its heading checks failed on letter case (CSS uppercase) and the failure read as unclassified | #298 |
 | Three more tests pinned tunable config values to their defaults, so lowering `module_budget_chars` for a validation step turned the suite red (as F22) | #296 |
