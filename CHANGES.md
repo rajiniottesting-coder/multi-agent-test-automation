@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — Inventory Health's multi_match note names only families measured thin; GUIDE re-analysis wording (#346)
+
+**Why:** observation O13. Inventory Health's "declared multi_match not multiple right now" note listed every declared family on every page: the set it subtracted held only UNDECLARED ambiguous keys. Families measured with dozens of matches (the listing's cards, the test-case panels) were named, and on Run G's removed-element branch a key declared `removed` was named with "do NOT remove". Separately, the GUIDE said a re-analysis updates the report in place; it updates the open Impact Review in place and posts a new report whose second line is the delta.
+
+- `scripts/verify_locators._verify_page`: the note names the declared families measured as one element, or none while declared conditional (`thin_family`)
+- GUIDE (How a story is analysed, step 1)
+- Test in `test_removed_elements.py`; TEST_TRACK E118. Not tested live yet: E118
+
+---
+
 ## November 2026 — Agent 1 refuses absolute claims on a kept page only when the test signs in (#340)
 
 **Why:** Agent 1's persistent-state rule refused every absolute claim ("only", "empty", "no rows", "exactly") on a `persistent_state` page, whether the test case signed in or not. The code-generation gate draws the line elsewhere on purpose: the state is kept against the signed-in user, and a scenario that never signs in opens a fresh browser context that starts with nothing. Found live on a Run G cart story: its criterion "emptying the only product shows the empty-cart message" was refused twice - every draft of it is absolute - and the story was handed back with no test case, although the anonymous scenario passes Agent 2's gate.
