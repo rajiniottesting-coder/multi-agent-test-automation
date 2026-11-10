@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — a workflow younger than the schedule window is not judged (#374)
+## November 2026 — a workflow younger than the schedule window is not judged (#375)
 
 **Why:** found live right after #372: a throw-away scheduled workflow added minutes before the health check got a `workflow-not-starting` alert - "no scheduled run in the last 24 hours" of a workflow that had existed for 20 minutes. The same check logged "Could not read runs ... list index out of range" for it: slicing an empty paginated list of runs raised.
 
