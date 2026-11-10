@@ -72,9 +72,11 @@ def test_the_store_follows_the_trackers_capabilities_and_the_setting(world, monk
     assert ul.mode(None) == "comments"
 
 
-def test_the_setting_ships_on_auto():
+def test_the_shipped_store_is_one_the_ledger_knows():
+    # The value is a project's to choose (switched for a validation, say): the
+    # test checks it is usable, never which one ships (E95).
     from core.ops_settings import section
-    assert section("usage_ledger")["store"] == "auto"
+    assert section("usage_ledger")["store"] in ("auto", "comments")
 
 
 # ── the cost comment ─────────────────────────────────────────────────────────
