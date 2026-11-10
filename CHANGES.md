@@ -4,6 +4,15 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a signed-in scenario owns its starting state only if it clears it itself (#363)
+
+**Why:** the code-generation gate's persistent-state rule decided per step-definition file whether the state is owned: one step anywhere in the file that clears it (or asks for a fresh identity) exempted every scenario. Found live on R2: a review fix removed one scenario's clearing step, and the gate passed that scenario - signed in as the shared account - asserting "exactly 1 row", because another scenario in the file removes every product.
+
+- `validators/method_resolution_validator._scenarios_not_owning_state`: with the feature at hand (the batch, else `features/<stem>.feature`), ownership is judged per scenario, Background included; the error names the scenarios that assert without clearing. An unreadable feature keeps the file-level answer; anonymous files stay exempt
+- Tests in `test_persistent_state_assertions.py`; TEST_TRACK E126. Not tested live yet: E126
+
+---
+
 ## November 2026 — each kind of splice correction gets its own retry (#359)
 
 **Why:** the splice's step writer had two answers in all, shared by three kinds of correction (a step answered "needs a page-object method", an unknown method, a gate rule broken - #358). Live on a Run G change story, the needs-a-method retry took the only second answer and a broken absence rule reached the final gate uncorrected.
