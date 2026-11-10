@@ -4,6 +4,17 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a story the plan leaves out entirely costs no generation, and is told to add the elements (#PRNUM)
+
+**Why:** found live on Run I: after the step-fidelity fix the plan correctly left out all of SCRUM-398's test cases (the side panel is not in the inventory) - and planned a note file explaining the skips, which Stage 2 then generated and the gate refused (the same happened to SCRUM-394 earlier that evening). The blocked comment then advised editing the test cases ("a test case asks for something this application cannot show"), when the remedy was adding the elements.
+
+- `agents/agent2_coder.py`: when the plan leaves every new approved test case out and plans no feature file, the story is refused before Stage 2 (`Coverage gate failed ... nothing was generated`), with the plan's reasons and the blocked comment, as the coverage gate would after generating
+- `core/blocked.py`: reasons that say "not in the app inventory" (the plan's Skipped format) get the add-the-element advice (`scripts.plan_inventory element` / `page`), or retire the test cases
+- `prompts/agent2_coder_plan.md`: when every test case is left out, plan no files
+- Tests in `test_step_fidelity.py`; TEST_TRACK E143. Not tested live yet: E143
+
+---
+
 ## November 2026 — a step whose code checks another element is left out, not shipped (#402)
 
 **Why:** found live on Run I (SCRUM-398's pull request): the story's side-panel list was not in the app inventory. The plan did not skip its test cases; the code read the main list's item names for "the side panel lists ...", opened an item's page by name for "I click ... in the side panel", and checked "the page loaded" for "the side panel is visible". Every gate passed - each step called real page-object methods on real keys - and the coverage audit (which reads the Gherkin, not the code) judged one of the three test cases fully checked.
