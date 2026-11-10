@@ -94,7 +94,7 @@
         "signup_name_input": "[data-qa='signup-name']",
         "signup_email_input": "[data-qa='signup-email']",
         "signup_button": "[data-qa='signup-button']",
-        "login_error": "text=Your email or password is incorrect!",
+        "login_error": "text=Your email or password is wrong!",
         "signup_error": "text=Email Address already exist!",
         "form_element": "#form"
       },
@@ -311,14 +311,16 @@
         "Test Cases"
       ],
       "elements": {
-        "test_cases_heading": "h2:has-text('Test Cases')",
+        "test_cases_heading": "h2:has-text('Test Cases Validation')",
         "test_case_titles": ".panel-group .panel-title a",
         "test_case_steps": ".panel-collapse .list-group-item",
         "test_case_search_input": "#search_test_cases",
         "feedback_automationexercise_com_link": "role=link[name='feedback@automationexercise.com']",
         "feedback_element": "#feedback",
         "test_case_panels": ".panel-group .panel",
-        "test_case_panel_headings": ".panel-group .panel-heading"
+        "test_case_panel_headings": ".panel-group .panel-heading",
+        "zz_validation_ambiguous": ".panel-group .panel-title a",
+        "zz_validation_text": "text=Test Case"
       },
       "planned": [
         "test_case_search_input"
@@ -330,6 +332,17 @@
         "test_case_panel_headings"
       ],
       "multi_match_note": "Lists: one panel, one panel heading and one title link per test case, one step item per step (inside collapsed panels until a title is clicked)."
+    },
+    "zz_placeholder": {
+      "url": "/zz-validation-placeholder",
+      "components": [],
+      "planned_page": true,
+      "elements": {
+        "zz_heading": "h1.zz-validation-heading"
+      },
+      "planned": [
+        "zz_heading"
+      ]
     }
   },
   "_starting_state": {
