@@ -4202,6 +4202,31 @@ def _extend_page_objects_for_splice(llm, gh, plan, generated_files, need, test_c
     return changed
 
 
+def _new_repairable_errors(step_defs_path: str, before: str, after: str, page_objects: list,
+                           feature_path: str, feature_content: str) -> list[str]:
+    """Errors the repair loop's validators (_collect_repairable_errors) find
+    in `step_defs_path` after the splice that they did not find before it -
+    what the new step functions broke. The feature and the page objects go
+    in as context, unchanged, so only the step file's change can add an
+    error. Fails soft: a validator crash reports nothing."""
+    def errors(content: str) -> list[str]:
+        files = [GeneratedFile(file_path=feature_path, content=feature_content,
+                               is_new_file=False, purpose="splice context"),
+                 GeneratedFile(file_path=step_defs_path, content=content,
+                               is_new_file=False, purpose="splice check")]
+        files += [GeneratedFile(file_path=p.file_path, content=p.content,
+                                is_new_file=False, purpose="page object")
+                  for p in page_objects]
+        try:
+            return _collect_repairable_errors(files)
+        except Exception as e:                                 # noqa: BLE001
+            logger.warning("Splice: the gate rules could not be checked (%s).", e)
+            return []
+    old = set(errors(before)) if before else set()
+    return [e for e in errors(after)
+            if e not in old and f"'{_normalize_path(step_defs_path)}'" in e.replace("\\", "/")]
+
+
 def _page_methods_written_in_run(gh, batch_files) -> list[str]:
     """`Class.method` for each public method a page object written in THIS
     run defines that its committed copy on main does not: what the run
@@ -4423,7 +4448,27 @@ def _splice_step_defs_incremental(
         unresolved = _new_method_resolution_errors(
             step_defs_path, existing, spliced, page_objects)
         if not unresolved:
-            break
+            # Every other rule the gate's repair loop acts on, for what this
+            # splice ADDED. The splice runs after that loop, so an error in
+            # its new functions used to reach the final gate unrepaired
+            # (10 Nov 2026: an absence step that asserted nothing refused a
+            # change story "after the repair loop exhausted its attempts" -
+            # attempts it had never been given).
+            broken = _new_repairable_errors(step_defs_path, existing, spliced, page_objects,
+                                            feature_file_path, spliced_feature_content)
+            if not broken:
+                break
+            if attempt == 2:
+                logger.warning(
+                    "Splice: the new step functions still break %d gate rule(s) after one "
+                    "correction - left to the final gate. First: %s",
+                    len(broken), broken[0][:160])
+                break
+            logger.warning(
+                "Splice: the new step functions break %d gate rule(s) - asking once more "
+                "with the validator's feedback. First: %s", len(broken), broken[0][:160])
+            feedback = "\n".join(f"- {e}" for e in broken)
+            continue
         if attempt == 2:
             logger.warning(
                 "Splice: new step functions still call unknown page-object "
