@@ -328,6 +328,39 @@ def signed_out_pages(inventory: dict, login_path: str | None, only_page: str | N
             and only_page in (None, name)}
 
 
+# The readings a declaration explains (GONE, COND, PLAN, FAMILY), collected
+# across the pages of one run for main()'s summary: {label: ["page.key", ...]}.
+# They count as "ok" - none needs attention - but they are not "one element",
+# and --only-problems prints no line for them. Before E128 the summary called
+# every one of them "resolves to exactly one element", so a key a change story
+# declared removed and measured gone never showed in the nightly report.
+_DECLARED_READINGS: dict = {}
+
+
+def _note_declared(label: str, page_name: str, name: str) -> None:
+    _DECLARED_READINGS.setdefault(label, []).append(f"{page_name}.{name}")
+
+
+def declared_summary(readings: dict) -> str:
+    """One line for the readings a declaration explains, or '' when none.
+
+    Keys declared removed are named (each one is a change story's element,
+    measured gone); the other readings are counted."""
+    parts = []
+    gone = readings.get("gone") or []
+    if gone:
+        parts.append(f"{len(gone)} gone, as declared removed ({', '.join(gone)})")
+    for label, words in (("conditional", "conditional, not shown until an interaction"),
+                         ("planned", "planned, not live yet"),
+                         ("family", "declared families matching several")):
+        if readings.get(label):
+            parts.append(f"{len(readings[label])} {words}")
+    if not parts:
+        return ""
+    total = sum(len(v) for v in readings.values())
+    return f"  {total} read as their declaration states: " + "; ".join(parts)
+
+
 def _verify_page(page, base_url: str, page_name: str, entry: dict,
                  pause: float, only_problems: bool, state: str = "") -> tuple[int, int]:
     path, skip = resolve_page_url(entry)
@@ -409,6 +442,7 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
                 ok += 1
                 expected = True
                 status, colour = "GONE ", "#3b82f6"
+                _note_declared("gone", page_name, name)
             else:
                 bad += 1
                 status, colour = f"BACK({count})", "#ef4444"
@@ -416,6 +450,7 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
             ok += 1
             expected = True
             status, colour = "PLAN ", "#3b82f6"
+            _note_declared("planned", page_name, name)
         elif count == 1:
             ok += 1
             status, colour = ("LIVE ", "#22c55e") if name in declared_planned else ("OK  ", "#22c55e")
@@ -428,6 +463,7 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
                 ok += 1
                 expected = True
                 status, colour = "COND ", "#3b82f6"
+                _note_declared("conditional", page_name, name)
                 if name in declared_family:
                     thin_family.add(name)
             else:
@@ -441,6 +477,7 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
                 ok += 1
                 expected = True
                 status, colour = f"FAMILY({count})", "#22c55e"
+                _note_declared("family", page_name, name)
             else:
                 bad += 1
                 status, colour = f"AMBIG({count})", "#f59e0b"
@@ -537,6 +574,7 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
 
 
 def main() -> int:
+    _DECLARED_READINGS.clear()          # one run's readings, not a previous call's
     ap = argparse.ArgumentParser(
         prog="python -m scripts.verify_locators",
         description="Highlight each inventory selector on the live page so you "
@@ -771,7 +809,11 @@ def main() -> int:
             total_ok += ok
             total_bad += bad
 
-        print(f"\n  {total_ok} selector(s) resolve to exactly one element")
+        declared = sum(len(v) for v in _DECLARED_READINGS.values())
+        print(f"\n  {total_ok - declared} selector(s) resolve to exactly one element")
+        line = declared_summary(_DECLARED_READINGS)
+        if line:
+            print(line)
         print(f"  {total_bad} need attention (stale / ambiguous / invalid)")
         if not args.headless and total_bad:
             print("\n  press Enter to close the browser")

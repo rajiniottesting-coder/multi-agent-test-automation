@@ -401,6 +401,9 @@ def build_update(drift: dict, inventory: dict, used: set, *,
         # - on main or in an open PR - its job is done: it goes, with every
         # reference. Never when removal is off.
         back = {r.get("element") for r in diff.get("reappeared") or []}
+        # Read before the retirement below, which drops the declaration: the
+        # additions further down must still see what a change story removed.
+        declared_removed = set(page.get("removed") or [])
         for key in list(page.get("removed") or []):
             if not allow_removal or key in back or key in used or key in _row_families(page):
                 continue
@@ -416,6 +419,14 @@ def build_update(drift: dict, inventory: dict, used: set, *,
         added_here = 0
         for element, selector in sorted(new.items()):
             reason = refusal_reason(out, name, element, selector)
+            if not reason and element in declared_removed:
+                # A change story declared this key removed. A live element the
+                # crawl names the same is not "new": re-adding it would undo
+                # the declaration (and the key's REMOVED note) in the same pull
+                # request that retires it. A person decides.
+                reason = ("a change story declared this name removed - an element "
+                          "by that name is on the page: check the change was "
+                          "deployed, or take the declaration out by hand")
             row = {"page": name, "element": element, "selector": selector}
             if reason:
                 upd.refused.append({**row, "refused": reason})
