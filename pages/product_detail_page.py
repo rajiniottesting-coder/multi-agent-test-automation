@@ -86,6 +86,33 @@ class ProductDetailPage(BasePage):
         """The current value typed in the quantity field (DOM value, not text)."""
         return self.get_input_value(self.sel("quantity_input"))
 
+    # ── product-detail readers (brand browsing) ──────────────
+    def has_name_and_price(self) -> bool:
+        """True once BOTH the product name and the price are on screen. WAITS.
+
+        A waiting predicate for the 'details page shows a product name and
+        price' assertion. Both are permanent elements of a product details
+        page, so each WAITS for presence; the AND is true only when both have
+        rendered, and additionally requires each to carry non-empty text so an
+        empty heading cannot pass as 'shown'.
+        """
+        if not (self.is_showing(self.sel("product_name"))
+                and self.is_showing(self.sel("product_price"))):
+            return False
+        return bool(self.product_name()) and bool(self.product_price())
+
+    def shows_brand(self, brand: str) -> bool:
+        """True once the Brand label text contains `brand`. WAITS for it.
+
+        The 'Brand:' label is rendered as 'Brand: <name>', so this reads the
+        whole label and checks containment case-insensitively. A waiting
+        predicate — call it where the brand IS expected, which it always is on
+        a product reached by browsing that brand.
+        """
+        self.wait_visible(self.sel("brand"))
+        shown = self.get_text(self.sel("brand"))
+        return brand.casefold() in shown.casefold()
+
     # ── review: queries ──────────────────────────────────────
     def has_review_form(self) -> bool:
         """True once the Write Your Review form is on screen. WAITS for it.
