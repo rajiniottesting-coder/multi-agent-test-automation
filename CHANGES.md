@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — Agent 1 refuses absolute claims on a kept page only when the test signs in (#340)
+
+**Why:** Agent 1's persistent-state rule refused every absolute claim ("only", "empty", "no rows", "exactly") on a `persistent_state` page, whether the test case signed in or not. The code-generation gate draws the line elsewhere on purpose: the state is kept against the signed-in user, and a scenario that never signs in opens a fresh browser context that starts with nothing. Found live on a Run G cart story: its criterion "emptying the only product shows the empty-cart message" was refused twice - every draft of it is absolute - and the story was handed back with no test case, although the anonymous scenario passes Agent 2's gate.
+
+- `core/test_case_rules`: the absolute-claim check runs only for a test case that signs in (`_signs_in`: a shared account named, or a sign-in mentioned anywhere that is not negated); the refusal also offers not signing in. The signed-in quantity rule is unchanged
+- `prompts/agent1_analyst.md`, `prompts/agent1_impact_aware.md`: the same line
+- Tests in `test_test_case_rules.py` (existing cases now sign in explicitly and still fail); TEST_TRACK E117. Not tested live yet: E117
+
+---
+
 ## November 2026 — context update: the REMOVED note is always written; a reworded passage is still rewritten (#339)
 
 **Why:** two flaws in the change-story context update, found live on Run G's first hand-overs:
