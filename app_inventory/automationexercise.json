@@ -289,7 +289,7 @@
         "contact_page_element": "#contact-page",
         "feedback_automationexercise_com_link": "role=link[name='feedback@automationexercise.com']",
         "form_section_element": "#form-section",
-        "upload_file_input": "input[name='upload_file_validation_gone']"
+        "upload_file_input": "input[name='upload_file']"
       },
       "planned": [
         "contact_home_button"
@@ -302,12 +302,8 @@
         "contact_success_message": "In the page from the start but HIDDEN until the form is submitted: verify_locators finds it before any submit. Assert it is VISIBLE after submitting, and NOT VISIBLE when the submit must not go through - never by presence.",
         "contact_home_button": "Appears only after a successful submit (in place of the form); it returns to the home page.",
         "contact_submit_button": "Submitting opens a native browser confirmation dialog ('Press OK to proceed!'): call accept_next_dialog() BEFORE clicking, or the submit waits forever.",
-        "contact_email_input": "Required (browser validation): with it empty the browser blocks the submit, so no dialog opens and no success message is shown.",
-        "upload_file_input": "REMOVED by SCRUM-371: the story takes it out of the application."
-      },
-      "removed": [
-        "upload_file_input"
-      ]
+        "contact_email_input": "Required (browser validation): with it empty the browser blocks the submit, so no dialog opens and no success message is shown."
+      }
     },
     "test_cases": {
       "url": "/test_cases",
