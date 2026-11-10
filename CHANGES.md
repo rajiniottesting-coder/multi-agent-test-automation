@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — every scan pass skips a story the gate refused on unchanged input (#PRNUM)
+## November 2026 — every scan pass skips a story the gate refused on unchanged input (#386)
 
 **Why:** found live on Run H: only the scan's normal pass skipped a story the gate had refused on unchanged input. A refused `ai-regenerate` story keeps its label, so every scan - including the one the hand-off starts after each run - generated it again, refused again, and posted another `[agent2:blocked]` comment: SCRUM-379 reached its $8 budget that way within the hour. `ai-update` never posted the comment at all, so a refused update could repeat the same way.
 
