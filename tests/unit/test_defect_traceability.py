@@ -64,7 +64,9 @@ def world(monkeypatch, tmp_path):
     (features / "reference.feature").write_text(
         "Feature: Reference\n\n  Scenario: Sign in\n    Given I am home\n")
     real = defects.section("defects")
-    settings = {**real, "trace_owners": {}}
+    # The cap is the test's own: the shipped value is an operator's choice
+    # (lowered to 1 for one validation night, it broke this suite).
+    settings = {**real, "trace_owners": {}, "max_new_per_run": 10}
     monkeypatch.setattr(defects, "settings", lambda: settings)
     yield fake, jira, features, settings
     ph.reset_cache()
