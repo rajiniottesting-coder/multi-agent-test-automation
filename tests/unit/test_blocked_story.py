@@ -145,9 +145,12 @@ def test_the_scan_summary_shows_a_blocked_story():
     assert any(line.startswith("[BLOCK] PROJ-5") for line in lines)
 
 
-def test_only_the_normal_scan_pass_skips(monkeypatch):
-    """Regenerate and update are explicit requests; a manual run is a retry.
-    Checked by running the scan, not by reading its source."""
+def test_every_scan_pass_skips_a_refused_input(monkeypatch):
+    """E135: every scan pass skips a story the gate refused on unchanged input.
+    Only the normal pass did: a refused `ai-regenerate` story keeps its label,
+    so every scan generated it again until its budget ran out (10 Nov 2026,
+    $8 on one story). A manual run is still the retry. Checked by running the
+    scan, not by reading its source."""
     import sys
     from unittest.mock import MagicMock
 
@@ -164,12 +167,13 @@ def test_only_the_normal_scan_pass_skips(monkeypatch):
     monkeypatch.setattr(a2, "run", lambda key, **kw: calls.append(
         (key, kw.get("skip_if_blocked", False), kw.get("is_regenerate"))) or
         {"story_id": key, "status": "pr_opened"})
-    monkeypatch.setattr(a2, "run_update", lambda key, **kw: calls.append((key, "update", None)) or
+    monkeypatch.setattr(a2, "run_update", lambda key, **kw: calls.append(
+        (key, "update", kw.get("skip_if_blocked", False))) or
                         {"story_id": key, "status": "update_pr_opened"})
     monkeypatch.setattr(a2, "_print_scan_summary", lambda r: None)
     monkeypatch.setattr(sys, "argv", ["agent2", "--scan"])
     a2.main()
-    assert calls == [("PROJ-1", True, False), ("PROJ-2", False, True), ("PROJ-3", "update", None)]
+    assert calls == [("PROJ-1", True, False), ("PROJ-2", True, True), ("PROJ-3", "update", True)]
 
 
 def test_a_step_standing_in_for_a_control_points_at_the_inventory():
@@ -182,3 +186,25 @@ def test_a_step_standing_in_for_a_control_points_at_the_inventory():
     text = blocked_comment("AB-1", "0" * 16, [err])
     assert "plan_inventory element" in text and "retires the test case" in text
     assert "A rule that survives every repair" not in text
+
+
+def test_an_update_refused_before_on_the_same_input_is_skipped(monkeypatch):
+    """E135: run_update reads the same [agent2:blocked] fingerprint as run()."""
+    from unittest.mock import MagicMock
+
+    import agents.agent2_coder as a2
+    from core import blocked
+    tracker = MagicMock()
+    story = {"key": "PROJ-5", "summary": "s", "description": "d"}
+    cases = [{"key": "PROJ-6", "summary": "t", "description": "x"}]
+    tracker.get_story.return_value = story
+    tracker.get_comments.return_value = [blocked.blocked_comment(
+        "PROJ-5", blocked.fingerprint(story, cases), ["Some error in 'x': y"])]
+    monkeypatch.setattr(a2, "get_tracker", lambda: tracker)
+    monkeypatch.setattr(a2, "load_test_cases_for_story", lambda j, k: cases)
+    out = a2.run_update("PROJ-5", skip_if_blocked=True)
+    assert out["status"] == "blocked" and out["free"]
+    tracker.get_comments.return_value = []
+    monkeypatch.setattr(a2, "_locate_feature_file_for_story", lambda *a: None)
+    monkeypatch.setattr(a2, "build_marker_index", lambda *a: {})
+    assert a2.run_update("PROJ-5", skip_if_blocked=True)["status"] != "blocked"

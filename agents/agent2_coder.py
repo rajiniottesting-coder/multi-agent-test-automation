@@ -4521,7 +4521,24 @@ def _hand_back_update(jira, story_id: str, stop: Exception) -> None:
         logger.warning(f"Could not remove '{label}' from {story_id}: {e}")
 
 
-def run_update(story_id: str, dry_run: bool = False) -> dict:
+def _refused_before(jira, story_id: str, input_fp: str) -> bool:
+    """Did the final gate refuse this exact input before? Jira reads only, no
+    model call; fails open (an unreadable story runs)."""
+    from core import blocked
+    try:
+        if blocked.blocked_on(jira.get_comments(story_id), input_fp):
+            logger.warning(
+                f"{story_id}: the final gate refused this story and neither it nor "
+                f"its test cases have changed since ({blocked.BLOCKED_MARKER} "
+                f"inputs: {input_fp}). Skipped - no model call. Edit a test case or "
+                f"the story, or run Agent 2 with its key, to try again.")
+            return True
+    except Exception as e:                                     # noqa: BLE001
+        logger.warning(f"Could not read {story_id}'s comments ({e}); running it.")
+    return False
+
+
+def run_update(story_id: str, dry_run: bool = False, skip_if_blocked: bool = False) -> dict:
     """Surgical incremental-update flow triggered by the `ai-update` label.
 
     Reads the existing feature file on main, classifies linked Test Cases
@@ -4540,6 +4557,13 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
     if not test_cases:
         logger.warning(f"No Test Cases linked to {story_id}. Run Agent 1 first.")
         return {"story_id": story_id, "status": "no_test_cases", "files_generated": 0}
+
+    # Refused before on this same input: the scan skips it, as in run()
+    # (core.blocked). A manual run always runs.
+    from core import blocked
+    input_fp = blocked.fingerprint(story, test_cases)
+    if skip_if_blocked and _refused_before(jira, story_id, input_fp):
+        return {"story_id": story_id, "status": "blocked", "files_generated": 0, "free": True}
 
     marker_index = build_marker_index(FEATURES_DIR)
     feature_file_path = _locate_feature_file_for_story(story_id, test_cases, marker_index)
@@ -4876,8 +4900,16 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
             purpose="Incremental update: orphan method(s) commented out",
         ))
 
-    _validate_generated_files(generated_files, story_id,
-                              list(classification["modified"]) + list(classification["new"]))
+    try:
+        _validate_generated_files(generated_files, story_id,
+                                  list(classification["modified"]) + list(classification["new"]))
+    except ValueError as e:
+        # Said once on the story, so the scan stops retrying unchanged input.
+        if not dry_run:
+            blocked.post_blocked_once(jira, story_id, input_fp,
+                                      getattr(e, "errors", None) or [str(e)])
+        show_refused_files(generated_files)
+        raise
 
     # Every test case this file should hold has its markered scenario, or is
     # named (F-13). A scenario the model wrote without its marker counts as
@@ -5060,7 +5092,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
         is_regenerate: If True, this is a REGENERATION run triggered by the
             `ai-regenerate` label. Skips dedup, uses -revN branch suffix,
             removes the regenerate label after success.
-        skip_if_blocked: The scheduled scan's normal pass sets it: a story the
+        skip_if_blocked: The scheduled scan sets it in every pass: a story the
             final gate already refused, with its story and test-case text
             unchanged since, is skipped before any model call (core.blocked).
             A manual run leaves it False and always runs.
@@ -5137,18 +5169,9 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
     # any model call; fails open.
     from core import blocked
     input_fp = blocked.fingerprint(story, test_cases, revisions)
-    if skip_if_blocked:
-        try:
-            if blocked.blocked_on(jira.get_comments(story_id), input_fp):
-                logger.warning(
-                    f"{story_id}: the final gate refused this story and neither it nor "
-                    f"its test cases have changed since ({blocked.BLOCKED_MARKER} "
-                    f"inputs: {input_fp}). Skipped - no model call. Edit a test case or "
-                    f"the story, or run Agent 2 with its key, to try again.")
-                return {"story_id": story_id, "status": "blocked", "files_generated": 0,
-                        "free": True}
-        except Exception as e:                                 # noqa: BLE001
-            logger.warning(f"Could not read {story_id}'s comments ({e}); running it.")
+    if skip_if_blocked and _refused_before(jira, story_id, input_fp):
+        return {"story_id": story_id, "status": "blocked", "files_generated": 0,
+                "free": True}
 
     if not test_cases and not impact_work:
         logger.warning(f"No Test Cases linked to {story_id}. Run Agent 1 first.")
@@ -6196,12 +6219,16 @@ def main():
                      "update": "Agent 2 (Coder, incremental update)"}[mode]
             try:
                 with story_usage(story["key"], label, jira=jira, dry_run=args.dry_run):
+                    # Every pass skips a story the gate refused on this same
+                    # input (10 Nov 2026: a refused `ai-regenerate` story was
+                    # generated again by every scan until its budget ran out).
                     if mode == "update":
-                        result = run_update(story["key"], dry_run=args.dry_run)
+                        result = run_update(story["key"], dry_run=args.dry_run,
+                                            skip_if_blocked=True)
                     else:
                         result = run(story["key"], dry_run=args.dry_run,
                                      is_regenerate=(mode == "regenerate"),
-                                     skip_if_blocked=(mode == "normal"))
+                                     skip_if_blocked=True)
                 results.append(result)
                 # A story that did nothing - blocked, or still waiting, with no
                 # model call - does not use up a place (F27): the next deferred
