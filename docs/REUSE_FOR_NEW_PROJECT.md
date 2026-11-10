@@ -129,11 +129,10 @@ app_under_test:
   auto_extend_page_objects: true
 ```
 
-ALSO update the legacy top-level `base_url:` alias:
-
-```yaml
-base_url: https://bank.acme.example.com   # was: the previous app's base URL
-```
+`app_under_test.base_url` is the only base URL: the tests, the agents and the
+application check all read it (a `BASE_URL` environment variable overrides it
+for one run). An older config's top-level `base_url:` is read only when
+`app_under_test.base_url` is missing - delete it.
 
 Login roles are NOT in `config.yaml`: rename the `APP_USER_<ROLE>` variables in
 `.env` and GitHub Secrets to the new app's roles (Change 5).

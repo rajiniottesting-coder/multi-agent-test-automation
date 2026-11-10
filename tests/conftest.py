@@ -117,19 +117,25 @@ def config():
     return load_config()
 
 
+def resolve_base_url(config: dict) -> str:
+    """The application base URL - the same order the application check
+    (scripts/app_probe.py) and the agents use, so the tests can never run
+    against another application than the one they are judged on:
+
+      1. BASE_URL env var (explicit override - dev/staging/prod)
+      2. config.yaml `app_under_test.base_url` (the one place a project sets it)
+      3. a top-level `base_url` (older configs only)
+    """
+    return (os.getenv("BASE_URL")
+            or ((config or {}).get("app_under_test") or {}).get("base_url")
+            or (config or {}).get("base_url") or "")
+
+
 @pytest.fixture(scope="session")
 def base_url(config) -> str:
-    """The application base URL — single source of truth.
-
-    Priority:
-      1. BASE_URL env var (explicit override — useful for pointing tests at
-         dev/staging/prod without changing config.yaml)
-      2. config.yaml `base_url` (the default for local dev)
-
-    Page objects receive this via their open() method, so the URL is never
-    hardcoded in pages/ or tests/.
-    """
-    return os.getenv("BASE_URL") or config["base_url"]
+    """The application base URL (resolve_base_url). Page objects receive it via
+    their open() method, so the URL is never hardcoded in pages/ or tests/."""
+    return resolve_base_url(config)
 
 
 @pytest.fixture(scope="session")
