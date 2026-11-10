@@ -408,6 +408,26 @@ def test_the_script_alerts_once_and_resolves(script_world):
     assert "no longer failing" in _alert_comments(fake, key)[1]
 
 
+def test_the_alerts_of_a_workflow_that_is_gone_close(script_world):
+    """E129: the not-starting alert of a deleted workflow stayed open - only the
+    failing alert was closed when the workflow file went. Both close now, as
+    "no longer scheduled"; the alerts of a workflow still scheduled and any
+    other alert are left to their own checks."""
+    from scripts import pipeline_health_check as script
+    fake, jira, state, run = script_world
+    for a in ("workflow-failing:gone.yml", "workflow-not-starting:gone.yml"):
+        ph.raise_alert(jira, a, a)
+    assert run() == 0
+    still = set(ph.open_alerts(jira))
+    assert not still & {"workflow-failing:gone.yml", "workflow-not-starting:gone.yml"}
+    closing = [c for c in _alert_comments(fake, ph.issue_key(jira))
+               if c.startswith("[health:resolved] workflow-not-starting:gone.yml")]
+    assert closing and "no longer scheduled" in closing[0]
+    assert script._workflow_alert_name("workflow-not-starting:job.yml") == "job.yml"
+    assert script._workflow_alert_name("workflow-failing:job.yml") == "job.yml"
+    assert script._workflow_alert_name("credential:model") is None
+
+
 def test_the_dry_run_writes_nothing(script_world, capsys):
     fake, jira, state, run = script_world
     assert run("--dry-run") == 0
