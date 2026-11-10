@@ -329,3 +329,38 @@ def test_the_script_says_unknown_and_never_fails_on_a_wrong_setting(tmp_path, mo
     data = json.loads(report.read_text())
     assert data["available"] == "unknown" and "not usable" in data["problem"]
     assert "::warning::" in capsys.readouterr().out
+
+
+# ── F50: one base URL for the tests, the agents and the application check ──
+
+def _resolver():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("_e2e_conftest", ROOT / "tests" / "conftest.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.resolve_base_url
+
+
+@pytest.mark.parametrize("env, cfg, expected", [
+    (None, {"app_under_test": {"base_url": "https://new.example"},
+            "base_url": "https://old.example"}, "https://new.example"),
+    (None, {"base_url": "https://old.example"}, "https://old.example"),
+    ("https://staging.example", {"app_under_test": {"base_url": "https://new.example"}},
+     "https://staging.example"),
+])
+def test_the_tests_run_against_the_application_the_agents_and_the_check_use(
+        monkeypatch, env, cfg, expected):
+    """9 Nov 2026: the tests read a top-level base_url while the agents and the
+    application check read app_under_test.base_url - a project setting only the
+    documented one ran its tests against the previous application."""
+    if env:
+        monkeypatch.setenv("BASE_URL", env)
+    else:
+        monkeypatch.delenv("BASE_URL", raising=False)
+    assert _resolver()(cfg) == expected
+
+
+def test_the_shipped_config_has_one_base_url():
+    config = yaml.safe_load((ROOT / "config" / "config.yaml").read_text())
+    assert "base_url" not in config, "a second base URL can silently disagree"
+    assert config["app_under_test"]["base_url"]

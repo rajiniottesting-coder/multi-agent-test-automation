@@ -1237,7 +1237,8 @@ app_under_test:        # The application being tested (the SINGLE decoupling poi
 browser:               # Playwright settings (headless, viewport, timeout, slow_mo,
                        # navigation_retry_delays_ms: waits before retrying a 5xx/429 page load)
 
-base_url: ...          # Legacy alias for tests/conftest.py
+# The base URL is app_under_test.base_url only (tests, agents and the
+# application check read it; BASE_URL in the environment overrides it).
 
 # Login roles are not configured here: APP_USER_<ROLE> / APP_PASSWORD[_<ROLE>]
 # in .env and GitHub Secrets, resolved by the `credentials` fixture.
@@ -2165,7 +2166,7 @@ If you want a pristine repo for your app:
   `features/<old>.feature`, `tests/step_defs/test_<old>.py`, `pages/<old>_page.py`
 - Rewrite `prompts/app_context/` — those modules describe the OLD app's
   behaviour and will actively mislead the agents if left in place
-- Update `config.yaml`'s `base_url:` legacy alias
+- Delete a top-level `base_url:` left in an older `config.yaml` (only `app_under_test.base_url` is used)
 - Rename the `APP_USER_<ROLE>` variables in `.env` and in GitHub Secrets to
   match the new app's roles
 
