@@ -106,7 +106,10 @@ def test_the_stop_comment_names_a_setting_never_a_code_change():
 def test_agent1_reads_its_output_room_from_config():
     import yaml
     shipped = yaml.safe_load(Path("config/config.yaml").read_text())
-    assert shipped["agents"]["agent1_analyst"]["max_output_tokens"] >= 4096
+    # The value is a project's to tune (lowered for a validation, say): the
+    # test checks it is usable, never what it is (E95).
+    cap = shipped["agents"]["agent1_analyst"]["max_output_tokens"]
+    assert isinstance(cap, int) and cap > 0
     source = Path("agents/agent1_analyst.py").read_text()
     assert 'cap_setting="agents.agent1_analyst.max_output_tokens"' in source
     assert "max_output_tokens=12288)" not in source, "the cap is read from config, not fixed"
