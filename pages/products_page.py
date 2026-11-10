@@ -10,6 +10,35 @@ belongs on the product detail page, which exposes a single unique control.
 Selectors: see `products` in the app inventory. No literals live here.
 
 App: https://automationexercise.com
+
+NOTES / MISSING INVENTORY (brand scenarios cannot be driven through this page
+object until a human adds these keys to the `products` page in the inventory):
+
+- brands_sidebar_heading : the 'Brands' heading in the left sidebar.
+- brands_sidebar_links   : the family of brand links, each reading like
+                           'Polo (6)' / 'Mast & Harbour (3)'.
+- brand_page_title       : the heading on a per-brand products page that shows
+                           the brand name (e.g. 'Brand - Polo Products').
+
+The `products` inventory lists ONLY these element keys: add_to_cart_buttons,
+added_modal, all_products_heading, continue_shopping_button, product_cards,
+product_names, sale_image_element, search_button, search_input,
+searched_products_heading, view_cart_link_in_modal, view_product_links. None of
+them reach the Brands sidebar heading, the brand-link family, or the per-brand
+page title. Rule 15 forbids inventing a key or writing a literal selector, so
+the following behaviours required by the brand scenarios are DELIBERATELY NOT
+implemented here and are named for a human to add:
+
+  * is_brands_sidebar_shown()   -> needs brands_sidebar_heading
+  * brand_entries() / lists_brand_entry(...) -> needs brands_sidebar_links
+  * open_brand(...)             -> needs brands_sidebar_links
+  * brand_page_title_contains(...) -> needs brand_page_title
+
+What CAN be implemented with existing keys stays below:
+  * view_first_brand_product() uses view_product_links (per-card family).
+  * assert_brand_product_count() uses product_cards (one per card, not doubled).
+
+BASEPAGE-REQUEST: none.
 """
 from typing import Optional
 
@@ -70,6 +99,18 @@ class ProductsPage(BasePage):
         self.require_own_page()
         self.fill(self.sel("search_input"), term)
         self.click(self.sel("search_button"))
+
+    def view_first_brand_product(self) -> None:
+        """Open the details page for the FIRST product on the brand page.
+
+        On a per-brand products page the cards are the same family as the main
+        listing, so the first card's View Product link is index 0 of the
+        view_product_links family (one link per card). Waits for at least one
+        link to render before clicking so a scenario that just navigated by
+        brand does not race the page load.
+        """
+        self.wait_for_any(self.sel("view_product_links"))
+        self.click_nth(self.sel("view_product_links"), 0)
 
     # ── queries ──────────────────────────────────────────────
     def is_loaded(self, timeout_ms: Optional[int] = None) -> bool:
@@ -152,3 +193,14 @@ class ProductsPage(BasePage):
         """
         self.wait_for_any(self.sel("product_cards"), present=False)
         return True
+
+    def assert_brand_product_count(self, expected: int) -> None:
+        """Assert the brand page lists exactly `expected` product cards. WAITS.
+
+        Uses wait_for_count on the (non-doubled) product_cards family, so it
+        retries until the brand page has finished rendering rather than
+        snapshotting a count that races the navigation. product_cards is one
+        per card — unlike product_names, which is doubled — so this count is the
+        real number of products on the brand page.
+        """
+        self.wait_for_count(self.sel("product_cards"), expected)
