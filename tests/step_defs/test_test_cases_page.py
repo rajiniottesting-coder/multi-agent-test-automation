@@ -60,11 +60,12 @@ def assert_titles_are_links(test_cases_page):
     )
 
 
-@then("the Feedback for Us section should display an email address link")
-def assert_feedback_email_link(test_cases_page):
-    assert test_cases_page.has_feedback_email_link(), (
-        "Expected a Feedback for Us email address link"
-    )
+# AI-ORPHAN: no scenario in features/test_cases_page.feature uses this step after SCRUM-354 revised or retired SCRUM-312. Review before deleting.
+# @then("the Feedback for Us section should display an email address link")
+# def assert_feedback_email_link(test_cases_page):
+    # assert test_cases_page.has_feedback_email_link(), (
+        # "Expected a Feedback for Us email address link"
+    # )
 
 
 @then("the steps of that test case should be shown")
@@ -78,4 +79,40 @@ def assert_steps_shown(test_cases_page):
 def assert_still_on_test_cases_page(test_cases_page):
     assert test_cases_page.remaining_on_page(), (
         "Navigated away from the Test Cases page"
+    )
+
+
+@then(parsers.parse('the feedback section should be headed "{heading}"'))
+def assert_feedback_heading(test_cases_page, heading):
+    assert test_cases_page.feedback_heading_matches(heading), (
+        f"Expected feedback heading {heading!r}, got {test_cases_page.feedback_heading_matches(heading)!r}"
+    )
+
+
+@then(parsers.parse('the old heading "{heading}" should not be shown'))
+def assert_old_feedback_heading_absent(test_cases_page, heading):
+    assert test_cases_page.feedback_heading_is_absent(heading), (
+        f"Old feedback heading {heading!r} is still shown"
+    )
+
+
+@then(parsers.parse('the feedback link text should read "{text}"'))
+def assert_feedback_link_text(test_cases_page, text):
+    assert test_cases_page.feedback_link_text() == text, (
+        f"Expected feedback link text {text!r}, got {test_cases_page.feedback_link_text()!r}"
+    )
+
+
+@then("the email address should not be shown as the feedback link text")
+def assert_email_not_shown_as_link_text(test_cases_page):
+    assert "@" not in test_cases_page.feedback_link_text(), (
+        f"Email address is shown as the feedback link text: {test_cases_page.feedback_link_text()!r}"
+    )
+
+
+@then("the feedback link should still be a mailto link to the same email address")
+def assert_feedback_link_mailto(test_cases_page):
+    href = test_cases_page.feedback_link_href()
+    assert href.startswith("mailto:"), (
+        f"Expected a mailto feedback link, got href {href!r}"
     )
