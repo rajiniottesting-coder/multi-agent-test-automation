@@ -506,7 +506,7 @@ jobs:
         env:
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
           APP_USER_REGISTERED: ${{ secrets.APP_USER_REGISTERED }}
-          MAX_RETRIED_TESTS: "100"
+          MAX_RETRIED_TESTS: "1"
         run: |
           FAILED=$(python -m scripts.finalise_junit --count-failed reports/junit.xml)
           echo "failed tests: $FAILED"
