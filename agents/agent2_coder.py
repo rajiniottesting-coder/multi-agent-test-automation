@@ -70,6 +70,7 @@ from validators.import_validator import validate_imports_resolvable
 from validators.page_object_contract import validate_extended_page_objects_keep_methods
 from validators.opening_step import validate_scenarios_open_a_page_first
 from validators.action_steps import leave_out_stand_ins, validate_click_steps_click
+from validators.step_arguments import validate_steps_carry_no_table_or_doc_string
 from validators.method_resolution_validator import (
     pages_missing_from_inventory,
     elements_missing_from_inventory,
@@ -2934,6 +2935,9 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     # A step that says the user clicks makes a page-object call that clicks -
     # never one that performs what the control would do (validators/action_steps.py).
     errors.extend(validate_click_steps_click(generated_files, PROJECT_ROOT))
+    # A data table or doc string under a step is read as step text by the
+    # pinned pytest-bdd: no definition matches at run time (validators/step_arguments.py).
+    errors.extend(validate_steps_carry_no_table_or_doc_string(generated_files))
     # Two stories editing one page object branch from main independently, so
     # neither sees the other's work and both may add their own name for one
     # behaviour. Git merges the additions cleanly when they land apart, and
@@ -5618,6 +5622,44 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
             ).strip()})
             output = output.model_copy(update={"files": generated_files, "notes": plan.notes})
 
+    # 4b-fidelity. A step whose code acts on or checks a different element than
+    # it names (10 Nov 2026: a side panel's list read from the main list's item
+    # names, the panel's "visible" checked as "the page loaded") passed every
+    # rule. One model reading of each step beside the code that runs for it
+    # (validators/step_fidelity.py); the scenarios using a step it names are
+    # left out with the reason, like a click stand-in above; a story left with
+    # nothing is refused below, naming the steps. A failed call changes nothing.
+    fidelity_left: list = []
+    if load_agent_config().get("step_fidelity_audit", True) and new_test_cases:
+        from core import inventory_planned as _inventory
+        from validators import step_fidelity
+        from validators.gherkin_analyzer import step_functions as _step_functions
+        owner_steps = {o.step_defs_path for o in owner_files.values()}
+        fidelity = step_fidelity.audit(
+            llm, generated_files, _inventory.load_inventory(ctx),
+            load_prompt("agent2_step_fidelity.md"), PROJECT_ROOT,
+            skip=set(owner_files) | owner_steps)
+        if fidelity:
+            for err in fidelity:
+                logger.warning("%s: %s", story_id, err)
+            generated_files, left_out = leave_out_stand_ins(
+                generated_files, fidelity, protected=set(owner_files) | owner_steps)
+            if left_out:
+                for key, why in left_out.items():
+                    logger.warning("%s: left out %s - %s", story_id, key, why)
+                plan = plan.model_copy(update={"notes": "\n".join(
+                    [plan.notes or ""] + [f"Skipped: {k} -- {why}" for k, why in left_out.items()]
+                ).strip()})
+                output = output.model_copy(update={"files": generated_files, "notes": plan.notes})
+            # A named step still in the files: nothing was left to keep.
+            present = {(f.file_path, kind, phrase)
+                       for f in generated_files if f.file_path.startswith("tests/step_defs/")
+                       for kind, phrase, _t, _fn in _step_functions(f.content or "") or []}
+            for err in fidelity:
+                m = re.match(r"^Step fidelity error in '([^']+)': the step `(\w+) (.+?)` - ", err)
+                if m and (m.group(1), m.group(2).lower(), m.group(3)) in present:
+                    fidelity_left.append(err)
+
     # 4c-pre. COVERAGE. Every approved test case this run was given has a
     # markered scenario, or is named - never dropped in silence
     # (agents/agent2_coverage.py, F-13). Judged from the files. Markers are read
@@ -5644,6 +5686,11 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
     try:
         _validate_generated_files(generated_files, story_id,
                                   list(new_test_cases) + list(revisions))
+        if fidelity_left:
+            raise GateFailure(
+                f"Step fidelity gate failed for {story_id}: every scenario uses a step whose "
+                "code acts on or checks a different element than the step names.",
+                errors=fidelity_left)
         if new_test_cases and len(batch_gaps) == len(new_test_cases) and not impact_work:
             raise GateFailure(
                 f"Coverage gate failed for {story_id}: none of its "

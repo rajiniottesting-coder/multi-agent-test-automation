@@ -325,7 +325,21 @@ survives the repair, its scenarios are taken out of the story's own feature
 (with the step functions only they used) and each test case is listed as not
 automated with that reason, so the story's other test cases are still coded -
 never a change story's splice into another story's files, never a Background
-step, and a feature that would be left empty is refused as before. A page has one
+step, and a feature that would be left empty is refused as before. A stand-in
+that uses a DIFFERENT element the inventory does have - another list's items
+read for the list a step names, "the page loaded" for a section it says is
+visible - breaks no rule, so after the gate one model call
+(`validators/step_fidelity.py`, `agents.agent2_coder.step_fidelity_audit`)
+reads each step of the story's own step files beside the code that runs for it
+(its definition, the page-object methods it calls, the inventory elements they
+read with their notes) and names the steps whose code acts on or checks
+another element than the wording names. Their scenarios are left out the same
+way (not automated, with that reason); a story left with nothing is refused,
+and the blocked comment names the element to add. A failed call changes
+nothing. A data table or doc string under a step is refused
+(`validators/step_arguments.py`) while the installed pytest-bdd is below 8: it
+reads those lines as part of the step's text, so the step would match no
+definition at run time. A page has one
 page object: a new page object for an inventory page a committed page object
 already implements is refused (`validate_page_object_selectors`), naming that
 page object - and, when it is reserved, saying a person adds the method there,
