@@ -55,6 +55,22 @@ class CartPage(BasePage):
             self.sel("cart_delete_buttons"),
         )
 
+    def remove_all_products(self) -> None:
+        """Delete every row in the cart until none remain.
+
+        Deletes the FIRST row repeatedly rather than iterating a snapshot of
+        names: each deletion re-renders the table, so a captured list would go
+        stale. After each click it waits for the row count to drop by one,
+        which lets the page settle before the next deletion, and stops once no
+        rows are left. This leaves the cart in its empty state, where the
+        empty-cart message is rendered in place of the rows.
+        """
+        remaining = self.get_count(self.sel("cart_rows"))
+        while remaining > 0:
+            self.click_nth(self.sel("cart_delete_buttons"), 0)
+            remaining -= 1
+            self.wait_for_count(self.sel("cart_rows"), remaining)
+
     # ── queries ──────────────────────────────────────────────
     def is_loaded(self, timeout_ms: Optional[int] = None) -> bool:
         """True once the cart table is on screen. WAITS for it.
@@ -84,6 +100,18 @@ class CartPage(BasePage):
         """
         self.wait_for_row(self.sel("cart_rows"), product_name, present=True)
         return True
+
+    def is_empty(self) -> bool:
+        """True once the empty-cart message is shown. WAITS, and times out if
+        it is not.
+
+        Call this only where the cart is EXPECTED to be empty — it waits for
+        the empty-cart message, which is rendered only while the cart holds
+        nothing, and times out if any row is still present. A step asking
+        "is it empty?" to branch would pay the full timeout every time the
+        answer is no.
+        """
+        return self.is_showing(self.sel("empty_cart_message"))
 
     def quantity_for(self, product_name: str) -> int:
         """Return the quantity shown in `product_name`'s row, as an int.
