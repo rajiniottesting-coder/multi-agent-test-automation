@@ -63,7 +63,7 @@ def record(tracker, flakes: list, run_url: str | None, now: _dt.datetime | None 
 
 def summary(tracker, issue: str, now: _dt.datetime) -> list:
     """[(test, times, last day YYYY-MM-DD)] within the window, most frequent first."""
-    window = int(section("flaky_tests").get("window_days", 30))
+    window = int(section("flaky_tests").get("window_days", 14))
     since = (now - _dt.timedelta(days=window)).strftime("%Y%m%d")
     counts: dict = {}
     for key in pipeline_health.record_keys(tracker, PREFIX, issue):
@@ -88,7 +88,7 @@ def summary(tracker, issue: str, now: _dt.datetime) -> list:
 def prune(tracker, now: _dt.datetime) -> int:
     """Delete flake records older than the window, and the name of a test with
     none left. Run by the health check. Returns how many records went."""
-    window = int(section("flaky_tests").get("window_days", 30))
+    window = int(section("flaky_tests").get("window_days", 14))
     keep_from = (now - _dt.timedelta(days=window)).strftime("%Y%m%d")
     gone = pipeline_health.prune(tracker, PREFIX, keep_from, day_part=2)
     issue = pipeline_health.issue_key(tracker, create=False)

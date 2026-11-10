@@ -134,7 +134,7 @@ pipeline_health:
 # description lists them by count over this window.
 flaky_tests:
   enabled: true
-  window_days: 30
+  window_days: 14
 
 # Defect triage (F-22): after a run on main (nightly, a push that ran the E2E,
 # a manual run on main) each test still failing raises ONE defect per test and
