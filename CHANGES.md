@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — the health check closes every alert of a workflow that is gone (#372)
+
+**Why:** a workflow alert closes when its workflow file is deleted or no longer scheduled - but only the `workflow-failing` alert did. Found on the health issue: two throw-away workflows deleted after validation cycle 1 still had open `workflow-not-starting` alerts, and nothing would ever close them.
+
+- `scripts/pipeline_health_check.apply`: both workflow alerts (`workflow-failing:<file>`, `workflow-not-starting:<file>`) close as "no longer scheduled" when `<file>` is not among the scheduled workflows (`_workflow_alert_name`)
+- GUIDE: the alert table gains its `workflow-not-starting:<file>` row (it had none)
+- Test in `test_pipeline_health.py`; TEST_TRACK E129. Not tested live yet: E129
+
+---
+
 ## November 2026 — a removed key is never added back, and the nightly summary names what it read as declared (#368)
 
 **Why:** two findings of the E22 after-deployment run (a removal story's key declared `removed`, its selector reading gone, and a live element the crawl names the same):

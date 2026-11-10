@@ -61,20 +61,34 @@ def findings(tracker, host_factory, root: Path, now: _dt.datetime) -> list:
     return out
 
 
+# The alerts that watch one scheduled workflow, by the workflow's file name.
+_WORKFLOW_ALERTS = ("workflow-failing:", "workflow-not-starting:")
+
+
+def _workflow_alert_name(alert_id: str) -> str | None:
+    """The workflow file a workflow alert watches, or None for any other alert."""
+    for prefix in _WORKFLOW_ALERTS:
+        if alert_id.startswith(prefix):
+            return alert_id[len(prefix):]
+    return None
+
+
 def apply(tracker, found: list, root: Path | None = None) -> dict:
     """Open or close each alert. Returns {"opened": [...], "resolved": [...]}.
 
-    With `root`: a workflow alert whose workflow file is gone or no longer
-    scheduled closes too - nothing else ever would. (Decided from the files,
-    not from the findings: a workflow whose runs could not be read this time
-    keeps its alert.)"""
+    With `root`: a workflow alert (failing or not starting) whose workflow
+    file is gone or no longer scheduled closes too - nothing else ever would.
+    (Decided from the files, not from the findings: a workflow whose runs
+    could not be read this time keeps its alert.) 10 Nov 2026: only the
+    failing alert was closed this way, so the not-starting alerts of two
+    deleted workflows stayed open on the health issue."""
     from core import health_checks as hc
     from core import pipeline_health as ph
     opened, resolved = [], []
     if root is not None:
-        scheduled = {f"workflow-failing:{n}" for n in hc.scheduled_workflows(root)}
+        names = set(hc.scheduled_workflows(root))
         resolved += ph.resolve_where(
-            tracker, lambda a: a.startswith("workflow-failing:") and a not in scheduled,
+            tracker, lambda a: _workflow_alert_name(a) not in (None, *names),
             "The workflow is no longer scheduled, so it is no longer watched.")
     for f in found:
         if f.problem:
