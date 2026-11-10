@@ -4,6 +4,15 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — the splice runs the repair loop's rules on the step functions it adds (#358)
+
+**Why:** a change story's splice runs after Agent 2's repair loop and checked its new step functions only for unknown page-object methods; any other rule they broke reached the final gate unrepaired. Found live on a Run G change story: a spliced absence step that asserted nothing refused the story "after the repair loop exhausted its attempts" - attempts it had never been given (R2).
+
+- `agents/agent2_coder._new_repairable_errors`: the repair loop's collector, run on the step file before and after the splice (feature and page objects as context); the errors the splice added are fed back to the writer once; still broken, the final gate decides
+- Tests in `test_splice_grounding.py` (`test_step_def_splicing.py`'s tier tests stub the rules); TEST_TRACK E125. Not tested live yet: E125
+
+---
+
 ## November 2026 — the literal-selector scan never reads prose inside a docstring (#357)
 
 **Why:** found live on a Run G change story's retry: the page-object literal-selector scan reads source lines and skipped only lines starting with a quote, `#` or `*`. A line in the middle of the page object's docstring (a quoted address followed by a period, and later an apostrophe) matched as a quoted selector, and the final gate refused a story whose code held none.

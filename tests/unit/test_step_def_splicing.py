@@ -21,6 +21,15 @@ from agents.agent2_coder import (
     _splice_step_defs_incremental,
 )
 
+
+@pytest.fixture(autouse=True)
+def _no_gate_rules(monkeypatch):
+    """These tests are about the splice tiers. Their fake step files request
+    fixtures this repository does not declare, which the gate rules the
+    splice now runs (_new_repairable_errors) rightly flag; those rules are
+    tested in test_splice_grounding.py."""
+    monkeypatch.setattr(coder, "_new_repairable_errors", lambda *a, **k: [])
+
 FEATURE = '''Feature: Login
   Scenario: valid login
     Given I am on the login page

@@ -471,3 +471,49 @@ def test_a_reserved_page_object_never_joins(monkeypatch, tmp_path):
         None, FakeGH(""), SimpleNamespace(files_to_create=[]), files, need, [], {}, "", None,
         root=tmp_path)
     assert files == []
+
+
+# ── 9. the splice runs the repair loop's rules on what it adds (E125) ───
+
+ABSENCE_FEATURE = '''Feature: Basket
+  Scenario: one item
+    Given I am on the widget page
+    Then the help link should not be shown
+'''
+
+ABSENCE_EMPTY = '''@then("the help link should not be shown")
+def _(widget_page):
+    widget_page.open_widget()
+'''
+
+ABSENCE_GOOD = '''@then("the help link should not be shown")
+def _(widget_page):
+    assert widget_page.is_help_link_absent()
+'''
+
+PAGE_ABSENT = PAGE + '''
+    def is_help_link_absent(self) -> bool:
+        return self.is_gone(self.sel("help"))
+'''
+
+
+def test_a_gate_rule_the_new_functions_break_is_fed_back_once(monkeypatch):
+    seen = []
+    real = coder._new_repairable_errors
+
+    def spy(*a):
+        out = real(*a)
+        seen.append(out)
+        return out
+    monkeypatch.setattr(coder, "_new_repairable_errors", spy)
+    llm = ScriptedLLM(ABSENCE_EMPTY, ABSENCE_GOOD)
+    batch = [coder.GeneratedFile(file_path="pages/widget_page.py", content=PAGE_ABSENT,
+                                 is_new_file=True, purpose="page object")]
+    content, mode = coder._splice_step_defs_incremental(
+        llm, FakeGH(EXISTING), "features/fake_basket.feature", ABSENCE_FEATURE,
+        "tests/step_defs/test_fake_basket.py", ctx=None, references={}, page_inventory="",
+        batch_files=batch)
+    assert mode == "spliced" and "is_help_link_absent" in content
+    assert any("Absence step error" in e for e in seen[0]), seen[0]
+    assert "rejected by the validator" in llm.prompts[1]
+    assert "Absence step error" in llm.prompts[1]
