@@ -58,6 +58,18 @@ class ProductsPage(BasePage):
             self.sel("view_product_links"),
         )
 
+    def open_product_detail_from_listing(self, base_url: str, product_name: str) -> None:
+        """Navigate to the listing, then open the named product's detail page.
+
+        Convenience for cart scenarios that start from 'open the product detail
+        page for X' with no prior step on the listing: it lands on /products
+        first (confirming arrival), then clicks the product's View Product link
+        by scoping to its card — so the multi-match link family is never
+        addressed as a whole.
+        """
+        self.open_products(base_url)
+        self.open_product_details(product_name)
+
     def search_for(self, term: str) -> None:
         """Enter a search term and submit the search form.
 
