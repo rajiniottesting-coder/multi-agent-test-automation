@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — an unmet splice step names its page object; each new stop is routed (#351)
+
+**Why:** live after #350: the routing repaired the run's page object and the first owner's step file spliced; the second owner's file then needed a check on another page - a committed page object the run had not touched - and #348's single, run-only route could not reach it.
+
+- `agents/agent2_coder`: the step writer names the page-object class that shows an unmet check (`needs a page-object method: <PageObjectClass>: <check>`); `_extend_page_objects_for_splice` sends each check to that class's file - one the run wrote, or a committed one that is not reserved, which joins the batch - and to the run's own page objects when none is named
+- `run()` routes each new stop again, at most one round per owner file; the same stop twice is refused
+- Tests in `test_splice_grounding.py`; TEST_TRACK E121. Not tested live yet: E121
+
+---
+
 ## November 2026 — an agent started with python -m is one module, however it is imported (#350)
 
 **Why:** every workflow starts Agent 2 as `python -m agents.agent2_coder`, so the file runs as `__main__`; `agents/agent2_impact.py` and several core modules import `agents.agent2_coder` by name, which loaded a second copy with its own classes and module state. Found live: the change-story splice raised the copy's `SpliceNeedsPageMethods`, `run()`'s `except` named the `__main__` class, and #348's routing to the page-object repair never ran.
