@@ -317,10 +317,6 @@ browser:
     - fundingchoicesmessages.google.com
     - 2mdn.net
 
-# Legacy alias — agents now read from app_under_test.base_url, but this
-# is kept so conftest.py (which uses BASE_URL env var fallback) still works.
-base_url: https://automationexercise.com
-
 # ────────────────────────────────────────────────────────────
 # Login roles
 #
