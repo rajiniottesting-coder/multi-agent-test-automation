@@ -4357,7 +4357,13 @@ def _splice_step_defs_incremental(
     page_objects = _page_objects()
     po_block = _build_sibling_page_object_context(page_objects)
     feedback = ""
-    for attempt in (1, 2):
+    # One correction per kind of problem - a step answered "needs a page-
+    # object method", a call to an unknown method, a gate rule broken - so a
+    # correction of one kind never uses up the other kinds' (10 Nov 2026:
+    # the needs-a-method retry took the only second attempt and a broken
+    # absence rule went to the final gate uncorrected).
+    retried: set = set()
+    for _attempt in range(4):
         snippet = _generate_missing_step_functions(
             llm, existing, spliced_feature_content, missing, step_defs_path,
             page_objects_block=po_block, validator_feedback=feedback,
@@ -4376,7 +4382,8 @@ def _splice_step_defs_incremental(
                  for m in re.finditer(re.escape(NEEDS_PAGE_METHOD) + r":\s*([^\"']+)", f)]
         if needs:
             written = _page_methods_written_in_run(gh, batch_files)
-            if attempt == 1 and written:
+            if "needs" not in retried and written:
+                retried.add("needs")
                 # 10 Nov 2026: a change story's run extended the page object
                 # with exactly the methods its revised steps need (the plan
                 # said so), and the step writer still answered three steps
@@ -4458,7 +4465,7 @@ def _splice_step_defs_incremental(
                                             feature_file_path, spliced_feature_content)
             if not broken:
                 break
-            if attempt == 2:
+            if "rules" in retried:
                 logger.warning(
                     "Splice: the new step functions still break %d gate rule(s) after one "
                     "correction - left to the final gate. First: %s",
@@ -4467,9 +4474,10 @@ def _splice_step_defs_incremental(
             logger.warning(
                 "Splice: the new step functions break %d gate rule(s) - asking once more "
                 "with the validator's feedback. First: %s", len(broken), broken[0][:160])
+            retried.add("rules")
             feedback = "\n".join(f"- {e}" for e in broken)
             continue
-        if attempt == 2:
+        if "unknown" in retried:
             logger.warning(
                 "Splice: new step functions still call unknown page-object "
                 "methods after one correction — regenerating whole. First: %s",
@@ -4479,6 +4487,7 @@ def _splice_step_defs_incremental(
         logger.warning(
             "Splice: new step functions call %d unknown page-object method(s) - "
             "asking once more with the validator's feedback.", len(unresolved))
+        retried.add("unknown")
         feedback = "\n".join(f"- {e}" for e in unresolved)
 
     logger.info(
