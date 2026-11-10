@@ -4,6 +4,15 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a change story's splice is told the methods its run wrote before stopping (#347)
+
+**Why:** found live on a Run G change story. Its run extended the page object with the methods its revised steps need (the plan said so), the splice's step writer still answered three steps "needs a page-object method", and the splice stopped on that first answer with the ai-update remedy ("add `ai-regenerate`") - a label a change story never has. Nothing reached a second attempt.
+
+- `agents/agent2_coder._page_methods_written_in_run`: the methods the page objects written in this run add over their committed copies. When there are any, the writer is asked once more with them named; still unanswered, the stop names them and says to run Agent 2 again by key or reword the test case. An ai-update (no page object written) keeps its one-answer stop and remedy
+- Tests in `test_splice_grounding.py`; TEST_TRACK E119. Not tested live yet: E119
+
+---
+
 ## November 2026 — Inventory Health's multi_match note names only families measured thin; GUIDE re-analysis wording (#346)
 
 **Why:** observation O13. Inventory Health's "declared multi_match not multiple right now" note listed every declared family on every page: the set it subtracted held only UNDECLARED ambiguous keys. Families measured with dozens of matches (the listing's cards, the test-case panels) were named, and on Run G's removed-element branch a key declared `removed` was named with "do NOT remove". Separately, the GUIDE said a re-analysis updates the report in place; it updates the open Impact Review in place and posts a new report whose second line is the delta.

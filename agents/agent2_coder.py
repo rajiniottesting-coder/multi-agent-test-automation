@@ -4085,6 +4085,34 @@ def _splice_page_objects(gh, step_defs_path: str, batch_files=None,
     return list(committed) + batch
 
 
+def _page_methods_written_in_run(gh, batch_files) -> list[str]:
+    """`Class.method` for each public method a page object written in THIS
+    run defines that its committed copy on main does not: what the run
+    added for the story. Fails soft: unreadable main counts every method."""
+    import ast as _ast
+    out: list[str] = []
+    for f in batch_files or []:
+        path = getattr(f, "file_path", "") or ""
+        content = getattr(f, "content", "") or ""
+        if not (path.startswith("pages/") and path.endswith(".py") and content):
+            continue
+        try:
+            committed = gh.get_file_content(path, branch="main") or ""
+        except Exception:                                      # noqa: BLE001
+            committed = ""
+
+        def methods(text: str) -> set:
+            try:
+                tree = _ast.parse(text)
+            except SyntaxError:
+                return set()
+            return {f"{c.name}.{n.name}" for c in _ast.walk(tree) if isinstance(c, _ast.ClassDef)
+                    for n in c.body if isinstance(n, (_ast.FunctionDef, _ast.AsyncFunctionDef))
+                    and not n.name.startswith("_")}
+        out += sorted(methods(content) - methods(committed))
+    return out
+
+
 def _new_method_resolution_errors(step_defs_path: str, before: str, after: str,
                                   page_objects: list) -> list[str]:
     """Method-resolution errors the splice INTRODUCED in `step_defs_path`.
@@ -4205,14 +4233,42 @@ def _splice_step_defs_incremental(
         needs = [m.group(1).strip() for f in new_funcs
                  for m in re.finditer(re.escape(NEEDS_PAGE_METHOD) + r":\s*([^\"']+)", f)]
         if needs:
+            written = _page_methods_written_in_run(gh, batch_files)
+            if attempt == 1 and written:
+                # 10 Nov 2026: a change story's run extended the page object
+                # with exactly the methods its revised steps need (the plan
+                # said so), and the step writer still answered three steps
+                # "needs a page-object method" - and the run stopped there,
+                # on its first answer, telling the person to use an
+                # ai-update label the story never had. The methods written
+                # for this story are named once, before giving up.
+                logger.warning(
+                    "Splice: %d step(s) answered '%s' while this run wrote %s - asking "
+                    "once more.", len(needs), NEEDS_PAGE_METHOD, ", ".join(written))
+                feedback = (
+                    f"These steps were answered with NotImplementedError: {'; '.join(needs)}. "
+                    f"This run has just written these page-object methods for the story's "
+                    f"steps: {', '.join(written)}. Use the one that checks what each step "
+                    f"states; keep the NotImplementedError line only for a step none of "
+                    f"them checks.")
+                continue
+            if written:
+                why = (f"Splice of {step_defs_path}: {len(needs)} revised step(s) need a "
+                       f"page-object method that none of the page objects - those this run "
+                       f"wrote included ({', '.join(written)}) - offers. Run Agent 2 again "
+                       f"with the story's key (a new plan), or reword the test case.")
+                hint = "the page objects this run wrote do not offer one either"
+            else:
+                why = (f"Incremental update of {step_defs_path}: {len(needs)} new step(s) need "
+                       f"a page-object method no page object has. `ai-update` writes step "
+                       f"definitions only; add `ai-regenerate` to the story instead - a "
+                       f"regeneration also extends the page objects.")
+                hint = "`ai-update` cannot add one - add `ai-regenerate` to the story"
             raise GateFailure(
-                f"Incremental update of {step_defs_path}: {len(needs)} new step(s) need a "
-                f"page-object method no page object has. `ai-update` writes step "
-                f"definitions only; add `ai-regenerate` to the story instead - a "
-                f"regeneration also extends the page objects.",
+                why,
                 errors=[f"Step needs a page-object method in '{step_defs_path}': {n}. "
-                        f"No page object offers a method that checks it; `ai-update` "
-                        f"cannot add one - add `ai-regenerate` to the story." for n in needs])
+                        f"No page object offers a method that checks it; {hint}."
+                        for n in needs])
 
         spliced = existing.rstrip() + "\n\n\n" + "\n\n\n".join(new_funcs) + "\n"
         if "parsers." in "\n".join(new_funcs) and "parsers" not in existing:
