@@ -264,11 +264,12 @@ def test_the_writer_is_told_not_to_substitute_an_unrelated_check():
 
 
 def test_a_step_no_method_checks_stops_the_update_with_the_remedy():
-    """5 Nov 2026: a spliced step for a section no method reads asserted an unrelated list."""
+    """5 Nov 2026: a spliced step for a section no method reads asserted an unrelated list.
+    An ai-update writes no page object (no batch): one answer, the ai-regenerate remedy."""
     import pytest
     llm = ScriptedLLM(NEEDS)
     with pytest.raises(coder.GateFailure) as stop:
-        _splice(llm)
+        _splice(llm, batch=[])
     assert "ai-regenerate" in str(stop.value)
     (err,) = stop.value.errors
     assert "the count of a named item" in err and "test_fake_basket.py" in err
@@ -312,3 +313,35 @@ def test_a_missing_page_is_reported_before_any_other_gate(monkeypatch):
     assert "reports_list_zz" in str(stop.value) and stop.value.errors == [page_err]
     text = blocked_comment("AB-1", "0" * 16, stop.value.errors)
     assert "plan_inventory page" in text and "reports_list_zz" in text
+
+
+
+# ── 6. a change story's run names the methods it wrote before giving up (E119)
+
+def test_a_change_storys_splice_is_told_the_methods_its_run_wrote(monkeypatch):
+    """10 Nov 2026: the run extended the page object with the methods its
+    revised steps need, the writer still answered 'needs a page-object
+    method', and the run stopped on that first answer."""
+    llm = ScriptedLLM(NEEDS, GOOD)
+    content, mode = _splice(llm)
+    assert mode == "spliced" and "count_for" in content
+    assert "This run has just written these page-object methods" in llm.prompts[1]
+    assert "WidgetPage.count_for" in llm.prompts[1]
+
+
+def test_still_no_method_after_that_stops_with_the_change_story_remedy():
+    import pytest
+    llm = ScriptedLLM(NEEDS, NEEDS)
+    with pytest.raises(coder.GateFailure) as stop:
+        _splice(llm)
+    assert "Run Agent 2 again with the story's key" in str(stop.value)
+    assert "ai-regenerate" not in str(stop.value) and "ai-update" not in str(stop.value)
+    assert "WidgetPage.count_for" in str(stop.value)
+
+
+def test_only_methods_new_in_this_run_are_named():
+    committed = PAGE.replace("    def count_for", "    def _private(self):\n        pass\n\n    def count_for_old")
+    written = coder._page_methods_written_in_run(FakeGH(PAGE), _batch())
+    assert written == [], "the committed copy already has every method"
+    written = coder._page_methods_written_in_run(FakeGH(committed), _batch())
+    assert written == ["WidgetPage.count_for"]
