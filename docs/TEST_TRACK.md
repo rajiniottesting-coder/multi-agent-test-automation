@@ -290,6 +290,7 @@ Older rows name the sessions S1-S8 of the first plan: **S1** is Run A, **S2** is
 | E45b | #248 | Three or more stories released to ai-ready at once (or labelled by hand, then Agent 1 run once) | Agent 1 takes 2, then starts itself again (`chain` 2) for the rest; no run when none waits | ⬜ | |
 | E45c | #248 | An Agent 0 run with nothing released, and an Agent 1 run that fails | "no story waits for it" - nothing started; the failed Agent 1 run has no hand-off step run (the schedule retries) | ✅ | Partly: "no story waits for it" on idle runs (3-4 Nov); the cap held at 5 - and exposed restarts for a blocked story (#262); "no story waits for it" on idle runs; the failed Agent 1 run 41782458165 skipped *Start Agent 1 again while stories wait* (4 Nov) |
 | E45d | #248 | Optional: the Jira Automation rule on `human-approved` (GUIDE, "Hand-off between agents") | Approving a story starts Agent 2 (event `repository_dispatch`) within a minute, in scan mode | ⬜ | |
+| E108 | Run E fixes | On main, a test whose older defect is flagged passing fails again under another cause (the next run on main while validation cycle 1 is merged) | The older defect loses `ai-defect-passing` with one comment naming the new defect; reported as failing again | ⬜ | |
 | E107 | Run E fixes | A throw-away PR (never merged) that sets only `app_under_test.base_url` to a page that is not the application | Every E2E test runs against that page and fails; the application check reports it not up; every failure is not judged | ⬜ | |
 | E106 | Run D fixes | A story whose test cases need an element the inventory lacks, run by key (not a dry run) | The run is refused naming the element (`Inventory gate failed ... element(s) ... home.<key>`); the `[agent2:blocked]` comment names it and gives the `plan_inventory element` command, not "a test case asks for something" | ⬜ | |
 | E105 | Run D fixes | The next framework PR (Agent 4's unit tests on it), and a throw-away commit adding a story key or a selector's UI text to a framework comment | Green on the PR; the throw-away commit fails `test_no_framework_file_names_anything_the_application_coins` naming the token and its kind | ⬜ | |
@@ -439,6 +440,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
+| #326 | A defect's test failing for another cause is no longer called passing (F51) | | E108 | |
 | #324 | One base URL for the tests, the agents and the application check (F50) | | E107 | |
 | #319 | A story refused after its element was missing is told so (F49) | | E106 | |
 | #318 | The golden-rule guard sees issue keys, UI text and the app's name; leaks removed | | E105 | |

@@ -4,6 +4,15 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a defect's test failing for another cause is no longer called passing (#326)
+
+**Why:** the triage keeps one defect per test and cause. On main a test whose old defect was flagged `ai-defect-passing` ("suggest closing") failed again, but the diagnosis gave another cause. A new defect was raised (correct), and the old one went on suggesting it be closed while its test failed. Nothing pointed it to the new defect.
+
+- `core/defects.triage`: when a test fails, an open defect of the same test under another cause loses `passing_label` and gets one comment naming the defect of this run ("not passing any more; if both describe one problem, close one of them"); reported in `failing_again`
+- Tests in `test_defect_triage.py`; TEST_TRACK E108. Not tested live yet: E108
+
+---
+
 ## November 2026 — one base URL for the tests, the agents and the application check (#324)
 
 **Why:** a throw-away run that pointed `app_under_test.base_url` elsewhere still ran every E2E test against the live application. The tests (`tests/conftest.py`) read a top-level legacy `base_url`; the agents, the application check and the inventory tools read `app_under_test.base_url`. A project that edits only the documented key would run its tests against the previous application while the health check judges another. REUSE_FOR_NEW_PROJECT asked for both edits by hand.
