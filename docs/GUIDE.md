@@ -2460,8 +2460,10 @@ scenario, so no pull request was opened. The comment lists the reasons. A rule t
 something the application cannot show as written - for example an exact
 quantity on state the application keeps against a shared account. Change that
 test case (or the story): the next scheduled scan then tries again by itself.
-Until then the scan skips the story and spends nothing. To retry without an
-edit - after a framework fix, say - run Agent 2 with the story's key.
+Until then the scan skips the story and spends nothing - in every pass, a
+story labelled `ai-regenerate` or `ai-update` included (the label stays until a
+run succeeds). To retry without an edit - after a framework fix, say - run
+Agent 2 with the story's key.
 
 **When the comment says the story needs a page the app inventory does not
 have**, no test case is wrong and no repair could fix it: Agent 2 stopped
