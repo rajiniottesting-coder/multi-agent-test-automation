@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — an unlimited budget is said in words, never "$inf"; Agent 1's output room is a setting (#PRNUM)
+## November 2026 — an unlimited budget is said in words, never "$inf"; Agent 1's output room is a setting (#395)
 
 **Why:** found live: with both budgets set to `.inf` (owner's decision until the validation items are developed), the Pipeline health description read "$71.86 of the $inf daily budget". A project may lift a limit for a while; nothing a person reads should show the raw value.
 
