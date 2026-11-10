@@ -4,6 +4,17 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — one base URL for the tests, the agents and the application check (#324)
+
+**Why:** a throw-away run that pointed `app_under_test.base_url` elsewhere still ran every E2E test against the live application. The tests (`tests/conftest.py`) read a top-level legacy `base_url`; the agents, the application check and the inventory tools read `app_under_test.base_url`. A project that edits only the documented key would run its tests against the previous application while the health check judges another. REUSE_FOR_NEW_PROJECT asked for both edits by hand.
+
+- `tests/conftest.resolve_base_url`: `BASE_URL` env, then `app_under_test.base_url`, then a top-level `base_url` (older configs) - the order `scripts/app_probe.py` already used
+- `config/config.yaml`: the legacy top-level `base_url` removed
+- GUIDE and REUSE_FOR_NEW_PROJECT: one key to set; an old top-level one is to be deleted
+- Tests in `test_app_health_and_retry.py`; TEST_TRACK E107. Not tested live yet: E107
+
+---
+
 ## November 2026 — a story refused after its element was missing is told so (#319)
 
 **Why:** a story needed an element the inventory did not have. The repair loop spent four attempts (about $0.80): each time the validator said the key was on no page, and the model deleted the page-object methods that used it. The step definitions still called them, and the story was refused for *method resolution*. The blocked comment blamed the model and the test case. #302 (F45) gave the missing **page** this treatment; a missing **element** had none.
