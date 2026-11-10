@@ -68,8 +68,7 @@
         "subscribe_button": "#subscribe",
         "subscribe_success": "text=You have been successfully subscribed!",
         "apis_list_practice_button": "role=button[name='APIs list for practice']",
-        "test_cases_button": "role=button[name='Test Cases']",
-        "zz_validation_stale": "#zz-validation-never-present"
+        "test_cases_button": "role=button[name='Test Cases']"
       },
       "elements_notes": {
         "subscribe_button": "Icon-only button - an arrow glyph, no text - so it has NO accessible name and role=button[name='Subscribe'] matches nothing (verified 1 Aug 2026). The id is the only handle it offers. This is the case where css is genuinely correct.",
@@ -317,16 +316,20 @@
         "test_case_steps": ".panel-collapse .list-group-item",
         "test_case_search_input": "#search_test_cases",
         "feedback_automationexercise_com_link": "role=link[name='feedback@automationexercise.com']",
-        "feedback_element": "#feedback"
+        "feedback_element": "#feedback",
+        "test_case_panels": ".panel-group .panel",
+        "test_case_panel_headings": ".panel-group .panel-heading"
       },
       "planned": [
         "test_case_search_input"
       ],
       "multi_match": [
         "test_case_titles",
-        "test_case_steps"
+        "test_case_steps",
+        "test_case_panels",
+        "test_case_panel_headings"
       ],
-      "multi_match_note": "Lists: one title link per test case, one step item per step (inside collapsed panels until a title is clicked)."
+      "multi_match_note": "Lists: one panel, one panel heading and one title link per test case, one step item per step (inside collapsed panels until a title is clicked)."
     }
   },
   "_starting_state": {

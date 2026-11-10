@@ -188,7 +188,7 @@ defects:
 #          comments  one [LLM-USAGE] comment per agent run and the table in
 #                    every Agent 5 report - the original behaviour.
 usage_ledger:
-  store: "comments"   # VALIDATION window I - restore "auto"
+  store: "auto"
 
 # Model spend budgets (F-24, core/spend_budget.py). Checked before EVERY model
 # call; over a limit the call is not made and the stop says why. Values grow
