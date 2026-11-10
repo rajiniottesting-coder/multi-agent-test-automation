@@ -329,7 +329,13 @@
         "test_case_panels",
         "test_case_panel_headings"
       ],
-      "multi_match_note": "Lists: one panel, one panel heading and one title link per test case, one step item per step (inside collapsed panels until a title is clicked)."
+      "multi_match_note": "Lists: one panel, one panel heading and one title link per test case, one step item per step (inside collapsed panels until a title is clicked).",
+      "removed": [
+        "feedback_automationexercise_com_link"
+      ],
+      "elements_notes": {
+        "feedback_automationexercise_com_link": "REMOVED by SCRUM-360: the story takes it out of the application."
+      }
     }
   },
   "_starting_state": {
