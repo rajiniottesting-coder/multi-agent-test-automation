@@ -52,6 +52,16 @@ from dataclasses import dataclass, field
 from typing import Optional
 import yaml
 
+# Started as `python -m agents.agent2_coder` (every workflow does), this file
+# is the module `__main__`. Modules that import `agents.agent2_coder` -
+# agents/agent2_impact.py, core/*.py - would load a SECOND copy, with its own
+# classes and its own module state. 10 Nov 2026: the change-story splice
+# raised the copy's SpliceNeedsPageMethods, run()'s `except` named the
+# __main__ class, and the stop meant to be routed to the page-object repair
+# reached the story instead. One module, however it was started.
+if __name__ == "__main__":
+    sys.modules.setdefault("agents.agent2_coder", sys.modules[__name__])
+
 from core.app_context import AppContext
 from integrations.tracker import get_tracker
 from core.board_status import move_card_for_label

@@ -467,7 +467,12 @@ def test_the_budget_block_is_shipped():
     from core.ops_settings import DEFAULTS
     shipped = yaml.safe_load(CONFIG_YAML.read_text(encoding="utf-8"))["budget"]
     assert set(shipped) == set(DEFAULTS["budget"])
-    assert (shipped["per_story_usd"], shipped["per_day_usd"], shipped["warn_at"]) == (8, 50, 0.5)
+    # The values are a project's to tune (raised for a validation, say): the
+    # test checks they are usable, never what they are (E95).
+    assert all(isinstance(shipped[k], (int, float)) and shipped[k] > 0
+               for k in ("per_story_usd", "per_day_usd"))
+    assert shipped["per_story_usd"] <= shipped["per_day_usd"]
+    assert 0 < shipped["warn_at"] <= 1
 
 
 def test_agent5_cost_line():
