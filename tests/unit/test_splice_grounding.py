@@ -517,3 +517,31 @@ def test_a_gate_rule_the_new_functions_break_is_fed_back_once(monkeypatch):
     assert any("Absence step error" in e for e in seen[0]), seen[0]
     assert "rejected by the validator" in llm.prompts[1]
     assert "Absence step error" in llm.prompts[1]
+
+
+def test_each_kind_of_correction_has_its_own_retry(monkeypatch):
+    """A needs-a-method retry no longer uses up the gate-rule correction (E125)."""
+    calls = []
+    real = coder._new_repairable_errors
+
+    def spy(*a):
+        out = real(*a)
+        calls.append(out)
+        return out
+    monkeypatch.setattr(coder, "_new_repairable_errors", spy)
+    needs = ('@then("the help link should not be shown")\ndef _(widget_page):\n'
+             '    raise NotImplementedError("needs a page-object method: WidgetPage: help gone")\n')
+    llm = ScriptedLLM(needs, ABSENCE_EMPTY, ABSENCE_GOOD)
+    batch = [coder.GeneratedFile(file_path="pages/widget_page.py", content=PAGE_ABSENT,
+                                 is_new_file=True, purpose="page object")]
+    class ByPath(FakeGH):                # main: the step file, and the page without
+        def get_file_content(self, path, branch="main"):     # is_help_link_absent
+            return PAGE if path.startswith("pages/") else EXISTING
+    content, mode = coder._splice_step_defs_incremental(
+        llm, ByPath(EXISTING), "features/fake_basket.feature", ABSENCE_FEATURE,
+        "tests/step_defs/test_fake_basket.py", ctx=None, references={}, page_inventory="",
+        batch_files=batch)
+    assert mode == "spliced" and "is_help_link_absent" in content
+    assert len(llm.prompts) == 3
+    assert "This run has just written" in llm.prompts[1]
+    assert "Absence step error" in llm.prompts[2]

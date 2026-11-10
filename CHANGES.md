@@ -4,6 +4,15 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — each kind of splice correction gets its own retry (#359)
+
+**Why:** the splice's step writer had two answers in all, shared by three kinds of correction (a step answered "needs a page-object method", an unknown method, a gate rule broken - #358). Live on a Run G change story, the needs-a-method retry took the only second answer and a broken absence rule reached the final gate uncorrected.
+
+- `agents/agent2_coder._splice_step_defs_incremental`: one correction per kind, at most four answers; a second failure of a kind ends as before
+- Test in `test_splice_grounding.py`; TEST_TRACK E125 covers it. Not tested live yet: E125
+
+---
+
 ## November 2026 — the splice runs the repair loop's rules on the step functions it adds (#358)
 
 **Why:** a change story's splice runs after Agent 2's repair loop and checked its new step functions only for unknown page-object methods; any other rule they broke reached the final gate unrepaired. Found live on a Run G change story: a spliced absence step that asserted nothing refused the story "after the repair loop exhausted its attempts" - attempts it had never been given (R2).
