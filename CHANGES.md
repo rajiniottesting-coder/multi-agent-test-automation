@@ -4,6 +4,17 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a step whose code checks another element is left out, not shipped (#PRNUM)
+
+**Why:** found live on Run I (SCRUM-398, PR #400): the story's side-panel list was not in the app inventory. The plan did not skip its test cases; the code read the main list's item names for "the side panel lists ...", opened an item's page by name for "I click ... in the side panel", and checked "the page loaded" for "the side panel is visible". Every gate passed - each step called real page-object methods on real keys - and the coverage audit (which reads the Gherkin, not the code) judged one of the three test cases fully checked.
+
+- `validators/step_fidelity.py`: after the gate, one model call (`prompts/agent2_step_fidelity.md`) reads each step of the story's own step files beside its definition, the page-object methods that run for it and the inventory elements they read (with the inventory's notes), and names each step whose code acts on or checks a different element than the wording names. Setting `agents.agent2_coder.step_fidelity_audit` (on). A failed call changes nothing
+- `validators/action_steps.leave_out_stand_ins` takes these errors too (and Then steps, and a step definition's pattern): the scenarios using a named step are left out and their test cases listed as not automated with the reason; a story left with nothing is refused (`Step fidelity gate failed`), and `core/blocked` names the element to add. Only the feature that would be emptied keeps its keys - before, one emptied feature dropped every left-out key of the run
+- The plan and generation prompts say a key counts only when its name or note is the thing the test case names
+- Tests in `test_step_fidelity.py`; TEST_TRACK E141. Not tested live yet: E141
+
+---
+
 ## November 2026 — an unlimited budget is said in words, never "$inf"; Agent 1's output room is a setting (#395)
 
 **Why:** found live: with both budgets set to `.inf` (owner's decision until the validation items are developed), the Pipeline health description read "$71.86 of the $inf daily budget". A project may lift a limit for a while; nothing a person reads should show the raw value.
