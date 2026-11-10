@@ -2469,6 +2469,18 @@ class GateFailure(ValueError):
         self.errors = list(errors or [])
 
 
+class SpliceNeedsPageMethods(GateFailure):
+    """A change story's splice still needs page-object methods after the run
+    wrote its page objects: the steps named in `needs`, for `step_defs_path`.
+    run() routes it back to the page-object repair once (the splice runs
+    after the repair loop, so nothing else could add them)."""
+
+    def __init__(self, message: str, errors=None, needs=(), step_defs_path: str = ""):
+        super().__init__(message, errors)
+        self.needs = list(needs)
+        self.step_defs_path = step_defs_path
+
+
 _REFUSED_FILE_CHARS = 20000
 
 
@@ -4085,6 +4097,52 @@ def _splice_page_objects(gh, step_defs_path: str, batch_files=None,
     return list(committed) + batch
 
 
+def _extend_page_objects_for_splice(llm, gh, plan, generated_files, need, test_cases,
+                                   references, page_inventory, ctx) -> bool:
+    """Repair the page objects this run wrote so they offer what a change
+    story's revised steps check (SpliceNeedsPageMethods). Only files with
+    methods new in this run - the story's own page objects - are repaired,
+    each told every unmet check and to add a method only for a check on its
+    own page. Returns whether any file changed."""
+    written = _page_methods_written_in_run(gh, generated_files)
+    paths = sorted({w.split(".", 1)[0] for w in written})
+    changed = False
+    for i, f in enumerate(list(generated_files)):
+        path = _normalize_path(f.file_path)
+        if not (path.startswith("pages/") and path.endswith(".py")):
+            continue
+        classes = {w.split(".", 1)[0] for w in _page_methods_written_in_run(gh, [f])}
+        if not classes:
+            continue
+        target_plan = next((fp for fp in plan.files_to_create
+                            if _normalize_path(fp.file_path) == path), None)
+        if target_plan is None:
+            continue
+        feedback = [f"Page object error in '{f.file_path}': the revised steps in "
+                    f"'{need.step_defs_path}' also need a method that checks: {n}. If this "
+                    f"page shows it, add a method of {', '.join(sorted(classes))} that "
+                    f"checks exactly that, through this page's inventory keys "
+                    f"(self.sel(...)) and a BasePage helper; keep every existing method "
+                    f"exactly as it is." for n in need.needs]
+        logger.info("Splice: %d step(s) need a page-object method - repairing %s "
+                    "(this run's page objects: %s).", len(need.needs), f.file_path,
+                    ", ".join(paths))
+        try:
+            content = generate_file_content(
+                llm, target_plan, plan, test_cases, references, page_inventory, ctx,
+                validator_feedback=feedback, previous_attempt=f.content,
+                already_generated=[g for j, g in enumerate(generated_files) if j != i])
+        except Exception as e:                                 # noqa: BLE001
+            logger.warning("Splice: the page-object repair of %s failed: %s", f.file_path, e)
+            continue
+        if (content and content != f.content
+                and not _is_degraded_regeneration(content, f.content, f.file_path)):
+            generated_files[i] = GeneratedFile(file_path=f.file_path, content=content,
+                                               is_new_file=f.is_new_file, purpose=f.purpose)
+            changed = True
+    return changed
+
+
 def _page_methods_written_in_run(gh, batch_files) -> list[str]:
     """`Class.method` for each public method a page object written in THIS
     run defines that its committed copy on main does not: what the run
@@ -4253,22 +4311,25 @@ def _splice_step_defs_incremental(
                     f"them checks.")
                 continue
             if written:
+                stop_cls = SpliceNeedsPageMethods
                 why = (f"Splice of {step_defs_path}: {len(needs)} revised step(s) need a "
                        f"page-object method that none of the page objects - those this run "
                        f"wrote included ({', '.join(written)}) - offers. Run Agent 2 again "
                        f"with the story's key (a new plan), or reword the test case.")
                 hint = "the page objects this run wrote do not offer one either"
             else:
+                stop_cls = GateFailure
                 why = (f"Incremental update of {step_defs_path}: {len(needs)} new step(s) need "
                        f"a page-object method no page object has. `ai-update` writes step "
                        f"definitions only; add `ai-regenerate` to the story instead - a "
                        f"regeneration also extends the page objects.")
                 hint = "`ai-update` cannot add one - add `ai-regenerate` to the story"
-            raise GateFailure(
-                why,
-                errors=[f"Step needs a page-object method in '{step_defs_path}': {n}. "
-                        f"No page object offers a method that checks it; {hint}."
-                        for n in needs])
+            errors = [f"Step needs a page-object method in '{step_defs_path}': {n}. "
+                      f"No page object offers a method that checks it; {hint}." for n in needs]
+            if stop_cls is SpliceNeedsPageMethods:
+                raise SpliceNeedsPageMethods(why, errors, needs=needs,
+                                             step_defs_path=step_defs_path)
+            raise GateFailure(why, errors=errors)
 
         spliced = existing.rstrip() + "\n\n\n" + "\n\n\n".join(new_funcs) + "\n"
         if "parsers." in "\n".join(new_funcs) and "parsers" not in existing:
@@ -5199,9 +5260,23 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
     if impact_work:
         if gh is None:
             gh = get_repo_host()
-        owner_generated, impact_report = agent2_impact.splice_owner_files(
-            llm, gh, story_id, owner_files, marker_index, ctx, references,
-            page_inventory, jira, batch_files=generated_files)
+        try:
+            owner_generated, impact_report = agent2_impact.splice_owner_files(
+                llm, gh, story_id, owner_files, marker_index, ctx, references,
+                page_inventory, jira, batch_files=generated_files)
+        except SpliceNeedsPageMethods as need:
+            # The splice runs after the repair loop: a method the revised
+            # steps need and the plan did not foresee had no way in, and the
+            # story stopped on it (10 Nov 2026). It goes back to the page-
+            # object repair once - the run's own page objects, told what the
+            # steps must check - and the splice runs again.
+            if not _extend_page_objects_for_splice(
+                    llm, gh, plan, generated_files, need, new_test_cases + plan_revisions,
+                    references, page_inventory, ctx):
+                raise
+            owner_generated, impact_report = agent2_impact.splice_owner_files(
+                llm, gh, story_id, owner_files, marker_index, ctx, references,
+                page_inventory, jira, batch_files=generated_files)
         by_path = {f.file_path: i for i, f in enumerate(generated_files)}
         for f in owner_generated:
             if f.file_path in by_path:

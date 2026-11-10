@@ -345,3 +345,57 @@ def test_only_methods_new_in_this_run_are_named():
     assert written == [], "the committed copy already has every method"
     written = coder._page_methods_written_in_run(FakeGH(committed), _batch())
     assert written == ["WidgetPage.count_for"]
+
+
+# ── 7. still unmet: back to the page-object repair once (E120) ─────────
+
+def test_a_change_storys_unmet_step_is_a_routable_stop():
+    import pytest
+    llm = ScriptedLLM(NEEDS, NEEDS)
+    with pytest.raises(coder.SpliceNeedsPageMethods) as stop:
+        _splice(llm)
+    assert stop.value.needs == ["the count of a named item"]
+    assert stop.value.step_defs_path == "tests/step_defs/test_fake_basket.py"
+    assert isinstance(stop.value, coder.GateFailure), "unrouted, it is still a gate refusal"
+
+
+def test_the_page_object_repair_is_told_each_unmet_check(monkeypatch):
+    from types import SimpleNamespace
+    seen = {}
+
+    def fake_generate(llm, file_plan, plan, cases, refs, inv, ctx, validator_feedback=None,
+                      previous_attempt=None, already_generated=None, **k):
+        seen["feedback"], seen["prior"] = validator_feedback, previous_attempt
+        return previous_attempt + "\n    def count_of_named_item(self, name):\n        return 1\n"
+    monkeypatch.setattr(coder, "generate_file_content", fake_generate)
+    # The tiny fixture page is below the real files' size floor.
+    monkeypatch.setattr(coder, "_is_degraded_regeneration", lambda *a, **k: False)
+    committed = PAGE.replace("    def count_for", "    def count_for_old")
+    files = _batch()
+    plan = SimpleNamespace(files_to_create=[coder.FilePlan(
+        file_path="pages/widget_page.py", file_type="page_object", is_new_file=False,
+        purpose="extend")])
+    need = coder.SpliceNeedsPageMethods("x", needs=["the count of a named item"],
+                                        step_defs_path="tests/step_defs/t.py")
+    assert coder._extend_page_objects_for_splice(None, FakeGH(committed), plan, files, need,
+                                                 [], {}, "", None)
+    assert "the count of a named item" in seen["feedback"][0]
+    assert "keep every existing method exactly as it is" in seen["feedback"][0]
+    assert seen["prior"] == PAGE and "count_of_named_item" in files[0].content
+
+
+def test_nothing_written_in_the_run_means_nothing_to_repair(monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(coder, "generate_file_content",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no call")))
+    need = coder.SpliceNeedsPageMethods("x", needs=["n"], step_defs_path="t.py")
+    assert not coder._extend_page_objects_for_splice(
+        None, FakeGH(PAGE), SimpleNamespace(files_to_create=[]), _batch(), need, [], {}, "", None)
+
+
+def test_run_routes_the_stop_back_once_and_splices_again():
+    import inspect
+    src = inspect.getsource(coder.run)
+    route = src[src.index("except SpliceNeedsPageMethods as need:"):]
+    assert "_extend_page_objects_for_splice(" in route[:900]
+    assert route[:1400].count("agent2_impact.splice_owner_files(") == 1, "one more splice"

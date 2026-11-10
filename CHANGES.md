@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a change story's unmet splice step goes back to the page-object repair (#348)
+
+**Why:** the change-story splice runs after Agent 2's repair loop. A method the revised steps need that the plan did not foresee had no way in, and the splice refused the story - an error never routed to the repair (R2). Found live on a Run G change story after #347's retry: one revised step ("a new browser tab or window should not be opened") had no method, and the plan had not asked for one.
+
+- `agents/agent2_coder.SpliceNeedsPageMethods` (a `GateFailure`): raised by a change story's splice with the unmet checks
+- `run()` routes it once to `_extend_page_objects_for_splice` - the page objects this run wrote, repaired with each check named (existing methods kept; a degraded answer discarded) - and splices again; still unmet, the story is refused as before
+- Tests in `test_splice_grounding.py`; TEST_TRACK E120. Not tested live yet: E120
+
+---
+
 ## November 2026 — a change story's splice is told the methods its run wrote before stopping (#347)
 
 **Why:** found live on a Run G change story. Its run extended the page object with the methods its revised steps need (the plan said so), the splice's step writer still answered three steps "needs a page-object method", and the splice stopped on that first answer with the ai-update remedy ("add `ai-regenerate`") - a label a change story never has. Nothing reached a second attempt.
