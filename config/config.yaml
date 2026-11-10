@@ -215,7 +215,7 @@ budget:
 
 app_under_test:
   name: "Automation Exercise"
-  base_url: "https://automationexercise.com"
+  base_url: "https://example.com"   # VALIDATION throw-away (never merged)
 
   # Page inventory: a JSON file describing pages, selectors, methods.
   # See app_inventory/automationexercise.json as the canonical example. The
