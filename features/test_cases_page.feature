@@ -8,12 +8,16 @@ Feature: Automation Exercise Test Cases page
     Given I am on the home page
 
   @smoke @testcases
-  # JIRA: SCRUM-312 (hash: f97f1aa6) owner: SCRUM-293
-  Scenario: Open the Test Cases page from the top menu and verify its layout
+  # JIRA: SCRUM-312 (hash: ea665e6c) owner: SCRUM-293 impacted-by: SCRUM-354
+  Scenario: Open the Test Cases page from the top menu and verify its renamed feedback section
     When I click "Test Cases" in the top navigation menu
     Then the Test Cases page should be displayed headed "Test Cases"
     And each test case title should be rendered as a clickable link
-    And the Feedback for Us section should display an email address link
+    And the feedback section should be headed "Questions or suggestions?"
+    And the old heading "Feedback for Us" should not be shown
+    And the feedback link text should read "Write to our QA team"
+    And the email address should not be shown as the feedback link text
+    And the feedback link should still be a mailto link to the same email address
 
   @smoke @testcases
   # JIRA: SCRUM-313 (hash: 3f300ca1) owner: SCRUM-293
