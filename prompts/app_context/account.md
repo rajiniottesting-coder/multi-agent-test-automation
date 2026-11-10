@@ -51,7 +51,7 @@ the form contains — not as a flow to write a scenario against.
 
 ## Deleting the account — same position
 
-"Delete Account" in the top navigation removes it and shows "ACCOUNT DELETED!".
+"Delete Account" in the top navigation removes it and shows a warm goodbye message thanking the user for having been a customer and wishing them well, with a Continue button back to the home page.
 
 This only matters for an account a test created, and a test cannot create one
 here. So there is nothing to delete and no cleanup step to write.
