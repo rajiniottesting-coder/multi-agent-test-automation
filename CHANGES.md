@@ -13,7 +13,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 - `core/inventory_update.build_update`: the keys declared `removed` are read before the retirement; a new element with one of their names is refused with the reason (GUIDE, Inventory update table)
 - `scripts/verify_locators`: the readings a declaration explains (gone, conditional, planned, a family) are collected per run; the summary counts them apart from the keys that resolve to one element and names each key declared removed and measured gone. `scripts/inventory_health_report`: the healthy sentence says the same
-- Tests in `test_removed_elements.py`, `test_inventory_health_report.py`, `test_inventory_health_summary.py` (the healthy sentence of its reference script); TEST_TRACK E127, E128. Not tested live yet: E127, E128
+- Tests in `test_removed_elements.py`, `test_inventory_health_report.py`, `test_inventory_health_summary.py` (the healthy sentence of its reference script); TEST_TRACK E127, E128. Tested live 10 Nov: E127, E128 (evidence in TEST_TRACK)
 
 ---
 
@@ -22,7 +22,7 @@ This document records substantive changes to the framework in reverse-chronologi
 **Why:** the code-generation gate's persistent-state rule decided per step-definition file whether the state is owned: one step anywhere in the file that clears it (or asks for a fresh identity) exempted every scenario. Found live on R2: a review fix removed one scenario's clearing step, and the gate passed that scenario - signed in as the shared account - asserting "exactly 1 row", because another scenario in the file removes every product.
 
 - `validators/method_resolution_validator._scenarios_not_owning_state`: with the feature at hand (the batch, else `features/<stem>.feature`), ownership is judged per scenario, Background included; the error names the scenarios that assert without clearing. An unreadable feature keeps the file-level answer; anonymous files stay exempt
-- Tests in `test_persistent_state_assertions.py`; TEST_TRACK E126. Not tested live yet: E126
+- Tests in `test_persistent_state_assertions.py`; TEST_TRACK E126. Tested live 10 Nov: E126 (evidence in TEST_TRACK)
 
 ---
 
@@ -31,7 +31,7 @@ This document records substantive changes to the framework in reverse-chronologi
 **Why:** the splice's step writer had two answers in all, shared by three kinds of correction (a step answered "needs a page-object method", an unknown method, a gate rule broken - #358). Live on a Run G change story, the needs-a-method retry took the only second answer and a broken absence rule reached the final gate uncorrected.
 
 - `agents/agent2_coder._splice_step_defs_incremental`: one correction per kind, at most four answers; a second failure of a kind ends as before
-- Test in `test_splice_grounding.py`; TEST_TRACK E125 covers it. Not tested live yet: E125
+- Test in `test_splice_grounding.py`; TEST_TRACK E125 covers it. Tested live 10 Nov: E125 (evidence in TEST_TRACK)
 
 ---
 
@@ -40,7 +40,7 @@ This document records substantive changes to the framework in reverse-chronologi
 **Why:** a change story's splice runs after Agent 2's repair loop and checked its new step functions only for unknown page-object methods; any other rule they broke reached the final gate unrepaired. Found live on a Run G change story: a spliced absence step that asserted nothing refused the story "after the repair loop exhausted its attempts" - attempts it had never been given (R2).
 
 - `agents/agent2_coder._new_repairable_errors`: the repair loop's collector, run on the step file before and after the splice (feature and page objects as context); the errors the splice added are fed back to the writer once; still broken, the final gate decides
-- Tests in `test_splice_grounding.py` (`test_step_def_splicing.py`'s tier tests stub the rules); TEST_TRACK E125. Not tested live yet: E125
+- Tests in `test_splice_grounding.py` (`test_step_def_splicing.py`'s tier tests stub the rules); TEST_TRACK E125. Tested live 10 Nov: E125 (evidence in TEST_TRACK)
 
 ---
 
@@ -49,7 +49,7 @@ This document records substantive changes to the framework in reverse-chronologi
 **Why:** found live on a Run G change story's retry: the page-object literal-selector scan reads source lines and skipped only lines starting with a quote, `#` or `*`. A line in the middle of the page object's docstring (a quoted address followed by a period, and later an apostrophe) matched as a quoted selector, and the final gate refused a story whose code held none.
 
 - `validators/method_resolution_validator._string_statement_lines`: every line of a docstring or bare string statement (AST); the generation gate and the committed-tree scan (`test_page_object_selectors.py`) both skip them
-- Test in `test_page_object_selectors.py`; TEST_TRACK E124. Not tested live yet: E124
+- Test in `test_page_object_selectors.py`; TEST_TRACK E124. Tested live 10 Nov: E124 (evidence in TEST_TRACK)
 
 ---
 
@@ -58,7 +58,7 @@ This document records substantive changes to the framework in reverse-chronologi
 **Why:** found live on R3. Agent 1's persistent-state rule treats "no row" as relative when its clause names an entry in quotes; the quote pattern knew straight and curly quotes, not backticks. A signed-in draft's "No row for \`<item>\` is present in the cart" - the relative absence the remedy asks for - was refused twice and the story handed back.
 
 - `core/test_case_rules._QUOTED`: backticks count as quotes
-- Test in `test_test_case_rules.py`; TEST_TRACK E123. Not tested live yet: E123
+- Test in `test_test_case_rules.py`; TEST_TRACK E123. Tested live 10 Nov: E123 (evidence in TEST_TRACK)
 
 ---
 
@@ -68,7 +68,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 - `core/impact_reconcile.reconcile_one`: the change path when `impact-applied`; the new-story path when it carries the completion label and is not `impact-reverted`; otherwise left alone
 - GUIDE (Reconcile)
-- Test in `test_reconcile_new_story.py`; TEST_TRACK E122. Not tested live yet: E122
+- Test in `test_reconcile_new_story.py`; TEST_TRACK E122. Tested live 10 Nov: E122 (evidence in TEST_TRACK)
 
 ---
 
@@ -77,7 +77,7 @@ This document records substantive changes to the framework in reverse-chronologi
 **Why:** live after #351, the first owner's step file needed two page-object repairs (its second answer asked for one more method); that used the second file's only round, and the second file's single stop was refused.
 
 - `agents/agent2_coder.run`: two routing rounds per owner file, plus one; the same stop twice is still refused
-- Test in `test_splice_grounding.py`; TEST_TRACK E121 covers it. Not tested live yet: E121
+- Test in `test_splice_grounding.py`; TEST_TRACK E121 covers it. Tested live 10 Nov: E121 (evidence in TEST_TRACK)
 
 ---
 
@@ -87,7 +87,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 - `agents/agent2_coder`: the step writer names the page-object class that shows an unmet check (`needs a page-object method: <PageObjectClass>: <check>`); `_extend_page_objects_for_splice` sends each check to that class's file - one the run wrote, or a committed one that is not reserved, which joins the batch - and to the run's own page objects when none is named
 - `run()` routes each new stop again, at most one round per owner file; the same stop twice is refused
-- Tests in `test_splice_grounding.py`; TEST_TRACK E121. Not tested live yet: E121
+- Tests in `test_splice_grounding.py`; TEST_TRACK E121. Tested live 10 Nov: E121 (evidence in TEST_TRACK)
 
 ---
 
@@ -97,7 +97,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 - `agents/agent2_coder.py`, `agents/agent0_impact.py`: started as `__main__`, the module registers itself under its own name before anything imports it
 - `tests/unit/test_entry_module_single_copy.py`: every module a workflow starts with `python -m` and another module imports by name must do so; a subprocess test starts Agent 2 as `__main__` and checks the named import is the same module (it fails without the alias)
-- TEST_TRACK E120 now covers this fix too. Not tested live yet: E120
+- TEST_TRACK E120 now covers this fix too. Tested live 10 Nov: E120 (evidence in TEST_TRACK)
 
 ---
 
@@ -107,7 +107,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 - `agents/agent2_coder.SpliceNeedsPageMethods` (a `GateFailure`): raised by a change story's splice with the unmet checks
 - `run()` routes it once to `_extend_page_objects_for_splice` - the page objects this run wrote, repaired with each check named (existing methods kept; a degraded answer discarded) - and splices again; still unmet, the story is refused as before
-- Tests in `test_splice_grounding.py`; TEST_TRACK E120. Not tested live yet: E120
+- Tests in `test_splice_grounding.py`; TEST_TRACK E120. Tested live 10 Nov: E120 (evidence in TEST_TRACK)
 
 ---
 
@@ -116,7 +116,7 @@ This document records substantive changes to the framework in reverse-chronologi
 **Why:** found live on a Run G change story. Its run extended the page object with the methods its revised steps need (the plan said so), the splice's step writer still answered three steps "needs a page-object method", and the splice stopped on that first answer with the ai-update remedy ("add `ai-regenerate`") - a label a change story never has. Nothing reached a second attempt.
 
 - `agents/agent2_coder._page_methods_written_in_run`: the methods the page objects written in this run add over their committed copies. When there are any, the writer is asked once more with them named; still unanswered, the stop names them and says to run Agent 2 again by key or reword the test case. An ai-update (no page object written) keeps its one-answer stop and remedy
-- Tests in `test_splice_grounding.py`; TEST_TRACK E119. Not tested live yet: E119
+- Tests in `test_splice_grounding.py`; TEST_TRACK E119. Tested live 10 Nov: E119 (evidence in TEST_TRACK)
 
 ---
 
@@ -126,7 +126,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 - `scripts/verify_locators._verify_page`: the note names the declared families measured as one element, or none while declared conditional (`thin_family`)
 - GUIDE (How a story is analysed, step 1)
-- Test in `test_removed_elements.py`; TEST_TRACK E118. Not tested live yet: E118
+- Test in `test_removed_elements.py`; TEST_TRACK E118. Tested live 10 Nov: E118 (evidence in TEST_TRACK)
 
 ---
 
@@ -136,7 +136,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 - `core/test_case_rules`: the absolute-claim check runs only for a test case that signs in (`_signs_in`: a shared account named, or a sign-in mentioned anywhere that is not negated); the refusal also offers not signing in. The signed-in quantity rule is unchanged
 - `prompts/agent1_analyst.md`, `prompts/agent1_impact_aware.md`: the same line
-- Tests in `test_test_case_rules.py` (existing cases now sign in explicitly and still fail); TEST_TRACK E117. Not tested live yet: E117
+- Tests in `test_test_case_rules.py` (existing cases now sign in explicitly and still fail); TEST_TRACK E117. Tested live 10 Nov: E117 (evidence in TEST_TRACK)
 
 ---
 
@@ -150,7 +150,7 @@ Changes:
 - `core/context_update._declare_removed(..., story_key)`: the note starts `REMOVED by <story>` - a new note for an element without one, the old note kept after the marker, a note the model rewrote that way left as it is. `propose(..., story_key)`; the hand-over passes it
 - `core/context_update._apply_rewrites`: a passage not found is tried again with the story's applied wording replacements (`_replace_passage`)
 - GUIDE (Context update)
-- Tests in `test_removed_elements.py`, `test_context_update.py`; TEST_TRACK E115, E116. Not tested live yet: E115, E116
+- Tests in `test_removed_elements.py`, `test_context_update.py`; TEST_TRACK E115, E116. Tested live 10 Nov: E115, E116 (evidence in TEST_TRACK)
 
 ---
 
@@ -164,7 +164,7 @@ Changes:
 - `agents/agent0_impact._proposed_selection`: `impact-proposed` and a status in `selection.allowed_statuses`; used by the claims and by the hand-over
 - `agents/agent0_impact.settle_drift_story`: a night that measured pages and found no drift affecting a test supersedes the drift story's open review (`_supersede_open_review`, shared with `publish`), takes `impact-proposed` off and posts the night's report, so the same drift coming back is analysed again. A Done review and a night that measured no page are left alone
 - GUIDE: the in-flight guard and the nightly drift trigger
-- Tests in `test_change_in_progress.py`; TEST_TRACK E113, E114. Not tested live yet: E113, E114
+- Tests in `test_change_in_progress.py`; TEST_TRACK E113, E114. Tested live 10 Nov: E113, E114 (evidence in TEST_TRACK)
 
 ---
 
@@ -174,7 +174,7 @@ Changes:
 
 - `core/context_update.read_scope`: the notes modules and the inventory pages whose notes the rewrite call is shown, in words; logged before the model calls and written into the PR body (*Read for this update: ...*)
 - GUIDE (Context update) says where to find it
-- Tests in `test_context_scope.py`; TEST_TRACK E112. Not tested live yet: E112
+- Tests in `test_context_scope.py`; TEST_TRACK E112. Tested live 10 Nov: E112 (evidence in TEST_TRACK)
 
 ---
 
