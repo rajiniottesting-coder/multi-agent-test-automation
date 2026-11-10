@@ -264,6 +264,14 @@ def invented_quotes(old: str, new: str, known: str) -> list:
     return out
 
 
+def _replace_passage(text: str, path: str, old: str, new: str) -> Optional[str]:
+    """`old` replaced by `new` - in the inventory's note values only - or None
+    when the file does not hold `old` verbatim."""
+    if path.endswith(".json"):
+        return _apply_json_notes(text, old, new)
+    return text.replace(old, new) if old in text else None
+
+
 def _apply_rewrites(current: dict, rewrites, prop: Proposal, offered=None,
                     story_text: str | None = None) -> None:
     """Apply each rewrite; `offered` (when given) is the set of files the model
@@ -293,10 +301,21 @@ def _apply_rewrites(current: dict, rewrites, prop: Proposal, offered=None,
                                  + " - describe it without quotes, or quote the story"))
             continue
         text = current[path]
-        if path.endswith(".json"):
-            updated = _apply_json_notes(text, old, new)
-        else:
-            updated = text.replace(old, new) if old in text else None
+        updated = _replace_passage(text, path, old, new)
+        if updated is None and prop.applied:
+            # The model copied the passage from the notes as they were; a
+            # wording change of this same story may have edited it a moment
+            # ago (10 Nov 2026: a renamed section heading, then the rewrite
+            # of that sentence - dropped as "not verbatim", so the notes kept
+            # describing what the story changes). The passage as it reads
+            # NOW is the same passage: rewrite that.
+            reworded = old
+            for o, n in prop.applied:
+                reworded = reworded.replace(o, n)
+            if reworded != old:
+                updated = _replace_passage(text, path, reworded, new)
+                if updated is not None:
+                    old = reworded
         if updated is None:
             prop.dropped.append((old[:60], new[:60], f"the passage is not in {path} verbatim"))
             continue
@@ -304,12 +323,25 @@ def _apply_rewrites(current: dict, rewrites, prop: Proposal, offered=None,
         prop.rewrites.append({"path": path, "before": old, "after": new, "reason": reason})
 
 
-def _declare_removed(current: dict, removed, pages, prop: Proposal) -> None:
+REMOVED_NOTE = "REMOVED by {story}"
+
+
+def _declare_removed(current: dict, removed, pages, prop: Proposal,
+                     story_key: str | None = None) -> None:
     """Add each `page.key` the story removes to that page's `removed` list in
     the inventory: after deployment the nightly check then reads the missing
     element as expected, and the inventory update deletes the key once no
     test names it (F-11). A reference that is not an element of a page the
-    story's Components select is dropped and reported."""
+    story's Components select is dropped and reported.
+
+    With `story_key`, the element's note starts "REMOVED by <story>" - what
+    tells Agents 1 and 2 reading the inventory that it is going. The model is
+    asked to rewrite the note that way, but an element with NO note has
+    nothing to rewrite (10 Nov 2026: the model aimed at the key's entries in
+    the `multi_match` / `conditional` lists instead, both dropped, and the key
+    was declared removed with no note at all). So the note is written here
+    whenever it does not start that way: a new one, or the old one kept after
+    the marker as what the element was before the change."""
     refs = [r.strip() for r in removed or () if r and r.strip()]
     if not refs:
         return
@@ -336,6 +368,14 @@ def _declare_removed(current: dict, removed, pages, prop: Proposal) -> None:
         elif key not in (spec.get("removed") or []):
             spec["removed"] = list(spec.get("removed") or []) + [key]
             prop.declared_removed.append(ref)
+            if story_key:
+                notes = spec.setdefault("elements_notes", {})
+                note = notes.get(key) if isinstance(notes, dict) else None
+                if isinstance(notes, dict) and not (isinstance(note, str)
+                                                    and note.startswith("REMOVED by ")):
+                    marker = REMOVED_NOTE.format(story=story_key)
+                    notes[key] = (f"{marker}: before the change - {note}" if note
+                                  else f"{marker}: the story takes it out of the application.")
     if prop.declared_removed:
         from core.inventory_update import dump_like
         current[path] = dump_like(current[path], data)
@@ -419,7 +459,7 @@ def _scoped_value_replace(text: str, old: str, new: str, pages,
 
 def propose(sources: dict, changes, code: dict | None = None, rewrites=(),
             offered=None, removed=(), pages=None, narrowed: bool | None = None,
-            story_text: str | None = None) -> Proposal:
+            story_text: str | None = None, story_key: str | None = None) -> Proposal:
     """Apply each old -> new, then each passage rewrite, then each removed
     element's declaration, to the sources. `offered`: the notes files the
     story's Components select (None: all); `pages`: the inventory pages they
@@ -512,7 +552,7 @@ def propose(sources: dict, changes, code: dict | None = None, rewrites=(),
                 if old in line:
                     prop.code_mentions.append({"path": relpath, "line": n, "text": line.strip()})
     _apply_rewrites(current, rewrites, prop, offered, story_text)
-    _declare_removed(current, removed, pages, prop)
+    _declare_removed(current, removed, pages, prop, story_key)
     prop.edits = {p: t for p, t in current.items() if t != sources.get(p)}
     return prop
 
@@ -840,7 +880,8 @@ def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: 
         unchecked = f"\nBehaviour notes were not checked ({type(e).__name__})."
     prop = propose(sources, changes, code_sources(root), rewrites, set(offered), removed, pages,
                    narrowed=_narrowed(sources, offered, pages),
-                   story_text=f"{story['summary']}\n{story.get('description') or ''}")
+                   story_text=f"{story['summary']}\n{story.get('description') or ''}",
+                   story_key=story_key)
     prop.note, prop.read = note, scope
     if prop.empty:
         tracker.add_comment(story_key, f"{MARKER} No context update needed: the story replaces "

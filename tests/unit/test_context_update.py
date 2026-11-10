@@ -228,3 +228,29 @@ def test_agent0_proposes_only_when_the_story_goes_straight_to_ai_ready(monkeypat
                                  tmp_path, host=object())
     assert (calls == ["AB-9"]) is proposed
     assert (out.get("context") == "proposed") is proposed
+
+
+# ── a rewrite of a passage the story's wording change already edited (E116)
+
+def test_a_rewrite_of_a_reworded_passage_is_applied_to_the_passage_as_it_reads_now():
+    from core.schemas import NoteRewrite, WordingChange
+    sources = {"notes/a.md": '- The page has a "Old Heading" section showing an address, as a link.\n'}
+    rewrite = NoteRewrite(path="notes/a.md",
+                          old='- The page has a "Old Heading" section showing an address, as a link.',
+                          new='- The page has a "New Heading" section with a link to write to the team.',
+                          reason="the link text changes")
+    prop = cu.propose(sources, [WordingChange(old="Old Heading", new="New Heading")], None,
+                      [rewrite])
+    assert prop.edits["notes/a.md"] == ('- The page has a "New Heading" section with a link '
+                                        'to write to the team.\n')
+    assert prop.rewrites and prop.rewrites[0]["before"].startswith('- The page has a "New Heading"')
+    assert not prop.dropped
+
+
+def test_a_passage_found_neither_way_is_still_dropped():
+    from core.schemas import NoteRewrite, WordingChange
+    sources = {"notes/a.md": "- Something else entirely.\n"}
+    prop = cu.propose(sources, [WordingChange(old="Old", new="New")], None,
+                      [NoteRewrite(path="notes/a.md", old="- An Old line.", new="- A new line.",
+                                   reason="r")])
+    assert prop.dropped[-1][2] == "the passage is not in notes/a.md verbatim"

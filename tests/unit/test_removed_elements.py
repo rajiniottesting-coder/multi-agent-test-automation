@@ -239,3 +239,30 @@ def test_the_hand_over_declares_what_the_model_reports(tmp_path, monkeypatch):
     assert out["context"] == "proposed"
     written = host.create_or_update_file.call_args.args[1]
     assert json.loads(written)["pages"]["detail"]["removed"] == ["pop"]
+
+
+# ── the REMOVED note is always there (E115) ─────────────────────────────
+
+def test_a_removed_element_without_a_note_gets_one():
+    prop = cu.propose(_sources(), [], None, [], None, ["detail.close"], {"detail"}, story_key="AB-9")
+    notes = json.loads(prop.edits["inv/app.json"])["pages"]["detail"]["elements_notes"]
+    assert notes["close"] == "REMOVED by AB-9: the story takes it out of the application."
+    assert notes["pop"] == "A pop-up confirms the add.", "another element's note untouched"
+
+
+def test_an_old_note_is_kept_after_the_marker_and_a_rewritten_one_stands():
+    prop = cu.propose(_sources(), [], None, [], None, ["detail.pop"], {"detail"}, story_key="AB-9")
+    notes = json.loads(prop.edits["inv/app.json"])["pages"]["detail"]["elements_notes"]
+    assert notes["pop"] == "REMOVED by AB-9: before the change - A pop-up confirms the add."
+    rewrite = SimpleNamespace(path="inv/app.json", old="A pop-up confirms the add.",
+                              new="REMOVED by AB-9: a toast confirms the add instead.", reason="r")
+    prop = cu.propose(_sources(), [], None, [rewrite], None, ["detail.pop"], {"detail"},
+                      story_key="AB-9")
+    notes = json.loads(prop.edits["inv/app.json"])["pages"]["detail"]["elements_notes"]
+    assert notes["pop"] == "REMOVED by AB-9: a toast confirms the add instead."
+
+
+def test_without_a_story_key_only_the_declaration_is_made():
+    prop = cu.propose(_sources(), [], None, [], None, ["detail.close"], {"detail"})
+    page = json.loads(prop.edits["inv/app.json"])["pages"]["detail"]
+    assert page["removed"] == ["close"] and "close" not in page["elements_notes"]
