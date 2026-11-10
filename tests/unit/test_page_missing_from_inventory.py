@@ -173,8 +173,10 @@ def test_a_refused_story_names_the_missing_element_first():
     src = inspect.getsource(a2.run)
     assert "missing_elements=missing_elements" in src
     wrap = src.index("if missing_elements:")
-    assert wrap < src.index("blocked.post_blocked_once(jira, story_id, input_fp") \
-        < src.index("raise e\n")
+    # The final gate's refusal: the first post after the wrap (an earlier
+    # refusal - the plan left everything out - posts its own).
+    post = src.index("blocked.post_blocked_once(jira, story_id, input_fp", wrap)
+    assert wrap < post < src.index("raise e\n", post)
 
 
 def test_the_blocked_comment_names_the_element_and_how_to_add_it(monkeypatch):

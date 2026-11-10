@@ -158,3 +158,20 @@ def test_agent2_reads_the_steps_after_the_gate_and_refuses_a_story_left_with_not
     assert "step_fidelity.audit(" in source and 'load_prompt("agent2_step_fidelity.md")' in source
     assert "Step fidelity gate failed for" in source
     assert source.index("step_fidelity.audit(") < source.index("# 4c-pre. COVERAGE")
+
+
+def test_a_story_the_plan_left_out_entirely_is_told_to_add_the_elements():
+    from core import blocked
+    text = blocked.blocked_comment("AB-1", "fp", [
+        "AB-2: no scenario of its own in this pull request - the plan's notes: needs the side "
+        "panel's filter links on shop, not in the app inventory."])
+    assert "need element(s) - or a page - the app inventory does not have" in text
+    assert "plan_inventory element" in text and "Change that test case" not in text
+
+
+def test_agent2_generates_nothing_when_the_plan_left_every_test_case_out():
+    from pathlib import Path
+    source = Path("agents/agent2_coder.py").read_text(encoding="utf-8")
+    stop = source.index("the plan left out all of its")
+    assert stop < source.index("ordered_files = _sort_files_for_generation(plan.files_to_create)")
+    assert "blocked.post_blocked_once(jira, story_id, input_fp, e.errors)" in source[stop:stop + 600]
