@@ -4,6 +4,15 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — the splice routing allows two rounds per owner file (#352)
+
+**Why:** live after #351, the first owner's step file needed two page-object repairs (its second answer asked for one more method); that used the second file's only round, and the second file's single stop was refused.
+
+- `agents/agent2_coder.run`: two routing rounds per owner file, plus one; the same stop twice is still refused
+- Test in `test_splice_grounding.py`; TEST_TRACK E121 covers it. Not tested live yet: E121
+
+---
+
 ## November 2026 — an unmet splice step names its page object; each new stop is routed (#351)
 
 **Why:** live after #350: the routing repaired the run's page object and the first owner's step file spliced; the second owner's file then needed a check on another page - a committed page object the run had not touched - and #348's single, run-only route could not reach it.
