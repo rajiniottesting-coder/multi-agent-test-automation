@@ -52,9 +52,12 @@ rejects "only", "exactly", a row count and "empty" on the cart in every case.
 
 ## Cart rows are a family
 
-Each row shows product name, price, quantity and total, plus a delete control.
-Row selectors match every row, so narrow to the product the test added rather
-than assuming a row index.
+Each row shows product name, price, quantity and total. A row's quantity can be
+edited; setting it to 0 and clicking "Update cart" removes that product's row
+while the other products' rows stay, and setting the only product's quantity to
+0 then clicking "Update cart" shows the empty-cart message. Row selectors match
+every row, so narrow to the product the test added rather than assuming a row
+index.
 
 
 ## "Register a fresh account" is not available here in one step
