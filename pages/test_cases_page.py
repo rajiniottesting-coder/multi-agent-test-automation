@@ -144,7 +144,7 @@ class TestCasesPage(BasePage):
     def has_visible_steps(self) -> bool:
         """True once at least one step item is present. WAITS for the family.
 
-        Steps live inside collapsed panels until a title is clicked, so call
+        Steps live inside collapsed panels until a title is clicked, so call it
         this only AFTER expanding a test case. `test_case_steps` is a
         multi_match family, so it is never waited on with wait_visible() (that
         raises in strict mode) — instead this waits for AT LEAST ONE member to
