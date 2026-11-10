@@ -12,7 +12,6 @@ Feature: Cart persistence
   @smoke @cart
   # JIRA: SCRUM-368 (hash: 45f774db) owner: SCRUM-367
   Scenario: A product added to the cart survives sign-out and sign-in
-    Given an empty cart
     When I open the product detail page for "Blue Top"
     Then the product name shown should be "Blue Top"
     And the product price shown should be "Rs. 500"
