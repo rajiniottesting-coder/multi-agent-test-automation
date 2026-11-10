@@ -264,6 +264,14 @@ def invented_quotes(old: str, new: str, known: str) -> list:
     return out
 
 
+def _replace_passage(text: str, path: str, old: str, new: str) -> Optional[str]:
+    """`old` replaced by `new` - in the inventory's note values only - or None
+    when the file does not hold `old` verbatim."""
+    if path.endswith(".json"):
+        return _apply_json_notes(text, old, new)
+    return text.replace(old, new) if old in text else None
+
+
 def _apply_rewrites(current: dict, rewrites, prop: Proposal, offered=None,
                     story_text: str | None = None) -> None:
     """Apply each rewrite; `offered` (when given) is the set of files the model
@@ -293,10 +301,21 @@ def _apply_rewrites(current: dict, rewrites, prop: Proposal, offered=None,
                                  + " - describe it without quotes, or quote the story"))
             continue
         text = current[path]
-        if path.endswith(".json"):
-            updated = _apply_json_notes(text, old, new)
-        else:
-            updated = text.replace(old, new) if old in text else None
+        updated = _replace_passage(text, path, old, new)
+        if updated is None and prop.applied:
+            # The model copied the passage from the notes as they were; a
+            # wording change of this same story may have edited it a moment
+            # ago (10 Nov 2026: a renamed section heading, then the rewrite
+            # of that sentence - dropped as "not verbatim", so the notes kept
+            # describing what the story changes). The passage as it reads
+            # NOW is the same passage: rewrite that.
+            reworded = old
+            for o, n in prop.applied:
+                reworded = reworded.replace(o, n)
+            if reworded != old:
+                updated = _replace_passage(text, path, reworded, new)
+                if updated is not None:
+                    old = reworded
         if updated is None:
             prop.dropped.append((old[:60], new[:60], f"the passage is not in {path} verbatim"))
             continue
