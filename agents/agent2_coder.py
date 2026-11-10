@@ -69,7 +69,7 @@ from integrations.repo_host import get_repo_host
 from validators.import_validator import validate_imports_resolvable
 from validators.page_object_contract import validate_extended_page_objects_keep_methods
 from validators.opening_step import validate_scenarios_open_a_page_first
-from validators.action_steps import validate_click_steps_click
+from validators.action_steps import leave_out_stand_ins, validate_click_steps_click
 from validators.method_resolution_validator import (
     pages_missing_from_inventory,
     elements_missing_from_inventory,
@@ -5576,6 +5576,24 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
             )
             orphan_regen_step_defs = []
             orphan_regen_page_methods = []
+
+    # 4b-stand-ins. A step that says the user clicks and still clicks nothing
+    # after the repair has nothing it can click: the control is not in the app
+    # inventory. Its scenarios are left out and named with that reason, so the
+    # story's other test cases are still coded (10 Nov 2026: one such step
+    # refused a whole story). Never a change story's splice into another
+    # story's files; a feature that would be left empty is refused as before.
+    stand_ins = validate_click_steps_click(generated_files, PROJECT_ROOT)
+    if stand_ins and new_test_cases:
+        generated_files, left_out = leave_out_stand_ins(
+            generated_files, stand_ins, protected=owner_files)
+        if left_out:
+            for key, why in left_out.items():
+                logger.warning("%s: left out %s - %s", story_id, key, why)
+            plan = plan.model_copy(update={"notes": "\n".join(
+                [plan.notes or ""] + [f"Skipped: {k} -- {why}" for k, why in left_out.items()]
+            ).strip()})
+            output = output.model_copy(update={"files": generated_files, "notes": plan.notes})
 
     # 4c-pre. COVERAGE. Every approved test case this run was given has a
     # markered scenario, or is named - never dropped in silence
