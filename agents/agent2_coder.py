@@ -5304,6 +5304,24 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
     # can include the actual method signatures from page objects already
     # generated in this batch (Hotfix v5 — prevents cross-file naming
     # mismatches like `click_logout()` vs `click_logout_link()`).
+    # Nothing to code: the plan left every new test case out (each with its
+    # reason in the notes) and planned no feature file. Generating what it did
+    # plan - a note explaining the skips, say (10 Nov 2026, twice) - only paid
+    # for a file the gate then refused. The story is refused now, with the
+    # plan's reasons, exactly as the coverage gate below would refuse it.
+    if (new_test_cases and not impact_work
+            and not any(f.file_path.endswith(".feature") for f in plan.files_to_create)):
+        gaps = agent2_coverage.missing_from_batch([], new_test_cases, plan.notes)
+        e = GateFailure(
+            f"Coverage gate failed for {story_id}: the plan left out all of its "
+            f"{len(new_test_cases)} new approved test case(s) and planned no feature file, "
+            "so there is nothing to code - nothing was generated.",
+            errors=[f"{g.key}: {g.reason}" for g in gaps])
+        logger.error(str(e))
+        if not dry_run:
+            blocked.post_blocked_once(jira, story_id, input_fp, e.errors)
+        raise e
+
     ordered_files = _sort_files_for_generation(plan.files_to_create)
 
     # Page objects already committed on main. Fetched ONCE, before the loop:
