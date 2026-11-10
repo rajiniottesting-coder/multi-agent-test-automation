@@ -344,9 +344,12 @@ def _coined_by_the_application() -> dict:
                         add(text.strip(), "UI text in a selector")
     # The application's own name and host.
     add(str(app.get("name", "")), "application name")
+    # The whole host, not its first label: a first label can be an ordinary
+    # word ("example", "shop") that every framework file may use (10 Nov 2026:
+    # pointed at example.com, the guard flagged 200 uses of "example").
     host = re.sub(r"^\w+://(www\.)?", "", str(app.get("base_url", ""))).split("/")[0]
-    if host:
-        coined.setdefault(host.split(".")[0], "application host")
+    if "." in host:
+        coined.setdefault(host.lower(), "application host")
     # Its tracker's issue keys: the project key on the markers of its own
     # feature files. Framework fixtures use invented keys (AB-1, PROJ-7).
     for path in sorted((_PROJECT / "features").glob("*.feature")):
@@ -442,6 +445,8 @@ def test_the_scan_would_notice_a_leak():
     for kind in ("issue key of the application's project", "application name",
                  "application host"):
         assert kind in kinds, f"the harvest no longer sees the application's {kind}"
+    hosts = [t for t, k in coined.items() if k == "application host"]
+    assert hosts and all("." in h for h in hosts), "the whole host, never a bare word"
     key = next(t for t, k in coined.items() if k.startswith("issue key"))
     assert _leak_pattern(key).search(f"# seen on {key}293's pull request")
     assert not _leak_pattern(key).search(f"x = '{key}'"), "a bare prefix is not a key"
