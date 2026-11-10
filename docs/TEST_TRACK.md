@@ -470,7 +470,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
-| #PRNUM | A new attempt starts on a fresh budget, without the old hold | | E138 | |
+| #392 | A new attempt starts on a fresh budget, without the old hold | | E138 | |
 | #389 | An inventory note quoted with its line prefix is still rewritten; a flaky prediction says why it blocks | | E136, E137 | |
 | #386 | Every scan pass skips a story the gate refused on unchanged input | | E135 | |
 | #385 | The scenarios that stand in for a missing control are left out, the rest coded | | E134 | |

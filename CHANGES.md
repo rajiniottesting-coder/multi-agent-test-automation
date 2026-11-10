@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — a new attempt starts on a fresh budget, without the old hold (#PRNUM)
+## November 2026 — a new attempt starts on a fresh budget, without the old hold (#392)
 
 **Why:** found live on Run H (validation window H2, per-story budget lowered): a change story held for an earlier attempt's spend was edited and sent back to Agent 0. Agent 0 records the attempt boundary only after its analysis, so the analysis itself ran on the held budget and was refused - the reset that would have restarted the budget never came. And a reset that did happen (Agent 1 re-processing a story) restarted the budget but left `budget-hold` on the story, so every selection kept skipping it.
 
