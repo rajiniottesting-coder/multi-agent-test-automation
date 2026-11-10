@@ -83,6 +83,8 @@ _RESERVED_CALL = re.compile(r"calls `\w+\.(\w+)\(\)`, but `(\w+)` does not defin
 # page object's inventory page (validators/method_resolution_validator.py).
 # validators.action_steps: a step worded as a click whose definition clicks nothing.
 _ACTION_STEP = "Action step error"
+# validators.step_fidelity: a step whose code acts on or checks another element.
+_STEP_FIDELITY = "Step fidelity error"
 _BORROWED_PAGE = re.compile(r"class (\w+) sets INVENTORY_PAGE = '[^']+', the page \w+ "
                             r"\([^)]+\) implements, and resolves none of its elements")
 
@@ -161,6 +163,17 @@ def blocked_comment(story_id: str, fp: str, errors) -> str:
                    "(`python -m scripts.plan_inventory element --page <page> --key <key> "
                    "--selector \"<selector>\"`), then runs Agent 2 with this story's key; or "
                    "retires the test case that needs it, so the others are coded.")]
+        return "\n".join(lines)
+    other_element = [e for e in errors if str(e).startswith(_STEP_FIDELITY)]
+    if other_element:
+        lines += ["",
+                  ("A step's code acts on or checks a different element than the step names: "
+                   "the generated code stood in for an element it could not reach. That is "
+                   "almost always an element the app inventory has no key for. A person adds it "
+                   "(`python -m scripts.plan_inventory element --page <page> --key <key> "
+                   "--selector \"<selector>\"`; a page it lives on, `plan_inventory page`), "
+                   "then runs Agent 2 with this story's key; or retires the test case that "
+                   "needs it, so the others are coded.")]
         return "\n".join(lines)
     reserved = _reserved_capabilities(errors)
     if reserved:

@@ -463,6 +463,11 @@ agents:
     # scenario does not check (a marker proves pairing, not content): such a
     # test case is listed "covered, but needing a person" on the PR and story.
     coverage_audit: true
+    # After the gate, one model call reads each step beside the code that runs
+    # for it and names a step whose code acts on or checks a different element
+    # than it names (validators/step_fidelity.py): its scenarios are left out
+    # as not automated; a story left with nothing is refused, naming them.
+    step_fidelity_audit: true
     # Set beside ai-coded when an approved test case has no scenario of its own
     # (agents/agent2_coverage.py): the pull request and one story comment list
     # each one with its reason. Removed by the next run - ai-update after the
