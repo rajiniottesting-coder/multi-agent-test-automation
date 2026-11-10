@@ -97,6 +97,13 @@ def notes_about(notes: str, key: str) -> str:
     return text if len(text) <= _MAX_NOTE_CHARS else text[:_MAX_NOTE_CHARS - 3] + "..."
 
 
+def skipped_by_plan(notes: str, key: str) -> bool:
+    """True when the plan's notes leave this test case out in the plan's own
+    form, "Skipped: <KEY> -- <reason>"."""
+    return bool(re.search(rf"\bskipped:\s*{re.escape(key)}(?![0-9])", notes or "",
+                          re.IGNORECASE))
+
+
 # ── the gaps ─────────────────────────────────────────────────────────────
 
 def missing_from_batch(files, test_cases, notes: str = "") -> list:

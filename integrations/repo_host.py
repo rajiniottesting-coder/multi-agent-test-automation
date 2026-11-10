@@ -61,6 +61,12 @@ credentials work and, where the host says, when they expire (the pipeline
 health check). Without it the repo host's credentials are checked by the first
 real call that needs them.
 
+OPTIONAL CAPABILITY: `workflow_created_at(workflow_file) -> str | None` is when
+the host first knew the workflow (ISO time), or None. The health check judges
+whether a schedule starts only once the workflow has existed for the whole
+window; without it a workflow added an hour ago reads as "no scheduled run in
+24 hours".
+
 OPTIONAL CAPABILITY: `dispatch_workflow(workflow_file, ref, inputs) -> None`
 starts a workflow run (core/handoff.py: an agent starting the next one).
 Without it no agent starts another; the schedules still run them.

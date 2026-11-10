@@ -106,7 +106,7 @@ Agent 0 is described in its own chapter, [Change stories — Agent 0](#change-st
 1. Reads a Jira story (description + acceptance criteria) — manual mode (`--story KEY`) or scan mode (`--scan` reads selection criteria from config).
 2. **Duplicate guard.** Refuses a story that already has linked Test Cases it owns, and says whether the last run finished or was interrupted (a partial set). The run turns red and a person decides. Test cases the story only *impacts* (Impacts links from Agent 0) do not count.
 3. Calls the LLM with a prompt template (`prompts/agent1_analyst.md` + the `prompts/app_context/` modules, or a single `prompts/app_context.md`) and a Pydantic schema (`TestCaseList`). It drafts the FEWEST cases that cover the story, grouped by behaviour, not by input value.
-4. Checks the draft against `core/test_case_rules.py` (each case runs on its own, no invented data) and `core/acceptance_coverage.py`: the acceptance criteria are read from the story text itself (numbered, bulleted or Given/When/Then lists under an "Acceptance criteria" heading, wiki markup or markdown) and numbered AC1, AC2, ...; the draft's coverage map must name, for every one, a test case of the draft that verifies it. A criterion that removes, replaces, renames, hides or no longer offers something needs a step whose expected result says it is absent and names it; one that restricts (only X can, Y cannot) a step showing the refusal; one that sets a limit or validation rule (at most N, required, a valid format) a step showing a violation rejected. A failing draft is sent back once with the problems listed; a second failure writes nothing. The draft is shown every scenario that already exists: a criterion one of them verifies unchanged ("as before") cites it instead of a copy, and a new test titled as an existing scenario is sent back. In a scan, a draft that broke the rules twice or ran out of output room is handed back: `ai-ready` is removed and one `[agent1:stopped]` comment says why - the next scan would only pay for the same answer. Add `ai-ready` again to retry.
+4. Checks the draft against `core/test_case_rules.py` (each case runs on its own, no invented data) and `core/acceptance_coverage.py`: the acceptance criteria are read from the story text itself (numbered, bulleted or Given/When/Then lists under an "Acceptance criteria" heading, wiki markup or markdown) and numbered AC1, AC2, ...; the draft's coverage map must name, for every one, a test case of the draft that verifies it. A criterion that removes, replaces, renames, hides or no longer offers something needs a step whose expected result says it is absent and names it; one that restricts (only X can, Y cannot) a step showing the refusal; one that sets a limit or validation rule (at most N, required, a valid format) a step showing a violation rejected. A failing draft is sent back once with the problems listed; a second failure writes nothing. The draft is shown every scenario that already exists: a criterion one of them verifies unchanged ("as before") cites it instead of a copy, and a new test titled as an existing scenario is sent back. In a scan, a draft that broke the rules twice or ran out of output room is handed back: `ai-ready` is removed and one `[agent1:stopped]` comment says why - the next scan would only pay for the same answer. Add `ai-ready` again to retry; for a story that genuinely needs more room, raise `agents.agent1_analyst.max_output_tokens` in `config.yaml` first (the stop names it).
 5. Posts the coverage map on the story (`[agent1:coverage]`), so the reviewer sees which test verifies each criterion before adding `human-approved`.
 6. For each test case, creates a "Test Case" issue in Jira linked to the parent story, carrying the story's Jira Components when it has some (a project that rejects them still gets the test case).
 7. Tags the parent story with `ai-processed` (idempotency) and posts its token/cost ledger.
@@ -314,7 +314,36 @@ phrase another feature already defines but asserts more than that definition doe
 `validate_scenarios_open_a_page_first` (`validators/opening_step.py`) rejects a
 scenario whose first Given or When step acts before any page is opened - its
 first page-object call is to a method that never calls `navigate()`; every
-test starts on the browser's empty page. Every repairable error is routed to
+test starts on the browser's empty page. `validate_click_steps_click`
+(`validators/action_steps.py`) rejects a Given or When step worded as a click
+(click, press, tap) whose definition makes no page-object call that clicks -
+directly or through the methods it calls - such as one that scrolls or
+navigates by script in the control's place: a test that performs what a
+control would do passes even when the control is missing. An element the
+inventory lacks is left out with its reason, never simulated: when such a step
+survives the repair, its scenarios are taken out of the story's own feature
+(with the step functions only they used) and each test case is listed as not
+automated with that reason, so the story's other test cases are still coded -
+never a change story's splice into another story's files, never a Background
+step, and a feature that would be left empty is refused as before. A stand-in
+that uses a DIFFERENT element the inventory does have - another list's items
+read for the list a step names, "the page loaded" for a section it says is
+visible - breaks no rule, so after the gate one model call
+(`validators/step_fidelity.py`, `agents.agent2_coder.step_fidelity_audit`)
+reads each step of the story's own step files beside the code that runs for it
+(its definition, the page-object methods it calls, the inventory elements they
+read with their notes) and names the steps whose code acts on or checks
+another element than the wording names. Their scenarios are left out the same
+way (not automated, with that reason); a story left with nothing is refused,
+and the blocked comment names the element to add. A failed call changes
+nothing. A data table or doc string under a step is refused
+(`validators/step_arguments.py`) while the installed pytest-bdd is below 8: it
+reads those lines as part of the step's text, so the step would match no
+definition at run time. A page has one
+page object: a new page object for an inventory page a committed page object
+already implements is refused (`validate_page_object_selectors`), naming that
+page object - and, when it is reserved, saying a person adds the method there,
+so the reserved file is never side-stepped. Every repairable error is routed to
 the generated file it names, whatever its wording
 (`_route_to_generated_file()`), so none reaches the final gate without a repair
 attempt.
@@ -496,7 +525,7 @@ The gate is between Agents 1 and 2 specifically because that's the highest-lever
 | `impact-reverted` | "The PR closed unmerged; the revisions were undone" | Agent 0 reconcile |
 | `ai-retired` | (on a Test Case) "Retired by a change; not run" | Agent 0 hand-over / reconcile |
 | `inventory-drift` | (on the drift maintenance story) "Selectors stopped matching; these tests are affected" | Agent 0 drift job |
-| `budget-hold` | "This story reached its model budget; no agent works on it" (F-24) | Any agent; a person removes it to allow one more budget |
+| `budget-hold` | "This story reached its model budget; no agent works on it" (F-24) | Any agent; a person removes it to allow one more budget, or a new attempt removes it (the story re-processed from `ai-ready`, or a change story analysed again after later agents worked on it - its budget starts from zero) |
 | `pipeline-health` | (on the one pipeline health issue) "Watch this for alerts" (F-23) | The first alert, or the health check |
 | `ai-defect` | (on a defect) "Raised by the defect triage" (F-22). A defect raised before #250 may still carry an `ai-defect-<hash>` code - removed on its next update or by `scripts.tidy_defect_labels` | Defect triage |
 | `ai-defect-passing` | (on a defect) "Its test passes on `main` again; a person may close it" | Defect triage (removed when it fails again) |
@@ -1758,7 +1787,7 @@ rewritten on each change - edits to it are not kept.
 | Alert id | Opened by | Means | Closes when |
 |---|---|---|---|
 | `workflow-failing:<file>` | health check | a scheduled workflow failed `consecutive_failures` scheduled runs in a row | its next scheduled run succeeds, or the workflow is no longer scheduled |
-| `workflow-not-starting:<file>` | health check | a scheduled workflow's cron lines asked for at least `schedule_min_expected` runs in the last `schedule_window_hours` and the repository host started none | a scheduled run starts, or the workflow is no longer scheduled (its file deleted or its schedule removed) |
+| `workflow-not-starting:<file>` | health check | a scheduled workflow's cron lines asked for at least `schedule_min_expected` runs in the last `schedule_window_hours` and the repository host started none (a workflow younger than the window is not judged yet - it cannot have missed a window's runs) | a scheduled run starts, or the workflow is no longer scheduled (its file deleted or its schedule removed) |
 | `credential:repo-host`, `credential:model` | health check | the repo host token, or the model key, was refused (a spent key budget included, with `model_check: completion` - each model in `LLM_MODELS_TO_CHECK`, asking the output room the agents ask) | the next check succeeds |
 | `credential-expiry:repo-host` | health check | the token expires within `expiry_warn_days` (where GitHub gives the date) | a new token is further away, or has no expiry |
 | `application-unavailable-on-main` | triage | tests on `main` could not run: the application was unavailable - including a night the health check found it not itself, with what was served instead | the next run on `main` without an outage |
@@ -1861,6 +1890,10 @@ stop says which limit, how much and what to do.
   A pull request's review is not made - Agent 3 posts *Not reviewed: model
   budget reached* and stays red - and Agent 5 still reports, with the summary
   written by code. To continue today, raise `per_day_usd`.
+- **No limit for a while:** set a value to `.inf`. Nothing is enforced for it,
+  spend is still recorded, and people read words, not the value: the health
+  issue says *no daily budget is set*, a story's cost comment has no budget
+  line. A story held before keeps its hold until a person removes the label.
 - **Every model call counts toward the day**: story agents, reviews of any PR,
   context and inventory proposals, Agent 0, the health check's probe. Each run
   records its spend on the health issue when it ends; a run reads the day's
@@ -2445,8 +2478,10 @@ scenario, so no pull request was opened. The comment lists the reasons. A rule t
 something the application cannot show as written - for example an exact
 quantity on state the application keeps against a shared account. Change that
 test case (or the story): the next scheduled scan then tries again by itself.
-Until then the scan skips the story and spends nothing. To retry without an
-edit - after a framework fix, say - run Agent 2 with the story's key.
+Until then the scan skips the story and spends nothing - in every pass, a
+story labelled `ai-regenerate` or `ai-update` included (the label stays until a
+run succeeds). To retry without an edit - after a framework fix, say - run
+Agent 2 with the story's key.
 
 **When the comment says the story needs a page the app inventory does not
 have**, no test case is wrong and no repair could fix it: Agent 2 stopped
@@ -2874,7 +2909,7 @@ A change story enters before `ai-ready`:
 | `impact-reverted` | terminal marker | reconcile | human (to retry) | "the change was undone" |
 | `ai-retired` | test-case marker | hand-over / reconcile | reconcile on undo | "this test case is retired" |
 | `inventory-drift` | sticky marker | Agent 0 drift (live) | never (the story keeps it for life) | "the nightly drift maintenance story" - the next night reuses it |
-| `budget-hold` | gate marker | any agent stopped by the story's budget (F-24) | human (allows one more `per_story_usd`) | every selection excludes it |
+| `budget-hold` | gate marker | any agent stopped by the story's budget (F-24) | human (allows one more `per_story_usd`), or a new attempt's ledger reset | every selection excludes it |
 | `pipeline-health` | identity | the first alert / health check | never | finds the one pipeline health issue |
 | `ai-defect` | identity | defect triage | never | marks a raised defect; the triage finds it again by the test and cause in its triage data (no code label since #250) |
 | `ai-defect-passing` | state marker | defect triage (test passes on `main`) | defect triage (fails again) | "a person may close this defect" |

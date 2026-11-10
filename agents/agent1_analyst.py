@@ -396,7 +396,11 @@ def run(story_id: str, dry_run: bool = False) -> dict:
     # 12288 restores the ~3x headroom the other caps carry.
     # NOTE: if you raise the "3-7 test cases" target in
     # prompts/agent1_analyst.md, revisit this cap in the same commit.
-    llm = LLMClient(temperature=0.3, max_output_tokens=12288)
+    # A project raises it in config.yaml (agents.agent1_analyst.
+    # max_output_tokens) - the truncation message names that key.
+    cap = int(load_agent_config().get("max_output_tokens") or 12288)
+    llm = LLMClient(temperature=0.3, max_output_tokens=cap,
+                    cap_setting="agents.agent1_analyst.max_output_tokens")
     test_case_list = _draft_test_cases(llm, user_prompt, criteria, existing)
 
     logger.info(f"LLM generated {len(test_case_list.test_cases)} test cases:")
@@ -521,6 +525,9 @@ def hand_back(tracker, story_id: str, error, agent_config: dict) -> list:
         except Exception as e:                                     # noqa: BLE001
             logger.warning(f"Could not remove '{label}' from {story_id}: {e}")
     reason = str(error).split(" To re-run", 1)[0]
+    setting = getattr(error, "setting", None)
+    if setting:                       # a setting a person may raise, not a code change
+        reason += f" For a story that genuinely needs more room, raise {setting} in config.yaml."
     again = " or ".join(f"`{label}`" for label in labels) or "the trigger label"
     why = ("the next run would repeat the same answer at the same cost"
            if isinstance(error, Exception) else

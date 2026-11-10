@@ -69,6 +69,8 @@ from integrations.repo_host import get_repo_host
 from validators.import_validator import validate_imports_resolvable
 from validators.page_object_contract import validate_extended_page_objects_keep_methods
 from validators.opening_step import validate_scenarios_open_a_page_first
+from validators.action_steps import leave_out_stand_ins, validate_click_steps_click
+from validators.step_arguments import validate_steps_carry_no_table_or_doc_string
 from validators.method_resolution_validator import (
     pages_missing_from_inventory,
     elements_missing_from_inventory,
@@ -2930,6 +2932,12 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     # Every test starts on an empty page: a scenario's first step opens one
     # before acting (validators/opening_step.py).
     errors.extend(validate_scenarios_open_a_page_first(generated_files, PROJECT_ROOT))
+    # A step that says the user clicks makes a page-object call that clicks -
+    # never one that performs what the control would do (validators/action_steps.py).
+    errors.extend(validate_click_steps_click(generated_files, PROJECT_ROOT))
+    # A data table or doc string under a step is read as step text by the
+    # pinned pytest-bdd: no definition matches at run time (validators/step_arguments.py).
+    errors.extend(validate_steps_carry_no_table_or_doc_string(generated_files))
     # Two stories editing one page object branch from main independently, so
     # neither sees the other's work and both may add their own name for one
     # behaviour. Git merges the additions cleanly when they land apart, and
@@ -4517,7 +4525,24 @@ def _hand_back_update(jira, story_id: str, stop: Exception) -> None:
         logger.warning(f"Could not remove '{label}' from {story_id}: {e}")
 
 
-def run_update(story_id: str, dry_run: bool = False) -> dict:
+def _refused_before(jira, story_id: str, input_fp: str) -> bool:
+    """Did the final gate refuse this exact input before? Jira reads only, no
+    model call; fails open (an unreadable story runs)."""
+    from core import blocked
+    try:
+        if blocked.blocked_on(jira.get_comments(story_id), input_fp):
+            logger.warning(
+                f"{story_id}: the final gate refused this story and neither it nor "
+                f"its test cases have changed since ({blocked.BLOCKED_MARKER} "
+                f"inputs: {input_fp}). Skipped - no model call. Edit a test case or "
+                f"the story, or run Agent 2 with its key, to try again.")
+            return True
+    except Exception as e:                                     # noqa: BLE001
+        logger.warning(f"Could not read {story_id}'s comments ({e}); running it.")
+    return False
+
+
+def run_update(story_id: str, dry_run: bool = False, skip_if_blocked: bool = False) -> dict:
     """Surgical incremental-update flow triggered by the `ai-update` label.
 
     Reads the existing feature file on main, classifies linked Test Cases
@@ -4536,6 +4561,13 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
     if not test_cases:
         logger.warning(f"No Test Cases linked to {story_id}. Run Agent 1 first.")
         return {"story_id": story_id, "status": "no_test_cases", "files_generated": 0}
+
+    # Refused before on this same input: the scan skips it, as in run()
+    # (core.blocked). A manual run always runs.
+    from core import blocked
+    input_fp = blocked.fingerprint(story, test_cases)
+    if skip_if_blocked and _refused_before(jira, story_id, input_fp):
+        return {"story_id": story_id, "status": "blocked", "files_generated": 0, "free": True}
 
     marker_index = build_marker_index(FEATURES_DIR)
     feature_file_path = _locate_feature_file_for_story(story_id, test_cases, marker_index)
@@ -4872,8 +4904,16 @@ def run_update(story_id: str, dry_run: bool = False) -> dict:
             purpose="Incremental update: orphan method(s) commented out",
         ))
 
-    _validate_generated_files(generated_files, story_id,
-                              list(classification["modified"]) + list(classification["new"]))
+    try:
+        _validate_generated_files(generated_files, story_id,
+                                  list(classification["modified"]) + list(classification["new"]))
+    except ValueError as e:
+        # Said once on the story, so the scan stops retrying unchanged input.
+        if not dry_run:
+            blocked.post_blocked_once(jira, story_id, input_fp,
+                                      getattr(e, "errors", None) or [str(e)])
+        show_refused_files(generated_files)
+        raise
 
     # Every test case this file should hold has its markered scenario, or is
     # named (F-13). A scenario the model wrote without its marker counts as
@@ -5056,7 +5096,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
         is_regenerate: If True, this is a REGENERATION run triggered by the
             `ai-regenerate` label. Skips dedup, uses -revN branch suffix,
             removes the regenerate label after success.
-        skip_if_blocked: The scheduled scan's normal pass sets it: a story the
+        skip_if_blocked: The scheduled scan sets it in every pass: a story the
             final gate already refused, with its story and test-case text
             unchanged since, is skipped before any model call (core.blocked).
             A manual run leaves it False and always runs.
@@ -5133,18 +5173,9 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
     # any model call; fails open.
     from core import blocked
     input_fp = blocked.fingerprint(story, test_cases, revisions)
-    if skip_if_blocked:
-        try:
-            if blocked.blocked_on(jira.get_comments(story_id), input_fp):
-                logger.warning(
-                    f"{story_id}: the final gate refused this story and neither it nor "
-                    f"its test cases have changed since ({blocked.BLOCKED_MARKER} "
-                    f"inputs: {input_fp}). Skipped - no model call. Edit a test case or "
-                    f"the story, or run Agent 2 with its key, to try again.")
-                return {"story_id": story_id, "status": "blocked", "files_generated": 0,
-                        "free": True}
-        except Exception as e:                                 # noqa: BLE001
-            logger.warning(f"Could not read {story_id}'s comments ({e}); running it.")
+    if skip_if_blocked and _refused_before(jira, story_id, input_fp):
+        return {"story_id": story_id, "status": "blocked", "files_generated": 0,
+                "free": True}
 
     if not test_cases and not impact_work:
         logger.warning(f"No Test Cases linked to {story_id}. Run Agent 1 first.")
@@ -5273,6 +5304,26 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
     # can include the actual method signatures from page objects already
     # generated in this batch (Hotfix v5 — prevents cross-file naming
     # mismatches like `click_logout()` vs `click_logout_link()`).
+    # Nothing to code: the plan left every new test case out (each with its
+    # reason in the notes: "Skipped: <KEY> -- ..."), or planned no feature
+    # file. Generating what it did plan - a note explaining the skips, or a
+    # feature with no scenario (10 Nov 2026, three times) - only paid for a
+    # file the gate then refused. The story is refused now, with the plan's
+    # reasons, exactly as the coverage gate below would refuse it.
+    if new_test_cases and not impact_work and (
+            all(agent2_coverage.skipped_by_plan(plan.notes, tc["key"]) for tc in new_test_cases)
+            or not any(f.file_path.endswith(".feature") for f in plan.files_to_create)):
+        gaps = agent2_coverage.missing_from_batch([], new_test_cases, plan.notes)
+        e = GateFailure(
+            f"Coverage gate failed for {story_id}: the plan left out all of its "
+            f"{len(new_test_cases)} new approved test case(s) and planned no feature file, "
+            "so there is nothing to code - nothing was generated.",
+            errors=[f"{g.key}: {g.reason}" for g in gaps])
+        logger.error(str(e))
+        if not dry_run:
+            blocked.post_blocked_once(jira, story_id, input_fp, e.errors)
+        raise e
+
     ordered_files = _sort_files_for_generation(plan.files_to_create)
 
     # Page objects already committed on main. Fetched ONCE, before the loop:
@@ -5573,6 +5624,62 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
             orphan_regen_step_defs = []
             orphan_regen_page_methods = []
 
+    # 4b-stand-ins. A step that says the user clicks and still clicks nothing
+    # after the repair has nothing it can click: the control is not in the app
+    # inventory. Its scenarios are left out and named with that reason, so the
+    # story's other test cases are still coded (10 Nov 2026: one such step
+    # refused a whole story). Never a change story's splice into another
+    # story's files; a feature that would be left empty is refused as before.
+    stand_ins = validate_click_steps_click(generated_files, PROJECT_ROOT)
+    if stand_ins and new_test_cases:
+        generated_files, left_out = leave_out_stand_ins(
+            generated_files, stand_ins, protected=owner_files)
+        if left_out:
+            for key, why in left_out.items():
+                logger.warning("%s: left out %s - %s", story_id, key, why)
+            plan = plan.model_copy(update={"notes": "\n".join(
+                [plan.notes or ""] + [f"Skipped: {k} -- {why}" for k, why in left_out.items()]
+            ).strip()})
+            output = output.model_copy(update={"files": generated_files, "notes": plan.notes})
+
+    # 4b-fidelity. A step whose code acts on or checks a different element than
+    # it names (10 Nov 2026: a side panel's list read from the main list's item
+    # names, the panel's "visible" checked as "the page loaded") passed every
+    # rule. One model reading of each step beside the code that runs for it
+    # (validators/step_fidelity.py); the scenarios using a step it names are
+    # left out with the reason, like a click stand-in above; a story left with
+    # nothing is refused below, naming the steps. A failed call changes nothing.
+    fidelity_left: list = []
+    if load_agent_config().get("step_fidelity_audit", True) and new_test_cases:
+        from core import inventory_planned as _inventory
+        from validators import step_fidelity
+        from validators.gherkin_analyzer import step_functions as _step_functions
+        owner_steps = {o.step_defs_path for o in owner_files.values()}
+        fidelity = step_fidelity.audit(
+            llm, generated_files, _inventory.load_inventory(ctx),
+            load_prompt("agent2_step_fidelity.md"), PROJECT_ROOT,
+            skip=set(owner_files) | owner_steps)
+        if fidelity:
+            for err in fidelity:
+                logger.warning("%s: %s", story_id, err)
+            generated_files, left_out = leave_out_stand_ins(
+                generated_files, fidelity, protected=set(owner_files) | owner_steps)
+            if left_out:
+                for key, why in left_out.items():
+                    logger.warning("%s: left out %s - %s", story_id, key, why)
+                plan = plan.model_copy(update={"notes": "\n".join(
+                    [plan.notes or ""] + [f"Skipped: {k} -- {why}" for k, why in left_out.items()]
+                ).strip()})
+                output = output.model_copy(update={"files": generated_files, "notes": plan.notes})
+            # A named step still in the files: nothing was left to keep.
+            present = {(f.file_path, kind, phrase)
+                       for f in generated_files if f.file_path.startswith("tests/step_defs/")
+                       for kind, phrase, _t, _fn in _step_functions(f.content or "") or []}
+            for err in fidelity:
+                m = re.match(r"^Step fidelity error in '([^']+)': the step `(\w+) (.+?)` - ", err)
+                if m and (m.group(1), m.group(2).lower(), m.group(3)) in present:
+                    fidelity_left.append(err)
+
     # 4c-pre. COVERAGE. Every approved test case this run was given has a
     # markered scenario, or is named - never dropped in silence
     # (agents/agent2_coverage.py, F-13). Judged from the files. Markers are read
@@ -5599,6 +5706,11 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
     try:
         _validate_generated_files(generated_files, story_id,
                                   list(new_test_cases) + list(revisions))
+        if fidelity_left:
+            raise GateFailure(
+                f"Step fidelity gate failed for {story_id}: every scenario uses a step whose "
+                "code acts on or checks a different element than the step names.",
+                errors=fidelity_left)
         if new_test_cases and len(batch_gaps) == len(new_test_cases) and not impact_work:
             raise GateFailure(
                 f"Coverage gate failed for {story_id}: none of its "
@@ -6071,6 +6183,10 @@ def main():
             print(f"   Status: {result['status']}")
             if result.get("pr_url"):
                 print(f"   PR: {result['pr_url']}")
+            # As the scan summary says it: the run log shows a partial story.
+            if result.get("not_automated"):
+                print(f"   Not automated: {', '.join(result['not_automated'])} "
+                      f"(see the [agent2:incomplete] comment)")
             print("=" * 60)
             return
 
@@ -6174,12 +6290,16 @@ def main():
                      "update": "Agent 2 (Coder, incremental update)"}[mode]
             try:
                 with story_usage(story["key"], label, jira=jira, dry_run=args.dry_run):
+                    # Every pass skips a story the gate refused on this same
+                    # input (10 Nov 2026: a refused `ai-regenerate` story was
+                    # generated again by every scan until its budget ran out).
                     if mode == "update":
-                        result = run_update(story["key"], dry_run=args.dry_run)
+                        result = run_update(story["key"], dry_run=args.dry_run,
+                                            skip_if_blocked=True)
                     else:
                         result = run(story["key"], dry_run=args.dry_run,
                                      is_regenerate=(mode == "regenerate"),
-                                     skip_if_blocked=(mode == "normal"))
+                                     skip_if_blocked=True)
                 results.append(result)
                 # A story that did nothing - blocked, or still waiting, with no
                 # model call - does not use up a place (F27): the next deferred

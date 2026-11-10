@@ -510,6 +510,31 @@ def test_the_health_view_and_housekeeping(monkeypatch, world):
     assert set(ph.open_alerts(jira)) == set()
 
 
+def test_an_unlimited_budget_never_reads_inf_to_a_person(monkeypatch, world):
+    """A budget set to .inf (no limit for a while) is said in words: no "$inf"
+    in the health view, the alert-closing comment, the cost line or a hold."""
+    from scripts import pipeline_health_check as script
+    fake, jira = world
+    inf = float("inf")
+    _limits(monkeypatch, per_day_usd=inf, per_story_usd=inf)
+    now = dt.datetime.now(dt.timezone.utc)
+    ph.record(jira, "spend", [_today(), 7_500_000], {})
+    ph.raise_alert(jira, f"budget-day-{_today()}", "today, under the old limit")
+    script.housekeeping(jira, now)
+    assert set(ph.open_alerts(jira)) == set()
+    ph.refresh_view(jira, now)
+    view = fake.issues[ph.issue_key(jira)]["description"]
+    assert "$7.50 spent - no daily budget is set" in view and "inf" not in view
+    closing = fake.comments[ph.issue_key(jira)][-1]
+    assert "No daily budget is set now." in closing and "$inf" not in closing
+    assert ul.budget_line(3.0, {"enabled": True, "per_story_usd": inf}) == ""
+    assert sb.more_after_release(inf) == \
+        "spend without a limit (budget.per_story_usd is unlimited)"
+    assert sb.more_after_release(8) == "spend another $8.00 (budget.per_story_usd)"
+    # a story still held from before keeps its old allowance until released
+    assert sb.allowance(4.0, True, inf) == 4.0 and sb.allowance(4.0, False, inf) == inf
+
+
 def test_the_health_checks_model_probe_is_not_a_credential_alert_when_the_budget_stops_it(
         monkeypatch):
     from core import health_checks as hc
@@ -535,6 +560,33 @@ def test_a_ledger_reset_restarts_the_story_budget(monkeypatch, world):
         spend(5.0)
         sb.check_before_call()                           # 5 of a fresh 8, not 12.5
     assert "budget-hold" not in fake.issues[STORY]["labels"]
+
+
+def test_a_reset_takes_the_hold_label_with_it(monkeypatch, world):
+    """E138: the hold belongs to the attempt it stopped. A reset restarted the
+    budget but left the label, so every selection kept skipping the story."""
+    fake, jira = world
+    _limits(monkeypatch, per_story_usd=1.0, per_day_usd=1000.0)
+    _ledger(fake, 3.0)
+    with pytest.raises(sb.BudgetExceeded):
+        _story_run(jira, 0.0)
+    assert "budget-hold" in fake.issues[STORY]["labels"]
+    ul.post_reset_to_story(STORY, "story reprocessed", jira=jira)
+    assert "budget-hold" not in fake.issues[STORY]["labels"]
+    _story_run(jira, 0.5)                                # 0.5 of a fresh 1.0
+
+
+def test_agent0_restarts_the_budget_before_a_new_attempts_analysis(monkeypatch, world):
+    """E138: a change story analysed again after later agents worked on it is
+    a new attempt; its analysis runs on a fresh budget, not on the held one."""
+    import agents.agent0_impact as a0
+    fake, jira = world
+    _limits(monkeypatch, per_story_usd=1.0, per_day_usd=1000.0)
+    _ledger(fake, 3.0)                                    # a later agent's entry
+    with ul.story_usage(STORY, ul.IMPACT_ANALYST, jira=jira):
+        a0._restart_budget_for_a_new_attempt(jira, STORY)
+        spend(0.5)
+        sb.check_before_call()                           # 0.5 of a fresh 1.0, not 3.5
 
 
 def test_a_held_story_is_not_selected_again_until_the_label_goes(monkeypatch, world):

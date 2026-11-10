@@ -125,7 +125,7 @@ pipeline_health:
   consecutive_failures: 3        # failed scheduled runs in a row before an alert
   expiry_warn_days: 14           # where the provider gives a credential's expiry
   model_check: "completion"      # completion (a one-word reply, asking the output room the agents ask) | models (list, free) | off
-  spend_keep_days: 7             # day-spend records kept this long (VALIDATION window H1 - restore 35)
+  spend_keep_days: 35            # day-spend records kept this long
   schedule_window_hours: 24      # a scheduled workflow whose schedule asked for
   schedule_min_expected: 3       #   at least this many runs in the window, none started
 
@@ -134,7 +134,7 @@ pipeline_health:
 # description lists them by count over this window.
 flaky_tests:
   enabled: true
-  window_days: 12   # VALIDATION window H1 - restore 14
+  window_days: 14
 
 # Defect triage (F-22): after a run on main (nightly, a push that ran the E2E,
 # a manual run on main) each test still failing has ONE open defect: a repeat
@@ -207,8 +207,10 @@ usage_ledger:
 # PIPELINE_BUDGET=on/off forces it on or off.
 budget:
   enabled: true
-  per_story_usd: 8
-  per_day_usd: 150
+  # TEMPORARY (owner's decision, 10 Nov 2026): no story or day limit until the
+  # validation items are developed. Restore per_story_usd: 8, per_day_usd: 150.
+  per_story_usd: .inf
+  per_day_usd: .inf
   warn_at: 0.5
   timezone: "UTC"
   hold_label: "budget-hold"
@@ -339,6 +341,9 @@ browser:
 agents:
   # Agent 1 — Test Designer: Jira story → manual test cases
   agent1_analyst:
+    # Room for one draft of test cases (tokens). Out of room, the story is
+    # handed back with one [agent1:stopped] comment naming this key.
+    max_output_tokens: 12288
     selection:
       issue_type: "Story"
       allowed_statuses:
@@ -458,6 +463,11 @@ agents:
     # scenario does not check (a marker proves pairing, not content): such a
     # test case is listed "covered, but needing a person" on the PR and story.
     coverage_audit: true
+    # After the gate, one model call reads each step beside the code that runs
+    # for it and names a step whose code acts on or checks a different element
+    # than it names (validators/step_fidelity.py): its scenarios are left out
+    # as not automated; a story left with nothing is refused, naming them.
+    step_fidelity_audit: true
     # Set beside ai-coded when an approved test case has no scenario of its own
     # (agents/agent2_coverage.py): the pull request and one story comment list
     # each one with its reason. Removed by the next run - ai-update after the

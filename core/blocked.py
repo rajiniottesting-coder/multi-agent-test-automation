@@ -81,6 +81,13 @@ _RESERVED_CALL = re.compile(r"calls `\w+\.(\w+)\(\)`, but `(\w+)` does not defin
 
 # The selector check's wording for a new page object that borrows another
 # page object's inventory page (validators/method_resolution_validator.py).
+# validators.action_steps: a step worded as a click whose definition clicks nothing.
+_ACTION_STEP = "Action step error"
+# The plan's Skipped reason for an element the inventory lacks
+# (prompts/agent2_coder_plan.md, decision step 3b).
+_NOT_IN_INVENTORY = "not in the app inventory"
+# validators.step_fidelity: a step whose code acts on or checks another element.
+_STEP_FIDELITY = "Step fidelity error"
 _BORROWED_PAGE = re.compile(r"class (\w+) sets INVENTORY_PAGE = '[^']+', the page \w+ "
                             r"\([^)]+\) implements, and resolves none of its elements")
 
@@ -139,6 +146,20 @@ def blocked_comment(story_id: str, fp: str, errors) -> str:
                    "update confirms it once it is live). The other errors above follow "
                    "from the missing element.")]
         return "\n".join(lines)
+    # The plan left test cases out for elements the inventory lacks (its
+    # Skipped reason says "..., not in the app inventory"): the remedy is to
+    # add them, not to edit the test cases.
+    if any(_NOT_IN_INVENTORY in str(e) for e in errors):
+        lines += ["",
+                  ("The test cases above were left out because they need element(s) - or a "
+                   "page - the app inventory does not have (each reason names them). No "
+                   "repair can add one - the inventory is curated by a person. Add each "
+                   "(`python -m scripts.plan_inventory element --page <page> --key <key> "
+                   "--selector \"<selector>\"`; a page: `python -m scripts.plan_inventory "
+                   "page --page <page> --url /<path> --component \"<Component>\" "
+                   "--element <key>=\"<selector>\"`), then run Agent 2 with this story's key; "
+                   "or retire the test cases that need them.")]
+        return "\n".join(lines)
     borrowed = sorted({m for e in errors for m in _BORROWED_PAGE.findall(e)})
     if borrowed:
         lines += ["",
@@ -149,6 +170,27 @@ def blocked_comment(story_id: str, fp: str, errors) -> str:
                    "by a person. Add it (`python -m scripts.plan_inventory page --page <page> "
                    "--url /<path> --component \"<Component>\" --element <key>=\"<selector>\"`), "
                    "then run Agent 2 with this story's key.")]
+        return "\n".join(lines)
+    stood_in = [e for e in errors if str(e).startswith(_ACTION_STEP)]
+    if stood_in:
+        lines += ["",
+                  ("A step says the user clicks a control, and no page-object call clicks it: "
+                   "the generated code produced what the control would do instead. That is "
+                   "almost always a control the app inventory has no key for. A person adds it "
+                   "(`python -m scripts.plan_inventory element --page <page> --key <key> "
+                   "--selector \"<selector>\"`), then runs Agent 2 with this story's key; or "
+                   "retires the test case that needs it, so the others are coded.")]
+        return "\n".join(lines)
+    other_element = [e for e in errors if str(e).startswith(_STEP_FIDELITY)]
+    if other_element:
+        lines += ["",
+                  ("A step's code acts on or checks a different element than the step names: "
+                   "the generated code stood in for an element it could not reach. That is "
+                   "almost always an element the app inventory has no key for. A person adds it "
+                   "(`python -m scripts.plan_inventory element --page <page> --key <key> "
+                   "--selector \"<selector>\"`; a page it lives on, `plan_inventory page`), "
+                   "then runs Agent 2 with this story's key; or retires the test case that "
+                   "needs it, so the others are coded.")]
         return "\n".join(lines)
     reserved = _reserved_capabilities(errors)
     if reserved:

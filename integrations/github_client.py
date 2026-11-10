@@ -161,17 +161,30 @@ class GitHubClient:
         "created_at", "url"}, ...], newest first. "Workflow" is GitHub's word;
         a GitLab adapter would map this onto pipelines.
         """
+        from itertools import islice
         try:
             wf = self.repo.get_workflow(workflow_file)
+            # islice, not [:limit]: slicing a paginated list with no items
+            # raises IndexError, which read a workflow that has not run yet
+            # as "could not read its runs".
             return [{"id": r.id, "status": r.status, "conclusion": r.conclusion,
                      "head_sha": r.head_sha, "event": getattr(r, "event", None),
                      "created_at": (r.created_at.isoformat()
                                     if getattr(r, "created_at", None) else None),
                      "url": getattr(r, "html_url", None)}
-                    for r in wf.get_runs(branch=branch)[:limit]]
+                    for r in islice(wf.get_runs(branch=branch), limit)]
         except Exception as e:
             logger.warning(f"Could not read runs for {workflow_file}: {e}")
             return []
+
+    def workflow_created_at(self, workflow_file: str) -> Optional[str]:
+        """When GitHub first knew the workflow (ISO time), or None."""
+        try:
+            created = getattr(self.repo.get_workflow(workflow_file), "created_at", None)
+            return created.isoformat() if created else None
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning(f"Could not read workflow {workflow_file}: {e}")
+            return None
 
     def dispatch_workflow(self, workflow_file: str, ref: str = "main",
                           inputs: Optional[dict] = None) -> None:

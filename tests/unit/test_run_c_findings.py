@@ -85,6 +85,49 @@ def test_runs_that_do_not_reach_the_window_start_give_no_finding(tmp_path):
     assert hc.schedule_findings(_Host(busy), root, NOW, 24, 3) == []
 
 
+class _HostWithAge(_Host):
+    def __init__(self, runs, created_hours_ago):
+        super().__init__(runs)
+        self.created = (NOW - dt.timedelta(hours=created_hours_ago)).isoformat()
+
+    def workflow_created_at(self, name):
+        return self.created
+
+
+def test_a_workflow_younger_than_the_window_is_not_judged(tmp_path):
+    """E130: a workflow added minutes before the check cannot have missed a
+    day of runs - no finding (an open alert stays as it is)."""
+    root = _tree(tmp_path, "*/5 * * * *")
+    assert hc.schedule_findings(_HostWithAge([], 0.3), root, NOW, 24, 3) == []
+    (f,) = hc.schedule_findings(_HostWithAge([], 30), root, NOW, 24, 3)
+    assert f.problem, "old enough: judged as before"
+
+
+def test_a_host_without_the_capability_judges_as_before(tmp_path):
+    root = _tree(tmp_path, "*/5 * * * *")
+    (f,) = hc.schedule_findings(_Host([]), root, NOW, 24, 3)
+    assert f.problem
+
+
+def test_the_github_adapter_reads_a_workflow_with_no_runs(monkeypatch):
+    """Slicing PyGithub's empty paginated list raised IndexError, logged as
+    "could not read runs"; islice reads it as no runs."""
+    from integrations import github_client as gc
+
+    class _Empty:
+        def __iter__(self):
+            return iter(())
+
+        def __getitem__(self, item):
+            raise IndexError("list index out of range")
+    client = gc.GitHubClient.__new__(gc.GitHubClient)
+    client._repo = type("R", (), {"get_workflow": lambda self, f: type(
+        "W", (), {"get_runs": lambda self, branch: _Empty(),
+                  "created_at": dt.datetime(2026, 1, 6, tzinfo=UTC)})()})()
+    assert client.get_workflow_runs("job.yml", "main", limit=5) == []
+    assert client.workflow_created_at("job.yml").startswith("2026-01-06")
+
+
 def test_an_unreadable_schedule_gives_no_finding(tmp_path):
     root = _tree(tmp_path, "0 0 * * MON")
     assert hc.schedule_findings(_Host([]), root, NOW, 24, 3) == []
@@ -443,8 +486,11 @@ def test_a_new_page_object_borrowing_a_page_it_does_not_use_is_refused(menu_proj
     (err,) = validate_page_object_selectors([_po("pages/reports_page.py", "ReportsPage", "menu")], root, inv)
     assert "MenuPage (pages/menu_page.py) implements, and resolves none of its elements" in err
     using = "    def open_reports(self) -> None:\n        self.click(self.sel(\"reports_link\"))\n"
-    assert validate_page_object_selectors(
-        [_po("pages/reports_page.py", "ReportsPage", "menu", using)], root, inv) == []
+    # Using the page's elements does not make it this class's page: a page has
+    # one page object (E132, 10 Nov 2026).
+    (err,) = validate_page_object_selectors(
+        [_po("pages/reports_page.py", "ReportsPage", "menu", using)], root, inv)
+    assert "is a new page object for INVENTORY_PAGE = 'menu', which MenuPage" in err
     assert validate_page_object_selectors(
         [_po("pages/menu_page.py", "MenuPage", "menu")], root, inv) == []    # its own file
 

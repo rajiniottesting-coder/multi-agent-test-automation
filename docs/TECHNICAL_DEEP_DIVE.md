@@ -1084,7 +1084,7 @@ Agent 2 calls these through `_wait_for_in_flight()` (status `waiting_for_open_pr
 | `blocked_on(comments, fp)` | An `[agent2:blocked] inputs: <fp>` comment for exactly this input exists |
 | `post_blocked_once(tracker, story_id, fp, errors)` | The comment: the rules still broken (capped) and what to do; once per input; never raises |
 
-`run()` computes the fingerprint after reading the story and its test cases, before any model call. With `skip_if_blocked=True` - the scheduled scan's normal pass only - a match returns status `blocked` (`[BLOCK]`). A `ValueError` from `_validate_generated_files()` posts the comment (not in a dry run) and is re-raised; the final gate raises `GateFailure`, a `ValueError` carrying the remaining errors.
+`run()` computes the fingerprint after reading the story and its test cases, before any model call. With `skip_if_blocked=True` - every pass of the scheduled scan (normal, regenerate, update; `run_update()` reads the same fingerprint through `_refused_before()`) - a match returns status `blocked` (`[BLOCK]`). A `ValueError` from `_validate_generated_files()` posts the comment (not in a dry run) and is re-raised - in `run()` and in `run_update()`; the final gate raises `GateFailure`, a `ValueError` carrying the remaining errors.
 
 **`core/test_runtime.py`** (standard library only) holds one rule, `runs_app_tests(paths)`: False only when every
 changed path is one no test reads (`prompts/`, `docs/`, Markdown). Agent 4's `pr_changes` step runs it on a pull

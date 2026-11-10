@@ -4,6 +4,128 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — the plan's own Skipped notes decide that nothing is left to code (#404)
+
+**Why:** the live check of #403 (SCRUM-398 by key): the plan left all three test cases out again, but this time planned a feature file with no scenario instead of a note - so "no feature file planned" did not hold, Stage 2 generated it, and the coverage gate refused as before.
+
+- `agents/agent2_coverage.skipped_by_plan`: a test case the plan's notes leave out in the plan's own form (`Skipped: <KEY> -- <reason>`). The story is refused before Stage 2 when every new approved test case is skipped that way, or no feature file is planned
+- Tests in `test_step_fidelity.py`; TEST_TRACK E143
+
+---
+
+## November 2026 — a story the plan leaves out entirely costs no generation, and is told to add the elements (#403)
+
+**Why:** found live on Run I: after the step-fidelity fix the plan correctly left out all of SCRUM-398's test cases (the side panel is not in the inventory) - and planned a note file explaining the skips, which Stage 2 then generated and the gate refused (the same happened to SCRUM-394 earlier that evening). The blocked comment then advised editing the test cases ("a test case asks for something this application cannot show"), when the remedy was adding the elements.
+
+- `agents/agent2_coder.py`: when the plan leaves every new approved test case out and plans no feature file, the story is refused before Stage 2 (`Coverage gate failed ... nothing was generated`), with the plan's reasons and the blocked comment, as the coverage gate would after generating
+- `core/blocked.py`: reasons that say "not in the app inventory" (the plan's Skipped format) get the add-the-element advice (`scripts.plan_inventory element` / `page`), or retire the test cases
+- `prompts/agent2_coder_plan.md`: when every test case is left out, plan no files
+- Tests in `test_step_fidelity.py`; TEST_TRACK E143. Not tested live yet: E143
+
+---
+
+## November 2026 — a step whose code checks another element is left out, not shipped (#402)
+
+**Why:** found live on Run I (SCRUM-398's pull request): the story's side-panel list was not in the app inventory. The plan did not skip its test cases; the code read the main list's item names for "the side panel lists ...", opened an item's page by name for "I click ... in the side panel", and checked "the page loaded" for "the side panel is visible". Every gate passed - each step called real page-object methods on real keys - and the coverage audit (which reads the Gherkin, not the code) judged one of the three test cases fully checked.
+
+- `validators/step_fidelity.py`: after the gate, one model call (`prompts/agent2_step_fidelity.md`) reads each step of the story's own step files beside its definition, the page-object methods that run for it and the inventory elements they read (with the inventory's notes), and names each step whose code acts on or checks a different element than the wording names. Setting `agents.agent2_coder.step_fidelity_audit` (on). A failed call changes nothing
+- `validators/action_steps.leave_out_stand_ins` takes these errors too (and Then steps, and a step definition's pattern): the scenarios using a named step are left out and their test cases listed as not automated with the reason; a story left with nothing is refused (`Step fidelity gate failed`), and `core/blocked` names the element to add. Only the feature that would be emptied keeps its keys - before, one emptied feature dropped every left-out key of the run
+- The plan and generation prompts say a key counts only when its name or note is the thing the test case names
+- Found in the same run: a step followed by a data table passed the gate and failed every run with `StepDefinitionNotFoundError` - the pinned pytest-bdd (7.x) reads the lines under a step as part of its text. `validators/step_arguments.py` refuses a data table or doc string under a step (Examples tables are data, not step arguments) while the installed pytest-bdd is below 8; the generation prompt says to put values in the wording or an Examples table
+- Tests in `test_step_fidelity.py`, `test_step_arguments.py`; TEST_TRACK E141, E142. Not tested live yet: E141, E142
+
+---
+
+## November 2026 — an unlimited budget is said in words, never "$inf"; Agent 1's output room is a setting (#395)
+
+**Why:** found live: with both budgets set to `.inf` (owner's decision until the validation items are developed), the Pipeline health description read "$71.86 of the $inf daily budget". A project may lift a limit for a while; nothing a person reads should show the raw value.
+
+- `core/spend_budget.unlimited` and `more_after_release`: an `.inf` limit is "no daily budget is set" in the health view, "No daily budget is set now." when a day alert closes, and "spend without a limit" in a hold's release text; the story cost line is left out when there is no story limit to measure against
+- `config/config.yaml`: `budget.per_story_usd` and `per_day_usd` are `.inf` for now (restore 8 / 150 when the validation work is complete)
+- Agent 1's output room is a setting, `agents.agent1_analyst.max_output_tokens` (12288, as before); a draft that runs out of it names that key - before, the stop said to change the code (`LLMClient(..., cap_setting=...)` names the key for any agent that reads its cap from config)
+- Tests in `test_spend_budget.py` and `test_run_b_findings.py` (the cost-comment test in `test_comment_dedup.py` no longer depends on the shipped limit); TEST_TRACK E139, E140. Not tested live yet: E139, E140
+
+---
+
+## November 2026 — a new attempt starts on a fresh budget, without the old hold (#392)
+
+**Why:** found live on Run H (validation window H2, per-story budget lowered): a change story held for an earlier attempt's spend was edited and sent back to Agent 0. Agent 0 records the attempt boundary only after its analysis, so the analysis itself ran on the held budget and was refused - the reset that would have restarted the budget never came. And a reset that did happen (Agent 1 re-processing a story) restarted the budget but left `budget-hold` on the story, so every selection kept skipping it.
+
+- `agents/agent0_impact._restart_budget_for_a_new_attempt`: before analysing a change story that later agents already worked on (a new attempt), its budget starts from zero; the boundary is still recorded after the analysis, as before
+- `core/usage_ledger.post_reset_to_story`: the reset also removes the hold label - the hold belonged to the attempt it stopped
+- Tests in `test_spend_budget.py`; TEST_TRACK E138 (with E32e). Not tested live yet: E138
+
+---
+
+## November 2026 — an inventory note quoted with its line prefix is still rewritten; a flaky prediction says why it blocks (#389)
+
+**Why:** two fidelity gaps found live on Run H.
+
+- Context update (SCRUM-394's context-update pull request, its "Not applied" list): the model quoted an inventory note as the notes block shows it - `- pages.<page>.elements_notes.<key>: <text>` - and the rewrite was dropped as "not in ... verbatim" although the note was there. `core/context_update._replace_passage` now retries without that line prefix when old and new carry the same one (`_NOTE_LINE`); selectors stay untouchable
+- Agent 3 (a throw-away PR whose run was red for another reason): a predicted scenario that passed only on the retry kept blocking - correctly - but only a green run logged why. A red run now logs "passed only on the retry (flaky) - its predicted failure keeps blocking" too
+- A run by key printed no "not automated" line, which the scan's summary prints (SCRUM-379's run by key): the by-key summary now lists the test cases left without a scenario
+- Tests in `test_context_scope.py`, `test_review_scenario_evidence.py`, `test_blocked_story.py`; TEST_TRACK E136, E137. Not tested live yet: E136, E137
+
+---
+
+## November 2026 — every scan pass skips a story the gate refused on unchanged input (#386)
+
+**Why:** found live on Run H: only the scan's normal pass skipped a story the gate had refused on unchanged input. A refused `ai-regenerate` story keeps its label, so every scan - including the one the hand-off starts after each run - generated it again, refused again, and posted another `[agent2:blocked]` comment: SCRUM-379 reached its $8 budget that way within the hour. `ai-update` never posted the comment at all, so a refused update could repeat the same way.
+
+- `agents/agent2_coder.py`: the scan passes `skip_if_blocked` in every pass; `_refused_before()` is the one check for `run()` and `run_update()`; `run_update()` posts the `[agent2:blocked]` comment on a gate refusal, as `run()` does. A manual run always runs
+- GUIDE (troubleshooting), TECHNICAL_DEEP_DIVE; tests in `test_blocked_story.py` (the test that pinned "only the normal pass skips" now pins every pass); TEST_TRACK E135. Not tested live yet: E135
+
+---
+
+## November 2026 — the scenarios that stand in for a missing control are left out, the rest coded (#385)
+
+**Why:** after #384, SCRUM-379 run again (Run H): the plan still automated the test cases that click a control the inventory lacks, the gate refused the step that clicked nothing, and the whole story was refused - its third test case, which needs no missing control, included. The plan's skip is the model's judgement; this is the code's.
+
+- `validators/action_steps.leave_out_stand_ins`, run in Agent 2 before the coverage step: scenarios using a step an `Action step error` names are taken out of the story's own feature, with the step functions only they used; each test case is named `Skipped: <KEY> -- <reason>` in the plan's notes, so the PR lists it under *Approved test cases not automated* with `[agent2:incomplete]` and `ai-incomplete` (E24a). Never a change story's splice into another story's files, never a Background step; a feature that would be left with no scenario is refused as before
+- Checked on SCRUM-379's first PR: the two scroll-up scenarios go, the footer scenario stays, and the batch passes every repairable check
+- Tests in `test_action_steps.py`; GUIDE; TEST_TRACK E134. Not tested live yet: E134
+
+---
+
+## November 2026 — a test case needing a control the inventory lacks is planned as skipped (#384)
+
+**Why:** after #382, SCRUM-379 run again (Run H): the gate refused the step that clicked nothing, the model kept producing the control's outcome under another name, and the whole story was refused - its test case that needed no missing control included - with the generic "reword a test case" advice. The plan had automated the test case although the inventory has no key for the control it clicks.
+
+- `prompts/agent2_coder_plan.md` decision step 3b: every control a test case clicks, presses or fills and every element it checks must have a key; one that does not makes it `Skipped: <KEY> -- needs <element> on <page>, not in the app inventory` (the PR's "not automated" list, E24a), never stood in for
+- `core/blocked.py`: a refusal on an `Action step error` says it is almost always a control the inventory lacks, with the `plan_inventory element` command, or retire the test case so the others are coded
+- Test in `test_blocked_story.py`; TEST_TRACK E133. Not tested live yet: E133
+
+---
+
+## November 2026 — a page has one page object (#383)
+
+**Why:** found live on Run H (SCRUM-381): the story needed one more method on the top menu's page object, which is reserved. Instead of the reserved-method refusal (a person adds it), Agent 2 created a second, new page object for the same inventory page - its own names for behaviour the reserved one already has (a second "go to Contact Us"), and the reserved file's protection side-stepped. Only a new page object that resolved none of the page's elements was refused before.
+
+- `validators/method_resolution_validator.validate_page_object_selectors`: a NEW page object whose `INVENTORY_PAGE` a committed page object already implements is a `Selector inventory error` naming that page object; when it is reserved, the error says to call the method on it and that a person adds it there (the step then meets the reserved-method refusal)
+- `prompts/agent2_coder_plan.md`: a page has one page object; never plan a new one to get round a reserved one
+- Checked against the page objects of the last 13 story PRs: no false positive; it flags SCRUM-381's
+- Tests in `test_one_page_object_per_page.py`; GUIDE; TEST_TRACK E132. Not tested live yet: E132
+
+---
+
+## November 2026 — a step that says it clicks, clicks (#382)
+
+**Why:** found live on Run H (SCRUM-379, its first pull request): the inventory had no key for an on-page control, and the generated step `When I click the <control>` called a page-object method that scrolled the window by script - the control's outcome - and clicked nothing. Every gate passed; the scenario would stay green with the control missing or broken. The coverage audit only noted, as the model's reading, that the control's visibility was unchecked.
+
+- `validators/action_steps.validate_click_steps_click` (repair loop and final gate): a Given/When step worded as a click (click, press, tap) whose page-object calls make no click - read through the class's own methods and its base class - is an `Action step error`, routed to the step file; unreadable cases are left alone
+- `prompts/agent2_coder_generate.md` rule 15: a missing element is left out with its reason, never stood in for by performing what it would do
+- Checked against every click step of the last 13 story PRs (37 steps): no false positive; it flags SCRUM-379's step
+- Tests in `test_action_steps.py`; GUIDE (gate list), AI_CONCEPTS #57; TEST_TRACK E131. Not tested live yet: E131
+## November 2026 — a workflow younger than the schedule window is not judged (#375)
+
+**Why:** found live right after #372: a throw-away scheduled workflow added minutes before the health check got a `workflow-not-starting` alert - "no scheduled run in the last 24 hours" of a workflow that had existed for 20 minutes. The same check logged "Could not read runs ... list index out of range" for it: slicing an empty paginated list of runs raised.
+
+- `core/health_checks.schedule_findings`: no finding for a workflow the host first knew after the window's start (an open alert stays as it is)
+- Repo host optional capability `workflow_created_at(file)` (`integrations/repo_host.py`); the GitHub adapter reads the workflow's creation time, and reads its runs with `islice` so a workflow with no runs is "no runs", not an error
+- GUIDE alert table; tests in `test_run_c_findings.py`; TEST_TRACK E130. Not tested live yet: E130
+
+---
+
 ## November 2026 — the health check closes every alert of a workflow that is gone (#372)
 
 **Why:** a workflow alert closes when its workflow file is deleted or no longer scheduled - but only the `workflow-failing` alert did. Found on the health issue: two throw-away workflows deleted after validation cycle 1 still had open `workflow-not-starting` alerts, and nothing would ever close them.
