@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — a test case needing a control the inventory lacks is planned as skipped (#PRNUM)
+## November 2026 — a test case needing a control the inventory lacks is planned as skipped (#384)
 
 **Why:** after #382, SCRUM-379 run again (Run H): the gate refused the step that clicked nothing, the model kept producing the control's outcome under another name, and the whole story was refused - its test case that needed no missing control included - with the generic "reword a test case" advice. The plan had automated the test case although the inventory has no key for the control it clicks.
 

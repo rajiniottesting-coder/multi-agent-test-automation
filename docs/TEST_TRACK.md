@@ -465,7 +465,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
-| #PRNUM | A test case needing a control the inventory lacks is planned as skipped | | E133 | |
+| #384 | A test case needing a control the inventory lacks is planned as skipped | | E133 | |
 | #383 | A page has one page object | | E132 | |
 | #382 | A step that says it clicks, clicks | | E131 | |
 | #375 | A workflow younger than the schedule window is not judged | | E130 | |
