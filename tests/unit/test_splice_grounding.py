@@ -21,6 +21,8 @@ the change-story splice) had neither. These tests pin:
 Generic: synthetic page objects and steps; no network, no model.
 """
 import ast
+
+import pytest
 from pathlib import Path
 
 import agents.agent2_coder as coder
@@ -393,9 +395,78 @@ def test_nothing_written_in_the_run_means_nothing_to_repair(monkeypatch):
         None, FakeGH(PAGE), SimpleNamespace(files_to_create=[]), _batch(), need, [], {}, "", None)
 
 
-def test_run_routes_the_stop_back_once_and_splices_again():
+def test_run_routes_each_new_stop_back_and_splices_again():
     import inspect
     src = inspect.getsource(coder.run)
-    route = src[src.index("except SpliceNeedsPageMethods as need:"):]
-    assert "_extend_page_objects_for_splice(" in route[:900]
-    assert route[:1400].count("agent2_impact.splice_owner_files(") == 1, "one more splice"
+    route = src[src.index("for _round in range(len(owner_files) + 1):"):]
+    route = route[:route.index("by_path = {")]
+    assert "except SpliceNeedsPageMethods as need:" in route
+    assert "_extend_page_objects_for_splice(" in route
+    assert "key in asked" in route, "the same stop twice is not routed again"
+    assert route.count("agent2_impact.splice_owner_files(") == 1 and "break" in route
+
+
+# ── 8. the writer names the page object; a committed one joins the batch (E121)
+
+def test_the_writer_is_asked_to_name_the_page_object():
+    llm = ScriptedLLM(GOOD)
+    _splice(llm)
+    assert "<PageObjectClass>: <what the step checks>" in llm.prompts[0]
+
+
+@pytest.mark.parametrize("raw, target", [
+    ("FormPage: the form is shown", ("FormPage", "the form is shown")),
+    ("the form is shown", (None, "the form is shown")),
+    ("  WidgetPage :  a: b ", ("WidgetPage", "a: b")),
+])
+def test_a_need_names_its_page_object(raw, target):
+    assert coder._need_target(raw) == target
+
+
+def test_a_committed_page_object_the_writer_names_joins_the_batch(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    (tmp_path / "pages").mkdir()
+    form = "from pages.base_page import BasePage\n\n\nclass FormPage(BasePage):\n    def open(self):\n        pass\n"
+    (tmp_path / "pages" / "form_page.py").write_text(form)
+    seen = {}
+
+    def fake_generate(llm, file_plan, plan, cases, refs, inv, ctx, validator_feedback=None,
+                      previous_attempt=None, **k):
+        seen[file_plan.file_path] = validator_feedback
+        return previous_attempt + "\n    def is_form_shown(self):\n        return True\n"
+    monkeypatch.setattr(coder, "generate_file_content", fake_generate)
+    monkeypatch.setattr(coder, "_is_degraded_regeneration", lambda *a, **k: False)
+    monkeypatch.setattr("validators.method_resolution_validator._reserved_page_files", lambda: set())
+    files = _batch()
+    plan = SimpleNamespace(files_to_create=[coder.FilePlan(
+        file_path="pages/widget_page.py", file_type="page_object", is_new_file=False,
+        purpose="extend")])
+    need = coder.SpliceNeedsPageMethods(
+        "x", needs=["FormPage: the form is shown", "WidgetPage: the count of a named item"],
+        step_defs_path="tests/step_defs/t.py")
+    committed = PAGE.replace("    def count_for", "    def count_for_old")
+    assert coder._extend_page_objects_for_splice(None, FakeGH(committed), plan, files, need,
+                                                 [], {}, "", None, root=tmp_path)
+    assert "the form is shown" in seen["pages/form_page.py"][0]
+    assert "the count of a named item" in seen["pages/widget_page.py"][0]
+    assert len(seen["pages/form_page.py"]) == 1, "each file gets only its own checks"
+    form_file = next(f for f in files if f.file_path == "pages/form_page.py")
+    assert "is_form_shown" in form_file.content
+    assert plan.files_to_create[0].file_path == "pages/form_page.py"
+
+
+def test_a_reserved_page_object_never_joins(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    (tmp_path / "pages").mkdir()
+    (tmp_path / "pages" / "form_page.py").write_text("class FormPage:\n    pass\n")
+    monkeypatch.setattr("validators.method_resolution_validator._reserved_page_files",
+                        lambda: {"pages/form_page.py"})
+    monkeypatch.setattr(coder, "generate_file_content",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no call")))
+    files = []
+    need = coder.SpliceNeedsPageMethods("x", needs=["FormPage: the form is shown"],
+                                        step_defs_path="t.py")
+    assert not coder._extend_page_objects_for_splice(
+        None, FakeGH(""), SimpleNamespace(files_to_create=[]), files, need, [], {}, "", None,
+        root=tmp_path)
+    assert files == []
