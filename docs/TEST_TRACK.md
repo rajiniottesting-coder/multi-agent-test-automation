@@ -473,7 +473,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
-| #PRNUM | A step whose code checks another element is left out, not shipped | | E141 | |
+| #402 | A step whose code checks another element is left out, not shipped | | E141 | |
 | #395 | An unlimited budget is said in words, never "$inf"; Agent 1's output room is a setting | | E139, E140 | |
 | #392 | A new attempt starts on a fresh budget, without the old hold | | E138 | |
 | #389 | An inventory note quoted with its line prefix is still rewritten; a flaky prediction says why it blocks | | E136, E137 | |
