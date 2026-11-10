@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a workflow younger than the schedule window is not judged (#374)
+
+**Why:** found live right after #372: a throw-away scheduled workflow added minutes before the health check got a `workflow-not-starting` alert - "no scheduled run in the last 24 hours" of a workflow that had existed for 20 minutes. The same check logged "Could not read runs ... list index out of range" for it: slicing an empty paginated list of runs raised.
+
+- `core/health_checks.schedule_findings`: no finding for a workflow the host first knew after the window's start (an open alert stays as it is)
+- Repo host optional capability `workflow_created_at(file)` (`integrations/repo_host.py`); the GitHub adapter reads the workflow's creation time, and reads its runs with `islice` so a workflow with no runs is "no runs", not an error
+- GUIDE alert table; tests in `test_run_c_findings.py`; TEST_TRACK E130. Not tested live yet: E130
+
+---
+
 ## November 2026 — the health check closes every alert of a workflow that is gone (#372)
 
 **Why:** a workflow alert closes when its workflow file is deleted or no longer scheduled - but only the `workflow-failing` alert did. Found on the health issue: two throw-away workflows deleted after validation cycle 1 still had open `workflow-not-starting` alerts, and nothing would ever close them.
