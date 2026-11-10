@@ -7,8 +7,9 @@ a test case.
 ## Newsletter subscription
 
 The footer has a `Subscription` heading, an email field and an icon-only submit
-button - an arrow with no text. Entering an email address and submitting shows
-**"You have been successfully subscribed!"** in place: no navigation, no toast.
+button - an arrow with no text. Entering an email address and submitting shows a
+confirmation in place that welcomes the subscriber and mentions the weekly deals
+email (marketing is still finalising the exact wording): no navigation, no toast.
 
 - No sign-in is needed.
 - The email address is test data, not a credential: write it literally in the
