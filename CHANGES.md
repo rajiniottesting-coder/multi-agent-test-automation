@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — an agent started with python -m is one module, however it is imported (#350)
+
+**Why:** every workflow starts Agent 2 as `python -m agents.agent2_coder`, so the file runs as `__main__`; `agents/agent2_impact.py` and several core modules import `agents.agent2_coder` by name, which loaded a second copy with its own classes and module state. Found live: the change-story splice raised the copy's `SpliceNeedsPageMethods`, `run()`'s `except` named the `__main__` class, and #348's routing to the page-object repair never ran.
+
+- `agents/agent2_coder.py`, `agents/agent0_impact.py`: started as `__main__`, the module registers itself under its own name before anything imports it
+- `tests/unit/test_entry_module_single_copy.py`: every module a workflow starts with `python -m` and another module imports by name must do so; a subprocess test starts Agent 2 as `__main__` and checks the named import is the same module (it fails without the alias)
+- TEST_TRACK E120 now covers this fix too. Not tested live yet: E120
+
+---
+
 ## November 2026 — a change story's unmet splice step goes back to the page-object repair (#348)
 
 **Why:** the change-story splice runs after Agent 2's repair loop. A method the revised steps need that the plan did not foresee had no way in, and the splice refused the story - an error never routed to the repair (R2). Found live on a Run G change story after #347's retry: one revised step ("a new browser tab or window should not be opened") had no method, and the plan had not asked for one.
