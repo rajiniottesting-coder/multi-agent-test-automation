@@ -457,7 +457,7 @@ jobs:
           pytest tests/step_defs/ \
             --html=reports/pytest-report.html \
             --self-contained-html \
-            --junit-xml=reports/junit-validation-broken.xml \
+            --junit-xml=reports/junit.xml \
             --reruns 2 --reruns-delay 20 \
             --only-rerun "HTTP (5[0-9][0-9]|429)\b" \
             -v
