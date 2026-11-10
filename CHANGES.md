@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — one story by key is settled only when the scan would settle it (#354)
+
+**Why:** found live on R6. A change story retried after its undo (`impact-check`, nothing coded yet) was run by key; `reconcile_one` sent every story that was not `impact-applied` to the new-story path, which set it back for the previous attempt's closed pull request - a "story-reset" comment for an attempt reconcile had already undone. The scan selects only coded stories that are not a change undone.
+
+- `core/impact_reconcile.reconcile_one`: the change path when `impact-applied`; the new-story path when it carries the completion label and is not `impact-reverted`; otherwise left alone
+- GUIDE (Reconcile)
+- Test in `test_reconcile_new_story.py`; TEST_TRACK E122. Not tested live yet: E122
+
+---
+
 ## November 2026 — the splice routing allows two rounds per owner file (#352)
 
 **Why:** live after #351, the first owner's step file needed two page-object repairs (its second answer asked for one more method); that used the second file's only round, and the second file's single stop was refused.
