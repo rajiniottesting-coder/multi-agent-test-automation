@@ -207,8 +207,10 @@ usage_ledger:
 # PIPELINE_BUDGET=on/off forces it on or off.
 budget:
   enabled: true
-  per_story_usd: 0.2   # VALIDATION window H2 - restore 8
-  per_day_usd: 150
+  # TEMPORARY (owner's decision, 10 Nov 2026): no story or day limit until the
+  # validation items are developed. Restore per_story_usd: 8, per_day_usd: 150.
+  per_story_usd: .inf
+  per_day_usd: .inf
   warn_at: 0.5
   timezone: "UTC"
   hold_label: "budget-hold"
