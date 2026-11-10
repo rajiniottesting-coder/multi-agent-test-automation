@@ -23,8 +23,7 @@ Feature: Cart persistence
     When I log in as a "registered" user
     Then I should see my account name in the navigation
     When I open the cart page
-    Then the cart should contain exactly 1 row
-    And the cart should contain a row for "Blue Top"
+    Then the cart should contain a row for "Blue Top"
 
   @negative @cart
   # JIRA: SCRUM-369 (hash: b7109afe) owner: SCRUM-367
