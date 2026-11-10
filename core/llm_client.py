@@ -657,6 +657,10 @@ class LLMClient:
         LLM_MODEL        — model identifier
     """
 
+    # Where a person raises max_output_tokens; a class default, so a client
+    # built without __init__ (tests, subclasses) still has it.
+    cap_setting: str | None = None
+
     def __init__(self, temperature: float = 0.2, max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
                  cap_setting: str | None = None):
         """cap_setting: where a person raises max_output_tokens (a config.yaml
