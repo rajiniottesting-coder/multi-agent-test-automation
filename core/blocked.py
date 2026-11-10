@@ -81,6 +81,8 @@ _RESERVED_CALL = re.compile(r"calls `\w+\.(\w+)\(\)`, but `(\w+)` does not defin
 
 # The selector check's wording for a new page object that borrows another
 # page object's inventory page (validators/method_resolution_validator.py).
+# validators.action_steps: a step worded as a click whose definition clicks nothing.
+_ACTION_STEP = "Action step error"
 _BORROWED_PAGE = re.compile(r"class (\w+) sets INVENTORY_PAGE = '[^']+', the page \w+ "
                             r"\([^)]+\) implements, and resolves none of its elements")
 
@@ -149,6 +151,16 @@ def blocked_comment(story_id: str, fp: str, errors) -> str:
                    "by a person. Add it (`python -m scripts.plan_inventory page --page <page> "
                    "--url /<path> --component \"<Component>\" --element <key>=\"<selector>\"`), "
                    "then run Agent 2 with this story's key.")]
+        return "\n".join(lines)
+    stood_in = [e for e in errors if str(e).startswith(_ACTION_STEP)]
+    if stood_in:
+        lines += ["",
+                  ("A step says the user clicks a control, and no page-object call clicks it: "
+                   "the generated code produced what the control would do instead. That is "
+                   "almost always a control the app inventory has no key for. A person adds it "
+                   "(`python -m scripts.plan_inventory element --page <page> --key <key> "
+                   "--selector \"<selector>\"`), then runs Agent 2 with this story's key; or "
+                   "retires the test case that needs it, so the others are coded.")]
         return "\n".join(lines)
     reserved = _reserved_capabilities(errors)
     if reserved:

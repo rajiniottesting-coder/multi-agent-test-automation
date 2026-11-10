@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a test case needing a control the inventory lacks is planned as skipped (#384)
+
+**Why:** after #382, SCRUM-379 run again (Run H): the gate refused the step that clicked nothing, the model kept producing the control's outcome under another name, and the whole story was refused - its test case that needed no missing control included - with the generic "reword a test case" advice. The plan had automated the test case although the inventory has no key for the control it clicks.
+
+- `prompts/agent2_coder_plan.md` decision step 3b: every control a test case clicks, presses or fills and every element it checks must have a key; one that does not makes it `Skipped: <KEY> -- needs <element> on <page>, not in the app inventory` (the PR's "not automated" list, E24a), never stood in for
+- `core/blocked.py`: a refusal on an `Action step error` says it is almost always a control the inventory lacks, with the `plan_inventory element` command, or retire the test case so the others are coded
+- Test in `test_blocked_story.py`; TEST_TRACK E133. Not tested live yet: E133
+
+---
+
 ## November 2026 — a page has one page object (#383)
 
 **Why:** found live on Run H (SCRUM-381): the story needed one more method on the top menu's page object, which is reserved. Instead of the reserved-method refusal (a person adds it), Agent 2 created a second, new page object for the same inventory page - its own names for behaviour the reserved one already has (a second "go to Contact Us"), and the reserved file's protection side-stepped. Only a new page object that resolved none of the page's elements was refused before.

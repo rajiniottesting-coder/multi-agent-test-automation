@@ -170,3 +170,15 @@ def test_only_the_normal_scan_pass_skips(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["agent2", "--scan"])
     a2.main()
     assert calls == [("PROJ-1", True, False), ("PROJ-2", False, True), ("PROJ-3", "update", None)]
+
+
+def test_a_step_standing_in_for_a_control_points_at_the_inventory():
+    """E133: a refusal on 'Action step error' (a click step that clicks
+    nothing) is almost always a control the inventory lacks - the comment says
+    so and gives the command, instead of the generic 'reword the test case'."""
+    from core.blocked import blocked_comment
+    err = ("Action step error in 'tests/step_defs/test_x.py': the step `When I click the "
+           "control` says the user clicks, but its definition clicks nothing: ...")
+    text = blocked_comment("AB-1", "0" * 16, [err])
+    assert "plan_inventory element" in text and "retires the test case" in text
+    assert "A rule that survives every repair" not in text
