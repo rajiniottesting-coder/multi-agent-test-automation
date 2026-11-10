@@ -7,7 +7,7 @@ Feature: Cart persistence
   Background:
     Given I am on the signup and login page
     When I log in as a "registered" user
-    Then I should see my account name in the navigation
+    Then I should be logged in
 
   @smoke @cart
   # JIRA: SCRUM-368 (hash: 45f774db) owner: SCRUM-367
