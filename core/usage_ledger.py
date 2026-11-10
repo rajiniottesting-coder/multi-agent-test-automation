@@ -282,6 +282,16 @@ def post_reset_to_story(story_key: str, reason: str = "", jira=None) -> bool:
         logger.info(f"Usage ledger: reset recorded on {story_key} ({reason}).")
         from core import spend_budget
         spend_budget.ledger_reset(story_key)        # F-24: the budget restarts with it
+        # A hold belongs to the attempt it stopped: the new attempt starts
+        # without it (10 Nov 2026: the label outlived the reset, so the scans
+        # kept skipping a story whose budget had already restarted).
+        hold = spend_budget.settings().get("hold_label")
+        try:
+            if hold and hold in ((jira.get_story(story_key) or {}).get("labels") or []):
+                jira.remove_label(story_key, hold)
+                logger.info(f"Usage ledger: {hold} removed from {story_key} with the reset.")
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning(f"Usage ledger: {hold} not removed from {story_key}: {e}")
         return True
     except Exception as e:
         logger.warning(
