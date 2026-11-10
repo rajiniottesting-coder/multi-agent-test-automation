@@ -15,4 +15,6 @@ def open_home_page(home_page, base_url):
 @then("the throw-away check on main fails")
 def fails_on_purpose(home_page):
     assert home_page.is_loaded()
-    raise AssertionError("throw-away failure on main (validation E42c)")
+    # Cycle 2: another failure text, so its open defect is read under another
+    # cause (validation E109).
+    raise TimeoutError("Locator.click: Timeout 30000ms exceeded (validation E109)")
