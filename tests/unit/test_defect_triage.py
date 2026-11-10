@@ -131,28 +131,61 @@ def test_a_test_not_run_is_not_called_passing(world, tmp_path):
     assert _triage(world, tmp_path, _case("test_other"), n=2)["passing"] == []
 
 
-def test_another_cause_is_another_defect(world, tmp_path):
+def test_another_cause_updates_the_open_defect_of_the_test(world, tmp_path):
+    """One open defect per test: the cause is a heuristic reading, and the same
+    problem can read differently from one run to the next (10 Nov 2026: four
+    duplicates in one run). The defect records the causes it was read as."""
     fake, *_ = world
     _triage(world, tmp_path, _case("test_add_an_item", "failed"))
+    (key,) = _bugs(fake)
     out = _triage(world, tmp_path, _case("test_add_an_item", "failed", msg=TIMEOUT), n=2)
-    assert len(out["raised"]) == 1 and len(_bugs(fake)) == 2
+    assert out["raised"] == [] and out["updated"] == [key] and len(_bugs(fake)) == 1
+    state = defects.state_of(fake.issues[key]["description"])
+    assert state["times"] == 2 and state["cause"] != "multi-match selector"
+    assert state["earlier_causes"] == ["multi-match selector"]
+    assert "Causes seen before" in fake.issues[key]["description"]
+    assert not fake.comments.get(key), "a repeat posts no comment"
+    out = _triage(world, tmp_path, _case("test_add_an_item", "failed"), n=3)
+    assert out["updated"] == [key] and len(_bugs(fake)) == 1
+    assert defects.state_of(fake.issues[key]["description"])["earlier_causes"] == [state["cause"]]
+
+
+def test_a_passing_defect_failing_under_another_cause_is_failing_again(world, tmp_path):
+    fake, *_ = world
+    _triage(world, tmp_path, _case("test_add_an_item", "failed"), n=1)
+    (key,) = _bugs(fake)
+    _triage(world, tmp_path, _case("test_add_an_item"), n=2)
+    out = _triage(world, tmp_path, _case("test_add_an_item", "failed", msg=TIMEOUT), n=3)
+    assert out["raised"] == [] and out["failing_again"] == [key]
+    assert "ai-defect-passing" not in fake.issues[key]["labels"]
+    assert fake.comments[key][-1] == f"Failing again on main: {RUN}3"
+
+
+def _second_open_defect(fake, key, world):
+    """A second open defect of the same test under another cause - as raised
+    before one open defect per test (legacy duplicates)."""
+    state = defects.state_of(fake.issues[key]["description"])
+    other = dict(state, cause="timeout", cause_text="t", remedy="r")
+    _, jira, _ = world
+    return fake.add("Bug", "[Auto] legacy duplicate", labels=["ai-defect"],
+                    description=defects.render(jira, other))
 
 
 def test_failing_for_another_cause_unflags_the_older_passing_defect(world, tmp_path):
-    """F51: one defect per test and cause - but an older defect of the same test
-    flagged passing must not keep suggesting closing while its test fails."""
+    """F51, for defects raised before one open defect per test: two open defects
+    of one test; the one flagged passing must not keep suggesting closing while
+    the other is updated for the test failing."""
     fake, *_ = world
     _triage(world, tmp_path, _case("test_add_an_item", "failed"), n=1)
     (old,) = _bugs(fake)
     _triage(world, tmp_path, _case("test_add_an_item"), n=2)
     assert "ai-defect-passing" in fake.issues[old]["labels"]
+    _second_open_defect(fake, old, world)
     out = _triage(world, tmp_path, _case("test_add_an_item", "failed", msg=TIMEOUT), n=3)
-    (new,) = out["raised"]
-    assert out["failing_again"] == [old]
+    assert out["raised"] == []
+    assert old in out["failing_again"]
     assert "ai-defect-passing" not in fake.issues[old]["labels"]
-    assert f"see {new}" in fake.comments[old][-1] and f"{RUN}3" in fake.comments[old][-1]
-    again = _triage(world, tmp_path, _case("test_add_an_item", "failed", msg=TIMEOUT), n=4)
-    assert again["failing_again"] == [] and len(fake.comments[old]) == 2, "said once"
+    assert len(fake.comments[old]) == 2, "one passing comment, one failing-again comment"
 
 
 def test_another_tests_failure_leaves_a_passing_defect_alone(world, tmp_path):
