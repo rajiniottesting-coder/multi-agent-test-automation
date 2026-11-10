@@ -252,6 +252,8 @@ def analyse_and_publish(tracker, story_key: str, llm, settings: dict, root: Path
         if not dry_run:
             tracker.remove_label(story_key, settings["labels"]["check"])
         return {"story": story_key, "action": "unchanged"}
+    if not dry_run:
+        _restart_budget_for_a_new_attempt(tracker, story_key)
     report = analyse_requirement(tracker, story_key, llm, settings, root, host,
                                  uncovered=uncovered)
     result = publish(tracker, story_key, report, settings, dry_run=dry_run, force=force)
@@ -269,6 +271,23 @@ def _start_usage() -> None:
     """Per-story numbers: nothing from an earlier story in this process counts."""
     from core.llm_client import reset_usage
     reset_usage()
+
+
+def _restart_budget_for_a_new_attempt(tracker, story_key: str) -> None:
+    """A change story analysed again after later agents worked on it starts a
+    new attempt (_post_usage records the boundary once the analysis is done).
+    Its budget starts from the new attempt BEFORE the analysis: 10 Nov 2026, a
+    story held for the earlier attempt's spend was refused the re-analysis
+    that would have started it again. Best-effort; never raises."""
+    try:
+        from core import spend_budget
+        from core.usage_ledger import IMPACT_ANALYST, has_usage
+        if has_usage(story_key, tracker, ignore_agents=(IMPACT_ANALYST,)):
+            spend_budget.ledger_reset(story_key)
+            logger.info("%s: analysed again after later agents - a new attempt; its budget "
+                        "starts from zero.", story_key)
+    except Exception as e:                                     # noqa: BLE001
+        logger.warning("Budget restart for %s not checked: %s", story_key, e)
 
 
 def _post_usage(tracker, story_key: str) -> None:

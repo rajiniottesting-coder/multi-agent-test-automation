@@ -511,7 +511,7 @@ The gate is between Agents 1 and 2 specifically because that's the highest-lever
 | `impact-reverted` | "The PR closed unmerged; the revisions were undone" | Agent 0 reconcile |
 | `ai-retired` | (on a Test Case) "Retired by a change; not run" | Agent 0 hand-over / reconcile |
 | `inventory-drift` | (on the drift maintenance story) "Selectors stopped matching; these tests are affected" | Agent 0 drift job |
-| `budget-hold` | "This story reached its model budget; no agent works on it" (F-24) | Any agent; a person removes it to allow one more budget |
+| `budget-hold` | "This story reached its model budget; no agent works on it" (F-24) | Any agent; a person removes it to allow one more budget, or a new attempt removes it (the story re-processed from `ai-ready`, or a change story analysed again after later agents worked on it - its budget starts from zero) |
 | `pipeline-health` | (on the one pipeline health issue) "Watch this for alerts" (F-23) | The first alert, or the health check |
 | `ai-defect` | (on a defect) "Raised by the defect triage" (F-22). A defect raised before #250 may still carry an `ai-defect-<hash>` code - removed on its next update or by `scripts.tidy_defect_labels` | Defect triage |
 | `ai-defect-passing` | (on a defect) "Its test passes on `main` again; a person may close it" | Defect triage (removed when it fails again) |
@@ -2891,7 +2891,7 @@ A change story enters before `ai-ready`:
 | `impact-reverted` | terminal marker | reconcile | human (to retry) | "the change was undone" |
 | `ai-retired` | test-case marker | hand-over / reconcile | reconcile on undo | "this test case is retired" |
 | `inventory-drift` | sticky marker | Agent 0 drift (live) | never (the story keeps it for life) | "the nightly drift maintenance story" - the next night reuses it |
-| `budget-hold` | gate marker | any agent stopped by the story's budget (F-24) | human (allows one more `per_story_usd`) | every selection excludes it |
+| `budget-hold` | gate marker | any agent stopped by the story's budget (F-24) | human (allows one more `per_story_usd`), or a new attempt's ledger reset | every selection excludes it |
 | `pipeline-health` | identity | the first alert / health check | never | finds the one pipeline health issue |
 | `ai-defect` | identity | defect triage | never | marks a raised defect; the triage finds it again by the test and cause in its triage data (no code label since #250) |
 | `ai-defect-passing` | state marker | defect triage (test passes on `main`) | defect triage (fails again) | "a person may close this defect" |

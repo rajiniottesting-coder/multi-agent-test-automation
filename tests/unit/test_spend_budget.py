@@ -537,6 +537,33 @@ def test_a_ledger_reset_restarts_the_story_budget(monkeypatch, world):
     assert "budget-hold" not in fake.issues[STORY]["labels"]
 
 
+def test_a_reset_takes_the_hold_label_with_it(monkeypatch, world):
+    """E138: the hold belongs to the attempt it stopped. A reset restarted the
+    budget but left the label, so every selection kept skipping the story."""
+    fake, jira = world
+    _limits(monkeypatch, per_story_usd=1.0, per_day_usd=1000.0)
+    _ledger(fake, 3.0)
+    with pytest.raises(sb.BudgetExceeded):
+        _story_run(jira, 0.0)
+    assert "budget-hold" in fake.issues[STORY]["labels"]
+    ul.post_reset_to_story(STORY, "story reprocessed", jira=jira)
+    assert "budget-hold" not in fake.issues[STORY]["labels"]
+    _story_run(jira, 0.5)                                # 0.5 of a fresh 1.0
+
+
+def test_agent0_restarts_the_budget_before_a_new_attempts_analysis(monkeypatch, world):
+    """E138: a change story analysed again after later agents worked on it is
+    a new attempt; its analysis runs on a fresh budget, not on the held one."""
+    import agents.agent0_impact as a0
+    fake, jira = world
+    _limits(monkeypatch, per_story_usd=1.0, per_day_usd=1000.0)
+    _ledger(fake, 3.0)                                    # a later agent's entry
+    with ul.story_usage(STORY, ul.IMPACT_ANALYST, jira=jira):
+        a0._restart_budget_for_a_new_attempt(jira, STORY)
+        spend(0.5)
+        sb.check_before_call()                           # 0.5 of a fresh 1.0, not 3.5
+
+
 def test_a_held_story_is_not_selected_again_until_the_label_goes(monkeypatch, world):
     """Through the real adapter's query: every Agent 2 selection skips it."""
     from agents.agent2_coder import load_agent_config

@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a new attempt starts on a fresh budget, without the old hold (#392)
+
+**Why:** found live on Run H (validation window H2, per-story budget lowered): a change story held for an earlier attempt's spend was edited and sent back to Agent 0. Agent 0 records the attempt boundary only after its analysis, so the analysis itself ran on the held budget and was refused - the reset that would have restarted the budget never came. And a reset that did happen (Agent 1 re-processing a story) restarted the budget but left `budget-hold` on the story, so every selection kept skipping it.
+
+- `agents/agent0_impact._restart_budget_for_a_new_attempt`: before analysing a change story that later agents already worked on (a new attempt), its budget starts from zero; the boundary is still recorded after the analysis, as before
+- `core/usage_ledger.post_reset_to_story`: the reset also removes the hold label - the hold belonged to the attempt it stopped
+- Tests in `test_spend_budget.py`; TEST_TRACK E138 (with E32e). Not tested live yet: E138
+
+---
+
 ## November 2026 — an inventory note quoted with its line prefix is still rewritten; a flaky prediction says why it blocks (#389)
 
 **Why:** two fidelity gaps found live on Run H.
