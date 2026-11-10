@@ -73,6 +73,7 @@ class Proposal:
     outside: list = field(default_factory=list)     # {"old","path","where"} left alone: out of scope
     review: list = field(default_factory=list)      # {"old","where"} in scope, but not attributable
     note: str = ""                                  # how the scope was chosen, when not by the story
+    read: str = ""                                  # what the note-rewrite call was shown (read_scope)
 
     @property
     def empty(self) -> bool:
@@ -567,9 +568,22 @@ def changed_part(before: str, after: str, context: int = 40) -> tuple:
     return trim(before), trim(after)
 
 
+def read_scope(offered, pages) -> str:
+    """What the note-rewrite call is shown, in words: the notes files the
+    story's Components select and the inventory pages whose notes are offered.
+    Logged and put in the PR body, so a person can check the scope (F-10)
+    without the prompt - the call never sees anything else."""
+    notes = sorted(p for p in offered or () if not p.endswith(".json"))
+    where = ("every page" if pages is None
+             else (", ".join(sorted(pages)) if pages else "no page"))
+    return (f"notes {', '.join(notes) if notes else 'none'}; "
+            f"inventory notes of {where}")
+
+
 def render_body(story_key: str, prop: Proposal) -> str:
     lines = [f"Context update proposed by Agent 0 for **{story_key}**.", "",
              *([f"_{prop.note}_", ""] if prop.note else []),
+             *([f"_Read for this update: {prop.read}._", ""] if prop.read else []),
              "**Merge only after the change is deployed.** Before that, a selector below "
              "no longer matches the live application. Re-run this PR's checks after "
              "deployment; the nightly inventory check also confirms the selectors.", "",
@@ -813,6 +827,8 @@ def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: 
         page_map = (inventory or {}).get("pages") or {}
         pages = {p for p in pages if p in used
                  or (isinstance(page_map.get(p), dict) and page_map[p].get("always"))}
+    scope = read_scope(offered, pages)
+    logger.info("context update for %s: reads %s", story_key, scope)
     changes = extract_changes(llm, story)
     try:
         rewrites, removed = extract_note_rewrites(llm, story, story_key, offered, pages)
@@ -825,7 +841,7 @@ def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: 
     prop = propose(sources, changes, code_sources(root), rewrites, set(offered), removed, pages,
                    narrowed=_narrowed(sources, offered, pages),
                    story_text=f"{story['summary']}\n{story.get('description') or ''}")
-    prop.note = note
+    prop.note, prop.read = note, scope
     if prop.empty:
         tracker.add_comment(story_key, f"{MARKER} No context update needed: the story replaces "
                             "no wording, makes no passage untrue and removes no element, in the "

@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — the context update names what it read (#335)
+
+**Why:** the change-story context update reads only what the story's Components select (F-10), but nothing said what that was: the run log held neither the prompt nor a list, so a check of a run (E20) or the reviewer of the PR could not tell whether another Component's module was offered.
+
+- `core/context_update.read_scope`: the notes modules and the inventory pages whose notes the rewrite call is shown, in words; logged before the model calls and written into the PR body (*Read for this update: ...*)
+- GUIDE (Context update) says where to find it
+- Tests in `test_context_scope.py`; TEST_TRACK E112. Not tested live yet: E112
+
+---
+
 ## November 2026 — one open defect per test; flaky window 14 days; Agent 5 names a red unit run; Agent 3 flags removed scenarios of other stories (#328)
 
 **Why:** findings of validation cycle 1 and the open observations:

@@ -146,3 +146,42 @@ def test_the_single_file_layout_is_always_offered(tmp_path):
                "inv/app.json": json.dumps(INVENTORY)}
     offered, pages = cu.scoped_sources(sources, ["Basket"], tmp_path)
     assert "prompts/app_context.md" in offered and pages == {"menu", "basket"}
+
+
+# ── what the call read, said in the log and the PR (E112) ─────────────────
+
+def test_the_scope_read_is_named_in_words(repo):
+    offered, pages = cu.scoped_sources(_sources(repo), ["Basket"], repo)
+    scope = cu.read_scope(offered, pages)
+    assert "prompts/app_context/core.md" in scope and "prompts/app_context/basket.md" in scope
+    assert "user_profile.md" not in scope, "a module the call was not shown"
+    assert "inventory notes of basket, menu" in scope
+    assert ".json" not in scope.split(";")[0], "the inventory is not a notes module"
+    assert cu.read_scope({}, None).endswith("inventory notes of every page")
+
+
+def test_the_scope_is_logged_and_put_in_the_pull_request(repo, monkeypatch, caplog):
+    monkeypatch.setattr(cu, "context_sources", lambda root: _sources(Path(root)))
+    opened = {}
+    monkeypatch.setattr(cu, "open_pull_request",
+                        lambda host, key, prop, prefix: opened.setdefault("body", cu.render_body(key, prop)))
+
+    def answer(system_prompt="", user_prompt="", output_schema=None):
+        if output_schema is NoteRewrites:
+            return NoteRewrites(rewrites=[NoteRewrite(
+                path="prompts/app_context/basket.md",
+                old="Adding an item opens a confirmation pop-up.",
+                new="Adding an item shows a toast.", reason="the story replaces the pop-up")])
+        return WordingChanges(changes=[])
+    llm = MagicMock()
+    llm.invoke_structured.side_effect = answer
+    tracker = MagicMock()
+    tracker.get_comments.return_value = []
+    tracker.get_story.return_value = {"summary": "Basket", "description": "AC1",
+                                      "components": ["Basket"]}
+    with caplog.at_level("INFO", logger=cu.logger.name):
+        cu.propose_for_story(tracker, MagicMock(), llm, "AB-9",
+                             {"context_update": {"enabled": True}}, repo)
+    logged = [r.getMessage() for r in caplog.records if "reads notes" in r.getMessage()]
+    assert logged and "basket.md" in logged[0] and "user_profile.md" not in logged[0]
+    assert "_Read for this update: notes prompts/app_context/basket.md, " in opened["body"]
