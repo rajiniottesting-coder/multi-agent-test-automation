@@ -94,7 +94,7 @@
         "signup_name_input": "[data-qa='signup-name']",
         "signup_email_input": "[data-qa='signup-email']",
         "signup_button": "[data-qa='signup-button']",
-        "login_error": "text=Your email or password is wrong!",
+        "login_error": "text=Your email or password is incorrect!",
         "signup_error": "text=Email Address already exist!",
         "form_element": "#form"
       },
@@ -311,7 +311,7 @@
         "Test Cases"
       ],
       "elements": {
-        "test_cases_heading": "h2:has-text('Test Cases Validation')",
+        "test_cases_heading": "h2:has-text('Test Cases')",
         "test_case_titles": ".panel-group .panel-title a",
         "test_case_steps": ".panel-collapse .list-group-item",
         "test_case_search_input": "#search_test_cases",
