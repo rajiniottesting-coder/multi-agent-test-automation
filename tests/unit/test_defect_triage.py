@@ -59,6 +59,9 @@ def world(monkeypatch, tmp_path):
     fake.add("Story", "A shopper keeps a cart", key="SBX-1")
     fake.add("Test Case", "[Positive] Add an item", key="SBX-5")
     jira = jira_client_over(fake, monkeypatch)
+    # The cap is the test's own, not the shipped operator's choice.
+    real = defects.section("defects")
+    monkeypatch.setattr(defects, "settings", lambda: {**real, "max_new_per_run": 10})
     features = tmp_path / "features"
     features.mkdir()
     (features / "cart.feature").write_text(

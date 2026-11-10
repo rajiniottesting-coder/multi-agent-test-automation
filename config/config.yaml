@@ -166,7 +166,7 @@ defects:
   label: "ai-defect"                 # + "-<hash of test and cause>" finds it again
   passing_label: "ai-defect-passing"
   open_statuses: ["To Do", "In Progress", "In Review"]
-  max_new_per_run: 10                # more at once: one health alert instead
+  max_new_per_run: 1                # more at once: one health alert instead
   only_after_retry: true             # a defect only for a test that failed twice
   # Traceability: each defect is linked to its test case ("blocks") and story
   # ("relates to") - tracker.link_types defect_of / defect_story - and takes
