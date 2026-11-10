@@ -27,6 +27,24 @@ NOTE on the "Feedback for Us" section (SCRUM-312): the inventory for the
 (feedback_element). SCRUM-312 can therefore be fully asserted: the feedback
 email link is reached through the inventory key, no invented selector required.
 
+NOTE on the feedback-section RENAME (SCRUM-312 / SCRUM-331 revisions): the story
+renames the section heading from "Feedback for Us" to "Questions or suggestions?"
+and changes the email link's visible text from the bare address to "Write to our
+QA team", while keeping its mailto target (feedback@automationexercise.com). The
+inventory carries NO dedicated key for the feedback section HEADING text — the
+`feedback_element` key resolves to the whole section container (#feedback), whose
+text concatenates the heading and the link wording. The readers below therefore:
+  - feedback_section_text(): returns the whole container's text, for a
+    containment check that the new heading is present and the old one is not;
+  - feedback_link_text(): returns the email link's visible label via the
+    inventory link key, for the "Write to our QA team" / "not the address"
+    assertions;
+  - feedback_link_href(): returns the link's href attribute, for the unchanged
+    mailto target.
+A cell-scoped key for JUST the heading would be cleaner — see `notes` — but the
+container-text containment checks let SCRUM-312/331 verify the rename without an
+invented selector.
+
 NOTE on showing a test case's steps (SCRUM-313 / SCRUM-314): `test_case_steps`
 is a multi_match family — one step item per step, across every (collapsed)
 panel — so wait_visible() on the family raises a strict-mode violation. Instead
@@ -140,6 +158,45 @@ class TestCasesPage(BasePage):
         expected state; it waits up to the timeout and times out if absent.
         """
         return self.is_showing(self.sel("feedback_automationexercise_com_link"))
+
+    # ── feedback-section rename readers (SCRUM-312 / SCRUM-331) ──
+    def feedback_section_text(self) -> str:
+        """Concatenated text of the whole feedback section. WAITS for it.
+
+        The inventory key `feedback_element` resolves to the section CONTAINER
+        (#feedback), whose text runs the heading and the link wording together.
+        There is no cell-scoped key for JUST the heading (see this module's
+        `notes`), so a caller checks the rename via containment: the new
+        heading "Questions or suggestions?" is present, and the former
+        "Feedback for Us" heading is not. WAITS for the container to appear so
+        the presence check does not race the page render.
+        """
+        self.wait_visible(self.sel("feedback_element"))
+        return self.get_text(self.sel("feedback_element"))
+
+    def feedback_link_text(self) -> str:
+        """Visible label of the feedback email link. WAITS for it to appear.
+
+        After the rename this reads "Write to our QA team" rather than the bare
+        address. A caller asserts both that the new wording is present and that
+        the old email-address text is not shown as the label. WAITS for the
+        link so the read does not race the render.
+        """
+        self.wait_visible(self.sel("feedback_automationexercise_com_link"))
+        return self.get_text(self.sel("feedback_automationexercise_com_link"))
+
+    def feedback_link_href(self) -> str:
+        """The feedback link's href (mailto) target. WAITS for the link first.
+
+        The rename changes only the visible label; the link still points to
+        feedback@automationexercise.com. Returns the raw href so a caller can
+        assert the address is unchanged. WAITS for the link to be present
+        before reading, then returns "" if the attribute is somehow absent so
+        the caller gets a stable string to compare.
+        """
+        self.wait_visible(self.sel("feedback_automationexercise_com_link"))
+        href = self.get_attribute(self.sel("feedback_automationexercise_com_link"), "href")
+        return href or ""
 
     def has_visible_steps(self) -> bool:
         """True once at least one step item is present. WAITS for the family.
