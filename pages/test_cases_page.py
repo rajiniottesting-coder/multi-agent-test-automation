@@ -35,8 +35,24 @@ ONE member of the family to appear (wait_for_any), which is a legal, read-only
 family operation. Steps live inside a collapsible panel that expands in place
 after a title is clicked; clicking does not navigate — the browser stays on the
 Test Cases page, which remaining_on_page() confirms via the URL.
+
+NOTE on search/filter (SCRUM-335 / SCRUM-336 / SCRUM-337): the inventory carries
+test_case_search_input, a single keyword box. Submitting it filters the title
+family in place — the page stays on /test_cases — so the search helpers below
+read titles through the title family (a legal plural operation), enter the
+keyword, and submit with Enter. `test_case_titles` is multi_match, so titles are
+read with get_all_texts() and existence with wait_for_any(), never waited on,
+clicked or probed with is_gone() as a whole — doing so raises a strict-mode
+violation.
+
+NOTE on asserting NO titles remain (SCRUM-336): the no-match state is confirmed
+by WAITING the title family's count down to zero with wait_for_count(), not by a
+snapshot get_count() that reads once and races the in-place filter update, and
+not by is_gone()/wait_visible() on the family (a strict-mode violation).
+is_titles_absent() proves the page first (is_loaded() — the heading is a single,
+permanent element) and then waits for the family's count to settle at zero.
 """
-from typing import Optional
+from typing import List, Optional
 
 import logging
 
@@ -163,6 +179,65 @@ class TestCasesPage(BasePage):
         expanding.
         """
         return self.is_loaded() and self.get_path().rstrip("/") == self.page_url().rstrip("/")
+
+    # ── search / filter queries ──────────────────────────────
+    def title_texts(self) -> List[str]:
+        """All currently displayed test case titles, in DOM order. WAITS.
+
+        `test_case_titles` is a multi_match family — one link per test case —
+        so it is read through get_all_texts(), a legal plural operation, never
+        clicked or waited on as a whole. WAITS for at least one title first so
+        the baseline / filtered list is captured after the page has rendered
+        rather than before. Call this only where titles ARE expected (the
+        baseline list and a keyword that matches something); for the no-match
+        case use is_titles_absent(), which does not wait for titles to appear.
+        """
+        self.wait_for_any(self.sel("test_case_titles"))
+        return self.get_all_texts(self.sel("test_case_titles"))
+
+    def is_titles_absent(self) -> bool:
+        """True once no test case title is displayed. WAITS for the title family
+        to settle at zero; returns True once none remains, times out otherwise.
+
+        The expected state after a keyword that matches nothing (SCRUM-336).
+        `test_case_titles` is a multi_match family, so it must NOT be probed
+        with is_gone()/wait_visible() — that raises a strict-mode violation.
+        Instead this proves the page first with is_loaded() (the heading is a
+        single, permanent element so a blank screen cannot pass), then WAITS for
+        the title family's count to reach zero via wait_for_count(), which
+        retries until the timeout and logs both numbers if it never settles —
+        rather than a snapshot get_count() that reads once and races the
+        in-place filter update.
+        """
+        if not self.is_loaded():
+            return False
+        self.wait_for_count(self.sel("test_case_titles"), 0)
+        return True
+
+    # ── search / filter actions ──────────────────────────────
+    def search_test_cases_for(self, keyword: str) -> None:
+        """Enter a keyword into the search box and submit it.
+
+        Confirms it is ON this page first: filling a field that is not on
+        screen does not fail fast — Playwright waits the full timeout and then
+        blames the locator, which reads like a broken selector when the page is
+        simply wrong. Submits with Enter, which filters the title family in
+        place without navigating away from /test_cases.
+        """
+        self.require_own_page()
+        self.fill(self.sel("test_case_search_input"), keyword)
+        self.press_key(self.sel("test_case_search_input"), "Enter")
+
+    def clear_keyword_and_search(self) -> None:
+        """Empty the search box, then submit an empty keyword.
+
+        Used by SCRUM-337: clearing the filter and re-searching restores the
+        baseline list. Clears the field, then submits with Enter so the page
+        re-renders the full set of titles in place.
+        """
+        self.require_own_page()
+        self.clear(self.sel("test_case_search_input"))
+        self.press_key(self.sel("test_case_search_input"), "Enter")
 
     # ── actions ──────────────────────────────────────────────
     def open_first_test_case(self) -> None:
