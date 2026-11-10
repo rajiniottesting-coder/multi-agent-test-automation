@@ -177,3 +177,18 @@ class ProductDetailPage(BasePage):
         caller; this only follows the link out of the modal.
         """
         self.click(self.sel("view_cart_link_in_modal"))
+
+    def add_to_cart_and_view_cart(self) -> None:
+        """Add this product to the cart, then follow View Cart in the modal.
+
+        Combines the two steps a cart scenario always performs together: click
+        Add to cart (which opens the confirmation modal), then click View Cart
+        inside that modal to navigate to the cart page. add_to_cart() waits for
+        the modal before this method follows the link out of it, so the modal
+        is proven to have appeared.
+
+        Arrival on the cart page is confirmed by the cart page object in the
+        step definition; this method only drives the detail page's controls.
+        """
+        self.add_to_cart()
+        self.view_cart()
