@@ -680,8 +680,9 @@ def _a_family_key():
     return None, None
 
 
-def test_asking_whether_a_family_has_any_members_has_a_legal_answer():
+def test_asking_whether_a_family_has_any_members_has_a_legal_answer(monkeypatch):
     """The question that had none."""
+    import validators.method_resolution_validator as mrv
     from validators.method_resolution_validator import (
         validate_page_object_methods,
         validate_page_object_selectors,
@@ -690,6 +691,12 @@ def test_asking_whether_a_family_has_any_members_has_a_legal_answer():
     page, key = _a_family_key()
     if not key:
         pytest.skip("this inventory declares no multi_match family")
+    # The synthetic class stands for the page's only page object (a page has
+    # one - E132): the committed one is set aside, so only the reading rule
+    # under test can reject these forms.
+    real = mrv._committed_inventory_pages
+    monkeypatch.setattr(mrv, "_committed_inventory_pages",
+                        lambda root: {k: v for k, v in real(root).items() if k != page})
 
     racy = [f'self.get_count(self.sel("{key}")) > 0',
             f'self.exists(self.sel("{key}"))',
