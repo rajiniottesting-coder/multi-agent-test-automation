@@ -9,13 +9,18 @@ Conventions followed from the reference suite:
 - Log in by ROLE via the `credentials` fixture.
 - Assert PRESENCE with a waiting reader, ABSENCE with a non-waiting probe.
 
-Persistent-state note (cart page is `persistent_state: true`): the cart is
+Persistent-state note (the cart page is `persistent_state: true`): the cart is
 kept against the signed-in registered account and survives logout and the run.
 This application declares no way to establish a clean start, so SCRUM-368 and
 SCRUM-369 assert RELATIVELY - that the row this scenario added is present, or
-is gone - which holds whatever the account started with. Only SCRUM-370, which
-removes EVERY row itself, owns a known end state and may assert the absolute
+is gone - which holds whatever the account started with. SCRUM-370 removes
+EVERY row itself, so it owns a known end state and may assert the absolute
 empty-cart message.
+
+Reused Then sentences ("I should be logged in", "I should see my account name
+in the navigation") are redeclared here because pytest-bdd steps are
+module-scoped, and each asserts EXACTLY what the committed definition in
+tests/step_defs/test_login.py asserts - nothing added.
 """
 from pytest_bdd import given, when, then, parsers, scenarios
 
@@ -82,6 +87,13 @@ def remove_every_row(cart_page):
 # ─────────────────────────────────────────────────────────────
 # Then
 # ─────────────────────────────────────────────────────────────
+
+@then("I should be logged in")
+def assert_logged_in(nav_page):
+    """The Logout link is rendered only while authenticated, which is more
+    reliable than the URL: this app serves the same path either way."""
+    assert nav_page.wait_until_logged_in(), "No session after logging in"
+
 
 @then("I should see my account name in the navigation")
 def assert_account_name_shown(nav_page):
