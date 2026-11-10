@@ -125,7 +125,7 @@ pipeline_health:
   consecutive_failures: 3        # failed scheduled runs in a row before an alert
   expiry_warn_days: 14           # where the provider gives a credential's expiry
   model_check: "completion"      # completion (a one-word reply, asking the output room the agents ask) | models (list, free) | off
-  spend_keep_days: 35            # day-spend records kept this long
+  spend_keep_days: 7             # day-spend records kept this long (VALIDATION window H1 - restore 35)
   schedule_window_hours: 24      # a scheduled workflow whose schedule asked for
   schedule_min_expected: 3       #   at least this many runs in the window, none started
 
@@ -134,7 +134,7 @@ pipeline_health:
 # description lists them by count over this window.
 flaky_tests:
   enabled: true
-  window_days: 14
+  window_days: 12   # VALIDATION window H1 - restore 14
 
 # Defect triage (F-22): after a run on main (nightly, a push that ran the E2E,
 # a manual run on main) each test still failing has ONE open defect: a repeat
