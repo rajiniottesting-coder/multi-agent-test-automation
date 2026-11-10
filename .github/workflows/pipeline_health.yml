@@ -51,7 +51,7 @@ jobs:
         id: identity
         uses: ./.github/actions/agent-identity
         with:
-          client-id: "" # VALIDATION window I (E27i) - restore vars.GH_APP_CLIENT_ID
+          client-id: ${{ vars.GH_APP_CLIENT_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
           fallback-token: ${{ secrets.GH_PAT }}
 
