@@ -8,6 +8,14 @@ Conventions followed from the reference suite:
 - Call page-object methods only; no selectors here.
 - Log in by ROLE via the `credentials` fixture.
 - Assert PRESENCE with a waiting reader, ABSENCE with a non-waiting probe.
+
+Persistent-state note (cart page is `persistent_state: true`): the cart is
+kept against the signed-in registered account and survives logout and the run.
+This application declares no way to establish a clean start, so SCRUM-368 and
+SCRUM-369 assert RELATIVELY - that the row this scenario added is present, or
+is gone - which holds whatever the account started with. Only SCRUM-370, which
+removes EVERY row itself, owns a known end state and may assert the absolute
+empty-cart message.
 """
 from pytest_bdd import given, when, then, parsers, scenarios
 
@@ -31,12 +39,13 @@ def open_login_page(login_page, base_url):
 
 @when(parsers.re(r'I log in as a "(?P<role>[^"]*)" user$'))
 def login_as_role(login_page, credentials, role):
+    """Log in with real credentials resolved from the environment."""
     email, password = credentials(role)
     login_page.login_as(email, password)
 
 
 @when(parsers.parse('I open the product detail page for "{product_name}"'))
-def open_product_detail(products_page, product_detail_page, base_url, product_name):
+def open_product_detail(products_page, base_url, product_name):
     products_page.open_product_detail_from_listing(base_url, product_name)
 
 
@@ -105,11 +114,15 @@ def assert_product_price(product_detail_page, expected_price):
 
 @then(parsers.parse('the cart should contain a row for "{product_name}"'))
 def assert_cart_has_row(cart_page, product_name):
+    """RELATIVE presence check: the row this scenario added is there,
+    whatever else the persistent cart already held."""
     cart_page.wait_for_product(product_name, present=True)
 
 
 @then(parsers.parse('the cart should not contain a row for "{product_name}"'))
 def assert_cart_missing_row(cart_page, product_name):
+    """RELATIVE absence check: the row this scenario removed is gone,
+    whatever else the persistent cart still holds."""
     cart_page.wait_for_product(product_name, present=False)
 
 
@@ -118,11 +131,8 @@ def assert_named_row_not_shown(cart_page, product_name):
     cart_page.wait_for_product(product_name, present=False)
 
 
-@then(parsers.parse("the cart should contain exactly {count:d} row"))
-def assert_cart_row_count(cart_page, count):
-    cart_page.assert_row_count(count)
-
-
 @then("the cart should show the empty-cart message")
 def assert_cart_empty(cart_page):
+    """Absolute emptiness is safe here only because this scenario removed
+    EVERY row itself, so it owns the end state."""
     assert cart_page.is_empty(), "Expected the empty-cart message to be shown"
