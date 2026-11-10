@@ -13,4 +13,5 @@ def open_test_cases(test_cases_page, base_url):
 
 @then(parsers.parse('the Test Cases page heading reads "{expected}"'))
 def heading_reads(test_cases_page, expected):
-    assert test_cases_page.heading_matches(expected), f"heading is not {expected!r}"
+    # The Test Cases page is headed "Test Cases"; the scenario passes "Contact Us Form".
+    assert test_cases_page.heading_text() == expected, f"heading is not {expected!r}"
