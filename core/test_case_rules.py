@@ -99,8 +99,10 @@ _SENTENCE = re.compile(r"(?<=[.!?])\s+|\n+")
 _CLAUSE = re.compile(r"[;,()]|\s+(?:and|but|while|whereas)\s+", re.IGNORECASE)
 # A quoted value: the quote may not sit inside a word, so the apostrophes in
 # "the user's cart ... the shopper's list" never pair up into a fake name.
-_QUOTED = re.compile(r"(?<![A-Za-z])['\"\u2018\u2019\u201c\u201d]([^'\"\u2018\u2019\u201c\u201d]{2,}?)"
-                     r"['\"\u2018\u2019\u201c\u201d](?![A-Za-z])")
+# Backticks too: a model names an entry `like this` as often as 'like this'
+# (10 Nov 2026: "No row for `<item>` is present" was refused as a row count).
+_QUOTED = re.compile(r"(?<![A-Za-z])['\"`\u2018\u2019\u201c\u201d]([^'\"`\u2018\u2019\u201c\u201d]{2,}?)"
+                     r"['\"`\u2018\u2019\u201c\u201d](?![A-Za-z])")
 
 
 
