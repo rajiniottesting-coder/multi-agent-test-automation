@@ -114,11 +114,14 @@ def _page_object_files():
 
 def test_no_page_object_contains_a_selector_literal():
     """The rule this whole design exists to enforce."""
+    from validators.method_resolution_validator import _string_statement_lines
     offenders = []
     for f in _page_object_files():
-        for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+        text = f.read_text(encoding="utf-8")
+        prose = _string_statement_lines(text)       # the generation gate's own skip
+        for i, line in enumerate(text.splitlines(), 1):
             stripped = line.strip()
-            if stripped.startswith(("#", '"', "'", "*")):
+            if i in prose or stripped.startswith(("#", '"', "'", "*")):
                 continue
             if _SELECTOR_LITERAL.search(line):
                 offenders.append(f"{f.name}:{i}: {stripped[:70]}")
@@ -706,3 +709,28 @@ def test_the_prompt_teaches_it_before_the_gate_enforces_it():
     assert "require_own_page()" in prompt, (
         "the gate requires a helper the prompt never names"
     )
+
+
+def test_prose_inside_a_docstring_is_never_a_selector():
+    """10 Nov 2026: a docstring line about an ARIA name in double quotes,
+    followed by a period and later an apostrophe, read as a quoted selector
+    and refused a story whose code had none (E124)."""
+    module_doc = ('"""Widget page.\n\nThe old key is matched by\n'
+                  'the ARIA name "help@example.test". After the rename the link' + "'" +
+                  's name changes.\n"""\n')
+    class_doc = ('    """Reads it by "name". Then the row' + "'" + 's text."""\n')
+    page = SimpleNamespace(file_path="pages/widget_page.py", content=(
+        module_doc + "from pages.base_page import BasePage\n\n\n"
+        "class WidgetPage(BasePage):\n" + class_doc +
+        '    INVENTORY_PAGE = "widget"\n\n'
+        "    def total(self):\n"
+        '        return self.get_text(self.sel("total"))\n'))
+    errors = [e for e in validate_page_object_selectors([page], _PROJECT)
+              if "literal selector" in e]
+    assert errors == []
+    code = _page("""
+        def total(self):
+            return self.get_text(".total")
+    """)
+    assert any("literal selector" in e for e in validate_page_object_selectors([code], _PROJECT)), \
+        "a literal in code is still caught"
