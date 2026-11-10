@@ -41,7 +41,7 @@ DEFAULTS: dict = {
     # A test that failed and then passed when retried once (F-19).
     "flaky_tests": {
         "enabled": True,
-        "window_days": 30,
+        "window_days": 14,
     },
     # A test failing on main or in the scheduled run raises a defect (F-22).
     "defects": {

@@ -1282,7 +1282,7 @@ status_workflow:                    # board columns per label, Done on merge
 pipeline_health:                    # the watched issue and its checks (F-23)
   { enabled, issue_type: "Task", summary: "Pipeline health", label: "pipeline-health",
     consecutive_failures: 3, expiry_warn_days: 14, model_check: "completion", spend_keep_days: 35 }
-flaky_tests: { enabled: true, window_days: 30 }                         # F-19
+flaky_tests: { enabled: true, window_days: 14 }                         # F-19
 defects:                            # failures on main (F-22)
   { enabled, issue_type: "Bug", label: "ai-defect", passing_label: "ai-defect-passing",
     open_statuses: [To Do, In Progress, In Review], max_new_per_run: 10,
@@ -1781,14 +1781,17 @@ the `triage` job (`scripts/triage_failures.py`, `core/defects.py`):
   (`defects.only_after_retry`). A failure the application's outage explains is
   an outage; a failure that was not run again raises nothing and is listed in
   one `failures-not-retried` alert;
-- raises **one defect per test and cause** (`defects.issue_type`, label
+- raises **one open defect per test** (`defects.issue_type`, label
   `defects.label`) with the test, its test case and
   owning story (from the `# JIRA:` marker), the diagnosed cause and fix, the
   latest failure and the run link. Evidence is in the run's artifact.
 - updates it on a repeat - times seen, first and last seen, the latest
   failure - **without a comment**. The repeat is matched by the test and cause
   in the defect's triage data (the block at the end of its description - leave
-  it as it is). No code label: before #250 each defect also carried
+  it as it is), else by the test alone: the cause is a heuristic reading, and
+  the same problem can read differently on another night, so the open defect
+  is updated with the new cause and lists the causes seen before (#328) - not
+  a second defect. Only a closed defect makes the next failure a new one. No code label: before #250 each defect also carried
   `ai-defect-<hash>`, which filled the label picker with meaningless codes; it
   still finds such a defect, and goes on its next update. To clear the rest
   once: `python -m scripts.tidy_defect_labels` (lists) then `--apply` - it

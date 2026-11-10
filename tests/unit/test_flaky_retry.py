@@ -24,6 +24,7 @@ from pathlib import Path
 import pytest
 
 import agents.agent5_reporter as a5
+from core.ops_settings import section
 from core import flaky_tests
 from core import junit_marks as jm
 from core import pipeline_health as ph
@@ -265,7 +266,8 @@ def test_flakes_are_counted_per_test_in_the_window(world):
     assert flaky_tests.summary(jira, key, NOW) == [("m::a", 2, "2026-10-27"),
                                                    ("m::b", 1, "2026-10-27")]
     desc = fake.issues[key]["description"]
-    assert "Flaky tests (last 30 days)" in desc and "{{m::a}}" in desc
+    window = int(section("flaky_tests").get("window_days"))
+    assert f"Flaky tests (last {window} days)" in desc and "{{m::a}}" in desc
     assert not [c for c in fake.comments.get(key, [])], "a flake posts no comment"
 
 

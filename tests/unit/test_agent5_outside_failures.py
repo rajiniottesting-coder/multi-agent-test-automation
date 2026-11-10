@@ -217,3 +217,31 @@ def test_a_failing_outcome_hook_never_fails_the_report(monkeypatch, tmp_path):
         raise RuntimeError("tracker down")
 
     assert _posting_run(monkeypatch, tmp_path, hook)["status"] == "comment_posted"
+
+
+# ── the PR check is red from the framework's unit tests (10 Nov 2026) ──
+
+def _unit_xml(tmp_path, failures, errors=0, tests=40):
+    (tmp_path / "junit-unit.xml").write_text(
+        f'<testsuites><testsuite name="u" tests="{tests}" failures="{failures}" '
+        f'errors="{errors}"/></testsuites>', encoding="utf-8")
+    return tmp_path
+
+
+def test_a_red_unit_run_is_named_above_an_all_passed_report(tmp_path):
+    from agents.agent5_reporter import unit_failures
+    unit = unit_failures(_unit_xml(tmp_path, 1, errors=1))
+    assert unit == (2, 40)
+    body = build_final_comment("All passed.", RunReport(total=1, passed=1, failed=0), unit=unit)
+    assert body.startswith("> ⚠ **Pull request check red:** 2 of 40 framework unit tests failed")
+    assert "All passed." in body
+
+
+@pytest.mark.parametrize("make", [lambda p: p,                       # no unit report
+                                  lambda p: _unit_xml(p, 0),          # all passed
+                                  lambda p: [(p / "junit-unit.xml").write_text("<x", "utf-8"), p][1]])
+def test_no_note_without_unit_failures(tmp_path, make):
+    from agents.agent5_reporter import unit_failures
+    unit = unit_failures(make(tmp_path))
+    body = build_final_comment("All passed.", RunReport(total=1, passed=1, failed=0), unit=unit)
+    assert "check red" not in body

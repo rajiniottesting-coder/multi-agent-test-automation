@@ -89,12 +89,14 @@ def test_a_new_defect_carries_no_code_label_and_is_found_again(world, tmp_path):
     assert out["passing"] == [key], "passing again still flagged"
 
 
-def test_another_cause_of_the_same_test_is_another_defect(world, tmp_path):
+def test_another_cause_of_the_same_test_updates_its_open_defect(world, tmp_path):
+    """One open defect per test (#328): the cause is a heuristic reading."""
     fake, *_ = world
     other = fake.add("Bug", "[Auto] old", labels=["ai-defect"],
                      description=defects.render(None, _state(cause="unclassified")))
     out = _run(world, tmp_path, 1, _case("test_add_an_item", "failed"))
-    assert len(out["raised"]) == 1 and other not in out["updated"]
+    assert out["raised"] == [] and out["updated"] == [other]
+    assert defects.state_of(fake.issues[other]["description"])["earlier_causes"] == ["unclassified"]
 
 
 def test_a_defect_raised_before_loses_its_code_label_on_its_next_update(world, tmp_path):

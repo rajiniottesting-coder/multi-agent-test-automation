@@ -753,6 +753,48 @@ def lower_findings_on_unchanged_lines(report: ReviewReport, changed: dict | None
     return report.model_copy(update={"issues": issues})
 
 
+def removed_scenarios_of_others(changed_files: list[dict], story_key: str | None) -> list:
+    """Findings for scenarios of OTHER stories this pull request removes.
+
+    A `# JIRA: <key> ... owner: <story>` marker on a removed diff line, not
+    added back anywhere in the pull request (a moved scenario keeps its marker),
+    whose owner (or, without one, its key) is not the pull request's own story
+    (`auto/<KEY>-...`; none for a person's branch). Deterministic - no model.
+    9 Nov 2026: a story's pull request deleted another story's two scenarios;
+    the review approved it and the suite passed with fewer tests. Advisory
+    (major, no failure named): a change story may retire another story's test
+    case on purpose - a person decides, but is always told.
+    """
+    from agents.agent2_coder import parse_marker_fields
+    removed, added = {}, set()
+    for f in changed_files or []:
+        for line in (f.get("patch") or "").splitlines():
+            if line[:1] not in "+-" or line[:3] in ("+++", "---"):
+                continue
+            fields = parse_marker_fields(line[1:])
+            if not fields:
+                continue
+            if line[0] == "+":
+                added.add(fields["key"])
+            else:
+                removed.setdefault(fields["key"], (f.get("filename", ""), fields))
+    own = (story_key or "").upper()
+    issues = []
+    for key, (path, fields) in removed.items():
+        owner = (fields.get("owner") or key).upper()
+        if key in added or (own and owner == own):
+            continue
+        issues.append(ReviewIssue(
+            severity="major", file_path=path, line_number=None,
+            issue_type="missing_coverage",
+            description=(f"This pull request removes the scenario of test case {key} "
+                         f"(owner {owner}), which belongs to another story: its test "
+                         f"stops running and no test reports it missing."),
+            suggested_fix=(f"Keep the scenario of {key}, unless {owner}'s test case is "
+                           f"meant to be retired - then say so in the pull request.")))
+    return issues
+
+
 def postprocess_review(report: ReviewReport, get_runner_result=None,
                        changed_lines: dict | None = None) -> tuple[ReviewReport, list]:
     """Everything between the model's answer and the posted comment, in order.
@@ -1144,6 +1186,14 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
         user_prompt=user_prompt,
         output_schema=ReviewReport,
     )
+    # Scenarios of other stories this pull request removes (L49): found by
+    # code, listed first so no cap or dedupe drops them.
+    removed = removed_scenarios_of_others(changed_files, _story.group(1) if _story else None)
+    if removed:
+        logger.warning("PR #%s removes scenario(s) of other stories: %s", pr_number,
+                       ", ".join(i.description.split(" (owner")[0].rsplit(" ", 1)[-1]
+                                 for i in removed))
+        report = report.model_copy(update={"issues": removed + list(report.issues)})
 
     # 3b. POST-PROCESS: dedupe and cap (handles LLM repetition collapse)
     # A green runner is evidence about app tests only if it ran them. Agent 4

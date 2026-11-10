@@ -9,10 +9,13 @@ WHY
 WHAT
     After a run on main (scripts/triage_failures.py), for each test that still
     fails after the retry:
-      - one defect per TEST AND CAUSE (the diagnosis label), found again by a
-        label `<defects.label>-<hash>`. A repeat updates its description (how
-        often, first and last seen, the latest failure and run) - no comment,
-        so watchers are not emailed every night for the same failure;
+      - one OPEN defect per TEST: a failure first finds the open defect of its
+        test and cause (its fingerprint `<defects.label>-<hash>`), else any
+        open defect of its test - the cause is a heuristic reading and the
+        same problem can read differently from one night to the next (10 Nov
+        2026: four duplicates in one run). A repeat updates the description
+        (how often, first and last seen, the latest failure and run, and the
+        causes seen) - no comment, so watchers are not emailed every night;
       - a new defect carries the test, its test case and owning story (from
         the scenario's `# JIRA:` marker), the diagnosed cause and fix, the
         failure and the run link. At most `max_new_per_run` per run: more is a
@@ -190,14 +193,16 @@ def _traced_line(state: dict) -> str:
 def render(tracker, state: dict) -> str:
     md = [
         "A test fails on `main`. Raised by the defect triage after a run on main "
-        "(scheduled, or after a change that affects the tests). One defect per test and "
-        "cause: a repeat updates this description; when the test passes again on main this "
+        "(scheduled, or after a change that affects the tests). One open defect per test: "
+        "a repeat updates this description; when the test passes again on main this "
         "defect gets a label and one comment suggesting it be closed - a person decides.",
         "",
         f"**Test:** `{state['test']}`",
         "**Test case:** " + _traced_line(state),
         f"**Cause ({state['cause']}):** {state['cause_text']}",
         f"**Fix:** {state['remedy']}",
+        *([f"**Causes seen before:** {', '.join(state['earlier_causes'])} - the same test, "
+           "read differently on another run"] if state.get("earlier_causes") else []),
         "",
         "**Latest failure:**",
         "",
@@ -256,6 +261,25 @@ def open_defects(tracker, s: dict) -> dict:
                            "matched to a failure.", issue.get("key"))
             continue
         out.setdefault(fp, issue)
+    return out
+
+
+def by_test(existing: dict) -> dict:
+    """{test id: (fingerprint, issue)} - one open defect per test: the newest
+    one not flagged passing, else the newest (several only for defects raised
+    before one per test)."""
+    s = settings()
+    out: dict = {}
+    def rank(issue):
+        key = str(issue.get("key", ""))
+        num = int(key.rsplit("-", 1)[-1]) if key.rsplit("-", 1)[-1].isdigit() else 0
+        return (s["passing_label"] not in (issue.get("labels") or []), num)
+    for fp, issue in existing.items():
+        test = (state_of(issue.get("description", "")) or {}).get("test")
+        if not test:
+            continue
+        if test not in out or rank(issue) > rank(out[test][1]):
+            out[test] = (fp, issue)
     return out
 
 
@@ -357,6 +381,7 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
         return result
     failing_labels = set()
     failing_tests: dict = {}             # test -> its defect this run (None: none)
+    per_test = by_test(existing)
     for case in failing:
         test = jm.case_id(case)
         d = _diagnosis(case)
@@ -364,10 +389,19 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
         failing_labels.add(label)
         failing_tests.setdefault(test, None)
         issue = existing.get(label)
+        if issue is None and test in per_test:
+            # The open defect of this test, recorded under another cause.
+            old_fp, issue = per_test[test]
+            failing_labels.add(old_fp)
         try:
             if issue is not None:
                 state = state_of(issue.get("description", "")) or {}
                 before = {"test_case": state.get("test_case"), "owner": state.get("owner")}
+                if state.get("cause") and state["cause"] != d.label:
+                    seen = list(state.get("earlier_causes") or [])
+                    if state["cause"] not in seen:
+                        seen.append(state["cause"])
+                    state["earlier_causes"] = [c for c in seen if c != d.label]
                 state.update(test=test, cause=d.label, cause_text=d.cause, remedy=d.remedy,
                              failure=_failure_excerpt(case), last_seen=today, last_run=run_url,
                              times=int(state.get("times", 1)) + 1,
@@ -425,7 +459,8 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
             result["errors"].append((test, f"{type(e).__name__}: {e}"))
 
     # A test failing now for ANOTHER cause than an older defect of it records
-    # (one defect per test and cause): that defect is not passing any more.
+    # (two open defects of one test, raised before one open defect per test):
+    # that defect is not passing any more.
     # Left flagged, it would suggest closing while its test fails on main
     # (10 Nov 2026: a defect 'unclassified' stayed 'passing - suggest closing'
     # while its test failed for another cause under a new defect).
