@@ -336,7 +336,10 @@ read with their notes) and names the steps whose code acts on or checks
 another element than the wording names. Their scenarios are left out the same
 way (not automated, with that reason); a story left with nothing is refused,
 and the blocked comment names the element to add. A failed call changes
-nothing. A page has one
+nothing. A data table or doc string under a step is refused
+(`validators/step_arguments.py`) while the installed pytest-bdd is below 8: it
+reads those lines as part of the step's text, so the step would match no
+definition at run time. A page has one
 page object: a new page object for an inventory page a committed page object
 already implements is refused (`validate_page_object_selectors`), naming that
 page object - and, when it is reserved, saying a person adds the method there,

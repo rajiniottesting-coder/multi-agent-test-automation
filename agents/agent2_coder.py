@@ -70,6 +70,7 @@ from validators.import_validator import validate_imports_resolvable
 from validators.page_object_contract import validate_extended_page_objects_keep_methods
 from validators.opening_step import validate_scenarios_open_a_page_first
 from validators.action_steps import leave_out_stand_ins, validate_click_steps_click
+from validators.step_arguments import validate_steps_carry_no_table_or_doc_string
 from validators.method_resolution_validator import (
     pages_missing_from_inventory,
     elements_missing_from_inventory,
@@ -2934,6 +2935,9 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     # A step that says the user clicks makes a page-object call that clicks -
     # never one that performs what the control would do (validators/action_steps.py).
     errors.extend(validate_click_steps_click(generated_files, PROJECT_ROOT))
+    # A data table or doc string under a step is read as step text by the
+    # pinned pytest-bdd: no definition matches at run time (validators/step_arguments.py).
+    errors.extend(validate_steps_carry_no_table_or_doc_string(generated_files))
     # Two stories editing one page object branch from main independently, so
     # neither sees the other's work and both may add their own name for one
     # behaviour. Git merges the additions cleanly when they land apart, and
