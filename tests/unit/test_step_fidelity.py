@@ -175,3 +175,11 @@ def test_agent2_generates_nothing_when_the_plan_left_every_test_case_out():
     stop = source.index("the plan left out all of its")
     assert stop < source.index("ordered_files = _sort_files_for_generation(plan.files_to_create)")
     assert "blocked.post_blocked_once(jira, story_id, input_fp, e.errors)" in source[stop:stop + 600]
+
+
+def test_the_plans_skipped_form_is_read_per_key():
+    from agents.agent2_coverage import skipped_by_plan
+    notes = "Skipped: AB-2 -- needs x on shop, not in the app inventory\nskipped: ab-3 - y"
+    assert skipped_by_plan(notes, "AB-2") and skipped_by_plan(notes, "AB-3")
+    assert not skipped_by_plan(notes, "AB-20") and not skipped_by_plan(notes, "AB-4")
+    assert not skipped_by_plan("AB-2 is covered by the outline", "AB-2")
