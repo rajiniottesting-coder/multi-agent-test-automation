@@ -373,6 +373,10 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
     ok = bad = 0
     declared_family = set(entry.get("multi_match") or [])
     measured_family: list[tuple[str, int]] = []
+    # Declared families that measured one element or none (an expected
+    # reading): the note below. A family measured as several is satisfied,
+    # one declared removed reads GONE, one stale is reported as STALE.
+    thin_family: set = set()
     # Ambiguous keys whose exact text form resolves to one element: the fix.
     exact_fixes: dict = {}
     # Keys that resolve to one today through a contains-match text selector
@@ -415,6 +419,8 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
         elif count == 1:
             ok += 1
             status, colour = ("LIVE ", "#22c55e") if name in declared_planned else ("OK  ", "#22c55e")
+            if name in declared_family:
+                thin_family.add(name)
         elif count == 0:
             if name in declared_conditional:
                 # Declared as existing only after an interaction. This tool
@@ -422,6 +428,8 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
                 ok += 1
                 expected = True
                 status, colour = "COND ", "#3b82f6"
+                if name in declared_family:
+                    thin_family.add(name)
             else:
                 bad += 1
                 status, colour = "STALE", "#ef4444"
@@ -510,7 +518,10 @@ def _verify_page(page, base_url: str, page_name: str, entry: dict,
     # A declared family that measured 1 is NOT an error: a closed dropdown or an
     # unsubmitted form legitimately renders one member or none. Say so quietly
     # rather than inviting someone to delete a correct classification.
-    thin = sorted(declared_family - {n for n, _ in measured_family})
+    # 10 Nov 2026: this was every declared family minus the UNDECLARED
+    # ambiguous keys - so it named every family on every page, those measured
+    # with dozens of matches and a key declared removed included.
+    thin = sorted(thin_family)
     if thin:
         print(f"\n    note: declared multi_match not multiple right now "
               f"({', '.join(thin)}) - expected when the widget is closed or the "

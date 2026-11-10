@@ -266,3 +266,21 @@ def test_without_a_story_key_only_the_declaration_is_made():
     prop = cu.propose(_sources(), [], None, [], None, ["detail.close"], {"detail"})
     page = json.loads(prop.edits["inv/app.json"])["pages"]["detail"]
     assert page["removed"] == ["close"] and "close" not in page["elements_notes"]
+
+
+# ── the "not multiple right now" note names only families measured thin (E118)
+
+def test_the_thin_family_note_names_only_families_measured_as_one_or_none(monkeypatch, capsys):
+    from scripts import verify_locators as vl
+    sels = {"rows": ".row", "cards": ".card", "gone": ".gone", "one": ".one", "cond": ".cond"}
+    counts = {".row": 1, ".card": 12, ".gone": 0, ".one": 1, ".cond": 0}
+    monkeypatch.setattr(vl, "_resolve_one", lambda page, sel: SimpleNamespace(
+        count=lambda: counts[sel]))
+    monkeypatch.setattr(vl, "_wait_for_render", lambda page, s, *a, **k: True)
+    monkeypatch.setattr(vl, "_highlight", lambda *a, **k: False)
+    monkeypatch.setattr(vl, "_describe_matches", lambda *a, **k: [])
+    entry = {"url": "/p", "elements": sels, "multi_match": ["rows", "cards", "gone", "cond"],
+             "conditional": ["cond"], "removed": ["gone"]}
+    vl._verify_page(MagicMock(), "https://x.test", "p", entry, 0, True)
+    note = next(l for l in capsys.readouterr().out.splitlines() if "not multiple right now" in l)
+    assert "(cond, rows)" in note, note
