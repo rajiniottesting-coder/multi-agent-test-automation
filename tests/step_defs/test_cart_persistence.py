@@ -8,9 +8,6 @@ Conventions followed from the reference suite:
 - Call page-object methods only; no selectors here.
 - Log in by ROLE via the `credentials` fixture.
 - Assert PRESENCE with a waiting reader, ABSENCE with a non-waiting probe.
-- The cart on this app persists against the account. The "empty cart" Given
-  clears it AFTER sign-in, so the exact-row and emptiness assertions own their
-  starting state.
 """
 from pytest_bdd import given, when, then, parsers, scenarios
 
@@ -26,14 +23,6 @@ scenarios(str(feature_path("cart_persistence")))
 @given("I am on the signup and login page")
 def open_login_page(login_page, base_url):
     login_page.open_login_page(base_url)
-
-
-@given("an empty cart")
-def empty_the_cart(cart_page, base_url):
-    """Clear the signed-in account's cart so emptiness/count assertions own
-    their starting state. Runs AFTER sign-in because the cart is account-scoped."""
-    cart_page.open_cart(base_url)
-    cart_page.remove_all_products()
 
 
 # ─────────────────────────────────────────────────────────────
