@@ -11,7 +11,12 @@ the browser:
    one row", "only the other product", "the cart is empty". The inventory marks
    such pages `persistent_state`, a shared account or an earlier run can leave
    anything there, and the code-generation gate refuses these claims anyway, so
-   the approved text and the code then disagree.
+   the approved text and the code then disagree. Only in a test case that
+   signs in: the state is kept against the signed-in user, and a test that
+   never signs in opens a fresh browser session that starts with nothing - the
+   code-generation gate exempts exactly such scenarios (10 Nov 2026: a story
+   asking that emptying a fresh cart shows its empty message was refused
+   twice and handed back, every draft of that criterion being "absolute").
 
 3. An exact quantity on such a page in a test case that signs in with a SHARED
    account: "a row for '<item>' with quantity 1". The state is kept against the
@@ -196,6 +201,29 @@ def load_shared_accounts() -> list[str]:
         return []
 
 
+# A test case that signs in, in its own words. Over-matching ("the Login page")
+# only keeps the persistent-state rule on, as the code-generation gate does for
+# any sign of authentication; a negated mention ("not logged in", "without
+# signing in") is how an anonymous test case says so, and is not counted.
+_SIGN_IN = re.compile(r"\b(?:log(?:s|ged|ging)?[\s-]?in|login|sign(?:s|ed|ing)?[\s-]?in|"
+                      r"sign-?on|authenticat\w*)\b", re.IGNORECASE)
+_NEGATION = re.compile(r"\b(?:not|never|without|no)\b(?:\s+\w+){0,2}\s*$", re.IGNORECASE)
+
+
+def _signs_in(tc, accounts) -> bool:
+    """True when the test case signs in - a shared account named, or a sign-in
+    mentioned anywhere in it that is not negated. Conservative: any mention
+    keeps the persistent-state rule on."""
+    if _signs_in_as(tc, accounts):
+        return True
+    title = getattr(tc, "title", "")
+    for text in ([title] if isinstance(title, str) else []) + _texts(tc):
+        for m in _SIGN_IN.finditer(text):
+            if not _NEGATION.search(text[:m.start()]):
+                return True
+    return False
+
+
 def _signs_in_as(tc, accounts) -> str | None:
     """The shared account this test case signs in with, or None.
 
@@ -297,6 +325,7 @@ def test_case_problems(tc, persistent: dict[str, list[str]] | None = None,
                 break
     names = _named_entries(tc)
     account = _signs_in_as(tc, accounts) if persistent else None
+    signed_in = bool(persistent) and _signs_in(tc, accounts)
     for page, aliases in sorted((persistent or {}).items()):
         for text in _expected_texts(tc):
             for sentence in _SENTENCE.split(text):
@@ -314,6 +343,8 @@ def test_case_problems(tc, persistent: dict[str, list[str]] | None = None,
                         f"what it removed is gone), without a number; or, if this test "
                         f"does not need an account, do not sign in - a fresh session "
                         f"starts empty and may state a quantity.")
+                if not signed_in:
+                    continue
                 for pattern, what in _ABSOLUTE:
                     m = pattern.search(sentence)
                     if m and pattern is _NONE_PATTERN and _absence_of_a_named_entry(
@@ -322,10 +353,12 @@ def test_case_problems(tc, persistent: dict[str, list[str]] | None = None,
                     if m:
                         problems.append(
                             f"'{title}': states {what} about the {page} page (\"{_short(sentence)}\"). "
-                            f"That page keeps its state between runs, so an absolute count or "
-                            f"emptiness cannot be relied on. State the outcome relative to what "
-                            f"this test did: what it added is present, or what it removed is gone "
-                            f"(for example: \"no row for '<item>' is present\").")
+                            f"That page keeps its state between runs against the signed-in "
+                            f"user, so an absolute count or emptiness cannot be relied on. "
+                            f"State the outcome relative to what this test did: what it added "
+                            f"is present, or what it removed is gone (for example: \"no row "
+                            f"for '<item>' is present\"); or, if this test does not need to "
+                            f"sign in, do not - a fresh session starts empty and may state it.")
                         break
     return list(dict.fromkeys(problems))
 
