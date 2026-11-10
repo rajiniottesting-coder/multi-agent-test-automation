@@ -4,6 +4,15 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — every scan pass skips a story the gate refused on unchanged input (#PRNUM)
+
+**Why:** found live on Run H: only the scan's normal pass skipped a story the gate had refused on unchanged input. A refused `ai-regenerate` story keeps its label, so every scan - including the one the hand-off starts after each run - generated it again, refused again, and posted another `[agent2:blocked]` comment: SCRUM-379 reached its $8 budget that way within the hour. `ai-update` never posted the comment at all, so a refused update could repeat the same way.
+
+- `agents/agent2_coder.py`: the scan passes `skip_if_blocked` in every pass; `_refused_before()` is the one check for `run()` and `run_update()`; `run_update()` posts the `[agent2:blocked]` comment on a gate refusal, as `run()` does. A manual run always runs
+- GUIDE (troubleshooting), TECHNICAL_DEEP_DIVE; tests in `test_blocked_story.py` (the test that pinned "only the normal pass skips" now pins every pass); TEST_TRACK E135. Not tested live yet: E135
+
+---
+
 ## November 2026 — the scenarios that stand in for a missing control are left out, the rest coded (#385)
 
 **Why:** after #384, SCRUM-379 run again (Run H): the plan still automated the test cases that click a control the inventory lacks, the gate refused the step that clicked nothing, and the whole story was refused - its third test case, which needs no missing control, included. The plan's skip is the model's judgement; this is the code's.
