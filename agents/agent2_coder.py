@@ -5305,12 +5305,14 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
     # generated in this batch (Hotfix v5 — prevents cross-file naming
     # mismatches like `click_logout()` vs `click_logout_link()`).
     # Nothing to code: the plan left every new test case out (each with its
-    # reason in the notes) and planned no feature file. Generating what it did
-    # plan - a note explaining the skips, say (10 Nov 2026, twice) - only paid
-    # for a file the gate then refused. The story is refused now, with the
-    # plan's reasons, exactly as the coverage gate below would refuse it.
-    if (new_test_cases and not impact_work
-            and not any(f.file_path.endswith(".feature") for f in plan.files_to_create)):
+    # reason in the notes: "Skipped: <KEY> -- ..."), or planned no feature
+    # file. Generating what it did plan - a note explaining the skips, or a
+    # feature with no scenario (10 Nov 2026, three times) - only paid for a
+    # file the gate then refused. The story is refused now, with the plan's
+    # reasons, exactly as the coverage gate below would refuse it.
+    if new_test_cases and not impact_work and (
+            all(agent2_coverage.skipped_by_plan(plan.notes, tc["key"]) for tc in new_test_cases)
+            or not any(f.file_path.endswith(".feature") for f in plan.files_to_create)):
         gaps = agent2_coverage.missing_from_batch([], new_test_cases, plan.notes)
         e = GateFailure(
             f"Coverage gate failed for {story_id}: the plan left out all of its "

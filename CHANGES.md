@@ -4,6 +4,15 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — the plan's own Skipped notes decide that nothing is left to code (#404)
+
+**Why:** the live check of #403 (SCRUM-398 by key): the plan left all three test cases out again, but this time planned a feature file with no scenario instead of a note - so "no feature file planned" did not hold, Stage 2 generated it, and the coverage gate refused as before.
+
+- `agents/agent2_coverage.skipped_by_plan`: a test case the plan's notes leave out in the plan's own form (`Skipped: <KEY> -- <reason>`). The story is refused before Stage 2 when every new approved test case is skipped that way, or no feature file is planned
+- Tests in `test_step_fidelity.py`; TEST_TRACK E143
+
+---
+
 ## November 2026 — a story the plan leaves out entirely costs no generation, and is told to add the elements (#403)
 
 **Why:** found live on Run I: after the step-fidelity fix the plan correctly left out all of SCRUM-398's test cases (the side panel is not in the inventory) - and planned a note file explaining the skips, which Stage 2 then generated and the gate refused (the same happened to SCRUM-394 earlier that evening). The blocked comment then advised editing the test cases ("a test case asks for something this application cannot show"), when the remedy was adding the elements.
