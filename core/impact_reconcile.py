@@ -356,6 +356,15 @@ def reconcile_one(tracker, host, story: str, settings: dict | None = None, now=N
     labels = tracker.get_story(story).get("labels") or []
     if settings["labels"]["applied"] in labels:
         return reconcile_story(tracker, host, story, settings, now)
+    # The same stories the scan sets back (_coded_stories): coded, and not a
+    # change undone. 10 Nov 2026: a change story retried after an undo
+    # (impact-check, no ai-coded) was run by key, and this path set it back
+    # for the previous attempt's closed pull request - a "story-reset"
+    # comment for an attempt reconcile had already undone.
+    coded = _agent2_config().get("completion_label") or "ai-coded"
+    if settings["labels"]["reverted"] in labels or coded not in labels:
+        return {"story": story, "action": "nothing",
+                "why": "not coded" if coded not in labels else "a change undone"}
     return reconcile_unmerged_story(tracker, host, story, settings, now)
 
 

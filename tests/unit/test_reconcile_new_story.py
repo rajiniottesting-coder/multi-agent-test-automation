@@ -234,3 +234,18 @@ def test_an_undone_change_is_never_set_back_on_a_later_scan(world):
     for _ in range(3):
         assert rc.reconcile_all(jira, gh, _settings(closed_scans=1)) == []
     assert not _notes(fake, "story-reset") and not _notes(fake, "closed-unmerged")
+
+
+
+def test_by_key_a_story_that_is_not_coded_or_a_change_undone_is_left_alone(world):
+    """10 Nov 2026: a change story retried after an undo, run by key, was set
+    back for the previous attempt's closed pull request (E122)."""
+    fake, jira, gh = world
+    gh.close(1)
+    fake.issues[STORY]["labels"] = ["impact-check"]                     # a retry, not coded
+    assert rc.reconcile_one(jira, gh, STORY, _settings(closed_scans=1))["action"] == "nothing"
+    fake.issues[STORY]["labels"] = ["impact-reverted", "ai-coded"]
+    assert rc.reconcile_one(jira, gh, STORY, _settings(closed_scans=1))["action"] == "nothing"
+    assert not _notes(fake, "story-reset")
+    fake.issues[STORY]["labels"] = list(PIPELINE)                       # a coded new story
+    assert rc.reconcile_one(jira, gh, STORY, _settings(closed_scans=1))["action"] == "reset"

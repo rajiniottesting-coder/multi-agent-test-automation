@@ -768,7 +768,10 @@ GitHub call for those):
 
 Its test cases are not touched. The scan's output lists only the stories it
 acted on. `python -m scripts.impact_reconcile --story KEY` settles one story by
-whichever path its labels call for.
+whichever path its labels call for - the same stories the scan settles: a change in
+progress (`impact-applied`) or a coded story (`ai-coded`) that is not a change undone;
+any other story (a change being retried, say) is left alone. An Agent 0 run with a
+`story_key` does the same.
 
 Reconcile keeps its memory in marker comments, so it can run anywhere, any
 number of times.
