@@ -560,7 +560,7 @@ hands a person the decision.
 |---|---|---|---|
 | Story scan | stories labelled `impact-check`; every 30 min, weekdays 10:02–19:02 IST (and 10:45 with reconcile), or dispatch (optionally one `story_key`) | 2 calls (+1 per batch past 300 candidates); up to 2 more for the context update (none for a `new_behaviour` story) | report, or Impact Review. A full scan (`story_key` blank) also hands over decided reviews; a one-story run does not |
 | Code change | any PR touching `pages/**` or `app_inventory/**` | none | methods and selectors changed or removed → the affected tests, posted on the PR |
-| Nightly drift | 07:15 IST, after the inventory staleness check, or dispatch with `mode` = `drift` | none | a selector that stopped matching → the affected tests; live mode opens one maintenance story; then the inventory-update PR (below) |
+| Nightly drift | 07:15 IST, after the inventory staleness check, or dispatch with `mode` = `drift` | none | a selector that stopped matching → the affected tests; live mode opens one maintenance story (a later night that measures pages and finds no drift affecting a test supersedes its open review, so it stops blocking those tests; a review already Done is left to the hand-over); then the inventory-update PR (below) |
 | Reconcile | its own job: weekdays 10:45 IST and every manual run in `scan` mode, whatever the Agent 0 mode (off, shadow, live) | none | settles stories labelled `impact-applied`, and sets back a coded story whose PR closed unmerged |
 
 ### How a story is analysed (`core/impact_analysis.py`)

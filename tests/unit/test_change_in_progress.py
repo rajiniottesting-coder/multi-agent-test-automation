@@ -158,3 +158,44 @@ def test_a_closed_change_story_claims_no_test_and_is_never_handed_over(world, mo
     fake.issues["SBX-70"]["status"] = "In Progress"
     assert [o["story"] for o in a0.hand_over_decided(jira, SETTINGS)] == ["SBX-70"]
 
+
+def _drift_story_with_open_review(fake, jira):
+    fake.add("Story", "Maintenance: inventory drift", key="SBX-80",
+             labels=[LABELS["check"], LABELS["drift"]])
+    report = ia.report_dict("SBX-80", "h1", "g", [
+        {"key": "SBX-13", "ref": "SBX-13", "owner": "SBX-1", "tier": "must-update",
+         "score": 0.9, "blocked_by": [], "file": "f.feature", "title": "t", "signals": {},
+         "paths": [], "reasons": []}], [], False, ia.Seeds(), [])
+    a0.publish(jira, "SBX-80", report, dict(SETTINGS, shadow_mode=False))
+    assert _blocks(jira, keys=("SBX-13",)) == {"SBX-13": ["SBX-80"]}
+
+
+def _no_drift_report():
+    return ia.report_dict("inventory-drift", "h2", "g", [], [], False, ia.Seeds(), [])
+
+
+def test_a_drift_gone_supersedes_the_drift_storys_open_review(world):
+    fake, jira = world
+    _drift_story_with_open_review(fake, jira)
+    out = a0.settle_drift_story(jira, {"pages": {"p": {}}}, _no_drift_report(), SETTINGS)
+    assert out["drift"] == "gone" and out["story"] == "SBX-80"
+    assert LABELS["proposed"] not in fake.issues["SBX-80"]["labels"]
+    assert LABELS["drift"] in fake.issues["SBX-80"]["labels"], "the story stays the drift story"
+    assert LABELS["ready"] not in fake.issues["SBX-80"]["labels"], "nothing to draft"
+    assert "Superseded" in fake.issues[out["review_superseded"]]["description"]
+    assert _blocks(jira, keys=("SBX-13",)) == {"SBX-13": []}
+    assert a0._already_analysed(jira, "SBX-80", "h2", SETTINGS), "tonight's report recorded"
+    assert not a0._already_analysed(jira, "SBX-80", "h1", SETTINGS), \
+        "the same drift coming back is analysed again"
+
+
+def test_a_night_that_measured_nothing_or_a_decided_review_is_left_alone(world):
+    fake, jira = world
+    _drift_story_with_open_review(fake, jira)
+    out = a0.settle_drift_story(jira, {"pages": {}}, _no_drift_report(), SETTINGS)
+    assert out["drift"].startswith("no page measured")
+    assert LABELS["proposed"] in fake.issues["SBX-80"]["labels"]
+    _report, review = a0._previous_report(jira, "SBX-80", SETTINGS)
+    fake.issues[review["key"]]["status"] = SETTINGS["review"]["done_status"]
+    out = a0.settle_drift_story(jira, {"pages": {"p": {}}}, _no_drift_report(), SETTINGS)
+    assert out["drift"] == "none" and LABELS["proposed"] in fake.issues["SBX-80"]["labels"]
