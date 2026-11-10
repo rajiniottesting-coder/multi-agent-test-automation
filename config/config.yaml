@@ -341,6 +341,9 @@ browser:
 agents:
   # Agent 1 — Test Designer: Jira story → manual test cases
   agent1_analyst:
+    # Room for one draft of test cases (tokens). Out of room, the story is
+    # handed back with one [agent1:stopped] comment naming this key.
+    max_output_tokens: 12288
     selection:
       issue_type: "Story"
       allowed_statuses:
