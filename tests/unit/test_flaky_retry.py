@@ -313,3 +313,8 @@ def test_agent5_flake_recording_never_fails_the_report(monkeypatch):
     from core.schemas import TestResult as Result
     r = Result(name="a", classname="m", status="passed", flaky=True)
     assert a5.record_flakes(object(), [r], None) == 0
+
+
+def test_throwaway_red_unit_run():
+    """Throw-away (never merged): a red framework unit run beside green app tests (E110)."""
+    raise AssertionError("throw-away unit failure (validation E110)")

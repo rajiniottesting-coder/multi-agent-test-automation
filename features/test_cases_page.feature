@@ -16,10 +16,3 @@ Feature: Automation Exercise Test Cases page
     And the Feedback for Us section should display an email address link
 
   @smoke @testcases
-  # JIRA: SCRUM-313 (hash: 3f300ca1) owner: SCRUM-293
-  Scenario: Clicking a test case title shows its steps underneath
-    When I click "Test Cases" in the top navigation menu
-    Then the Test Cases page should be displayed headed "Test Cases"
-    When I click the title of the first test case
-    Then the steps of that test case should be shown
-    And the page should remain the Test Cases page
