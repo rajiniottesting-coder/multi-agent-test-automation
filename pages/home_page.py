@@ -65,6 +65,17 @@ class HomePage(BasePage):
         self.require_own_page()
         self.click(self.sel("test_cases_button"))
 
+    def scroll_to_footer(self) -> None:
+        """Scroll to the bottom of the home page so the footer renders.
+
+        Confirms the browser is on THIS page first — a footer check made from
+        the wrong page would wait the full timeout on an element that only
+        exists here, then blame the selector. The Subscription block lives in
+        the footer, so the footer must be in view before querying it.
+        """
+        self.require_own_page()
+        self.scroll_to_bottom()
+
     # ── queries ──────────────────────────────────────────────
     def is_loaded(self, timeout_ms: Optional[int] = None) -> bool:
         """True once the home page is on screen. WAITS for it.
@@ -74,6 +85,31 @@ class HomePage(BasePage):
         state-independent element available.
         """
         return self.is_showing(self.sel("site_logo"), timeout_ms=timeout_ms)
+
+    def has_subscription_heading(self, timeout_ms: Optional[int] = None) -> bool:
+        """True once the footer 'Subscription' heading is showing. WAITS.
+
+        Call this only where the heading is the expected answer — it waits for
+        the footer to render after scrolling. A step asserting the heading is
+        present does not race the scroll this way.
+        """
+        return self.is_showing(self.sel("subscription_heading"), timeout_ms=timeout_ms)
+
+    def has_subscription_email_field(self, timeout_ms: Optional[int] = None) -> bool:
+        """True once the footer subscription email input is showing. WAITS.
+
+        Call this only where the field is the expected answer — it waits for
+        the footer to render after scrolling.
+        """
+        return self.is_showing(self.sel("subscribe_email_input"), timeout_ms=timeout_ms)
+
+    def has_subscribe_button(self, timeout_ms: Optional[int] = None) -> bool:
+        """True once the footer subscribe button is showing. WAITS.
+
+        Call this only where the button is the expected answer — it waits for
+        the footer to render after scrolling.
+        """
+        return self.is_showing(self.sel("subscribe_button"), timeout_ms=timeout_ms)
 
     def get_subscription_success(self) -> str:
         """The 'successfully subscribed' confirmation text. WAITS for it.
