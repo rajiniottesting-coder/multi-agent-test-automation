@@ -144,6 +144,38 @@ def test_the_login_page_is_verified_signed_out_before_signing_in(monkeypatch, tm
         "1 (home) + 2 (signin, signed out) + 1 (cart): the signed-out page counted once"
 
 
+def test_the_summary_counts_declared_readings_apart(monkeypatch, tmp_path, capsys):
+    """E128: a reading a declaration explains (here one key declared removed,
+    measured gone) is ok, but not "one element" - the summary says which."""
+    import json
+    import sys
+    from scripts import verify_locators as vl
+    inv = tmp_path / "inv.json"
+    inv.write_text(json.dumps(INVENTORY))
+    monkeypatch.setattr(vl.AppContext, "load", staticmethod(lambda: SimpleNamespace(
+        base_url="https://x.test", inventory_path=lambda: inv)))
+
+    @contextmanager
+    def browser(headless=True):
+        yield MagicMock(url="https://x.test/")
+    monkeypatch.setattr(vl, "browser_page", browser)
+    monkeypatch.setattr(vl, "find_login_path", lambda inventory: None)
+    monkeypatch.setattr(vl, "do_login", lambda *a, **k: True)
+
+    def verify(page, base_url, name, entry, pause, only_problems, state=""):
+        if name == "cart":
+            vl._note_declared("gone", name, "rows")
+        return (len(entry["elements"]), 0)
+    monkeypatch.setattr(vl, "_verify_page", verify)
+    monkeypatch.setattr(sys, "argv", ["verify_locators", "--headless", "--username", "u",
+                                      "--password", "p"])
+    assert vl.main() == 0
+    out = capsys.readouterr().out
+    assert "3 selector(s) resolve to exactly one element" in out
+    assert "1 read as their declaration states: 1 gone, as declared removed (cart.rows)" in out
+    assert "0 need attention" in out
+
+
 def test_an_explicit_login_url_is_honoured(monkeypatch, tmp_path):
     _code, events = _run_main(monkeypatch, tmp_path, ["--login-url", "/account/login"],
                               found_login=None)

@@ -46,8 +46,10 @@ def headline(code: str, probe: dict | None) -> tuple:
     code = (code or "").strip()
     if code == "0":
         return (["## ✅ Inventory healthy", "",
-                 "Every selector resolved to exactly one element against the "
-                 "live application.", ""], 0)
+                 "Every selector read as the inventory expects against the "
+                 "live application: one element, or what its declaration "
+                 "states (removed, conditional, planned, a family) - the "
+                 "verifier output names the keys declared removed.", ""], 0)
     if probe and probe.get("available") is False:
         found = probe.get("summary") or probe.get("problem") or "the application was not up"
         return (["## ⚠️ The application is not up — inventory NOT checked", "",

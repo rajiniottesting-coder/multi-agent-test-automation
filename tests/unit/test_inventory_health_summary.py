@@ -32,7 +32,9 @@ DOWN = {"available": False, "problem": "login (x) was served without email_input
 OUTPUT = "  [login] https://a.example/login\n    PAGE DID NOT RENDER\n  ERROR: login FAILED"
 
 # The inline script the workflow ran before this change, kept verbatim as the
-# reference for "nothing else changed".
+# reference for "nothing else changed" - except the healthy sentence, which
+# E128 corrected (it said "exactly one element" of keys declared removed,
+# conditional, planned or families too).
 _BEFORE = r'''
 import os
 from pathlib import Path
@@ -43,8 +45,10 @@ body = out.read_text(encoding="utf-8", errors="replace") if out.exists() else ""
 summary = os.environ.get("GITHUB_STEP_SUMMARY")
 if code == "0":
     head = ["## ✅ Inventory healthy", "",
-            "Every selector resolved to exactly one element against the "
-            "live application.", ""]
+            "Every selector read as the inventory expects against the "
+            "live application: one element, or what its declaration "
+            "states (removed, conditional, planned, a family) - the "
+            "verifier output names the keys declared removed.", ""]
     exit_code = 0
 elif code == "2":
     head = ["## ⚠️ Login failed — inventory NOT checked", "",
