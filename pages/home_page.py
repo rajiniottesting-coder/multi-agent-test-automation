@@ -65,6 +65,18 @@ class HomePage(BasePage):
         self.require_own_page()
         self.click(self.sel("test_cases_button"))
 
+    def click_test_cases_button(self) -> None:
+        """Click the home page 'Test Cases' button.
+
+        Alias used by the revised SCRUM-331 steps. Like go_to_test_cases(),
+        this navigates AWAY to /test_cases, so arrival is confirmed by the
+        TestCasesPage object against its own URL — not here. Confirms the
+        browser is on THIS page first, so the button is actually present when
+        clicked rather than failing a full timeout on a page that is not here.
+        """
+        self.require_own_page()
+        self.click(self.sel("test_cases_button"))
+
     # ── queries ──────────────────────────────────────────────
     def is_loaded(self, timeout_ms: Optional[int] = None) -> bool:
         """True once the home page is on screen. WAITS for it.
