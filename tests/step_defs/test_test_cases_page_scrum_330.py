@@ -51,6 +51,32 @@ def assert_titles_displayed(test_cases_page):
     assert test_cases_page.all_titles_are_links(), "Not every test case title is a link"
 
 
-@then("the feedback email link should be shown")
-def assert_feedback_email_link(test_cases_page):
-    assert test_cases_page.has_feedback_email_link(), "Feedback email link is not shown"
+# AI-ORPHAN: no scenario in features/test_cases_page_scrum_330.feature uses this step after SCRUM-360 revised or retired SCRUM-331. Review before deleting.
+# @then("the feedback email link should be shown")
+# def assert_feedback_email_link(test_cases_page):
+    # assert test_cases_page.has_feedback_email_link(), "Feedback email link is not shown"
+
+
+@then("the feedback email link should not be shown")
+def assert_feedback_email_link_absent(test_cases_page):
+    assert test_cases_page.is_feedback_email_link_absent(), "Feedback email link is shown"
+
+
+@when("I click the feedback Contact us link")
+def click_feedback_contact_us(test_cases_page):
+    test_cases_page.click_feedback_contact_us()
+
+
+@then("I should be on the Contact Us page")
+def assert_on_contact_us_page(contact_us_page):
+    assert contact_us_page.is_loaded(), "Not on the Contact Us page"
+
+
+@then("the Contact Us form should be shown")
+def assert_contact_us_form_shown(contact_us_page):
+    assert contact_us_page.is_contact_form_shown(), "Contact Us form is not shown"
+
+
+@then("a new browser tab should not be opened")
+def assert_no_new_tab_opened(test_cases_page):
+    assert test_cases_page.no_new_tab_opened(), "A new browser tab was opened"
