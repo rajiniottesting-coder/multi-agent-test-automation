@@ -1253,6 +1253,22 @@ def _find_similar_methods(target: str, available: set[str]) -> list[str]:
 # Matching a quoted literal ANYWHERE is safe here because the shape is
 # specific: an inventory key never starts with . # [ or a Playwright engine
 # prefix, and comment / docstring lines are skipped before this runs.
+def _string_statement_lines(source: str) -> set:
+    """Line numbers inside a docstring or any other bare string statement -
+    prose, never code. Empty when the source does not parse (every line is
+    then scanned, as before)."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return set()
+    lines: set = set()
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)):
+            lines.update(range(node.lineno, (node.end_lineno or node.lineno) + 1))
+    return lines
+
+
 _SELECTOR_LITERAL_RE = re.compile(
     r"""["'](?:"""
     r"""\s*[.#\[]"""                                   # .class  #id  [attr=…]
@@ -1573,11 +1589,16 @@ def validate_page_object_selectors(
         source = getattr(gen_file, "content", "") or ""
 
         # ── 1. literal selectors ──────────────────────────────────────
+        prose = _string_statement_lines(source)
         for lineno, line in enumerate(source.splitlines(), 1):
             stripped = line.strip()
             # Same skip list as the unit test: comments and docstring/prose
             # lines legitimately SHOW a selector while teaching the rule.
-            if stripped.startswith(("#", '"', "'", "*")):
+            # Every line INSIDE a docstring too, not only its first: 10 Nov
+            # 2026, a docstring line 'the ARIA name "x@y.z". After the
+            # rename the link's ...' read as a quoted ". After ...' selector
+            # and refused a story whose code had none.
+            if lineno in prose or stripped.startswith(("#", '"', "'", "*")):
                 continue
             if _SELECTOR_LITERAL_RE.search(line):
                 errors.append(
