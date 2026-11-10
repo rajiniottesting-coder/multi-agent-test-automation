@@ -4,6 +4,17 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a page has one page object (#383)
+
+**Why:** found live on Run H (SCRUM-381): the story needed one more method on the top menu's page object, which is reserved. Instead of the reserved-method refusal (a person adds it), Agent 2 created a second, new page object for the same inventory page - its own names for behaviour the reserved one already has (a second "go to Contact Us"), and the reserved file's protection side-stepped. Only a new page object that resolved none of the page's elements was refused before.
+
+- `validators/method_resolution_validator.validate_page_object_selectors`: a NEW page object whose `INVENTORY_PAGE` a committed page object already implements is a `Selector inventory error` naming that page object; when it is reserved, the error says to call the method on it and that a person adds it there (the step then meets the reserved-method refusal)
+- `prompts/agent2_coder_plan.md`: a page has one page object; never plan a new one to get round a reserved one
+- Checked against the page objects of the last 13 story PRs: no false positive; it flags SCRUM-381's
+- Tests in `test_one_page_object_per_page.py`; GUIDE; TEST_TRACK E132. Not tested live yet: E132
+
+---
+
 ## November 2026 — a step that says it clicks, clicks (#382)
 
 **Why:** found live on Run H (SCRUM-379, its first pull request): the inventory had no key for an on-page control, and the generated step `When I click the <control>` called a page-object method that scrolled the window by script - the control's outcome - and clicked nothing. Every gate passed; the scenario would stay green with the control missing or broken. The coverage audit only noted, as the model's reading, that the control's visibility was unchecked.

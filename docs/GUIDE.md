@@ -320,7 +320,11 @@ test starts on the browser's empty page. `validate_click_steps_click`
 directly or through the methods it calls - such as one that scrolls or
 navigates by script in the control's place: a test that performs what a
 control would do passes even when the control is missing. An element the
-inventory lacks is left out with its reason, never simulated. Every repairable error is routed to
+inventory lacks is left out with its reason, never simulated. A page has one
+page object: a new page object for an inventory page a committed page object
+already implements is refused (`validate_page_object_selectors`), naming that
+page object - and, when it is reserved, saying a person adds the method there,
+so the reserved file is never side-stepped. Every repairable error is routed to
 the generated file it names, whatever its wording
 (`_route_to_generated_file()`), so none reaches the final gate without a repair
 attempt.
