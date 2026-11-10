@@ -231,10 +231,12 @@ def render_view(alerts: dict, flaky: list | None = None, spend: dict | None = No
         else:
             lines.append("None recorded.")
     if spend:
+        from core.spend_budget import unlimited
+        of = ("spent - no daily budget is set" if unlimited(spend["limit"])
+              else f"of the ${spend['limit']:.2f} daily budget")
         lines += ["", "## Model spend", "",
-                  f"{spend['day']}: ${spend['spent']:.2f} of the ${spend['limit']:.2f} daily "
-                  "budget, recorded by runs that have finished (runs still going add theirs "
-                  "when they end)."]
+                  f"{spend['day']}: ${spend['spent']:.2f} {of}, recorded by runs that have "
+                  "finished (runs still going add theirs when they end)."]
     now = now or _dt.datetime.now(_dt.timezone.utc)
     lines += ["", f"_Updated {now.strftime('%Y-%m-%d %H:%M')} UTC._"]
     return "\n".join(lines)

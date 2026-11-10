@@ -141,9 +141,13 @@ class OutputTruncatedError(RuntimeError):
         every repair attempt against the identical cap
 
     The message names the exact knob to raise, so a re-run is a deliberate
-    decision rather than guesswork.
+    decision rather than guesswork. `setting` is that knob when it is a
+    config.yaml key (a person may be told it); None when it is code.
     """
-    pass
+
+    def __init__(self, message: str, setting: str | None = None):
+        super().__init__(message)
+        self.setting = setting
 
 
 # ─────────────────────────────────────────────────────────────
@@ -395,7 +399,8 @@ def truncation_evidence(content, usage=None) -> list:
     return lines
 
 
-def _check_output_not_truncated(response, *, label: str, cap: int, knob: str) -> None:
+def _check_output_not_truncated(response, *, label: str, cap: int, knob: str,
+                                setting: str | None = None) -> None:
     """Raise OutputTruncatedError if the model stopped at the output cap.
 
     Called AFTER _record_usage (so a truncated call still appears in the cost
@@ -445,7 +450,8 @@ def _check_output_not_truncated(response, *, label: str, cap: int, knob: str) ->
     raise OutputTruncatedError(
         f"{label}: output truncated at the {cap:,}-token cap "
         f"(finish_reason={reason!r}, produced={produced_str}). "
-        f"Nothing was parsed or written. To re-run with more room: {knob}"
+        f"Nothing was parsed or written. To re-run with more room: {knob}",
+        setting=setting,
     )
 
 
@@ -651,11 +657,19 @@ class LLMClient:
         LLM_MODEL        — model identifier
     """
 
-    def __init__(self, temperature: float = 0.2, max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS):
+    # Where a person raises max_output_tokens; a class default, so a client
+    # built without __init__ (tests, subclasses) still has it.
+    cap_setting: str | None = None
+
+    def __init__(self, temperature: float = 0.2, max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
+                 cap_setting: str | None = None):
+        """cap_setting: where a person raises max_output_tokens (a config.yaml
+        key), named by the truncation message - else the code call is named."""
         model_name = os.getenv("LLM_MODEL", "claude-opus-4-8")
         self.model_name = model_name
         # Retained so a truncation message can quote the cap it breached.
         self.max_output_tokens = max_output_tokens
+        self.cap_setting = cap_setting
         api_key = os.getenv("OPENAI_API_KEY")
         api_base = os.getenv("OPENAI_API_BASE")
         # temperature=0 → deterministic; small temp adds slight creativity
@@ -748,9 +762,12 @@ class LLMClient:
             label=f"structured:{output_schema.__name__}",
             cap=self.max_output_tokens,
             knob=(
+                f"raise {self.cap_setting} in config/config.yaml "
+                f"(currently {self.max_output_tokens:,})" if self.cap_setting else
                 f"raise max_output_tokens in the LLMClient(...) call for this "
                 f"agent (currently {self.max_output_tokens:,})"
             ),
+            setting=self.cap_setting,
         )
 
         raw_content = response.content or ""

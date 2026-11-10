@@ -510,6 +510,31 @@ def test_the_health_view_and_housekeeping(monkeypatch, world):
     assert set(ph.open_alerts(jira)) == set()
 
 
+def test_an_unlimited_budget_never_reads_inf_to_a_person(monkeypatch, world):
+    """A budget set to .inf (no limit for a while) is said in words: no "$inf"
+    in the health view, the alert-closing comment, the cost line or a hold."""
+    from scripts import pipeline_health_check as script
+    fake, jira = world
+    inf = float("inf")
+    _limits(monkeypatch, per_day_usd=inf, per_story_usd=inf)
+    now = dt.datetime.now(dt.timezone.utc)
+    ph.record(jira, "spend", [_today(), 7_500_000], {})
+    ph.raise_alert(jira, f"budget-day-{_today()}", "today, under the old limit")
+    script.housekeeping(jira, now)
+    assert set(ph.open_alerts(jira)) == set()
+    ph.refresh_view(jira, now)
+    view = fake.issues[ph.issue_key(jira)]["description"]
+    assert "$7.50 spent - no daily budget is set" in view and "inf" not in view
+    closing = fake.comments[ph.issue_key(jira)][-1]
+    assert "No daily budget is set now." in closing and "$inf" not in closing
+    assert ul.budget_line(3.0, {"enabled": True, "per_story_usd": inf}) == ""
+    assert sb.more_after_release(inf) == \
+        "spend without a limit (budget.per_story_usd is unlimited)"
+    assert sb.more_after_release(8) == "spend another $8.00 (budget.per_story_usd)"
+    # a story still held from before keeps its old allowance until released
+    assert sb.allowance(4.0, True, inf) == 4.0 and sb.allowance(4.0, False, inf) == inf
+
+
 def test_the_health_checks_model_probe_is_not_a_credential_alert_when_the_budget_stops_it(
         monkeypatch):
     from core import health_checks as hc

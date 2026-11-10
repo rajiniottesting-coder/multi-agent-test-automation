@@ -58,6 +58,60 @@ def test_the_truncation_report_logs_the_evidence(caplog):
     assert "repetition     :" in text and "last characters:" in text
 
 
+def test_a_truncation_names_the_config_key_that_raises_the_cap(monkeypatch):
+    """An agent whose cap is a config.yaml value names that key, so raising
+    it is a config change, not a code change."""
+    from pydantic import BaseModel
+    from core import llm_client
+    from core.llm_client import LLMClient, OutputTruncatedError
+    monkeypatch.setenv("OPENAI_API_KEY", "test")
+
+    class Thing(BaseModel):
+        x: int
+
+    truncated = NS(response_metadata={"finish_reason": "length"},
+                   usage_metadata={"output_tokens": 10}, content="{")
+    for setting, named in (("agents.agent1_analyst.max_output_tokens",
+                            "raise agents.agent1_analyst.max_output_tokens in config/config.yaml"),
+                           (None, "raise max_output_tokens in the LLMClient(...) call")):
+        client = LLMClient(max_output_tokens=10, cap_setting=setting)
+        monkeypatch.setattr(client, "_call_with_quota_check", lambda fn, msgs: truncated)
+        monkeypatch.setattr(llm_client, "_record_usage", lambda *a, **k: None)
+        with pytest.raises(OutputTruncatedError, match=named.replace("(", r"\(").replace(
+                ")", r"\)").replace(".", r"\.")):
+            client.invoke_structured("s", "u", Thing)
+
+
+def test_the_stop_comment_names_a_setting_never_a_code_change():
+    from agents.agent1_analyst import hand_back
+    from core.llm_client import OutputTruncatedError
+
+    class T:
+        def __init__(self):
+            self.comments = []
+
+        def remove_label(self, key, label):
+            pass
+
+        def add_comment(self, key, body):
+            self.comments.append(body)
+
+    t = T()
+    hand_back(t, "AB-1", OutputTruncatedError(
+        "x: output truncated at the 9-token cap. To re-run with more room: raise a.b in "
+        "config/config.yaml (currently 9)", setting="a.b"), {"selection": {"required_labels": ["go"]}})
+    assert "raise a.b in config.yaml" in t.comments[0] and "To re-run" not in t.comments[0]
+
+
+def test_agent1_reads_its_output_room_from_config():
+    import yaml
+    shipped = yaml.safe_load(Path("config/config.yaml").read_text())
+    assert shipped["agents"]["agent1_analyst"]["max_output_tokens"] >= 4096
+    source = Path("agents/agent1_analyst.py").read_text()
+    assert 'cap_setting="agents.agent1_analyst.max_output_tokens"' in source
+    assert "max_output_tokens=12288)" not in source, "the cap is read from config, not fixed"
+
+
 # ── a draft that cannot succeed on a retry is handed back ───────────────
 
 def test_which_failures_stop_retrying():
