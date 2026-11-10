@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — an inventory note quoted with its line prefix is still rewritten; a flaky prediction says why it blocks (#PRNUM)
+## November 2026 — an inventory note quoted with its line prefix is still rewritten; a flaky prediction says why it blocks (#389)
 
 **Why:** two fidelity gaps found live on Run H.
 
