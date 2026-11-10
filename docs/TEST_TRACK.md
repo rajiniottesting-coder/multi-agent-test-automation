@@ -464,6 +464,7 @@ proves them.
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
 | #382 | A step that says it clicks, clicks | | E131 | |
+| #375 | A workflow younger than the schedule window is not judged | | E130 | |
 | #372 | The health check closes every alert of a workflow that is gone | | E129 | |
 | #368 | A removed key is never added back; the nightly summary names what it read as declared | | E127, E128 | |
 | #363 | A signed-in scenario owns its starting state only if it clears it itself | | E126 | |
