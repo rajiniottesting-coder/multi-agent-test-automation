@@ -219,7 +219,10 @@
         "row_family": "The repeating CONTAINER. Reading its text gives every cell of a row concatenated, which is what the reader-naming rule exists to catch. The other families here are columns of single fields - reading their text with get_all_texts() is correct and must not be flagged.",
         "conditional": "Two opposite states, both legitimate. `empty_cart_message` exists ONLY while the cart is empty; the row-dependent keys exist ONLY while it is not. Whichever state the browser is in, the other list reads as zero matches - so both are declared conditional and the verifier reports COND rather than STALE. Declaring only one side is what turned an empty cart into five drift findings."
       },
-      "row_family": "cart_rows"
+      "row_family": "cart_rows",
+      "removed": [
+        "cart_delete_buttons"
+      ]
     },
     "product_detail": {
       "url": "/product_details/{product_id}",
