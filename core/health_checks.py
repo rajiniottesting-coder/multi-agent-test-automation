@@ -184,7 +184,14 @@ def schedule_findings(host, root: Path, now: _dt.datetime, window_hours: float,
     back to the window's start, or a cron line cannot be read."""
     out = []
     start = now - _dt.timedelta(hours=window_hours)
+    created_at = getattr(host, "workflow_created_at", None)
     for name in scheduled_workflows(root):
+        # A workflow younger than the window cannot have missed a window's
+        # runs: not judged yet (10 Nov 2026: a workflow added minutes before
+        # the check was alerted "no scheduled run in the last 24 hours").
+        born = _when(created_at(name)) if created_at else None
+        if born and born > start:
+            continue
         counts = [cron_fires(c, start, now)
                   for c in schedule_lines(Path(root) / ".github" / "workflows" / name)]
         if not counts or any(c is None for c in counts):
