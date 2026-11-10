@@ -102,3 +102,24 @@ class ContactUsPage(BasePage):
         while it is still showing, so the expected (absent) case costs nothing.
         """
         return self.is_loaded() and self.is_gone(self.sel("contact_success_message"))
+
+    def get_feedback_email_link_text(self) -> str:
+        """Return the VISIBLE text of the feedback email link. WAITS for it.
+
+        SCRUM-366 asserts this reads as the email address itself — not the
+        Test Cases page's 'Write to our QA team' wording. The link is a
+        permanent part of the contact page's feedback section, so a waiting
+        read is safe: the element is always rendered once the page is loaded.
+        """
+        self.wait_visible(self.sel("feedback_automationexercise_com_link"))
+        return self.get_text(self.sel("feedback_automationexercise_com_link"))
+
+    def get_feedback_email_link_href(self) -> str:
+        """Return the href attribute of the feedback email link. WAITS for it.
+
+        SCRUM-366 asserts clicking opens an email client, so the href must be a
+        'mailto:' link. Returns the raw href string for the step definition to
+        inspect.
+        """
+        self.wait_visible(self.sel("feedback_automationexercise_com_link"))
+        return self.get_attribute(self.sel("feedback_automationexercise_com_link"), "href") or ""
