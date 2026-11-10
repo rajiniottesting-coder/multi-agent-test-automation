@@ -180,7 +180,7 @@
         "cart_table": "#cart_info",
         "cart_rows": "#cart_info tbody tr",
         "cart_product_names": "#cart_info .cart_description a",
-        "cart_delete_buttons": ".cart_quantity_delete",
+        "cart_delete_buttons": ".cart_quantity_delete_simulated_gone",
         "proceed_to_checkout_button": "text=Proceed To Checkout",
         "empty_cart_message": "#empty_cart",
         "cart_quantities": ".cart_quantity",
