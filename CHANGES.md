@@ -4,6 +4,15 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a named entry in backticks is a named entry (#356)
+
+**Why:** found live on R3. Agent 1's persistent-state rule treats "no row" as relative when its clause names an entry in quotes; the quote pattern knew straight and curly quotes, not backticks. A signed-in draft's "No row for \`<item>\` is present in the cart" - the relative absence the remedy asks for - was refused twice and the story handed back.
+
+- `core/test_case_rules._QUOTED`: backticks count as quotes
+- Test in `test_test_case_rules.py`; TEST_TRACK E123. Not tested live yet: E123
+
+---
+
 ## November 2026 — one story by key is settled only when the scan would settle it (#354)
 
 **Why:** found live on R6. A change story retried after its undo (`impact-check`, nothing coded yet) was run by key; `reconcile_one` sent every story that was not `impact-applied` to the new-story path, which set it back for the previous attempt's closed pull request - a "story-reset" comment for an attempt reconcile had already undone. The scan selects only coded stories that are not a change undone.
