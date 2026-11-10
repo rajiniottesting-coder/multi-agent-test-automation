@@ -510,7 +510,7 @@ agents:
     # person labels impact-check are affected.
     # The framework default (core/impact_settings.DEFAULTS) stays off.
     enabled: true
-    shadow_mode: true
+    shadow_mode: false
     # A story that names an element no selector covers (E1) adds its page as a
     # review-tier candidate. Review only, never must-update. Off until the
     # backtest with and without it has been compared.
