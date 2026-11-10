@@ -4,6 +4,14 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a step that says it clicks, clicks (#382)
+
+**Why:** found live on Run H (SCRUM-379, its first pull request): the inventory had no key for an on-page control, and the generated step `When I click the <control>` called a page-object method that scrolled the window by script - the control's outcome - and clicked nothing. Every gate passed; the scenario would stay green with the control missing or broken. The coverage audit only noted, as the model's reading, that the control's visibility was unchecked.
+
+- `validators/action_steps.validate_click_steps_click` (repair loop and final gate): a Given/When step worded as a click (click, press, tap) whose page-object calls make no click - read through the class's own methods and its base class - is an `Action step error`, routed to the step file; unreadable cases are left alone
+- `prompts/agent2_coder_generate.md` rule 15: a missing element is left out with its reason, never stood in for by performing what it would do
+- Checked against every click step of the last 13 story PRs (37 steps): no false positive; it flags SCRUM-379's step
+- Tests in `test_action_steps.py`; GUIDE (gate list), AI_CONCEPTS #57; TEST_TRACK E131. Not tested live yet: E131
 ## November 2026 — a workflow younger than the schedule window is not judged (#375)
 
 **Why:** found live right after #372: a throw-away scheduled workflow added minutes before the health check got a `workflow-not-starting` alert - "no scheduled run in the last 24 hours" of a workflow that had existed for 20 minutes. The same check logged "Could not read runs ... list index out of range" for it: slicing an empty paginated list of runs raised.

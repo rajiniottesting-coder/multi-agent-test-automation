@@ -314,7 +314,13 @@ phrase another feature already defines but asserts more than that definition doe
 `validate_scenarios_open_a_page_first` (`validators/opening_step.py`) rejects a
 scenario whose first Given or When step acts before any page is opened - its
 first page-object call is to a method that never calls `navigate()`; every
-test starts on the browser's empty page. Every repairable error is routed to
+test starts on the browser's empty page. `validate_click_steps_click`
+(`validators/action_steps.py`) rejects a Given or When step worded as a click
+(click, press, tap) whose definition makes no page-object call that clicks -
+directly or through the methods it calls - such as one that scrolls or
+navigates by script in the control's place: a test that performs what a
+control would do passes even when the control is missing. An element the
+inventory lacks is left out with its reason, never simulated. Every repairable error is routed to
 the generated file it names, whatever its wording
 (`_route_to_generated_file()`), so none reaches the final gate without a repair
 attempt.
