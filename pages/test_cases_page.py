@@ -21,11 +21,23 @@ says "Test Cases". heading_matches() therefore compares case-insensitively; the
 raw heading_text() reader is left unchanged for any caller that wants the exact
 rendered text.
 
-NOTE on the "Feedback for Us" section (SCRUM-312): the inventory for the
-`test_cases` page DOES carry a key for the Feedback email link
-(feedback_automationexercise_com_link) and the Feedback section container
-(feedback_element). SCRUM-312 can therefore be fully asserted: the feedback
-email link is reached through the inventory key, no invented selector required.
+NOTE on the feedback section (SCRUM-312 / SCRUM-331 revision): the section was
+renamed from "Feedback for Us" to "Questions or suggestions?" and the email
+link's visible text changed from the raw address to "Write to our QA team",
+while its mailto href still targets the same address. The inventory for the
+`test_cases` page carries:
+  - feedback_element: the Feedback section container (#feedback), whose text
+    includes the section heading, so feedback_heading_matches() reads it to
+    confirm the new heading is present and the old one is not.
+  - feedback_automationexercise_com_link: an ARIA link addressed by the
+    accessible NAME "feedback@automationexercise.com". That accessible name
+    comes from the href's mailto target, not the visible text, so the key still
+    resolves after the visible text changed. feedback_link_text() reads the
+    visible link text and feedback_link_href() reads its href.
+The inventory has no key dedicated solely to the section heading element, but it
+does carry the whole section (feedback_element), whose rendered text contains
+the heading — so both "the new heading is shown" and "the old heading is not
+shown" are checkable without inventing a selector.
 
 NOTE on showing a test case's steps (SCRUM-313 / SCRUM-314): `test_case_steps`
 is a multi_match family — one step item per step, across every (collapsed)
@@ -132,14 +144,65 @@ class TestCasesPage(BasePage):
         return True
 
     def has_feedback_email_link(self) -> bool:
-        """True once the Feedback for Us email link is displayed. WAITS for it.
+        """True once the feedback email link is displayed. WAITS for it.
 
         The inventory carries feedback_automationexercise_com_link, an ARIA
-        link named for the feedback email address, so this asserts the section
-        offers an email address as a link. Call this where the link is the
-        expected state; it waits up to the timeout and times out if absent.
+        link whose accessible name comes from its mailto target, so this
+        asserts the section offers an email link regardless of its visible
+        text. Call this where the link is the expected state; it waits up to
+        the timeout and times out if absent.
         """
         return self.is_showing(self.sel("feedback_automationexercise_com_link"))
+
+    def feedback_heading_matches(self, expected: str) -> bool:
+        """True if the feedback section's heading matches `expected` (case-insensitive).
+
+        The inventory has no key for the heading element alone, but it carries
+        the whole feedback section (feedback_element), whose rendered text
+        includes that heading. WAITS for the section, reads its text, and
+        checks `expected` appears within it case-insensitively — so a step
+        asserting the section is headed "Questions or suggestions?" is answered
+        from the page's own rendered text.
+        """
+        self.wait_visible(self.sel("feedback_element"))
+        shown = self.get_text(self.sel("feedback_element"))
+        return expected.strip().casefold() in shown.strip().casefold()
+
+    def feedback_heading_is_absent(self, heading: str) -> bool:
+        """True if `heading` is NOT shown in the feedback section. WAITS for the section.
+
+        For asserting the OLD heading ("Feedback for Us") is gone. The feedback
+        section is a permanent element of this page, so its text alone is not a
+        safe absence probe before the page renders — this first WAITS for the
+        section to be visible (proving the page), then confirms `heading` does
+        not appear in its rendered text, compared case-insensitively.
+        """
+        self.wait_visible(self.sel("feedback_element"))
+        shown = self.get_text(self.sel("feedback_element"))
+        return heading.strip().casefold() not in shown.strip().casefold()
+
+    def feedback_link_text(self) -> str:
+        """Visible text of the feedback email link. WAITS for it to appear.
+
+        After the SCRUM-312 / SCRUM-331 revision this reads "Write to our QA
+        team" rather than the raw email address. The link is addressed by its
+        accessible name (the mailto target), which is unaffected by the
+        visible-text change.
+        """
+        self.wait_visible(self.sel("feedback_automationexercise_com_link"))
+        return self.get_text(self.sel("feedback_automationexercise_com_link"))
+
+    def feedback_link_href(self) -> str:
+        """The href of the feedback email link. WAITS for the link to appear.
+
+        After the revision the visible text changed but the destination did
+        not: this still begins with "mailto:" and targets the same address.
+        Returns an empty string if the attribute is somehow absent, so a step
+        asserting it starts with "mailto:" fails cleanly rather than on None.
+        """
+        self.wait_visible(self.sel("feedback_automationexercise_com_link"))
+        href = self.get_attribute(self.sel("feedback_automationexercise_com_link"), "href")
+        return href or ""
 
     def has_visible_steps(self) -> bool:
         """True once at least one step item is present. WAITS for the family.
