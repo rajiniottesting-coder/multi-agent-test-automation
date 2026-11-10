@@ -78,6 +78,20 @@ class ContactUsPage(BasePage):
         """True once the Contact Us form heading is on screen. WAITS for it."""
         return self.is_showing(self.sel("contact_heading"), timeout_ms=timeout_ms)
 
+    def is_contact_form_shown(self, timeout_ms: Optional[int] = None) -> bool:
+        """True once the Contact Us form is on screen. WAITS for it.
+
+        This is what a scenario arriving from the 'Contact us' feedback link
+        asserts: that the click opened THIS page and the form is present. It
+        probes the form element itself rather than the heading, so it holds
+        for 'the Contact Us form should be shown' regardless of surrounding
+        copy. Waiting, because the arrival we are verifying is fresh and a
+        non-waiting glance would race the navigation.
+
+        Call this only where the form IS expected.
+        """
+        return self.is_showing(self.sel("contact_form_element"), timeout_ms=timeout_ms)
+
     def has_success_message(self) -> bool:
         """True once the submission success message is visible. WAITS for it.
 
