@@ -45,6 +45,9 @@ class CartPage(BasePage):
     def remove_product(self, product_name: str) -> None:
         """Delete the row for `product_name` via its own delete control.
 
+        The row is found by its product name, for example "Blue Top". Then the
+        row's delete control is clicked.
+
         Scopes to the row containing the product name rather than indexing a
         delete-button family, so the correct row is removed even if the rows
         and the delete controls are not in lockstep.
