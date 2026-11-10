@@ -4,6 +4,20 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — context update: the REMOVED note is always written; a reworded passage is still rewritten (#339)
+
+**Why:** two flaws in the change-story context update, found live on Run G's first hand-overs:
+- **No REMOVED note.** A removed element was declared in the page's `removed` list, but its `REMOVED by <story>` note was left to the model's rewrite of the element's note. An element with no note had nothing to rewrite: the model aimed at the key's `multi_match` / `conditional` entries, both rewrites were dropped, and the key went out with no note.
+- **A rewrite dropped after a wording change.** Wording replacements run first; the model copies each passage from the notes as they were, so a rewrite of a sentence the wording change had just edited no longer matched and was dropped as "not verbatim" - the part the story makes untrue stayed.
+
+Changes:
+- `core/context_update._declare_removed(..., story_key)`: the note starts `REMOVED by <story>` - a new note for an element without one, the old note kept after the marker, a note the model rewrote that way left as it is. `propose(..., story_key)`; the hand-over passes it
+- `core/context_update._apply_rewrites`: a passage not found is tried again with the story's applied wording replacements (`_replace_passage`)
+- GUIDE (Context update)
+- Tests in `test_removed_elements.py`, `test_context_update.py`; TEST_TRACK E115, E116. Not tested live yet: E115, E116
+
+---
+
 ## November 2026 — stale claims: a closed change story and a drift that is gone no longer block tests (#336)
 
 **Why:** two Impact Reviews went on blocking tests in other change stories after nothing called for them, both found before Run G's change stories were analysed:
