@@ -79,3 +79,53 @@ def test_invariant_only_security_blocks_from_an_unchanged_line(sev, typ, outcome
     final, _ = postprocess_review(_report(issue), get_runner_result=lambda: "failure",
                                   changed_lines={"x.py": set(range(1, 10))})
     assert (final.overall_verdict == "request_changes") == (typ == "security")
+
+
+# ── L49: scenarios of other stories a pull request removes ────────────────
+
+def _patch(*lines):
+    return {"filename": "features/widgets.feature", "patch": "\n".join(lines)}
+
+
+def test_a_removed_scenario_of_another_story_is_a_finding():
+    from agents.agent3_reviewer import removed_scenarios_of_others
+    files = [_patch("@@ -1,5 +1,2 @@",
+                    "-  # JIRA: AB-11 (hash: 11111111) owner: AB-10",
+                    "-  Scenario: First",
+                    "-  # JIRA: AB-21 (hash: 22222222) owner: AB-20",
+                    "+  # JIRA: AB-22 (hash: 33333333) owner: AB-20")]
+    (issue,) = removed_scenarios_of_others(files, "AB-20")
+    assert "AB-11" in issue.description and "owner AB-10" in issue.description
+    assert issue.severity == "major" and issue.issue_type == "missing_coverage"
+    assert issue.line_number is None
+
+
+@pytest.mark.parametrize("files, story", [
+    # its own story's scenario (a regeneration)
+    ([_patch("-  # JIRA: AB-21 (hash: 22222222) owner: AB-20")], "AB-20"),
+    # moved: removed here, added back elsewhere
+    ([_patch("-  # JIRA: AB-11 (hash: 11111111) owner: AB-10"),
+      {"filename": "features/other.feature",
+       "patch": "+  # JIRA: AB-11 (hash: 11111111) owner: AB-10"}], "AB-20"),
+    # nothing removed
+    ([_patch("+  # JIRA: AB-22 (hash: 33333333) owner: AB-20")], None),
+])
+def test_no_finding_for_its_own_or_a_moved_scenario(files, story):
+    from agents.agent3_reviewer import removed_scenarios_of_others
+    assert removed_scenarios_of_others(files, story) == []
+
+
+def test_a_persons_branch_removing_any_owned_scenario_is_flagged():
+    from agents.agent3_reviewer import removed_scenarios_of_others
+    files = [_patch("-  # JIRA: AB-11 (hash: 11111111) owner: AB-10")]
+    assert len(removed_scenarios_of_others(files, None)) == 1
+
+
+def test_the_finding_survives_the_review_postprocessing_and_does_not_block():
+    from agents.agent3_reviewer import removed_scenarios_of_others, postprocess_review
+    issues = removed_scenarios_of_others(
+        [_patch("-  # JIRA: AB-11 (hash: 11111111) owner: AB-10")], "AB-20")
+    report = _report(*issues)
+    out, _ = postprocess_review(report, None, changed_lines={})
+    assert any("AB-11" in i.description for i in out.issues)
+    assert out.overall_verdict != "request_changes", "advisory: a person decides"

@@ -5,7 +5,7 @@
 Runs in agent4_runner.yml after a run on `main` (the scheduled run, a push that
 ran the E2E, a manual run on main), on the junit.xml Agent 4 finalised:
 
-  failures  one defect per test and cause (core/defects.py)
+  failures  one open defect per test (core/defects.py)
   outages   one pipeline health alert while main runs hit the application's
             unavailability, with what the application health check found
             (reports/app_probe.json) when it found the application not up;

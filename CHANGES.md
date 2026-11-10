@@ -4,6 +4,24 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — one open defect per test; flaky window 14 days; Agent 5 names a red unit run; Agent 3 flags removed scenarios of other stories (#328)
+
+**Why:** findings of validation cycle 1 and the open observations:
+- **Duplicate defects.** The triage kept one defect per test *and cause*. The cause is a heuristic reading, so the same problem reads differently on another night: one run raised four duplicates next to open defects of the same tests (SCRUM-349/350/351 beside 327/328/329).
+- **Flaky window.** `flaky_tests.window_days` 30 kept a fixed flake on the health issue's table for a month.
+- **O12.** Agent 5 wrote "All 1 tests passed" on a pull request whose check was red from the framework's unit tests.
+- **L53.** A pull request removing another story's scenarios was flagged by no agent.
+
+Changes:
+- `core/defects`: a failure updates the open defect of its test and cause, else the open defect of its test (the newest not flagged passing). That defect takes the new cause and lists `Causes seen before`. A closed defect still makes the next failure a new one. F51's unflagging stays for defects raised before this change
+- `flaky_tests.window_days` 14 (config, `core/ops_settings`, `core/flaky_tests`, GUIDE): about ten working days of nightly and PR runs, so a repeat flake is visible and a fixed one leaves the table in two weeks
+- `agents/agent5_reporter`: when `junit-unit.xml` beside the app tests' report has failures, the comment opens with "Pull request check red: N of M framework unit tests failed"
+- `agents/agent3_reviewer.removed_scenarios_of_others`: a marker removed by the diff and not added back, owned by another story (or by anyone, on a person's branch), becomes a `major` / `missing_coverage` finding. It is found by code, listed first, advisory
+- Docs: every "one defect per test and cause" statement updated (config, GUIDE, TECHNICAL_DEEP_DIVE, README, VALIDATION L37 and F-22, `scripts/triage_failures`); VALIDATION's duplicate L49/L50 ids renumbered L53/L54
+- Tests in `test_defect_triage.py`, `test_agent5_outside_failures.py`, `test_review_changed_lines_only.py`; TEST_TRACK E109-E111. Not tested live yet: E109, E110, E111
+
+---
+
 ## November 2026 — a defect's test failing for another cause is no longer called passing (#326)
 
 **Why:** the triage keeps one defect per test and cause. On main a test whose old defect was flagged `ai-defect-passing` ("suggest closing") failed again, but the diagnosis gave another cause. A new defect was raised (correct), and the old one went on suggesting it be closed while its test failed. Nothing pointed it to the new defect.

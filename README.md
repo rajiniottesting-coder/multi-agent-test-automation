@@ -195,7 +195,7 @@ Attaching Agent 0 to another application: [docs/AGENT0_ONBOARDING.md](./docs/AGE
 - **Cost on the story, said once.** Every model-using agent, Agent 0 included, records its tokens and cost on the Jira story as hidden issue properties, and the story shows one cost comment per attempt, edited after every run - a row per agent; Agent 5's report links to it. Reprocessing starts a new attempt, so a rerun is not double-counted. A re-run of Agent 5 on the same commit with the same results posts nothing. (A tracker without issue properties keeps one `[LLM-USAGE]` comment per run and the table in Agent 5's report.)
 - **Spend has limits.** A budget per story and per day (`config.yaml` `budget`), checked before every model call: a story over its budget is held by a label a person removes; a day over its budget stops the scans until the next day (F-24).
 - **Nobody watches the Actions tab.** One pipeline health issue in the tracker, watched by the team: a comment when a problem starts (a scheduled workflow failing in a row, a refused or expiring credential, an outage on `main`, the day's budget) and one when it ends - never while it persists (F-23).
-- **Main is tested every night.** A failing test raises one defect per test and cause, updated without noise and flagged when it passes again; an outage of the application is reported apart from test failures everywhere (F-7, F-21, F-22).
+- **Main is tested every night.** A failing test has one open defect, updated without noise and flagged when it passes again; an outage of the application is reported apart from test failures everywhere (F-7, F-21, F-22).
 - **Flaky tests are named, not hidden.** A failed test is retried once; a pass on the retry counts as passed, is named in the reports and is counted on the health issue (F-19).
 - **Business-level stories.** Acceptance criteria state outcomes; Agent 1 takes concrete test data from `core.md` and is forbidden to invent any.
 
@@ -264,7 +264,7 @@ multi-agent-test-automation/
 │   ├── junit_marks.py               # Agent 4's marks in junit.xml: outage, flaky (one reader)
 │   ├── pipeline_health.py           # The watched health issue: alerts, records, the picture
 │   ├── health_checks.py             # Scheduled workflows failing, credentials
-│   ├── defects.py                   # A test failing on main → one defect per test and cause
+│   ├── defects.py                   # A test failing on main → one open defect per test
 │   ├── flaky_tests.py               # Flakes counted on the health issue
 │   ├── spend_budget.py              # Per-story and per-day model spend budgets
 │   └── ops_settings.py              # The operational config blocks, with defaults
