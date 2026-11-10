@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — the scenarios that stand in for a missing control are left out, the rest coded (#PRNUM)
+## November 2026 — the scenarios that stand in for a missing control are left out, the rest coded (#385)
 
 **Why:** after #384, SCRUM-379 run again (Run H): the plan still automated the test cases that click a control the inventory lacks, the gate refused the step that clicked nothing, and the whole story was refused - its third test case, which needs no missing control, included. The plan's skip is the model's judgement; this is the code's.
 

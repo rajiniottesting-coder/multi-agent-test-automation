@@ -466,7 +466,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
-| #PRNUM | The scenarios that stand in for a missing control are left out, the rest coded | | E134 | |
+| #385 | The scenarios that stand in for a missing control are left out, the rest coded | | E134 | |
 | #384 | A test case needing a control the inventory lacks is planned as skipped | | E133 | |
 | #383 | A page has one page object | | E132 | |
 | #382 | A step that says it clicks, clicks | | E131 | |
