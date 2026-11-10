@@ -4,6 +4,19 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a removed key is never added back, and the nightly summary names what it read as declared (#368)
+
+**Why:** two findings of the E22 after-deployment run (a removal story's key declared `removed`, its selector reading gone, and a live element the crawl names the same):
+
+- the nightly inventory update retired the key and then added the same name back with the live selector - one pull request that undid the story's declaration and its `REMOVED by` note;
+- `Inventory Health` reported "every selector resolved to exactly one element" and `87 selector(s) resolve to exactly one element` while the removed key read zero (as declared), and with `--only-problems` no line anywhere showed it gone.
+
+- `core/inventory_update.build_update`: the keys declared `removed` are read before the retirement; a new element with one of their names is refused with the reason (GUIDE, Inventory update table)
+- `scripts/verify_locators`: the readings a declaration explains (gone, conditional, planned, a family) are collected per run; the summary counts them apart from the keys that resolve to one element and names each key declared removed and measured gone. `scripts/inventory_health_report`: the healthy sentence says the same
+- Tests in `test_removed_elements.py`, `test_inventory_health_report.py`, `test_inventory_health_summary.py` (the healthy sentence of its reference script); TEST_TRACK E127, E128. Not tested live yet: E127, E128
+
+---
+
 ## November 2026 — a signed-in scenario owns its starting state only if it clears it itself (#363)
 
 **Why:** the code-generation gate's persistent-state rule decided per step-definition file whether the state is owned: one step anywhere in the file that clears it (or asks for a fresh identity) exempted every scenario. Found live on R2: a review fix removed one scenario's clearing step, and the gate passed that scenario - signed in as the shared account - asserting "exactly 1 row", because another scenario in the file removes every product.

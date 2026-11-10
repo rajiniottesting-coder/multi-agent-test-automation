@@ -676,6 +676,7 @@ inventory alone:
 | More than `hold_ratio` of a page's selectors stale | **Leaves the page alone** and lists it: an error page, an outage or a redesign is a person's call |
 | A key declared `removed`, still gone, that no code names any more (on `main` or in an open PR) | **Removes** it with its note and its list entries - its absence test is gone |
 | A key declared `removed` that is on the page again | Listed: the removal was undone, or the selector matches something else |
+| A live element no selector covers whose generated name is a key declared `removed` on that page | **Never added** - refused with the reason, even when the same update retires the key: re-adding it would undo the change story's declaration and its note. A person checks the deployment |
 | A live element **another page's key already covers** (a header or footer repeated on every page) | Listed with that key, **never added** a second time under a new name - move it to an `always` page if several page objects need it |
 | A new element no key covers, found on **every** page checked (at least `layout_min_pages`, default 3) | Listed once with its pages, **never added** to each - a shared section belongs once on an `always` page. On some pages only, it is page-specific and added |
 | A key declared `planned` (added from the design before deployment), found on the page | **Confirms** it: it leaves `planned` |
@@ -2020,7 +2021,11 @@ stories). The nightly `Inventory Health` workflow measures with
 click, one a change story removed and one not deployed yet read as expected
 rather than as a fault - a removed element on the page again reads as drift
 (`BACK`), a planned one found as `LIVE`, and a `planned_page` not deployed yet as
-`PLANNED PAGE`.
+`PLANNED PAGE`. With `--only-problems` none of those expected readings prints a
+line of its own; the summary at the end counts them apart from the keys that
+resolve to one element (*N read as their declaration states: 1 gone, as declared
+removed (page.key); …*), so a removal that has been deployed shows in the nightly
+report.
 
 When the verifier does not pass, `Inventory Health` asks whether the
 application itself was up - the same application health check Agent 4 uses
@@ -2030,7 +2035,7 @@ Its summary (`scripts/inventory_health_report.py`) then reads:
 
 | Summary | Means | Do |
 |---|---|---|
-| ✅ Inventory healthy | every selector resolved to exactly one element | nothing |
+| ✅ Inventory healthy | every selector read as expected: one element, or what its declaration states (removed, conditional, planned, a family). The verifier's summary counts the declared readings apart and names each key declared removed and measured gone | nothing |
 | ❌ Selector drift detected | stale or ambiguous selectors on an application that is up (or the check could not run) | fix the inventory by hand, as the summary says |
 | ⚠️ Login failed — inventory NOT checked | the verifier could not sign in; the check found the application up | check `APP_USER_REGISTERED` / `APP_PASSWORD` and the login form's selectors |
 | ⚠️ The application is not up — inventory NOT checked | the check found the application not serving its own pages; the summary says what the browser was shown | **change nothing** - neither drift nor credentials; the next night checks again |
