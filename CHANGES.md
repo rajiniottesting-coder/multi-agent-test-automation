@@ -4,6 +4,15 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — the literal-selector scan never reads prose inside a docstring (#357)
+
+**Why:** found live on a Run G change story's retry: the page-object literal-selector scan reads source lines and skipped only lines starting with a quote, `#` or `*`. A line in the middle of the page object's docstring (a quoted address followed by a period, and later an apostrophe) matched as a quoted selector, and the final gate refused a story whose code held none.
+
+- `validators/method_resolution_validator._string_statement_lines`: every line of a docstring or bare string statement (AST); the generation gate and the committed-tree scan (`test_page_object_selectors.py`) both skip them
+- Test in `test_page_object_selectors.py`; TEST_TRACK E124. Not tested live yet: E124
+
+---
+
 ## November 2026 — a named entry in backticks is a named entry (#356)
 
 **Why:** found live on R3. Agent 1's persistent-state rule treats "no row" as relative when its clause names an entry in quotes; the quote pattern knew straight and curly quotes, not backticks. A signed-in draft's "No row for \`<item>\` is present in the cart" - the relative absence the remedy asks for - was refused twice and the story handed back.
