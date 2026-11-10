@@ -21,11 +21,26 @@ says "Test Cases". heading_matches() therefore compares case-insensitively; the
 raw heading_text() reader is left unchanged for any caller that wants the exact
 rendered text.
 
-NOTE on the "Feedback for Us" section (SCRUM-312): the inventory for the
-`test_cases` page DOES carry a key for the Feedback email link
-(feedback_automationexercise_com_link) and the Feedback section container
-(feedback_element). SCRUM-312 can therefore be fully asserted: the feedback
-email link is reached through the inventory key, no invented selector required.
+NOTE on the "Feedback for Us" section (SCRUM-312 / SCRUM-331 REVISION):
+The revised stories say the Feedback for Us section now shows a "Contact us"
+link INSTEAD OF the old email address link, and that clicking it opens the
+Contact Us page in the SAME tab.
+
+The inventory for the `test_cases` page carries:
+  - feedback_element       — the Feedback for Us section container
+  - feedback_automationexercise_com_link — the OLD email address link
+
+The "Contact us" link is NOT a separate inventory key, so it is reached through
+an ARIA role query by accessible name ("Contact us") via the BasePage role
+helpers (click_role / get_role_text), which match on accessible name and need
+no selector literal. This is the sanctioned path for a named ARIA control, so
+no invented CSS and no selector literal appears here.
+
+  - has_feedback_section()          — the Feedback for Us section is shown
+  - has_feedback_contact_us_link()  — a "Contact us" link is offered
+  - is_feedback_email_link_absent() — the OLD email link is no longer shown
+  - click_feedback_contact_us()     — click "Contact us" (same-tab navigation)
+  - no_new_tab_opened()             — the browser stayed in one tab/window
 
 NOTE on showing a test case's steps (SCRUM-313 / SCRUM-314): `test_case_steps`
 is a multi_match family — one step item per step, across every (collapsed)
@@ -131,6 +146,27 @@ class TestCasesPage(BasePage):
                 return False
         return True
 
+    def title_texts(self) -> list[str]:
+        """Visible text of every test case title link, in DOM order. WAITS.
+
+        `test_case_titles` is a multi_match family of anchors — one per test
+        case — so it is read with the plural family reader, never clicked or
+        waited on as a whole. Waits for at least one to appear first so the
+        reader does not race the page render and return an empty list.
+        """
+        self.wait_for_any(self.sel("test_case_titles"))
+        return self.get_all_texts(self.sel("test_case_titles"))
+
+    def has_feedback_section(self) -> bool:
+        """True once the Feedback for Us section is displayed. WAITS for it.
+
+        The inventory carries feedback_element, the Feedback for Us section
+        container, so this asserts the section itself is on screen. Call this
+        where the section is the expected state; it waits up to the timeout and
+        times out if absent.
+        """
+        return self.is_showing(self.sel("feedback_element"))
+
     def has_feedback_email_link(self) -> bool:
         """True once the Feedback for Us email link is displayed. WAITS for it.
 
@@ -140,6 +176,49 @@ class TestCasesPage(BasePage):
         expected state; it waits up to the timeout and times out if absent.
         """
         return self.is_showing(self.sel("feedback_automationexercise_com_link"))
+
+    def has_feedback_contact_us_link(self) -> bool:
+        """True once a "Contact us" link is offered in the Feedback section. WAITS.
+
+        The revised SCRUM-312 / SCRUM-331 stories replace the old email link
+        with a "Contact us" link. That control has no inventory key, so it is
+        addressed by ARIA role and accessible name — role=link named
+        "Contact us" — which needs no selector literal. Reading its text with
+        the waiting role reader confirms the link is on screen; it returns a
+        non-empty string only when the link is present, so a non-empty result
+        means the link is offered. Call this where the link is the expected
+        state; it waits up to the timeout and raises if absent.
+        """
+        return bool(self.get_role_text("link", name="Contact us").strip())
+
+    def is_feedback_email_link_absent(self) -> bool:
+        """True if the Feedback for Us email link is NOT shown. Does not time out.
+
+        The revised SCRUM-312 / SCRUM-331 stories require the old email address
+        link to be GONE from the Feedback section. feedback_automationexercise_com_link
+        is a permanent-until-removed element (the inventory does NOT list it as
+        conditional), so an absent element is also what an un-rendered page
+        looks like — this proves the page is loaded first, THEN that the link
+        is gone, so the check cannot pass before the page has rendered.
+
+        Built on is_gone(): True at once when the link is absent, waiting only
+        while it is still on screen. Call this to assert the email link is no
+        longer offered.
+        """
+        return self.is_loaded() and self.is_gone(
+            self.sel("feedback_automationexercise_com_link")
+        )
+
+    def no_new_tab_opened(self) -> bool:
+        """True if the browser stayed in a single tab/window. Does not raise.
+
+        The revised stories require the "Contact us" link to open the Contact
+        Us page in the SAME tab — no new tab or window. This reads the browser
+        context's open pages through the Playwright Page this object already
+        holds, and confirms exactly one is open, so a step can assert that a
+        same-tab navigation (rather than a pop-up) occurred.
+        """
+        return len(self.page.context.pages) == 1
 
     def has_visible_steps(self) -> bool:
         """True once at least one step item is present. WAITS for the family.
@@ -165,6 +244,18 @@ class TestCasesPage(BasePage):
         return self.is_loaded() and self.get_path().rstrip("/") == self.page_url().rstrip("/")
 
     # ── actions ──────────────────────────────────────────────
+    def click_feedback_contact_us(self) -> None:
+        """Click the "Contact us" link in the Feedback for Us section.
+
+        The link has no inventory key, so it is addressed by ARIA role and
+        accessible name ("Contact us") via click_role — the sanctioned path for
+        a named ARIA control that needs no selector literal. The revised
+        stories require this to navigate in the SAME tab, so this does NOT open
+        a new tab; the destination's own page object confirms arrival.
+        """
+        self.require_own_page()
+        self.click_role("link", name="Contact us")
+
     def open_first_test_case(self) -> None:
         """Click the first test case title to expand its steps in place.
 
