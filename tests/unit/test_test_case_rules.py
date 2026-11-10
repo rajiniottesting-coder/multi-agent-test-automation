@@ -233,6 +233,7 @@ def _with_data(expected, data):
     "Saved items shows no 'Blue Widget' row",
     "In saved items there is no row any more for 'Blue Widget'",
     "Saved items has no row named \u201cBlue Widget\u201d",
+    "No row for `Blue Widget` is present in saved items",
     "The 'Blue Widget' row is gone from saved items",
     "Saved items still shows a row for 'Blue Widget'",
 ])
