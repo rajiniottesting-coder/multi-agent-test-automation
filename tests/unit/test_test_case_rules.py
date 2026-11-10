@@ -43,7 +43,10 @@ INVENTORY = {"pages": {
 PERSISTENT = persistent_pages(INVENTORY)
 
 
-def _tc(title="[Positive] Add a widget", pre=(), action="Open a widget",
+# Signed in by default: the absolute-claim rule holds only for a test case that
+# signs in (an anonymous one owns a fresh session - see the end of this file).
+def _tc(title="[Positive] Add a widget", pre=("Signed in as the shopper role",),
+        action="Open a widget",
         expected="The widget is shown", outcome="It works"):
     return TestCase(title=title, description="d", priority="High", test_type="Positive",
                     preconditions=list(pre),
@@ -261,3 +264,44 @@ def test_the_example_in_the_remedy_passes_the_rule():
     example = p.split("(for example: \"", 1)[1].split("\")", 1)[0]
     sentence = example.replace("<item>", "Blue Widget") + " in saved items"
     assert test_case_problems(_tc(expected=sentence), PERSISTENT) == []
+
+
+
+# ─────────────────────────────────────────────────────────────
+# A test case that never signs in owns a fresh session (E117)
+# ─────────────────────────────────────────────────────────────
+# The code-generation gate exempts a scenario that never signs in from the
+# persistent-state rule; this rule now draws the line in the same place, so an
+# acceptance criterion about emptying a fresh cart can be drafted at all.
+
+@pytest.mark.parametrize("text", [
+    "Saved items is empty",
+    "Only 'Blue Widget' remains in saved items",
+    "Saved items has no rows",
+    "Saved items contains exactly one row",
+])
+def test_an_anonymous_test_case_may_state_absolute_state(text):
+    assert test_case_problems(_tc(pre=(), expected=text), PERSISTENT) == []
+    assert test_case_problems(_tc(pre=["The shopper is not logged in"], expected=text),
+                              PERSISTENT) == []
+
+
+@pytest.mark.parametrize("pre", [
+    ["Log in as a 'registered' user"],
+    ["The shopper signs in first"],
+    ["Open the login page and authenticate"],
+])
+def test_any_sign_in_keeps_the_rule(pre):
+    assert test_case_problems(_tc(pre=pre, expected="Saved items is empty"), PERSISTENT)
+
+
+def test_a_sign_in_in_a_step_or_the_title_counts_too():
+    assert test_case_problems(_tc(pre=(), action="Log in, then open saved items",
+                                  expected="Saved items is empty"), PERSISTENT)
+    assert test_case_problems(_tc(title="[Positive] Signed-in shopper empties saved items",
+                                  pre=(), expected="Saved items is empty"), PERSISTENT)
+
+
+def test_the_refusal_offers_not_signing_in():
+    [p] = test_case_problems(BAD_ABSOLUTE, PERSISTENT)
+    assert "if this test does not need to sign in, do not" in p
