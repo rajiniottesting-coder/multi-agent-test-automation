@@ -207,7 +207,7 @@ usage_ledger:
 # PIPELINE_BUDGET=on/off forces it on or off.
 budget:
   enabled: true
-  per_story_usd: 8
+  per_story_usd: 0.2   # VALIDATION window H2 - restore 8
   per_day_usd: 150
   warn_at: 0.5
   timezone: "UTC"
