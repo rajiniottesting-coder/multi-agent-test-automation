@@ -307,3 +307,14 @@ def test_with_a_diff_only_the_added_lines_count(tmp_path):
               "patch": "@@ -1 +1,2 @@\n self.click_in_row(a, b, c)\n+self.is_gone(x)\n"}]
     block = base_page_helpers_called(files, tmp_path)
     assert "self.is_gone(" in block and "click_in_row" not in block
+
+
+def test_a_red_run_says_why_a_flaky_scenarios_prediction_keeps_blocking(caplog):
+    """E137: on a red run, a predicted scenario that passed only on the retry
+    keeps blocking - and the log now says so, as it does on a green run."""
+    scenarios = parse_junit_scenarios(FLAKY_GREEN)
+    flaky = _report(_issue("Borrow a book from its catalogue card"))
+    with caplog.at_level("INFO"):
+        out = apply(flaky, RunnerEvidence("failure", scenarios))
+    assert out.overall_verdict == "request_changes"
+    assert any("passed only on the retry (flaky)" in r.getMessage() for r in caplog.records)

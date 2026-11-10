@@ -4,6 +4,17 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — an inventory note quoted with its line prefix is still rewritten; a flaky prediction says why it blocks (#389)
+
+**Why:** two fidelity gaps found live on Run H.
+
+- Context update (SCRUM-394's context-update pull request, its "Not applied" list): the model quoted an inventory note as the notes block shows it - `- pages.<page>.elements_notes.<key>: <text>` - and the rewrite was dropped as "not in ... verbatim" although the note was there. `core/context_update._replace_passage` now retries without that line prefix when old and new carry the same one (`_NOTE_LINE`); selectors stay untouchable
+- Agent 3 (a throw-away PR whose run was red for another reason): a predicted scenario that passed only on the retry kept blocking - correctly - but only a green run logged why. A red run now logs "passed only on the retry (flaky) - its predicted failure keeps blocking" too
+- A run by key printed no "not automated" line, which the scan's summary prints (SCRUM-379's run by key): the by-key summary now lists the test cases left without a scenario
+- Tests in `test_context_scope.py`, `test_review_scenario_evidence.py`, `test_blocked_story.py`; TEST_TRACK E136, E137. Not tested live yet: E136, E137
+
+---
+
 ## November 2026 — every scan pass skips a story the gate refused on unchanged input (#386)
 
 **Why:** found live on Run H: only the scan's normal pass skipped a story the gate had refused on unchanged input. A refused `ai-regenerate` story keeps its label, so every scan - including the one the hand-off starts after each run - generated it again, refused again, and posted another `[agent2:blocked]` comment: SCRUM-379 reached its $8 budget that way within the hour. `ai-update` never posted the comment at all, so a refused update could repeat the same way.

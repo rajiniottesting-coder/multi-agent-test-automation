@@ -264,11 +264,23 @@ def invented_quotes(old: str, new: str, known: str) -> list:
     return out
 
 
+# One line of the notes block's inventory section: `- <where>: <note text>`.
+_NOTE_LINE = re.compile(r"^\s*-\s*([A-Za-z0-9_.\-]+):\s+")
+
+
 def _replace_passage(text: str, path: str, old: str, new: str) -> Optional[str]:
     """`old` replaced by `new` - in the inventory's note values only - or None
     when the file does not hold `old` verbatim."""
     if path.endswith(".json"):
-        return _apply_json_notes(text, old, new)
+        done = _apply_json_notes(text, old, new)
+        if done is None:
+            # The model quoted the note as the notes block shows it, with its
+            # `- <where>: ` line prefix (10 Nov 2026: "not in ... verbatim"
+            # for a note that was there). The prefix is ours, not the note's.
+            m_old, m_new = _NOTE_LINE.match(old), _NOTE_LINE.match(new)
+            if m_old and m_new and m_old.group(1) == m_new.group(1):
+                done = _apply_json_notes(text, old[m_old.end():], new[m_new.end():])
+        return done
     return text.replace(old, new) if old in text else None
 
 

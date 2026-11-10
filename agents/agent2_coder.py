@@ -6116,6 +6116,10 @@ def main():
             print(f"   Status: {result['status']}")
             if result.get("pr_url"):
                 print(f"   PR: {result['pr_url']}")
+            # As the scan summary says it: the run log shows a partial story.
+            if result.get("not_automated"):
+                print(f"   Not automated: {', '.join(result['not_automated'])} "
+                      f"(see the [agent2:incomplete] comment)")
             print("=" * 60)
             return
 
