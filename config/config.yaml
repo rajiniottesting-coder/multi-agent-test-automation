@@ -124,7 +124,7 @@ pipeline_health:
   label: "pipeline-health"
   consecutive_failures: 3        # failed scheduled runs in a row before an alert
   expiry_warn_days: 14           # where the provider gives a credential's expiry
-  model_check: "off"      # completion (a one-word reply, asking the output room the agents ask) | models (list, free) | off
+  model_check: "completion"      # completion (a one-word reply, asking the output room the agents ask) | models (list, free) | off
   spend_keep_days: 35            # day-spend records kept this long
   schedule_window_hours: 24      # a scheduled workflow whose schedule asked for
   schedule_min_expected: 3       #   at least this many runs in the window, none started
@@ -215,7 +215,7 @@ budget:
 
 app_under_test:
   name: "Automation Exercise"
-  base_url: "https://www.iana.org"
+  base_url: "https://automationexercise.com"
 
   # Page inventory: a JSON file describing pages, selectors, methods.
   # See app_inventory/automationexercise.json as the canonical example. The
