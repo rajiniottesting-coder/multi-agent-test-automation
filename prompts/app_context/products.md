@@ -47,7 +47,7 @@ product's name, its price, and three labelled facts: `Availability:`,
 
 Every product detail page has a review form: a name, an email address, review
 text and a submit button. A successful submission shows
-**"Thank you for your review."** in place - there is no navigation.
+**"Thanks for sharing your review!"** in place - there is no navigation.
 
 All three fields are required. Submitting with any of them empty is blocked by
 the browser's own validation, so nothing app-authored appears and the thank-you
