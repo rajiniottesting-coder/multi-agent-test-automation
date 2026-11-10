@@ -85,6 +85,49 @@ def test_runs_that_do_not_reach_the_window_start_give_no_finding(tmp_path):
     assert hc.schedule_findings(_Host(busy), root, NOW, 24, 3) == []
 
 
+class _HostWithAge(_Host):
+    def __init__(self, runs, created_hours_ago):
+        super().__init__(runs)
+        self.created = (NOW - dt.timedelta(hours=created_hours_ago)).isoformat()
+
+    def workflow_created_at(self, name):
+        return self.created
+
+
+def test_a_workflow_younger_than_the_window_is_not_judged(tmp_path):
+    """E130: a workflow added minutes before the check cannot have missed a
+    day of runs - no finding (an open alert stays as it is)."""
+    root = _tree(tmp_path, "*/5 * * * *")
+    assert hc.schedule_findings(_HostWithAge([], 0.3), root, NOW, 24, 3) == []
+    (f,) = hc.schedule_findings(_HostWithAge([], 30), root, NOW, 24, 3)
+    assert f.problem, "old enough: judged as before"
+
+
+def test_a_host_without_the_capability_judges_as_before(tmp_path):
+    root = _tree(tmp_path, "*/5 * * * *")
+    (f,) = hc.schedule_findings(_Host([]), root, NOW, 24, 3)
+    assert f.problem
+
+
+def test_the_github_adapter_reads_a_workflow_with_no_runs(monkeypatch):
+    """Slicing PyGithub's empty paginated list raised IndexError, logged as
+    "could not read runs"; islice reads it as no runs."""
+    from integrations import github_client as gc
+
+    class _Empty:
+        def __iter__(self):
+            return iter(())
+
+        def __getitem__(self, item):
+            raise IndexError("list index out of range")
+    client = gc.GitHubClient.__new__(gc.GitHubClient)
+    client._repo = type("R", (), {"get_workflow": lambda self, f: type(
+        "W", (), {"get_runs": lambda self, branch: _Empty(),
+                  "created_at": dt.datetime(2026, 1, 6, tzinfo=UTC)})()})()
+    assert client.get_workflow_runs("job.yml", "main", limit=5) == []
+    assert client.workflow_created_at("job.yml").startswith("2026-01-06")
+
+
 def test_an_unreadable_schedule_gives_no_finding(tmp_path):
     root = _tree(tmp_path, "0 0 * * MON")
     assert hc.schedule_findings(_Host([]), root, NOW, 24, 3) == []
