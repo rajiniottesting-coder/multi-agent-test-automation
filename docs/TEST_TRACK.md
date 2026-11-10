@@ -475,7 +475,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
-| #PRNUM | The plan's own Skipped notes decide that nothing is left to code | | E143 | |
+| #404 | The plan's own Skipped notes decide that nothing is left to code | | E143 | |
 | #403 | A story the plan leaves out entirely costs no generation, and is told to add the elements | | E143 | |
 | #402 | A step whose code checks another element is left out, not shipped; no data table under a step | | E141, E142 | |
 | #395 | An unlimited budget is said in words, never "$inf"; Agent 1's output room is a setting | | E139, E140 | |

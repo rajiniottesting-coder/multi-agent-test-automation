@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — the plan's own Skipped notes decide that nothing is left to code (#PRNUM)
+## November 2026 — the plan's own Skipped notes decide that nothing is left to code (#404)
 
 **Why:** the live check of #403 (SCRUM-398 by key): the plan left all three test cases out again, but this time planned a feature file with no scenario instead of a note - so "no feature file planned" did not hold, Stage 2 generated it, and the coverage gate refused as before.
 
