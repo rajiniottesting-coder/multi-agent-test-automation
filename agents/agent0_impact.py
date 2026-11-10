@@ -55,6 +55,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Started as `python -m agents.agent0_impact`, this file is `__main__`; a module
+# importing it by name must get this module, not a second copy with its own
+# classes and state (see tests/unit/test_entry_module_single_copy.py).
+if __name__ == "__main__":
+    sys.modules.setdefault("agents.agent0_impact", sys.modules[__name__])
+
 from core import impact_analysis as ia
 from core import impact_review
 from core.impact_settings import impact_settings
