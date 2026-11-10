@@ -3131,6 +3131,106 @@ def _authenticates(tree: ast.AST, shared_accounts: frozenset) -> bool:
     return False
 
 
+_STEP_LINE = re.compile(r"^\s*(?:Given|When|Then|And|But|\*)\s+(.+?)\s*$")
+_SCENARIO_LINE = re.compile(r"^\s*(?:Scenario Outline|Scenario Template|Scenario|Example)\s*:\s*(.*)$")
+
+
+def _feature_scenarios(text: str) -> list:
+    """[(title, [step text])] - each scenario with the Background's steps
+    first, as pytest-bdd runs it."""
+    background: list = []
+    scenarios: list = []
+    current = None
+    for line in (text or "").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("Background:"):
+            current = background
+            continue
+        m = _SCENARIO_LINE.match(line)
+        if m:
+            scenarios.append((m.group(1).strip(), []))
+            current = scenarios[-1][1]
+            continue
+        step = _STEP_LINE.match(line)
+        if step and current is not None:
+            current.append(step.group(1))
+    return [(title, background + steps) for title, steps in scenarios]
+
+
+def _feature_text_for(step_source: str, generated_files: list, project_root) -> Optional[str]:
+    """The feature this step-definition module drives: from the batch, else
+    from the repository (features/<stem>.feature). None when not found."""
+    path = _feature_in_batch(step_source, generated_files)
+    if path:
+        f = next((g for g in generated_files or [] if getattr(g, "file_path", "") == path), None)
+        return getattr(f, "content", None)
+    try:
+        tree = ast.parse(step_source or "")
+    except SyntaxError:
+        return None
+    for node in ast.walk(tree):
+        name = getattr(getattr(node, "func", None), "id", None) or \
+            getattr(getattr(node, "func", None), "attr", None)
+        if not isinstance(node, ast.Call) or name not in {"scenarios", "scenario"}:
+            continue
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Constant) and isinstance(sub.value, str) and sub.value.strip():
+                base = sub.value.replace("\\", "/").rsplit("/", 1)[-1]
+                stem = base[:-len(".feature")] if base.endswith(".feature") else base
+                candidate = Path(project_root) / "features" / f"{stem}.feature"
+                if candidate.is_file():
+                    return candidate.read_text(encoding="utf-8")
+    return None
+
+
+def _scenarios_not_owning_state(tree, source: str, generated_files: list, project_root,
+                                fresh_fixtures: set, establishing_calls: set) -> Optional[dict]:
+    """{(function name, line): [scenario titles]} - for each step function, the
+    scenarios that use it without a step of their own that owns the starting
+    state (requests a fresh-identity fixture, or makes a clearing call for its
+    effect). None when the feature cannot be read or no step matches any
+    scenario: the caller then keeps the file-level answer."""
+    from validators.gherkin_analyzer import _phrase_matches, step_functions
+    text = _feature_text_for(source, generated_files, project_root)
+    funcs = step_functions(source) if text else None
+    if not text or not funcs:
+        return None
+
+    def owns(func) -> bool:
+        if {a.arg for a in func.args.args} & set(fresh_fixtures or ()):
+            return True
+        for node in ast.walk(func):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                continue
+            if node.func.attr in (establishing_calls or ()):
+                return True
+        for node in ast.walk(func):
+            if (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+                    and isinstance(node.value.func, ast.Attribute)
+                    and not node.value.func.attr.startswith(("is_", "has_"))
+                    and _STATE_OWNING_CALLS.search(node.value.func.attr)):
+                return True
+        return False
+
+    def uses(step: str, func) -> bool:
+        return any(_phrase_matches(step, phrase, ptype)
+                   for _k, phrase, ptype, node in funcs if node is func)
+
+    owning = [node for _k, _p, _t, node in funcs if owns(node)]
+    out: dict = {}
+    matched_any = False
+    for title, steps in _feature_scenarios(text):
+        scenario_owns = any(uses(step, f) for step in steps for f in owning)
+        for _k, _p, _t, node in funcs:
+            if any(uses(step, node) for step in steps):
+                matched_any = True
+                if not scenario_owns:
+                    titles = out.setdefault((node.name, node.lineno), [])
+                    if title not in titles:
+                        titles.append(title)
+    return out if matched_any else None
+
+
 def validate_persistent_state_assertions(
         generated_files: list, project_root=None) -> list[str]:
     """Fail an absolute assertion on state the inventory says the app keeps."""
@@ -3248,12 +3348,26 @@ def validate_persistent_state_assertions(
                         and _STATE_OWNING_CALLS.search(func.attr)):
                     owns_state = True
                     break
+        unowned: Optional[dict] = None
         if owns_state:
-            continue
+            # The file owns its state SOMEWHERE - but each scenario runs on
+            # its own, and only a scenario that clears (or starts a fresh
+            # identity) owns what it asserts. 10 Nov 2026: one scenario's
+            # "remove every product" exempted another, signed in as the
+            # shared account, that asserted "exactly 1 row" without clearing.
+            # With the feature at hand the claim is judged per scenario; an
+            # unreadable feature keeps the file-level answer.
+            unowned = _scenarios_not_owning_state(
+                tree, source, generated_files, project_root, fresh_fixtures,
+                establishing_calls)
+            if not unowned:
+                continue
 
         for func in ast.walk(tree):
             if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
+            if unowned is not None and (func.name, func.lineno) not in unowned:
+                continue                 # every scenario using it clears first
             args = {a.arg for a in func.args.args}
             if not (args & set(fixtures)):
                 continue                 # this step does not touch such a page
@@ -3361,6 +3475,12 @@ def validate_persistent_state_assertions(
                                           feature_in_batch=bool(feature_path),
                                           declared_calls=establishing_calls)
                     + contradiction
+                    + (f" Another scenario in this file clears the state, but these "
+                       f"scenarios assert it without doing so first: "
+                       f"{'; '.join(unowned[(func.name, func.lineno)])}. Each scenario "
+                       f"runs on its own."
+                       if unowned is not None and unowned.get((func.name, func.lineno))
+                       else "")
                 )
     return errors
 

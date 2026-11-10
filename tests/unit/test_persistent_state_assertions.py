@@ -1692,3 +1692,68 @@ def test_an_unused_capture_is_a_bug_under_any_keyword(project):
             basket_page.clear_the_basket()
     ''')], project)
     assert errors and "count" in errors[0]
+
+# ─────────────────────────────────────────────────────────────────────────
+# Ownership is per scenario, not per file (E126)
+# ─────────────────────────────────────────────────────────────────────────
+# 10 Nov 2026: one scenario's "remove every product" exempted another, signed
+# in as the shared account, that asserted "exactly 1 row" without clearing.
+
+_TWO_SCENARIOS = '''Feature: Basket
+  Scenario: emptied first
+    Given an empty basket
+    Then the basket holds exactly 1 row
+
+  Scenario: not emptied
+    When I add an item
+    Then the basket holds exactly 1 row
+'''
+
+_STEPS_WITH_CLEARING = '''
+    from pytest_bdd import given, when, then, parsers, scenarios
+    from config.paths import feature_path
+
+    scenarios(str(feature_path("flow")))
+
+    @given("an empty basket")
+    def empty(basket_page):
+        basket_page.remove_all_items()
+
+    @when("I add an item")
+    def add(basket_page):
+        basket_page.add_item()
+
+    @then(parsers.parse("the basket holds exactly {n:d} row"))
+    def count(basket_page, n):
+        assert len(basket_page.item_names()) == n
+'''
+
+
+def _feature_file(text):
+    return SimpleNamespace(file_path="features/flow.feature", content=text)
+
+
+def test_a_scenario_that_does_not_clear_is_not_exempted_by_one_that_does(project):
+    errors = validate_persistent_state_assertions(
+        [_feature_file(_TWO_SCENARIOS), _steps(_STEPS_WITH_CLEARING)], project)
+    assert errors, "the scenario that never clears asserts an exact count"
+    joined = "\n".join(errors)
+    assert "not emptied" in joined and "emptied first;" not in joined
+
+
+def test_every_scenario_that_asserts_clears_first_passes(project):
+    owned = _TWO_SCENARIOS.replace("    When I add an item\n",
+                                   "    Given an empty basket\n    When I add an item\n")
+    assert validate_persistent_state_assertions(
+        [_feature_file(owned), _steps(_STEPS_WITH_CLEARING)], project) == []
+
+
+def test_without_the_feature_the_file_level_answer_stands(project):
+    assert validate_persistent_state_assertions([_steps(_STEPS_WITH_CLEARING)], project) == []
+
+
+def test_the_feature_is_read_from_the_repository_when_not_in_the_batch(project):
+    (project / "features").mkdir()
+    (project / "features" / "flow.feature").write_text(_TWO_SCENARIOS, encoding="utf-8")
+    errors = validate_persistent_state_assertions([_steps(_STEPS_WITH_CLEARING)], project)
+    assert any("not emptied" in e for e in errors)
