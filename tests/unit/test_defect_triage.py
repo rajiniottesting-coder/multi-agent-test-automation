@@ -138,6 +138,33 @@ def test_another_cause_is_another_defect(world, tmp_path):
     assert len(out["raised"]) == 1 and len(_bugs(fake)) == 2
 
 
+def test_failing_for_another_cause_unflags_the_older_passing_defect(world, tmp_path):
+    """F51: one defect per test and cause - but an older defect of the same test
+    flagged passing must not keep suggesting closing while its test fails."""
+    fake, *_ = world
+    _triage(world, tmp_path, _case("test_add_an_item", "failed"), n=1)
+    (old,) = _bugs(fake)
+    _triage(world, tmp_path, _case("test_add_an_item"), n=2)
+    assert "ai-defect-passing" in fake.issues[old]["labels"]
+    out = _triage(world, tmp_path, _case("test_add_an_item", "failed", msg=TIMEOUT), n=3)
+    (new,) = out["raised"]
+    assert out["failing_again"] == [old]
+    assert "ai-defect-passing" not in fake.issues[old]["labels"]
+    assert f"see {new}" in fake.comments[old][-1] and f"{RUN}3" in fake.comments[old][-1]
+    again = _triage(world, tmp_path, _case("test_add_an_item", "failed", msg=TIMEOUT), n=4)
+    assert again["failing_again"] == [] and len(fake.comments[old]) == 2, "said once"
+
+
+def test_another_tests_failure_leaves_a_passing_defect_alone(world, tmp_path):
+    fake, *_ = world
+    _triage(world, tmp_path, _case("test_add_an_item", "failed"), n=1)
+    (old,) = _bugs(fake)
+    _triage(world, tmp_path, _case("test_add_an_item"), n=2)
+    out = _triage(world, tmp_path, _case("test_add_an_item"),
+                  _case("test_other", "failed", msg=TIMEOUT), n=3)
+    assert out["failing_again"] == [] and "ai-defect-passing" in fake.issues[old]["labels"]
+
+
 def test_a_closed_defect_is_left_alone_and_a_new_one_raised(world, tmp_path):
     fake, *_ = world
     _triage(world, tmp_path, _case("test_add_an_item", "failed"))

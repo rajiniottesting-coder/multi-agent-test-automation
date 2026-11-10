@@ -356,11 +356,13 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
         result["errors"].append(("the open defects", f"{type(e).__name__}: {e}"))
         return result
     failing_labels = set()
+    failing_tests: dict = {}             # test -> its defect this run (None: none)
     for case in failing:
         test = jm.case_id(case)
         d = _diagnosis(case)
         label = defect_label(test, d.label, s)
         failing_labels.add(label)
+        failing_tests.setdefault(test, None)
         issue = existing.get(label)
         try:
             if issue is not None:
@@ -374,6 +376,7 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
                 if not dry_run:
                     tracker.set_description(issue["key"], render(tracker, state))
                 result["updated"].append(issue["key"])
+                failing_tests[test] = issue["key"]
                 _trace(tracker, issue["key"], state, before, list(issue.get("labels") or []),
                        s, result, dry_run)
                 for old in legacy_labels(issue.get("labels"), s):
@@ -414,11 +417,37 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
                 labels.append(s["unmapped_label"])
             key = create(s["issue_type"], summary, render(tracker, state), labels)
             result["raised"].append(key)
+            failing_tests[test] = key
             logger.warning("Defect %s raised: %s", key, summary)
             _trace(tracker, key, state, {}, labels, s, result, dry_run)
         except Exception as e:                                     # noqa: BLE001
             logger.warning("Defect for %s not written: %s", test, e)
             result["errors"].append((test, f"{type(e).__name__}: {e}"))
+
+    # A test failing now for ANOTHER cause than an older defect of it records
+    # (one defect per test and cause): that defect is not passing any more.
+    # Left flagged, it would suggest closing while its test fails on main
+    # (10 Nov 2026: a defect 'unclassified' stayed 'passing - suggest closing'
+    # while its test failed for another cause under a new defect).
+    for label, issue in existing.items():
+        if label in failing_labels or s["passing_label"] not in (issue.get("labels") or []):
+            continue
+        test = (state_of(issue.get("description", "")) or {}).get("test")
+        if test not in failing_tests:
+            continue
+        now = failing_tests[test]
+        try:
+            if not dry_run:
+                tracker.remove_label(issue["key"], s["passing_label"])
+                tracker.add_comment(
+                    issue["key"],
+                    f"Its test fails on main again, now for another cause"
+                    f"{f' - see {now}' if now else ''}: {run_url}. Not passing any more; "
+                    "if both describe one problem, close one of them.")
+            result["failing_again"].append(issue["key"])
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning("Defect %s not unflagged: %s", issue.get("key"), e)
+            result["errors"].append((issue.get("key"), f"{type(e).__name__}: {e}"))
 
     # A pass only on the retry is no sign the defect is gone (F-19).
     passed = {jm.case_id(c) for c in cases if jm.outcome(c) == "passed" and not jm.is_flaky(c)}
