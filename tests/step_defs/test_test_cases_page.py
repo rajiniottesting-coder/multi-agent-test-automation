@@ -60,11 +60,12 @@ def assert_titles_are_links(test_cases_page):
     )
 
 
-@then("the Feedback for Us section should display an email address link")
-def assert_feedback_email_link(test_cases_page):
-    assert test_cases_page.has_feedback_email_link(), (
-        "Expected a Feedback for Us email address link"
-    )
+# AI-ORPHAN: no scenario in features/test_cases_page.feature uses this step after SCRUM-360 revised or retired SCRUM-312. Review before deleting.
+# @then("the Feedback for Us section should display an email address link")
+# def assert_feedback_email_link(test_cases_page):
+    # assert test_cases_page.has_feedback_email_link(), (
+        # "Expected a Feedback for Us email address link"
+    # )
 
 
 @then("the steps of that test case should be shown")
@@ -78,4 +79,38 @@ def assert_steps_shown(test_cases_page):
 def assert_still_on_test_cases_page(test_cases_page):
     assert test_cases_page.remaining_on_page(), (
         "Navigated away from the Test Cases page"
+    )
+
+
+@then('the Feedback for Us section should display a "Contact us" link')
+def assert_feedback_contact_us_link(test_cases_page):
+    assert test_cases_page.has_feedback_contact_us_link(), (
+        "Expected a 'Contact us' link in the Feedback for Us section"
+    )
+
+
+@then("the feedback email address link should not be shown in the Feedback for Us section")
+def assert_feedback_email_link_absent(test_cases_page):
+    assert test_cases_page.is_feedback_email_link_absent(), (
+        "Feedback email address link should not be shown"
+    )
+
+
+@when('I click the "Contact us" link in the Feedback for Us section')
+def click_feedback_contact_us(test_cases_page):
+    test_cases_page.click_feedback_contact_us()
+
+
+@then("the Contact Us page should be displayed showing the Contact Us form")
+def assert_contact_us_page_displayed(contact_us_page):
+    assert contact_us_page.is_loaded(), "Contact Us page did not load"
+    assert contact_us_page.is_contact_form_shown(), (
+        "Contact Us form is not shown"
+    )
+
+
+@then("no new browser tab or window should be opened")
+def assert_no_new_tab(test_cases_page):
+    assert test_cases_page.no_new_tab_opened(), (
+        "A new browser tab or window was opened"
     )
