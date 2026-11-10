@@ -243,9 +243,28 @@ def gather_ci_context(report: RunReport, cli_pr: int | None = None) -> RunReport
 # nullable fields — it will follow the template even when told
 # to omit. Determinism belongs in code.
 # ─────────────────────────────────────────────────────────────
+def unit_failures(reports_dir: Path) -> tuple[int, int] | None:
+    """(failed or errored, total) of the framework unit tests of this run, from
+    `junit-unit.xml` beside the app tests' report; None when there is none or
+    it cannot be read. The story's report is about the app tests, but the pull
+    request's check is red when these fail - and the comment must not read
+    "all passed" without saying so (10 Nov 2026)."""
+    path = Path(reports_dir) / "junit-unit.xml"
+    if not path.exists():
+        return None
+    try:
+        root = ET.parse(path).getroot()
+    except Exception:                                              # noqa: BLE001
+        return None
+    suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
+    bad = sum(int(x.get("failures", 0) or 0) + int(x.get("errors", 0) or 0) for x in suites)
+    total = sum(int(x.get("tests", 0) or 0) for x in suites)
+    return bad, total
+
+
 def build_final_comment(prose_body: str, report: RunReport,
                         outside: list = (), unscoped_total: int | None = None,
-                        outages: list = ()) -> str:
+                        outages: list = (), unit: tuple[int, int] | None = None) -> str:
     """Assemble the final Jira comment from LLM prose + deterministic links.
 
     Args:
@@ -267,6 +286,11 @@ def build_final_comment(prose_body: str, report: RunReport,
         Final markdown string ready to post to Jira.
     """
     parts: list[str] = []
+    if unit and unit[0]:
+        parts.append(f"> ⚠ **Pull request check red:** {unit[0]} of {unit[1]} framework "
+                     f"unit tests failed in this run. The results below are this story's "
+                     f"app tests only.")
+        parts.append("")
     if unscoped_total is not None:
         parts.append(f"_Scope: all {unscoped_total} tests in this run - the run "
                      f"could not be narrowed to this story's own tests._")
@@ -773,7 +797,7 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
     final_body = build_final_comment(draft.body_markdown, report, outside,
                                      unscoped_total=(full_report.total
                                                      if scoped_whole else None),
-                                     outages=outages)
+                                     outages=outages, unit=unit_failures(reports_dir))
 
     # 3c. USAGE LEDGER: this agent's own usage, and the story's cost so far.
     # Property ledger (F-31): one line pointing to the story's cost comment,
