@@ -585,6 +585,11 @@ def apply_runner_evidence(report: ReviewReport, runner_result) -> ReviewReport:
                 notes[id(issue)] = (f"Refuted by the runner: scenario '{title}' was executed "
                                     f"on this commit and passed, so the predicted failure "
                                     f"did not happen.")
+            elif _scenario_flaky(issue, scenarios):
+                # Said, as on a green run: a reader seeing the prediction still
+                # block beside a passed scenario asks why (10 Nov 2026).
+                logger.info("Scenario '%s' passed only on the retry (flaky) - its predicted "
+                            "failure keeps blocking.", _predicted_scenario(issue))
         if not notes:
             logger.info("Runner result for this commit: %s - predicted failure(s) "
                         "keep blocking%s.", conclusion or "not concluded",
