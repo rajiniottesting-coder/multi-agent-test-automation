@@ -4,6 +4,20 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — stale claims: a closed change story and a drift that is gone no longer block tests (#336)
+
+**Why:** two Impact Reviews went on blocking tests in other change stories after nothing called for them, both found before Run G's change stories were analysed:
+- **A closed change story.** The in-flight guard's list of open reviews and the hand-over's list of stories selected `impact-proposed` in any status. A change a person dropped (story closed, review left as it was) claimed its tests for good, and a Done review on it would still have been handed over.
+- **A drift that is gone.** The nightly drift job returned before reaching the drift maintenance story when no test was affected, so a review opened for a drift since fixed (validation cycle 1's broken selectors) stayed open and "blocked" the Test Cases tests in every change story.
+
+Changes:
+- `agents/agent0_impact._proposed_selection`: `impact-proposed` and a status in `selection.allowed_statuses`; used by the claims and by the hand-over
+- `agents/agent0_impact.settle_drift_story`: a night that measured pages and found no drift affecting a test supersedes the drift story's open review (`_supersede_open_review`, shared with `publish`), takes `impact-proposed` off and posts the night's report, so the same drift coming back is analysed again. A Done review and a night that measured no page are left alone
+- GUIDE: the in-flight guard and the nightly drift trigger
+- Tests in `test_change_in_progress.py`; TEST_TRACK E113, E114. Not tested live yet: E113, E114
+
+---
+
 ## November 2026 — the context update names what it read (#335)
 
 **Why:** the change-story context update reads only what the story's Components select (F-10), but nothing said what that was: the run log held neither the prompt nor a list, so a check of a run (E20) or the reviewer of the PR could not tell whether another Component's module was offered.
