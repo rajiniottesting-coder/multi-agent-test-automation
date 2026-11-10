@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — a step that says it clicks, clicks (#381)
+## November 2026 — a step that says it clicks, clicks (#382)
 
 **Why:** found live on Run H (SCRUM-379, its first pull request): the inventory had no key for an on-page control, and the generated step `When I click the <control>` called a page-object method that scrolled the window by script - the control's outcome - and clicked nothing. Every gate passed; the scenario would stay green with the control missing or broken. The coverage audit only noted, as the model's reading, that the control's visibility was unchecked.
 
