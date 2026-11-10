@@ -277,7 +277,7 @@
         "Contact Us"
       ],
       "elements": {
-        "contact_heading": "text=\"Get In Touch\"",
+        "contact_heading": "text=\"Write to us\"",
         "contact_name_input": "[data-qa='name']",
         "contact_email_input": "[data-qa='email']",
         "contact_subject_input": "[data-qa='subject']",
