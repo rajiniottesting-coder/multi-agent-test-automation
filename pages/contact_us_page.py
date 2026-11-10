@@ -102,3 +102,34 @@ class ContactUsPage(BasePage):
         while it is still showing, so the expected (absent) case costs nothing.
         """
         return self.is_loaded() and self.is_gone(self.sel("contact_success_message"))
+
+    def is_upload_field_absent(self) -> bool:
+        """True when the file upload control is NOT on the Contact Us form.
+
+        The upload field is a PERMANENT element — the inventory lists it as a
+        plain element, not a conditional — so a story that removes it leaves an
+        absent element that would also read as absent before the page has
+        rendered or on any other page. Prove the page is loaded first, THEN
+        that the upload input is gone, or the check passes on a blank screen.
+
+        is_gone() returns at once when the element is absent and waits only
+        while it is still showing, so the expected (absent) case costs nothing.
+        """
+        return self.is_loaded() and self.is_gone(self.sel("upload_file_input"))
+
+    def are_core_fields_shown(self) -> bool:
+        """True once the Name, Email, Subject and Message fields are all shown.
+
+        WAITS for each field. Call this only where the fields ARE expected —
+        the scenario asserting the form is intact after the upload removal.
+        """
+        return (
+            self.is_showing(self.sel("contact_name_input"))
+            and self.is_showing(self.sel("contact_email_input"))
+            and self.is_showing(self.sel("contact_subject_input"))
+            and self.is_showing(self.sel("contact_message_input"))
+        )
+
+    def is_submit_button_shown(self) -> bool:
+        """True once the Submit button is on screen. WAITS for it."""
+        return self.is_showing(self.sel("contact_submit_button"))
