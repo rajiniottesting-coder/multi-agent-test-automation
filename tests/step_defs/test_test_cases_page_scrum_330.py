@@ -51,6 +51,42 @@ def assert_titles_displayed(test_cases_page):
     assert test_cases_page.all_titles_are_links(), "Not every test case title is a link"
 
 
-@then("the feedback email link should be shown")
-def assert_feedback_email_link(test_cases_page):
-    assert test_cases_page.has_feedback_email_link(), "Feedback email link is not shown"
+# AI-ORPHAN: no scenario in features/test_cases_page_scrum_330.feature uses this step after SCRUM-354 revised or retired SCRUM-331. Review before deleting.
+# @then("the feedback email link should be shown")
+# def assert_feedback_email_link(test_cases_page):
+    # assert test_cases_page.has_feedback_email_link(), "Feedback email link is not shown"
+
+
+@then(parsers.parse('the feedback section should be headed "{expected}"'))
+def assert_feedback_section_heading(test_cases_page, expected):
+    assert expected in test_cases_page.feedback_section_text(), (
+        f"Expected feedback section heading {expected!r}, got {test_cases_page.feedback_section_text()!r}"
+    )
+
+
+@then(parsers.parse('the heading "{unexpected}" should not be shown'))
+def assert_heading_absent(test_cases_page, unexpected):
+    assert unexpected not in test_cases_page.feedback_section_text(), (
+        f"Heading {unexpected!r} should not be shown but was found"
+    )
+
+
+@then(parsers.parse('the feedback email link should read "{expected}"'))
+def assert_feedback_link_text(test_cases_page, expected):
+    assert test_cases_page.feedback_link_text() == expected, (
+        f"Expected feedback link text {expected!r}, got {test_cases_page.feedback_link_text()!r}"
+    )
+
+
+@then(parsers.parse('the link text "{unexpected}" should not be shown'))
+def assert_link_text_absent(test_cases_page, unexpected):
+    assert unexpected not in test_cases_page.feedback_link_text(), (
+        f"Link text {unexpected!r} should not be shown but was found"
+    )
+
+
+@then(parsers.parse('the feedback email link should point to "{expected}"'))
+def assert_feedback_link_href(test_cases_page, expected):
+    assert expected in test_cases_page.feedback_link_href(), (
+        f"Expected feedback link to point to {expected!r}, got {test_cases_page.feedback_link_href()!r}"
+    )
