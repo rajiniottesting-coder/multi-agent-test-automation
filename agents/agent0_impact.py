@@ -144,15 +144,26 @@ def _owners_and_blocks(tracker, host, story_key: str, candidates: list,
                               | set(claims.get(c.test_case_key, ())))
 
 
+def _proposed_selection(settings: dict) -> dict:
+    """The change stories with an Impact Review in progress: labelled
+    `impact-proposed` AND in a status a story is analysed in
+    (`selection.allowed_statuses`). 10 Nov 2026: the query had no status, so a
+    change a person dropped - the story closed, its review left as it was -
+    went on claiming its tests in every other story's in-flight guard, and a
+    Done review on it would still have been handed over (ai-ready, test cases
+    revised) for a change nobody makes any more."""
+    selection = {"issue_type": "Story", "required_labels": [settings["labels"]["proposed"]]}
+    statuses = (settings.get("selection") or {}).get("allowed_statuses")
+    return {**selection, "allowed_statuses": statuses} if statuses else selection
+
+
 def _claimed_by_open_reviews(tracker, story_key: str, settings: dict) -> dict:
     """{test case key: [change story]} - the rows of every OTHER story's open
     Impact Review (`impact-proposed`). Read from each story's latest report;
     a story whose report cannot be read claims nothing. Fails open."""
     claims: dict = {}
     try:
-        stories = tracker.find_stories_to_process(
-            {"issue_type": "Story", "required_labels": [settings["labels"]["proposed"]]},
-            max_results=50)
+        stories = tracker.find_stories_to_process(_proposed_selection(settings), max_results=50)
     except Exception as e:                                     # noqa: BLE001
         logger.warning("Could not list the open Impact Reviews (%s) - not checked.", e)
         return claims
@@ -552,6 +563,19 @@ def _with_delta(body: str, change: dict | None) -> str:
     return f"{head}\n{text}\n{rest}" if rest else f"{head}\n{text}"
 
 
+def _supersede_open_review(tracker, story_key: str, review: dict, report: dict,
+                           settings: dict) -> str:
+    """An open Impact Review whose rows a newer analysis no longer finds: its
+    table emptied with a note (the data block is the new report's), and
+    `impact-proposed` off the story, so it claims no test any more."""
+    note = (f"Superseded: the analysis with hash {report['content_hash']} finds no "
+            "test this change affects - nothing to decide here.")
+    superseded = impact_review.render(story_key, [], intro=note) + "\n\n" + ia.embed(report)
+    tracker.set_description(review["key"], superseded)
+    tracker.remove_label(story_key, settings["labels"]["proposed"])
+    return review["key"]
+
+
 def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool = False,
             force: bool = False) -> dict:
     """Shadow: one report comment. Live: the Impact Review (or ai-ready when
@@ -591,12 +615,7 @@ def publish(tracker, story_key: str, report: dict, settings: dict, dry_run: bool
             # Agent 1 skips - beside ai-ready, and approving the stale rows
             # later would hand over revisions nothing calls for (4 Nov 2026,
             # a story analysed again).
-            note = (f"Superseded: the analysis with hash {report['content_hash']} finds no "
-                    "test this change affects - nothing to decide here.")
-            superseded = impact_review.render(story_key, [], intro=note) + "\n\n" + ia.embed(report)
-            tracker.set_description(review["key"], superseded)
-            tracker.remove_label(story_key, labels["proposed"])
-            settled = review["key"]
+            settled = _supersede_open_review(tracker, story_key, review, report, settings)
         tracker.add_label(story_key, labels["ready"])
         out = {"story": story_key, "action": "nothing-to-review"}
         return {**out, "review_superseded": settled} if settled else out
@@ -655,9 +674,7 @@ def hand_over_decided(tracker, settings: dict, host=None, llm=None,
     update is not proposed, so a dry run costs no model call."""
     from core.impact_handover import HandoverRefused, decisions_from_review, handover
     out = []
-    for s in tracker.find_stories_to_process(
-            {"issue_type": "Story", "required_labels": [settings["labels"]["proposed"]]},
-            max_results=50):
+    for s in tracker.find_stories_to_process(_proposed_selection(settings), max_results=50):
         _start_usage()
         try:
             review_key, decisions = decisions_from_review(tracker, s["key"], settings)
@@ -875,6 +892,8 @@ def _run_mode(args, ap, settings, tracker, host, uncovered) -> int:
     body = _render_report(report, "Impact of the nightly inventory drift")
     if args.dry_run or settings["shadow_mode"] or not report["ranked"]:
         print(body)
+        if not (args.dry_run or settings["shadow_mode"]):
+            print(settle_drift_story(tracker, drift, report, settings))
         return 0
     story = _open_drift_story(tracker, settings)
     if story is None:
@@ -898,6 +917,35 @@ def _uncovered_for(path: str | None, settings: dict) -> dict | None:
         logger.info("uncovered-element hint not used: %s", why_not)
         return None
     return uncovered
+
+
+def settle_drift_story(tracker, drift: dict, report: dict, settings: dict) -> dict:
+    """The drift is gone: a night that measured pages and found no drift
+    affecting a test. 10 Nov 2026: the maintenance story's review, opened for
+    a drift since fixed, stayed open with `impact-proposed` - the job returned
+    before it reached the story - so its rows were listed as "blocked by" in
+    every change story on those tests, for good. Now its open review is
+    superseded (as a change story's is when a re-analysis finds nothing) and
+    the night's report is posted, so the same drift coming back is analysed
+    again. A review already Done (a person decided; the hand-over is theirs)
+    and a night that measured no page (site down, login failed - nothing
+    known) are left alone."""
+    if not (drift.get("pages") or {}):
+        return {"drift": "no page measured - drift story left as it is"}
+    story = _open_drift_story(tracker, settings)
+    if story is None:
+        return {"drift": "none"}
+    if settings["labels"]["proposed"] not in (tracker.get_story(story).get("labels") or []):
+        return {"drift": "none", "story": story}
+    _previous, review = _previous_report(tracker, story, settings)
+    done = settings["review"]["done_status"].strip().lower()
+    if not review or review["status"].strip().lower() == done:
+        return {"drift": "none", "story": story, "review": review["key"] if review else None}
+    settled = _supersede_open_review(tracker, story, review, report, settings)
+    tracker.add_comment(story, _render_report(
+        report, f"Impact report for {story} - no drift affects a test tonight; review "
+                f"{settled} superseded"))
+    return {"drift": "gone", "story": story, "review_superseded": settled}
 
 
 def _drift_components(report: dict, root: Path) -> list:
