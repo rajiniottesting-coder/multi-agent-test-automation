@@ -320,7 +320,12 @@ test starts on the browser's empty page. `validate_click_steps_click`
 directly or through the methods it calls - such as one that scrolls or
 navigates by script in the control's place: a test that performs what a
 control would do passes even when the control is missing. An element the
-inventory lacks is left out with its reason, never simulated. A page has one
+inventory lacks is left out with its reason, never simulated: when such a step
+survives the repair, its scenarios are taken out of the story's own feature
+(with the step functions only they used) and each test case is listed as not
+automated with that reason, so the story's other test cases are still coded -
+never a change story's splice into another story's files, never a Background
+step, and a feature that would be left empty is refused as before. A page has one
 page object: a new page object for an inventory page a committed page object
 already implements is refused (`validate_page_object_selectors`), naming that
 page object - and, when it is reserved, saying a person adds the method there,

@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — the scenarios that stand in for a missing control are left out, the rest coded (#PRNUM)
+
+**Why:** after #384, SCRUM-379 run again (Run H): the plan still automated the test cases that click a control the inventory lacks, the gate refused the step that clicked nothing, and the whole story was refused - its third test case, which needs no missing control, included. The plan's skip is the model's judgement; this is the code's.
+
+- `validators/action_steps.leave_out_stand_ins`, run in Agent 2 before the coverage step: scenarios using a step an `Action step error` names are taken out of the story's own feature, with the step functions only they used; each test case is named `Skipped: <KEY> -- <reason>` in the plan's notes, so the PR lists it under *Approved test cases not automated* with `[agent2:incomplete]` and `ai-incomplete` (E24a). Never a change story's splice into another story's files, never a Background step; a feature that would be left with no scenario is refused as before
+- Checked on SCRUM-379's first PR: the two scroll-up scenarios go, the footer scenario stays, and the batch passes every repairable check
+- Tests in `test_action_steps.py`; GUIDE; TEST_TRACK E134. Not tested live yet: E134
+
+---
+
 ## November 2026 — a test case needing a control the inventory lacks is planned as skipped (#384)
 
 **Why:** after #382, SCRUM-379 run again (Run H): the gate refused the step that clicked nothing, the model kept producing the control's outcome under another name, and the whole story was refused - its test case that needed no missing control included - with the generic "reword a test case" advice. The plan had automated the test case although the inventory has no key for the control it clicks.
