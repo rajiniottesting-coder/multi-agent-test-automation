@@ -55,6 +55,20 @@ class CartPage(BasePage):
             self.sel("cart_delete_buttons"),
         )
 
+    def remove_all_products(self) -> None:
+        """Delete EVERY row currently in the cart, one at a time.
+
+        Deletes the first row, waits for the row family to shrink, and repeats
+        until no rows remain. Waiting after each deletion means the next count
+        reads the settled page rather than racing the removal, so a row left
+        mid-update is never miscounted as still present.
+        """
+        count = self.get_count(self.sel("cart_rows"))
+        while count > 0:
+            self.click_nth(self.sel("cart_delete_buttons"), 0)
+            self.wait_for_count(self.sel("cart_rows"), count - 1)
+            count -= 1
+
     # ── queries ──────────────────────────────────────────────
     def is_loaded(self, timeout_ms: Optional[int] = None) -> bool:
         """True once the cart table is on screen. WAITS for it.
@@ -105,3 +119,23 @@ class CartPage(BasePage):
     def product_names(self) -> list[str]:
         """Return the names of every product currently in the cart."""
         return self.get_all_texts(self.sel("cart_product_names"))
+
+    def assert_row_count(self, expected: int) -> None:
+        """Wait until the cart holds exactly `expected` rows.
+
+        Uses wait_for_count so the check re-reads until the page settles rather
+        than snapshotting a count mid-update. The cart is private to this
+        test's own session here, so an absolute count is a safe assertion.
+        """
+        self.wait_for_count(self.sel("cart_rows"), expected)
+
+    def is_empty(self) -> bool:
+        """True once the empty-cart message is on screen. WAITS for it.
+
+        The empty-cart message renders only when the cart holds nothing, so
+        asserting on it asserts emptiness ABSOLUTELY — call this only where the
+        scenario has driven the cart to empty itself (it removed every row). A
+        step asking 'is it empty?' to branch would pay the full timeout each
+        time the answer is no.
+        """
+        return self.is_showing(self.sel("empty_cart_message"))
