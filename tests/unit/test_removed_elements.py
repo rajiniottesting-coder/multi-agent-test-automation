@@ -170,6 +170,32 @@ def test_the_body_lists_retired_and_reappeared_elements():
     assert "Declared removed, but on the page again" in body and "`p.badge`" in body
 
 
+def test_a_retired_key_is_not_added_back_under_its_own_name():
+    """E127: a key declared removed whose selector reads gone, while a live
+    element the crawl names the same is on the page. The update retired the
+    key and then added the name back with the live selector - one pull
+    request undoing the story's declaration and its note. Now the addition is
+    refused with the reason, for a person."""
+    drift = _drift()
+    drift["new_elements"] = {"p": {"badge": ".badge-new"}}
+    upd = iu.build_update(drift, _inventory(), set())
+    page = upd.inventory["pages"]["p"]
+    assert upd.retired and not upd.added
+    assert "badge" not in page["elements"]
+    assert upd.refused[0]["element"] == "badge"
+    assert "declared this name removed" in upd.refused[0]["refused"]
+    assert "declared this name removed" in iu.render_body(upd, "inv.json", "abcdef123456")
+
+
+def test_a_kept_removed_key_still_refuses_the_same_name():
+    drift = _drift()
+    drift["new_elements"] = {"p": {"badge": ".badge-new", "fresh": "#fresh"}}
+    upd = iu.build_update(drift, _inventory(), {"badge"})
+    assert not upd.retired
+    assert [r["element"] for r in upd.added] == ["fresh"]
+    assert upd.inventory["pages"]["p"]["elements"]["badge"] == "#badge"
+
+
 # ── the hand-over declares it ───────────────────────────────────────────
 
 INV = {"pages": {"detail": {"components": ["Detail"], "elements": {"pop": "text=Added",
@@ -284,3 +310,32 @@ def test_the_thin_family_note_names_only_families_measured_as_one_or_none(monkey
     vl._verify_page(MagicMock(), "https://x.test", "p", entry, 0, True)
     note = next(l for l in capsys.readouterr().out.splitlines() if "not multiple right now" in l)
     assert "(cond, rows)" in note, note
+
+
+# ── the summary names what a declaration explains (E128) ─────────────────
+
+def test_the_summary_names_a_removed_key_measured_gone(monkeypatch, capsys):
+    """Under --only-problems a GONE key prints no line of its own; the run's
+    summary called it "resolves to exactly one element". Now the summary
+    counts the declared readings apart and names the keys declared removed."""
+    from scripts import verify_locators as vl
+    counts = {"#badge": 0, "#save": 1, "#help": 0, "#rows": 3}
+    monkeypatch.setattr(vl, "_resolve_one", lambda page, sel: SimpleNamespace(
+        count=lambda: counts[sel]))
+    monkeypatch.setattr(vl, "_wait_for_render", lambda page, s, *a, **k: True)
+    monkeypatch.setattr(vl, "_highlight", lambda *a, **k: False)
+    vl._DECLARED_READINGS.clear()
+    entry = {"url": "/p", "removed": ["badge"], "conditional": ["help"],
+             "multi_match": ["rows"],
+             "elements": {"badge": "#badge", "save": "#save", "help": "#help",
+                          "rows": "#rows"}}
+    ok, bad = vl._verify_page(MagicMock(), "https://x.test", "p", entry, 0, True)
+    assert (ok, bad) == (4, 0)
+    assert "GONE" not in capsys.readouterr().out, "--only-problems: no line per key"
+    line = vl.declared_summary(vl._DECLARED_READINGS)
+    assert "3 read as their declaration states" in line
+    assert "1 gone, as declared removed (p.badge)" in line
+    assert "1 conditional" in line and "1 declared families" in line
+    assert "planned" not in line
+    assert vl.declared_summary({}) == ""
+    vl._DECLARED_READINGS.clear()
