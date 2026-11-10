@@ -4,6 +4,17 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — an unlimited budget is said in words, never "$inf"; Agent 1's output room is a setting (#PRNUM)
+
+**Why:** found live: with both budgets set to `.inf` (owner's decision until the validation items are developed), the Pipeline health description read "$71.86 of the $inf daily budget". A project may lift a limit for a while; nothing a person reads should show the raw value.
+
+- `core/spend_budget.unlimited` and `more_after_release`: an `.inf` limit is "no daily budget is set" in the health view, "No daily budget is set now." when a day alert closes, and "spend without a limit" in a hold's release text; the story cost line is left out when there is no story limit to measure against
+- `config/config.yaml`: `budget.per_story_usd` and `per_day_usd` are `.inf` for now (restore 8 / 150 when the validation work is complete)
+- Agent 1's output room is a setting, `agents.agent1_analyst.max_output_tokens` (12288, as before); a draft that runs out of it names that key - before, the stop said to change the code (`LLMClient(..., cap_setting=...)` names the key for any agent that reads its cap from config)
+- Tests in `test_spend_budget.py` and `test_run_b_findings.py` (the cost-comment test in `test_comment_dedup.py` no longer depends on the shipped limit); TEST_TRACK E139, E140. Not tested live yet: E139, E140
+
+---
+
 ## November 2026 — a new attempt starts on a fresh budget, without the old hold (#392)
 
 **Why:** found live on Run H (validation window H2, per-story budget lowered): a change story held for an earlier attempt's spend was edited and sent back to Agent 0. Agent 0 records the attempt boundary only after its analysis, so the analysis itself ran on the held budget and was refused - the reset that would have restarted the budget never came. And a reset that did happen (Agent 1 re-processing a story) restarted the budget but left `budget-hold` on the story, so every selection kept skipping it.
