@@ -40,6 +40,11 @@ If a test case is already covered by a reserved file (e.g., login.feature
 already covers login), SKIP that test case — don't try to "improve" the
 reserved file. Add the skip to `notes`.
 
+A page has ONE page object. Never plan a new page object for an inventory page
+a reserved (or any committed) page object already implements, to get round
+it: a step needing a method a reserved page object lacks calls it there, and
+the system tells a person to add it.
+
 ## TIER 2: EXTENDABLE (may modify, additively)
 
 These files are existing page objects that grow as new features are

@@ -157,6 +157,17 @@ def _features_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(paths, "FEATURES_DIR", tmp_path, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _the_synthetic_class_is_its_pages_page_object(monkeypatch):
+    """The contract's page object stands for the page's ONLY page object (a
+    page has one - E132): the committed one for the same page is set aside,
+    so the gate judges the shapes under test, not a second class."""
+    import validators.method_resolution_validator as mrv
+    real = mrv._committed_inventory_pages
+    monkeypatch.setattr(mrv, "_committed_inventory_pages",
+                        lambda root: {k: v for k, v in real(root).items() if k != PAGE_NAME})
+
+
 def _run(c):
     return _gate(_batch(c["methods"], c["step"], c["phrase"], c["arg"], c["params"]))
 

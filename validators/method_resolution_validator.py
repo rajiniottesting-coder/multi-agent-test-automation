@@ -1739,6 +1739,30 @@ def validate_page_object_selectors(
                 )
                 continue
 
+            # A page has ONE page object. 10 Nov 2026: the top menu's page
+            # object is reserved, and a story needing one more method on it got
+            # a second, new page object for the same inventory page instead -
+            # its own name for behaviour the reserved one already has, and the
+            # reserved file's protection side-stepped. The method belongs on
+            # the page's page object: extend it, or, when it is reserved, call
+            # what it needs there and let the gate say a person adds it.
+            if claimed and _norm_path(claimed[1]) != _norm_path(path) and not (
+                    Path(project_root or ".") / path).is_file():
+                reserved = _norm_path(claimed[1]) in {
+                    _norm_path(r) for r in _reserved_page_files()}
+                errors.append(
+                    f"{_ERROR_PREFIX} in '{path}': class {node.name} is a new page "
+                    f"object for INVENTORY_PAGE = '{inv_page}', which {claimed[0]} "
+                    f"({claimed[1]}) already implements. A page has one page object: "
+                    + (f"{claimed[1]} is RESERVED, so do not work around it - call the "
+                       f"method the step needs on {claimed[0]}; if it does not exist, "
+                       f"a person adds it there."
+                       if reserved else
+                       f"add the methods to {claimed[0]} in {claimed[1]} and remove "
+                       f"this class.")
+                )
+                continue
+
             page_entry = pages.get(inv_page) or {}
             elements = page_entry.get("elements")
             elements = elements if isinstance(elements, dict) else {}

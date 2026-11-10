@@ -486,8 +486,11 @@ def test_a_new_page_object_borrowing_a_page_it_does_not_use_is_refused(menu_proj
     (err,) = validate_page_object_selectors([_po("pages/reports_page.py", "ReportsPage", "menu")], root, inv)
     assert "MenuPage (pages/menu_page.py) implements, and resolves none of its elements" in err
     using = "    def open_reports(self) -> None:\n        self.click(self.sel(\"reports_link\"))\n"
-    assert validate_page_object_selectors(
-        [_po("pages/reports_page.py", "ReportsPage", "menu", using)], root, inv) == []
+    # Using the page's elements does not make it this class's page: a page has
+    # one page object (E132, 10 Nov 2026).
+    (err,) = validate_page_object_selectors(
+        [_po("pages/reports_page.py", "ReportsPage", "menu", using)], root, inv)
+    assert "is a new page object for INVENTORY_PAGE = 'menu', which MenuPage" in err
     assert validate_page_object_selectors(
         [_po("pages/menu_page.py", "MenuPage", "menu")], root, inv) == []    # its own file
 
