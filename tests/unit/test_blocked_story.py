@@ -208,3 +208,19 @@ def test_an_update_refused_before_on_the_same_input_is_skipped(monkeypatch):
     monkeypatch.setattr(a2, "_locate_feature_file_for_story", lambda *a: None)
     monkeypatch.setattr(a2, "build_marker_index", lambda *a: {})
     assert a2.run_update("PROJ-5", skip_if_blocked=True)["status"] != "blocked"
+
+
+def test_a_run_by_key_names_what_it_did_not_automate(monkeypatch, capsys):
+    """A run by key printed no 'not automated' line; the scan's summary does."""
+    import sys
+
+    import agents.agent2_coder as a2
+    monkeypatch.setattr(a2, "validate_required_env", lambda *a: None)
+    monkeypatch.setattr(a2, "get_tracker", lambda: type("T", (), {
+        "get_story": lambda self, k: {"labels": []}})())
+    monkeypatch.setattr(a2, "run", lambda key, **kw: {
+        "story_id": key, "status": "pr_opened", "files_generated": 3,
+        "not_automated": ["PROJ-8", "PROJ-9"]})
+    monkeypatch.setattr(sys, "argv", ["agent2", "--story", "PROJ-5"])
+    a2.main()
+    assert "Not automated: PROJ-8, PROJ-9" in capsys.readouterr().out

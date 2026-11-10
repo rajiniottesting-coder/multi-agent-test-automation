@@ -10,7 +10,8 @@ This document records substantive changes to the framework in reverse-chronologi
 
 - Context update (SCRUM-394's context-update pull request, its "Not applied" list): the model quoted an inventory note as the notes block shows it - `- pages.<page>.elements_notes.<key>: <text>` - and the rewrite was dropped as "not in ... verbatim" although the note was there. `core/context_update._replace_passage` now retries without that line prefix when old and new carry the same one (`_NOTE_LINE`); selectors stay untouchable
 - Agent 3 (a throw-away PR whose run was red for another reason): a predicted scenario that passed only on the retry kept blocking - correctly - but only a green run logged why. A red run now logs "passed only on the retry (flaky) - its predicted failure keeps blocking" too
-- Tests in `test_context_scope.py`, `test_review_scenario_evidence.py`; TEST_TRACK E136, E137. Not tested live yet: E136, E137
+- A run by key printed no "not automated" line, which the scan's summary prints (SCRUM-379's run by key): the by-key summary now lists the test cases left without a scenario
+- Tests in `test_context_scope.py`, `test_review_scenario_evidence.py`, `test_blocked_story.py`; TEST_TRACK E136, E137. Not tested live yet: E136, E137
 
 ---
 
