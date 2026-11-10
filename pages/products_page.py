@@ -58,6 +58,21 @@ class ProductsPage(BasePage):
             self.sel("view_product_links"),
         )
 
+    def open_product_detail_page(self, product_name: str) -> None:
+        """Navigate to the listing, then open the named product's detail page.
+
+        For a scenario that starts on another page (e.g. just signed in) and
+        wants to reach a product's detail page in one step. Opens the listing
+        itself first so the View Product link is guaranteed to be on screen,
+        then scopes to the product card and clicks its link — the link's href
+        already carries the product id, so the test never invents one.
+
+        Prefer this over open_products + open_product_details when the browser
+        is not yet on the listing; it combines the navigation with the click.
+        """
+        self.require_own_page()
+        self.open_product_details(product_name)
+
     def search_for(self, term: str) -> None:
         """Enter a search term and submit the search form.
 
