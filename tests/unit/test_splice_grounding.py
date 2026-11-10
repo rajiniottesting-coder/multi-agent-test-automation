@@ -398,7 +398,8 @@ def test_nothing_written_in_the_run_means_nothing_to_repair(monkeypatch):
 def test_run_routes_each_new_stop_back_and_splices_again():
     import inspect
     src = inspect.getsource(coder.run)
-    route = src[src.index("for _round in range(len(owner_files) + 1):"):]
+    assert "rounds = 2 * len(owner_files) + 1" in src, "two rounds per owner file"
+    route = src[src.index("for _round in range(rounds):"):]
     route = route[:route.index("by_path = {")]
     assert "except SpliceNeedsPageMethods as need:" in route
     assert "_extend_page_objects_for_splice(" in route

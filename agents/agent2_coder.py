@@ -5324,10 +5324,12 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
         # stopped on it (10 Nov 2026). Each such stop goes back to the page-
         # object repair - the page object it names, told what the steps must
         # check - and the splice runs again, while each round asks for
-        # something new (one owner file after another), at most one round
-        # per owner file.
+        # something new. Bounded: two rounds per owner file (a file's second
+        # answer may need one more method, then the next file's turn) - live,
+        # one round per file stopped a story whose first file needed two.
         asked: set = set()
-        for _round in range(len(owner_files) + 1):
+        rounds = 2 * len(owner_files) + 1
+        for _round in range(rounds):
             try:
                 owner_generated, impact_report = agent2_impact.splice_owner_files(
                     llm, gh, story_id, owner_files, marker_index, ctx, references,
@@ -5335,7 +5337,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
                 break
             except SpliceNeedsPageMethods as need:
                 key = (need.step_defs_path, tuple(need.needs))
-                if (key in asked or _round == len(owner_files)
+                if (key in asked or _round == rounds - 1
                         or not _extend_page_objects_for_splice(
                             llm, gh, plan, generated_files, need,
                             new_test_cases + plan_revisions, references, page_inventory,
