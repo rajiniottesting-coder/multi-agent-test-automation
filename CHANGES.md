@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a test re-run after a temporary HTTP error is never invisible (#410)
+
+**Why:** found live on validation item E15 (11 Nov, throw-away PR T7): a test refused with HTTP 503 on its first attempt passed on the re-run - and the *Keep only the final attempt* step printed "no re-run tests". `scripts/collapse_junit_reruns.py` assumed the re-run plugin writes every attempt as its own testcase; pytest-rerunfailures 16 writes only the final one and nothing about the earlier attempts, so the re-run reached no reader of the report.
+
+- `core/rerun_record.py` (a pytest plugin, registered by `tests/conftest.py`): counts the attempts pytest reports as `rerun` and puts a `reruns` property on the test's final testcase - whatever shape the plugin's report has
+- `scripts/collapse_junit_reruns.py`: lists tests that already carry the property, beside those it collapses; nothing is rewritten when there is nothing to collapse
+- GUIDE and TECHNICAL_DEEP_DIVE updated; tests in `test_outage_retry.py` (one runs the installed plugin end to end); TEST_TRACK E145. Not tested live yet: E145
+
+---
+
 ## November 2026 — a full Agent 4 run started by hand takes turns and survives a merge, like the nightly one (#407)
 
 **Why:** the owner asked why E30b/E30c had to wait for the nightly run rather than a manual one. Reading the workflow showed why - and a gap: a manual (`workflow_dispatch`) run on `main` shared the concurrency group of a push to `main`, whose `cancel-in-progress` is on, so any merge cancelled a person's full regression run part-way; and it did not take turns with pull requests' browser runs, which log in with the same test accounts (`scripts/e2e_turn.py`), so either could change the other's results.

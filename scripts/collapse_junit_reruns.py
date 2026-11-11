@@ -14,6 +14,11 @@ attempt whose outcome counts - records how many attempts came before it as a
 
     python -m scripts.collapse_junit_reruns reports/junit.xml
 
+A plugin that writes only the final attempt (pytest-rerunfailures 16) leaves
+nothing to collapse; core/rerun_record.py then puts the `reruns` property on
+that testcase at the source, and this step lists those tests the same way -
+a re-run is never invisible whichever shape the report has.
+
 A missing or unreadable file is left alone and the exit code is 0: this step
 must never be the reason a run has no report.
 """
@@ -67,6 +72,22 @@ def collapse(root: ET.Element) -> dict:
     return reruns
 
 
+def recorded(root: ET.Element) -> dict:
+    """{"classname::name": earlier attempts} from `reruns` properties already
+    on the report (written at the source by core/rerun_record.py)."""
+    out: dict = {}
+    for case in root.iter("testcase"):
+        for prop in case.iter("property"):
+            if prop.get("name") == "reruns":
+                try:
+                    n = int(prop.get("value") or 0)
+                except ValueError:
+                    continue
+                if n > 0:
+                    out[f"{case.get('classname', '')}::{case.get('name', '')}"] = n
+    return out
+
+
 def main(argv=None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     path = Path(args[0]) if args else Path("reports/junit.xml")
@@ -78,11 +99,13 @@ def main(argv=None) -> int:
     except ET.ParseError as exc:
         print(f"{path}: unreadable ({exc}), left as it is")
         return 0
-    reruns = collapse(tree.getroot())
+    collapsed = collapse(tree.getroot())
+    if collapsed:
+        tree.write(path, encoding="utf-8", xml_declaration=True)
+    reruns = {**recorded(tree.getroot()), **collapsed}
     if not reruns:
         print(f"{path}: no re-run tests")
         return 0
-    tree.write(path, encoding="utf-8", xml_declaration=True)
     for label, n in sorted(reruns.items()):
         print(f"re-run {n} time(s) after a temporary HTTP error: {label}")
     return 0
