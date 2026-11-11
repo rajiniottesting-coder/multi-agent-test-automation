@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — a test re-run after a temporary HTTP error is never invisible (#PRNUM)
+## November 2026 — a test re-run after a temporary HTTP error is never invisible (#410)
 
 **Why:** found live on validation item E15 (11 Nov, throw-away PR T7): a test refused with HTTP 503 on its first attempt passed on the re-run - and the *Keep only the final attempt* step printed "no re-run tests". `scripts/collapse_junit_reruns.py` assumed the re-run plugin writes every attempt as its own testcase; pytest-rerunfailures 16 writes only the final one and nothing about the earlier attempts, so the re-run reached no reader of the report.
 
