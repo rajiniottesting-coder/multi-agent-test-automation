@@ -27,10 +27,11 @@ import sys
 # the live application (or is about to).
 ACTIVE = {"queued", "in_progress", "waiting", "requested", "pending"}
 
-# Runs that drive the live application in turn: pull requests, and the nightly
-# run on main (F-21). A push to main runs the unit suite and only rarely the
+# Runs that drive the live application in turn: pull requests, the nightly
+# run on main (F-21), and a full run started by hand - it logs in with the
+# same test accounts. A push to main runs the unit suite and only rarely the
 # E2E; it does not hold anybody up.
-TURN_EVENTS = {"pull_request", "schedule"}
+TURN_EVENTS = {"pull_request", "schedule", "workflow_dispatch"}
 
 
 def runs_ahead(me: int, branch: str, runs: list) -> list[int]:

@@ -77,6 +77,10 @@ def should_block_request(url: str, blocked_hosts) -> bool:
 def pytest_configure(config):
     """Fill the Allure report's metadata panels before any test runs.
 
+    Also registers core/rerun_record.py: a test re-run after a temporary
+    HTTP error gets a `reruns` property in junit.xml, whatever shape the
+    re-run plugin writes (it lists the re-run tests, Agent 4's report step).
+
     ENVIRONMENT, CATEGORIES, EXECUTORS and TREND are all blank unless
     something writes them, and none is a by-product of running tests. A
     report with four empty boxes reads as a report that does not work.
@@ -89,6 +93,9 @@ def pytest_configure(config):
     and from the framework's own diagnosis signatures - so pointing at a
     different application changes every value without changing this code.
     """
+    from core import rerun_record
+    if not config.pluginmanager.is_registered(rerun_record):
+        config.pluginmanager.register(rerun_record, "rerun_record")
     results_dir = config.getoption("--alluredir", default=None)
     if not results_dir:
         return                                    # not an Allure run

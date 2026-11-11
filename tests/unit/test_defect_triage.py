@@ -323,9 +323,13 @@ def test_the_suite_runs_nightly_outside_business_hours():
 
 
 def test_the_nightly_run_has_its_own_group_and_no_story_report():
+    # A full run - nightly or started by hand - is never in the group a push
+    # to main cancels (cancel-in-progress is for push only).
     jobs = _wf()["jobs"]
     group = jobs["test"]["concurrency"]["group"]
-    assert "github.event_name == 'schedule' && 'scheduled'" in group
+    assert ("(github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') "
+            "&& format('full-{0}', github.ref)") in group
+    assert jobs["test"]["concurrency"]["cancel-in-progress"] == "${{ github.event_name == 'push' }}"
     assert "github.event_name == 'pull_request'" in jobs["report"]["if"]
 
 

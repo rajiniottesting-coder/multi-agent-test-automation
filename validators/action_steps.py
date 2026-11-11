@@ -173,7 +173,8 @@ def validate_click_steps_click(generated_files, project_root=None) -> list:
 
 # ── leaving out the scenarios that stand in for a missing control ─────────
 
-_ERROR = re.compile(r"^Action step error in '([^']+)': the step `(Given|When) (.+?)` says")
+_ERROR = re.compile(r"^(Action step error|Step fidelity error) in '([^']+)': the step "
+                    r"`(Given|When|Then) (.+?)`(?: says| - (.+?)\. Its code acts on)")
 _MARKER_KEY = re.compile(r"#\s*JIRA:\s*([A-Z][A-Z0-9_]*-\d+)")
 _SCENARIO = re.compile(r"^\s*(Scenario Outline|Scenario Template|Scenario|Example)\s*:")
 _BACKGROUND = re.compile(r"^\s*Background\s*:")
@@ -215,8 +216,10 @@ def _steps_of(block_lines: list) -> list:
 
 def leave_out_stand_ins(generated_files, errors, protected=()) -> tuple:
     """(files, {test case key: reason}) with every scenario that uses a step an
-    `Action step error` names taken out of its feature, and each step function
-    only those scenarios used taken out of its step file.
+    `Action step error` or a `Step fidelity error` (validators/step_fidelity.py:
+    the step's code acts on or checks another element) names taken out of its
+    feature, and each step function only those scenarios used taken out of its
+    step file.
 
     A step that says the user clicks and clicks nothing has, after the repair,
     nothing it CAN click: the control is not in the app inventory. Refusing the
@@ -227,11 +230,15 @@ def leave_out_stand_ins(generated_files, errors, protected=()) -> tuple:
     lists it as not automated (agents/agent2_coverage.py). Files the errors do
     not name are returned unchanged."""
     from validators.gherkin_analyzer import _phrase_matches, step_functions
+    # {step file: {(keyword, phrase): why}} - an action error names the
+    # feature's own wording; a fidelity error names the step definition's
+    # pattern, matched to the feature's wording below.
     targets: dict = {}
     for err in errors or []:
         m = _ERROR.match(str(err))
         if m:
-            targets.setdefault(m.group(1), set()).add((m.group(2).lower(), m.group(3)))
+            targets.setdefault(m.group(2), {})[(m.group(3).lower(), m.group(4))] = (
+                m.group(5) if m.group(1).startswith("Step fidelity") else None)
     by_path = {f.file_path: f for f in generated_files or []}
     replaced: dict = {}
     left_out: dict = {}
@@ -242,21 +249,38 @@ def leave_out_stand_ins(generated_files, errors, protected=()) -> tuple:
         if feature is None or step_file is None or {feature_path, sd_path} & set(protected):
             continue
         lines = feature.content.splitlines()
+        types = {(kind, phrase): ptype
+                 for kind, phrase, ptype, _f in step_functions(step_file.content) or []}
+
+        def named(kw, phrase):
+            """The target this feature step is, or None."""
+            for (k, target), why in steps.items():
+                if k == kw and (phrase == target or ((k, target) in types and _phrase_matches(
+                        phrase, target, types[(k, target)]))):
+                    return phrase, why
+            return None
+
         drop, kept_steps, dropped_steps = [], [], []
         for start, end, is_scenario in _blocks(lines):
             block = lines[start:end]
             used = _steps_of(block)
-            if is_scenario and any((k, p) in steps for k, p in used):
+            hit = next((h for k, p in used for h in [named(k, p)] if h), None)
+            if is_scenario and hit:
                 drop.append((start, end))
                 dropped_steps += used
                 keys = [m.group(1) for line in block for m in [_MARKER_KEY.search(line)] if m]
+                phrase, why = hit
                 for key in keys:
-                    phrase = next(p for k, p in used if (k, p) in steps)
-                    left_out[key] = (f"its step `{phrase}` says the user clicks a control, and "
-                                     "no page-object call can click it - the app inventory has "
-                                     "no key for that control. A person adds it "
-                                     "(scripts.plan_inventory element ...), then edits the test "
-                                     "case so `ai-update` adds its scenario.")
+                    left_out[key] = (
+                        f"its step `{phrase}` acts on or checks a different element than it "
+                        f"names ({why}) - usually one the app inventory has no key for. A "
+                        "person adds it (scripts.plan_inventory element ...), then edits the "
+                        "test case so `ai-update` adds its scenario." if why else
+                        f"its step `{phrase}` says the user clicks a control, and "
+                        "no page-object call can click it - the app inventory has "
+                        "no key for that control. A person adds it "
+                        "(scripts.plan_inventory element ...), then edits the test "
+                        "case so `ai-update` adds its scenario.")
             else:
                 kept_steps += used
         if not drop:
@@ -265,8 +289,12 @@ def leave_out_stand_ins(generated_files, errors, protected=()) -> tuple:
                       if not any(s <= i < e for s, e in drop)]
         if not any(_SCENARIO.match(line) for line in keep_lines):
             # Nothing would be left: the story is refused as before, naming why.
-            for key in list(left_out):
-                left_out.pop(key, None)
+            for start, end, _s in _blocks(lines):
+                if (start, end) in drop:
+                    for line in lines[start:end]:
+                        m = _MARKER_KEY.search(line)
+                        if m:
+                            left_out.pop(m.group(1), None)
             continue
         new_feature = "\n".join(keep_lines).rstrip("\n") + "\n"
         # Step functions only the dropped scenarios used go too - one left

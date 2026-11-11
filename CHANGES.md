@@ -4,6 +4,58 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a test re-run after a temporary HTTP error is never invisible (#410)
+
+**Why:** found live on validation item E15 (11 Nov, throw-away PR T7): a test refused with HTTP 503 on its first attempt passed on the re-run - and the *Keep only the final attempt* step printed "no re-run tests". `scripts/collapse_junit_reruns.py` assumed the re-run plugin writes every attempt as its own testcase; pytest-rerunfailures 16 writes only the final one and nothing about the earlier attempts, so the re-run reached no reader of the report.
+
+- `core/rerun_record.py` (a pytest plugin, registered by `tests/conftest.py`): counts the attempts pytest reports as `rerun` and puts a `reruns` property on the test's final testcase - whatever shape the plugin's report has
+- `scripts/collapse_junit_reruns.py`: lists tests that already carry the property, beside those it collapses; nothing is rewritten when there is nothing to collapse
+- GUIDE and TECHNICAL_DEEP_DIVE updated; tests in `test_outage_retry.py` (one runs the installed plugin end to end); TEST_TRACK E145. Not tested live yet: E145
+
+---
+
+## November 2026 — a full Agent 4 run started by hand takes turns and survives a merge, like the nightly one (#407)
+
+**Why:** the owner asked why E30b/E30c had to wait for the nightly run rather than a manual one. Reading the workflow showed why - and a gap: a manual (`workflow_dispatch`) run on `main` shared the concurrency group of a push to `main`, whose `cancel-in-progress` is on, so any merge cancelled a person's full regression run part-way; and it did not take turns with pull requests' browser runs, which log in with the same test accounts (`scripts/e2e_turn.py`), so either could change the other's results.
+
+- `.github/workflows/agent4_runner.yml`: a full run (nightly or by hand) is in group `agent4-full-<ref>`, never the branch's group a push cancels; the turn-taking step runs for `workflow_dispatch` too
+- `scripts/e2e_turn.py`: `TURN_EVENTS` includes `workflow_dispatch`
+- GUIDE and TECHNICAL_DEEP_DIVE updated; tests in `test_in_flight.py`, `test_defect_triage.py`; TEST_TRACK E144. Not tested live yet: E144
+
+---
+
+## November 2026 — the plan's own Skipped notes decide that nothing is left to code (#404)
+
+**Why:** the live check of #403 (SCRUM-398 by key): the plan left all three test cases out again, but this time planned a feature file with no scenario instead of a note - so "no feature file planned" did not hold, Stage 2 generated it, and the coverage gate refused as before.
+
+- `agents/agent2_coverage.skipped_by_plan`: a test case the plan's notes leave out in the plan's own form (`Skipped: <KEY> -- <reason>`). The story is refused before Stage 2 when every new approved test case is skipped that way, or no feature file is planned
+- Tests in `test_step_fidelity.py`; TEST_TRACK E143
+
+---
+
+## November 2026 — a story the plan leaves out entirely costs no generation, and is told to add the elements (#403)
+
+**Why:** found live on Run I: after the step-fidelity fix the plan correctly left out all of SCRUM-398's test cases (the side panel is not in the inventory) - and planned a note file explaining the skips, which Stage 2 then generated and the gate refused (the same happened to SCRUM-394 earlier that evening). The blocked comment then advised editing the test cases ("a test case asks for something this application cannot show"), when the remedy was adding the elements.
+
+- `agents/agent2_coder.py`: when the plan leaves every new approved test case out and plans no feature file, the story is refused before Stage 2 (`Coverage gate failed ... nothing was generated`), with the plan's reasons and the blocked comment, as the coverage gate would after generating
+- `core/blocked.py`: reasons that say "not in the app inventory" (the plan's Skipped format) get the add-the-element advice (`scripts.plan_inventory element` / `page`), or retire the test cases
+- `prompts/agent2_coder_plan.md`: when every test case is left out, plan no files
+- Tests in `test_step_fidelity.py`; TEST_TRACK E143. Not tested live yet: E143
+
+---
+
+## November 2026 — a step whose code checks another element is left out, not shipped (#402)
+
+**Why:** found live on Run I (SCRUM-398's pull request): the story's side-panel list was not in the app inventory. The plan did not skip its test cases; the code read the main list's item names for "the side panel lists ...", opened an item's page by name for "I click ... in the side panel", and checked "the page loaded" for "the side panel is visible". Every gate passed - each step called real page-object methods on real keys - and the coverage audit (which reads the Gherkin, not the code) judged one of the three test cases fully checked.
+
+- `validators/step_fidelity.py`: after the gate, one model call (`prompts/agent2_step_fidelity.md`) reads each step of the story's own step files beside its definition, the page-object methods that run for it and the inventory elements they read (with the inventory's notes), and names each step whose code acts on or checks a different element than the wording names. Setting `agents.agent2_coder.step_fidelity_audit` (on). A failed call changes nothing
+- `validators/action_steps.leave_out_stand_ins` takes these errors too (and Then steps, and a step definition's pattern): the scenarios using a named step are left out and their test cases listed as not automated with the reason; a story left with nothing is refused (`Step fidelity gate failed`), and `core/blocked` names the element to add. Only the feature that would be emptied keeps its keys - before, one emptied feature dropped every left-out key of the run
+- The plan and generation prompts say a key counts only when its name or note is the thing the test case names
+- Found in the same run: a step followed by a data table passed the gate and failed every run with `StepDefinitionNotFoundError` - the pinned pytest-bdd (7.x) reads the lines under a step as part of its text. `validators/step_arguments.py` refuses a data table or doc string under a step (Examples tables are data, not step arguments) while the installed pytest-bdd is below 8; the generation prompt says to put values in the wording or an Examples table
+- Tests in `test_step_fidelity.py`, `test_step_arguments.py`; TEST_TRACK E141, E142. Not tested live yet: E141, E142
+
+---
+
 ## November 2026 — an unlimited budget is said in words, never "$inf"; Agent 1's output room is a setting (#395)
 
 **Why:** found live: with both budgets set to `.inf` (owner's decision until the validation items are developed), the Pipeline health description read "$71.86 of the $inf daily budget". A project may lift a limit for a while; nothing a person reads should show the raw value.

@@ -164,10 +164,11 @@ jobs:
     # chain. Cancelling story runs would manufacture exactly the condition the
     # sweeper is built to repair.
     #
-    # The scheduled run has its own group: sharing main's would let a push to
-    # main cancel the nightly run part-way.
+    # A full run - the nightly one or one started by hand - has its own group:
+    # sharing the branch's would let a push to main cancel it part-way (a
+    # person's manual regression run included).
     concurrency:
-      group: agent4-${{ github.event.pull_request.number || (github.event_name == 'schedule' && 'scheduled') || github.ref }}
+      group: agent4-${{ github.event.pull_request.number || ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && format('full-{0}', github.ref)) || github.ref }}
       cancel-in-progress: ${{ github.event_name == 'push' }}
 
     steps:
@@ -386,7 +387,7 @@ jobs:
         # always(): the E2E runs even when the unit gate failed, so the wait must too.
         # The scheduled run on main takes its turn too, and pull requests wait
         # for it: it drives the same application with the same accounts.
-        if: always() && (github.event_name == 'pull_request' || github.event_name == 'schedule') && steps.pr_changes.outputs.e2e != 'false'
+        if: always() && (github.event_name == 'pull_request' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && steps.pr_changes.outputs.e2e != 'false'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
