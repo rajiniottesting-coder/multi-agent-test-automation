@@ -118,3 +118,17 @@ class LoginPage(BasePage):
         time out instead of returning False.
         """
         return bool(self.get_all_texts(self.sel("login_error")))
+
+    def get_signup_error(self) -> str:
+        """The signup form's 'email already registered' message. WAITS for it.
+
+        Shown after start_signup() with an email address that already has an
+        account, instead of the second registration form. Only call this when
+        the message IS expected; has_signup_error() asserts its absence.
+        """
+        self.wait_visible(self.sel("signup_error"))
+        return self.get_text(self.sel("signup_error"))
+
+    def has_signup_error(self) -> bool:
+        """True if the signup error is showing right now. Never waits, never raises."""
+        return bool(self.get_all_texts(self.sel("signup_error")))
