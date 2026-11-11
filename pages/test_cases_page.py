@@ -106,7 +106,8 @@ class TestCasesPage(BasePage):
         from the test case ("TEST CASES" vs "Test Cases") in case only. WAITS
         for the heading, then compares case-insensitively.
         """
-        return self.heading_text().strip().casefold() == expected.strip().casefold()
+        actual = self.heading_text().strip().casefold()
+        return actual == expected.strip().casefold()
 
     def has_title_links(self) -> bool:
         """True once at least one test case title link is rendered. WAITS.
