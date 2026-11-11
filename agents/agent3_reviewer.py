@@ -1027,11 +1027,20 @@ def format_changed_files_for_prompt(files: list[dict],
     def total() -> int:
         return sum(len(b) for b in blocks.values()) + sep * (len(blocks) - 1)
 
+    diff_only = sum(1 for i, f in enumerate(files) if f.get("content") and not full[i])
+    capped = []
     for i in sorted((i for i in full if full[i]), key=lambda i: -len(files[i]["content"])):
         if total() <= budget_chars:
             break
         full[i] = False
         blocks[i] = _file_block(files[i], False)
+        capped.append(files[i].get("filename") or "?")
+    # What the reviewer was shown, so a review of a large change can be read
+    # against it (E34): which files it saw in full and which only as a diff.
+    logger.info("Changed files for the review: %d in full, %d as their diff only (not read "
+                "while the tests run), %d over the section's cap of %s characters shown as "
+                "their diff%s.", sum(full.values()), diff_only, len(capped),
+                f"{budget_chars:,}", f" ({', '.join(capped)})" if capped else "")
     return "\n---\n".join(blocks[i] for i in range(len(files)))
 
 

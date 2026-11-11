@@ -477,6 +477,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
+| #412 | Agent 3 logs what its review was shown | | E34 | |
 | #410 | A test re-run after a temporary HTTP error is never invisible | | E145, E15 | |
 | #407 | A full Agent 4 run started by hand takes turns and survives a merge | | E144, E30b, E30c | |
 | #404 | The plan's own Skipped notes decide that nothing is left to code | | E143 | |

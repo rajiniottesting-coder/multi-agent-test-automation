@@ -73,3 +73,14 @@ def test_no_files_and_no_content_keep_their_messages():
 
 def test_the_budget_leaves_room_in_the_context():
     assert a3._CHANGED_FILES_BUDGET_CHARS <= 400_000     # ~100k tokens, of ~200k
+
+
+def test_the_log_says_what_the_reviewer_was_shown(caplog):
+    files = [_f("pages/a_page.py", "a" * 6_000, "@@ a"), _f("pages/b_page.py", "b" * 2_000, "@@ b"),
+             _f("docs/GUIDE.md", "g" * 9_000, "@@ g")]
+    with caplog.at_level("INFO", logger="agent3_reviewer"):
+        a3.format_changed_files_for_prompt(files, budget_chars=7_000)
+    line = next(r.getMessage() for r in caplog.records if "Changed files for the review" in r.getMessage())
+    assert line == ("Changed files for the review: 1 in full, 1 as their diff only (not read while "
+                    "the tests run), 1 over the section's cap of 7,000 characters shown as their "
+                    "diff (pages/a_page.py).")
