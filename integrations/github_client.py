@@ -154,7 +154,7 @@ class GitHubClient:
         self.repo.get_pull(pr_number).edit(state="closed")
 
     def get_workflow_runs(self, workflow_file: str, branch: str,
-                          limit: int = 20) -> list[dict]:
+                          limit: int = 20, strict: bool = False) -> list[dict]:
         """Recent CI runs for a workflow on a branch, as plain dicts.
 
         Returns [{"id", "status", "conclusion", "head_sha", "event",
@@ -174,6 +174,8 @@ class GitHubClient:
                      "url": getattr(r, "html_url", None)}
                     for r in islice(wf.get_runs(branch=branch), limit)]
         except Exception as e:
+            if strict:
+                raise
             logger.warning(f"Could not read runs for {workflow_file}: {e}")
             return []
 

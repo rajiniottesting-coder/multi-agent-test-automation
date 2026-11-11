@@ -61,6 +61,12 @@ runs:
         permission-issues: write
         permission-actions: read
 
+    - name: Say why the App's token was refused
+      if: failure() && steps.app.outcome == 'failure'
+      shell: bash
+      run: |
+        echo "::error title=The GitHub App's token could not be created::GitHub refused the App's credentials, so this job stops here and writes nothing - it never falls back to GH_PAT while an App is configured. Usually GH_APP_PRIVATE_KEY holds a key that was deleted or regenerated on the App's settings page, or GH_APP_CLIENT_ID names another App. Generate a key on the App's settings page, store it in GH_APP_PRIVATE_KEY, then re-run. See docs/GUIDE.md, Agent identity."
+
     - name: Say who the agents write as
       shell: bash
       env:

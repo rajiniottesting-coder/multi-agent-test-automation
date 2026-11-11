@@ -116,7 +116,10 @@ def test_the_identity_action():
         "${{ steps.app.outputs.token || inputs.fallback-token }}"
     assert "'app'" in action["outputs"]["kind"]["value"] and \
         "'personal'" in action["outputs"]["kind"]["value"]
-    say = steps[1]["run"]
+    say = next(st for st in steps if st.get("name") == "Say who the agents write as")["run"]
+    why = next(st for st in steps if st.get("name") == "Say why the App's token was refused")
+    assert why["if"] == "failure() && steps.app.outcome == 'failure'" and "::error" in why["run"], \
+        "a refused App token names the secret to fix (11 Nov 2026: only GitHub's 'JSON web token could not be decoded')"
     assert "::warning" in say and "GH_PAT" in say, "writing as a person is said in the run"
     assert "::error" in say and "exit 1" in say, "no token at all fails the step"
     assert "continue-on-error" not in str(app), \

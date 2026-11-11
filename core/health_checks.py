@@ -80,6 +80,24 @@ def failing_streak(runs: list) -> tuple:
     return streak, url
 
 
+def _runs(host, name: str, limit: int) -> list:
+    """The runs of `name` on main; raises when they could not be read.
+
+    11 Nov 2026: with a refused token the adapter returned [] for every
+    workflow, and the check read that as "no scheduled run started" - five
+    workflow-not-starting alerts opened, and a workflow-failing alert would
+    have been resolved as "no longer failing". An adapter that can tell is
+    asked to raise (strict); one that cannot is read as before."""
+    import inspect
+    try:
+        strict = "strict" in inspect.signature(host.get_workflow_runs).parameters
+    except (TypeError, ValueError):
+        strict = False
+    if strict:
+        return host.get_workflow_runs(name, "main", limit=limit, strict=True)
+    return host.get_workflow_runs(name, "main", limit=limit)
+
+
 def workflow_findings(host, root: Path, threshold: int, exclude=()) -> list:
     """One Finding per scheduled workflow."""
     out = []
@@ -87,7 +105,7 @@ def workflow_findings(host, root: Path, threshold: int, exclude=()) -> list:
         if name in exclude:
             continue
         try:
-            runs = host.get_workflow_runs(name, "main", limit=50)
+            runs = _runs(host, name, 50)
         except Exception as e:                                     # noqa: BLE001
             logger.warning("Runs of %s not read: %s", name, e)
             continue
@@ -198,7 +216,7 @@ def schedule_findings(host, root: Path, now: _dt.datetime, window_hours: float,
             continue
         expected = sum(counts)
         try:
-            runs = host.get_workflow_runs(name, "main", limit=100)
+            runs = _runs(host, name, 100)
         except Exception as e:                                     # noqa: BLE001
             logger.warning("Runs of %s not read: %s", name, e)
             continue
