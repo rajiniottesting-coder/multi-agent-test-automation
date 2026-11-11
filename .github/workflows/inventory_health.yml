@@ -101,7 +101,7 @@ jobs:
 
       - name: Install Playwright browsers
         # OS-level apt packages are not cached and need reinstalling each run.
-        run: playwright install --with-deps chromium
+        run: bash scripts/install_browser.sh chromium
 
       - name: Verify inventory selectors
         id: verify

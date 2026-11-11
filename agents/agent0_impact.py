@@ -386,6 +386,11 @@ def _render_report(report: dict, title: str, data_in: str | None = None) -> str:
 
 
 _ELEMENT_IN_PATH = re.compile(r"element (\S+:\S+)")
+# What else a structural path starts from (core.impact_analysis.structural_candidates):
+# a changed page method, a changed shared-base method, a page that is gone.
+_METHOD_IN_PATH = re.compile(r"(?:^|; )method (\S+) <-")
+_SHARED_IN_PATH = re.compile(r"(?:^|; )shared method (\S+) <-")
+_PAGE_IN_PATH = re.compile(r"(?:^|; )page (\S+) <- scenario")
 _EVIDENCE_LIMIT = 240
 
 
@@ -395,16 +400,21 @@ def short_evidence(row: dict) -> str:
     The full structural paths repeat every element a scenario reaches and
     made the Impact Review hard to read; they stay in the embedded data.
     A person needs WHY the test is affected - the model's reason - and which
-    of the changed elements it touches.
+    of the changed things it touches: elements, page methods, shared-base
+    methods, pages. 11 Nov 2026: a pull request changing a selector AND a
+    method its tests call showed only the element; the method, which made the
+    row must-update on its own, was in the hidden data only.
     """
-    elements = sorted(set(_ELEMENT_IN_PATH.findall(row.get("evidence") or "")))
+    paths = row.get("evidence") or ""
+    touched = [(label, sorted(set(rx.findall(paths))))
+               for label, rx in (("Elements", _ELEMENT_IN_PATH), ("Methods", _METHOD_IN_PATH),
+                                 ("Shared methods", _SHARED_IN_PATH), ("Pages", _PAGE_IN_PATH))]
     reason = " ".join((row.get("reason") or "").split())
     parts = []
     if reason:
         parts.append(reason if len(reason) <= _EVIDENCE_LIMIT
                      else reason[:_EVIDENCE_LIMIT - 3].rsplit(" ", 1)[0] + "...")
-    if elements:
-        parts.append("Elements: " + ", ".join(elements))
+    parts += [f"{label}: {', '.join(names)}" for label, names in touched if names]
     if not parts:
         text = " ".join((row.get("evidence") or "-").split())
         parts.append(text if len(text) <= _EVIDENCE_LIMIT
