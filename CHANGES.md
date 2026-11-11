@@ -4,6 +4,17 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a refused story names a reserved page object's missing method; Markdown notices reach Jira rendered (#PRNUM)
+
+**Why:** found live in validation Run L (11 Nov, SCRUM-408, Agent 2 run 42984931248). The steps needed `get_signup_error()` on the reserved `LoginPage`; the repair stood the login error in for it, and the blocked comment (13792) named only the stand-in, advising an inventory element the inventory already had. The same comment quoted the step pattern `"(?P<expected_message>[^"]*)"`, and Jira drew a broken image and bold text from it: comments go to REST v2, which reads wiki markup, while most of the agents' notices are Markdown posted as written (the coverage comments on SCRUM-293 showed `*KEY*` and backticks literally).
+
+- `agents/agent2_coder._attempt_step_coverage_repair(reserved_needs=)` records each method a reserved page object lacks (as F49 records missing elements); a refusal carries them first. `core/blocked`: the reserved-page advice comes before the stand-in advice; `reserved_capabilities` is public
+- `integrations.tracker.add_markdown_comment`: renders through the tracker's `render_markdown` capability and posts; used by the blocked, waiting, budget-hold, not-selected, coverage, Agent 1 coverage and stopped, and update-stopped notices. Comments written in wiki markup keep `add_comment`
+- `integrations/jira_markup`: a code span escapes the characters wiki markup reads as formatting and writes a backslash as `&#92;`
+- Tests in `test_run_c_findings.py`, `test_agent5_scope_and_markup.py`; TEST_TRACK E153, E154. Not tested live yet: E153, E154
+
+---
+
 ## November 2026 — a file is not repaired on feedback a page-object repair just answered (#428)
 
 **Why:** found re-checking validation item E90 against its runs (Agent 2 run 42825326200, 10 Nov, SCRUM-381): a committed page object joined the batch and its repair added the six methods the steps call - but the step definitions' feedback, computed before that repair, still said the class "does not define" them and offered other names. The repair moved the calls to a reserved page object, the error count rose and the story was refused as "not converging".
