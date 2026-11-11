@@ -6,3 +6,8 @@ Feature: Throw-away validation checks (never merged)
   Scenario: A throw-away check of the Test Cases heading
     Given I open the throw-away Test Cases page
     Then the throw-away Test Cases heading reads as expected
+
+  Scenario: A throw-away check of a test case's steps
+    Given I open the throw-away Test Cases page
+    When I open the throw-away first test case
+    Then the throw-away second test case's steps are shown

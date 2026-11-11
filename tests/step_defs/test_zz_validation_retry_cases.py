@@ -7,7 +7,7 @@ E29g: the heading check expects a different heading on its first attempt.
 import tempfile
 from pathlib import Path
 
-from pytest_bdd import given, scenarios, then
+from pytest_bdd import given, scenarios, then, when
 
 from config.paths import feature_path
 
@@ -36,3 +36,16 @@ def heading_reads(test_cases_page):
     expected = "Test Cases" if mark.exists() else "All Test Scenarios"
     mark.write_text("1", encoding="utf-8")
     assert test_cases_page.heading_matches(expected), f"heading is not {expected!r}"
+
+
+@when("I open the throw-away first test case")
+def open_first(test_cases_page):
+    test_cases_page.open_first_test_case()
+
+
+@then("the throw-away second test case's steps are shown")
+def second_steps_shown(test_cases_page):
+    assert test_cases_page.has_visible_steps()
+    test_cases_page.open_second_test_case()
+    assert test_cases_page.remaining_on_page()
+    assert test_cases_page.heading_matches("Test Case 2")
