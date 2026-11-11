@@ -204,3 +204,24 @@ def test_a_note_quoted_with_the_notes_blocks_line_prefix_is_still_rewritten(repo
         old="- pages.basket.elements_notes.pay: Paying needs an address.",
         new="- pages.profile.elements_notes.save: Saving shows a toast.", reason="x")])
     assert mismatched.empty, "prefixes naming different notes are not stripped"
+
+
+@pytest.mark.parametrize("prefix", ["pages.basket.elements_notes.pay: ",
+                                    "`pages.basket.elements_notes.pay`: ",
+                                    "* pages.basket.elements_notes.pay: "])
+def test_a_note_quoted_with_its_location_in_another_shape_is_still_rewritten(repo, prefix):
+    """11 Nov 2026: the model quoted the note's location without the list
+    marker (`pages.<page>.elements_notes.<key>: <text>`) and the rewrite was
+    dropped as "not verbatim" again. Any shape of the location is stripped."""
+    prop = cu.propose(_sources(repo), [], None, [NoteRewrite(
+        path="inv/app.json", old=prefix + "Paying needs an address.",
+        new=prefix + "Paying needs an address and a phone number.", reason="x")])
+    assert "Paying needs an address and a phone number." in prop.edits["inv/app.json"]
+    assert "#pay" in prop.edits["inv/app.json"], "selectors untouched"
+
+
+def test_a_location_the_file_does_not_have_is_not_stripped(repo):
+    prop = cu.propose(_sources(repo), [], None, [NoteRewrite(
+        path="inv/app.json", old="pages.basket.elements_notes.nope: Paying needs an address.",
+        new="pages.basket.elements_notes.nope: Paying needs a phone number.", reason="x")])
+    assert prop.empty and "verbatim" in prop.dropped[0][2]
