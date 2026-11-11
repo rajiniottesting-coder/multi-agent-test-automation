@@ -54,7 +54,15 @@ def blocked_on(comments, fp: str) -> bool:
 
 def _short(error: str) -> str:
     text = " ".join(str(error).split())
-    return text if len(text) <= _MAX_ERROR_CHARS else text[:_MAX_ERROR_CHARS - 3] + "..."
+    if len(text) <= _MAX_ERROR_CHARS:
+        return text
+    cut = text[:_MAX_ERROR_CHARS - 3]
+    # Never end inside a code span: an unclosed backtick is shown literally,
+    # and the text after it loses its formatting (11 Nov 2026, a blocked
+    # comment cut in the middle of `LoginPage`).
+    if cut.count("`") % 2:
+        cut = cut[:cut.rindex("`")].rstrip()
+    return cut + "..."
 
 
 def _missing_elements(errors) -> list:
