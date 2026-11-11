@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — every health alert is redacted where it is posted, and quotes a tracker error readably (#PRNUM)
+## November 2026 — every health alert is redacted where it is posted, and quotes a tracker error readably (#415)
 
 **Why:** found live on validation item E31h (11 Nov, window J): the triage's `defects-not-written` alert quoted the tracker client's error whole - `response headers = {'Content-Type': ..., 'S...` - cut at 300 characters just before what could have been a `Set-Cookie` session value. `raise_alert` posted its body as given; only some callers redacted their text.
 
