@@ -22,7 +22,8 @@ What it does, in order:
               and the comments that concern it. A feature file must keep its
               scenarios, titles and markers; a degraded answer is discarded.
   5. Gate     the repair loop, then the final gate, over every code file of
-              the PR - the same checks a new pull request passes. Anything
+              the PR - the same checks a new pull request passes - and the
+              step fidelity audit over each step the fix added or changed. Anything
               still failing, or a repair that reaches a file that is not
               editable: nothing is pushed, and the reviewer is told why.
   6. Push     each changed file to the SAME branch, so Agents 3, 4 and 5 run
@@ -617,6 +618,49 @@ class _Refused(Exception):
         self.problem = problem
 
 
+_FIDELITY_STEP = re.compile(r"in '([^']+)': the step `\w+ (.*?)` - ")
+
+
+def _new_stand_ins(llm, batch, contents: dict, ctx, a2) -> list:
+    """Step fidelity errors (validators/step_fidelity.py) for the steps this
+    fix added or whose code it changed - never for a step it left as it was.
+
+    11 Nov 2026 (validation Run L): a review asked to check that a form is
+    shown before it is submitted; the fix added the step and checked it with
+    the page's 'loaded' reader of ANOTHER form, because the reserved page
+    object has no reader for that one. Every rule passed and the change was
+    pushed; only Agent 3 noticed. A new pull request is audited for exactly
+    this, so a fix is too. A failed call names nothing (advice-grade)."""
+    from validators import step_fidelity
+    from validators.gherkin_analyzer import step_functions
+    if not a2.load_agent_config().get("step_fidelity_audit", True):
+        return []
+
+    def bodies(path, text):
+        out = {}
+        for _kind, phrase, _ptype, func in step_functions(text or "") or []:
+            out[phrase] = ast.get_source_segment(text, func) or ""
+        return out
+
+    changed = [f for f in batch if f.content != contents.get(f.file_path)]
+    if not any(f.file_path.startswith("tests/step_defs/") for f in changed):
+        return []
+    from core import inventory_planned as _inventory
+    errors = step_fidelity.audit(llm, batch, _inventory.load_inventory(ctx),
+                                 a2.load_prompt("agent2_step_fidelity.md"), a2.PROJECT_ROOT)
+    fresh = []
+    for err in errors:
+        hit = _FIDELITY_STEP.search(err)
+        if hit:
+            path, phrase = hit.group(1), hit.group(2)
+            new = next((f.content for f in batch if f.file_path == path), "")
+            before = bodies(path, contents.get(path, "")).get(phrase)
+            if before is not None and before == bodies(path, new).get(phrase):
+                continue                      # the step and its code are as they were
+        fresh.append(err)
+    return fresh
+
+
 def _fix(host, pr_number, key, head, meta, contents, editable, protected, to_fix, outcomes,
          story, story_key, test_cases, ctx, llm, a2) -> list:
     """Generate, check and push the fixes. Returns the pushed paths; raises
@@ -693,6 +737,12 @@ def _fix(host, pr_number, key, head, meta, contents, editable, protected, to_fix
                         "the repair would alter the scenarios, titles or markers of "
                         f"{rewritten}, which come from the approved test cases")
                 a2._validate_generated_files(batch, story_key, test_cases)
+                stand_ins = _new_stand_ins(llm, batch, contents, ctx, a2)
+                if stand_ins:
+                    raise a2.GateFailure(
+                        "a step the fix added or changed acts on or checks a different element "
+                        "than it names - usually one the page object has no reader for (a "
+                        "reserved page object is extended by a person)", errors=stand_ins)
             except Exception as e:                                 # noqa: BLE001
                 problem = f"The changed files did not pass the checks every pull request passes: {e}"
                 errors = getattr(e, "errors", None) or []
