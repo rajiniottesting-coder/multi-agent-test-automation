@@ -1782,7 +1782,11 @@ it. **Watch it**: the tracker then emails you on each comment, and the pipeline
 comments only when something changes - `[health:open] <id>` when a problem
 starts, `[health:resolved] <id>` when it ends, nothing while it persists. The
 description is the current picture (open alerts, flaky tests, today's spend),
-rewritten on each change - edits to it are not kept.
+rewritten on each change - edits to it are not kept. Every alert is redacted
+where it is posted (`core/redaction.py`: secret values, token-shaped strings,
+credential-carrying HTTP header values, email addresses), and an error from
+the tracker is quoted as its status and the server's own message, never the
+client's header dump.
 
 | Alert id | Opened by | Means | Closes when |
 |---|---|---|---|
