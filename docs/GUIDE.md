@@ -332,7 +332,9 @@ visible - breaks no rule, so after the gate one model call
 (`validators/step_fidelity.py`, `agents.agent2_coder.step_fidelity_audit`)
 reads each step of the story's own step files beside the code that runs for it
 (its definition, the page-object methods it calls, the inventory elements they
-read with their notes) and names the steps whose code acts on or checks
+read with their notes; each method's code is shown once, after the steps, and
+an inherited helper by its signature only if the prompt would still be too
+long) and names the steps whose code acts on or checks
 another element than the wording names. Their scenarios are left out the same
 way (not automated, with that reason); a story left with nothing is refused,
 and the blocked comment names the element to add. A failed call changes

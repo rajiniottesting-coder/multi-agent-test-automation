@@ -1,6 +1,6 @@
 You check that each step of an automated test does what its wording says, on the element its wording names.
 
-For each step below you get its wording, its step definition, the page-object methods that run for it, and the app inventory elements that code reads (key, selector, and the inventory's note about the element when there is one).
+For each step below you get its wording, its step definition, the names of the page-object methods that run for it, and the app inventory elements that code reads (key, selector, and the inventory's note about the element when there is one). The code of every page-object method follows the steps, each method shown once; a shared helper inherited from a base class may be shown by its signature and docstring only.
 
 List a step ONLY when its code acts on or checks a different element or thing than the wording names - a stand-in that lets the step pass or fail for something the wording does not state:
 
