@@ -4,6 +4,15 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a cost row names every kind of run, a completed one included (#PRNUM)
+
+**Why:** found live on validation item E147 (11 Nov, SCRUM-403): one failed and one successful Agent 1 run read `Agent 1 (Test Designer): failed | 2` in the cost comment - as if both had failed. A run of no particular kind added nothing to the row's list.
+
+- `core/usage_ledger.by_agent` counts such runs; `_label` lists them as `completed` beside the other kinds when the row's runs differ (`Agent 1 (Test Designer): completed, failed`); a row of one kind still reads as the agent alone
+- Tests in `test_usage_ledger.py`; TEST_TRACK E148. Not tested live yet: E148
+
+---
+
 ## November 2026 — a failed Agent 1 run is the same attempt: retrying it keeps its cost (#417)
 
 **Why:** observation O3, left open earlier and seen again on 10 Nov (SCRUM-398): Agent 1 ran out of output room and wrote nothing; `ai-ready` added again posted `[LEDGER-RESET] story reprocessed from ai-ready`, and the failed run's cost dropped out of the story's total - a retry of a run that produced nothing is not a new attempt.
