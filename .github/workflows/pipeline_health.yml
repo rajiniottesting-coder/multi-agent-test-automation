@@ -77,13 +77,13 @@ jobs:
           # A GitHub App's token is created for each run: no expiry to watch.
           REPO_HOST_TOKEN_PER_RUN: ${{ steps.identity.outputs.kind == 'app' }}
           GITHUB_REPO: ${{ vars.GH_REPO || github.repository }}
-          OPENAI_API_KEY: "sk-validation-e38-fake-key-000000000000000000000000"  # VALIDATION T-E38 (never merged): a wrong model key on purpose
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
           # The cheapest model the agents use (its price prices the probe).
-          LLM_MODEL: ${{ vars.LLM_MODEL_LIGHT || vars.LLM_MODEL || 'claude-opus-4-6' }}
+          LLM_MODEL: "e38-ghs_FAKEe38FAKEe38FAKEe38FAKEe38FAKE00000000-e38.check@example.com"  # VALIDATION T-E38
           # Every model the agents use is probed: a provider can refuse one
           # model (its own budget) and answer another.
-          LLM_MODELS_TO_CHECK: ${{ vars.LLM_MODEL_LIGHT }},${{ vars.LLM_MODEL || 'claude-opus-4-6' }}
+          LLM_MODELS_TO_CHECK: "e38-ghs_FAKEe38FAKEe38FAKEe38FAKEe38FAKE00000000-e38.check@example.com"  # VALIDATION T-E38
           LLM_PRICE_INPUT_PER_1M: ${{ vars.LLM_PRICE_INPUT_PER_1M }}
           LLM_PRICE_OUTPUT_PER_1M: ${{ vars.LLM_PRICE_OUTPUT_PER_1M }}
         run: |
