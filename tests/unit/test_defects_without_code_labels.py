@@ -19,12 +19,14 @@ from tests.sandbox.fake_jira import FakeJira, jira_client_over
 from core import pipeline_health as ph
 from core.ops_settings import DEFAULTS
 
+
 TEST = "tests.step_defs.test_cart::test_add_an_item"
 MULTI = "Error: strict mode violation: locator('.row') resolved to 3 elements"
 CAUSE = "multi-match selector"
 RUN = "https://ci.example/runs/"
 # The shipped defaults, pinned: the tests do not follow a deployment's config.
 S = {**DEFAULTS["defects"], "trace_owners": {}}
+BUG = S["issue_type"]                  # the issue type these tests pin
 
 
 def _case(name, outcome="passed"):
@@ -59,7 +61,7 @@ def _run(world, tmp_path, n, *cases):
 
 
 def _bugs(fake):
-    return {k: d for k, d in fake.issues.items() if d["issuetype"] == "Bug"}
+    return {k: d for k, d in fake.issues.items() if d["issuetype"] == BUG}
 
 
 def _state(**kw):
@@ -92,7 +94,7 @@ def test_a_new_defect_carries_no_code_label_and_is_found_again(world, tmp_path):
 def test_another_cause_of_the_same_test_updates_its_open_defect(world, tmp_path):
     """One open defect per test (#328): the cause is a heuristic reading."""
     fake, *_ = world
-    other = fake.add("Bug", "[Auto] old", labels=["ai-defect"],
+    other = fake.add(BUG, "[Auto] old", labels=["ai-defect"],
                      description=defects.render(None, _state(cause="unclassified")))
     out = _run(world, tmp_path, 1, _case("test_add_an_item", "failed"))
     assert out["raised"] == [] and out["updated"] == [other]
@@ -102,7 +104,7 @@ def test_another_cause_of_the_same_test_updates_its_open_defect(world, tmp_path)
 def test_a_defect_raised_before_loses_its_code_label_on_its_next_update(world, tmp_path):
     fake, *_ = world
     label = defects.defect_label(TEST, CAUSE, S)
-    old = fake.add("Bug", "[Auto] old", labels=["ai-defect", label, "ai-defect-passing"],
+    old = fake.add(BUG, "[Auto] old", labels=["ai-defect", label, "ai-defect-passing"],
                    description=defects.render(None, _state()))
     out = _run(world, tmp_path, 1, _case("test_add_an_item", "failed"))
     assert out["raised"] == [] and out["updated"] == [old]
@@ -114,7 +116,7 @@ def test_a_defect_raised_before_loses_its_code_label_on_its_next_update(world, t
 def test_a_defect_whose_data_was_edited_away_is_still_found_by_its_label(world, tmp_path):
     fake, *_ = world
     label = defects.defect_label(TEST, CAUSE, S)
-    old = fake.add("Bug", "[Auto] old", labels=["ai-defect", label],
+    old = fake.add(BUG, "[Auto] old", labels=["ai-defect", label],
                    description="A person rewrote this description.")
     out = _run(world, tmp_path, 1, _case("test_add_an_item", "failed"))
     assert out["raised"] == [] and out["updated"] == [old], "no duplicate"
@@ -122,7 +124,7 @@ def test_a_defect_whose_data_was_edited_away_is_still_found_by_its_label(world, 
 
 def test_a_defect_with_neither_is_left_alone(world, tmp_path):
     fake, *_ = world
-    stray = fake.add("Bug", "[Auto] stray", labels=["ai-defect"], description="no data")
+    stray = fake.add(BUG, "[Auto] stray", labels=["ai-defect"], description="no data")
     assert defects.open_defects(world[1], S) == {}
     out = _run(world, tmp_path, 1, _case("test_add_an_item", "failed"))
     assert stray not in out["updated"] and len(out["raised"]) == 1
@@ -146,12 +148,12 @@ def test_only_a_ten_hex_code_is_a_code_label(labels, legacy):
 
 def _seed(fake):
     lab = lambda t: defects.defect_label(t, CAUSE, S)          # noqa: E731
-    readable = fake.add("Bug", "a", labels=["ai-defect", lab("t1")],
+    readable = fake.add(BUG, "a", labels=["ai-defect", lab("t1")],
                         description=defects.render(None, _state(test="t1")))
-    closed = fake.add("Bug", "b", labels=["ai-defect", lab("t2"), "ai-defect-passing"],
+    closed = fake.add(BUG, "b", labels=["ai-defect", lab("t2"), "ai-defect-passing"],
                       description="edited", status="Done")
-    stuck = fake.add("Bug", "c", labels=["ai-defect", lab("t3")], description="edited")
-    clean = fake.add("Bug", "d", labels=["ai-defect"],
+    stuck = fake.add(BUG, "c", labels=["ai-defect", lab("t3")], description="edited")
+    clean = fake.add(BUG, "d", labels=["ai-defect"],
                      description=defects.render(None, _state(test="t4")))
     return readable, closed, stuck, clean
 

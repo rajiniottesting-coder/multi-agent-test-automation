@@ -23,6 +23,9 @@ from core import pipeline_health as ph
 from scripts import triage_failures as tf
 from tests.sandbox.fake_jira import FakeJira, jira_client_over
 
+# The configured defect issue type - a project's choice (E95): never pinned here.
+BUG = defects.settings()["issue_type"]
+
 
 def _junit(*cases):
     body = []
@@ -57,7 +60,7 @@ def _run(world, tmp_path, root, n=1, probe=None):
 
 
 def _bugs(fake):
-    return [k for k, d in fake.issues.items() if d["issuetype"] == "Bug"]
+    return [k for k, d in fake.issues.items() if d["issuetype"] == BUG]
 
 
 def _alerts(fake):
