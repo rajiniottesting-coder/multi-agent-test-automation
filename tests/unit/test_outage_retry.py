@@ -169,3 +169,48 @@ def test_a_missing_or_broken_report_never_fails_the_step(tmp_path, content):
     if content is not None:
         path.write_text(content, encoding="utf-8")
     assert collapse_junit_reruns.main([str(path)]) == 0
+
+
+# ─────────────────────────────────────────────────────────────
+# A re-run is recorded whatever shape the plugin's report has
+# (11 Nov 2026: pytest-rerunfailures 16 writes only the final attempt, and
+# the step printed "no re-run tests" for a test re-run after an HTTP 503)
+# ─────────────────────────────────────────────────────────────
+def test_the_installed_plugin_records_the_rerun_at_the_source(tmp_path):
+    import subprocess
+    import sys
+    (tmp_path / "test_once.py").write_text(
+        "import pathlib\n"
+        "M = pathlib.Path(__file__).with_name('mark')\n"
+        "def test_refused_once():\n"
+        "    if not M.exists():\n"
+        "        M.write_text('1')\n"
+        "        raise AssertionError('Navigation to https://x.example/ returned HTTP 503 () "
+        "after 3 attempts.')\n"
+        "def test_clean():\n"
+        "    pass\n", encoding="utf-8")
+    junit = tmp_path / "junit.xml"
+    done = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-p", "core.rerun_record",
+         "--rootdir", str(tmp_path), "-c", "/dev/null", str(tmp_path / "test_once.py"),
+         "--reruns", "1", "--only-rerun", r"HTTP (5[0-9][0-9]|429)\b", f"--junitxml={junit}"],
+        capture_output=True, text=True, cwd=ROOT, env={**__import__("os").environ, "PYTHONPATH": str(ROOT)})
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert collapse_junit_reruns.recorded(ET.parse(junit).getroot()) == {
+        "test_once::test_refused_once": 1}
+
+
+def test_a_recorded_rerun_is_listed_without_collapsing(tmp_path, capsys):
+    path = tmp_path / "junit.xml"
+    path.write_text('<testsuites><testsuite tests="2"><testcase classname="c" name="a">'
+                    '<properties><property name="reruns" value="2"/></properties></testcase>'
+                    '<testcase classname="c" name="b"/></testsuite></testsuites>', encoding="utf-8")
+    before = path.read_text(encoding="utf-8")
+    assert collapse_junit_reruns.main([str(path)]) == 0
+    assert "re-run 2 time(s) after a temporary HTTP error: c::a" in capsys.readouterr().out
+    assert path.read_text(encoding="utf-8") == before, "nothing to collapse, nothing rewritten"
+
+
+def test_the_e2e_run_registers_the_recorder():
+    text = (ROOT / "tests" / "conftest.py").read_text(encoding="utf-8")
+    assert "config.pluginmanager.register(rerun_record" in text

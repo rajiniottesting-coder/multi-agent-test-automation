@@ -31,6 +31,9 @@ from core import pipeline_health as ph
 from scripts import triage_failures as tf
 from tests.sandbox.fake_jira import FakeJira, jira_client_over
 
+# The configured defect issue type - a project's choice (E95): never pinned here.
+BUG = defects.settings()["issue_type"]
+
 ROOT = Path(__file__).resolve().parents[2]
 MSG = "AssertionError: total was 0"
 
@@ -79,7 +82,7 @@ def _run(world, tmp_path, n, *names, module="test_cart", **kw):
 
 
 def _bug(fake):
-    (key,) = [k for k, d in fake.issues.items() if d["issuetype"] == "Bug"]
+    (key,) = [k for k, d in fake.issues.items() if d["issuetype"] == BUG]
     return key
 
 
@@ -199,7 +202,7 @@ def test_two_untraced_defects_stay_two_defects(world, tmp_path):
     _run(world, tmp_path, 1, "test_sign_in", "test_sign_out", module="test_reference")
     out = _run(world, tmp_path, 2, "test_sign_in", "test_sign_out", module="test_reference")
     assert out["raised"] == [] and len(out["updated"]) == 2
-    assert len([d for d in fake.issues.values() if d["issuetype"] == "Bug"]) == 2
+    assert len([d for d in fake.issues.values() if d["issuetype"] == BUG]) == 2
 
 
 def test_an_untraced_defect_passing_again_is_flagged_once(world, tmp_path):
@@ -245,7 +248,7 @@ def test_a_defect_raised_before_traceability_is_linked_on_its_next_update(world,
                  "owner": "SBX-101", "cause": "unclassified", "cause_text": "x", "remedy": "y",
                  "failure": MSG, "times": 3, "first_seen": "2026-10-01",
                  "last_seen": "2026-10-02", "last_run": "https://ci.example/runs/0"}
-    old = fake.add("Bug", "[Auto] old", labels=["ai-defect", label],
+    old = fake.add(BUG, "[Auto] old", labels=["ai-defect", label],
                    description=defects.render(None, old_state))
     out = _run(world, tmp_path, 1, "test_add_an_item")
     assert out["raised"] == [] and out["updated"] == [old]
@@ -316,7 +319,7 @@ def test_both_switches_turn_it_off(world, tmp_path):
 def test_a_dry_run_writes_nothing_and_still_says_what_is_untraced(world, tmp_path):
     fake, *_ = world
     out = _run(world, tmp_path, 1, "test_sign_in", module="test_reference", dry_run=True)
-    assert [d for d in fake.issues.values() if d["issuetype"] == "Bug"] == []
+    assert [d for d in fake.issues.values() if d["issuetype"] == BUG] == []
     assert fake.links == {} and out["unmapped"] and out["unmapped"][0].startswith("(dry run)")
 
 

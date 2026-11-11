@@ -157,7 +157,10 @@ def raise_alert(tracker, alert_id: str, title: str, detail: str = "") -> bool:
         state = alert_states(tracker.get_comments(key)).get(alert_id, ("resolved", ""))[0]
         if state == "open":
             return False
-        body = f"{OPEN} {alert_id}\n**{title}**" + (f"\n\n{detail}" if detail else "")
+        # Redacted HERE, for every alert: a caller passes an error's text
+        # (core/redaction.py), and only some callers redacted it themselves.
+        from core.redaction import redact
+        body = redact(f"{OPEN} {alert_id}\n**{title}**" + (f"\n\n{detail}" if detail else ""))
         tracker.add_comment(key, _render(tracker, body))
         logger.warning("Pipeline health alert opened on %s - %s: %s", key, alert_id, title)
     except Exception as e:                                         # noqa: BLE001
@@ -177,7 +180,8 @@ def resolve_alert(tracker, alert_id: str, note: str = "") -> bool:
         state = alert_states(tracker.get_comments(key)).get(alert_id, ("resolved", ""))[0]
         if state != "open":
             return False
-        body = f"{RESOLVED} {alert_id}" + (f"\n{note}" if note else "")
+        from core.redaction import redact
+        body = redact(f"{RESOLVED} {alert_id}" + (f"\n{note}" if note else ""))
         tracker.add_comment(key, _render(tracker, body))
         logger.info("Pipeline health alert resolved on %s - %s", key, alert_id)
     except Exception as e:                                         # noqa: BLE001

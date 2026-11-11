@@ -69,6 +69,8 @@ from core.json_block import read_json_block
 from core.ops_settings import section
 from integrations.tracker import capability
 
+from core.redaction import error_text
+
 logger = logging.getLogger(__name__)
 
 DATA_OPEN, DATA_CLOSE = "{code:json}", "{code}"
@@ -317,7 +319,7 @@ def _trace(tracker, key: str, state: dict, before: dict, labels: list, s: dict,
                 result["stale_trace"].append(f"{key} -> {target}")
                 return
             logger.warning("Defect %s: %s not done: %s", key, what, e)
-            result["errors"].append((f"{key} {what}", f"{type(e).__name__}: {e}"))
+            result["errors"].append((f"{key} {what}", error_text(e)))
 
     if unmapped:
         if not (tc or owner) and unmapped not in labels:
@@ -377,7 +379,7 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
         existing = open_defects(tracker, s)
     except Exception as e:                                         # noqa: BLE001
         logger.warning("Open defects not read (%s); none raised this run.", e)
-        result["errors"].append(("the open defects", f"{type(e).__name__}: {e}"))
+        result["errors"].append(("the open defects", error_text(e)))
         return result
     failing_labels = set()
     failing_tests: dict = {}             # test -> its defect this run (None: none)
@@ -421,7 +423,7 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
                             tracker.remove_label(issue["key"], old)
                     except Exception as e:                         # noqa: BLE001
                         result["errors"].append((issue["key"], f"label {old} not removed: "
-                                                               f"{type(e).__name__}: {e}"))
+                                                               + error_text(e)))
                 if s["passing_label"] in (issue.get("labels") or []):
                     if not dry_run:
                         tracker.remove_label(issue["key"], s["passing_label"])
@@ -456,7 +458,7 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
             _trace(tracker, key, state, {}, labels, s, result, dry_run)
         except Exception as e:                                     # noqa: BLE001
             logger.warning("Defect for %s not written: %s", test, e)
-            result["errors"].append((test, f"{type(e).__name__}: {e}"))
+            result["errors"].append((test, error_text(e)))
 
     # A test failing now for ANOTHER cause than an older defect of it records
     # (two open defects of one test, raised before one open defect per test):
@@ -482,7 +484,7 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
             result["failing_again"].append(issue["key"])
         except Exception as e:                                     # noqa: BLE001
             logger.warning("Defect %s not unflagged: %s", issue.get("key"), e)
-            result["errors"].append((issue.get("key"), f"{type(e).__name__}: {e}"))
+            result["errors"].append((issue.get("key"), error_text(e)))
 
     # A pass only on the retry is no sign the defect is gone (F-19).
     passed = {jm.case_id(c) for c in cases if jm.outcome(c) == "passed" and not jm.is_flaky(c)}
@@ -501,5 +503,5 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
             result["passing"].append(issue["key"])
         except Exception as e:                                     # noqa: BLE001
             logger.warning("Defect %s not flagged as passing: %s", issue.get("key"), e)
-            result["errors"].append((issue.get("key"), f"{type(e).__name__}: {e}"))
+            result["errors"].append((issue.get("key"), error_text(e)))
     return result

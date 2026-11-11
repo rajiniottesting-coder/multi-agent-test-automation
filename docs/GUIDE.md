@@ -421,7 +421,7 @@ Pydantic's `max_length=10` translates to JSON Schema `maxItems`, which some prov
 **What the workflow does:**
 1. Checks out the pull request **merged with main** (the commit of `refs/pull/<n>/merge` the event was raised for, checked out by SHA - the same commit GitHub takes the workflow from), so the run tests what main will hold after the merge, and a pull request merged while it runs still gets its report; a pull request that conflicts with main gets no run until it is updated (GitHub's rule)
 2. Installs Python deps and Playwright (with browser caching for speed)
-3. Runs `pytest` — the offline unit suite and the BDD tests — with JUnit XML, HTML and Allure output; a failed test keeps its screenshot, video and Playwright trace. A BDD test whose failure names a temporary HTTP error from the application (5xx or 429) is re-run up to twice, 20 s apart (`pytest-rerunfailures`, `--only-rerun`); a failure in a test whose own request the server refused that way, and never answered afterwards, is restated to name it (`tests/conftest.py`), so it is re-run too; nothing else is re-run, and `scripts/collapse_junit_reruns.py` then keeps only each test's final attempt in `junit.xml`, so Agent 5's counts and Agent 3's per-scenario evidence see one result per test. Page loads are retried earlier still, inside `BasePage.navigate()`. Then every test still failing is **retried once** (`--last-failed`, at most 10; F-19), and `scripts/finalise_junit.py` writes what was learned into `junit.xml` (`core/junit_marks.py`): a pass on the retry is `flaky` (counts as passed, named, recorded on the pipeline health issue) or `outage_recovered`; a failure whose text says the application was unavailable is `outage` (F-7) - reported apart from test failures everywhere. The run step itself never fails the job; the last step, *Decide the E2E result*, does - on anything still failing after the retry (outages included: such a test was not tested), an interrupted run, a collection error, or no tests. On a pull request that changes only `prompts/`, `docs/` or Markdown the browser run and Agent 5 are skipped (see *What runs, per event*); on a push to `main` the browser runs only when a runtime file changed
+3. Runs `pytest` — the offline unit suite and the BDD tests — with JUnit XML, HTML and Allure output; a failed test keeps its screenshot, video and Playwright trace. A BDD test whose failure names a temporary HTTP error from the application (5xx or 429) is re-run up to twice, 20 s apart (`pytest-rerunfailures`, `--only-rerun`); a failure in a test whose own request the server refused that way, and never answered afterwards, is restated to name it (`tests/conftest.py`), so it is re-run too; nothing else is re-run, and `scripts/collapse_junit_reruns.py` then keeps only each test's final attempt in `junit.xml` and lists every re-run test (a plugin that writes only the final attempt gets a `reruns` property from `core/rerun_record.py`), so Agent 5's counts and Agent 3's per-scenario evidence see one result per test. Page loads are retried earlier still, inside `BasePage.navigate()`. Then every test still failing is **retried once** (`--last-failed`, at most 10; F-19), and `scripts/finalise_junit.py` writes what was learned into `junit.xml` (`core/junit_marks.py`): a pass on the retry is `flaky` (counts as passed, named, recorded on the pipeline health issue) or `outage_recovered`; a failure whose text says the application was unavailable is `outage` (F-7) - reported apart from test failures everywhere. The run step itself never fails the job; the last step, *Decide the E2E result*, does - on anything still failing after the retry (outages included: such a test was not tested), an interrupted run, a collection error, or no tests. On a pull request that changes only `prompts/`, `docs/` or Markdown the browser run and Agent 5 are skipped (see *What runs, per event*); on a push to `main` the browser runs only when a runtime file changed
 4. On a pull request and on the nightly run, before the browser run: waits while a run of another PR (or the nightly run) that started earlier has not finished (first come, first served, `scripts/e2e_turn.py`). Every PR tests the same live application with the same accounts, and saved state such as a cart would otherwise leak between them. Capped at 15 minutes, then it runs anyway; if the runs cannot be read it does not wait.
 5. After a run with failures: **checks that the application is up** (`scripts/app_probe.py`) - opens the pages in `app_under_test.health_check` and looks for elements always on them, waiting up to `app_health.wait_minutes` for it to come back. Not up: every failure is an outage (not judged, never a defect), with what the browser was shown instead. Up: **every failed test is run again** once (F-19; capped at 100); a pass is a flake, a second failure is a failure - and only that can become a defect
 6. Uploads `reports/` as a workflow artifact (so Agent 5 can read it in the next job)
@@ -1644,7 +1644,9 @@ the story's true lifetime cost, not just the first pass. A story reset to
 `ai-ready` and drafted again starts a **new attempt**: the cost comment of the
 old attempt gets a closing line saying why and keeps its figures; the next run
 opens a new one counted from zero (with the comment ledger: a `[LEDGER-RESET]`
-comment).
+comment). A story whose earlier Agent 1 runs all FAILED (they wrote nothing -
+out of output room, say) is not a new attempt when `ai-ready` is added again:
+the retry's cost joins theirs.
 
 Prerequisites for full numbers (one-time): the two `LLM_PRICE_*`
 variables are set and runs are real (not `--dry-run`). The cost comment is
@@ -1782,7 +1784,11 @@ it. **Watch it**: the tracker then emails you on each comment, and the pipeline
 comments only when something changes - `[health:open] <id>` when a problem
 starts, `[health:resolved] <id>` when it ends, nothing while it persists. The
 description is the current picture (open alerts, flaky tests, today's spend),
-rewritten on each change - edits to it are not kept.
+rewritten on each change - edits to it are not kept. Every alert is redacted
+where it is posted (`core/redaction.py`: secret values, token-shaped strings,
+credential-carrying HTTP header values, email addresses), and an error from
+the tracker is quoted as its status and the server's own message, never the
+client's header dump.
 
 | Alert id | Opened by | Means | Closes when |
 |---|---|---|---|
@@ -2511,9 +2517,12 @@ propose`), and a scenario no test case could be paired with.
 
 ### Agent 4 log says "waiting for earlier run(s)"
 
-Another pull request's browser run started earlier and has not finished; the
-runs take turns because they share the live application and its accounts. The
-wait is capped at 15 minutes, after which the tests run anyway.
+Another pull request's browser run, the nightly run, or a full run started by
+hand started earlier and has not finished; the runs take turns because they
+share the live application and its accounts. The wait is capped at 15
+minutes, after which the tests run anyway. A full run (nightly or by hand) has
+its own concurrency group, so a merge to `main` while it runs does not cancel
+it.
 
 ### A test failed with `HTTP 503` (or another 5xx / 429) from the application
 
@@ -2528,7 +2537,10 @@ found", "element never appeared"); `tests/conftest.py` then restates that
 failure to name the request and its status, so it is re-run as well (PR #215).
 A request the server later answered successfully is not named.
 The log shows `succeeded on attempt N` for a page load and the
-`Keep only the final attempt` step lists every re-run test. A test still
+`Keep only the final attempt` step lists every re-run test - whether the
+re-run plugin writes every attempt (collapsed to the last) or only the final
+one (`core/rerun_record.py` records a `reruns` property on it at the source).
+A test still
 failing this way means the outage outlasted both: re-run the job. A 4xx, an
 assertion or a timeout is never retried.
 

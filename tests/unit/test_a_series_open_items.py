@@ -64,6 +64,35 @@ class TestLedgerIgnoringAgents:
         assert not has_usage_comments([_entry("Agent 1 (Test Designer)"), RESET_MARKER])
 
 
+class TestAFailedAgent1RunIsTheSameAttempt:
+    """Observation O3 (11 Nov 2026, a validation story): Agent 1 ran out of room, wrote
+    nothing; `ai-ready` added again opened a NEW attempt and its cost dropped
+    out of the story's total. A failed Agent 1 run is the same attempt."""
+
+    FAILED = "Agent 1 (Test Designer) (failed)"
+
+    def test_only_failed_agent1_runs_are_not_a_previous_attempt(self):
+        from core.usage_ledger import TEST_DESIGNER
+        comments = [_entry(IMPACT_ANALYST), _entry(self.FAILED), _entry(self.FAILED)]
+        assert not has_usage_comments(comments, ignore_agents=(IMPACT_ANALYST,),
+                                      same_attempt_if_failed=(TEST_DESIGNER,))
+
+    def test_a_successful_draft_or_a_later_agent_still_starts_a_new_attempt(self):
+        from core.usage_ledger import TEST_DESIGNER
+        for other in ("Agent 1 (Test Designer)", "Agent 2 (Coder) (failed)"):
+            comments = [_entry(self.FAILED), _entry(other)]
+            assert has_usage_comments(comments, ignore_agents=(IMPACT_ANALYST,),
+                                      same_attempt_if_failed=(TEST_DESIGNER,)), other
+
+    def test_agent1_passes_its_own_failed_runs(self):
+        from pathlib import Path
+        src = Path("agents/agent1_analyst.py").read_text(encoding="utf-8")
+        assert "same_attempt_if_failed=(TEST_DESIGNER,)" in src
+
+    def test_other_callers_are_unchanged(self):
+        assert has_usage_comments([_entry(self.FAILED)], ignore_agents=(IMPACT_ANALYST,))
+
+
 class TestAgent0PostsItsUsage:
     def _post(self, tracker, usage=USAGE):
         import agents.agent0_impact as a0

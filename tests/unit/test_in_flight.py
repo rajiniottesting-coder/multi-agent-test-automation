@@ -311,7 +311,7 @@ def _r(i, status="in_progress", branch="b", event="pull_request"):
     ([_r(10, branch="mine")], []),                             # our own PR: its own group
     ([_r(10, branch="other", event="push")], []),              # not a PR run
     ([_r(10, branch="main", event="schedule")], [10]),         # the nightly run on main (F-21)
-    ([_r(10, branch="other", event="workflow_dispatch")], []),
+    ([_r(10, branch="main", event="workflow_dispatch")], [10]),  # a full run started by hand
     ([_r(10, branch="x"), _r(12, branch="y"), _r(5, status="completed", branch="z")], [10, 12]),
 ])
 def test_runs_ahead(runs, ahead):
@@ -345,8 +345,9 @@ def _wait_step():
 def test_the_wait_step_is_guarded_like_the_browser_run():
     step = _wait_step()
     assert step["if"].startswith("always() && (github.event_name == 'pull_request' "
-                                 "|| github.event_name == 'schedule')"), \
-        "pull requests and the nightly run on main take turns"
+                                 "|| github.event_name == 'schedule' "
+                                 "|| github.event_name == 'workflow_dispatch')"), \
+        "pull requests, the nightly run and a manual full run take turns"
     assert "steps.pr_changes.outputs.e2e != 'false'" in step["if"]
     assert step.get("continue-on-error") is True
     assert int(step["env"]["MAX_WAIT_SECONDS"]) > 0

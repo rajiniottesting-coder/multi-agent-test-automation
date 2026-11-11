@@ -4,6 +4,65 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a cost row names every kind of run, a completed one included (#421)
+
+**Why:** found live on validation item E147 (11 Nov, SCRUM-403): one failed and one successful Agent 1 run read `Agent 1 (Test Designer): failed | 2` in the cost comment - as if both had failed. A run of no particular kind added nothing to the row's list.
+
+- `core/usage_ledger.by_agent` counts such runs; `_label` lists them as `completed` beside the other kinds when the row's runs differ (`Agent 1 (Test Designer): completed, failed`); a row of one kind still reads as the agent alone
+- Tests in `test_usage_ledger.py`; TEST_TRACK E148. Not tested live yet: E148
+
+---
+
+## November 2026 — a failed Agent 1 run is the same attempt: retrying it keeps its cost (#417)
+
+**Why:** observation O3, left open earlier and seen again on 10 Nov (SCRUM-398): Agent 1 ran out of output room and wrote nothing; `ai-ready` added again posted `[LEDGER-RESET] story reprocessed from ai-ready`, and the failed run's cost dropped out of the story's total - a retry of a run that produced nothing is not a new attempt.
+
+- `core/usage_ledger.has_usage(..., same_attempt_if_failed=...)`: failed runs of the named agents do not count as a previous attempt; `TEST_DESIGNER` names Agent 1's ledger entry
+- `agents/agent1_analyst.py` passes its own failed runs; a successful draft, or any later agent's run (failed or not), still starts a new attempt; other callers unchanged
+- GUIDE updated; tests in `test_a_series_open_items.py`; TEST_TRACK E147. Not tested live yet: E147
+
+---
+
+## November 2026 — every health alert is redacted where it is posted, and quotes a tracker error readably (#415)
+
+**Why:** found live on validation item E31h (11 Nov, window J): the triage's `defects-not-written` alert quoted the tracker client's error whole - `response headers = {'Content-Type': ..., 'S...` - cut at 300 characters just before what could have been a `Set-Cookie` session value. `raise_alert` posted its body as given; only some callers redacted their text.
+
+- `core/pipeline_health.raise_alert` / `resolve_alert`: the body is redacted where it is posted - every alert, whoever raises it
+- `core/redaction.redact`: also the value of a credential-carrying HTTP header an error quotes (`Authorization`, `Cookie`, `Set-Cookie`, a `...-Token` header)
+- `core/redaction.error_text`: `<Type>: HTTP <status>: <the server's message>` for an error that carries them, else the message without the client's header dump; whitespace collapsed, cut to a length. `core/defects` records refused writes with it
+- GUIDE updated; tests in `test_alert_text.py`; TEST_TRACK E146 (and E38). Not tested live yet: E146
+
+---
+
+## November 2026 — Agent 3 logs what its review was shown (#412)
+
+**Why:** validation item E34 (a review of a large change: docs shown as diffs, the changed-files section capped) could not be checked from a run - nothing said which files the reviewer saw in full and which only as a diff, so a review of a large change could not be read against its input.
+
+- `agents/agent3_reviewer.format_changed_files_for_prompt` logs one line: how many changed files were shown in full, how many as their diff only (files not read while the tests run), and which went over the section's cap and were shown as their diff
+- Tests in `test_review_prompt_budget.py`; TEST_TRACK E34
+
+---
+
+## November 2026 — a test re-run after a temporary HTTP error is never invisible (#410)
+
+**Why:** found live on validation item E15 (11 Nov, throw-away PR T7): a test refused with HTTP 503 on its first attempt passed on the re-run - and the *Keep only the final attempt* step printed "no re-run tests". `scripts/collapse_junit_reruns.py` assumed the re-run plugin writes every attempt as its own testcase; pytest-rerunfailures 16 writes only the final one and nothing about the earlier attempts, so the re-run reached no reader of the report.
+
+- `core/rerun_record.py` (a pytest plugin, registered by `tests/conftest.py`): counts the attempts pytest reports as `rerun` and puts a `reruns` property on the test's final testcase - whatever shape the plugin's report has
+- `scripts/collapse_junit_reruns.py`: lists tests that already carry the property, beside those it collapses; nothing is rewritten when there is nothing to collapse
+- GUIDE and TECHNICAL_DEEP_DIVE updated; tests in `test_outage_retry.py` (one runs the installed plugin end to end); TEST_TRACK E145. Not tested live yet: E145
+
+---
+
+## November 2026 — a full Agent 4 run started by hand takes turns and survives a merge, like the nightly one (#407)
+
+**Why:** the owner asked why E30b/E30c had to wait for the nightly run rather than a manual one. Reading the workflow showed why - and a gap: a manual (`workflow_dispatch`) run on `main` shared the concurrency group of a push to `main`, whose `cancel-in-progress` is on, so any merge cancelled a person's full regression run part-way; and it did not take turns with pull requests' browser runs, which log in with the same test accounts (`scripts/e2e_turn.py`), so either could change the other's results.
+
+- `.github/workflows/agent4_runner.yml`: a full run (nightly or by hand) is in group `agent4-full-<ref>`, never the branch's group a push cancels; the turn-taking step runs for `workflow_dispatch` too
+- `scripts/e2e_turn.py`: `TURN_EVENTS` includes `workflow_dispatch`
+- GUIDE and TECHNICAL_DEEP_DIVE updated; tests in `test_in_flight.py`, `test_defect_triage.py`; TEST_TRACK E144. Not tested live yet: E144
+
+---
+
 ## November 2026 — the plan's own Skipped notes decide that nothing is left to code (#404)
 
 **Why:** the live check of #403 (SCRUM-398 by key): the plan left all three test cases out again, but this time planned a feature file with no scenario instead of a note - so "no feature file planned" did not hold, Stage 2 generated it, and the coverage gate refused as before.

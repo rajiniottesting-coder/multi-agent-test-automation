@@ -61,7 +61,7 @@ def night(monkeypatch, tmp_path):
 
 
 def _bugs(fake):
-    return {k: d for k, d in fake.issues.items() if d["issuetype"] == "Bug"}
+    return {k: d for k, d in fake.issues.items() if d["issuetype"] == defects.settings()["issue_type"]}
 
 
 def test_two_nights(night):

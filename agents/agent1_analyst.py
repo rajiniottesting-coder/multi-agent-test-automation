@@ -317,13 +317,17 @@ def run(story_id: str, dry_run: bool = False) -> dict:
     if not dry_run:
         from core.usage_ledger import (
             IMPACT_ANALYST,
+            TEST_DESIGNER,
             has_usage,
             post_reset_to_story,
         )
         try:
             # Agent 0's entries belong to THIS attempt of a change story (it
             # runs first), so they do not make the story "already costed".
-            if has_usage(story_id, jira, ignore_agents=(IMPACT_ANALYST,)):
+            # A failed Agent 1 run wrote nothing: retrying it is the same
+            # attempt, its cost stays counted (observation O3).
+            if has_usage(story_id, jira, ignore_agents=(IMPACT_ANALYST,),
+                         same_attempt_if_failed=(TEST_DESIGNER,)):
                 logger.info(
                     f"{story_id} already has usage entries from a previous run — "
                     "posting ledger reset boundary."
