@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — runs that cannot be read judge no workflow; a refused App token names its secret (#PRNUM)
+
+**Why:** found in validation window L (11 Nov). With a refused token (health run 43016854504) the GitHub adapter returned no runs for every workflow, and the check read that as "no scheduled run started": five workflow-not-starting alerts opened. The same empty list resolves a real workflow-failing alert as "no longer failing". With a deleted App key (health run 43018090056) the job stopped at Agent identity with only GitHub's "A JSON web token could not be decoded".
+
+- `integrations/repo_host.get_workflow_runs(strict=)`: with `strict` an adapter raises instead of returning `[]`; `GitHubClient` does. `core/health_checks._runs` asks for it, so a workflow whose runs cannot be read is not judged (an adapter without `strict` is read as before)
+- `.github/actions/agent-identity`: when the App's token is refused, an error says the job writes nothing, never falls back to `GH_PAT`, and that `GH_APP_PRIVATE_KEY` (or `GH_APP_CLIENT_ID`) is the secret to fix
+- Tests in `test_run_c_findings.py`, `test_agent_identity.py`; TEST_TRACK E156, E157. Not tested live yet: E156, E157
+
+---
+
 ## November 2026 — a shortened refusal reason never ends inside a code span (#436)
 
 **Why:** found live checking E154 (11 Nov, SCRUM-408 blocked comment 13796): each reason is cut at a fixed length, and a cut inside a code span left an unclosed backtick, shown literally.
