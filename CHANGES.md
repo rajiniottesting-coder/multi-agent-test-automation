@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — a review fix's new or changed steps pass the step fidelity audit (#PRNUM)
+## November 2026 — a review fix's new or changed steps pass the step fidelity audit (#443)
 
 **Why:** found in validation Run L (11 Nov, PR #435, review-fix run 43021957053). A `/fix` asked to check that the signup form is shown before it is submitted; the fix added the step and checked it with the page's "loaded" reader, which reads the other form, because the reserved page object has no reader for the signup form. Every rule passed and it was pushed; only Agent 3 noticed.
 
