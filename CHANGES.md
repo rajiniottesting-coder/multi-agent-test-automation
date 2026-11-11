@@ -4,6 +4,15 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a review fix's new or changed steps pass the step fidelity audit (#PRNUM)
+
+**Why:** found in validation Run L (11 Nov, PR #435, review-fix run 43021957053). A `/fix` asked to check that the signup form is shown before it is submitted; the fix added the step and checked it with the page's "loaded" reader, which reads the other form, because the reserved page object has no reader for the signup form. Every rule passed and it was pushed; only Agent 3 noticed.
+
+- `agents/agent2_review_fix._new_stand_ins`: the step fidelity audit (`validators/step_fidelity`) over the steps the fix added or whose code it changed; a step left as it was is not blamed on the fix. A stand-in refuses the batch - nothing is pushed and the summary names the step
+- Tests in `test_step_fidelity.py`; TEST_TRACK E158. Not tested live yet: E158
+
+---
+
 ## November 2026 — runs that cannot be read judge no workflow; a refused App token names its secret (#438)
 
 **Why:** found in validation window L (11 Nov). With a refused token (health run 43016854504) the GitHub adapter returned no runs for every workflow, and the check read that as "no scheduled run started": five workflow-not-starting alerts opened. The same empty list resolves a real workflow-failing alert as "no longer failing". With a deleted App key (health run 43018090056) the job stopped at Agent identity with only GitHub's "A JSON web token could not be decoded".

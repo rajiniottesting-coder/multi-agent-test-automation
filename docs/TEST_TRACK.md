@@ -339,6 +339,7 @@ Older rows name the sessions S1-S8 of the first plan: **S1** is Run A, **S2** is
 | E155 | Cut reason, closed code span | The next blocked comment whose reason is cut | No literal backtick at the cut; the reason ends with '...' | ⬜ | |
 | E156 | Refused App token named | An agent job with a wrong App key (window L, key-wrong) | It fails at Agent identity with an error naming GH_APP_PRIVATE_KEY and saying it never falls back to GH_PAT | ⬜ | |
 | E157 | Unread runs judge nothing | A health run whose token is refused (window L, pat-revoked) | credential:repo-host opens; no workflow-not-starting alert opens and no workflow alert resolves | ⬜ | |
+| E158 | Review fix audited | A `/fix` whose change would check a step with another element's reader | Nothing pushed; the summary names the step and says a person adds the reader | ⬜ | |
 | E108 | Run E fixes | On main, a test whose older defect is flagged passing fails again under another cause (the next run on main while validation cycle 1 is merged) | The older defect loses `ai-defect-passing` with one comment naming the new defect; reported as failing again | ✅ | 10 Nov manual main run 42744076569 (cycle 1 failures, after #326): raised [], updated SCRUM-346..352, failing_again SCRUM-327, 328, 329 (older defects flagged passing, recorded under another cause) - label removed + one comment |
 | E107 | Run E fixes | A throw-away PR (never merged) that sets only `app_under_test.base_url` to a page that is not the application | Every E2E test runs against that page and fails; the application check reports it not up; every failure is not judged | ✅ | 10 Nov throw-away PR #322 re-run after #324 (run 42734786168): only app_under_test.base_url -> example.com; every E2E test ran there; "The application is NOT up ... home (https://example.com/) was served without site_logo"; 25 failures not judged |
 | E106 | Run D fixes | A story whose test cases need an element the inventory lacks, run by key (not a dry run) | The run is refused naming the element (`Inventory gate failed ... element(s) ... home.<key>`); the `[agent2:blocked]` comment names it and gives the `plan_inventory element` command, not "a test case asks for something" | ✅ | 9 Nov: SCRUM-333 by key (run 42669343924, after #319): "Inventory gate failed for SCRUM-333: the test cases need element(s) ... home.scroll_up_arrow"; [agent2:blocked] comment 13557 names it and gives the plan_inventory element command |
@@ -489,6 +490,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
+| #PRNUM | A review fix's new or changed steps pass the step fidelity audit | | E158 | |
 | #438 | Runs that cannot be read judge no workflow; a refused App token names its secret | | E156, E157 | |
 | #436 | A shortened refusal reason never ends inside a code span | | E155 | |
 | #433 | A refused story names a reserved page object's missing method; Markdown notices reach Jira rendered | | E153, E154 | |
