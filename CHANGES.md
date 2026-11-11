@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — a cost row names every kind of run, a completed one included (#PRNUM)
+## November 2026 — a cost row names every kind of run, a completed one included (#421)
 
 **Why:** found live on validation item E147 (11 Nov, SCRUM-403): one failed and one successful Agent 1 run read `Agent 1 (Test Designer): failed | 2` in the cost comment - as if both had failed. A run of no particular kind added nothing to the row's list.
 

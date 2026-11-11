@@ -480,7 +480,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
-| #PRNUM | A cost row names every kind of run, a completed one included | | E148 | |
+| #421 | A cost row names every kind of run, a completed one included | | E148 | |
 | #417 | A failed Agent 1 run is the same attempt | | E147 | |
 | #415 | Every health alert redacted where it is posted; a tracker error quoted readably | | E146, E38 | |
 | #412 | Agent 3 logs what its review was shown | | E34 | |
