@@ -11,7 +11,10 @@ and lenient about form:
   covers it, IS checked. Do not list it.
 - A step that asserts something of every item of a list, or of a part of an element, also
   checks that the list or element is shown: "each title is a link" checks that titles are
-  listed. A step that acts on an element (clicks or fills it) checks that the element is there.
+  listed. A link, text or field checked inside a section checks that the section is shown with
+  it, even when the step does not name the section: "a support phone link is displayed" checks
+  "the Support section is displayed, showing a phone number". A step that acts on an element
+  (clicks or fills it) checks that the element is there.
 - Setup the scenario reaches another way (opening a page directly instead of through a menu, a
   Background step) is not an omission, unless the test case's purpose is that path itself.
 - List only what the test case states. Never invent requirements.
