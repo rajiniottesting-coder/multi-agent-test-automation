@@ -176,3 +176,11 @@ def test_the_real_usage_table_converts_cleanly():
     out = markdown_to_jira_wiki(section)
     assert "||Agent run||Calls||Input tokens||Output tokens||Cost (USD)||" in out
     assert "---|" not in out and "|---" not in out
+
+
+def test_a_shortened_reason_never_ends_inside_a_code_span():
+    from core import blocked
+    long = "calls `x()` and a human has to add `" + "y" * 400 + "` to `Page`"
+    short = blocked._short(long)
+    assert short.endswith("...") and short.count("`") % 2 == 0
+    assert len(short) <= blocked._MAX_ERROR_CHARS
