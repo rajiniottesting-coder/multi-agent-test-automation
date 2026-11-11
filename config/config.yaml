@@ -162,7 +162,7 @@ handoff:
 
 defects:
   enabled: true
-  issue_type: "ZZ-validation-not-an-issue-type"   # VALIDATION window J part C (E146) - restore "Bug"
+  issue_type: "Bug"
   label: "ai-defect"                 # + "-<hash of test and cause>" finds it again
   passing_label: "ai-defect-passing"
   open_statuses: ["To Do", "In Progress", "In Review"]
@@ -343,7 +343,7 @@ agents:
   agent1_analyst:
     # Room for one draft of test cases (tokens). Out of room, the story is
     # handed back with one [agent1:stopped] comment naming this key.
-    max_output_tokens: 600   # VALIDATION window J part C (E147) - restore 12288
+    max_output_tokens: 12288
     selection:
       issue_type: "Story"
       allowed_statuses:
