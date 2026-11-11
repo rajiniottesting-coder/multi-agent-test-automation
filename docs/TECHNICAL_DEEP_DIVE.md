@@ -666,7 +666,7 @@ skipped runs would cancel a person's `/fix` waiting in the group. ADR-017.
    - System: `prompts/agent3_reviewer.md`
    - PR metadata
    - Reference files block (from `ctx.load_reference_files()`)
-   - `format_changed_files_for_prompt(files, budget_chars)` — renders each file's name, status and full content or diff (rule and budget above) as a markdown section
+   - `format_changed_files_for_prompt(files, budget_chars)` — renders each file's name, status and full content or diff (rule and budget above) as a markdown section, and logs how many files were shown in full, as their diff only, and over the cap (named)
 5. **Invoke LLM with structured schema**:
    ```python
    report = llm.invoke_structured(prompt, schema=ReviewReport)
