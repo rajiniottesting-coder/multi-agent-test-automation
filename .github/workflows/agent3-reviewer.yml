@@ -95,7 +95,7 @@ jobs:
           #   GitHub Secret: GH_REPO  →  Env Var: GITHUB_REPO  (what code reads)
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO: ${{ vars.GH_REPO }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: "sk-validation-e38-fake-key-000000000000000000000000"  # VALIDATION T-E38 (never merged): a wrong model key on purpose
           OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
           LLM_MODEL: ${{ vars.LLM_MODEL || 'claude-opus-4-6' }}
           # Optional pricing (USD per 1M tokens) for cost tracking
