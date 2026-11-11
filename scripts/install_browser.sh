@@ -7,19 +7,23 @@
 # yet every browser test then ran and passed: the runner image already carries
 # the libraries the browser needs, and only optional font packages were missing.
 #
-# So: the full install (browser + OS packages) is tried twice. If the package
-# mirrors stay unreachable, the browser alone is installed and STARTED once; the
-# step passes, with a warning, only when the browser really launches. A browser
+# So: the full install (browser + OS packages) is tried twice, each try cut off
+# after INSTALL_TIMEOUT seconds (default 180; a normal install takes 7-26 s,
+# but apt waits about ten minutes on unresolvable mirrors - the first version
+# of this script spent 20 minutes on two such tries). If the mirrors stay
+# unreachable, the browser alone is installed and STARTED once; the step
+# passes, with a warning, only when the browser really launches. A browser
 # that cannot start still fails the step, saying why.
 # Usage: scripts/install_browser.sh [browser]   (default: chromium)
 set -u
 browser="${1:-chromium}"
+limit="${INSTALL_TIMEOUT:-180}"
 for attempt in 1 2; do
-  if playwright install --with-deps "$browser"; then
+  if timeout "$limit" playwright install --with-deps "$browser"; then
     exit 0
   fi
   if [ "$attempt" -lt 2 ]; then
-    echo "::warning::Installing $browser with its OS packages failed (attempt $attempt of 2) - trying again in 30s"
+    echo "::warning::Installing $browser with its OS packages failed or took over ${limit}s (attempt $attempt of 2) - trying again in 30s"
     sleep 30
   fi
 done

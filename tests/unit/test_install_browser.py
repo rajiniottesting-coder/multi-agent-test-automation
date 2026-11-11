@@ -67,3 +67,17 @@ def test_a_browser_that_does_not_start_fails_the_step(tmp_path):
     env, _ = _fake(tmp_path / "x" if (tmp_path / "x").mkdir() is None else tmp_path,
                    with_deps_fails=9, plain_ok=False)
     assert _run(env).returncode == 1
+
+
+def test_a_hanging_install_is_cut_off(tmp_path):
+    """apt waits about ten minutes on unresolvable mirrors; each try is cut off."""
+    env, log = _fake(tmp_path, with_deps_fails=0)
+    hang = tmp_path / "playwright"
+    hang.write_text(f"#!/usr/bin/env bash\necho \"$*\" >> {log}\n"
+                    "if [ \"$2\" = \"--with-deps\" ]; then exec /bin/sleep 30; fi\n")
+    out = subprocess.run(["bash", str(SCRIPT)], env=dict(env, INSTALL_TIMEOUT="1"),
+                         capture_output=True, text=True, timeout=20)
+    assert out.returncode == 0
+    assert log.read_text().splitlines() == ["install --with-deps chromium"] * 2 + [
+        "install chromium", "launch"]
+    assert "took over 1s" in out.stdout
