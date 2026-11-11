@@ -202,12 +202,16 @@ class RepoHost(Protocol):
 
     # ── CI status ────────────────────────────────────────────
     def get_workflow_runs(self, workflow_file: str, branch: str,
-                          limit: int = 20) -> list[dict]:
+                          limit: int = 20, strict: bool = False) -> list[dict]:
         """Recent CI runs as [{"id","status","conclusion","head_sha"}, ...],
         newest first. An adapter may add "event" (what started the run:
         "schedule", "push", "pull_request", ...), "created_at" (ISO time) and
         "url"; the pipeline health check needs "event" to find scheduled runs
         and treats a run without it as not scheduled.
+
+        Runs that cannot be read come back as []; with `strict` the adapter
+        raises instead - the health check must tell "no runs" from "could not
+        read them" (a refused token read as "no scheduled run started").
 
         "Workflow" is GitHub's word; a GitLab adapter maps this onto pipelines
         and an Azure adapter onto builds.

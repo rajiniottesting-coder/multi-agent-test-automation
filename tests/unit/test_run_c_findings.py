@@ -790,3 +790,48 @@ def test_the_refusal_carries_the_reserved_needs_first():
     block = source[source.index("lost = [err for err in reserved_needs.values()"):][:200]
     assert "e = GateFailure(str(e), errors=lost + refused)" in block
     assert source.index("reserved_needs=reserved_needs,") < source.index("lost = [err")
+
+
+class _RefusedHost:
+    """A repo host whose token is refused: the adapter returns [] unless
+    asked to raise (strict), as GitHubClient does."""
+    def get_workflow_runs(self, name, branch, limit=20, strict=False):
+        if strict:
+            raise RuntimeError("401 Bad credentials")
+        return []
+
+
+def test_runs_that_cannot_be_read_judge_no_workflow(tmp_path):
+    """11 Nov 2026 (validation window L, health run 43016854504): with a
+    refused token every workflow's runs read as [] - five workflow-not-starting
+    alerts opened, and a workflow-failing alert would have been resolved."""
+    root = _tree(tmp_path, "0 * * * *")
+    assert hc.schedule_findings(_RefusedHost(), root, NOW, 24, 3) == []
+    assert hc.workflow_findings(_RefusedHost(), root, 3) == []
+
+
+def test_an_adapter_without_strict_is_read_as_before(tmp_path):
+    root = _tree(tmp_path, "0 * * * *")
+    (f,) = hc.schedule_findings(_Host([_run(30)]), root, NOW, 24, 3)
+    assert f.problem
+
+
+def test_the_github_adapter_raises_when_asked_to():
+    from integrations.github_client import GitHubClient
+    client = GitHubClient.__new__(GitHubClient)
+
+    class Repo:
+        def get_workflow(self, name):
+            raise RuntimeError("401 Bad credentials")
+    client._repo = Repo()
+    assert client.get_workflow_runs("x.yml", "main") == []
+    with pytest.raises(RuntimeError):
+        client.get_workflow_runs("x.yml", "main", strict=True)
+
+
+def test_a_refused_app_token_names_the_secret_to_fix():
+    from pathlib import Path
+    action = Path(".github/actions/agent-identity/action.yml").read_text(encoding="utf-8")
+    step = action[action.index("Say why the App's token was refused"):]
+    assert "if: failure() && steps.app.outcome == 'failure'" in step[:200]
+    assert "GH_APP_PRIVATE_KEY" in step and "never falls back to GH_PAT" in step
