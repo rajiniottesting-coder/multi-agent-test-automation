@@ -352,7 +352,7 @@ jobs:
         # OS-level apt packages are NOT cached and need to be reinstalled fresh.
         # Skipped on push — saves ~2-3 min on every framework commit.
         if: (github.event_name != 'push' || steps.changes.outputs.inventory != 'false') && steps.pr_changes.outputs.e2e != 'false'
-        run: playwright install --with-deps chromium
+        run: bash scripts/install_browser.sh chromium
 
       - name: Framework self-test (unit tests)
         # Runs the framework's own unit tests FIRST as a gate. If the

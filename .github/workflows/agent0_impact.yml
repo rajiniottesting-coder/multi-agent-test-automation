@@ -312,7 +312,7 @@ jobs:
       - run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          playwright install --with-deps chromium
+          bash scripts/install_browser.sh chromium
       - name: Check the inventory, then analyse the drift
         env:
           # Same per-role application credentials as Agent 4's E2E step.
