@@ -484,7 +484,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
-| #PRNUM | A file is not repaired on feedback a page-object repair just answered | | E152 | |
+| #428 | A file is not repaired on feedback a page-object repair just answered | | E152 | |
 | #427 | The coverage audit reads a section checked through what it shows | | E151 | |
 | #427 | A context update rewrites a note quoted with its location in any shape | | E150 | |
 | #427 | The step fidelity audit reads every step: each method's code shown once | | E149 | |

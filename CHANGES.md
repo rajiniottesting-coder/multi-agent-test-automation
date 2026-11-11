@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — a file is not repaired on feedback a page-object repair just answered (#PRNUM)
+## November 2026 — a file is not repaired on feedback a page-object repair just answered (#428)
 
 **Why:** found re-checking validation item E90 against its runs (Agent 2 run 42825326200, 10 Nov, SCRUM-381): a committed page object joined the batch and its repair added the six methods the steps call - but the step definitions' feedback, computed before that repair, still said the class "does not define" them and offered other names. The repair moved the calls to a reserved page object, the error count rose and the story was refused as "not converging".
 
