@@ -342,7 +342,8 @@ def hold_story(tracker, exc: BudgetExceeded) -> bool:
         labels = (tracker.get_story(exc.story) or {}).get("labels") or []
         if s["hold_label"] in labels:
             return False                                   # already held: nothing new to say
-        tracker.add_comment(exc.story, (
+        from integrations.tracker import add_markdown_comment
+        add_markdown_comment(tracker, exc.story, (
             f"{HOLD_MARKER} spent: {exc.spent:.4f} limit: {exc.limit:.2f}\n"
             f"Model spend for this story reached its budget: ${exc.spent:.2f} of "
             f"${exc.limit:.2f}. No agent works on it while it carries the label "

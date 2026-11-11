@@ -92,7 +92,7 @@ _BORROWED_PAGE = re.compile(r"class (\w+) sets INVENTORY_PAGE = '[^']+', the pag
                             r"\([^)]+\) implements, and resolves none of its elements")
 
 
-def _reserved_capabilities(errors) -> list:
+def reserved_capabilities(errors) -> list:
     """`Class.method (file)` for each method a reserved page object would need.
     No repair can add one: Agent 2 may not edit a reserved file."""
     found = []
@@ -171,6 +171,19 @@ def blocked_comment(story_id: str, fp: str, errors) -> str:
                    "--url /<path> --component \"<Component>\" --element <key>=\"<selector>\"`), "
                    "then run Agent 2 with this story's key.")]
         return "\n".join(lines)
+    # Before the stand-in advice: a stand-in for a method a reserved page
+    # object lacks is fixed by adding that method, not an inventory element
+    # (11 Nov 2026: the inventory already had the element).
+    reserved = reserved_capabilities(errors)
+    if reserved:
+        lines += ["",
+                  ("The generated steps need what a reserved page object does not offer: "
+                   f"{', '.join(reserved)}. Agent 2 may not edit a reserved file, so no "
+                   "repair can add it. A person adds the method (its element must be in "
+                   "the app inventory), or rewords the test case to use what the page "
+                   "already offers; then run Agent 2 with this story's key (an edit to a "
+                   "test case lets the next scheduled scan try again by itself).")]
+        return "\n".join(lines)
     stood_in = [e for e in errors if str(e).startswith(_ACTION_STEP)]
     if stood_in:
         lines += ["",
@@ -191,16 +204,6 @@ def blocked_comment(story_id: str, fp: str, errors) -> str:
                    "--selector \"<selector>\"`; a page it lives on, `plan_inventory page`), "
                    "then runs Agent 2 with this story's key; or retires the test case that "
                    "needs it, so the others are coded.")]
-        return "\n".join(lines)
-    reserved = _reserved_capabilities(errors)
-    if reserved:
-        lines += ["",
-                  ("The generated steps need what a reserved page object does not offer: "
-                   f"{', '.join(reserved)}. Agent 2 may not edit a reserved file, so no "
-                   "repair can add it. A person adds the method (its element must be in "
-                   "the app inventory), or rewords the test case to use what the page "
-                   "already offers; then run Agent 2 with this story's key (an edit to a "
-                   "test case lets the next scheduled scan try again by itself).")]
         return "\n".join(lines)
     lines += ["",
               ("A rule that survives every repair usually means a test case asks for "
@@ -225,7 +228,8 @@ def post_blocked_once(tracker, story_id: str, fp: str, errors) -> bool:
         head = f"{BLOCKED_MARKER} inputs: {fp} reasons: {_reasons_digest(errors)}"
         if any((c or "").startswith(head) for c in tracker.get_comments(story_id)):
             return False
-        tracker.add_comment(story_id, blocked_comment(story_id, fp, errors))
+        from integrations.tracker import add_markdown_comment
+        add_markdown_comment(tracker, story_id, blocked_comment(story_id, fp, errors))
         return True
     except Exception as e:                                     # noqa: BLE001
         logger.warning("Could not post the blocked note on %s: %s", story_id, e)

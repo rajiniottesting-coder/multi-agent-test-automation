@@ -754,3 +754,39 @@ def test_page_objects_are_repaired_before_the_files_that_call_them():
     other = ("Method resolution error in 'tests/step_defs/test_x.py': line 3 calls "
              "`x_page.stay()`, but `XPage` does not define `stay`.")
     assert a2._still_missing([other], defined) == [other]
+
+
+def test_a_reserved_page_objects_missing_method_seen_in_the_repair_is_kept(monkeypatch):
+    """11 Nov 2026 (validation Run L): the steps needed two methods a RESERVED page
+    object lacks; the repair stood the login error in for the signup error, and
+    the refusal named only that stand-in - advising an inventory element the
+    inventory already had. The reserved need is kept for the refusal."""
+    import agents.agent2_coder as a2
+    from core import blocked
+    from core.schemas import CodePlan, FilePlan, GeneratedFile
+    reserved = ("Method resolution error in 'tests/step_defs/test_x.py': line 50 calls "
+                "`login_page.get_signup_error()`, but `LoginPage` does not define "
+                "`get_signup_error`. `pages/login_page.py` is a RESERVED file - Agent 2 must "
+                "not modify it")
+    rounds = iter([[reserved], []])
+    monkeypatch.setattr(a2, "_collect_repairable_errors", lambda files: next(rounds, []))
+    monkeypatch.setattr(a2, "_absence_claim_errors", lambda files, tcs: [])
+    monkeypatch.setattr(a2, "generate_file_content", lambda *a, **k: "x = 1\n" * 200)
+    steps = GeneratedFile(file_path="tests/step_defs/test_x.py", content="x = 0\n" * 200)
+    plan = CodePlan(feature_name="x", branch_name="b", pr_title="t", pr_body="b", notes="",
+                    files_to_create=[FilePlan(file_path="tests/step_defs/test_x.py",
+                                              file_type="step_definitions", purpose="s")])
+    needs: dict = {}
+    a2._attempt_step_coverage_repair([steps], None, plan, [], {}, "", None,
+                                     reserved_needs=needs)
+    assert list(needs) == ["`LoginPage.get_signup_error` (pages/login_page.py)"]
+    text = blocked.blocked_comment("AB-1", "fp", list(needs.values()) + ["Step fidelity error x"])
+    assert "reserved page object does not offer" in text and "LoginPage.get_signup_error" in text
+
+
+def test_the_refusal_carries_the_reserved_needs_first():
+    from pathlib import Path
+    source = Path("agents/agent2_coder.py").read_text(encoding="utf-8")
+    block = source[source.index("lost = [err for err in reserved_needs.values()"):][:200]
+    assert "e = GateFailure(str(e), errors=lost + refused)" in block
+    assert source.index("reserved_needs=reserved_needs,") < source.index("lost = [err")

@@ -23,12 +23,28 @@ _BOLD = re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*")
 _CODE = re.compile(r"`([^`\n]+)`")
 
 
+# Characters wiki markup reads as formatting even inside {{monospace}}: bold,
+# italics, strike, links, images, macros, tables. A code span is literal text -
+# a step pattern, a selector, a label - so each one is escaped. 11 Nov 2026:
+# a refused story's comment quoted the step `... "(?P<expected_message>[^"]*)"`
+# and Jira drew a broken image and bold text out of it.
+_WIKI_SPECIAL = re.compile(r"([*_?+^~!\[\]{}|#-])")
+
+
+def _literal(code: str) -> str:
+    """`code` as wiki monospace that shows exactly these characters. A
+    backslash is written as its character reference: in wiki markup a
+    backslash escapes the next character, and two of them break the line."""
+    escaped = _WIKI_SPECIAL.sub(r"\\\1", code.replace("\\", "\x01"))
+    return "{{" + escaped.replace("\x01", "&#92;") + "}}"
+
+
 def _inline(text: str) -> str:
     # Code spans first, and protected, so nothing inside them is rewritten.
     spans: list[str] = []
 
     def keep(match):
-        spans.append("{{" + match.group(1) + "}}")
+        spans.append(_literal(match.group(1)))
         return f"\x00{len(spans) - 1}\x00"
 
     text = _CODE.sub(keep, text)

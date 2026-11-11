@@ -3147,6 +3147,7 @@ def _attempt_step_coverage_repair(
     ctx: AppContext,
     max_retries: int = 4,
     missing_elements: dict | None = None,
+    reserved_needs: dict | None = None,
 ) -> list[GeneratedFile]:
     """If validators find issues in the generated files, give the LLM up to
     `max_retries` chances to fix them with explicit feedback.
@@ -3191,6 +3192,16 @@ def _attempt_step_coverage_repair(
             for err in all_errors:
                 for name in elements_missing_from_inventory([err], PROJECT_ROOT):
                     missing_elements.setdefault(name, err)
+        # A method a RESERVED page object lacks is recorded the same way: the
+        # repair may then stand another element in for it (11 Nov 2026: the
+        # signup error read through the login error), and the refusal named
+        # only that stand-in - advising an inventory element the inventory
+        # already had - while the real cause, a method a person adds, was gone.
+        if reserved_needs is not None:
+            from core.blocked import reserved_capabilities
+            for err in all_errors:
+                for need in reserved_capabilities([err]):
+                    reserved_needs.setdefault(need, err)
         missing_pages = pages_missing_from_inventory(all_errors, PROJECT_ROOT)
         if missing_pages:
             logger.warning(
@@ -4562,7 +4573,8 @@ def _hand_back_update(jira, story_id: str, stop: Exception) -> None:
     label = load_agent_config().get("update_label", "ai-update")
     errors = getattr(stop, "errors", None) or [str(stop)]
     try:
-        jira.add_comment(story_id, "\n".join(
+        from integrations.tracker import add_markdown_comment
+        add_markdown_comment(jira, story_id, "\n".join(
             [f"{UPDATE_STOPPED} {stop}", ""] + [f"- {e}" for e in errors]
             + ["", f"`{label}` was removed so the scheduled scan does not repeat this stop."]))
     except Exception as e:                                         # noqa: BLE001
@@ -5436,6 +5448,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
     # to fix the broken step def file with explicit feedback. Only the
     # broken file is regenerated (cheap), and the cap bounds total cost.
     missing_elements: dict = {}
+    reserved_needs: dict = {}
     generated_files = _attempt_step_coverage_repair(
         generated_files,
         llm,
@@ -5446,6 +5459,7 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
         ctx,
         max_retries=4,
         missing_elements=missing_elements,
+        reserved_needs=reserved_needs,
     )
     output = CodeGenerationOutput(
         feature_name=plan.feature_name,
@@ -5776,6 +5790,13 @@ def run(story_id: str, dry_run: bool = False, is_regenerate: bool = False,
                 "each (scripts.plan_inventory element ...); no repair can.",
                 errors=list(missing_elements.values()) + list(getattr(e, "errors", None) or [str(e)]))
             logger.error(str(e))
+        # A reserved page object's missing method, seen during the repair, is
+        # named too (first), whatever the final gate refused for: no repair
+        # can add it, and it is usually why the code stood something else in.
+        refused = list(getattr(e, "errors", None) or [str(e)])
+        lost = [err for err in reserved_needs.values() if err not in refused]
+        if lost:
+            e = GateFailure(str(e), errors=lost + refused)
         # Tell the person once which rules could not be met, so the story stops
         # being retried on unchanged input (core.blocked). Every gate refusal is
         # a ValueError; the final gate's carries the remaining errors.

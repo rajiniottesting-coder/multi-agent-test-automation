@@ -229,7 +229,9 @@ def record(tracker, story_id: str, gaps, unmarked, where: str, labels: dict,
     # Separately: a comment that fails must not cost the label, nor the reverse.
     if gaps or unmarked:
         try:
-            tracker.add_comment(story_id, comment(story_id, gaps, unmarked, where, labels))
+            from integrations.tracker import add_markdown_comment
+            add_markdown_comment(tracker, story_id,
+                                 comment(story_id, gaps, unmarked, where, labels))
         except Exception as e:                                 # noqa: BLE001
             logger.warning("Could not comment the coverage of %s: %s", story_id, e)
     try:
