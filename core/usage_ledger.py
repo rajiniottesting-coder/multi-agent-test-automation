@@ -603,13 +603,22 @@ def by_agent(entries: list[dict]) -> list[dict]:
             row["cost_usd"] += e["cost_usd"]
         if run_mode:
             row["modes"][run_mode] = row["modes"].get(run_mode, 0) + 1
+        else:
+            row["plain"] = row.get("plain", 0) + 1
     return list(rows.values())
 
 
 def _label(row: dict) -> str:
+    """The agent, and - when its runs differ - every kind of run with its
+    count. A run of no particular kind is 'completed', so a row of one failed
+    and one successful run never reads as if both had failed (11 Nov 2026:
+    'Agent 1 (Test Designer): failed' over a failed and a successful draft)."""
     if not row["modes"]:
         return row["agent"]
-    modes = ", ".join(m if n == 1 else f"{m} ×{n}" for m, n in row["modes"].items())
+    kinds = dict(row["modes"])
+    if row.get("plain"):
+        kinds = {"completed": row["plain"], **kinds}
+    modes = ", ".join(m if n == 1 else f"{m} ×{n}" for m, n in kinds.items())
     return f"{row['agent']}: {modes}"
 
 

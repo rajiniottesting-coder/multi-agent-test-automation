@@ -399,3 +399,16 @@ class TestStoryScoping:
                                 lambda n: seen.setdefault("n", n) and [] or [])})())
         _scope_to_story(_session(), cli_pr=99)
         assert seen["n"] == 99
+
+def test_a_cost_row_names_every_kind_of_run_completed_included():
+    """11 Nov 2026: one failed and one successful Agent 1 run read 'Agent 1
+    (Test Designer): failed' - as if both had failed."""
+    from core.usage_ledger import _label, by_agent
+    e = lambda agent: {"agent": agent, "calls": 1, "input_tokens": 1, "output_tokens": 1,
+                       "cost_usd": 0.1}
+    rows = by_agent([e("Agent 1 (Test Designer) (failed)"), e("Agent 1 (Test Designer)")])
+    assert _label(rows[0]) == "Agent 1 (Test Designer): completed, failed"
+    rows = by_agent([e("Agent 3 (Reviewer)"), e("Agent 3 (Reviewer)")])
+    assert _label(rows[0]) == "Agent 3 (Reviewer)", "runs of one kind need no list"
+    rows = by_agent([e("Agent 2 (Coder, initial)"), e("Agent 2 (Coder, regenerate) (failed)")])
+    assert _label(rows[0]) == "Agent 2 (Coder): initial, regenerate (failed)"
