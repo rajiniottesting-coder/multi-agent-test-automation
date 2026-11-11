@@ -92,6 +92,19 @@ def test_short_evidence_without_a_reason_names_the_elements():
     assert len(long) <= 240 and long.endswith("...")
 
 
+def test_short_evidence_names_every_changed_thing_a_row_reaches():
+    """A row reached through an element AND a method names both; a shared-base
+    method and a removed page (the review-tier paths of a code change) are named."""
+    from agents.agent0_impact import short_evidence
+    both = ("element p:a (selector `#a`) <- P.m <- Then step (assertion) <- scenario; "
+            "method P.check <- step definition <- scenario")
+    assert short_evidence({"reason": "", "evidence": both}) == "Elements: p:a - Methods: P.check"
+    weak = "shared method Base.wait <- page method <- scenario; page q <- scenario"
+    assert short_evidence({"reason": "", "evidence": weak}) == "Shared methods: Base.wait - Pages: q"
+    only = "method P.check <- step definition <- scenario"
+    assert short_evidence({"reason": "Why.", "evidence": only}) == "Why. - Methods: P.check"
+
+
 def test_the_review_table_carries_the_short_line_and_the_data_keeps_the_paths():
     from agents.agent0_impact import _review_rows
     report = {"ranked": [dict(ROW, key="AB-1", ref="AB-1", owner="AB-9", tier="review",
