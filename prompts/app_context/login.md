@@ -35,6 +35,9 @@ not deleting it. Use the shared `registered` role and assert relatively. See
 Both render as text on the same page — there is no redirect, and no toast.
 Assert on the message text.
 
+- The "Email Address already exist!" message appears when the New User Signup! form is submitted with a name and the email of an already-registered account; the visitor stays on `/login` and does not advance to the second signup form.
+- After this refusal the "Login to your account" form (email + password) is still shown, so the visitor can log in instead.
+
 ## Logging out
 
 The "Logout" link in the top navigation returns to `/login`. It is only present
