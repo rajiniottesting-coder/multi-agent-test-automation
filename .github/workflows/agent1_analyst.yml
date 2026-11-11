@@ -107,6 +107,12 @@ jobs:
     timeout-minutes: 10  # cap: 2 stories × ~2 min/story + setup overhead
 
     steps:
+      - name: VALIDATION window J (E27b) - fail every scheduled run
+        if: github.event_name == 'schedule'
+        run: |
+          echo "Validation window J: this scheduled run fails on purpose (three in a row raise the health alert)."
+          exit 1
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
