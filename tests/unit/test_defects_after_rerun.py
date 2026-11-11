@@ -74,7 +74,8 @@ def test_a_failure_not_run_again_raises_no_defect_and_one_alert(world, tmp_path)
     assert out["raised"] == [] and _bugs(fake) == []
     assert out["not_retried"] == ["tests.step_defs.test_x::test_a"]
     (alert,) = _alerts(fake)
-    assert alert.startswith(f"[health:open] {tf.NOT_RETRIED}") and "test_a" in alert
+    # A test id in a code span is written for wiki markup: `_` escaped.
+    assert alert.startswith(f"[health:open] {tf.NOT_RETRIED}") and "test\\_a" in alert
 
 
 def test_a_failure_that_failed_again_raises_its_defect_and_the_alert_closes(world, tmp_path):

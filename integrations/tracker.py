@@ -272,7 +272,8 @@ def add_markdown_comment(tracker, issue_key: str, markdown: str) -> str:
     body = markdown
     if render is not None:
         try:
-            body = render(markdown)
+            rendered = render(markdown)
+            body = rendered if isinstance(rendered, str) else markdown
         except Exception:                                          # noqa: BLE001
             body = markdown
     return tracker.add_comment(issue_key, body)

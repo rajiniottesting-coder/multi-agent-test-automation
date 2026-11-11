@@ -97,7 +97,7 @@ def test_two_nights(night):
     key = ph.issue_key(jira)
     assert set(ph.open_alerts(jira)) == {tf.OUTAGE, "workflow-failing:runner.yml"}
     desc = fake.issues[key]["description"]
-    assert "Open alerts (2)" in desc and "|{{tests.step_defs.test_shop::test_browse}}|1|" in desc
+    assert "Open alerts (2)" in desc and "|{{tests.step\\_defs.test\\_shop::test\\_browse}}|1|" in desc
 
     # ── night 2: everything passes ──
     _write(junit, _case("test_pay_for_an_order"), _case("test_browse"), _case("test_search"),

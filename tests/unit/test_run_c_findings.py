@@ -757,7 +757,7 @@ def test_page_objects_are_repaired_before_the_files_that_call_them():
 
 
 def test_a_reserved_page_objects_missing_method_seen_in_the_repair_is_kept(monkeypatch):
-    """11 Nov 2026 (SCRUM-408): the steps needed two methods a RESERVED page
+    """11 Nov 2026 (validation Run L): the steps needed two methods a RESERVED page
     object lacks; the repair stood the login error in for the signup error, and
     the refusal named only that stand-in - advising an inventory element the
     inventory already had. The reserved need is kept for the refusal."""
