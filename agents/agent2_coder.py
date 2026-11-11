@@ -4573,7 +4573,8 @@ def _hand_back_update(jira, story_id: str, stop: Exception) -> None:
     label = load_agent_config().get("update_label", "ai-update")
     errors = getattr(stop, "errors", None) or [str(stop)]
     try:
-        jira.add_comment(story_id, "\n".join(
+        from integrations.tracker import add_markdown_comment
+        add_markdown_comment(jira, story_id, "\n".join(
             [f"{UPDATE_STOPPED} {stop}", ""] + [f"- {e}" for e in errors]
             + ["", f"`{label}` was removed so the scheduled scan does not repeat this stop."]))
     except Exception as e:                                         # noqa: BLE001

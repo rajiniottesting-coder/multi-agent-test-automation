@@ -55,7 +55,7 @@ They are looked up with `capability(tracker, name)`; without one, the feature
 that needs it is off and says so once in the log - nothing else changes, and
 an adapter written before them stays valid.
 
-    render_markdown(markdown) -> str          comment markup (Agent 5)
+    render_markdown(markdown) -> str          comment markup (add_markdown_comment)
     create_issue(issue_type, summary, description, labels=None) -> key
                                               pipeline health issue, defects
     set_property(issue_key, key, value)       hidden JSON values on an issue:
@@ -257,6 +257,25 @@ def capability(tracker, name: str):
     None when the adapter does not offer it."""
     fn = getattr(tracker, name, None) if tracker is not None else None
     return fn if callable(fn) else None
+
+
+def add_markdown_comment(tracker, issue_key: str, markdown: str) -> str:
+    """Post a comment written in Markdown, in the tracker's own comment markup.
+
+    11 Nov 2026: the agents' notices - a refused story, a wait, a hold, a
+    coverage gap - were written in Markdown and posted as they were, so Jira
+    (wiki markup) showed `**KEY**` and backticks literally, and a quoted step
+    pattern turned into a broken image. Every Markdown comment goes through
+    here; a tracker without `render_markdown` receives the Markdown as is.
+    A body written in the tracker's own markup is posted with add_comment."""
+    render = capability(tracker, "render_markdown")
+    body = markdown
+    if render is not None:
+        try:
+            body = render(markdown)
+        except Exception:                                          # noqa: BLE001
+            body = markdown
+    return tracker.add_comment(issue_key, body)
 
 
 # ─────────────────────────────────────────────────────────────

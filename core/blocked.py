@@ -228,7 +228,8 @@ def post_blocked_once(tracker, story_id: str, fp: str, errors) -> bool:
         head = f"{BLOCKED_MARKER} inputs: {fp} reasons: {_reasons_digest(errors)}"
         if any((c or "").startswith(head) for c in tracker.get_comments(story_id)):
             return False
-        tracker.add_comment(story_id, blocked_comment(story_id, fp, errors))
+        from integrations.tracker import add_markdown_comment
+        add_markdown_comment(tracker, story_id, blocked_comment(story_id, fp, errors))
         return True
     except Exception as e:                                     # noqa: BLE001
         logger.warning("Could not post the blocked note on %s: %s", story_id, e)

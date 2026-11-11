@@ -151,7 +151,8 @@ def post_wait_once(tracker, story_id: str, files: list[dict], scenarios: list[di
     try:
         if any(signature in (c or "") for c in tracker.get_comments(story_id)):
             return False
-        tracker.add_comment(story_id, body)
+        from integrations.tracker import add_markdown_comment
+        add_markdown_comment(tracker, story_id, body)
         return True
     except Exception as e:                                     # noqa: BLE001
         logger.warning("Could not post the waiting note on %s: %s", story_id, e)

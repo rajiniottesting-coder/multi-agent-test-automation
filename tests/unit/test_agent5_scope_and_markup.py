@@ -124,7 +124,46 @@ def test_machine_markers_and_plain_text_are_untouched():
 
 def test_code_fences_and_code_spans_are_not_rewritten():
     md = "```\n**x** | a |\n|---|\n```\nuse `**literal**`"
-    assert markdown_to_jira_wiki(md) == "{code}\n**x** | a |\n|---|\n{code}\nuse {{**literal**}}"
+    # A code span shows its characters: wiki markup would read `**` inside
+    # {{...}} as bold, so they are escaped (11 Nov 2026, a step pattern).
+    assert markdown_to_jira_wiki(md) == "{code}\n**x** | a |\n|---|\n{code}\nuse {{\\*\\*literal\\*\\*}}"
+
+
+def test_a_code_span_shows_a_step_pattern_exactly():
+    out = markdown_to_jira_wiki('the step `Then I see "(?P<msg>[^"]*)"` and `a\\d+`')
+    assert out == 'the step {{Then I see "(\\?P<msg>\\[\\^"\\]\\*)"}} and {{a&#92;d\\+}}'
+    assert "!" not in out
+
+
+def test_markdown_comments_reach_the_tracker_rendered():
+    """Every Markdown notice goes through one helper that renders it."""
+    from pathlib import Path as P
+    from integrations.tracker import add_markdown_comment
+
+    class T:
+        posted = []
+
+        def render_markdown(self, md):
+            return "R:" + md
+
+        def add_comment(self, key, body):
+            self.posted.append(body)
+            return "url"
+
+    class Plain:
+        posted = []
+
+        def add_comment(self, key, body):
+            self.posted.append(body)
+            return "url"
+    t, plain = T(), Plain()
+    add_markdown_comment(t, "AB-1", "x `y`")
+    add_markdown_comment(plain, "AB-1", "x `y`")
+    assert t.posted == ["R:x `y`"] and plain.posted == ["x `y`"]
+    for path in ["core/blocked.py", "agents/agent2_coder.py", "core/in_flight.py", "core/spend_budget.py",
+                 "core/selection_notice.py", "agents/agent2_coverage.py",
+                 "agents/agent1_analyst.py"]:
+        assert "add_markdown_comment(" in P(path).read_text(encoding="utf-8"), path
 
 
 def test_the_real_usage_table_converts_cleanly():

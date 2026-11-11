@@ -433,7 +433,8 @@ def run(story_id: str, dry_run: bool = False) -> dict:
         # must not fail the run.
         if coverage_lines:
             try:
-                jira.add_comment(story_id, "[agent1:coverage] Acceptance criteria and the test "
+                from integrations.tracker import add_markdown_comment
+                add_markdown_comment(jira, story_id, "[agent1:coverage] Acceptance criteria and the test "
                                  "cases that verify them\n" + "\n".join(coverage_lines))
             except Exception as e:                                 # noqa: BLE001
                 logger.warning(f"Could not post the coverage comment on {story_id}: {e}")
@@ -541,7 +542,8 @@ def hand_back(tracker, story_id: str, error, agent_config: dict) -> list:
             f"Reason: {reason[:600]}\n\nNothing was written to the tracker. "
             f"Add {again} again to retry; the run log says more.")
     try:
-        tracker.add_comment(story_id, body)
+        from integrations.tracker import add_markdown_comment
+        add_markdown_comment(tracker, story_id, body)
     except Exception as e:                                         # noqa: BLE001
         logger.warning(f"Could not comment on {story_id}: {e}")
     return removed

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 
-from integrations.tracker import capability
+from integrations.tracker import add_markdown_comment, capability
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ def notify_unselected(tracker, selection: dict, agent: str, sprint_override=None
             if any(MARKER in str(c) and why in str(c) and agent in str(c)
                    for c in tracker.get_comments(key) or []):
                 continue
-            tracker.add_comment(key, body)
+            add_markdown_comment(tracker, key, body)
         except Exception as e:                                     # noqa: BLE001
             logger.warning(f"{agent}: could not tell {key} why it is not taken ({e}).")
     return seen
