@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — a failed Agent 1 run is the same attempt: retrying it keeps its cost (#PRNUM)
+## November 2026 — a failed Agent 1 run is the same attempt: retrying it keeps its cost (#417)
 
 **Why:** observation O3, left open earlier and seen again on 10 Nov (SCRUM-398): Agent 1 ran out of output room and wrote nothing; `ai-ready` added again posted `[LEDGER-RESET] story reprocessed from ai-ready`, and the failed run's cost dropped out of the story's total - a retry of a run that produced nothing is not a new attempt.
 
