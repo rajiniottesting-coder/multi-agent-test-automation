@@ -72,6 +72,11 @@ RESET_MARKER = "[LEDGER-RESET]"
 # cost of an attempt, so they never make a later agent think the story was
 # costed before: has_usage() is told to ignore them by Agent 1.
 IMPACT_ANALYST = "Agent 0 (Impact Analyst)"
+# Agent 1's ledger name. A FAILED Agent 1 run wrote nothing (no test case,
+# label unchanged): retrying the story is the same attempt, so Agent 1 passes
+# it as `same_attempt_if_failed` - only a run that produced test cases makes
+# the next draft a new attempt (observation O3, 11 Nov 2026).
+TEST_DESIGNER = "Agent 1 (Test Designer)"
 
 # Issue-property ledger (F-31). Keys sort by time: `<prefix>.<UTC time>.<id>`.
 PROP_USAGE = "llm.usage"
@@ -318,7 +323,8 @@ def record_hold(story_key: str, spent: float, limit: float, jira=None) -> bool:
         return False
 
 
-def has_usage_comments(comment_bodies: list[str], ignore_agents=()) -> bool:
+def has_usage_comments(comment_bodies: list[str], ignore_agents=(),
+                       same_attempt_if_failed=()) -> bool:
     """True if any comment after the last reset is a usage entry from an agent
     not in `ignore_agents` (comments mode; has_usage() reads either store).
 
@@ -327,19 +333,27 @@ def has_usage_comments(comment_bodies: list[str], ignore_agents=()) -> bool:
     an attempt passes the agents that run BEFORE it in that same attempt, so
     their entries are kept rather than discarded as a "previous run".
     """
-    return _any_other(_entries_from_comments(comment_bodies or []), ignore_agents)
+    return _any_other(_entries_from_comments(comment_bodies or []), ignore_agents,
+                      same_attempt_if_failed)
 
 
-def has_usage(story_key: str, tracker, ignore_agents=()) -> bool:
-    """has_usage_comments over whichever store the story's ledger is in."""
-    return _any_other(story_ledger(story_key, tracker)["entries"], ignore_agents)
+def has_usage(story_key: str, tracker, ignore_agents=(), same_attempt_if_failed=()) -> bool:
+    """has_usage_comments over whichever store the story's ledger is in.
+    `same_attempt_if_failed`: agents whose FAILED runs (nothing written) do
+    not count as a previous attempt either."""
+    return _any_other(story_ledger(story_key, tracker)["entries"], ignore_agents,
+                      same_attempt_if_failed)
 
 
-def _any_other(entries: list, ignore_agents) -> bool:
+def _any_other(entries: list, ignore_agents, same_attempt_if_failed=()) -> bool:
     ignore = set(ignore_agents or ())
+    failed_ok = set(same_attempt_if_failed or ())
     # An ignored agent's failed run ("<agent> (failed)", story_usage) is
     # still that agent: its cost is part of the same attempt.
-    return any(e["agent"].removesuffix(FAILED_SUFFIX) not in ignore for e in entries)
+    return any(e["agent"].removesuffix(FAILED_SUFFIX) not in ignore
+               and not (e["agent"].endswith(FAILED_SUFFIX)
+                        and e["agent"].removesuffix(FAILED_SUFFIX) in failed_ok)
+               for e in entries)
 
 
 def _comments_after_last_reset(comment_bodies: list[str]) -> list[str]:

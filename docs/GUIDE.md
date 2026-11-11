@@ -1644,7 +1644,9 @@ the story's true lifetime cost, not just the first pass. A story reset to
 `ai-ready` and drafted again starts a **new attempt**: the cost comment of the
 old attempt gets a closing line saying why and keeps its figures; the next run
 opens a new one counted from zero (with the comment ledger: a `[LEDGER-RESET]`
-comment).
+comment). A story whose earlier Agent 1 runs all FAILED (they wrote nothing -
+out of output room, say) is not a new attempt when `ai-ready` is added again:
+the retry's cost joins theirs.
 
 Prerequisites for full numbers (one-time): the two `LLM_PRICE_*`
 variables are set and runs are real (not `--dry-run`). The cost comment is
