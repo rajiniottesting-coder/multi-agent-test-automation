@@ -175,7 +175,8 @@ class TestCasesPage(BasePage):
         the title expands to reveal its steps.
         """
         self.require_own_page()
-        self.click_nth(self.sel("test_case_titles"), 0)
+        first = 0
+        self.click_nth(self.sel("test_case_titles"), first)
 
     def open_second_test_case(self) -> None:
         """Click the second test case title to expand its steps in place.
