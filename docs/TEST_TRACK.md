@@ -489,7 +489,7 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
-| #PRNUM | Runs that cannot be read judge no workflow; a refused App token names its secret | | E156, E157 | |
+| #438 | Runs that cannot be read judge no workflow; a refused App token names its secret | | E156, E157 | |
 | #436 | A shortened refusal reason never ends inside a code span | | E155 | |
 | #433 | A refused story names a reserved page object's missing method; Markdown notices reach Jira rendered | | E153, E154 | |
 | #428 | A file is not repaired on feedback a page-object repair just answered | | E152 | |

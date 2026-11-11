@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — runs that cannot be read judge no workflow; a refused App token names its secret (#PRNUM)
+## November 2026 — runs that cannot be read judge no workflow; a refused App token names its secret (#438)
 
 **Why:** found in validation window L (11 Nov). With a refused token (health run 43016854504) the GitHub adapter returned no runs for every workflow, and the check read that as "no scheduled run started": five workflow-not-starting alerts opened. The same empty list resolves a real workflow-failing alert as "no longer failing". With a deleted App key (health run 43018090056) the job stopped at Agent identity with only GitHub's "A JSON web token could not be decoded".
 
