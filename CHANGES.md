@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a failed Agent 1 run is the same attempt: retrying it keeps its cost (#PRNUM)
+
+**Why:** observation O3, left open earlier and seen again on 10 Nov (SCRUM-398): Agent 1 ran out of output room and wrote nothing; `ai-ready` added again posted `[LEDGER-RESET] story reprocessed from ai-ready`, and the failed run's cost dropped out of the story's total - a retry of a run that produced nothing is not a new attempt.
+
+- `core/usage_ledger.has_usage(..., same_attempt_if_failed=...)`: failed runs of the named agents do not count as a previous attempt; `TEST_DESIGNER` names Agent 1's ledger entry
+- `agents/agent1_analyst.py` passes its own failed runs; a successful draft, or any later agent's run (failed or not), still starts a new attempt; other callers unchanged
+- GUIDE updated; tests in `test_a_series_open_items.py`; TEST_TRACK E147. Not tested live yet: E147
+
+---
+
 ## November 2026 — every health alert is redacted where it is posted, and quotes a tracker error readably (#415)
 
 **Why:** found live on validation item E31h (11 Nov, window J): the triage's `defects-not-written` alert quoted the tracker client's error whole - `response headers = {'Content-Type': ..., 'S...` - cut at 300 characters just before what could have been a `Set-Cookie` session value. `raise_alert` posted its body as given; only some callers redacted their text.
