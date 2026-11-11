@@ -483,9 +483,9 @@ proves them.
 | #237 | The nightly inventory check: matches described, login page checked signed out | | E37 | |
 | #238 | One redaction rule; App tokens and keys covered | | E38 | |
 | #248 | An agent that leaves work for another starts it | | E45a-d | |
-| #PRNUM | The coverage audit reads a section checked through what it shows | | E151 | |
-| #PRNUM | A context update rewrites a note quoted with its location in any shape | | E150 | |
-| #PRNUM | The step fidelity audit reads every step: each method's code shown once | | E149 | |
+| #427 | The coverage audit reads a section checked through what it shows | | E151 | |
+| #427 | A context update rewrites a note quoted with its location in any shape | | E150 | |
+| #427 | The step fidelity audit reads every step: each method's code shown once | | E149 | |
 | #421 | A cost row names every kind of run, a completed one included | | E148 | |
 | #417 | A failed Agent 1 run is the same attempt | | E147 | |
 | #415 | Every health alert redacted where it is posted; a tracker error quoted readably | | E146, E38 | |
