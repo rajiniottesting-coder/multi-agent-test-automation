@@ -26,6 +26,9 @@ from core import pipeline_health as ph
 from scripts import triage_failures as tf
 from tests.sandbox.fake_jira import FakeJira, jira_client_over
 
+# The configured defect issue type - a project's choice (E95): never pinned here.
+BUG = defects.settings()["issue_type"]
+
 ROOT = Path(__file__).resolve().parents[2]
 NAV_503 = ("AssertionError: Navigation to https://s.example/x returned HTTP 503 (x) after 3 "
            "attempts. The page did not load, so every selector on it will time out.")
@@ -73,7 +76,7 @@ def world(monkeypatch, tmp_path):
 
 
 def _bugs(fake):
-    return {k: d for k, d in fake.issues.items() if d["issuetype"] == "Bug"}
+    return {k: d for k, d in fake.issues.items() if d["issuetype"] == BUG}
 
 
 def _triage(world, tmp_path, *cases, n=1, **kw):
@@ -93,7 +96,7 @@ def test_a_failure_raises_one_defect_with_its_owner_and_cause(world, tmp_path):
     out = _triage(world, tmp_path, _case("test_add_an_item", "failed"), _case("test_ok"))
     (key,) = out["raised"]
     bug = fake.issues[key]
-    assert bug["issuetype"] == "Bug"
+    assert bug["issuetype"] == BUG
     assert bug["labels"] == ["ai-defect"], "no fingerprint label (test_defects_without_code_labels)"
     assert "test_add_an_item fails on main: multi-match selector" in bug["summary"]
     state = defects.state_of(bug["description"])
@@ -170,7 +173,7 @@ def _second_open_defect(fake, key, world):
     state = defects.state_of(fake.issues[key]["description"])
     other = dict(state, cause="timeout", cause_text="t", remedy="r")
     _, jira, _ = world
-    return fake.add("Bug", "[Auto] legacy duplicate", labels=["ai-defect"],
+    return fake.add(BUG, "[Auto] legacy duplicate", labels=["ai-defect"],
                     description=defects.render(jira, other))
 
 
@@ -373,7 +376,7 @@ def test_a_refused_defect_write_is_reported_and_fails_the_job(world, tmp_path, m
     real_create = jira.create_issue
 
     def refuse(issue_type, *a, **k):
-        if issue_type == "Bug":
+        if issue_type == BUG:
             raise RuntimeError("Field 'priority' is required.")
         return real_create(issue_type, *a, **k)
     monkeypatch.setattr(jira, "create_issue", refuse)
