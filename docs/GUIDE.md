@@ -1189,7 +1189,13 @@ directly; GitHub records each bypass. The agents write as their GitHub App
 (F-30), which must be on the branch ruleset's bypass list too - or, until the
 App is set up, with the owner's `GH_PAT`. A second ruleset on every branch restricts creating, updating and
 deleting branches to the bypass list as well, so a collaborator who is not on it
-cannot push a branch at all - widen it before adding one.
+cannot push a branch at all - widen it before adding one. While that ruleset's
+targets include the default branch, every merge into `main` - an approved pull
+request too - is recorded as a bypass of its *update* rule (11 Nov 2026: rule
+suite "update - Cannot update this protected ref", result `bypass`). To merge an
+approved pull request as an ordinary merge, exclude the default branch from it
+(**Target branches → Exclude by pattern → Default branch**); `main` keeps its own
+pull-request ruleset.
 
 No status check is required yet. Requiring `Agent 4 - Runner / Run Tests` would
 turn the gate from a report into a block; do it only once the pipeline is
@@ -1564,8 +1570,10 @@ which sit in the same list.
       `GH_APP_CLIENT_ID` is missing or misspelt.
 22. The next agent pull request is opened by `<name>[bot]`: on it you can now
     leave inline comments and press **Request changes** (Agent 2's review fix
-    starts), **Approve**, and merge without a ruleset bypass (TEST_TRACK
-    E36a-h).
+    starts), **Approve**, and merge it. The merge is an ordinary one only when
+    the all-branches ruleset excludes the default branch (see *Branch
+    protection*); otherwise GitHub records it as a bypass (TEST_TRACK E36a-h,
+    E159).
 23. Once that works: delete the `GH_PAT` secret and revoke the token on
     GitHub (profile → Settings → Developer settings → Personal access tokens).
     Optionally remove yourself from the rulesets' bypass list and require an

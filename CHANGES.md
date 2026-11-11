@@ -4,6 +4,15 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — GUIDE: a merge into main is a bypass while the all-branches ruleset covers main (#PRNUM)
+
+**Why:** found on validation item E36d (11 Nov): the owner approved the App's pull request for SCRUM-408 and merged it, and GitHub recorded a bypass - the ruleset on every branch restricts updates, and its targets include `main` (rule suite "update - Cannot update this protected ref"). The GUIDE said such a merge needed no bypass.
+
+- `docs/GUIDE.md` *Branch protection* and the App set-up step 22: exclude the default branch from the all-branches ruleset for ordinary merges; `main` keeps its own pull-request ruleset
+- TEST_TRACK E159 (after the owner's ruleset change); Run L evidence rows
+
+---
+
 ## November 2026 — a review fix's new or changed steps pass the step fidelity audit (#443)
 
 **Why:** found in validation Run L (11 Nov, SCRUM-408's pull request, review-fix run 43021957053). A `/fix` asked to check that the signup form is shown before it is submitted; the fix added the step and checked it with the page's "loaded" reader, which reads the other form, because the reserved page object has no reader for the signup form. Every rule passed and it was pushed; only Agent 3 noticed.
