@@ -8,7 +8,7 @@ a test case.
 
 The footer has a `Subscription` heading, an email field and an icon-only submit
 button - an arrow with no text. Entering an email address and submitting shows
-**"You have been successfully subscribed!"** in place: no navigation, no toast.
+**"You have been successfully subscribed!"** as a toast at the top of the page for a few seconds: no navigation, and nothing is rendered in place under the subscription box.
 
 - No sign-in is needed.
 - The email address is test data, not a credential: write it literally in the
