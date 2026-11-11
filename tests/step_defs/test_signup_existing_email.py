@@ -9,6 +9,11 @@ Conventions mirrored from the reference step-def file:
 - Step defs call page-object methods only; no selectors here.
 - Real credentials come from the `credentials` fixture, resolved by ROLE.
 - PRESENCE asserted with a waiting reader; readiness checked with is_loaded().
+
+LoginPage is RESERVED - it exposes is_loaded() (waits for the 'Login to your
+account' heading), start_signup(), and get_signup_error(). It has no reader for
+the 'New User Signup!' heading, so the "New User Signup form should be
+displayed" step asserts readiness, which is what LoginPage can actually show.
 """
 from pytest_bdd import given, when, then, parsers, scenarios
 
@@ -43,6 +48,15 @@ def sign_up_with_registered_email(login_page, credentials, name, role):
 # Then
 # ─────────────────────────────────────────────────────────────
 
+@then("the New User Signup form should be displayed")
+def assert_signup_form_displayed(login_page):
+    """LoginPage carries both forms and exposes a single readiness probe for the
+    screen. It has no reader for the signup heading specifically, so assert the
+    page it belongs to is loaded - the strongest signal this page can show."""
+    assert login_page.is_loaded(), \
+        "Expected the Signup / Login page (with the New User Signup form) to be displayed"
+
+
 @then(parsers.re(r'I should see the signup error message "(?P<expected_message>[^"]*)"'))
 def assert_signup_error(login_page, expected_message):
     actual = login_page.get_signup_error()
@@ -54,6 +68,7 @@ def assert_still_on_signup_login(login_page):
     assert login_page.is_loaded(), "Expected to stay on the Signup / Login page"
 
 
-@then("the login form should still be displayed")
-def assert_login_form_displayed(login_page):
-    assert login_page.is_loaded(), "Expected the 'Login to your account' form to still be displayed"
+@then("the Login to your account form is still shown")
+def assert_login_form_still_shown(login_page):
+    assert login_page.is_loaded(), \
+        "Expected the 'Login to your account' form to still be shown"
