@@ -3058,3 +3058,4 @@ Because every step persists before the next begins, recovery is trivial:
   workflow of its own) → Agent 5 posts a second, timestamped report; it has no
   duplicate check, by design.
 - Quota exhaustion mid-run → labels not consumed → automatic retry next tick.
+<!-- validation T9 (throw-away, never merged) -->
