@@ -695,3 +695,62 @@ def test_the_generation_rules_say_to_compare_displayed_text_case_insensitively()
     import agents.agent2_coder as a2
     text = (a2.PROMPTS_DIR / "agent2_coder_generate.md").read_text(encoding="utf-8")
     assert "letter case" in text and "casefold" in text
+
+
+def test_a_step_file_is_not_repaired_on_feedback_a_page_repair_just_answered(tmp_path, monkeypatch):
+    """10 Nov 2026 (validation item E90, Agent 2 run 42825326200): the joined page
+    object was repaired first and gained the six methods the steps call, but
+    the steps' feedback - computed before - still said the class did not
+    define them. The steps' repair believed it and moved the calls to a
+    reserved page object; the story was refused. Stale items are dropped."""
+    import agents.agent2_coder as a2
+    import validators.method_resolution_validator as v
+    from core.schemas import CodePlan, FilePlan, GeneratedFile
+    (tmp_path / "pages").mkdir()
+    (tmp_path / "pages" / "front_page.py").write_text("class FrontPage:\n    pass\n")
+    monkeypatch.setattr(v, "_reserved_page_files", lambda: set())
+    monkeypatch.setattr(a2, "PROJECT_ROOT", tmp_path)
+    err = ("Method resolution error in 'tests/step_defs/test_x.py': line 3 calls "
+           "`front_page.go_to_reports()`, but `FrontPage` does not define `go_to_reports`. "
+           "Did you mean one of: go_to_help?")
+
+    def errors(files):
+        page = next((f.content for f in files if f.file_path == "pages/front_page.py"), "")
+        return [] if "def go_to_reports" in page else [err]
+    monkeypatch.setattr(a2, "_collect_repairable_errors", errors)
+    monkeypatch.setattr(a2, "_absence_claim_errors", lambda files, tcs: [])
+    repaired = []
+
+    def regenerate(llm, target_plan, plan, *a, **k):
+        repaired.append((target_plan.file_path, list(k["validator_feedback"])))
+        if target_plan.file_path == "pages/front_page.py":
+            return ('"""The front page."""\n\n\nclass FrontPage:\n'
+                    '    """Reads and acts on the front page through its inventory keys."""\n\n'
+                    "    def go_to_reports(self):\n"
+                    '        """Open the reports page from the front page\'s link."""\n'
+                    "        return self.click(self.sel('reports_link'))\n" + "\n" * 0
+                    + "".join(f"\n    def keep_{i}(self):\n        \"\"\"An existing method kept "
+                              f"as it was.\"\"\"\n        return {i}\n" for i in range(8)))
+        return "# steps rewritten on stale feedback"
+    monkeypatch.setattr(a2, "generate_file_content", regenerate)
+    steps = GeneratedFile(file_path="tests/step_defs/test_x.py", content="# steps")
+    plan = CodePlan(feature_name="x", branch_name="b", pr_title="t", pr_body="b", notes="",
+                    files_to_create=[FilePlan(file_path="tests/step_defs/test_x.py",
+                                              file_type="step_definitions", purpose="steps")])
+    out = a2._attempt_step_coverage_repair([steps], None, plan, [], {}, "", None)
+    assert [path for path, _fb in repaired] == ["pages/front_page.py"], \
+        "the steps are not rewritten on feedback the page repair answered"
+    assert next(f.content for f in out if f.file_path.endswith("test_x.py")) == "# steps"
+    assert errors(out) == []
+
+
+def test_page_objects_are_repaired_before_the_files_that_call_them():
+    import agents.agent2_coder as a2
+    order = a2._page_objects_first({"tests/step_defs/test_x.py": ["a"],
+                                    "features/x.feature": ["b"], "pages/x_page.py": ["c"]})
+    assert list(order)[0] == "pages/x_page.py"
+    defined = a2._methods_defined("class XPage:\n    def go(self):\n        pass\n")
+    assert ("XPage", "go") in defined
+    other = ("Method resolution error in 'tests/step_defs/test_x.py': line 3 calls "
+             "`x_page.stay()`, but `XPage` does not define `stay`.")
+    assert a2._still_missing([other], defined) == [other]

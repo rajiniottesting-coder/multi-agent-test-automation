@@ -4,6 +4,15 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a file is not repaired on feedback a page-object repair just answered (#428)
+
+**Why:** found re-checking validation item E90 against its runs (Agent 2 run 42825326200, 10 Nov, SCRUM-381): a committed page object joined the batch and its repair added the six methods the steps call - but the step definitions' feedback, computed before that repair, still said the class "does not define" them and offered other names. The repair moved the calls to a reserved page object, the error count rose and the story was refused as "not converging".
+
+- `agents/agent2_coder._attempt_step_coverage_repair` repairs page objects before the files that call them (`_page_objects_first`), and drops a later file's method-resolution items that a page-object repair of the same attempt now answers (`_methods_defined`, `_still_missing`); a file left with none is not repaired - the next attempt validates the code as it is
+- Tests in `test_run_c_findings.py` (the loop test fails without the change); TEST_TRACK E152. Not tested live yet: E152
+
+---
+
 ## November 2026 — the coverage audit reads a section checked through what it shows (#427)
 
 **Why:** seen live on validation item E103 (11 Nov, SCRUM-293 regenerated, as on 9 Nov): a scenario that checks the feedback email link was audited as not checking "the Feedback for Us section ... showing an email address". The rule that a part checked shows its element named lists only.

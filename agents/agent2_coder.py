@@ -3044,6 +3044,42 @@ _MISSING_METHOD = re.compile(
     r"but `(\w+)` does not define `\w+`")
 
 
+def _methods_defined(content: str) -> set:
+    """{(class name, method name)} a page-object file's classes define."""
+    try:
+        tree = ast.parse(content or "")
+    except SyntaxError:
+        return set()
+    return {(node.name, item.name) for node in tree.body if isinstance(node, ast.ClassDef)
+            for item in node.body if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+
+def _still_missing(errors: list, defined: set) -> list:
+    """`errors` without the method-resolution items a page object repaired
+    earlier in this attempt now answers.
+
+    10 Nov 2026: a committed page object joined the batch and was repaired
+    first, adding the six methods the steps call - but the step definitions'
+    feedback, computed before that repair, still said the class "does not
+    define" them and offered other names. The repair believed it, moved the
+    calls to a reserved page object, and the story was refused as "not
+    converging". Feedback is only true of the code it was computed on."""
+    out = []
+    for err in errors:
+        hit = _MISSING_METHOD.search(str(err))
+        if hit and (hit.group(2), hit.group(1)) in defined:
+            continue
+        out.append(err)
+    return out
+
+
+def _page_objects_first(grouped: dict) -> dict:
+    """The repair order: page objects before the files that call them, so a
+    step definition is repaired against the methods it can now call."""
+    return dict(sorted(grouped.items(),
+                       key=lambda kv: 0 if _normalize_path(kv[0]).startswith("pages/") else 1))
+
+
 def _bring_in_page_objects(generated_files, plan, errors, root=None) -> list[str]:
     """Feedback for committed page objects the step definitions need a method on.
 
@@ -3259,7 +3295,17 @@ def _attempt_step_coverage_repair(
             f"Attempting repair (attempt {attempt}/{max_retries})..."
         )
 
-        for step_def_path, errors_for_this_file in grouped.items():
+        defined_now: set = set()
+        for step_def_path, errors_for_this_file in _page_objects_first(grouped).items():
+            stale = len(errors_for_this_file)
+            errors_for_this_file = _still_missing(errors_for_this_file, defined_now)
+            if len(errors_for_this_file) < stale:
+                logger.info(
+                    f"  '{step_def_path}': {stale - len(errors_for_this_file)} feedback "
+                    f"item(s) dropped - a page object repaired in this attempt now "
+                    f"defines the method(s) they named.")
+            if not errors_for_this_file:
+                continue
             # Find the corresponding GeneratedFile to repair
             target_idx = next(
                 (i for i, gf in enumerate(generated_files)
@@ -3336,6 +3382,8 @@ def _attempt_step_coverage_repair(
                     is_new_file=generated_files[target_idx].is_new_file,
                     purpose=generated_files[target_idx].purpose,
                 )
+                if _normalize_path(step_def_path).startswith("pages/"):
+                    defined_now |= _methods_defined(repaired_content)
             except OutputTruncatedError:
                 # A budget breach is not a repairable failure. Every further
                 # attempt would truncate at the identical cap, so swallowing
