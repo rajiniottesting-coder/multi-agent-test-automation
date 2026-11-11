@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — GUIDE: a merge into main is a bypass while the all-branches ruleset covers main (#PRNUM)
+## November 2026 — GUIDE: a merge into main is a bypass while the all-branches ruleset covers main (#446)
 
 **Why:** found on validation item E36d (11 Nov): the owner approved the App's pull request for SCRUM-408 and merged it, and GitHub recorded a bypass - the ruleset on every branch restricts updates, and its targets include `main` (rule suite "update - Cannot update this protected ref"). The GUIDE said such a merge needed no bypass.
 
