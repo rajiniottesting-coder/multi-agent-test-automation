@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — Agent 3 logs what its review was shown (#PRNUM)
+## November 2026 — Agent 3 logs what its review was shown (#412)
 
 **Why:** validation item E34 (a review of a large change: docs shown as diffs, the changed-files section capped) could not be checked from a run - nothing said which files the reviewer saw in full and which only as a diff, so a review of a large change could not be read against its input.
 
