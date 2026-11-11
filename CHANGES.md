@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — a refused story names a reserved page object's missing method; Markdown notices reach Jira rendered (#PRNUM)
+## November 2026 — a refused story names a reserved page object's missing method; Markdown notices reach Jira rendered (#433)
 
 **Why:** found live in validation Run L (11 Nov, SCRUM-408, Agent 2 run 42984931248). The steps needed `get_signup_error()` on the reserved `LoginPage`; the repair stood the login error in for it, and the blocked comment (13792) named only the stand-in, advising an inventory element the inventory already had. The same comment quoted the step pattern `"(?P<expected_message>[^"]*)"`, and Jira drew a broken image and bold text from it: comments go to REST v2, which reads wiki markup, while most of the agents' notices are Markdown posted as written (the coverage comments on SCRUM-293 showed `*KEY*` and backticks literally).
 
