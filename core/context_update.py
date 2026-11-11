@@ -265,7 +265,19 @@ def invented_quotes(old: str, new: str, known: str) -> list:
 
 
 # One line of the notes block's inventory section: `- <where>: <note text>`.
-_NOTE_LINE = re.compile(r"^\s*-\s*([A-Za-z0-9_.\-]+):\s+")
+# The model copies it with the list marker or without it, and sometimes with
+# the location in backticks (11 Nov 2026: `pages.home.elements_notes.<key>: `
+# - no marker - and the rewrite was dropped as "not verbatim" again). The
+# location is stripped only when it names a note the file really has.
+_NOTE_LINE = re.compile(r"^\s*(?:[-*]\s*)?`?([A-Za-z0-9_.\-]+)`?:\s+")
+
+
+def _note_locations(text: str) -> set:
+    """The `<where>` of every note line the notes block shows for this file."""
+    try:
+        return {".".join(p) for p, _s in _walk(json.loads(text)) if "elements" not in p}
+    except ValueError:
+        return set()
 
 
 def _replace_passage(text: str, path: str, old: str, new: str) -> Optional[str]:
@@ -275,10 +287,11 @@ def _replace_passage(text: str, path: str, old: str, new: str) -> Optional[str]:
         done = _apply_json_notes(text, old, new)
         if done is None:
             # The model quoted the note as the notes block shows it, with its
-            # `- <where>: ` line prefix (10 Nov 2026: "not in ... verbatim"
-            # for a note that was there). The prefix is ours, not the note's.
+            # `<where>: ` location (10 Nov 2026: "not in ... verbatim" for a
+            # note that was there). The location is ours, not the note's.
             m_old, m_new = _NOTE_LINE.match(old), _NOTE_LINE.match(new)
-            if m_old and m_new and m_old.group(1) == m_new.group(1):
+            if (m_old and m_new and m_old.group(1) == m_new.group(1)
+                    and m_old.group(1) in _note_locations(text)):
                 done = _apply_json_notes(text, old[m_old.end():], new[m_new.end():])
         return done
     return text.replace(old, new) if old in text else None

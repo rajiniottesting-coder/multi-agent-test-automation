@@ -17,6 +17,14 @@ it (its definition, the page-object methods it calls, and the inventory
 elements that code reads, with the inventory's notes) and names the steps
 whose code acts on or checks a different element than the wording names.
 
+Each page-object method's code is shown ONCE, after the steps, and each step
+names the methods that run for it. 11 Nov 2026: eight steps of one story
+repeated the same shared helpers (navigation, waits, locators) under every
+step - 61,000 characters, 85% of it the same helpers - and the last step was
+not read ("the prompt is full"). If the prompt is still too long, inherited
+helpers are shown by signature and docstring only, before any step is left
+unread.
+
 A step named here has nothing in the inventory it CAN use honestly: its
 scenarios are left out (validators.action_steps.leave_out_stand_ins) and its
 test cases listed as not automated with the reason, so the story's other test
@@ -32,6 +40,7 @@ from __future__ import annotations
 import ast
 import logging
 import re
+import textwrap
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -121,8 +130,12 @@ def _elements(inventory: dict, keys: set) -> list:
 
 def step_bindings(generated_files, inventory: dict, project_root=None,
                   skip=()) -> list:
-    """[{id, path, keyword, phrase, code}] - every step function of the batch's
-    step files (not those in `skip`) with the code that runs for it."""
+    """[{id, path, keyword, phrase, code, methods, own}] - every step function
+    of the batch's step files (not those in `skip`): `code` is its definition,
+    the names of the page-object methods that run for it and the inventory
+    elements that code reads; `methods` is [(Class.method, source)] and `own`
+    the classes its page fixtures name (a method of another class - a base
+    class - is an inherited helper)."""
     from validators.gherkin_analyzer import step_functions
     if project_root is None:
         from config.paths import PROJECT_ROOT
@@ -146,14 +159,62 @@ def step_bindings(generated_files, inventory: dict, project_root=None,
             code = _source(content, func)
             keys = set(_SEL.findall(code)) | {k for _n, src in reached for k in _SEL.findall(src)}
             parts = [f"Step definition:\n{code}"]
-            parts += [f"Page-object method {name}:\n{src}" for name, src in reached]
+            if reached:
+                parts.append("Page-object methods that run for it (code below): "
+                             + ", ".join(name for name, _src in reached))
             rows = _elements(inventory, keys)
             if rows:
                 parts.append("Inventory elements this code reads:\n" + "\n".join(
                     f"- {k}: {sel}" + (f" - note: {note}" if note else "") for k, sel, note in rows))
             out.append({"id": f"S{len(out) + 1}", "path": path, "keyword": kind,
-                        "phrase": phrase, "code": "\n\n".join(parts)})
+                        "phrase": phrase, "code": "\n\n".join(parts), "methods": reached,
+                        "own": set(fixtures.values())})
     return out
+
+
+def _signature(src: str) -> str:
+    """A method's `def` line(s) and docstring - its code left out."""
+    lines = textwrap.dedent(src).splitlines()
+    try:
+        func = ast.parse(textwrap.dedent(src)).body[0]
+        head = "\n".join(lines[:func.body[0].lineno - 1])
+        doc = ast.get_docstring(func)
+    except (SyntaxError, IndexError, AttributeError):
+        # A long method's code is cut at _MAX_METHOD_CHARS: its `def` line(s) still lead.
+        end = next((i for i, line in enumerate(lines) if line.rstrip().endswith(":")), 0)
+        head, doc = "\n".join(lines[:end + 1]), None
+    body = f'    """{doc}"""\n' if doc else ""
+    return f"{head}\n{body}    ...  # inherited helper - code not shown"
+
+
+def _prompt(steps: list, limit: int) -> tuple:
+    """(user prompt, steps read): the steps, then each method's code once.
+    Over `limit`, inherited helpers (methods of a class no step's fixture
+    names) are cut to their signature; still over, the last steps are left
+    unread."""
+    def build(chosen, short):
+        methods: dict = {}
+        for s in chosen:
+            for name, src in s["methods"]:
+                methods.setdefault(name, src)
+        own = set().union(*(s["own"] for s in chosen)) if chosen else set()
+        head = [f"## {s['id']}: {s['keyword'].capitalize()} {s['phrase']}\n{s['code']}"
+                for s in chosen]
+        if methods:
+            head.append("## Page-object methods (each shown once)\n\n" + "\n\n".join(
+                f"### {name}\n" + (_signature(src) if short and name.split(".")[0] not in own
+                                   else src) for name, src in methods.items()))
+        return "\n\n".join(head)
+
+    for n in range(len(steps), 0, -1):
+        for short in (False, True):
+            text = build(steps[:n], short)
+            if len(text) <= limit:
+                if short:
+                    logger.info("Step fidelity: inherited helpers shown by signature only - "
+                                "the prompt would be over %d characters.", limit)
+                return text, n
+    return build(steps[:1], True), 1
 
 
 def audit(llm, generated_files, inventory: dict, prompt: str, project_root=None,
@@ -163,17 +224,12 @@ def audit(llm, generated_files, inventory: dict, prompt: str, project_root=None,
     steps = step_bindings(generated_files, inventory, project_root, skip)
     if not steps:
         return []
-    blocks, size = [], 0
-    for s in steps:
-        block = f"## {s['id']}: {s['keyword'].capitalize()} {s['phrase']}\n{s['code']}"
-        if size + len(block) > _MAX_PROMPT_CHARS:
-            logger.warning("Step fidelity: %d step(s) not read - the prompt is full.",
-                           len(steps) - len(blocks))
-            break
-        blocks.append(block)
-        size += len(block)
+    user_prompt, read = _prompt(steps, _MAX_PROMPT_CHARS)
+    if read < len(steps):
+        logger.warning("Step fidelity: %d step(s) not read - the prompt is full.",
+                       len(steps) - read)
     try:
-        result = llm.invoke_structured(system_prompt=prompt, user_prompt="\n\n".join(blocks),
+        result = llm.invoke_structured(system_prompt=prompt, user_prompt=user_prompt,
                                        output_schema=StepFidelityAudit)
     except Exception as e:                                         # noqa: BLE001
         logger.warning("Step fidelity audit not run (%s): %s", type(e).__name__, e)

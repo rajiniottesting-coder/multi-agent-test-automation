@@ -94,8 +94,35 @@ def test_each_step_is_read_beside_the_code_and_elements_it_uses(tmp_path):
     steps = step_fidelity.step_bindings(_files(), INVENTORY, _root(tmp_path))
     panel = next(s for s in steps if s["phrase"] == 'the side panel lists "{name}"')
     assert panel["keyword"] == "then"
-    assert "def item_names" in panel["code"], "the page-object method that runs is shown"
+    assert "ShopPage.item_names" in panel["code"], "the page-object method that runs is named"
+    assert any("def item_names" in src for _n, src in panel["methods"])
     assert "shop.item_names: .list .name - note: names in the main list" in panel["code"]
+
+
+def test_each_method_is_shown_once_and_every_step_is_read(tmp_path):
+    """11 Nov 2026: eight steps repeated the same helpers under every step; the
+    last step went unread. Each method's code is shown once, after the steps."""
+    steps = step_fidelity.step_bindings(_files(), INVENTORY, _root(tmp_path))
+    text, read = step_fidelity._prompt(steps, 60000)
+    assert read == len(steps) == 3
+    assert text.count("def item_names") == 1 and text.count("ShopPage.item_names") >= 3
+
+
+def test_over_the_limit_inherited_helpers_lose_their_code_before_a_step_is_dropped(tmp_path):
+    big = "\n".join(f"        x{i} = {i}" for i in range(60))
+    helper = "    def get_texts(self, locator):\n        return []"
+    assert helper in PAGE
+    page = PAGE.replace(helper, "    def get_texts(self, locator):\n"
+                                '        """Texts of every match."""\n' + big + "\n        return []")
+    (tmp_path / "pages").mkdir()
+    (tmp_path / "pages" / "shop_page.py").write_text(page, encoding="utf-8")
+    steps = step_fidelity.step_bindings(_files(), INVENTORY, tmp_path)
+    full, _ = step_fidelity._prompt(steps, 10 ** 6)
+    short, read = step_fidelity._prompt(steps, len(full) - 1)
+    assert read == len(steps), "every step is still read"
+    assert "x59 = 59" in full and "x59 = 59" not in short
+    assert '"""Texts of every match."""' in short and "inherited helper - code not shown" in short
+    assert 'return self.get_texts(self.sel("item_names"))' in short, "the page's own code stays"
 
 
 def test_a_named_stand_in_becomes_an_error_and_its_scenario_is_left_out(tmp_path):

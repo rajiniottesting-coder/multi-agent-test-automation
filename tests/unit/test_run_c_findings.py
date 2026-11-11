@@ -638,6 +638,9 @@ def test_the_audit_reads_implied_checks_and_its_note_asks_for_a_look_first():
     from agents import agent2_coverage as cov
     rules = (a2.PROMPTS_DIR / "agent2_coverage_audit.md").read_text(encoding="utf-8")
     assert "every item of a list" in rules and "acts on an element" in rules
+    # 11 Nov 2026: a section's email link checked was still listed as "the
+    # section showing an email address" not checked - the rule names sections.
+    assert "checked inside a section checks that the section is shown" in rules
 
     class LLM:
         def invoke_structured(self, **k):
