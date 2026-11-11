@@ -2511,9 +2511,12 @@ propose`), and a scenario no test case could be paired with.
 
 ### Agent 4 log says "waiting for earlier run(s)"
 
-Another pull request's browser run started earlier and has not finished; the
-runs take turns because they share the live application and its accounts. The
-wait is capped at 15 minutes, after which the tests run anyway.
+Another pull request's browser run, the nightly run, or a full run started by
+hand started earlier and has not finished; the runs take turns because they
+share the live application and its accounts. The wait is capped at 15
+minutes, after which the tests run anyway. A full run (nightly or by hand) has
+its own concurrency group, so a merge to `main` while it runs does not cancel
+it.
 
 ### A test failed with `HTTP 503` (or another 5xx / 429) from the application
 
