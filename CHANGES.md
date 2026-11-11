@@ -4,7 +4,7 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
-## November 2026 — a shortened refusal reason never ends inside a code span (#PRNUM)
+## November 2026 — a shortened refusal reason never ends inside a code span (#436)
 
 **Why:** found live checking E154 (11 Nov, SCRUM-408 blocked comment 13796): each reason is cut at a fixed length, and a cut inside a code span left an unclosed backtick, shown literally.
 
