@@ -4,6 +4,16 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — a full Agent 4 run started by hand takes turns and survives a merge, like the nightly one (#407)
+
+**Why:** the owner asked why E30b/E30c had to wait for the nightly run rather than a manual one. Reading the workflow showed why - and a gap: a manual (`workflow_dispatch`) run on `main` shared the concurrency group of a push to `main`, whose `cancel-in-progress` is on, so any merge cancelled a person's full regression run part-way; and it did not take turns with pull requests' browser runs, which log in with the same test accounts (`scripts/e2e_turn.py`), so either could change the other's results.
+
+- `.github/workflows/agent4_runner.yml`: a full run (nightly or by hand) is in group `agent4-full-<ref>`, never the branch's group a push cancels; the turn-taking step runs for `workflow_dispatch` too
+- `scripts/e2e_turn.py`: `TURN_EVENTS` includes `workflow_dispatch`
+- GUIDE and TECHNICAL_DEEP_DIVE updated; tests in `test_in_flight.py`, `test_defect_triage.py`; TEST_TRACK E144. Not tested live yet: E144
+
+---
+
 ## November 2026 — the plan's own Skipped notes decide that nothing is left to code (#404)
 
 **Why:** the live check of #403 (SCRUM-398 by key): the plan left all three test cases out again, but this time planned a feature file with no scenario instead of a note - so "no feature file planned" did not hold, Stage 2 generated it, and the coverage gate refused as before.
