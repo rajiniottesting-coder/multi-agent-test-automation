@@ -4,6 +4,17 @@ This document records substantive changes to the framework in reverse-chronologi
 
 ---
 
+## November 2026 — every health alert is redacted where it is posted, and quotes a tracker error readably (#PRNUM)
+
+**Why:** found live on validation item E31h (11 Nov, window J): the triage's `defects-not-written` alert quoted the tracker client's error whole - `response headers = {'Content-Type': ..., 'S...` - cut at 300 characters just before what could have been a `Set-Cookie` session value. `raise_alert` posted its body as given; only some callers redacted their text.
+
+- `core/pipeline_health.raise_alert` / `resolve_alert`: the body is redacted where it is posted - every alert, whoever raises it
+- `core/redaction.redact`: also the value of a credential-carrying HTTP header an error quotes (`Authorization`, `Cookie`, `Set-Cookie`, a `...-Token` header)
+- `core/redaction.error_text`: `<Type>: HTTP <status>: <the server's message>` for an error that carries them, else the message without the client's header dump; whitespace collapsed, cut to a length. `core/defects` records refused writes with it
+- GUIDE updated; tests in `test_alert_text.py`; TEST_TRACK E146 (and E38). Not tested live yet: E146
+
+---
+
 ## November 2026 — Agent 3 logs what its review was shown (#412)
 
 **Why:** validation item E34 (a review of a large change: docs shown as diffs, the changed-files section capped) could not be checked from a run - nothing said which files the reviewer saw in full and which only as a diff, so a review of a large change could not be read against its input.
