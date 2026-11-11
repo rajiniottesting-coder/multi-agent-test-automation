@@ -27,11 +27,6 @@ on:
         description: "Print the findings only; write nothing"
         type: boolean
         default: false
-      validation_window:
-        description: "VALIDATION window L (E27d E27e E27h E36f) - which test secret to use; removed after"
-        type: choice
-        default: none
-        options: [none, pat-revoked, pat-expiring, jira-wrong, key-wrong]
 
 permissions:
   contents: read
@@ -56,9 +51,9 @@ jobs:
         id: identity
         uses: ./.github/actions/agent-identity
         with:
-          client-id: ${{ !(inputs.validation_window == 'pat-revoked' || inputs.validation_window == 'pat-expiring') && vars.GH_APP_CLIENT_ID || '' }}
-          private-key: ${{ inputs.validation_window == 'key-wrong' && secrets.GH_APP_PRIVATE_KEY_WRONG || secrets.GH_APP_PRIVATE_KEY }}
-          fallback-token: ${{ inputs.validation_window == 'pat-revoked' && secrets.GH_PAT_REVOKED || inputs.validation_window == 'pat-expiring' && secrets.GH_PAT_EXPIRING || secrets.GH_PAT }}
+          client-id: ${{ vars.GH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.GH_PAT }}
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
@@ -75,7 +70,7 @@ jobs:
         env:
           JIRA_URL: ${{ vars.JIRA_URL }}
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
-          JIRA_API_TOKEN: ${{ inputs.validation_window == 'jira-wrong' && secrets.JIRA_API_TOKEN_WRONG || secrets.JIRA_API_TOKEN }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
           JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
           # The token the agents use, so its refusal or expiry is what is checked.
           GITHUB_TOKEN: ${{ steps.identity.outputs.token }}
