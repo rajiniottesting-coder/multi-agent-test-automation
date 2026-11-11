@@ -210,3 +210,34 @@ def test_the_plans_skipped_form_is_read_per_key():
     assert skipped_by_plan(notes, "AB-2") and skipped_by_plan(notes, "AB-3")
     assert not skipped_by_plan(notes, "AB-20") and not skipped_by_plan(notes, "AB-4")
     assert not skipped_by_plan("AB-2 is covered by the outline", "AB-2")
+
+
+def test_a_review_fix_is_audited_for_the_steps_it_added_or_changed(monkeypatch):
+    """11 Nov 2026 (validation Run L): a review fix added 'the signup form
+    is shown' and checked it with the login form's 'loaded' reader; every
+    rule passed and it was pushed. The fix's new or changed steps are audited;
+    a step left as it was is not blamed on the fix."""
+    import agents.agent2_coder as a2
+    from agents import agent2_review_fix as rf
+    old = ('from pytest_bdd import then\n\n\n@then("the list shows items")\n'
+           'def a(shop_page):\n    assert shop_page.item_names()\n')
+    new = old + ('\n\n@then("the side panel is shown")\ndef b(shop_page):\n'
+                 '    assert shop_page.is_loaded()\n')
+    batch = [NS(file_path="tests/step_defs/test_x.py", content=new)]
+    contents = {"tests/step_defs/test_x.py": old}
+    err = lambda phrase: (f"Step fidelity error in 'tests/step_defs/test_x.py': the step "
+                          f"`Then {phrase}` - x. Its code acts on or checks a different element")
+    monkeypatch.setattr(step_fidelity, "audit", lambda *a, **k: [err("the list shows items"),
+                                                                 err("the side panel is shown")])
+    monkeypatch.setattr("core.inventory_planned.load_inventory", lambda ctx: {})
+    out = rf._new_stand_ins(object(), batch, contents, None, a2)
+    assert out == [err("the side panel is shown")]
+    unchanged = [NS(file_path="tests/step_defs/test_x.py", content=old)]
+    assert rf._new_stand_ins(object(), unchanged, contents, None, a2) == []
+
+
+def test_the_review_fix_gate_refuses_a_new_stand_in():
+    from pathlib import Path
+    source = Path("agents/agent2_review_fix.py").read_text(encoding="utf-8")
+    gate = source[source.index("a2._validate_generated_files(batch, story_key, test_cases)"):][:400]
+    assert "_new_stand_ins(llm, batch, contents, ctx, a2)" in gate and "raise a2.GateFailure(" in gate
