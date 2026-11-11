@@ -115,7 +115,8 @@ class TestCasesPage(BasePage):
         Call this where titles-as-links is the expected state. A step asking
         this to branch would pay the full timeout whenever there are none.
         """
-        self.wait_for_any(self.sel("test_case_titles"))
+        titles = self.sel("test_case_titles")
+        self.wait_for_any(titles)
         return True
 
     def all_titles_are_links(self) -> bool:
