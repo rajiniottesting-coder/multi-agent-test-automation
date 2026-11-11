@@ -132,3 +132,11 @@ class LoginPage(BasePage):
     def has_signup_error(self) -> bool:
         """True if the signup error is showing right now. Never waits, never raises."""
         return bool(self.get_all_texts(self.sel("signup_error")))
+
+    def is_signup_form_shown(self) -> bool:
+        """True when the 'New User Signup!' form is showing. Never waits.
+
+        Its own heading, not is_loaded(): that reads the login form's heading,
+        which says nothing about the signup form beside it.
+        """
+        return bool(self.get_all_texts(self.sel("signup_heading")))
