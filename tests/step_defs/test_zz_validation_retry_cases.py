@@ -22,7 +22,7 @@ def reaches_home(page, home_page, base_url):
     if not mark.exists():
         mark.write_text("1", encoding="utf-8")
         page.goto("https://zz-validation-unreachable.invalid/")
-    home_page.open_home_page(base_url)
+    page.goto(base_url)
     assert home_page.is_loaded()
 
 
