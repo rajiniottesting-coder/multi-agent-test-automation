@@ -1,8 +1,9 @@
 """Nothing secret leaves the pipeline in text it writes for people.
 
-Agent 3's failure note on a pull request and the pipeline health alerts carry
-an error's message, and an error can quote what it was given. Before either is
-posted, `redact()` removes:
+Agent 3's failure note on a pull request, the pipeline health alerts and the
+agents' notices on a story (integrations.tracker.add_markdown_comment - a
+refused story's reasons, say) carry an error's message, and an error can quote
+what it was given. Before any of them is posted, `redact()` removes:
 
   - the value of every credential the workflows pass (SECRET_ENV - a unit test
     fails when a workflow passes a secret this list does not name);

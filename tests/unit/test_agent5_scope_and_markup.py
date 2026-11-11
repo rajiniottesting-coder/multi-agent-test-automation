@@ -184,3 +184,34 @@ def test_a_shortened_reason_never_ends_inside_a_code_span():
     short = blocked._short(long)
     assert short.endswith("...") and short.count("`") % 2 == 0
     assert len(short) <= blocked._MAX_ERROR_CHARS
+
+
+def test_a_story_notice_never_carries_a_secret(monkeypatch):
+    """A notice can quote a gate error or an exception, which can quote what it
+    was given: every Markdown notice is redacted before it is posted."""
+    from integrations.tracker import add_markdown_comment
+
+    class Plain:
+        posted = []
+
+        def add_comment(self, key, body):
+            self.posted.append(body)
+            return "url"
+    monkeypatch.setenv("JIRA_API_TOKEN", "abcd1234efgh5678")
+    add_markdown_comment(Plain(), "AB-1",
+                         "refused: `token=abcd1234efgh5678` and `ghp_" + "Q" * 36 + "` by a@b.io")
+    body = Plain.posted[-1]
+    assert "abcd1234efgh5678" not in body and "ghp_" not in body and "a@b.io" not in body
+    assert body.count("[redacted]") == 3 and body.startswith("refused: `token=")
+
+
+def test_a_reason_is_redacted_before_it_is_shortened(monkeypatch):
+    """Cut first, a secret value straddling the limit is posted half - its
+    first half no longer matches the value, so redacting afterwards misses it."""
+    from core import blocked
+    secret = "S3cr3tValue" * 4
+    monkeypatch.setenv("APP_PASSWORD", secret)
+    reason = "x" * (blocked._MAX_ERROR_CHARS - 20) + " " + secret + " tail"
+    short = blocked._short(reason)
+    assert "S3cr3t" not in short
+    assert blocked._reasons_digest([reason]) in blocked.blocked_comment("AB-1", "0" * 16, [reason])

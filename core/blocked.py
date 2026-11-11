@@ -53,7 +53,10 @@ def blocked_on(comments, fp: str) -> bool:
 
 
 def _short(error: str) -> str:
-    text = " ".join(str(error).split())
+    # Redacted BEFORE the cut: a secret value cut in half no longer matches
+    # the value, so redacting the shortened text could post its first half.
+    from core.redaction import redact
+    text = " ".join(redact(str(error)).split())
     if len(text) <= _MAX_ERROR_CHARS:
         return text
     cut = text[:_MAX_ERROR_CHARS - 3]

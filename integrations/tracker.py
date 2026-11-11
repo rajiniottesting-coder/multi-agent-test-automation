@@ -267,7 +267,12 @@ def add_markdown_comment(tracker, issue_key: str, markdown: str) -> str:
     (wiki markup) showed `**KEY**` and backticks literally, and a quoted step
     pattern turned into a broken image. Every Markdown comment goes through
     here; a tracker without `render_markdown` receives the Markdown as is.
-    A body written in the tracker's own markup is posted with add_comment."""
+    A body written in the tracker's own markup is posted with add_comment.
+
+    The text is redacted first (core.redaction): a notice can quote a gate
+    error or an exception, which can quote what it was given."""
+    from core.redaction import redact
+    markdown = redact(markdown)
     render = capability(tracker, "render_markdown")
     body = markdown
     if render is not None:
