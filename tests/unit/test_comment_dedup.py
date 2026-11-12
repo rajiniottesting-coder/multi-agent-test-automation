@@ -42,6 +42,13 @@ def world(monkeypatch):
     jira = jira_client_over(fake, monkeypatch)
     monkeypatch.setattr("integrations.tracker.get_tracker", lambda *a, **k: jira)
     monkeypatch.setattr(ul, "_store_setting", lambda: "auto")
+    # Its own budget: the cost comment's budget line quotes per_story_usd, and
+    # the shipped value is a project's to tune - a validation window set it to
+    # $0.50 (12 Nov 2026), which this file's "$0.5 not in" check then read.
+    from core import spend_budget
+    real = spend_budget.settings()
+    monkeypatch.setattr(spend_budget, "settings",
+                        lambda: {**real, "per_story_usd": 8.0, "per_day_usd": 150.0})
     return fake, jira
 
 
