@@ -191,7 +191,10 @@ def test_when_the_day_turns_the_earlier_spend_stays_with_yesterday(monkeypatch, 
         sb.check_before_call()
 
 
-def test_reset_records_nothing_at_exit(world):
+def test_reset_records_nothing_at_exit(world, monkeypatch):
+    # Its own limits: with the shipped per_day_usd under $1 (a validation
+    # window, 12 Nov 2026) the check below stopped the day instead (E95).
+    _limits(monkeypatch, per_story_usd=float("inf"), per_day_usd=float("inf"))
     spend(1)
     sb.check_before_call()
     assert sb._state["registered"]
