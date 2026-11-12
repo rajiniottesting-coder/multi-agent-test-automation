@@ -1,89 +1,73 @@
-"""The live test track keeps up with what is built.
+"""The live test track and the backlog keep up with what is built.
 
-docs/TEST_TRACK.md must list:
-- every fix marked **Done** in docs/VALIDATION_AND_KNOWN_GAPS.md §4, in the
-  *Built in* column of at least one check row;
-- every fix not done yet, in *Not built yet* (the rows to add when it is built);
-- every PR number CHANGES.md cites, in *Every merged change and where it is
-  proven* (or the line naming the cited PRs that were never merged).
-Row ids are unique, every row carries a known status, and a passed or partly
-passed row names its evidence.
+docs/TEST_TRACK.md keeps the live checks still open and the rows each new
+change adds; docs/BACKLOG.md lists what is still to build. An item marked
+Done in the backlog must have a check row naming it in *Built in*. Row ids
+are unique, every row carries a known status, and a passed or not-applicable
+row names its evidence.
 """
 import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 TRACK = (ROOT / "docs" / "TEST_TRACK.md").read_text(encoding="utf-8")
-GAPS = (ROOT / "docs" / "VALIDATION_AND_KNOWN_GAPS.md").read_text(encoding="utf-8")
-CHANGES = (ROOT / "CHANGES.md").read_text(encoding="utf-8")
+BACKLOG = (ROOT / "docs" / "BACKLOG.md").read_text(encoding="utf-8")
 STATUSES = {"⬜", "✅", "❌", "➖"}
 
 
 def _rows():
-    """(id, built in, status) for every check row (6 columns)."""
+    """(id, built in, status, evidence) for every check row (6 columns)."""
     out = []
     for line in TRACK.splitlines():
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) == 6 and cells[0] not in ("ID", "PR", "---") \
-                and not set(cells[0]) <= {"-"} and not cells[0].startswith("#"):
-            out.append((cells[0], cells[1], cells[4]))
+        if line.startswith("| ") and len(cells) == 6 and cells[0] != "ID" \
+                and not set(cells[0]) <= {"-"}:
+            out.append((cells[0], cells[1], cells[4], cells[5]))
     return out
 
 
 def _backlog():
-    """{F-n: done?} from VALIDATION_AND_KNOWN_GAPS.md §4."""
-    backlog = GAPS.split("## 4. Fix backlog")[1].split("## 5.")[0]
+    """{item id: status} for every backlog row (7 columns)."""
     out = {}
-    for fix, change in re.findall(r"^\| (F-\d+) \|[^|]*\| ([^\n]*)$", backlog, re.M):
-        out[fix] = change.startswith("**Done")
-    assert len(out) >= 31, "the backlog no longer reads as expected - update this test"
+    for line in BACKLOG.splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if line.startswith("| ") and len(cells) == 7 and cells[0] != "ID" \
+                and not set(cells[0]) <= {"-"}:
+            assert cells[0] not in out, f"backlog id {cells[0]} twice"
+            out[cells[0]] = cells[6]
     return out
-
-
-def test_every_done_fix_has_a_row():
-    done = [f for f, d in _backlog().items() if d]
-    assert len(done) >= 18
-    built = " ".join(b for _i, b, _s in _rows())
-    missing = [f for f in done if not re.search(rf"\b{f}\b", built)]
-    assert not missing, f"built but no live check in TEST_TRACK.md: {missing}"
-
-
-def test_every_fix_not_done_is_in_the_not_built_group():
-    group = TRACK.split("## Not built yet: rows to add when each is built")[1].split("\n## ")[0]
-    open_fixes = [f for f, d in _backlog().items() if not d]
-    missing = [f for f in open_fixes if not re.search(rf"\| {f}\b", group)]
-    assert not missing, f"fixes not built and not in *Not built yet*: {missing}"
-    done = [f for f, d in _backlog().items() if d]
-    stale = [f for f in done if re.search(rf"\| {f}\b", group)]
-    assert not stale, f"built, but still listed as not built: {stale}"
-
-
-def test_every_pr_changes_cites_is_in_the_coverage_list():
-    coverage = TRACK.split("## Every merged change and where it is proven")[1]
-    cited = sorted({int(n) for n in re.findall(r"#(\d{3,})\b", CHANGES)})
-    assert cited, "CHANGES.md cites no PR - update this test"
-    missing = [n for n in cited if not re.search(rf"#{n}\b", coverage)]
-    assert not missing, f"PRs in CHANGES.md missing from TEST_TRACK's coverage list: {missing}"
 
 
 def test_every_check_row_is_read():
     """A `|` inside a cell would split it and hide that row from these checks."""
-    starts = [l for l in TRACK.split("## Every merged change")[0].splitlines()
-              if re.match(r"\| [A-Z][A-Za-z0-9-]* \| ", l) and not l.startswith(("| ID", "| Session", "| Planned"))]
+    starts = [l for l in TRACK.splitlines()
+              if re.match(r"\| [A-Z][A-Za-z0-9-]* \| ", l) and not l.startswith("| ID")]
     assert len(starts) == len(_rows()), "a check row does not have exactly 6 cells"
 
 
 def test_row_ids_are_unique_and_statuses_known():
     rows = _rows()
-    assert len(rows) > 100
-    ids = [i for i, _b, _s in rows]
+    assert rows, "no check rows - update this test"
+    ids = [r[0] for r in rows]
     assert len(ids) == len(set(ids)), "duplicate row ids"
-    assert all(s in STATUSES for _i, _b, s in rows), "unknown status"
+    assert all(r[2] in STATUSES for r in rows), "unknown status"
 
 
 def test_a_passed_row_names_its_evidence():
-    for row_id, _b, status in _rows():
-        line = next(l for l in TRACK.splitlines() if l.startswith(f"| {row_id} |"))
-        evidence = line.strip().strip("|").split("|")[5].strip()
+    for row_id, _b, status, evidence in _rows():
         if status in ("✅", "➖"):
             assert evidence, f"{row_id} is marked {status} without evidence"
+
+
+def test_backlog_items_read_and_have_known_status():
+    items = _backlog()
+    assert len(items) >= 30, "the backlog no longer reads as expected - update this test"
+    bad = {i: s for i, s in items.items() if not re.fullmatch(r"Open|Done \(#\d+\)", s)}
+    assert not bad, f"backlog status must be 'Open' or 'Done (#PR)': {bad}"
+
+
+def test_every_done_item_has_a_check_row():
+    built = " ".join(r[1] for r in _rows())
+    done = [i for i, s in _backlog().items() if s.startswith("Done")]
+    missing = [i for i in done if not re.search(rf"\b{re.escape(i)}\b", built)]
+    assert not missing, f"built but no live check in TEST_TRACK.md: {missing}"

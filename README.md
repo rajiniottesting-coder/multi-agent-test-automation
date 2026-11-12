@@ -11,15 +11,14 @@ A reusable framework where **six AI agents** turn a Jira story into a reviewed, 
 | Doc | Purpose |
 |---|---|
 | **[docs/GUIDE.md](./docs/GUIDE.md)** | Architecture (with Mermaid diagrams), Agents 1–5 in depth, change stories (Agent 0), which route a change takes, stories in flight, configuration, sprint scoping, branch naming, human-approval gates, label state machine, onboarding a new app, troubleshooting |
-| [docs/AGENT0_ONBOARDING.md](./docs/AGENT0_ONBOARDING.md) | Attaching Agent 0 (impact analysis) to an application, with the readiness check |
 | [docs/AI_CONCEPTS.md](./docs/AI_CONCEPTS.md) | AI/LLM concepts used (and deliberately not used), guardrails, demo Q&A, the failure catalogue |
 | [docs/DECISIONS.md](./docs/DECISIONS.md) | Architecture Decision Records |
-| [docs/REUSE_FOR_NEW_PROJECT.md](./docs/REUSE_FOR_NEW_PROJECT.md) | Checklist for pointing the framework at a new application, incl. the app-inventory JSON schema |
+| [docs/REUSE_FOR_NEW_PROJECT.md](./docs/REUSE_FOR_NEW_PROJECT.md) | Checklist for pointing the framework at a new application, incl. the app-inventory JSON schema and attaching Agent 0 (impact analysis) with its readiness check |
 | [docs/TECHNICAL_DEEP_DIVE.md](./docs/TECHNICAL_DEEP_DIVE.md) | Function-level walkthrough of the agents and mechanisms |
 | [inventory_tools/inventory_readme.md](./inventory_tools/inventory_readme.md) | Building and maintaining the app inventory (crawl, merge, measure, curate) |
-| [docs/VALIDATION_AND_KNOWN_GAPS.md](./docs/VALIDATION_AND_KNOWN_GAPS.md) | What has been validated live, and every known gap with its status and planned fix |
-| [docs/TEST_TRACK.md](./docs/TEST_TRACK.md) | The live test track: every check still to run against the real Jira, GitHub and application, grouped by use case, with expected result, status and evidence; a regression group for what was proven before; and every merged change mapped to the run or rows that prove it |
-| [CHANGES.md](./CHANGES.md) | Changelog — what changed, why, how to adapt |
+| [docs/BACKLOG.md](./docs/BACKLOG.md) | Everything still to build (38 items), with priority, estimated model spend and order |
+| [docs/KNOWN_LIMITATIONS.md](./docs/KNOWN_LIMITATIONS.md) | Accepted behaviour of the current design, so nobody relies on more |
+| [docs/TEST_TRACK.md](./docs/TEST_TRACK.md) | The live checks still open, and the rows each new change adds (the 254 checks proven in November 2026 are in git history) |
 
 ---
 
@@ -176,7 +175,7 @@ impact-check → impact-proposed → Impact Review Done → ai-ready → impact-
 - **Outcome:** Agent 5 scores the prediction on the story — **recall** (of the tests the PR actually changed, how many Agent 0 flagged) and **precision** (of the tests flagged, how many really changed).
 - **Reconcile** (runs whatever the mode, on stories labelled `impact-applied`; it also sets back a NEW story whose PR closed unmerged - approval and `ai-coded` off, card to To Do, one comment on how to retry). For a change story: a merged PR closes the loop. A PR closed without merging is undone once `reconcile.closed_scans` scans (default 2) have seen it still closed, so a sweeper close-and-reopen is never mistaken for a rejection: each revised test's earlier text is restored, retired tests are un-retired, the links are removed, the story's own tests that never reached main are retired, the pipeline labels are reset, the review is marked undone, the card moves back to To Do and the retry steps are posted. A story labelled `impact-applied` with no PR for 14 days (`no_pr_days`) gets an ask-a-person comment. Only PRs opened after `Change applied at` count, so to retry an undone story you remove `impact-reverted` and add `impact-check`: it is analysed afresh as a new attempt.
 
-Attaching Agent 0 to another application: [docs/AGENT0_ONBOARDING.md](./docs/AGENT0_ONBOARDING.md) and `python -m scripts.onboarding_check`.
+Attaching Agent 0 to another application: [docs/REUSE_FOR_NEW_PROJECT.md → Attaching Agent 0](./docs/REUSE_FOR_NEW_PROJECT.md#attaching-agent-0-to-another-application) and `python -m scripts.onboarding_check`.
 
 ---
 
@@ -308,6 +307,8 @@ multi-agent-test-automation/
 │   ├── finalise_junit.py            # Agent 4: merge the retry, mark outages and flakes, the verdict
 │   ├── triage_failures.py           # After a run on main: defects, outage alert, flakes
 │   ├── pipeline_health_check.py     # The scheduled health check
+│   ├── install_browser.sh           # CI: browser + OS packages, retried; browser alone if mirrors fail
+│   ├── start_agent.py               # Hand-off: start the next agent while stories wait
 │
 ├── .github/workflows/
 │   ├── agent0_impact.yml            # Scan, reconcile, PR code change, nightly drift
@@ -322,7 +323,8 @@ multi-agent-test-automation/
 │   ├── story_done_on_merge.yml      # Only a human merge moves a story to Done; then its notes addition
 │   └── sweeper.yml                  # Re-triggers stalled PRs
 │
-├── docs/
+├── docs/                            # GUIDE, TECHNICAL_DEEP_DIVE, REUSE_FOR_NEW_PROJECT, DECISIONS,
+│                                    # AI_CONCEPTS, BACKLOG, KNOWN_LIMITATIONS, TEST_TRACK
 ├── .env.example
 ├── pytest.ini
 └── requirements.txt
@@ -428,7 +430,7 @@ No Python changes are needed to point the framework at a new app:
 2. **`app_inventory/<your-app>.json`** — pages and selectors ([schema](./docs/REUSE_FOR_NEW_PROJECT.md#app-inventory-json-schema)). Build it with the tooling — crawl, merge, measure, then curate ([full sequence](./docs/GUIDE.md#inventory-tooling--the-full-sequence)). Curation cannot be automated: a crawler records what a page contains, never what it means.
 3. **`prompts/app_context/`** — `core.md` (users by role, known data, page flow, business phrases → real values) plus one `<component>.md` per Jira Component. Agent 1 reads only these modules, never the inventory.
 4. **The reference trio** — replace `features/login.feature`, `tests/step_defs/test_login.py` and `pages/login_page.py` with one well-written test for your app; the model uses them as its style baseline.
-5. **Agent 0 (optional)** — `components` on every inventory page, a `# JIRA:` marker above every scenario (`scripts.backfill_markers` proposes them), the `Impacts` link type, then shadow mode before live. `python -m scripts.onboarding_check` reports what is missing ([docs/AGENT0_ONBOARDING.md](./docs/AGENT0_ONBOARDING.md)).
+5. **Agent 0 (optional)** — `components` on every inventory page, a `# JIRA:` marker above every scenario (`scripts.backfill_markers` proposes them), the `Impacts` link type, then shadow mode before live. `python -m scripts.onboarding_check` reports what is missing ([docs/REUSE_FOR_NEW_PROJECT.md → Attaching Agent 0](./docs/REUSE_FOR_NEW_PROJECT.md#attaching-agent-0-to-another-application)).
 
 The framework was moved from an Angular HR system to this e-commerce application without editing a single agent.
 

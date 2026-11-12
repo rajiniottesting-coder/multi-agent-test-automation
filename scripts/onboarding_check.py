@@ -12,7 +12,7 @@ application's own config/config.yaml, else this deployment's configured ones.
 
 Exit code: 1 when any check FAILs; with --strict, also when any WARNs.
 
-The checklist and what each result means: docs/AGENT0_ONBOARDING.md.
+The checklist and what each result means: docs/REUSE_FOR_NEW_PROJECT.md (Attaching Agent 0 to another application).
 """
 from __future__ import annotations
 
