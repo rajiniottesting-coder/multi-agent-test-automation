@@ -209,8 +209,8 @@ budget:
   enabled: true
   # TEMPORARY (owner's decision, 10 Nov 2026): no story or day limit until the
   # validation items are developed. Restore per_story_usd: 8, per_day_usd: 150.
-  per_story_usd: .inf
-  per_day_usd: .inf
+  per_story_usd: 1.20  # VALIDATION window N (E32b): <= per_day_usd; replaced by the final values
+  per_day_usd: 1.20    # VALIDATION window N (E32b): today's spend ($0.86 at 07:20 UTC) + $0.34
   warn_at: 0.5
   timezone: "UTC"
   hold_label: "budget-hold"
