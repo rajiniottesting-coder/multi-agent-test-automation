@@ -207,9 +207,14 @@ usage_ledger:
 # PIPELINE_BUDGET=on/off forces it on or off.
 budget:
   enabled: true
-  # TEMPORARY (owner's decision, 10 Nov 2026): no story or day limit until the
-  # validation items are developed. Restore per_story_usd: 8, per_day_usd: 150.
-  per_story_usd: 0.50  # VALIDATION window N2 (E35h): below SCRUM-408's ledger; replaced by the final values
+  # Set 12 Nov 2026 from the spend of 3-12 Nov (588 recorded runs, $182):
+  # a clean story costs ~$1.70 end to end, the heaviest legitimate one ~$4.70,
+  # so per_story_usd 8 holds only a story looping on refusals. The busiest
+  # day was $80 (heavy validation); per_day_usd 100 lets such a day finish
+  # and must stay below the model key's own credit, so the pipeline stops on
+  # its own alert before the provider refuses calls (402). warn_at 0.5 alerts
+  # at $50.
+  per_story_usd: 8
   per_day_usd: 100
   warn_at: 0.5
   timezone: "UTC"
@@ -343,7 +348,9 @@ agents:
   agent1_analyst:
     # Room for one draft of test cases (tokens). Out of room, the story is
     # handed back with one [agent1:stopped] comment naming this key.
-    max_output_tokens: 12288
+    # 16384 since 12 Nov 2026: the largest draft (3-12 Nov) used 11,061 of
+    # 12,288 (90%); room costs nothing until a draft uses it.
+    max_output_tokens: 16384
     selection:
       issue_type: "Story"
       allowed_statuses:

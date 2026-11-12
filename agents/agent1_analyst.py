@@ -397,12 +397,13 @@ def run(story_id: str, dry_run: bool = False) -> dict:
     # result) runs ~2,800-4,200 tokens — only ~1x headroom at 4096, and ~2x at
     # 8192. A verbose story or a raised TC-count target in the prompt could
     # truncate mid-JSON, which fails the Pydantic parse and burns a retry.
-    # 12288 restores the ~3x headroom the other caps carry.
+    # 12288 restored the ~3x headroom the other caps carry; 16384 since
+    # 12 Nov 2026, when the largest real draft had used 11,061 (90%).
     # NOTE: if you raise the "3-7 test cases" target in
     # prompts/agent1_analyst.md, revisit this cap in the same commit.
     # A project raises it in config.yaml (agents.agent1_analyst.
     # max_output_tokens) - the truncation message names that key.
-    cap = int(load_agent_config().get("max_output_tokens") or 12288)
+    cap = int(load_agent_config().get("max_output_tokens") or 16384)
     llm = LLMClient(temperature=0.3, max_output_tokens=cap,
                     cap_setting="agents.agent1_analyst.max_output_tokens")
     test_case_list = _draft_test_cases(llm, user_prompt, criteria, existing)
