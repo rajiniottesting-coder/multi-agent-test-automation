@@ -130,6 +130,7 @@ jobs:
           cache: "pip"
 
       - name: Install Python dependencies
+        id: deps
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
@@ -222,7 +223,11 @@ jobs:
         # waiting (the schedule, its only other path, rarely starts). No retry
         # loop: it starts again only if the run took a story that waited
         # (core/handoff.py), and handoff.max_chain bounds it.
-        if: ${{ !cancelled() && github.event.inputs.dry_run != 'true' }}
+        # Not when the run stopped before its checkout and dependencies:
+        # there is no script to start, and nothing ran that a restart
+        # follows (12 Nov 2026: 'No module named scripts' after a red
+        # first step).
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' && github.event.inputs.dry_run != 'true' }}
         continue-on-error: true
         env:
           JIRA_URL: ${{ vars.JIRA_URL }}
