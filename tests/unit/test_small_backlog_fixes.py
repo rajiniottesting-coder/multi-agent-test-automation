@@ -1,4 +1,4 @@
-"""The small backlog found while validating (TEST_TRACK, *Not built yet*).
+"""The small backlog found while validating (November 2026).
 
 Each test pins one fix: a feature file repaired from what it is, one bot rule
 for review comments, the jira library's false link-type warning, Gherkin tags

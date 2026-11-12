@@ -844,7 +844,7 @@ def propose_for_story(tracker, host, llm, story_key: str, settings: dict, root: 
     replaced, no passage becomes untrue and no element is removed: no model
     call, a "no update needed" marker. Asked anyway, the model narrowed a
     correct, fuller note to the story's own sentence (found in validation,
-    3 Nov 2026 - see CHANGES.md, #247). What such a story ADDS reaches the
+    3 Nov 2026, #247). What such a story ADDS reaches the
     notes when its tests merge (propose_addition_for_story). Any other value,
     or none (an older report, another trigger), runs the update as before.
 

@@ -810,7 +810,7 @@ number of times.
 
 ### Onboarding Agent 0 to another application
 
-See [AGENT0_ONBOARDING.md](./AGENT0_ONBOARDING.md). `python -m scripts.onboarding_check`
+See [REUSE_FOR_NEW_PROJECT.md → Attaching Agent 0](./REUSE_FOR_NEW_PROJECT.md#attaching-agent-0-to-another-application). `python -m scripts.onboarding_check`
 reports whether an application is ready (layout, inventory components,
 scenario markers, adapters); `python -m scripts.backfill_markers` gives unmarked
 scenarios their `# JIRA:` marker; `python -m scripts.agent0_backtest` measures
@@ -1334,7 +1334,7 @@ app_health:                         # the application health check's timing
   { wait_minutes: 8, interval_seconds: 60, element_timeout_ms: 15000 }
                                     # WHAT it checks: app_under_test.health_check
 budget:                             # model spend (F-24); every selection excludes hold_label
-  { enabled, per_story_usd: 8, per_day_usd: 50, warn_at: 0.5, timezone: "UTC",
+  { enabled, per_story_usd: 8, per_day_usd: 100, warn_at: 0.5, timezone: "UTC",
     hold_label: "budget-hold" }
 usage_ledger: { store: "auto" }     # F-31: hidden properties + one cost comment per
                                     # attempt; "comments" = [LLM-USAGE] per run
@@ -1572,8 +1572,7 @@ which sit in the same list.
     leave inline comments and press **Request changes** (Agent 2's review fix
     starts), **Approve**, and merge it. The merge is an ordinary one only when
     the all-branches ruleset excludes the default branch (see *Branch
-    protection*); otherwise GitHub records it as a bypass (TEST_TRACK E36a-h,
-    E159).
+    protection*); otherwise GitHub records it as a bypass.
 23. Once that works: delete the `GH_PAT` secret and revoke the token on
     GitHub (profile → Settings → Developer settings → Personal access tokens).
     Optionally remove yourself from the rulesets' bypass list and require an
@@ -1740,19 +1739,20 @@ that leaves work for another starts it (`python -m scripts.start_agent`):
 | After | Starts | When |
 |---|---|---|
 | Agent 0's story analysis (scan or one story, not a dry run) | Agent 1 | a story waits for Agent 1 - released by Agent 0 or labelled by a person |
-| Agent 1, on success | Agent 1 again | stories still wait **and the run took at least one of those that waited when it began** (more than `max_stories_per_run` were waiting) |
-| Agent 2, on success | Agent 2 again | the same |
+| Agent 1, green or red | Agent 1 again | stories still wait **and the run took at least one of those that waited when it began** (more than `max_stories_per_run` were waiting) |
+| Agent 2, green or red | Agent 2 again | the same |
 
 - **Only with work**: the tracker is asked with the started agent's own selections (every `*selection` block under `agents.<key>`), so the run scans exactly as its schedule would. It runs in scan mode.
 - **Only after progress** (an agent starting itself): the step *Record the stories waiting before the run* writes what waits; the restart happens only if the run took one of them. A story the agent skips - a blocked one - stays waiting, and restarting would repeat the skip (3-4 Nov 2026: a blocked story restarted Agent 2 five times per scheduled run). Agent 0 starting Agent 1 needs no record: a story released to it is new work.
-- **Bounded**: the started run carries `chain` (runs started in a row); at `handoff.max_chain` (5) it stops and the schedule picks up the rest. A failed run starts nothing, so a story that keeps failing is retried by the schedule, never in a loop.
+- **Also after a red run**: a run is red when one story needs a person, and that must not stop the other waiting stories (4 Nov 2026). It still restarts only if the run took a story that waited, so a story that keeps failing is never retried in a loop. Not when the run stopped before its checkout and dependencies (the step needs them; 12 Nov 2026).
+- **Bounded**: the started run carries `chain` (runs started in a row); at `handoff.max_chain` (5) it stops and the schedule picks up the rest.
 - **Never fails a run**: a refused start is a warning and a line in the job summary; the schedule still runs. The built-in token starts the run (`actions: write`; GitHub runs a `workflow_dispatch` it makes).
 - **Agent 1 → Agent 2 stays a person's step**: the test cases are approved in the tracker, which GitHub cannot see. To start Agent 2 the moment a story is approved, add a tracker rule (optional; without it the schedule, or *Run workflow*, starts Agent 2). In Jira: *Project settings → Automation → Create rule* - trigger **Field value changed** (Labels) with condition *Labels contains* `human-approved` → action **Send web request**: `POST https://api.github.com/repos/<owner>/<repo>/dispatches`, headers `Accept: application/vnd.github+json` and `Authorization: Bearer <token>`, body `{"event_type": "agent2_coder"}`. The token is a fine-grained personal access token for this one repository with **Contents: Read and write** (GitHub's requirement for `repository_dispatch`) - kept in the rule, never in the repository. `agent1_analyst` starts Agent 1 the same way (e.g. on `ai-ready`).
 - `handoff.enabled: false` returns to schedules only.
 
-Agent 2 opens its PR with a PAT so the PR events reach Agents 3–5 (see
-[DECISIONS.md → ADR-008](./DECISIONS.md)); the built-in token would not trigger
-other workflows.
+Agent 2 opens its PR as the agents' GitHub App (see *Agent identity*), so the
+PR events reach Agents 3–5; the built-in `GITHUB_TOKEN` would not trigger other
+workflows (the reason [DECISIONS.md → ADR-008](./DECISIONS.md) first used a PAT).
 
 ---
 
@@ -1794,7 +1794,8 @@ it. **Watch it**: the tracker then emails you on each comment, and the pipeline
 comments only when something changes - `[health:open] <id>` when a problem
 starts, `[health:resolved] <id>` when it ends, nothing while it persists. The
 description is the current picture (open alerts, flaky tests, today's spend),
-rewritten on each change - edits to it are not kept. Every alert is redacted
+rewritten on each change - edits to it are not kept. Every alert, and every
+agent notice on a story (redacted before it is shortened), is redacted
 where it is posted (`core/redaction.py`: secret values, token-shaped strings,
 credential-carrying HTTP header values, email addresses), and an error from
 the tracker is quoted as its status and the server's own message, never the
@@ -2250,7 +2251,7 @@ Leave `agents.agent0_impact.enabled: false` until the inventory pages carry
 `Impacts` link type and a sub-task type for the Impact Review (`link_types` and
 `agents.agent0_impact.review` in `config.yaml`). Then run
 `python -m scripts.onboarding_check`, switch to shadow mode, and go live once
-the shadow reports are trusted. See [AGENT0_ONBOARDING.md](./AGENT0_ONBOARDING.md).
+the shadow reports are trusted. See [REUSE_FOR_NEW_PROJECT.md → Attaching Agent 0](./REUSE_FOR_NEW_PROJECT.md#attaching-agent-0-to-another-application).
 
 ### Step 8: Operations (health, defects, budgets)
 
@@ -2553,6 +2554,24 @@ one (`core/rerun_record.py` records a `reruns` property on it at the source).
 A test still
 failing this way means the outage outlasted both: re-run the job. A 4xx, an
 assertion or a timeout is never retried.
+
+### *Install Playwright browsers* shows a warning, or fails
+
+`scripts/install_browser.sh` installs the browser and its OS packages, each try
+cut off after 180 s (`INSTALL_TIMEOUT`). When the package mirrors cannot be
+reached (11 Nov 2026: about 15 minutes of "Temporary failure resolving"), two
+tries fail, the browser is installed alone and started once: the step passes
+with *starts without the freshly installed OS packages* and the run goes on.
+It fails only when the browser cannot start either - re-run the job later.
+
+### Inventory Health failed with "login FAILED (still on the login page)"
+
+The verifier could not sign in, so it refused to report: every page would have
+redirected to the login screen and every selector would have read as stale.
+Usually the application was slow or unavailable (12 Nov 2026: the login form
+did not appear within 15 s; the re-run passed). Re-run the workflow; if it
+fails again, check the application and the `APP_*` credentials. Backlog X9
+makes this an app-unavailable alert instead of a red run.
 
 ### `LLM returned None — could not produce valid <Schema>`
 

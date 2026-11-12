@@ -718,7 +718,7 @@ No Python agent file. The "intelligence" is the test code Agent 2 wrote; Agent 4
 
 1. **Checkout** via `actions/checkout@v4` with `ref: ${{ github.sha }}` - on a pull request the merge commit of `refs/pull/<n>/merge` the event was raised for, the merge result GitHub also takes the workflow file from (the `report` job checks out the same); the branch alone ran main's workflow with the branch's older scripts. By SHA, not `github.ref`: merging deletes the merge ref, and a report job still running then failed to check out (#255)
 2. **Setup Python 3.13** via `actions/setup-python@v5`
-3. **Install deps**: `pip install -r requirements.txt && playwright install --with-deps chromium`
+3. **Install deps**: `pip install -r requirements.txt`, then `bash scripts/install_browser.sh chromium`: the browser and its OS packages, each try cut off after 180 s (`INSTALL_TIMEOUT`); after two failed tries (package mirrors unreachable) the browser alone, and the step passes only if it starts. Used by Agent 4, Agent 0's drift job and Inventory Health
 3b. **Wait for earlier browser runs** (pull request, the nightly run, a full run started by hand): `scripts/e2e_turn.py` lists unfinished `pull_request`, `schedule` and `workflow_dispatch` runs (`TURN_EVENTS`) of OTHER branches with a lower run id; the step polls every 30 s, up to `MAX_WAIT_SECONDS` (900), then proceeds; it never waits if the runs cannot be read. A shared concurrency group is not used because GitHub cancels a pending run when a newer one queues, and the sweeper reads a cancelled run as a stalled PR. A full run - nightly or started by hand - has its own concurrency group (`full-<ref>`) so a push to `main` cannot cancel it (only push runs cancel in progress). The job's timeout is 40 minutes: the wait, the run, and the retry.
 4. **Run tests** — two steps:
    ```bash
@@ -1512,7 +1512,7 @@ Agent prompts (`prompts/agent2_coder_plan.md`, `prompts/agent2_coder_generate.md
 | `app_inventory/<app>.json` | Pages/selectors catalog | YES |
 | `prompts/app_context/` (`core.md` + one module per Jira Component) | Known users, data, flows, module behaviour | YES |
 | Reference triplet (1 feature + 1 step_def + 1 page_object) | LLM's style baseline | YES |
-| `README.md` / `CHANGES.md` | Narrative docs | Optional |
+| `README.md` | Narrative docs | Optional |
 
 ### Layer 4 — Agent files (NEVER touch)
 

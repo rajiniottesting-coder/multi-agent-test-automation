@@ -657,8 +657,8 @@ leaked between them and produced flaky failures.
   `Agent 2 (Coder, waiting)`.
 - The limits of a file-level guard (two different scenarios of one file wait;
   reworded duplicates; a person's PR opened later; clashes across different
-  files) and the gaps found later are tracked in
-  [VALIDATION_AND_KNOWN_GAPS.md](./VALIDATION_AND_KNOWN_GAPS.md).
+  files) are recorded in [KNOWN_LIMITATIONS.md](./KNOWN_LIMITATIONS.md); gaps
+  still to fix are in [BACKLOG.md](./BACKLOG.md).
 
 *Later note (P2, ADR-022):* the several-stories gaps listed above - a failed
 story's cost charged to the next, the per-pass cap in a 10-minute job, the
