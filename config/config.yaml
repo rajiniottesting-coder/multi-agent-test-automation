@@ -165,6 +165,26 @@ reporting:
   story_trend: true                  # RP10: a trend chart on Agent 5's comment
   story_trend_points: 10
   story_trend_min_points: 2          # no chart for a story's first run
+  # D7: every defect's last known state is kept on the store, so the defect
+  # trend and density survive a defect deleted from the tracker.
+  defect_history: true
+  defect_keep_days: 730              # a closed defect leaves the history this long after closing (0 = never)
+  defect_history_forget: []          # keys to drop at once: throw-away issues deleted before they were labelled test-data
+  # D8: a defect's module - its tracker component when it has one, else the
+  # module whose patterns match its feature file, else the feature file's name.
+  modules:
+    Cart: ["cart_management.feature", "product_detail_cart.feature"]
+    Login and signup: ["login.feature", "signup_existing_email.feature"]
+    Contact us: ["contact_us_form.feature"]
+    Newsletter: ["newsletter_subscription.feature"]
+    Products: ["product_reviews.feature", "product_search.feature"]
+    Test cases page: ["test_cases_page*.feature"]
+  density_per: 10                    # density = product defects per this many scenarios
+
+# D10: scripts/delete_issues.py deletes only closed issues with this label -
+# throw-away issues. A real defect is closed, never deleted. "" = off.
+cleanup:
+  delete_label: "test-data"
 
 # Defect triage (F-22): after a run on main (nightly, a push that ran the E2E,
 # a manual run on main) each test still failing has ONE open defect: a repeat
@@ -209,6 +229,18 @@ defects:
   # the story they belong to.
   trace_owners:
     "features/login.feature": "SCRUM-282"
+  # D9: what a closed defect was - the label a person adds when closing it,
+  # else the tracker's resolution. Categories: app, test, environment,
+  # duplicate, not-a-bug. The density counts app (and not yet categorised).
+  close_categories:
+    defect-app: app                  # a bug in the application
+    defect-test: test                # the test was wrong (selector, step, data)
+    defect-env: environment          # the application or the runner was down or slow
+    defect-duplicate: duplicate
+  resolution_categories:
+    Duplicate: duplicate
+    "Won't Do": not-a-bug
+    "Cannot Reproduce": not-a-bug
 
 # A story's model-cost ledger (F-31, core/usage_ledger.py).
 #   store  auto      hidden issue properties, and ONE cost comment per attempt

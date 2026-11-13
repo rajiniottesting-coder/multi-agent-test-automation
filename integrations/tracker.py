@@ -75,11 +75,17 @@ an adapter written before them stays valid.
                                               issues of one type for the reports
                                               (scripts/build_site.py): open
                                               defects, whoever raised them
+    defects_for_history(issue_type, updated_since=None, open_only=False)
+        -> [dict] | None                      every defect, or those changed
+                                              since, for the defect history
+                                              (core/defect_ledger.py, D7)
     get_active_sprint() -> {"id","name","start","end"}
                                               the sprint the PDF summary covers
-    delete_closed_issue(issue_key) -> {"key","summary","type","deleted","reason"}
-                                              delete one CLOSED issue for good
-                                              (scripts/delete_issues.py)
+    delete_closed_issue(issue_key, required_label=None)
+        -> {"key","summary","type","deleted","reason"}
+                                              delete one CLOSED issue for good,
+                                              only with `required_label` when
+                                              given (scripts/delete_issues.py)
     add_attachment(issue_key, path, name=None) -> markup
                                               attach a file; the markup shows it
                                               in a comment (the sprint summary's

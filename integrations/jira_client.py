@@ -630,6 +630,47 @@ class JiraClient:
                         "created": getattr(f, "created", None), "links": links})
         return out
 
+    def defects_for_history(self, issue_type: str, updated_since: str | None = None,
+                            open_only: bool = False) -> list[dict] | None:
+        """Issues of one type for the defect history (core/defect_ledger.py):
+        every one, or those changed since `updated_since` ("YYYY-MM-DD HH:MM"),
+        or the open ones. [{"key", "summary", "status", "open", "labels",
+        "components", "created", "updated", "resolved", "resolution", "priority",
+        "links", "description"}]. None when the tracker cannot be read - the
+        history is then left as it is, never emptied. Optional capability."""
+        parts = [f"project = {self.project_key}", f'issuetype = "{issue_type}"']
+        if updated_since:
+            parts.append(f'updated >= "{updated_since}"')
+        if open_only:
+            parts.append("statusCategory != Done")
+        try:
+            found = self.client.enhanced_search_issues(
+                " AND ".join(parts) + " ORDER BY created ASC", maxResults=False,
+                fields="summary,status,labels,components,created,updated,resolution,"
+                       "resolutiondate,priority,issuelinks,description")
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning(f"Defects for the history not read: {e}")
+            return None
+        out = []
+        for i in found:
+            f = i.fields
+            links = []
+            for link in getattr(f, "issuelinks", None) or []:
+                other = getattr(link, "outwardIssue", None) or getattr(link, "inwardIssue", None)
+                if other is not None:
+                    links.append(other.key)
+            category = getattr(getattr(f.status, "statusCategory", None), "key", "")
+            out.append({"key": i.key, "summary": f.summary, "status": f.status.name,
+                        "open": category != "done", "labels": list(f.labels or []),
+                        "components": [c.name for c in (getattr(f, "components", None) or [])],
+                        "created": getattr(f, "created", None),
+                        "resolved": getattr(f, "resolutiondate", None),
+                        "updated": getattr(f, "updated", None),
+                        "resolution": getattr(getattr(f, "resolution", None), "name", None),
+                        "priority": getattr(getattr(f, "priority", None), "name", None),
+                        "links": links, "description": getattr(f, "description", None) or ""})
+        return out
+
     def get_comments(self, issue_key: str) -> list:
         """Return the body text of every comment on an issue (oldest first).
 
@@ -905,12 +946,14 @@ class JiraClient:
         logger.info(f"Created {issue_type}: {issue.key} — {summary}")
         return issue.key
 
-    def delete_closed_issue(self, issue_key: str) -> dict:
+    def delete_closed_issue(self, issue_key: str, required_label: str | None = None) -> dict:
         """Delete one issue for good - only when it is in the done category
         (scripts/delete_issues.py). Returns {"key", "summary", "type",
-        "deleted": bool, "reason"}; never deletes an open issue, and never
-        an issue with sub-tasks. Optional capability."""
-        issue = self.client.issue(issue_key, fields="summary,status,issuetype,subtasks")
+        "deleted": bool, "reason"}; never deletes an open issue, never an
+        issue with sub-tasks, and - when `required_label` is given - never
+        one without that label (D10: a closed defect is history). Optional
+        capability."""
+        issue = self.client.issue(issue_key, fields="summary,status,issuetype,subtasks,labels")
         f = issue.fields
         out = {"key": issue.key, "summary": f.summary,
                "type": getattr(f.issuetype, "name", ""), "deleted": False, "reason": ""}
@@ -919,6 +962,8 @@ class JiraClient:
             out["reason"] = f"not closed (status {f.status.name})"
         elif getattr(f, "subtasks", None):
             out["reason"] = "has sub-tasks"
+        elif required_label and required_label not in (getattr(f, "labels", None) or []):
+            out["reason"] = f"no '{required_label}' label"
         else:
             issue.delete()
             out["deleted"] = True

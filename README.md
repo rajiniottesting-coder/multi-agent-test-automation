@@ -320,7 +320,7 @@ multi-agent-test-automation/
 │   ├── local_report.py              # The same reports for a test run on your machine
 │   ├── pull_reports.py              # Copy the published reports into a local folder
 │   ├── prune_allure_history.py      # Allure history: only the tests the run reported
-│   ├── delete_issues.py             # Delete closed tracker issues by key (guarded)
+│   ├── delete_issues.py             # Delete closed throw-away (test-data) issues by key
 │
 ├── .github/workflows/
 │   ├── agent0_impact.yml            # Scan, reconcile, PR code change, nightly drift
@@ -333,7 +333,7 @@ multi-agent-test-automation/
 │   ├── inventory_health.yml         # Nightly selector check against the live app
 │   ├── pipeline_health.yml          # Health check: failing scheduled workflows, credentials
 │   ├── reports.yml                  # After each run on main: results store + GitHub Pages site
-│   ├── delete_issues.yml            # By hand: delete closed tracker issues by key
+│   ├── delete_issues.yml            # By hand: delete closed throw-away issues by key
 │   ├── story_done_on_merge.yml      # Only a human merge moves a story to Done; then its notes addition
 │   └── sweeper.yml                  # Re-triggers stalled PRs
 │

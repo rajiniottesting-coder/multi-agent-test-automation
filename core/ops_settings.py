@@ -72,6 +72,15 @@ DEFAULTS: dict = {
         # Feature files that cannot carry `# JIRA:` markers (the reserved
         # reference files) -> the story they belong to: {path: story key}.
         "trace_owners": {},
+        # D9: what a closed defect was - a label a person adds when closing
+        # it, else the tracker's resolution. Categories: app (a bug in the
+        # application), test (the test was wrong), environment, duplicate,
+        # not-a-bug. The density counts app defects and the ones nobody
+        # categorised; the rest are listed apart.
+        "close_categories": {"defect-app": "app", "defect-test": "test",
+                             "defect-env": "environment", "defect-duplicate": "duplicate"},
+        "resolution_categories": {"Duplicate": "duplicate", "Won't Do": "not-a-bug",
+                                  "Cannot Reproduce": "not-a-bug"},
     },
     # The application health probe (core/app_probe.py): asked by Agent 4 after
     # a run with failures, before anything is retried or raised as a defect.
@@ -160,6 +169,30 @@ DEFAULTS: dict = {
         "story_trend": True,
         "story_trend_points": 10,
         "story_trend_min_points": 2,
+        # D7: the defect history kept on the store (core/defect_ledger.py) -
+        # every defect's last known state, so the trend and density survive
+        # a defect deleted from the tracker. A closed defect is dropped this
+        # many days after it was closed (0: kept for ever).
+        "defect_history": True,
+        "defect_keep_days": 730,
+        # Keys dropped from the history at once: a throw-away issue deleted
+        # before it carried cleanup.delete_label stays as 'deleted' otherwise.
+        "defect_history_forget": [],
+        # D8: the module of a defect: its tracker component when it has one;
+        # else the module whose feature-file patterns match its test's (or
+        # its test case's) feature file; else the feature file's name.
+        # {module name: [feature file patterns]}.
+        "modules": {},
+        # RP12: the density is a module's product defects per this many
+        # scenarios.
+        "density_per": 10,
+    },
+    # D10: scripts/delete_issues.py deletes only closed issues carrying this
+    # label - throw-away issues (validation runs, dummy defects). A real
+    # defect is closed, never deleted: it is the defect trend's history. The
+    # defect history leaves issues with this label out. "" turns it off.
+    "cleanup": {
+        "delete_label": "test-data",
     },
 }
 

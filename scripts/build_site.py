@@ -7,7 +7,11 @@ Writes into --out:
   index.html          the latest run: what failed, flaked or could not be judged,
                       with the error, story and test case, and the run's link
   history.html        the dashboard: trend, durations, flaky tests, breakdowns,
-                      open defects (Plotly, from a CDN)
+                      open defects, and the defect history (RP12): defects
+                      opened and closed per day, time to close, density per
+                      module, per sprint - from the store's defect history
+                      (core/defect_ledger.py), so a defect closed or deleted
+                      in the tracker stays counted (Plotly, from a CDN)
   traceability.html   story -> acceptance criterion -> test case -> scenario ->
                       last result -> defect
   summary.pdf         the management summary (ReportLab); a dated copy is kept
@@ -153,6 +157,7 @@ def collect(store: Path, features_dir: Path, now: _dt.datetime, with_tracker: bo
             rows = traceability(tracker, features_dir, latest, defects)
         except Exception as e:                                     # noqa: BLE001
             logger.warning("Traceability matrix not built: %s", e)
+    history = defect_history(store, tracker, features_dir, sprint, now)
     return {
         "generated": now.strftime("%Y-%m-%d %H:%M"), "window_days": s.get("window_days"),
         "kpis": rd.kpis(runs, results), "trend": rd.trend(runs),
@@ -166,7 +171,55 @@ def collect(store: Path, features_dir: Path, now: _dt.datetime, with_tracker: bo
         "traceability_summary": rd.traceability_summary(rows) if rows is not None else None,
         "unlinked_defects": (rd.unlinked_defects(defects, rows)
                              if rows is not None and defects is not None else None),
+        "defect_history": defect_figures(history, now, int(s.get("window_days") or 30)),
     }
+
+
+def defect_figures(history: dict, now: _dt.datetime, window_days: int) -> dict | None:
+    """RP12: the window's defect trend, totals and density per module, and
+    one row per recorded sprint - None while the history is empty."""
+    from core import defect_ledger as dl
+    recs = history["records"]
+    if not recs:
+        return None
+    end = now.astimezone(_dt.timezone.utc).date()
+    start = end - _dt.timedelta(days=window_days - 1)
+    a, b = start.isoformat(), end.isoformat()
+    return {"summary": dl.summary(recs, a, b), "trend": dl.trend(recs, start, end),
+            "modules": dl.by_module(recs, a, b, history["scenarios"], history["per"]),
+            "per": history["per"], "recorded": len(recs), "sync": history["synced"],
+            "sprints": [{k: sp.get(k) for k in ("name", "start", "end", "opened", "closed",
+                                                 "open", "mean_days_to_close", "reopened",
+                                                 "written")}
+                        | {"densest": next((m for m in sp.get("modules") or []
+                                            if m.get("density")), None)}
+                        for sp in history["sprints"]]}
+
+
+def defect_history(store: Path, tracker, features_dir: Path, sprint: dict | None,
+                   now: _dt.datetime) -> dict:
+    """D7: bring the store's defect history up to date (when the tracker can
+    be read) and record the active sprint's figures. The history is read
+    from the store either way, so the pages show it without the tracker."""
+    from core import defect_ledger as dl
+    from core.ops_settings import section
+    s = section("reporting")
+    synced = None
+    if tracker is not None:
+        try:
+            synced = dl.sync(store, tracker, features_dir, now)
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning("Defect history not updated: %s", e)
+    recs = dl.records(store)
+    scenarios = dl.scenarios_per_module(features_dir, s.get("modules") or {})
+    per = int(s.get("density_per") or 10)
+    if tracker is not None and recs:
+        try:
+            dl.sprint_snapshot(store, sprint, recs, scenarios, per, now)
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning("Sprint defect record not written: %s", e)
+    return {"synced": synced, "records": recs, "scenarios": scenarios, "per": per,
+            "sprints": dl.read_sprints(store)}
 
 
 # ── HTML ────────────────────────────────────────────────────────────────
@@ -323,7 +376,8 @@ def dashboard_html(data: dict) -> str:
             + f"<div class='card'><h2>Flaky tests</h2>{flaky}</div>"
             + f"<div class='card'><h2>By feature file (latest result of each test)</h2>{bd(data['by_file'])}</div>"
             + f"<div class='card'><h2>By story</h2>{bd(data['by_story'])}</div>"
-            + f"<div class='card'><h2>Open defects</h2>{defects}</div></main>")
+            + f"<div class='card'><h2>Open defects</h2>{defects}</div>"
+            + defect_history_html(data) + "</main>")
     t = data["trend"]
     ids = [str(r) for r in t["run"]]
     series = [{"type": "bar", "name": k, "x": ids, "y": t[k], "marker": {"color": c},
@@ -343,8 +397,66 @@ def dashboard_html(data: dict) -> str:
               + (f"Plotly.newPlot('defects-age',[{{type:'bar',x:{json.dumps([a for a, _ in age])},"
                  f"y:{json.dumps([n for _, n in age])},marker:{{color:'#c62828'}}}}],"
                  f"Object.assign({{}},L,{{height:220}}),{{displayModeBar:false}});" if age else "")
+              + _defect_trend_js(data)
               + "}</script>")
     return _page("Test history", body + script)
+
+
+def defect_history_html(data: dict) -> str:
+    """RP12: the defect trend, totals, density per module and per sprint."""
+    h = data.get("defect_history")
+    if not h:
+        return ("<div class='card'><h2>Defects over time</h2><p class='muted'>No defect "
+                "history yet: it starts with the first build that reads the tracker.</p></div>")
+    sm = h["summary"]
+    cards = [(sm["opened"], "defects opened"), (sm["closed"], "closed"),
+             (sm["open"], "open now"),
+             ("-" if sm["mean_days_to_close"] is None else sm["mean_days_to_close"],
+              "mean days to close"),
+             (sm["reopened"], "reopened"), (sm["deleted"], "deleted from the tracker")]
+    kpi = "".join(f"<div class='card kpi'><b>{_e(v)}</b><span>{_e(t)}</span></div>"
+                  for v, t in cards)
+    cats = ", ".join(f"{n} {c}" for c, n in sm["closed_by_category"]) or "none closed"
+    who = f"{sm['by_pipeline']} raised by the pipeline, {sm['by_person']} by a person"
+    mods = _table(["Module", "Scenarios", "Opened", "Product defects", "Closed", "Open now",
+                   f"Density (per {h['per']} scenarios)"],
+                  [[_e(r["module"]), r["scenarios"], r["opened"], r["product"], r["closed"],
+                    r["open"], "-" if r["density"] is None else r["density"]]
+                   for r in h["modules"]])
+    sprints = _table(["Sprint", "From", "To", "Opened", "Closed", "Open at the record",
+                      "Mean days to close", "Densest module"],
+                     [[_e(sp["name"]), _e(sp["start"]), _e(sp["end"]), _e(sp["opened"]),
+                       _e(sp["closed"]), _e(sp["open"]),
+                       _e("-" if sp["mean_days_to_close"] is None else sp["mean_days_to_close"]),
+                       _e(f"{sp['densest']['module']} ({sp['densest']['density']})"
+                          if sp.get("densest") else "-")] for sp in h["sprints"]]) \
+        if h["sprints"] else "<p class='muted'>No sprint recorded yet.</p>"
+    return (f"<div class='card'><h2>Defects over time (last {_e(data['window_days'])} days)</h2>"
+            f"<div class='grid'>{kpi}</div>"
+            f"<p class='muted'>Opened: {_e(who)}. Closed as: {_e(cats)}. Kept on the results "
+            f"store ({_e(h['recorded'])} defects), so a defect closed or deleted in the tracker "
+            f"stays in these figures.</p><div id='defect-trend'></div></div>"
+            f"<div class='card'><h2>Defect density by module</h2>{mods}<p class='muted'>Product "
+            f"defects opened in the window per {_e(h['per'])} scenarios of the module. A defect "
+            f"closed as test, environment, duplicate or not-a-bug is left out; one not yet "
+            f"categorised is counted. Module: the defect's tracker component, else its test's "
+            f"feature file (<code>reporting.modules</code>).</p></div>"
+            f"<div class='card'><h2>Defects per sprint</h2>{sprints}</div>")
+
+
+def _defect_trend_js(data: dict) -> str:
+    h = data.get("defect_history")
+    if not h:
+        return ""
+    t = h["trend"]
+    series = [{"type": "bar", "name": "opened", "x": t["days"], "y": t["opened"],
+               "marker": {"color": COLORS["failed"]}},
+              {"type": "bar", "name": "closed", "x": t["days"], "y": t["closed"],
+               "marker": {"color": COLORS["passed"]}},
+              {"type": "scatter", "mode": "lines", "name": "open", "x": t["days"],
+               "y": t["open"], "line": {"color": "#1f4e8c", "width": 2}}]
+    return (f"Plotly.newPlot('defect-trend',{json.dumps(series)},Object.assign({{}},L,"
+            f"{{barmode:'group',height:300,xaxis:{{type:'date'}}}}),{{displayModeBar:false}});")
 
 
 def _test_case_cell(r: dict) -> str:
@@ -472,6 +584,30 @@ def summary_pdf(data: dict, path: Path, sprint_end: bool) -> bool:
         flow += [Paragraph("Open defects by age", st["Heading2"]),
                  Table([["Age", "Defects"]] + [[a, str(n)] for a, n in data["defects"]["by_age"]],
                        colWidths=[6 * cm, 4 * cm], style=style)]
+    h = data.get("defect_history")
+    if h:
+        sm = h["summary"]
+        flow += [Paragraph(f"Defects, last {data['window_days']} days", st["Heading2"]),
+                 Table([["Opened", "Closed", "Open now", "Mean days to close", "Reopened"],
+                        [str(sm["opened"]), str(sm["closed"]), str(sm["open"]),
+                         "-" if sm["mean_days_to_close"] is None else str(sm["mean_days_to_close"]),
+                         str(sm["reopened"])]], style=style),
+                 Spacer(1, 0.3 * cm)]
+        this = next((sp for sp in h["sprints"] if sprint and sp["name"] == sprint.get("name")),
+                    None)
+        if this:
+            flow += [Paragraph(f"{html.escape(this['name'])} ({this['start']} to {this['end']}): "
+                               f"{this['opened']} defects opened, {this['closed']} closed, "
+                               f"{this['open']} open", st["Normal"]), Spacer(1, 0.3 * cm)]
+        mods = [r for r in h["modules"] if r["opened"] or r["open"]][:8]
+        if mods:
+            flow += [Paragraph(f"Density by module (product defects per {h['per']} scenarios)",
+                               st["Heading3"]),
+                     Table([["Module", "Scenarios", "Opened", "Product", "Open", "Density"]]
+                           + [[r["module"], str(r["scenarios"]), str(r["opened"]),
+                               str(r["product"]), str(r["open"]),
+                               "-" if r["density"] is None else str(r["density"])] for r in mods],
+                           style=style)]
     failing = [r for r in data["by_file"] if r["failed"]]
     flow += [Paragraph("Risks", st["Heading2"])]
     risks = [f"{r['name']}: {r['failed']} failing of {r['tests']}" for r in failing]

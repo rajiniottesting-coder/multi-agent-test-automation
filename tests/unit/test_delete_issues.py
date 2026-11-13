@@ -24,8 +24,9 @@ class Tracker:
     def __init__(self):
         self.asked = []
 
-    def delete_closed_issue(self, key):
+    def delete_closed_issue(self, key, required_label=None):
         self.asked.append(key)
+        self.label = required_label
         if key == "PRJ-2":
             return {"key": key, "summary": "open", "deleted": False, "reason": "not closed"}
         return {"key": key, "summary": "s", "type": "Bug", "deleted": True, "reason": ""}
@@ -58,12 +59,13 @@ def test_each_key_is_reported_and_a_kept_one_fails_the_run(tracker, capsys):
     assert di.main(["--keys", "PRJ-1", "--confirm", "DELETE"]) == 0
 
 
-def _jira(category, subtasks=()):
+def _jira(category, subtasks=(), labels=()):
     from integrations.jira_client import JiraClient
     c = JiraClient.__new__(JiraClient)
     deleted = []
     issue = SimpleNamespace(key="PRJ-9", delete=lambda: deleted.append("PRJ-9"), fields=SimpleNamespace(
         summary="s", issuetype=SimpleNamespace(name="Bug"), subtasks=list(subtasks),
+        labels=list(labels),
         status=SimpleNamespace(name="X", statusCategory=SimpleNamespace(key=category))))
     c._client = SimpleNamespace(issue=lambda key, fields=None: issue)
     return c, deleted
@@ -86,3 +88,32 @@ def test_the_workflow_runs_by_hand_only_and_fails_on_a_kept_key():
     step = wf["jobs"]["delete"]["steps"][-1]
     assert step["shell"] == "bash" and "--confirm \"$CONFIRM\"" in step["run"]
     assert "${{" not in step["run"]                 # inputs reach it through env only
+
+
+# ── D10: only throw-away issues (13 Nov 2026) ────────────────────────────
+
+def test_jira_keeps_a_closed_issue_without_the_throw_away_label():
+    c, deleted = _jira("done", labels=["ai-defect"])
+    r = c.delete_closed_issue("PRJ-9", required_label="test-data")
+    assert r["deleted"] is False and r["reason"] == "no 'test-data' label" and deleted == []
+    c, deleted = _jira("done", labels=["ai-defect", "test-data"])
+    assert c.delete_closed_issue("PRJ-9", required_label="test-data")["deleted"] is True
+    c, deleted = _jira("indeterminate", labels=["test-data"])        # still closed only
+    assert c.delete_closed_issue("PRJ-9", required_label="test-data")["deleted"] is False
+
+
+def test_the_script_asks_for_the_configured_label(tracker, capsys, monkeypatch):
+    assert di.main(["--keys", "PRJ-1", "--confirm", "DELETE"]) == 0
+    assert tracker.label == "test-data"                 # cleanup.delete_label
+    tracker.delete_closed_issue = lambda key, required_label=None: {
+        "key": key, "summary": "s", "deleted": False, "reason": f"no '{required_label}' label"}
+    assert di.main(["--keys", "PRJ-5", "--confirm", "DELETE"]) == 1
+    assert "a real defect is closed, not deleted" in capsys.readouterr().out
+
+
+def test_the_label_can_be_switched_off(tracker, monkeypatch):
+    import core.ops_settings as ops
+    real = ops.section
+    monkeypatch.setattr(ops, "section", lambda n: {"delete_label": ""} if n == "cleanup" else real(n))
+    assert di.main(["--keys", "PRJ-1", "--confirm", "DELETE"]) == 0
+    assert tracker.label is None

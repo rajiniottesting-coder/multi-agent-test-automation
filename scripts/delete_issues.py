@@ -1,5 +1,4 @@
-"""Delete closed tracker issues for good, by key - throw-away validation
-issues, or defects the pipeline raised and closed.
+"""Delete closed throw-away tracker issues for good, by key.
 
     python -m scripts.delete_issues --keys PRJ-1,PRJ-2 --confirm DELETE
 
@@ -8,6 +7,12 @@ tracker's credentials in .env). Guards, each one on every issue:
   - nothing happens without `--confirm DELETE`;
   - an issue not in the done category is never deleted (close it first);
   - an issue with sub-tasks is never deleted;
+  - an issue without the `cleanup.delete_label` label ("test-data") is never
+    deleted (D10). A real defect is closed, not deleted: it is the history
+    the defect trend and density are built from (13 Nov 2026: 24 closed
+    defects the nightly run had raised were deleted, and their history with
+    them). Give the label to throw-away issues only - validation stories,
+    dummy defects;
   - at most `--max` keys (default 50) in one run.
 Each key is reported (deleted, or why not). Exit 1 when any key was not
 deleted, so a refused key is never mistaken for done. Deletion cannot be
@@ -54,10 +59,12 @@ def main(argv=None) -> int:
     if delete is None:
         print("Nothing deleted: this tracker has no delete_closed_issue capability.")
         return 1
+    from core.ops_settings import section
+    label = (section("cleanup").get("delete_label") or "").strip() or None
     failed = 0
     for key in keys:
         try:
-            r = delete(key)
+            r = delete(key, required_label=label) if label else delete(key)
         except Exception as e:                                     # noqa: BLE001
             from core.redaction import error_text
             r = {"key": key, "summary": "", "deleted": False, "reason": error_text(e)}
@@ -65,7 +72,11 @@ def main(argv=None) -> int:
             print(f"deleted  {r['key']}  {r.get('type', '')}: {r['summary']}")
         else:
             failed += 1
-            print(f"KEPT     {r['key']}  - {r['reason']}")
+            why = r["reason"]
+            if label and why == f"no '{label}' label":
+                why += (" - a real defect is closed, not deleted (it is the defect "
+                        "trend's history); give the label to throw-away issues only")
+            print(f"KEPT     {r['key']}  - {why}")
     print(f"{len(keys) - failed} deleted, {failed} kept.")
     return 1 if failed else 0
 
