@@ -2051,7 +2051,9 @@ store (`core/defect_ledger.py`):
   labelled `cleanup.delete_label` (throw-away) are left out. A closed defect
   leaves the history `reporting.defect_keep_days` (730) after it closed; the
   results' `keep_days` does not touch it. A tracker that cannot be read
-  leaves the history as it is.
+  leaves the history as it is. A throw-away issue deleted before it carried
+  the `test-data` label stays as deleted: list its key under
+  `reporting.defect_history_forget` and the next run drops it.
 - `sprints/<id>-<name>.json` - the active sprint's figures (opened, closed,
   open, mean days to close, density per module), rewritten on each run while
   the sprint is active; the last one stays as the sprint's record.

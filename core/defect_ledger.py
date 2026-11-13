@@ -20,7 +20,9 @@ WHAT
         recorded as deleted on that day - its history stays;
       - an issue labelled `cleanup.delete_label` (throw-away) is left out;
       - a closed defect leaves the history `reporting.defect_keep_days`
-        after it closed (0: never).
+        after it closed (0: never);
+      - a key in `reporting.defect_history_forget` leaves it at once (a
+        throw-away issue deleted before it was labelled as one).
     A tracker that cannot be read leaves the history as it is.
 
     `sprints/<id>-<name>.json`: the active sprint's figures, rewritten on
@@ -224,7 +226,7 @@ def sync(store: Path, tracker, features_dir: Path, now: _dt.datetime) -> dict | 
     patterns = s_rep.get("modules") or {}
     today = now.astimezone(_dt.timezone.utc).isoformat(timespec="seconds")
     counts = {"read": len(changed), "new": 0, "updated": 0, "reopened": 0, "deleted": 0,
-              "left_out": 0, "dropped": 0}
+              "left_out": 0, "dropped": 0, "forgotten": 0}
     defects = ledger["defects"]
     seen = set()
     for issue in changed + (still_open or []):
@@ -247,6 +249,11 @@ def sync(store: Path, tracker, features_dir: Path, now: _dt.datetime) -> dict | 
             rec.update(open=False, deleted=today, status="deleted from the tracker",
                        closed=rec.get("closed") or today)
             counts["deleted"] += 1
+    # Keys a person listed to forget: a throw-away issue deleted before it
+    # carried the throw-away label stays as 'deleted' otherwise.
+    for key in s_rep.get("defect_history_forget") or []:
+        if defects.pop(str(key).strip().upper(), None) is not None:
+            counts["forgotten"] += 1
     keep = int(s_rep.get("defect_keep_days") or 0)
     if keep > 0:
         cutoff = (now - _dt.timedelta(days=keep)).astimezone(_dt.timezone.utc).isoformat()
@@ -258,7 +265,8 @@ def sync(store: Path, tracker, features_dir: Path, now: _dt.datetime) -> dict | 
     write(store, ledger)
     logger.info("Defect history: %(read)d read, %(new)d new, %(updated)d updated, "
                 "%(reopened)d reopened, %(deleted)d deleted from the tracker, "
-                "%(left_out)d throw-away left out, %(dropped)d past keep_days dropped", counts)
+                "%(left_out)d throw-away left out, %(dropped)d past keep_days dropped, "
+                "%(forgotten)d forgotten", counts)
     return counts
 
 

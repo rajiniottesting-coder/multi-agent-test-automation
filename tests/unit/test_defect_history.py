@@ -264,3 +264,14 @@ def test_the_site_reads_the_history_without_the_tracker(tmp_path):
     h = bs.defect_history(tmp_path, None, Path("features"), None, NOW)
     assert h["synced"] is None and len(h["records"]) == 3
     assert not (tmp_path / dl.SPRINTS_DIR).exists()            # no tracker: no sprint record
+
+
+def test_a_listed_key_is_forgotten(tmp_path, features, settings, monkeypatch):
+    import core.ops_settings as ops
+    t = Tracker([_issue("PRJ-1"), _issue("PRJ-2")])
+    dl.sync(tmp_path, t, features, NOW)
+    real = ops.section
+    monkeypatch.setattr(ops, "section", lambda n: {**real(n), "defect_history_forget": ["prj-1"]}
+                        if n == "reporting" else real(n))
+    assert dl.sync(tmp_path, t, features, NOW)["forgotten"] == 1
+    assert [r["key"] for r in dl.records(tmp_path)] == ["PRJ-2"]

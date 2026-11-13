@@ -169,6 +169,7 @@ reporting:
   # trend and density survive a defect deleted from the tracker.
   defect_history: true
   defect_keep_days: 730              # a closed defect leaves the history this long after closing (0 = never)
+  defect_history_forget: []          # keys to drop at once: throw-away issues deleted before they were labelled test-data
   # D8: a defect's module - its tracker component when it has one, else the
   # module whose patterns match its feature file, else the feature file's name.
   modules:

@@ -175,6 +175,9 @@ DEFAULTS: dict = {
         # many days after it was closed (0: kept for ever).
         "defect_history": True,
         "defect_keep_days": 730,
+        # Keys dropped from the history at once: a throw-away issue deleted
+        # before it carried cleanup.delete_label stays as 'deleted' otherwise.
+        "defect_history_forget": [],
         # D8: the module of a defect: its tracker component when it has one;
         # else the module whose feature-file patterns match its test's (or
         # its test case's) feature file; else the feature file's name.
