@@ -410,10 +410,7 @@ def test_the_site_is_built_from_the_store(tmp_path, monkeypatch):
     assert data["kpis"]["runs"] in (0, 1, 2) and data["sprint"]["name"] == "Sprint 9"
     pytest.importorskip("reportlab")
     assert (out / "summary.pdf").read_bytes().startswith(b"%PDF")
-    assert [p.name for p in (store / "pdf").iterdir()] == [
-        dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
-        + ("-sprint-end" if bs.is_sprint_last_day(data["sprint"], dt.datetime.now(dt.timezone.utc)) else "")
-        + ".pdf"]
+    assert not (store / "pdf").exists()        # pdf_keep 0: the latest is published only
 
 
 def test_the_site_is_built_without_a_tracker(tmp_path):
@@ -485,7 +482,8 @@ def test_active_sprint():
 def test_reporting_settings_have_defaults():
     from core.ops_settings import section
     s = section("reporting")
-    assert s["store_branch"] and s["window_days"] > 0 and s["pdf_keep"] > 0
+    assert s["store_branch"] and s["window_days"] > 0 and s["pdf_keep"] >= 0
+    assert s["keep_days"] == 0 or s["keep_days"] >= s["window_days"]
     assert s["default_severity"] in ("blocker", "critical", "normal", "minor", "trivial")
 
 
