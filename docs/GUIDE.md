@@ -1725,6 +1725,31 @@ Selection rules come from `config.yaml`'s `agents.<name>.selection` block.
 | Sweeper | weekdays hourly, 10:05–19:05 | `dry_run` input |
 | Story Done on merge | on PR closed with `merged == true`: Done, then the notes addition | — |
 
+### Scheduled runs that do not start (X8)
+
+GitHub may delay a scheduled run by hours or drop it, most on a quiet
+repository - on 10-12 Nov 2026 Agent 1's schedule asked for about 20 runs a
+weekday and GitHub started 3, with gaps of 17 hours. A run that never starts
+fails nothing, so the pipeline health check (F-23) watches the starts
+themselves, per scheduled workflow, over `pipeline_health.schedule_window_hours`:
+
+- **none started** although the schedule asked for at least
+  `schedule_min_expected`: alert `workflow-not-starting:<file>`;
+- **fewer than `schedule_min_share`** (default 25%) of the runs asked for
+  started: alert `workflow-starting-rarely:<file>`.
+
+Both close by themselves when the starts come back. The hand-offs and *Run
+workflow* keep working meanwhile. If the alert persists, start the critical
+workflows from outside GitHub - the same web request as the approval rule
+below, on a schedule. In Jira: *Project settings → Automation → Create rule* -
+trigger **Scheduled** (for example every 30 minutes, weekdays, working hours)
+→ action **Send web request**: `POST https://api.github.com/repos/<owner>/<repo>/dispatches`,
+headers `Accept: application/vnd.github+json` and `Authorization: Bearer <token>`,
+body `{"event_type": "agent1_analyst"}` (a second rule, or a second action,
+with `agent2_coder`). Any outside scheduler that can send that request works
+the same way. The token stays in the rule, never in the repository; a started
+run with nothing to do ends in seconds and spends nothing.
+
 ### Hand-off between agents (`core/handoff.py`, settings `handoff`)
 
 GitHub drops or delays most scheduled runs of a quiet repository: on 3 Nov 2026
@@ -2179,7 +2204,13 @@ Its summary (`scripts/inventory_health_report.py`) then reads:
 | ✅ Inventory healthy | every selector read as expected: one element, or what its declaration states (removed, conditional, planned, a family). The verifier's summary counts the declared readings apart and names each key declared removed and measured gone | nothing |
 | ❌ Selector drift detected | stale or ambiguous selectors on an application that is up (or the check could not run) | fix the inventory by hand, as the summary says |
 | ⚠️ Login failed — inventory NOT checked | the verifier could not sign in; the check found the application up | check `APP_USER_REGISTERED` / `APP_PASSWORD` and the login form's selectors |
-| ⚠️ The application is not up — inventory NOT checked | the check found the application not serving its own pages; the summary says what the browser was shown | **change nothing** - neither drift nor credentials; the next night checks again |
+| ⚠️ The application is not up — inventory NOT checked | the check found the application not serving its own pages; the summary says what the browser was shown. The run is **not** red: the pipeline health issue gets the alert `application-unavailable-inventory-health` (X9), which the next check with the application up closes. Red only when the alert cannot be posted | **change nothing** - neither drift nor credentials; the next night checks again |
+
+When the first reading did not pass and the check found the application up,
+the verifier runs **once more** (X9: on 12 Nov 2026 a login form slow to render
+read as a failed login, and the re-run by hand was green). The summary is the
+second reading, with a note quoting what the first one found; both outputs are
+in the run's artifact.
 
 ### Every section of the inventory JSON, and what to do with it
 
@@ -2659,9 +2690,11 @@ It fails only when the browser cannot start either - re-run the job later.
 The verifier could not sign in, so it refused to report: every page would have
 redirected to the login screen and every selector would have read as stale.
 Usually the application was slow or unavailable (12 Nov 2026: the login form
-did not appear within 15 s; the re-run passed). Re-run the workflow; if it
-fails again, check the application and the `APP_*` credentials. Backlog X9
-makes this an app-unavailable alert instead of a red run.
+did not appear within 15 s; the re-run passed). The workflow now verifies once
+more by itself when the application is up (X9), so this headline means the
+second reading failed too: check the application and the `APP_*` credentials.
+An application that is not up is an alert on the pipeline health issue, not a
+red run.
 
 ### `LLM returned None — could not produce valid <Schema>`
 

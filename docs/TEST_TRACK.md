@@ -27,7 +27,7 @@ still open, and the rows each new change adds.
 
 ## Open checks
 
-29 rows: 25 open or partly proven (⬜), 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌); with the 254 proven, 283.
+31 rows: 27 open or partly proven (⬜), 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌); with the 254 proven, 285.
 
 Most of these wait for an event that cannot be produced on demand (the model
 taking a particular path, a provider error that quotes a secret); some are not
@@ -64,3 +64,5 @@ possible on the current application. Each names what it is waiting for.
 | E173 | #465 RP11 | The Pages link after the next recorded run | Opens on *Latest run*: the run's counts, link and duration; each failed, flaky or not-judged test with its error line, story and test case; *History* holds the charts; the Allure link opens the published report | ⬜ | |
 | E174 | #465 RP9 | A folder cloned from `metrics-data` and pulled after the next Reports run | `latest/index.html`, `history.html`, `traceability.html`, `summary.pdf` and `data.json` updated; `git pull --ff-only` succeeds; the Allure link points at Pages | ⬜ | |
 | E175 | #465 Bars per run | The History page after the next Reports run | Runs 42950342049 and 42950372112 (both started 11 Nov 03:05) are two bars of 26, not one of 52; `zz_validation_window_j.feature` (no longer in the suite) is not in *By feature file* or *By story*; the tests card counts the latest run (26) | ⬜ | Found on the first live store (Reports run 43414618346, 13 Nov) |
+| E176 | #466 X8 | The next pipeline health check (or *Run workflow* with `dry_run`) | For each scheduled workflow GitHub starts in under 25% of its slots over 24 hours (Agent 1 and Agent 2 on 10-12 Nov), one `workflow-starting-rarely:<file>` alert naming started and asked-for counts; it closes once the share is back; `workflow-not-starting` unchanged | ⬜ | |
+| E177 | #466 X9 | Inventory Health by hand (and the next night) | Green when healthy, as before; after a first reading that fails with the application up, a second reading and the note quoting the first; with the application down (not reproducible on demand - unit-tested), the alert `application-unavailable-inventory-health` on the health issue and a green run | ⬜ | |

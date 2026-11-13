@@ -82,8 +82,8 @@ before a real project; P2 and P3 before a wider rollout.
 
 | ID | Item | Today (gap) | Priority | Cost | Was | Status |
 |---|---|---|---|---|---|---|
-| X8 | Alert when a scheduled run does not start, or trigger the critical schedules from outside GitHub | 11-12 Nov: no scheduled Agent 1 run for 17 hours | P1 | A | | Open |
-| X9 | Inventory Health probes the application and retries once; an unreachable application raises an app-unavailable alert instead of a red run | 12 Nov 10:03 UTC: red because the login form was slow; the re-run was green | P2 | A | | Open |
+| X8 | Alert when a scheduled run does not start, or trigger the critical schedules from outside GitHub | 11-12 Nov: no scheduled Agent 1 run for 17 hours | P1 | A | | Done (#466) |
+| X9 | Inventory Health probes the application and retries once; an unreachable application raises an app-unavailable alert instead of a red run | 12 Nov 10:03 UTC: red because the login form was slow; the re-run was green | P2 | A | | Done (#466) |
 
 ### Coverage
 
