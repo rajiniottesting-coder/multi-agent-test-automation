@@ -905,6 +905,25 @@ class JiraClient:
         logger.info(f"Created {issue_type}: {issue.key} — {summary}")
         return issue.key
 
+    def delete_closed_issue(self, issue_key: str) -> dict:
+        """Delete one issue for good - only when it is in the done category
+        (scripts/delete_issues.py). Returns {"key", "summary", "type",
+        "deleted": bool, "reason"}; never deletes an open issue, and never
+        an issue with sub-tasks. Optional capability."""
+        issue = self.client.issue(issue_key, fields="summary,status,issuetype,subtasks")
+        f = issue.fields
+        out = {"key": issue.key, "summary": f.summary,
+               "type": getattr(f.issuetype, "name", ""), "deleted": False, "reason": ""}
+        category = getattr(getattr(f.status, "statusCategory", None), "key", "")
+        if category != "done":
+            out["reason"] = f"not closed (status {f.status.name})"
+        elif getattr(f, "subtasks", None):
+            out["reason"] = "has sub-tasks"
+        else:
+            issue.delete()
+            out["deleted"] = True
+        return out
+
     def add_attachment(self, issue_key: str, path, name: Optional[str] = None) -> str:
         """Attach a file to the issue and return the wiki markup that shows it
         in a comment or description: an image inline (`!name|thumbnail!`),
