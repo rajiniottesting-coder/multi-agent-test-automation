@@ -212,7 +212,7 @@ Attaching Agent 0 to another application: [docs/REUSE_FOR_NEW_PROJECT.md → Att
 | **Design pattern** | Page Object Model | Selectors resolved by key from the inventory (`self.sel("key")`) |
 | **Tracker** | Jira Cloud (adapter behind the `Tracker` Protocol) | Stories, Test Cases, labels, Impact Reviews |
 | **Code host** | GitHub (adapter behind the `RepoHost` Protocol) | Branches, PRs, PR-based human gates |
-| **CI** | GitHub Actions (12 workflows) | Agents 0–5, Agent 2's review fix, inventory health, pipeline health, Done on merge, sweeper, artifact cleanup, reports |
+| **CI** | GitHub Actions (13 workflows) | Agents 0–5, Agent 2's review fix, inventory health, pipeline health, Done on merge, sweeper, artifact cleanup, reports, delete closed issues |
 | **Reporting** | Allure, pytest-html, JUnit XML, Plotly, ReportLab | Reports on the PR and in Jira; a results history, dashboard, traceability matrix and PDF summary on GitHub Pages |
 
 Prompts are Markdown files under `prompts/`, filled by plain string replacement — versioned and reviewable in a PR.
@@ -320,6 +320,7 @@ multi-agent-test-automation/
 │   ├── local_report.py              # The same reports for a test run on your machine
 │   ├── pull_reports.py              # Copy the published reports into a local folder
 │   ├── prune_allure_history.py      # Allure history: only the tests the run reported
+│   ├── delete_issues.py             # Delete closed tracker issues by key (guarded)
 │
 ├── .github/workflows/
 │   ├── agent0_impact.yml            # Scan, reconcile, PR code change, nightly drift
@@ -332,6 +333,7 @@ multi-agent-test-automation/
 │   ├── inventory_health.yml         # Nightly selector check against the live app
 │   ├── pipeline_health.yml          # Health check: failing scheduled workflows, credentials
 │   ├── reports.yml                  # After each run on main: results store + GitHub Pages site
+│   ├── delete_issues.yml            # By hand: delete closed tracker issues by key
 │   ├── story_done_on_merge.yml      # Only a human merge moves a story to Done; then its notes addition
 │   └── sweeper.yml                  # Re-triggers stalled PRs
 │

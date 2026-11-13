@@ -77,6 +77,9 @@ an adapter written before them stays valid.
                                               defects, whoever raised them
     get_active_sprint() -> {"id","name","start","end"}
                                               the sprint the PDF summary covers
+    delete_closed_issue(issue_key) -> {"key","summary","type","deleted","reason"}
+                                              delete one CLOSED issue for good
+                                              (scripts/delete_issues.py)
     add_attachment(issue_key, path, name=None) -> markup
                                               attach a file; the markup shows it
                                               in a comment (the sprint summary's

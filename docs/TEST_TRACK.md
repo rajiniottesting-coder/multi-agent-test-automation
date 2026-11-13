@@ -27,7 +27,7 @@ still open, and the rows each new change adds.
 
 ## Open checks
 
-32 rows: 3 proven on 13 Nov evening (✅, removed in the next evidence PR), 25 open or partly proven (⬜), 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌); with the 264 proven before (their rows are in the history of #470 and #473), 267 of 296.
+33 rows: 3 proven on 13 Nov evening (✅, removed in the next evidence PR), 26 open or partly proven (⬜), 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌); with the 264 proven before (their rows are in the history of #470 and #473), 267 of 297.
 
 Most of these wait for an event that cannot be produced on demand (the model
 taking a particular path, a provider error that quotes a secret); some are not
@@ -67,3 +67,4 @@ possible on the current application. Each names what it is waiting for.
 | E186 | #474 Local junit | On the owner's machine: `pytest tests/step_defs/`, then `python -m scripts.local_report --open` | `reports/junit.xml` is written without `--junit-xml`, and the local report opens on that run; `pytest tests/unit/` writes no junit.xml | ⬜ | Found 13 Nov on the owner's machine: 26 passed, then 'No reports\junit.xml'. Partly: a real pytest session in the cloud workspace - written for the app tests, none for unit tests, `--junit-xml` still wins |
 | E187 | #475 Matrix rows and defects | Reports after a Bug linked to a test case and one raised with no link | Stories with no coverage map show one row per test case (criteria named once as not mapped, no 'none'); 'none' only on a mapped criterion no test case covers; the linked Bug in its test case's Defects cell; the unlinked one under 'Open defects not linked to a story or test case here' | ⬜ | Found 13 Nov on the owner's local report: SCRUM-111's five criteria each showed test case 'none' |
 | E188 | #476 Revised titles | Reports after the merge | SCRUM-284 AC2 shows SCRUM-289, its result, and 'matched by wording'; no 'cited title not found' and no SCRUM-289 row 'not mapped to a criterion'; criteria without a test case: 0 | ⬜ | Found 13 Nov on the owner's local report |
+| E189 | #477 Delete closed issues | *Delete closed issues* with keys SCRUM-412, SCRUM-413, SCRUM-414 (the owner's throw-away defects, closed) and confirm DELETE | Each reported 'deleted'; the issues are gone from Jira; a run without DELETE, or with an open issue's key, deletes nothing for that key and fails | ⬜ | |
