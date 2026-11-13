@@ -136,6 +136,19 @@ flaky_tests:
   enabled: true
   window_days: 14
 
+# Reports beyond one run (core/results_store.py, scripts/build_site.py,
+# .github/workflows/reports.yml): every full run on the default branch is
+# recorded on store_branch (written by the agents' identity) and published as
+# a site - dashboard, Allure with history, traceability matrix, PDF summary.
+reporting:
+  enabled: true
+  store_branch: metrics-data
+  window_days: 30                    # what the dashboard and the PDF look back on
+  severity_by_tag:                   # Allure severity by tag; the most severe match
+    smoke: critical
+  default_severity: normal
+  pdf_keep: 14                       # dated PDFs kept (the latest is always published)
+
 # Defect triage (F-22): after a run on main (nightly, a push that ran the E2E,
 # a manual run on main) each test still failing has ONE open defect: a repeat
 # updates it - under another diagnosed cause too (the causes seen are listed) -

@@ -280,6 +280,12 @@ def page(browser, config, request) -> Page:
 #
 # pytest-bdd already announces every step it runs; nothing was listening.
 # ---------------------------------------------------------------------------
+def pytest_bdd_before_scenario(request, feature, scenario):
+    """Severity, behaviours and tracker links in the Allure report (RP8)."""
+    from core.allure_labels import apply
+    apply(feature, scenario)
+
+
 def pytest_bdd_before_step_call(request, feature, scenario, step, step_func,
                                 step_func_args):
     from core.allure_steps import start_step

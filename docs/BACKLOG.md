@@ -27,14 +27,14 @@ before a real project; P2 and P3 before a wider rollout.
 
 | ID | Item | Today (gap) | Priority | Cost | Was | Status |
 |---|---|---|---|---|---|---|
-| RP1 | Results store: every run appends test, verdict, duration, run, commit, story and environment to a store that keeps history (SQLite on a data branch, or Postgres). RP3-RP7 read from it | Reports are kept 3 days; Allure's trend lives in a cache deleted after 7 unused days | P1 | A | | Open |
-| RP2 | Allure published at a stable link (GitHub Pages) with full history | A 3-day download only | P1 | A | | Open |
-| RP3 | Metrics dashboard (Plotly, a static page on GitHub Pages): pass/fail/skip over time, duration trends and slowest tests, flaky-test ranking, breakdown by feature, page and story, open defects by age and component | No dashboard or trend | P1 | A | N9 | Open |
-| RP4 | Traceability matrix: story -> acceptance criterion -> test case -> scenario -> last result -> defect | The data is in markers and coverage comments, not in one view | P1 | A | | Open |
+| RP1 | Results store: every run appends test, verdict, duration, run, commit and story to a store that keeps history - built as JSON lines on a data branch (`metrics-data`): diff-friendly, no conflicts, readable by any tool; one environment today, so none recorded. RP3-RP7 read from it | Reports are kept 3 days; Allure's trend lives in a cache deleted after 7 unused days | P1 | A | | Done (#464) |
+| RP2 | Allure published at a stable link (GitHub Pages) with full history | A 3-day download only | P1 | A | | Done (#464) |
+| RP3 | Metrics dashboard (Plotly, a static page on GitHub Pages): pass/fail/skip over time, duration trends and slowest tests, flaky-test ranking, breakdown by feature, page and story, open defects by age and component | No dashboard or trend | P1 | A | N9 | Done (#464) |
+| RP4 | Traceability matrix: story -> acceptance criterion -> test case -> scenario -> last result -> defect | The data is in markers and coverage comments, not in one view | P1 | A | | Done (#464) |
 | RP5 | AI metrics: cost per story and agent, first-attempt success of generated code, refusals, review findings, Agent 0 precision and recall | Posted per story, never aggregated | P2 | B | N9, F-29 | Open |
-| RP6 | Management PDF (ReportLab) after the nightly run and at sprint end: totals, pass %, trend chart, open defects by severity, risks | None | P2 | A | | Open |
+| RP6 | Management PDF (ReportLab) after the nightly run and at sprint end: totals, pass %, trend chart, open defects by severity, risks | None | P2 | A | | Done (#464) |
 | RP7 | Sprint / release summary on Jira | Agent 5 reports per story only | P2 | A | | Open |
-| RP8 | Allure severity (from smoke / critical tags) and links to the story and test case (from the `# JIRA:` marker) | Allure's severity and requirement views are empty | P2 | A | | Open |
+| RP8 | Allure severity (from smoke / critical tags) and links to the story and test case (from the `# JIRA:` marker) | Allure's severity and requirement views are empty | P2 | A | | Done (#464) |
 | RP9 | Nightly summary to Teams, Slack or email | A person must watch the health issue | P3 | A | | Open |
 | RP10 | A small trend chart (Matplotlib) attached to Agent 5's Jira comment | Text only | P3 | A | | Open |
 

@@ -557,6 +557,27 @@ jobs:
           restore-keys: |
             allure-history-
 
+      - name: Restore Allure history from the results store
+        # The cache above is dropped after 7 days unused; the Reports workflow
+        # keeps the default branch's history on the results store branch
+        # (RP2), so a quiet week does not reset the trend. Used only when the
+        # cache had none. Never fails the job.
+        if: always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          if [ -f reports/allure-report/history/history-trend.json ]; then
+            echo "History restored from the cache."; exit 0
+          fi
+          BRANCH=$(python -c "from core.ops_settings import section; print(section('reporting')['store_branch'])" 2>/dev/null || true)
+          if [ -n "$BRANCH" ] && git fetch -q --depth 1 origin "$BRANCH" 2>/dev/null \
+             && git cat-file -e FETCH_HEAD:allure-history 2>/dev/null; then
+            mkdir -p reports/allure-report/history
+            git archive FETCH_HEAD allure-history | tar -x -C "$RUNNER_TEMP"
+            cp -r "$RUNNER_TEMP"/allure-history/. reports/allure-report/history/
+            echo "History restored from the $BRANCH branch."
+          else
+            echo "No Allure history yet."
+          fi
+
       - name: Generate the Allure report
         if: always()
         run: |
@@ -606,10 +627,14 @@ jobs:
         # within minutes; the daily artifact_cleanup workflow is the backstop.
         with:
           name: pytest-report-${{ github.run_id }}
+          # allure-report/history is a few KB: the Reports workflow keeps it
+          # on the results store branch (RP2). Listed after the exclusion so
+          # it is taken back in.
           path: |
             reports/
             !reports/allure-report/
             !reports/allure-results/
+            reports/allure-report/history/
           retention-days: 3
 
       - name: Write test summary to Agent 4's run page

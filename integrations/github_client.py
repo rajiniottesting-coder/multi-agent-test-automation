@@ -250,7 +250,10 @@ class GitHubClient:
                     return None
                 return zf.read(member)
         except Exception as e:                                   # noqa: BLE001
-            logger.warning(f"Could not read {filename} from run {run_id}: {e}")
+            # error_text: a failed download names the storage host's signed
+            # URL, and its signature would let anyone read the artifact.
+            from core.redaction import error_text
+            logger.warning(f"Could not read {filename} from run {run_id}: {error_text(e)}")
             return None
 
     def get_pr_comments(self, pr_number: int) -> list[str]:

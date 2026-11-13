@@ -90,6 +90,25 @@ class JiraClient:
     # Sprint resolution
     # ─────────────────────────────────────────────────────────────
 
+    def get_active_sprint(self) -> Optional[dict]:
+        """The board's active sprint: {"id", "name", "start", "end"} (ISO
+        times, None when unset), or None (no board, no active sprint, an
+        error). Optional capability: the reports mark a sprint's last day."""
+        if not self.board_id:
+            return None
+        try:
+            active = self.client.sprints(board_id=int(self.board_id), state="active")
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning(f"Active sprint not read: {e}")
+            return None
+        if not active:
+            return None
+        sp = active[0]
+        raw = getattr(sp, "raw", {}) or {}
+        return {"id": getattr(sp, "id", None), "name": sp.name,
+                "start": raw.get("startDate") or getattr(sp, "startDate", None),
+                "end": raw.get("endDate") or getattr(sp, "endDate", None)}
+
     def get_active_sprint_name(self) -> Optional[str]:
         """Return the name of the currently active sprint on this board.
 
@@ -576,6 +595,40 @@ class JiraClient:
             logger.info(f"Removed label '{label}' from {issue_key}")
         else:
             logger.info(f"Label '{label}' not on {issue_key} — nothing to remove")
+
+    def issues_for_report(self, issue_type: str, open_only: bool = True,
+                          labels: list[str] | None = None,
+                          max_results: int = 500) -> list[dict]:
+        """Issues of one type for the reports (core/report_data.py), with what
+        a report shows: [{"key", "summary", "status", "open", "labels",
+        "components", "created", "links"}]. `open` is False for the tracker's
+        done category; `links` the keys of every linked issue. Optional
+        capability (integrations.tracker.capability); [] when unreadable."""
+        parts = [f"project = {self.project_key}", f'issuetype = "{issue_type}"']
+        if open_only:
+            parts.append("statusCategory != Done")
+        parts += [f'labels = "{label}"' for label in labels or []]
+        try:
+            found = self.client.enhanced_search_issues(
+                " AND ".join(parts) + " ORDER BY created ASC", maxResults=max_results,
+                fields="summary,status,labels,components,created,issuelinks")
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning(f"Issues for the report not read: {e}")
+            return []
+        out = []
+        for i in found:
+            f = i.fields
+            links = []
+            for link in getattr(f, "issuelinks", None) or []:
+                other = getattr(link, "outwardIssue", None) or getattr(link, "inwardIssue", None)
+                if other is not None:
+                    links.append(other.key)
+            category = getattr(getattr(f.status, "statusCategory", None), "key", "")
+            out.append({"key": i.key, "summary": f.summary, "status": f.status.name,
+                        "open": category != "done", "labels": list(f.labels or []),
+                        "components": [c.name for c in (getattr(f, "components", None) or [])],
+                        "created": getattr(f, "created", None), "links": links})
+        return out
 
     def get_comments(self, issue_key: str) -> list:
         """Return the body text of every comment on an issue (oldest first).

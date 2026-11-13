@@ -1,0 +1,195 @@
+# ─────────────────────────────────────────────────────────────
+# Reports (RP1-RP4, RP6, RP8)
+#
+# After every Agent 4 run on the default branch, and by hand:
+#   1. record   the run's final junit.xml in the results store - the branch
+#               `reporting.store_branch` (core/results_store.py). Catch-up:
+#               every recent full run not yet recorded is added, so a missed
+#               start loses nothing while the run's artifact lasts (3 days).
+#   2. build    the site from the store and the tracker (scripts/build_site.py):
+#               dashboard, traceability matrix, PDF summary, and the latest
+#               run's Allure report (Agent 4 makes it). Its trend history is
+#               kept on the store (allure-history/), where Agent 4 finds it
+#               when its own cache has been dropped.
+#   3. publish  the store (pushed with the agents' identity - the branch rules
+#               let only it write there) and the site to GitHub Pages.
+#
+# A run that recorded nothing new (a framework push that ran the unit tests
+# only) stops after step 1. No model is called anywhere here.
+#
+# Needs: Settings -> Pages -> Source: GitHub Actions.
+# ─────────────────────────────────────────────────────────────
+
+name: Reports
+
+on:
+  workflow_run:
+    workflows: ["Agent 4 - Runner"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: reports
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Record results and publish the reports
+    # Pull requests from a branch named like the default one still carry the
+    # pull_request event: only the default branch's own runs are recorded.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event != 'pull_request' &&
+       github.event.workflow_run.conclusion != 'cancelled' &&
+       github.event.workflow_run.conclusion != 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Agent identity (the GitHub App's token, else GH_PAT)
+        id: identity
+        uses: ./.github/actions/agent-identity
+        with:
+          client-id: ${{ vars.GH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.GH_PAT }}
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-reports.txt
+
+      - name: Open the results store
+        id: store
+        env:
+          GITHUB_TOKEN: ${{ steps.identity.outputs.token }}
+        run: |
+          set -euo pipefail
+          BRANCH=$(python -c "from core.ops_settings import section; print(section('reporting')['store_branch'])")
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          AUTH=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)
+          echo "::add-mask::$AUTH"
+          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $AUTH"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
+            git fetch --depth 1 origin "$BRANCH:refs/remotes/origin/$BRANCH"
+            git worktree add -B "$BRANCH" store "origin/$BRANCH"
+          else
+            echo "No $BRANCH branch yet: starting an empty store."
+            git worktree add --orphan -b "$BRANCH" store
+          fi
+
+      - name: Record new runs
+        id: record
+        env:
+          GITHUB_TOKEN: ${{ steps.identity.outputs.token }}
+          GITHUB_REPO: ${{ vars.GH_REPO || github.repository }}
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+        run: python -m scripts.record_results --store store
+
+      - name: Take the latest run's Allure report
+        if: github.event_name == 'workflow_dispatch' || steps.record.outputs.recorded != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          mkdir -p site/allure
+          RUN=$(python -c "from core.results_store import read_runs; r = read_runs('store'); print(r[-1]['run_id'] if r else '')")
+          if [ -n "$RUN" ] && gh run download "$RUN" -R "$GITHUB_REPOSITORY" -n "pytest-report-$RUN" -D "$RUNNER_TEMP/rep" \
+             && [ -f "$RUNNER_TEMP/rep/allure-single/index.html" ]; then
+            cp "$RUNNER_TEMP/rep/allure-single/index.html" site/allure/index.html
+            echo "Allure report of run $RUN taken."
+            # Its trend history, for Agent 4's next run on the default branch
+            # when its cache is gone (RP2).
+            if [ -d "$RUNNER_TEMP/rep/allure-report/history" ]; then
+              rm -rf store/allure-history
+              cp -r "$RUNNER_TEMP/rep/allure-report/history" store/allure-history
+            fi
+          else
+            echo "::notice::The latest run's Allure report is not available (its artifact lasts 3 days)."
+            printf '%s' "<!doctype html><meta charset=utf-8><title>Allure report</title><p>The Allure report of the latest recorded run is no longer available: a run's report is kept for 3 days. It returns with the next run. <a href='../index.html'>Back to the dashboard</a></p>" > site/allure/index.html
+          fi
+
+      - name: Build the site
+        if: github.event_name == 'workflow_dispatch' || steps.record.outputs.recorded != '0'
+        env:
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+        run: python -m scripts.build_site --store store --out site
+
+      - name: Save the results store
+        # Before the deploy: a site never shows numbers the store lost.
+        if: github.event_name == 'workflow_dispatch' || steps.record.outputs.recorded != '0'
+        env:
+          BRANCH: ${{ steps.store.outputs.branch }}
+        run: |
+          set -euo pipefail
+          cd store
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Store unchanged."; exit 0
+          fi
+          git commit -q -m "Record test results ($(date -u +%Y-%m-%dT%H:%MZ))"
+          for i in 1 2 3; do
+            git push origin "HEAD:refs/heads/$BRANCH" && exit 0
+            echo "Push refused (try $i); rebasing on the remote store."
+            git pull --rebase -q origin "$BRANCH" || true
+            sleep 5
+          done
+          echo "::error::The results store could not be saved."
+          exit 1
+
+      - name: Configure Pages
+        if: github.event_name == 'workflow_dispatch' || steps.record.outputs.recorded != '0'
+        uses: actions/configure-pages@v5
+
+      - name: Upload the site
+        if: github.event_name == 'workflow_dispatch' || steps.record.outputs.recorded != '0'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        if: github.event_name == 'workflow_dispatch' || steps.record.outputs.recorded != '0'
+        uses: actions/deploy-pages@v4
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Reports"
+            echo "Runs recorded this time: ${{ steps.record.outputs.recorded || '0' }}"
+            if [ -n "${{ steps.deploy.outputs.page_url }}" ]; then
+              echo "Published: ${{ steps.deploy.outputs.page_url }}"
+            else
+              echo "Nothing new to publish."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

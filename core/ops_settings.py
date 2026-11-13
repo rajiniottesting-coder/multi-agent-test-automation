@@ -119,6 +119,22 @@ DEFAULTS: dict = {
         # selection excludes it. Removing it allows the story one more budget.
         "hold_label": "budget-hold",
     },
+    # Reports beyond one run (core/results_store.py, scripts/build_site.py,
+    # .github/workflows/reports.yml): every full run on the default branch is
+    # recorded on `store_branch` and published as a site.
+    "reporting": {
+        "enabled": True,
+        # The branch that keeps the history (written by the agents' identity).
+        "store_branch": "metrics-data",
+        # How far back the dashboard and the PDF look.
+        "window_days": 30,
+        # Allure severity of a scenario by its tags (the most severe match);
+        # every other scenario is `default_severity`.
+        "severity_by_tag": {"smoke": "critical"},
+        "default_severity": "normal",
+        # Dated PDFs kept on the store branch (the latest is always published).
+        "pdf_keep": 14,
+    },
 }
 
 

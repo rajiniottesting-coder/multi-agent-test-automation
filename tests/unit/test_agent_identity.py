@@ -47,7 +47,7 @@ def test_the_agents_jobs_are_all_found():
         ("agent0_impact.yml", "code-change"), ("agent0_impact.yml", "drift"),
         ("agent2_coder.yml", "generate"), ("agent2_review_fix.yml", "fix"),
         ("sweeper.yml", "sweep"), ("pipeline_health.yml", "check"),
-        ("story_done_on_merge.yml", "mark-done")}
+        ("story_done_on_merge.yml", "mark-done"), ("reports.yml", "publish")}
 
 
 @pytest.mark.parametrize("wf", WORKFLOWS, ids=lambda p: p.name)

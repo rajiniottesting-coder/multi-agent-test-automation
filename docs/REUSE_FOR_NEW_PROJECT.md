@@ -405,6 +405,15 @@ ruleset's bypass list. Without it the agents write with `GH_PAT` - as that
 person, who then cannot request changes on or approve the agents' pull
 requests. One App can serve several repositories: install it on each.
 
+### Change 10 - Reports on GitHub Pages (OPTIONAL)
+
+Settings -> Pages -> Source: *GitHub Actions*; the *Reports* workflow then
+publishes the dashboard, traceability matrix, PDF summary and Allure report
+after each run on the default branch (GUIDE -> *Reports*). Map your own tags to
+a severity in `reporting.severity_by_tag`. The store branch
+(`reporting.store_branch`) must be writable by the agents' identity: add it to
+the branch rules the way the agents' other branches are.
+
 ### The agents' identity on another repository host
 
 The agents never see how their token was made: `RepoHost` (GitHub today) reads

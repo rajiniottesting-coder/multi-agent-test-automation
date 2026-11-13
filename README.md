@@ -212,8 +212,8 @@ Attaching Agent 0 to another application: [docs/REUSE_FOR_NEW_PROJECT.md → Att
 | **Design pattern** | Page Object Model | Selectors resolved by key from the inventory (`self.sel("key")`) |
 | **Tracker** | Jira Cloud (adapter behind the `Tracker` Protocol) | Stories, Test Cases, labels, Impact Reviews |
 | **Code host** | GitHub (adapter behind the `RepoHost` Protocol) | Branches, PRs, PR-based human gates |
-| **CI** | GitHub Actions (10 workflows) | Agents 0–5, Agent 2's review fix, inventory health, Done on merge, sweeper, artifact cleanup |
-| **Reporting** | Allure, pytest-html, JUnit XML | Reports on the PR and in Jira |
+| **CI** | GitHub Actions (12 workflows) | Agents 0–5, Agent 2's review fix, inventory health, pipeline health, Done on merge, sweeper, artifact cleanup, reports |
+| **Reporting** | Allure, pytest-html, JUnit XML, Plotly, ReportLab | Reports on the PR and in Jira; a results history, dashboard, traceability matrix and PDF summary on GitHub Pages |
 
 Prompts are Markdown files under `prompts/`, filled by plain string replacement — versioned and reviewable in a PR.
 
@@ -266,7 +266,10 @@ multi-agent-test-automation/
 │   ├── defects.py                   # A test failing on main → one open defect per test
 │   ├── flaky_tests.py               # Flakes counted on the health issue
 │   ├── spend_budget.py              # Per-story and per-day model spend budgets
-│   └── ops_settings.py              # The operational config blocks, with defaults
+│   ├── ops_settings.py              # The operational config blocks, with defaults
+│   ├── results_store.py             # The history of test results (the metrics-data branch)
+│   ├── report_data.py               # The numbers every report shows
+│   └── allure_labels.py             # Allure severity from tags, links to test case and story
 │
 ├── integrations/                    # Tool adapters behind two Protocols
 │   ├── tracker.py, repo_host.py     # The Protocols
@@ -309,6 +312,8 @@ multi-agent-test-automation/
 │   ├── pipeline_health_check.py     # The scheduled health check
 │   ├── install_browser.sh           # CI: browser + OS packages, retried; browser alone if mirrors fail
 │   ├── start_agent.py               # Hand-off: start the next agent while stories wait
+│   ├── record_results.py            # Reports: record full runs on main in the results store
+│   ├── build_site.py                # Reports: dashboard, traceability matrix, PDF summary
 │
 ├── .github/workflows/
 │   ├── agent0_impact.yml            # Scan, reconcile, PR code change, nightly drift
@@ -320,6 +325,7 @@ multi-agent-test-automation/
 │   ├── artifact_cleanup.yml         # Daily: delete old Actions artifacts (storage quota)
 │   ├── inventory_health.yml         # Nightly selector check against the live app
 │   ├── pipeline_health.yml          # Health check: failing scheduled workflows, credentials
+│   ├── reports.yml                  # After each run on main: results store + GitHub Pages site
 │   ├── story_done_on_merge.yml      # Only a human merge moves a story to Done; then its notes addition
 │   └── sweeper.yml                  # Re-triggers stalled PRs
 │
@@ -327,7 +333,8 @@ multi-agent-test-automation/
 │                                    # AI_CONCEPTS, BACKLOG, KNOWN_LIMITATIONS, TEST_TRACK
 ├── .env.example
 ├── pytest.ini
-└── requirements.txt
+├── requirements.txt
+└── requirements-reports.txt         # Only the reports workflow: ReportLab, Matplotlib
 ```
 
 ---

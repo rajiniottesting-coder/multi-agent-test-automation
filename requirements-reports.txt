@@ -1,0 +1,10 @@
+# Packages only the reports workflow needs (.github/workflows/reports.yml).
+# Kept out of requirements.txt so every agent job does not install them.
+# Install on top of requirements.txt: pip install -r requirements-reports.txt
+
+# ReportLab - writes the PDF management summary (scripts/build_site.py).
+reportlab==5.0.1
+
+# Matplotlib - draws the trend chart embedded in the PDF. The web dashboard
+# uses Plotly from a CDN instead, so nothing extra is installed for it.
+matplotlib==3.11.2

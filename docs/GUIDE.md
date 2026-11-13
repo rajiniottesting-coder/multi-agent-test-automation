@@ -1922,6 +1922,59 @@ stop says which limit, how much and what to do.
 - The values grow with the repository and the stories: raise them in
   `config.yaml`, nowhere else.
 
+### Reports: history, dashboard, traceability, PDF (RP1-RP4, RP6, RP8)
+
+Agent 4's report artifact is kept 3 days and Agent 5 reports one story at a
+time, so nothing used to show how the suite does over weeks. The *Reports*
+workflow (`.github/workflows/reports.yml`) runs after every Agent 4 run on
+`main` (and by hand), calls no model, and publishes one site on GitHub Pages:
+
+| Page | What it shows | Built from |
+|---|---|---|
+| Dashboard (`index.html`) | Pass rate of the latest run and of the window, results per run, suite duration per run, slowest tests, flaky tests, results by feature file and by story, open defects by age | the results store, the tracker |
+| Allure report | The latest recorded run's report, with its full trend, a severity from the scenario's tags and links to its test case and story | Agent 4's artifact |
+| Traceability | Story -> acceptance criterion -> test case -> scenario -> last result -> defect, and what has no test case or no scenario | markers, the tracker, Agent 1's coverage comment, the store |
+| PDF summary | The headline numbers, the trend chart, open defects by age, risks; on a sprint's last day it is the sprint summary | the same data |
+
+**The results store (RP1).** Every full run on `main` - nightly, by hand, or a
+push that ran the application tests - is recorded on the branch
+`reporting.store_branch` (`metrics-data`): `runs.jsonl` (one line per run:
+commit, event, totals, duration) and `results/YYYY-MM.jsonl` (one line per test
+per run: verdict, duration, test case, story, the failure's first line,
+redacted). The verdict is Agent 4's final reading of `junit.xml` -
+`passed`, `failed`, `skipped`, `flaky` (counts as passed) or `outage` (the
+application was down: not counted in a pass rate). Recording catches up: each
+run records every recent full run not yet in the store, so a missed start
+loses nothing while the run's artifact lasts (3 days). A framework push that
+ran only the unit tests records nothing, and the workflow stops there. Only
+the agents' identity (the GitHub App, F-30) writes the store branch - the
+branch rules let no person push there. JSON lines, not a database: any tool
+reads them, and two runs never conflict.
+
+**Defects.** The dashboard counts every open issue of the defect type
+(`defects.issue_type`), whoever raised it - the nightly triage or a person.
+
+**Severity (RP8).** `reporting.severity_by_tag` maps a scenario's tags (its
+feature's tags included) to Allure's severity; the most severe wins, and an
+untagged scenario gets `reporting.default_severity`. The `# JIRA:` marker gives
+the links: the test case (Allure's test-management link) and its owner story.
+
+**Settings** (`config.yaml`, block `reporting`): `enabled`, `store_branch`,
+`window_days` (what the dashboard and the PDF cover, default 30),
+`severity_by_tag`, `default_severity`, `pdf_keep` (dated PDF copies kept on the
+store branch under `pdf/`; a sprint's last-day copy is always kept).
+
+**Set up once:** Settings -> Pages -> Source: *GitHub Actions*. The first run
+creates the store branch. Without the tracker the site is still built, without
+defects and traceability.
+
+**Limits.** The dashboard loads Plotly from its CDN, so it needs internet
+access to draw charts. The Allure page shows the latest recorded run only
+while its artifact lasts (3 days); after that it says so until the next run.
+Allure's own trend is carried by Agent 4's cache; the Reports workflow also
+keeps it on the store branch (`allure-history/`), and Agent 4 on `main` takes
+it from there when GitHub has dropped the cache (7 days unused).
+
 ---
 
 ## Inventory tooling — the full sequence
