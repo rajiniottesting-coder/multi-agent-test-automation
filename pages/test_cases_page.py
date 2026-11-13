@@ -47,6 +47,7 @@ logger = logging.getLogger(__name__)
 
 
 class TestCasesPage(BasePage):
+    # Validation (13 Nov 2026, throw-away, never merged): RP10 trend chart, X7 review cap.
     """Test Cases listing. Selectors: see `test_cases` in the app inventory.
 
     The title links (test_case_titles) and step items (test_case_steps) are
