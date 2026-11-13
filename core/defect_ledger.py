@@ -335,7 +335,7 @@ def summary(recs: list[dict], start: str, end: str) -> dict:
             pass
     cats: dict = {}
     for r in closed:
-        c = r.get("category") or "not categorised"
+        c = r.get("category") or ("deleted" if r.get("deleted") else "not categorised")
         cats[c] = cats.get(c, 0) + 1
     return {"opened": len(opened), "closed": len(closed),
             "open": sum(1 for r in recs if r.get("open")),

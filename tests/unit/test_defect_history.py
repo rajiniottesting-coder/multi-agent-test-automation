@@ -275,3 +275,20 @@ def test_a_listed_key_is_forgotten(tmp_path, features, settings, monkeypatch):
                         if n == "reporting" else real(n))
     assert dl.sync(tmp_path, t, features, NOW)["forgotten"] == 1
     assert [r["key"] for r in dl.records(tmp_path)] == ["PRJ-2"]
+
+
+def test_a_deleted_defect_is_closed_as_deleted_not_uncategorised():
+    recs = _recs() + [{"key": "D", "opened": "2026-11-12T01:00:00+00:00",
+                       "closed": "2026-11-13T01:00:00+00:00", "open": False, "module": "x",
+                       "category": None, "deleted": "2026-11-13T01:00:00+00:00"}]
+    cats = dict(dl.summary(recs, "2026-11-01", "2026-11-14")["closed_by_category"])
+    assert cats.get("deleted") == 1 and "not categorised" not in cats
+
+
+def test_the_open_defect_list_leaves_throw_away_issues_out():
+    from scripts.build_site import open_defects
+
+    class T:
+        def issues_for_report(self, issue_type, open_only=True):
+            return [{"key": "PRJ-1", "labels": []}, {"key": "PRJ-2", "labels": ["test-data"]}]
+    assert [d["key"] for d in open_defects(T())] == ["PRJ-1"]
