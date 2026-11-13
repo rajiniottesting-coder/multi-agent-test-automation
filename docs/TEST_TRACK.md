@@ -27,7 +27,7 @@ still open, and the rows each new change adds.
 
 ## Open checks
 
-24 rows: 20 open or partly proven (⬜), 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌); with the 254 proven, 278.
+26 rows: 22 open or partly proven (⬜), 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌); with the 254 proven, 280.
 
 Most of these wait for an event that cannot be produced on demand (the model
 taking a particular path, a provider error that quotes a secret); some are not
@@ -59,3 +59,5 @@ possible on the current application. Each names what it is waiting for.
 | E168 | #464 RP6 | The PDF summary | Opens from the site; KPIs, trend chart, defects by age, risks; a dated copy under `pdf/` on `metrics-data`; on the active sprint's last day titled as the sprint summary | ⬜ | |
 | E169 | #464 RP8 | The Allure report of the next full run | A `@smoke` scenario has severity *critical*, others *normal*; Behaviors groups by feature and story; each marked scenario links its test case and story in the tracker | ⬜ | |
 | E170 | #464 Signed URL redacted | The next artifact download that fails (Agent 5, the triage or the Reports run) | The log line shows `sig=[redacted]`, never the storage host's signature; the rest of the message as before | ⬜ | Unit-tested; found 13 Nov while building RP1 (a refused download logged the full signed URL) |
+| E171 | #465 RP7 | Reports run by hand with *sprint_summary* (and the active sprint's last day, when it comes) | One `Test summary: <sprint>` issue, label `test-sprint-summary`, numbers and risks as on the site, the site's link, the PDF attached, moved to Done; a second forced run adds a comment to the same issue, no second issue | ⬜ | |
+| E172 | #465 RP10 | The second Agent 5 report on one story (SCRUM-408 or SCRUM-410 re-run) | A `trend.` property per report; the second report shows a chart of both runs (passed / failed / not judged), attached to the story; the first report has none | ⬜ | |

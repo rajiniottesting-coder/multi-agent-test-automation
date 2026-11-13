@@ -1959,10 +1959,27 @@ feature's tags included) to Allure's severity; the most severe wins, and an
 untagged scenario gets `reporting.default_severity`. The `# JIRA:` marker gives
 the links: the test case (Allure's test-management link) and its owner story.
 
+**The sprint's summary on the tracker (RP7).** On the active sprint's last day
+the Reports run records one issue, `Test summary: <sprint>` (type
+`reporting.sprint_summary_issue_type`, label `test-sprint-summary`), with the
+numbers, the risks, a link to the site and the PDF attached, and moves it to
+`reporting.sprint_summary_status` at once - a record, not work, so it never sits
+in the board's open columns. Once per sprint; *Run workflow* with
+*sprint_summary* records it now, or adds the current numbers to the existing
+one as a comment.
+
+**A trend on the story's report (RP10).** Each report Agent 5 posts records
+the story's counts (a hidden issue property, `trend.<time>`); from the story's
+second report on, a chart of its last `reporting.story_trend_points` runs -
+passed, failed, not judged - is attached and shown under the report, so a
+reviewer sees the story go from red to green over its review rounds.
+
 **Settings** (`config.yaml`, block `reporting`): `enabled`, `store_branch`,
 `window_days` (what the dashboard and the PDF cover, default 30),
 `severity_by_tag`, `default_severity`, `pdf_keep` (dated PDF copies kept on the
-store branch under `pdf/`; a sprint's last-day copy is always kept).
+store branch under `pdf/`; a sprint's last-day copy is always kept),
+`sprint_summary`, `sprint_summary_issue_type`, `sprint_summary_status`,
+`story_trend`, `story_trend_points`, `story_trend_min_points`.
 
 **Set up once:** Settings -> Pages -> Source: *GitHub Actions*. The first run
 creates the store branch. Without the tracker the site is still built, without

@@ -269,7 +269,9 @@ multi-agent-test-automation/
 │   ├── ops_settings.py              # The operational config blocks, with defaults
 │   ├── results_store.py             # The history of test results (the metrics-data branch)
 │   ├── report_data.py               # The numbers every report shows
-│   └── allure_labels.py             # Allure severity from tags, links to test case and story
+│   ├── allure_labels.py             # Allure severity from tags, links to test case and story
+│   ├── sprint_summary.py            # The sprint's test summary on the tracker
+│   └── story_trend.py               # The trend chart on Agent 5's report
 │
 ├── integrations/                    # Tool adapters behind two Protocols
 │   ├── tracker.py, repo_host.py     # The Protocols

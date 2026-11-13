@@ -33,10 +33,10 @@ before a real project; P2 and P3 before a wider rollout.
 | RP4 | Traceability matrix: story -> acceptance criterion -> test case -> scenario -> last result -> defect | The data is in markers and coverage comments, not in one view | P1 | A | | Done (#464) |
 | RP5 | AI metrics: cost per story and agent, first-attempt success of generated code, refusals, review findings, Agent 0 precision and recall | Posted per story, never aggregated | P2 | B | N9, F-29 | Open |
 | RP6 | Management PDF (ReportLab) after the nightly run and at sprint end: totals, pass %, trend chart, open defects by severity, risks | None | P2 | A | | Done (#464) |
-| RP7 | Sprint / release summary on Jira | Agent 5 reports per story only | P2 | A | | Open |
+| RP7 | Sprint / release summary on Jira | Agent 5 reports per story only | P2 | A | | Done (#465) |
 | RP8 | Allure severity (from smoke / critical tags) and links to the story and test case (from the `# JIRA:` marker) | Allure's severity and requirement views are empty | P2 | A | | Done (#464) |
 | RP9 | Nightly summary to Teams, Slack or email | A person must watch the health issue | P3 | A | | Open |
-| RP10 | A small trend chart (Matplotlib) attached to Agent 5's Jira comment | Text only | P3 | A | | Open |
+| RP10 | A small trend chart (Matplotlib) attached to Agent 5's Jira comment | Text only | P3 | A | | Done (#465) |
 
 ### Security
 

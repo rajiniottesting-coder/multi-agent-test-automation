@@ -94,6 +94,8 @@ core/
   results_store.py
   schemas.py
   spend_budget.py
+  sprint_summary.py
+  story_trend.py
   test_case_rules.py
   test_runtime.py
   usage_ledger.py
