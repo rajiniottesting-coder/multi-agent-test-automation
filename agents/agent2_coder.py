@@ -95,6 +95,7 @@ from validators.method_resolution_validator import (
     validate_absence_not_asserted_with_waiting_probe,
     validate_no_selectors_in_step_defs,
     validate_persistent_state_assertions,
+    validate_persistent_state_snapshots,
     validate_page_method_names_are_specific,
 )
 from core.llm_client import QuotaExhaustedError, LLMClient, OutputTruncatedError
@@ -2965,6 +2966,8 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     errors.extend(validate_readiness_probe(generated_files, PROJECT_ROOT))
     errors.extend(validate_no_selectors_in_step_defs(generated_files))
     errors.extend(validate_persistent_state_assertions(generated_files, PROJECT_ROOT))
+    # ...and a relative claim on it, read once, is still a race (C2).
+    errors.extend(validate_persistent_state_snapshots(generated_files, PROJECT_ROOT))
     errors.extend(validate_step_parameter_types(generated_files, PROJECT_ROOT))
     errors.extend(validate_persistent_pages_can_be_cleared(
         generated_files, PROJECT_ROOT))
