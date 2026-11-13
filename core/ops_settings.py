@@ -138,12 +138,17 @@ DEFAULTS: dict = {
         "store_branch": "metrics-data",
         # How far back the dashboard and the PDF look.
         "window_days": 30,
+        # Results older than this are deleted from the store - the store
+        # branch and a local run's store alike (at least window_days; 0: keep
+        # everything).
+        "keep_days": 90,
         # Allure severity of a scenario by its tags (the most severe match);
         # every other scenario is `default_severity`.
         "severity_by_tag": {"smoke": "critical"},
         "default_severity": "normal",
-        # Dated PDFs kept on the store branch (the latest is always published).
-        "pdf_keep": 14,
+        # Dated PDFs kept on the store (the latest is always published, and a
+        # sprint's PDF is attached to its summary issue). 0: none.
+        "pdf_keep": 0,
         # A sprint's summary on the tracker (RP7): one issue of this type per
         # sprint, the PDF attached, moved to this status (it is a record, not
         # work), made on the sprint's last day or by hand.

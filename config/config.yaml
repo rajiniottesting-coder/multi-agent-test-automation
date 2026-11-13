@@ -153,10 +153,12 @@ reporting:
   enabled: true
   store_branch: metrics-data
   window_days: 30                    # what the dashboard and the PDF look back on
+  keep_days: 90                      # results older than this are deleted, store branch and local (0 = keep all)
   severity_by_tag:                   # Allure severity by tag; the most severe match
     smoke: critical
   default_severity: normal
-  pdf_keep: 14                       # dated PDFs kept (the latest is always published)
+  pdf_keep: 0                        # dated PDF copies kept; the latest is always published
+                                     # and a sprint's is attached to its Jira summary
   sprint_summary: true               # RP7: a summary issue per sprint, on its last day
   sprint_summary_issue_type: Task
   sprint_summary_status: Done        # it is a record, not work: off the board's open columns

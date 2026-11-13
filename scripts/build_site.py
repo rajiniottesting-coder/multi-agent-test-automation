@@ -34,6 +34,7 @@ from pathlib import Path
 logger = logging.getLogger("build_site")
 
 PLOTLY = "https://cdn.plot.ly/plotly-2.35.2.min.js"
+SOURCE_CI = "full runs on the default branch"
 COLORS = {"passed": "#2e7d32", "flaky": "#f9a825", "failed": "#c62828",
           "outage": "#6a1b9a", "skipped": "#9e9e9e"}
 
@@ -214,7 +215,7 @@ def _header(data: dict, active: str) -> str:
     nav = "".join(f'<a href="{_e(h)}"{" aria-current=page" if h == active else ""}>{t}</a>'
                   for h, t in links)
     return (f"<header><h1>Test automation reports</h1><p>Generated {_e(data['generated'])} UTC "
-            f"from full runs on the default branch; history covers the last "
+            f"from {_e(data.get('source') or SOURCE_CI)}; history covers the last "
             f"{_e(data['window_days'])} days.</p><nav style='margin-top:10px'>{nav}</nav></header>")
 
 
@@ -466,8 +467,13 @@ def is_sprint_last_day(sprint: dict | None, now: _dt.datetime) -> bool:
 
 def keep_pdf(store: Path, pdf: Path, now: _dt.datetime, sprint_end: bool, keep: int) -> None:
     """A dated copy on the store; the oldest nightly copies beyond `keep` go
-    (a sprint's last-day copy stays)."""
+    (a sprint's last-day copy stays). `keep` 0: no dated copies at all - the
+    folder goes, copies made before included (the latest PDF is published
+    with the site, and a sprint's is attached to its summary issue)."""
     folder = store / "pdf"
+    if keep <= 0:
+        shutil.rmtree(folder, ignore_errors=True)
+        return
     folder.mkdir(parents=True, exist_ok=True)
     name = now.strftime("%Y-%m-%d") + ("-sprint-end" if sprint_end else "") + ".pdf"
     shutil.copyfile(pdf, folder / name)
@@ -484,6 +490,8 @@ def main(argv=None) -> int:
     ap.add_argument("--features", default=Path("features"), type=Path)
     ap.add_argument("--no-tracker", action="store_true")
     ap.add_argument("--site-url", default=None, help="where the site is published")
+    ap.add_argument("--source", default=SOURCE_CI,
+                    help="what the runs are, for the pages' header")
     ap.add_argument("--sprint-summary", choices=("auto", "force", "off"), default="auto",
                     help="record the sprint's summary on the tracker (RP7): on the "
                          "sprint's last day (auto), now (force), or never")
@@ -496,6 +504,7 @@ def main(argv=None) -> int:
         print(f"::error::Reports not built - the results store could not be read: {e}")
         return 1
     data["site_url"] = args.site_url
+    data["source"] = args.source
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "index.html").write_text(latest_html(data), encoding="utf-8")
     (args.out / "history.html").write_text(dashboard_html(data), encoding="utf-8")
@@ -504,7 +513,7 @@ def main(argv=None) -> int:
     sprint_end = is_sprint_last_day(data.get("sprint"), now)
     pdf = args.out / "summary.pdf"
     if summary_pdf(data, pdf, sprint_end):
-        keep_pdf(args.store, pdf, now, sprint_end, int(section("reporting").get("pdf_keep") or 14))
+        keep_pdf(args.store, pdf, now, sprint_end, int(section("reporting").get("pdf_keep") or 0))
     summary_key = None
     if not args.no_tracker and (args.sprint_summary == "force"
                                 or (args.sprint_summary == "auto" and sprint_end)):

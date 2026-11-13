@@ -176,6 +176,13 @@ jobs:
 
       - name: Save the results store
         # Before the deploy: a site never shows numbers the store lost.
+        #
+        # ONE commit, replaced each time - no git history. The files are the
+        # history (runs.jsonl, results/, trimmed to reporting.keep_days); a
+        # commit per run kept every earlier copy of the pages and PDFs as well,
+        # and a clone of the branch reached 14 MB on its first day (13 Nov
+        # 2026). Runs of this workflow take turns (concurrency group), so the
+        # forced replace never drops another run's results.
         if: github.event_name == 'workflow_dispatch' || steps.record.outputs.recorded != '0'
         env:
           BRANCH: ${{ steps.store.outputs.branch }}
@@ -186,21 +193,17 @@ jobs:
           if git diff --cached --quiet; then
             echo "Store unchanged."; exit 0
           fi
-          git commit -q -m "Record test results ($(date -u +%Y-%m-%dT%H:%MZ))"
-          for i in 1 2 3; do
-            git push origin "HEAD:refs/heads/$BRANCH" && exit 0
-            echo "Push refused (try $i); rebasing on the remote store."
-            git pull --rebase -q origin "$BRANCH" || true
-            sleep 5
-          done
-          echo "::error::The results store could not be saved."
-          exit 1
+          git checkout -q --orphan store-snapshot
+          git commit -q -m "Test results and reports ($(date -u +%Y-%m-%dT%H:%MZ))"
+          git push -q --force origin "HEAD:refs/heads/$BRANCH"
+          echo "Store saved: $(git ls-files | wc -l) file(s), $(du -sh --exclude=.git . | cut -f1)."
 
       - name: Upload the site
         if: github.event_name == 'workflow_dispatch' || steps.record.outputs.recorded != '0'
         uses: actions/upload-pages-artifact@v3
         with:
           path: site
+          retention-days: 1          # Pages keeps the deployed site itself
 
       - name: Deploy to GitHub Pages
         id: deploy
