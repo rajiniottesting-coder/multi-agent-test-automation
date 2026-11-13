@@ -54,7 +54,8 @@ def summary_markdown(data: dict, site_url: str | None) -> str:
               for r in (data.get("flaky") or [])[:5]]
     sm = data.get("traceability_summary")
     if sm and sm.get("criteria_uncovered"):
-        risks.append(f"{sm['criteria_uncovered']} acceptance criteria have no test case")
+        n = sm["criteria_uncovered"]
+        risks.append(f"{n} acceptance {'criterion has' if n == 1 else 'criteria have'} no test case")
     lines += ["", "**Risks**", ""] + [f"- {r}" for r in risks or ["None found in the window."]]
     if site_url:
         lines += ["", f"Dashboard, traceability and the Allure report: {site_url}"]

@@ -441,7 +441,8 @@ def summary_pdf(data: dict, path: Path, sprint_end: bool) -> bool:
     if data.get("traceability_summary"):
         sm = data["traceability_summary"]
         if sm["criteria_uncovered"]:
-            risks.append(f"{sm['criteria_uncovered']} acceptance criteria have no test case")
+            n = sm["criteria_uncovered"]
+            risks.append(f"{n} acceptance {'criterion has' if n == 1 else 'criteria have'} no test case")
     for r in risks or ["None found in the window."]:
         flow.append(Paragraph("&bull; " + html.escape(r), st["Normal"]))
     SimpleDocTemplate(str(path), pagesize=A4, leftMargin=2 * cm, rightMargin=2 * cm,
