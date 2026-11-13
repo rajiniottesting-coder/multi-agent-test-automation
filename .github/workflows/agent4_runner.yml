@@ -598,6 +598,10 @@ jobs:
           if [ -d reports/allure-report/history ]; then
             cp -r reports/allure-report/history reports/allure-results/ || true
           fi
+          # Only the tests this run reported stay in the history: one that
+          # left the report would stay in history.json for ever (it reached
+          # 11 MB with unit tests that no longer write Allure results).
+          python -m scripts.prune_allure_history reports/allure-results || true
 
           "/tmp/allure-${ALLURE_VERSION}/bin/allure" generate \
             reports/allure-results -o reports/allure-report --clean

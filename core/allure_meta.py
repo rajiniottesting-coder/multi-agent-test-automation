@@ -230,6 +230,44 @@ def _carry_history(results_dir: Path, previous_report: Path) -> bool:
         return False
 
 
+def prune_history(results_dir) -> tuple:
+    """Keep in `history/history.json` only the tests this run reported.
+
+    Allure merges the carried history with the run's results and writes
+    every test it ever saw back out, so a test that left the report (a
+    removed scenario, or - 13 Nov 2026 - the ~4,400 unit tests every Agent 4
+    run used to write beside the application tests) stays in the history for
+    ever: the file had reached 11 MB. Run after the tests, before `allure
+    generate` (scripts/prune_allure_history.py). The trend panels (history-trend.json and the like) hold
+    per-run totals and are left alone. Returns (kept, dropped); (0, 0) when
+    there is nothing to prune. Never raises.
+    """
+    import json
+    results = Path(results_dir)
+    path = results / "history" / "history.json"
+    try:
+        if not path.is_file():
+            return (0, 0)
+        ids = set()
+        for f in results.glob("*-result.json"):
+            try:
+                hid = json.loads(f.read_text(encoding="utf-8")).get("historyId")
+            except (ValueError, OSError):
+                continue
+            if hid:
+                ids.add(hid)
+        if not ids:
+            return (0, 0)             # no results read: never empty the history
+        history = json.loads(path.read_text(encoding="utf-8"))
+        kept = {k: v for k, v in history.items() if k in ids}
+        if len(kept) != len(history):
+            path.write_text(json.dumps(kept), encoding="utf-8")
+        return (len(kept), len(history) - len(kept))
+    except Exception:                                     # noqa: BLE001
+        logger.debug("Allure history not pruned", exc_info=True)
+        return (0, 0)
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
