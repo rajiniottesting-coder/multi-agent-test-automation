@@ -44,6 +44,22 @@ def kpis(runs: list[dict], results: list[dict]) -> dict:
     }
 
 
+_ATTENTION = ("failed", "outage", "flaky", "skipped")
+
+
+def latest_run(runs: list[dict], results: list[dict]) -> dict | None:
+    """The newest run and what in it needs a look: every test not plainly
+    passed, failed first, then outage, flaky, skipped. None without a run."""
+    if not runs:
+        return None
+    run = runs[-1]
+    mine = [r for r in results if r.get("run_id") == run["run_id"]]
+    rows = sorted((r for r in mine if r.get("verdict") in _ATTENTION),
+                  key=lambda r: (_ATTENTION.index(r["verdict"]), r.get("test") or ""))
+    return {"run": run, "rows": rows, "pass_rate": pass_rate(mine),
+            "passed": sum(r.get("verdict") == "passed" for r in mine)}
+
+
 def trend(runs: list[dict]) -> dict:
     """Per run, oldest first: verdict counts and suite duration."""
     keys = ("passed", "flaky", "failed", "outage", "skipped")
