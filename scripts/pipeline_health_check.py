@@ -44,7 +44,8 @@ def findings(tracker, host_factory, root: Path, now: _dt.datetime) -> list:
         out += hc.workflow_findings(host, root, int(s["consecutive_failures"]),
                                     exclude=(OWN_WORKFLOW,))
         out += hc.schedule_findings(host, root, now, float(s["schedule_window_hours"]),
-                                    int(s["schedule_min_expected"]))
+                                    int(s["schedule_min_expected"]),
+                                    float(s.get("schedule_min_share") or 0))
     except Exception as e:                                         # noqa: BLE001
         logger.warning("Scheduled workflows not checked: %s", e)
     # A token created for this run (the agents' GitHub App, F-30) has no

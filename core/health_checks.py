@@ -14,6 +14,10 @@ schedule.
                cron lines asked for at least `schedule_min_expected`. A host
                may drop scheduled runs of a quiet repository; a run never
                started fails nothing, so the failure check cannot see it.
+               And one whose host started fewer than `schedule_min_share` of
+               the runs asked for (X8, 10-12 Nov 2026: Agent 1's schedule asked
+               for about 20 runs a weekday and 3 started, gaps of 17 hours -
+               never "none", so nothing was reported).
   credentials  the repo host's token (and its expiry, where the host says),
                and the model endpoint. The tracker's own credentials are
                checked first by the script: without them no alert can be posted.
@@ -195,7 +199,7 @@ def _when(stamp) -> _dt.datetime | None:
 
 
 def schedule_findings(host, root: Path, now: _dt.datetime, window_hours: float,
-                      min_expected: int) -> list:
+                      min_expected: int, min_share: float = 0.0) -> list:
     """One Finding per scheduled workflow whose runs can be judged: its cron
     lines asked for `expected` runs in the window; `started` of them began.
     No finding (the alert stays as it is) when the runs read do not reach
@@ -234,6 +238,18 @@ def schedule_findings(host, root: Path, now: _dt.datetime, window_hours: float,
             "repository host started none. Nothing failed, so no other check sees it. Work "
             "still starts through the hand-offs and by hand; check the workflow is enabled and "
             "the schedule unchanged. It closes by itself once a scheduled run starts."))
+        if min_share > 0:
+            rare = expected >= min_expected and 0 < started < min_share * expected
+            out.append(Finding(
+                f"workflow-starting-rarely:{name}", rare,
+                f"Scheduled runs of {name} start rarely: {started} of {expected} in the last "
+                f"{window_hours:g} hours" if rare else f"Scheduled runs of {name} start as asked again",
+                f"Its schedule asked for {expected} runs in the last {window_hours:g} hours and the "
+                f"repository host started {started} (alert below {min_share:.0%}). Stories wait "
+                "longer between agents than the schedule promises. A host may delay or drop "
+                "scheduled runs when it is busy; if this persists, start the critical workflows "
+                "from outside the host (GUIDE -> Scheduled runs that do not start). It closes by "
+                "itself once the share is back."))
     return out
 
 

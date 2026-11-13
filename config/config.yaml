@@ -128,6 +128,7 @@ pipeline_health:
   spend_keep_days: 35            # day-spend records kept this long
   schedule_window_hours: 24      # a scheduled workflow whose schedule asked for
   schedule_min_expected: 3       #   at least this many runs in the window, none started
+  schedule_min_share: 0.25       # ... or fewer than this share of them started (0 = off)
 
 # Flaky tests (F-19): a test that failed and then passed when Agent 4 retried
 # it once counts as passed and is recorded on the pipeline health issue; its

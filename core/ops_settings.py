@@ -37,6 +37,9 @@ DEFAULTS: dict = {
         # none of which the repository host started, is reported.
         "schedule_window_hours": 24,
         "schedule_min_expected": 3,
+        # ... and one whose host started fewer than this share of them (X8).
+        # 0 switches that half off.
+        "schedule_min_share": 0.25,
     },
     # A test that failed and then passed when retried once (F-19).
     "flaky_tests": {
