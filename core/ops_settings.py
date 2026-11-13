@@ -134,6 +134,17 @@ DEFAULTS: dict = {
         "default_severity": "normal",
         # Dated PDFs kept on the store branch (the latest is always published).
         "pdf_keep": 14,
+        # A sprint's summary on the tracker (RP7): one issue of this type per
+        # sprint, the PDF attached, moved to this status (it is a record, not
+        # work), made on the sprint's last day or by hand.
+        "sprint_summary": True,
+        "sprint_summary_issue_type": "Task",
+        "sprint_summary_status": "Done",
+        # A trend chart on Agent 5's comment (RP10): the story's results over
+        # its last runs, once it has at least `story_trend_min_points`.
+        "story_trend": True,
+        "story_trend_points": 10,
+        "story_trend_min_points": 2,
     },
 }
 
