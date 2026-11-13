@@ -153,6 +153,8 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || steps.record.outputs.recorded != '0'
         env:
           SITE_URL: ${{ steps.pages.outputs.base_url }}
+          # The board whose active sprint the PDF and the sprint summary cover.
+          JIRA_BOARD_ID: ${{ vars.JIRA_BOARD_ID }}
           SPRINT_SUMMARY: ${{ inputs.sprint_summary && 'force' || 'auto' }}
           JIRA_URL: ${{ vars.JIRA_URL }}
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}

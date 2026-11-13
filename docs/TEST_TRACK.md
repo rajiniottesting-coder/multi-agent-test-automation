@@ -27,7 +27,7 @@ still open, and the rows each new change adds.
 
 ## Open checks
 
-31 rows: 27 open or partly proven (⬜), 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌); with the 254 proven, 285.
+32 rows: 28 open or partly proven (⬜), 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌); with the 254 proven, 286.
 
 Most of these wait for an event that cannot be produced on demand (the model
 taking a particular path, a provider error that quotes a secret); some are not
@@ -66,3 +66,4 @@ possible on the current application. Each names what it is waiting for.
 | E175 | #465 Bars per run | The History page after the next Reports run | Runs 42950342049 and 42950372112 (both started 11 Nov 03:05) are two bars of 26, not one of 52; `zz_validation_window_j.feature` (no longer in the suite) is not in *By feature file* or *By story*; the tests card counts the latest run (26) | ⬜ | Found on the first live store (Reports run 43414618346, 13 Nov) |
 | E176 | #466 X8 | The next pipeline health check (or *Run workflow* with `dry_run`) | For each scheduled workflow GitHub starts in under 25% of its slots over 24 hours (Agent 1 and Agent 2 on 10-12 Nov), one `workflow-starting-rarely:<file>` alert naming started and asked-for counts; it closes once the share is back; `workflow-not-starting` unchanged | ⬜ | |
 | E177 | #466 X9 | Inventory Health by hand (and the next night) | Green when healthy, as before; after a first reading that fails with the application up, a second reading and the note quoting the first; with the application down (not reproducible on demand - unit-tested), the alert `application-unavailable-inventory-health` on the health issue and a green run | ⬜ | |
+| E178 | #467 Matrix read live | The traceability page after the next Reports run | Stories with no Agent 1 coverage map (SCRUM-111, 200, 201, 202) read *not mapped* and count apart, not as criteria without a test case; SCRUM-284 lists SCRUM-289 (marked for it on main); a criterion citing a title revised since reads *cited test case not found*; the PDF names the active sprint | ⬜ | Found on the first live store (Reports run 43418830017: 17 of 30 criteria read uncovered, no sprint) |

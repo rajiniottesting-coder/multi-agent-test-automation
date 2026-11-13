@@ -207,3 +207,10 @@ def test_reports_workflow_can_force_the_sprint_summary():
     wf = (root / "reports.yml").read_text()
     assert "sprint_summary:" in wf and "--sprint-summary" in wf and "steps.pages.outputs.base_url" in wf
     assert "requirements-reports.txt" in (root / "agent4_runner.yml").read_text().split("Run Agent 5")[0][-2500:]
+
+
+def test_the_reports_run_knows_the_board():
+    """13 Nov 2026, first live run: no sprint was read - the board was not passed."""
+    wf = (Path(__file__).resolve().parents[2] / ".github/workflows/reports.yml").read_text()
+    build = wf[wf.index("- name: Build the site"):wf.index("- name: Keep a copy")]
+    assert "JIRA_BOARD_ID: ${{ vars.JIRA_BOARD_ID }}" in build

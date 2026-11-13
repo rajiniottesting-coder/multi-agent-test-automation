@@ -73,7 +73,7 @@ def traceability(tracker, features_dir: Path, latest: dict, defects: list[dict] 
     that owns a test case the suite implements."""
     from agents.agent2_coder import build_marker_index
     from core.acceptance_coverage import extract_criteria
-    from core.report_data import coverage_map, traceability_rows
+    from core.report_data import coverage_map, traceability_rows, unmatched_citations
     index = build_marker_index(features_dir)
     scenarios: dict = {}
     for rec in latest.values():
@@ -100,9 +100,18 @@ def traceability(tracker, features_dir: Path, latest: dict, defects: list[dict] 
             continue
         criteria = [(c.ref, c.text) for c in extract_criteria(story.get("summary"),
                                                               story.get("description"))]
+        # A test case the suite implements for this story is listed even when
+        # the tracker no longer links it (13 Nov 2026, first live matrix: a
+        # story's second test case was on main, marked for it, and missing).
+        linked = {tc["key"] for tc in tcs}
+        tcs = list(tcs) + [{"key": k, "summary": index.by_key[k].title}
+                           for k in sorted(owners[key]) if k not in linked]
+        comment = _coverage_comment(comments)
+        refs = [r for r, _ in criteria]
         stories.append({**story, "criteria": criteria, "test_cases": tcs,
-                        "coverage": coverage_map(_coverage_comment(comments),
-                                                 [r for r, _ in criteria], tcs),
+                        "has_coverage_map": bool(comment),
+                        "coverage": coverage_map(comment, refs, tcs),
+                        "unmatched": unmatched_citations(comment, refs, tcs),
                         "scenarios": {k: scenarios.get(k) or [] for k in
                                       {tc["key"] for tc in tcs} | owners[key]}})
     return traceability_rows(stories, latest, defects_by_key)
@@ -331,9 +340,12 @@ def traceability_html(data: dict) -> str:
     else:
         sm = data["traceability_summary"]
         res = ", ".join(f"{n} {k}" for k, n in sorted(sm["results"].items())) or "none"
+        unmapped = (f"; {sm['criteria_unmapped']} on stories Agent 1 left no coverage map for"
+                    if sm.get("criteria_unmapped") else "")
         head = (f"<p>{_n(sm['stories'], 'story').replace('storys', 'stories')}, "
                 f"{_n(sm['criteria'], 'acceptance criterion').replace('criterions', 'criteria')} "
-                f"({sm['criteria_uncovered']} without a test case), {_n(sm['test_cases'], 'test case')} "
+                f"({sm['criteria_uncovered']} without a test case{unmapped}), "
+                f"{_n(sm['test_cases'], 'test case')} "
                 f"({sm['test_cases_without_scenario']} without a scenario on the default branch). "
                 f"Scenario results: {res}.</p>")
         body = head + _table(
