@@ -112,3 +112,36 @@ def test_agent3_and_the_health_alerts_use_the_same_rule(monkeypatch):
     note = failure_note(RuntimeError(f"refused {token} with app-pass-9876"))
     assert token not in note and "app-pass-9876" not in note and M in note
     assert _redact(f"refused {token} with app-pass-9876") == f"refused {M} with {M}"
+
+
+def test_a_signed_urls_signature_is_redacted_and_the_rest_kept():
+    """A failed artifact download printed the storage host's signed URL
+    (13 Nov 2026): its signature let anyone read the file until it expired."""
+    from core.redaction import redact
+    sig = "LCSCqoPht8uVaGFv5v108Mj2zWEk%2B%2B7qRJY1sjDwtSY%3D"
+    text = f"url: /artifacts/x.zip?rscd=attachment&se=2026-11-13&sig={sig}&ske=1 (Caused by"
+    out = redact(text)
+    assert sig not in out
+    assert "sig=[redacted]&ske=1 (Caused by" in out and "?rscd=attachment&se=2026-11-13" in out
+    assert "abc123" not in redact("https://s3.example/k?X-Amz-Signature=abc123&X-Amz-Date=1")
+    assert "tok99" not in redact("https://h.example/f?access_token=tok99")
+    assert redact("https://h.example/page?id=7&sort=asc") == "https://h.example/page?id=7&sort=asc"
+
+
+def test_an_artifact_download_failure_logs_no_signed_url(caplog, monkeypatch):
+    import logging
+    from types import SimpleNamespace
+    from integrations.github_client import GitHubClient
+    c = GitHubClient.__new__(GitHubClient)
+    art = SimpleNamespace(name="pytest-report-1", expired=False,
+                          archive_download_url="https://api.example/zip")
+    run = SimpleNamespace(get_artifacts=lambda: [art])
+    c._repo = SimpleNamespace(get_workflow_run=lambda i: run)
+    c.__dict__["token"] = "t"
+
+    def refused(*a, **k):
+        raise ConnectionError("Max retries exceeded with url: /a.zip?sv=1&sig=SECRETSIG123 (proxy)")
+    monkeypatch.setattr("requests.get", refused)
+    with caplog.at_level(logging.WARNING):
+        assert c.get_run_artifact_file(1, "pytest-report-", "junit.xml") is None
+    assert "SECRETSIG123" not in caplog.text and "sig=[redacted]" in caplog.text

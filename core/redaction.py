@@ -16,7 +16,11 @@ what it was given. Before any of them is posted, `redact()` removes:
   - a gateway's key alias (`Key=<owner>_<id>`) and any email address;
   - the value of a credential-carrying HTTP header an error quotes
     (`Authorization`, `Cookie`, `Set-Cookie`, a `...-Token` header): an HTTP
-    client's error can print the response's headers, session cookie included.
+    client's error can print the response's headers, session cookie included;
+  - the signature or token of a signed URL (`sig=`, `signature=`,
+    `X-Amz-Signature=`, `X-Goog-Signature=`, `token=`, `access_token=`): a
+    failed download prints the URL it was redirected to, and a storage
+    host's signed link lets anyone holding it read the file until it expires.
 
 `error_text()` is the readable form of such an error for a person: its status
 and the server's own message, without the request/response header dump.
@@ -54,6 +58,9 @@ _EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 # (`'Set-Cookie': 'session=...'`, `Authorization: Bearer ...`).
 _HEADER = re.compile(r"(?i)(\b(?:proxy-)?authorization|\bset-cookie|\bcookie|\b[\w-]*-token)"
                      r"(['\"]?\s*[:=]\s*)(['\"]?)([^'\"\n]*)")
+# The secret part of a signed URL's query string.
+_SIGNED_QUERY = re.compile(r"(?i)([?&](?:sig|signature|x-amz-signature|x-amz-security-token|"
+                           r"x-goog-signature|token|access_token)=)[^&\s'\"]+")
 # An HTTP client's dump of the headers it sent or received.
 _HEADER_DUMP = re.compile(r"(?is)\s*(?:request|response)\s+headers\s*=\s*\{.*?(?:\}|\Z)")
 MARK = "[redacted]"
@@ -71,6 +78,7 @@ def redact(text: str, env=None) -> str:
     text = _TOKEN.sub(MARK, text)
     text = _KEY_ALIAS.sub(f"Key={MARK}", text)
     text = _HEADER.sub(lambda m: f"{m.group(1)}{m.group(2)}{m.group(3)}{MARK}", text)
+    text = _SIGNED_QUERY.sub(lambda m: m.group(1) + MARK, text)
     return _EMAIL.sub(MARK, text)
 
 
