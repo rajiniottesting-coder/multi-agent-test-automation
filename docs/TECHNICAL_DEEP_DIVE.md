@@ -85,6 +85,7 @@ core/
   inventory_proposals.py
   inventory_update.py
   json_block.py
+  local_outputs.py
   junit_marks.py
   llm_client.py
   onboarding.py
@@ -136,12 +137,14 @@ scripts/
   generate_inventory.py
   impact_handover.py
   impact_reconcile.py
+  local_report.py
   onboarding_check.py
   pipeline_health_check.py
   plan_inventory.py
   promote_draft.py
   propose_context_addition.py
   propose_inventory_update.py
+  pull_reports.py
   record_results.py
   smoke_test.py
   sweep_stalled_prs.py

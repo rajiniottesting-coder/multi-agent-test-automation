@@ -412,7 +412,10 @@ publishes the dashboard, traceability matrix, PDF summary and Allure report
 after each run on the default branch (GUIDE -> *Reports*). Map your own tags to
 a severity in `reporting.severity_by_tag`. The store branch
 (`reporting.store_branch`) must be writable by the agents' identity: add it to
-the branch rules the way the agents' other branches are.
+the branch rules the way the agents' other branches are. A test run on a
+person's machine gets the same pages with `python -m scripts.local_report`;
+`python -m scripts.pull_reports --to <folder>` keeps a copy of the published
+ones in a folder.
 
 ### The agents' identity on another repository host
 

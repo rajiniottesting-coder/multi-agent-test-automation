@@ -1970,6 +1970,19 @@ workflow (`.github/workflows/reports.yml`) runs after every Agent 4 run on
 | Traceability | Story -> acceptance criterion -> test case -> scenario -> last result -> defect, and what has no test case or no scenario | markers, the tracker, Agent 1's coverage comment, the store |
 | PDF summary | The headline numbers, the trend chart, open defects by age, risks; on a sprint's last day it is the sprint summary | the same data |
 
+**Where the numbers come from.** Not from a sprint or a board: from the test
+runs themselves. The source is the **repository's CI runs** - every run of
+Agent 4 on `main` (the nightly, *Run workflow* on main, a push that ran the
+application tests); pull-request runs are not recorded, they test unmerged
+code. Each result is tied to its **test case and story** by the scenario's
+`# JIRA:` marker in the feature file (and the tracker's links, when a marker
+names no owner). The **tracker** is read for what the runs cannot say: the
+story's title and acceptance criteria and Agent 1's coverage map
+(traceability), the open defects (any issue of `defects.issue_type` in the
+project), and the **board's active sprint** (`JIRA_BOARD_ID`) - used only to
+name the sprint on the PDF and to time the sprint summary. The pages cover
+the last `reporting.window_days` days of runs, whatever sprint they fell in.
+
 **The results store (RP1).** Every full run on `main` - nightly, by hand, or a
 push that ran the application tests - is recorded on the branch
 `reporting.store_branch` (`metrics-data`): `runs.jsonl` (one line per run:
@@ -1984,6 +1997,15 @@ ran only the unit tests records nothing, and the workflow stops there. Only
 the agents' identity (the GitHub App, F-30) writes the store branch - the
 branch rules let no person push there. JSON lines, not a database: any tool
 reads them, and two runs never conflict.
+
+**Storage does not grow.** The store keeps `reporting.keep_days` (90) of
+results; older runs are deleted each time. The branch is ONE commit, replaced
+by each Reports run - its files are the history, so no earlier copy of the
+pages or the PDF is kept in git (a commit per run reached 14 MB on its first
+day). No dated PDF copies are kept (`reporting.pdf_keep: 0`): the latest is
+published, and a sprint's is attached to its summary issue. Agent 4's run
+artifacts last 3 days (and the daily *Artifact cleanup* removes leftovers);
+the site's upload lasts 1 day - Pages keeps only the deployed site.
 
 **Defects.** The dashboard counts every open issue of the defect type
 (`defects.issue_type`), whoever raised it - the nightly triage or a person.
@@ -2010,27 +2032,55 @@ reviewer sees the story go from red to green over its review rounds.
 
 **Reports in a folder on your machine (RP9).** Each Reports run also keeps the
 pages, the PDF and `data.json` under `latest/` on the store branch (the Allure
-report stays on Pages: it is several MB a run). Clone the branch once and pull
-it on a schedule - the repository is public, so no credentials are needed, and
-only the agents' identity writes the branch, so a fast-forward pull never
-conflicts:
+report stays on Pages: it is several MB a run). `scripts/pull_reports.py`
+downloads the branch as one archive and REPLACES the folder's contents with
+those pages - one copy, no git history, about 120 KB. Run it from the
+repository checkout on a schedule (a public repository needs no credentials;
+a private one, `GITHUB_TOKEN` with read access):
 
 ```bash
-git clone --single-branch --branch metrics-data https://github.com/<owner>/<repo>.git D:\TestReports
+python -m scripts.pull_reports --to D:\TestReports
 # Windows, every day at 09:00 (Task Scheduler):
-schtasks /Create /SC DAILY /ST 09:00 /TN "Test reports" /TR "git -C D:\TestReports pull --ff-only"
+schtasks /Create /SC DAILY /ST 09:00 /TN "Test reports" /TR "cmd /c cd /d C:\path\to\repo && python -m scripts.pull_reports --to D:\TestReports"
 # macOS / Linux (crontab -e):
-0 9 * * * git -C ~/TestReports pull --ff-only
+0 9 * * * cd ~/repo && python3 -m scripts.pull_reports --to ~/TestReports
 ```
 
-Open `latest/index.html` (latest run), `latest/history.html` or
-`latest/summary.pdf`; dated PDFs are under `pdf/`. The charts load Plotly from
-its CDN, so they need internet; the tables and the PDF do not.
+Open `index.html` (latest run), `history.html`, `traceability.html` or
+`summary.pdf`; the Allure link opens the published report. The charts load
+Plotly from its CDN, so they need internet; the tables and the PDF do not. A
+failed download leaves the folder as it was. (Not a git clone of the branch:
+the branch is replaced each run, so `git pull` cannot fast-forward.)
+
+**Test runs on your own machine.** Run the application tests, then build the
+same pages from that run:
+
+```bash
+pytest tests/step_defs/
+python -m scripts.local_report --open
+```
+
+The run is recorded in a store of its own, `reports/history/` (kept
+`reporting.keep_days`, like the shared one) - never in the shared history: a
+local run may be a few scenarios on unreviewed code and would bend the trend.
+The pages go to `reports/site/` (Latest run, History of your local runs,
+Traceability, PDF); with the Allure command line installed the run's Allure
+report is generated beside them, otherwise the page says
+`allure serve reports/allure-results`. Nothing is posted anywhere (no sprint
+summary, no deploy); the tracker is read when `.env` has its credentials
+(`--no-tracker` skips it). Each local run of the application tests starts
+clean: the previous run's Allure result files and `reports/failure-evidence/`
+are deleted when the session starts (`core/local_outputs.py`) - they used to
+pile up run after run, and Allure showed old results as retries. Allure's
+trend is kept (it comes from the last generated report). Never in CI, where
+every job starts on a clean runner, never for `--last-failed` (a retry writes
+beside the run it retries), and never for a unit-test session.
 
 **Settings** (`config.yaml`, block `reporting`): `enabled`, `store_branch`,
-`window_days` (what the dashboard and the PDF cover, default 30),
-`severity_by_tag`, `default_severity`, `pdf_keep` (dated PDF copies kept on the
-store branch under `pdf/`; a sprint's last-day copy is always kept),
+`window_days` (what the dashboard and the PDF cover, default 30), `keep_days`
+(results kept in a store, default 90; 0 keeps everything), `severity_by_tag`,
+`default_severity`, `pdf_keep` (dated PDF copies kept on the store under
+`pdf/`; default 0 - none),
 `sprint_summary`, `sprint_summary_issue_type`, `sprint_summary_status`,
 `story_trend`, `story_trend_points`, `story_trend_min_points`.
 

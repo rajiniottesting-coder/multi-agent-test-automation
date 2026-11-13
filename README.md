@@ -268,6 +268,7 @@ multi-agent-test-automation/
 │   ├── spend_budget.py              # Per-story and per-day model spend budgets
 │   ├── ops_settings.py              # The operational config blocks, with defaults
 │   ├── results_store.py             # The history of test results (the metrics-data branch)
+│   ├── local_outputs.py             # A local test run starts clean (no piled-up results)
 │   ├── report_data.py               # The numbers every report shows
 │   ├── allure_labels.py             # Allure severity from tags, links to test case and story
 │   ├── sprint_summary.py            # The sprint's test summary on the tracker
@@ -316,6 +317,8 @@ multi-agent-test-automation/
 │   ├── start_agent.py               # Hand-off: start the next agent while stories wait
 │   ├── record_results.py            # Reports: record full runs on main in the results store
 │   ├── build_site.py                # Reports: dashboard, traceability matrix, PDF summary
+│   ├── local_report.py              # The same reports for a test run on your machine
+│   ├── pull_reports.py              # Copy the published reports into a local folder
 │
 ├── .github/workflows/
 │   ├── agent0_impact.yml            # Scan, reconcile, PR code change, nightly drift
