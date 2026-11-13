@@ -730,6 +730,7 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
             "separately, and the verdict is 'failed': %s",
             len(outside), ", ".join(f"{r.classname}::{r.name}" for r in outside[:10]))
     verdict = _overall_verdict(report, outside, outages)
+    scoped_outages = sum(1 for r in report.results if r.outage)       # RP10's chart
     # What the model summarises is what the run could judge; the outages are
     # listed by code (build_final_comment).
     report = _without_outages(report)
@@ -880,8 +881,19 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
     # table separator becomes a row of dashes and **bold** keeps its stars);
     # a tracker without the capability gets the Markdown as written.
     render = getattr(jira, "render_markdown", None)
-    comment_url = jira.add_comment(story_key, render(final_body) if callable(render)
-                                   else final_body)
+    body = render(final_body) if callable(render) else final_body
+    # RP10: the story's results over its runs, as a chart under the report -
+    # in the tracker's own markup, so after the Markdown is rendered.
+    try:
+        from core import story_trend
+        item = story_trend.entry(report.passed, report.failed + report.errors, report.skipped,
+                                 scoped_outages, report.workflow_run_url, report.commit_sha)
+        shown = story_trend.attach_chart(jira, story_key, item, reports_dir / "trend")
+        if shown:
+            body += "\n\n" + shown
+    except Exception as e:                                         # noqa: BLE001
+        logger.warning(f"Trend chart skipped (non-fatal): {e}")
+    comment_url = jira.add_comment(story_key, body)
     jira.add_label(story_key, "tests-run")  # idempotent — won't dup-add
 
     # A change story that revised tests OTHER stories own (Agent 0, stage 9):

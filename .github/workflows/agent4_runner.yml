@@ -967,9 +967,11 @@ jobs:
           cache: "pip"
 
       - name: Install Python dependencies
+        # requirements-reports.txt: Matplotlib, for the trend chart on the
+        # story's report (RP10); without it the report is posted unchanged.
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt -r requirements-reports.txt
 
       - name: Download test reports from test job
         # The `test` job uploaded reports/ as an artifact. We download it
