@@ -33,6 +33,7 @@ from pathlib import Path
 logger = logging.getLogger("record_results")
 
 WORKFLOW = "agent4_runner.yml"
+APP_TESTS_PREFIX = "tests.step_defs."
 ARTIFACT = "pytest-report-"
 # Runs whose junit.xml is the application suite on the default branch.
 FULL_RUN_EVENTS = ("schedule", "workflow_dispatch", "push")
@@ -106,6 +107,9 @@ def record_local(store: Path, junit: Path, features_dir: Path) -> dict:
     if run["id"] in rs.recorded_run_ids(store):
         return {"recorded": 0, "already": 1, "no_report": 0, "not_full": 0}
     cases = rs.case_records(junit.read_bytes(), run, _tracer(features_dir))
+    # A whole-suite run (`pytest` with no paths) reports the framework's unit
+    # tests too: only the application tests are a run of the application.
+    cases = [c for c in cases if c["test"].startswith(APP_TESTS_PREFIX)]
     done = rs.append(store, run, cases)
     return {"recorded": int(done), "already": 0, "no_report": int(not cases), "not_full": 0}
 

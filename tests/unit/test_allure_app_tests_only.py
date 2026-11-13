@@ -100,3 +100,43 @@ def test_the_cli_prints_what_it_kept(tmp_path, capsys):
     assert main([str(res)]) == 0
     assert "1 test(s) kept, 1 no longer reported dropped" in capsys.readouterr().out
     assert main([]) == 0
+
+
+# ── a local run of the application tests writes junit.xml ──────────────
+
+def _jconfig(args, xmlpath=None, collectonly=False):
+    return SimpleNamespace(args=args, invocation_params=SimpleNamespace(dir=ROOT),
+                           option=SimpleNamespace(xmlpath=xmlpath, collectonly=collectonly))
+
+
+def test_an_app_run_writes_junit_without_being_asked(tmp_path):
+    from core.local_outputs import default_junit_for_app_runs
+    config = _jconfig(["tests/step_defs/"])
+    assert default_junit_for_app_runs(config, tmp_path) is True
+    assert config.option.xmlpath == str(tmp_path / "reports" / "junit.xml")
+
+
+@pytest.mark.parametrize("args,xmlpath,collectonly", [
+    (["tests/step_defs/"], "reports/junit-retry.xml", False),   # CI names its own file
+    (["tests/unit/"], None, False),                             # unit tests: none
+    (["tests/step_defs/"], None, True),                         # collection only
+])
+def test_junit_left_alone(tmp_path, args, xmlpath, collectonly):
+    from core.local_outputs import default_junit_for_app_runs
+    config = _jconfig(args, xmlpath, collectonly)
+    config.args = args
+    assert default_junit_for_app_runs(config, ROOT) is False
+    assert config.option.xmlpath == xmlpath
+
+
+def test_a_local_run_records_the_application_tests_only(tmp_path, monkeypatch):
+    from scripts import record_results as rr
+    from core import results_store as rs
+    monkeypatch.setattr(rr, "_tracer", lambda features: (lambda t: {}))
+    junit = tmp_path / "junit.xml"
+    junit.write_bytes(b"<testsuites><testsuite>"
+                      b"<testcase classname='tests.step_defs.test_a' name='test_one' time='1'/>"
+                      b"<testcase classname='tests.unit.test_b' name='test_two' time='1'/>"
+                      b"</testsuite></testsuites>")
+    assert rr.record_local(tmp_path / "h", junit, tmp_path)["recorded"] == 1
+    assert [r["test"] for r in rs.read_results(tmp_path / "h")] == ["tests.step_defs.test_a::test_one"]

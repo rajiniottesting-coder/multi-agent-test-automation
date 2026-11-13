@@ -72,6 +72,30 @@ def keep_unit_tests_out_of_allure(config, root: Path) -> bool:
     return False
 
 
+LOCAL_JUNIT = "reports/junit.xml"
+
+
+def default_junit_for_app_runs(config, root: Path) -> bool:
+    """pytest_configure (before the junitxml plugin's): a session that runs
+    the application tests writes reports/junit.xml even when not asked to.
+    13 Nov 2026: `pytest tests/step_defs/` on the owner's machine passed 26
+    tests and wrote no junit.xml, so `python -m scripts.local_report` had no
+    run to record - only Agent 4 passed `--junit-xml`. A path given on the
+    command line wins; a unit-test session writes none. True when set."""
+    try:
+        if getattr(config.option, "xmlpath", None) or getattr(config.option, "collectonly", False):
+            return False                  # asked for elsewhere, or nothing runs
+        base = getattr(getattr(config, "invocation_params", None), "dir", None)
+        if unit_only(config.args, root, base=base):
+            return False
+        config.option.xmlpath = str(Path(root) / LOCAL_JUNIT)
+        Path(config.option.xmlpath).parent.mkdir(parents=True, exist_ok=True)
+        return True
+    except Exception as e:                                         # noqa: BLE001
+        logger.debug("junit.xml left as configured: %s", e)
+        return False
+
+
 def clear_previous_run(reports_dir: Path, allure_dir: Path | None) -> int:
     """Delete the previous run's per-test Allure files and failure evidence;
     the number of files deleted."""
