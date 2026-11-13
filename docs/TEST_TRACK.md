@@ -27,7 +27,7 @@ still open, and the rows each new change adds.
 
 ## Open checks
 
-32 rows: 28 open or partly proven (⬜), 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌); with the 254 proven, 286.
+34 rows: 30 open or partly proven (⬜), 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌); with the 254 proven, 288.
 
 Most of these wait for an event that cannot be produced on demand (the model
 taking a particular path, a provider error that quotes a secret); some are not
@@ -67,3 +67,5 @@ possible on the current application. Each names what it is waiting for.
 | E176 | #466 X8 | The next pipeline health check (or *Run workflow* with `dry_run`) | For each scheduled workflow GitHub starts in under 25% of its slots over 24 hours (Agent 1 and Agent 2 on 10-12 Nov), one `workflow-starting-rarely:<file>` alert naming started and asked-for counts; it closes once the share is back; `workflow-not-starting` unchanged | ⬜ | |
 | E177 | #466 X9 | Inventory Health by hand (and the next night) | Green when healthy, as before; after a first reading that fails with the application up, a second reading and the note quoting the first; with the application down (not reproducible on demand - unit-tested), the alert `application-unavailable-inventory-health` on the health issue and a green run | ⬜ | |
 | E178 | #467 Matrix read live | The traceability page after the next Reports run | Stories with no Agent 1 coverage map (SCRUM-111, 200, 201, 202) read *not mapped* and count apart, not as criteria without a test case; SCRUM-284 lists SCRUM-289 (marked for it on main); a criterion citing a title revised since reads *cited test case not found*; the PDF names the active sprint | ⬜ | Found on the first live store (Reports run 43418830017: 17 of 30 criteria read uncovered, no sprint) |
+| E179 | #468 X7 | The next Agent 3 review (any pull request) | Its log reads `Review prompt size: ... (~N tokens; cap 100,000)`; a change whose prompt would exceed the cap (not produced on demand - unit-tested) is reviewed in parts, one comment, the strictest verdict, files beyond `review.max_parts` named as not reviewed | ⬜ | |
+| E180 | #468 C2 | The next Agent 2 run whose signed-in steps read a persistent page (and the committed tree) | A membership or count read once from the persistent page is refused as `Persistent state snapshot error` with the wait_for_row / wait_for_count remedy, and the repair adds a waiting page-object method; no committed step definition is flagged | ⬜ | |

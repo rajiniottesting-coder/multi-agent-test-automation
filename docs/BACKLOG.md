@@ -76,7 +76,7 @@ before a real project; P2 and P3 before a wider rollout.
 | X4 | An optional deployment signal (config or webhook) that marks a change story's failures as expected until deployment and reminds a person to merge its context-update PR | Pre-deployment failures look real | P3 | B | L20, F-17 | Open |
 | X5 | Detect agent PRs that conflict with or fall behind `main`; comment with the cause and suggest `ai-update` or `ai-regenerate`; never force-push | The PR waits silently | P2 | B | N5, F-25 | Open |
 | X6 | Require Agent 4's Run Tests check before merge, with X4's expected-failure marking so a change story is not blocked before deployment | A red PR can be merged | P3 | A | N6, F-26 | Open |
-| X7 | Cap or split very large PR reviews | The largest review read 138,632 tokens; nothing caps it | P2 | A | | Open |
+| X7 | Cap or split very large PR reviews | The largest review read 138,632 tokens; nothing caps it | P2 | A | | Done (#468) |
 
 ### Operations
 
@@ -90,7 +90,7 @@ before a real project; P2 and P3 before a wider rollout.
 | ID | Item | Today (gap) | Priority | Cost | Was | Status |
 |---|---|---|---|---|---|---|
 | C1 | API, accessibility, visual and performance tests, chosen per project | UI tests only | P3 | C | | Open |
-| C2 | Validator for snapshot-count and snapshot-membership assertions in signed-in tests | Not rejected by Agent 2's gate | P3 | A | L11, F-6 | Open |
+| C2 | Validator for snapshot-count and snapshot-membership assertions in signed-in tests | Not rejected by Agent 2's gate | P3 | A | L11, F-6 | Done (#468) |
 | C3 | A fixed set of stories replayed when the prompts of Agents 1-3 change | No prompt regression set | P3 | C | L12 | Open |
 
 ### Live browser (Playwright CLI)
