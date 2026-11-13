@@ -153,6 +153,8 @@ def collect(store: Path, features_dir: Path, now: _dt.datetime, with_tracker: bo
         "defect_list": defects, "sprint": sprint,
         "traceability": rows,
         "traceability_summary": rd.traceability_summary(rows) if rows is not None else None,
+        "unlinked_defects": (rd.unlinked_defects(defects, rows)
+                             if rows is not None and defects is not None else None),
     }
 
 
@@ -334,6 +336,19 @@ def dashboard_html(data: dict) -> str:
     return _page("Test history", body + script)
 
 
+def _test_case_cell(r: dict) -> str:
+    """A real gap (a mapped criterion no test case covers) in red; a test
+    case only when there is one - never 'none' where nothing is known."""
+    if r["test_case"]:
+        return (f"{_link(r['test_case'])}<br><span class='muted'>"
+                f"{_e(r['test_case_summary'])}</span>")
+    if r["result"] == "no test case" and r["criterion"] != "-":
+        return "<span class='v-failed'>none</span>"
+    if r["result"] == "cited test case not found":
+        return "<span class='v-failed'>cited title not found</span>"
+    return "-"
+
+
 def traceability_html(data: dict) -> str:
     rows = data["traceability"]
     if rows is None:
@@ -352,12 +367,22 @@ def traceability_html(data: dict) -> str:
         body = head + _table(
             ["Story", "Criterion", "Test case", "Scenario", "Last result", "Defects"],
             [[f"{_link(r['story'])}<br><span class='muted'>{_e(r['story_summary'])}</span>",
-              f"<b>{_e(r['criterion'])}</b> {_e(r['criterion_text'])}",
-              (f"{_link(r['test_case'])}<br><span class='muted'>{_e(r['test_case_summary'])}</span>"
-               if r["test_case"] else "<span class='v-failed'>none</span>"),
+              (f"<b>{_e(r['criterion'])}</b> " if r["criterion"] != "-" else "")
+              + (f"<span class='muted'>{_e(r['criterion_text'])}</span>" if r["criterion"] == "-"
+                 else _e(r["criterion_text"])),
+              _test_case_cell(r),
               f"<code>{_e(r['scenario'].split('::')[-1])}</code>" if r["scenario"] else "-",
               f"<span class='v-{_e(r['result'])}'>{_e(r['result'])}</span> {_e(r['result_date'])}",
               " ".join(_link(d) for d in r["defects"]) or "-"] for r in rows])
+        loose = data.get("unlinked_defects") or []
+        if loose:
+            body += ("<h2 style='margin-top:20px'>Open defects not linked to a story or test "
+                     "case here</h2><p class='muted'>Raised without a link (or linked to an issue "
+                     "outside this matrix), so no row can show them. Link each to its test case "
+                     "or story to place it.</p>" + _table(
+                         ["Defect", "Summary", "Status", "Created"],
+                         [[_link(d["key"]), _e(d.get("summary")), _e(d.get("status")),
+                           _e((d.get("created") or "")[:10])] for d in loose]))
     return _page("Traceability", _header(data, "traceability.html")
                  + f"<main><div class='card'><h2>Traceability matrix</h2>{body}</div></main>")
 
