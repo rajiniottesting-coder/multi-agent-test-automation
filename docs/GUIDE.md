@@ -1733,6 +1733,17 @@ Selection rules come from `config.yaml`'s `agents.<name>.selection` block.
 | Sweeper | weekdays hourly, 10:05–19:05 | `dry_run` input |
 | Story Done on merge | on PR closed with `merged == true`: Done, then the notes addition | — |
 
+### Deleting closed issues (by hand)
+
+Throw-away validation issues, or defects the pipeline raised and closed, can
+be deleted for good with the *Delete closed issues* workflow
+(`.github/workflows/delete_issues.yml`, `scripts/delete_issues.py`): *Run
+workflow* -> keys `PRJ-1, PRJ-2`, confirm `DELETE`. It deletes only issues in
+the done category without sub-tasks, at most 50 a run, reports each key, and
+fails when it kept any. Deletion cannot be undone; close an issue first to
+make it eligible. The tracker account needs the project's *Delete issues*
+permission.
+
 ### Scheduled runs that do not start (X8)
 
 GitHub may delay a scheduled run by hours or drop it, most on a quiet
