@@ -408,6 +408,10 @@ def main(argv=None) -> int:
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--features", default=Path("features"), type=Path)
     ap.add_argument("--no-tracker", action="store_true")
+    ap.add_argument("--site-url", default=None, help="where the site is published")
+    ap.add_argument("--sprint-summary", choices=("auto", "force", "off"), default="auto",
+                    help="record the sprint's summary on the tracker (RP7): on the "
+                         "sprint's last day (auto), now (force), or never")
     args = ap.parse_args(argv)
     from core.ops_settings import section
     now = _dt.datetime.now(_dt.timezone.utc)
@@ -424,10 +428,17 @@ def main(argv=None) -> int:
     pdf = args.out / "summary.pdf"
     if summary_pdf(data, pdf, sprint_end):
         keep_pdf(args.store, pdf, now, sprint_end, int(section("reporting").get("pdf_keep") or 14))
+    summary_key = None
+    if not args.no_tracker and (args.sprint_summary == "force"
+                                or (args.sprint_summary == "auto" and sprint_end)):
+        from core.sprint_summary import post
+        summary_key = post(_tracker(), data, pdf if pdf.exists() else None, args.site_url,
+                           force=args.sprint_summary == "force")
     k = data["kpis"]
     print(f"Site built: {k['runs']} run(s), {k['tests']} test(s) in the window; "
           f"traceability {'built' if data['traceability'] is not None else 'not built'}; "
-          f"PDF {'made' if pdf.exists() else 'not made'}{' (sprint end)' if sprint_end else ''}.")
+          f"PDF {'made' if pdf.exists() else 'not made'}{' (sprint end)' if sprint_end else ''}"
+          f"{f'; sprint summary {summary_key}' if summary_key else ''}.")
     return 0
 
 

@@ -905,6 +905,20 @@ class JiraClient:
         logger.info(f"Created {issue_type}: {issue.key} — {summary}")
         return issue.key
 
+    def add_attachment(self, issue_key: str, path, name: Optional[str] = None) -> str:
+        """Attach a file to the issue and return the wiki markup that shows it
+        in a comment or description: an image inline (`!name|thumbnail!`),
+        any other file as a link (`[^name]`). Optional capability (RP7, RP10);
+        raises when the upload is refused - the caller decides."""
+        from pathlib import Path as _Path
+        p = _Path(path)
+        name = name or p.name
+        with p.open("rb") as fh:
+            self.client.add_attachment(issue=issue_key, attachment=fh, filename=name)
+        logger.info(f"Attached {name} to {issue_key}")
+        image = p.suffix.lower() in (".png", ".jpg", ".jpeg", ".gif", ".svg")
+        return f"!{name}|thumbnail!" if image else f"[^{name}]"
+
     def set_components(self, issue_key: str, components: list) -> None:
         """Replace the issue's Jira Components (by name) - a defect takes its
         owning story's. Components must exist in the project; the story's do."""

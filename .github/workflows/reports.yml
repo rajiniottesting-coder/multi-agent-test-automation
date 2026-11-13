@@ -10,7 +10,9 @@
 #               dashboard, traceability matrix, PDF summary, and the latest
 #               run's Allure report (Agent 4 makes it). Its trend history is
 #               kept on the store (allure-history/), where Agent 4 finds it
-#               when its own cache has been dropped.
+#               when its own cache has been dropped. On the active sprint's
+#               last day (or by hand, input sprint_summary) the sprint's test
+#               summary is recorded on the tracker (core/sprint_summary.py).
 #   3. publish  the store (pushed with the agents' identity - the branch rules
 #               let only it write there) and the site to GitHub Pages.
 #
@@ -28,6 +30,11 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      sprint_summary:
+        description: "Record the active sprint's test summary on the tracker now (RP7)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -135,14 +142,23 @@ jobs:
             printf '%s' "<!doctype html><meta charset=utf-8><title>Allure report</title><p>The Allure report of the latest recorded run is no longer available: a run's report is kept for 3 days. It returns with the next run. <a href='../index.html'>Back to the dashboard</a></p>" > site/allure/index.html
           fi
 
+      - name: Configure Pages
+        id: pages
+        if: github.event_name == 'workflow_dispatch' || steps.record.outputs.recorded != '0'
+        uses: actions/configure-pages@v5
+
       - name: Build the site
+        # On the active sprint's last day it also records the sprint's summary
+        # on the tracker (RP7); by hand, the input does it at once.
         if: github.event_name == 'workflow_dispatch' || steps.record.outputs.recorded != '0'
         env:
+          SITE_URL: ${{ steps.pages.outputs.base_url }}
+          SPRINT_SUMMARY: ${{ inputs.sprint_summary && 'force' || 'auto' }}
           JIRA_URL: ${{ vars.JIRA_URL }}
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
           JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
-        run: python -m scripts.build_site --store store --out site
+        run: python -m scripts.build_site --store store --out site --site-url "$SITE_URL" --sprint-summary "$SPRINT_SUMMARY"
 
       - name: Save the results store
         # Before the deploy: a site never shows numbers the store lost.
@@ -165,10 +181,6 @@ jobs:
           done
           echo "::error::The results store could not be saved."
           exit 1
-
-      - name: Configure Pages
-        if: github.event_name == 'workflow_dispatch' || steps.record.outputs.recorded != '0'
-        uses: actions/configure-pages@v5
 
       - name: Upload the site
         if: github.event_name == 'workflow_dispatch' || steps.record.outputs.recorded != '0'

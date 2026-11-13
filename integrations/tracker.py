@@ -77,6 +77,10 @@ an adapter written before them stays valid.
                                               defects, whoever raised them
     get_active_sprint() -> {"id","name","start","end"}
                                               the sprint the PDF summary covers
+    add_attachment(issue_key, path, name=None) -> markup
+                                              attach a file; the markup shows it
+                                              in a comment (the sprint summary's
+                                              PDF, Agent 5's trend chart)
 
 A link to an issue in a browser is built without a connection, by
 issue_url(key): add the adapter's base-URL variable and template to
