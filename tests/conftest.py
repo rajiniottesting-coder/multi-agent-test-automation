@@ -74,8 +74,13 @@ def should_block_request(url: str, blocked_hosts) -> bool:
     return False
 
 
+@pytest.hookimpl(tryfirst=True)
 def pytest_configure(config):
     """Fill the Allure report's metadata panels before any test runs.
+
+    First of all (tryfirst, before the Allure plugin reads its option): a
+    session of the framework's unit tests writes no Allure results - the
+    report is the application tests' (core/local_outputs.py).
 
     Also registers core/rerun_record.py: a test re-run after a temporary
     HTTP error gets a `reruns` property in junit.xml, whatever shape the
@@ -94,8 +99,10 @@ def pytest_configure(config):
     different application changes every value without changing this code.
     """
     from core import rerun_record
+    from core.local_outputs import keep_unit_tests_out_of_allure
     if not config.pluginmanager.is_registered(rerun_record):
         config.pluginmanager.register(rerun_record, "rerun_record")
+    keep_unit_tests_out_of_allure(config, Path(__file__).resolve().parents[1])
     results_dir = config.getoption("--alluredir", default=None)
     if not results_dir:
         return                                    # not an Allure run
