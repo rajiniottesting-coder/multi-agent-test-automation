@@ -905,12 +905,14 @@ class JiraClient:
         logger.info(f"Created {issue_type}: {issue.key} — {summary}")
         return issue.key
 
-    def delete_closed_issue(self, issue_key: str) -> dict:
+    def delete_closed_issue(self, issue_key: str, required_label: str | None = None) -> dict:
         """Delete one issue for good - only when it is in the done category
         (scripts/delete_issues.py). Returns {"key", "summary", "type",
-        "deleted": bool, "reason"}; never deletes an open issue, and never
-        an issue with sub-tasks. Optional capability."""
-        issue = self.client.issue(issue_key, fields="summary,status,issuetype,subtasks")
+        "deleted": bool, "reason"}; never deletes an open issue, never an
+        issue with sub-tasks, and - when `required_label` is given - never
+        one without that label (D10: a closed defect is history). Optional
+        capability."""
+        issue = self.client.issue(issue_key, fields="summary,status,issuetype,subtasks,labels")
         f = issue.fields
         out = {"key": issue.key, "summary": f.summary,
                "type": getattr(f.issuetype, "name", ""), "deleted": False, "reason": ""}
@@ -919,6 +921,8 @@ class JiraClient:
             out["reason"] = f"not closed (status {f.status.name})"
         elif getattr(f, "subtasks", None):
             out["reason"] = "has sub-tasks"
+        elif required_label and required_label not in (getattr(f, "labels", None) or []):
+            out["reason"] = f"no '{required_label}' label"
         else:
             issue.delete()
             out["deleted"] = True

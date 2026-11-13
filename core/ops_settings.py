@@ -161,6 +161,13 @@ DEFAULTS: dict = {
         "story_trend_points": 10,
         "story_trend_min_points": 2,
     },
+    # D10: scripts/delete_issues.py deletes only closed issues carrying this
+    # label - throw-away issues (validation runs, dummy defects). A real
+    # defect is closed, never deleted: it is the defect trend's history. The
+    # defect history leaves issues with this label out. "" turns it off.
+    "cleanup": {
+        "delete_label": "test-data",
+    },
 }
 
 

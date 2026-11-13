@@ -1735,14 +1735,20 @@ Selection rules come from `config.yaml`'s `agents.<name>.selection` block.
 
 ### Deleting closed issues (by hand)
 
-Throw-away validation issues, or defects the pipeline raised and closed, can
-be deleted for good with the *Delete closed issues* workflow
-(`.github/workflows/delete_issues.yml`, `scripts/delete_issues.py`): *Run
-workflow* -> keys `PRJ-1, PRJ-2`, confirm `DELETE`. It deletes only issues in
-the done category without sub-tasks, at most 50 a run, reports each key, and
-fails when it kept any. Deletion cannot be undone; close an issue first to
-make it eligible. The tracker account needs the project's *Delete issues*
-permission.
+Only **throw-away** issues are deleted - validation stories, dummy defects.
+A real defect is closed, never deleted: it is the history the defect trend
+and density are built from (D10; on 13 Nov 2026 24 closed defects the nightly
+run had raised were deleted, and their history with them). So a throw-away
+issue carries the label `cleanup.delete_label` (`test-data`); give it to such
+issues only.
+
+The *Delete closed issues* workflow (`.github/workflows/delete_issues.yml`,
+`scripts/delete_issues.py`): *Run workflow* -> keys `PRJ-1, PRJ-2`, confirm
+`DELETE`. It deletes only issues in the done category, without sub-tasks and
+with the `test-data` label, at most 50 a run, reports each key, and fails
+when it kept any. Deletion cannot be undone; close an issue and label it
+first to make it eligible. The tracker account needs the project's *Delete
+issues* permission. The defect history (D7) leaves `test-data` issues out.
 
 ### Scheduled runs that do not start (X8)
 

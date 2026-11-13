@@ -1,10 +1,11 @@
 # ─────────────────────────────────────────────────────────────
 # Delete closed issues (by hand only)
 #
-# Deletes tracker issues for good, by key: throw-away validation issues, or
-# defects the pipeline raised and closed. Guards (scripts/delete_issues.py):
-# the confirm input must be DELETE, an issue that is not closed or has
-# sub-tasks is kept, at most 50 keys a run. Deletion cannot be undone.
+# Deletes throw-away tracker issues for good, by key. Guards
+# (scripts/delete_issues.py): the confirm input must be DELETE; an issue that
+# is not closed, has sub-tasks, or lacks the cleanup.delete_label label
+# ("test-data") is kept; at most 50 keys a run. A real defect is closed, not
+# deleted - it is the defect trend's history. Deletion cannot be undone.
 # Run workflow -> keys "PRJ-1, PRJ-2", confirm "DELETE".
 # ─────────────────────────────────────────────────────────────
 
@@ -14,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       keys:
-        description: "Issue keys to delete, comma-separated (closed issues only)"
+        description: "Issue keys to delete, comma-separated (closed, labelled test-data)"
         required: true
         type: string
       confirm:

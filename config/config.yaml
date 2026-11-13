@@ -166,6 +166,11 @@ reporting:
   story_trend_points: 10
   story_trend_min_points: 2          # no chart for a story's first run
 
+# D10: scripts/delete_issues.py deletes only closed issues with this label -
+# throw-away issues. A real defect is closed, never deleted. "" = off.
+cleanup:
+  delete_label: "test-data"
+
 # Defect triage (F-22): after a run on main (nightly, a push that ran the E2E,
 # a manual run on main) each test still failing has ONE open defect: a repeat
 # updates it - under another diagnosed cause too (the causes seen are listed) -
