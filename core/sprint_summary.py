@@ -8,7 +8,9 @@ work: it is moved to `reporting.sprint_summary_status` at once so it never sits
 in the board's open columns.
 
 Once per sprint: an existing summary is left alone; with `force` the current
-numbers are added to it as a comment (and the PDF again). Optional capabilities
+numbers are added to it as a comment. The PDF is attached once, when the
+issue is made - a forced update does not attach another copy (one PDF per
+sprint, not one per run; the site always has the latest). Optional capabilities
 only (integrations.tracker.capability) - a tracker without them gets no
 summary and the log says so. Never raises.
 """
@@ -59,7 +61,9 @@ def summary_markdown(data: dict, site_url: str | None) -> str:
     lines += ["", "**Risks**", ""] + [f"- {r}" for r in risks or ["None found in the window."]]
     if site_url:
         lines += ["", f"Dashboard, traceability and the Allure report: {site_url}"]
-    lines += ["", "The PDF summary is attached."]
+    lines += ["", "The PDF made with the first summary is attached to this issue"
+              + (f"; the latest is always at {site_url.rstrip('/')}/summary.pdf." if site_url
+                 else ".")]
     return "\n".join(lines)
 
 
@@ -102,10 +106,7 @@ def post(tracker, data: dict, pdf: Path | None, site_url: str | None,
             logger.info("Sprint summary: %s already records %s.", key, name)
             return key
         if key:
-            note = body
-            if attach and pdf and Path(pdf).is_file():
-                note += "\n\n" + attach(key, pdf, _pdf_name(sprint))
-            tracker.add_comment(key, note)
+            tracker.add_comment(key, body)
             logger.info("Sprint summary: %s updated.", key)
             return key
         key = create(issue_type, name, body, labels=[LABEL])
