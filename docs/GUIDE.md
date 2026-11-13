@@ -79,7 +79,7 @@ For more diagrams — component view, Agent 2 sequence, and the labels-as-state-
 - **Idempotency via Jira labels.** `ai-processed` (Agent 1 done), `ai-coded` (Agent 2 done), `tests-run` (Agent 5 done); for a change story `impact-proposed` (Agent 0 done, review open) and `impact-applied` (tests revised). Re-running an agent against an already-processed story is a no-op, and Agent 0 skips a story whose text it has already analysed.
 - **Config-driven, not code-driven.** App-specific knowledge (URL, reference files, page inventory, module notes) lives in `config.yaml`, `app_inventory/` and `prompts/app_context/`. Agent code is app-agnostic.
 - **Tools behind Protocols.** Agents talk to `Tracker` (23 operations) and `RepoHost` (20 operations) in `integrations/`, never to Jira or GitHub directly; the Jira and GitHub adapters are the only implementations today.
-- **Defensive validators.** Between Agent 2's model output and the PR, 33 static checks run: the path policy on the plan, 10 hard gates in `_validate_generated_files()`, 28 validator calls in `_collect_repairable_errors()` (7 of them also hard gates), and the absence-claim check against the approved test cases (`_absence_claim_errors()`, in the repair loop and the final gate). Repairable failures feed a repair loop that regenerates only the broken files; the rest abort before a branch exists.
+- **Defensive validators.** Between Agent 2's model output and the PR, 36 static checks run: the path policy on the plan, 10 hard gates in `_validate_generated_files()`, 31 validator calls in `_collect_repairable_errors()` (7 of them also hard gates), and the absence-claim check against the approved test cases (`_absence_claim_errors()`, in the repair loop and the final gate). Repairable failures feed a repair loop that regenerates only the broken files; the rest abort before a branch exists.
 
 ---
 
@@ -130,7 +130,7 @@ Agent 0 is described in its own chapter, [Change stories — Agent 0](#change-st
 2. Optional dedup check: if any test cases are already covered by existing scenarios, skip them — by marker first, then by title without the `[type]` tag. (`ai-regenerate` label bypasses this.) A test case whose title matches **another** test case's scenario is not covered: it is reported, not silently skipped (step 6). If another open PR already adds one of the scenarios, or (after the plan) changes a file this story would write, the story **waits** for the next scan instead — see *Two stories on one page object*.
 3. **Stage 1 (Plan):** Calls the LLM with a Pydantic schema (`CodePlan`) — gets file paths, types, branch name, PR title. NO code yet.
 4. **Stage 2 (Generate):** For EACH file in the plan, calls the LLM in text mode to generate the file's content.
-5. **Validators:** 33 static checks run before a branch is created — see **The validator gate** below. Repairable failures go through the repair loop; anything still failing aborts the run.
+5. **Validators:** 36 static checks run before a branch is created — see **The validator gate** below. Repairable failures go through the repair loop; anything still failing aborts the run.
 6. **Coverage (`agents/agent2_coverage.py`, F-13).** Every approved test case must end with a scenario carrying its marker, read from the files, not from what the model says. One that has none - left out by the model, or a scenario it could not be paired with - is listed with its reason (the plan's `Skipped: <KEY> -- <reason>` line, or "no reason given") in the PR body and in one `[agent2:incomplete]` comment on the story, and the story gets `ai-incomplete` beside `ai-coded`. Covered cases that need a person (an outdated scenario, one without its marker) are listed too, without the label. A run that would automate **none** of the story's new test cases opens no PR: the gate refuses it (`[agent2:blocked]`).
 7. Creates a branch (`auto/<JIRA-KEY>-<feature-name>`), commits files, opens a PR.
 8. Tags the parent story with `ai-coded` (the card moves to In Review) and posts its cost.
@@ -297,13 +297,13 @@ its trigger label was never consumed.
 
 **The validator gate:**
 
-Thirty-three checks guard the generated batch: `validate_paths_against_policy`
+Thirty-six checks guard the generated batch: `validate_paths_against_policy`
 on the plan, then the 10 hard gates below in `_validate_generated_files()`, run
 in order, cheapest first, so an expensive AST walk only runs if the basic checks
-pass. `_collect_repairable_errors()` makes 28 validator calls - the set the
+pass. `_collect_repairable_errors()` makes 31 validator calls - the set the
 repair loop uses, 7 of which are also hard gates - and `_absence_claim_errors()`
 runs beside it wherever the approved test cases are known (the repair loop and
-the final gate). Path policy + 10 + 28 − 7 + 1 = 33 distinct checks. The newest
+the final gate). Path policy + 10 + 31 − 7 + 1 = 36 distinct checks. The newest
 three (`validators/absence_claims.py`) keep a removal verified all the way to the
 browser: a test case's "is not shown" step stays in its scenario, a Then step
 worded as absence asserts absence, and an absence predicate on a permanent
@@ -311,6 +311,14 @@ element (one the inventory does not list as `conditional`) proves its page is
 loaded first - otherwise it also passes before the page has rendered.
 `validate_reused_steps_keep_their_meaning` rejects a Then step that re-defines a
 phrase another feature already defines but asserts more than that definition does.
+`validate_persistent_state_snapshots` (C2) rejects, in a signed-in step definition,
+a list or a count read ONCE from a page the inventory declares `persistent_state`
+and asserted on (`assert item in page.item_names()`, `assert page.row_count() == n`): the
+application saves the change for the user and the page shows it a moment later,
+so the read right after the action is still the previous state. The remedy is a
+page-object method built on `wait_for_row` / `wait_for_count`; an assertion the
+absolute-state check (`validate_persistent_state_assertions`) already reports is
+not reported twice.
 `validate_scenarios_open_a_page_first` (`validators/opening_step.py`) rejects a
 scenario whose first Given or When step acts before any page is opened - its
 first page-object call is to a method that never calls `navigate()`; every
@@ -397,7 +405,7 @@ already cover the revision).
 
 **What it does:**
 1. Reads PR metadata + changed files through the repo host. The workflow checks out the BASE branch, so every PR is reviewed by the reviewer code, prompt and reference files on `main` — never by a stale copy on an old story branch.
-2. Calls the LLM with a rigorous review prompt (`prompts/agent3_reviewer.md`) plus the reference files for style baseline, returning a `ReviewReport`. Test code goes in whole; documentation, prompts and Markdown - nothing a test reads while it runs - go in as their diff, and the changed-files section has a size budget (the largest full contents fall back to their diffs first), so a PR that edits the big guides still fits the model's context.
+2. Calls the LLM with a rigorous review prompt (`prompts/agent3_reviewer.md`) plus the reference files for style baseline, returning a `ReviewReport`. Test code goes in whole; documentation, prompts and Markdown - nothing a test reads while it runs - go in as their diff, and the changed-files section has a size budget (the largest full contents fall back to their diffs first), so a PR that edits the big guides still fits the model's context. The whole prompt is capped too (X7, `review.max_prompt_tokens`, default 100k tokens): a larger change is reviewed in parts - the same instructions and references, a share of the files, one model call each - merged into one review with the strictest verdict, at most `review.max_parts` (3); files beyond them are named on the review as not reviewed.
 3. Post-processes the response (`postprocess_review()`): deduplicates issues and caps at 10, withdraws unsubstantiated findings, lowers findings on lines this PR did not change to advice, and derives the verdict. **Blocking needs a named failure scenario**; when the only blocker is a predicted test failure, it waits for Agent 4's result on the same commit - up to Agent 4's browser-turn cap (15 min) plus one run (8 min), 23 min; most reviews never wait - and a green run refutes the block; a red run refutes each prediction whose own scenario passed on that commit (`runner_evidence_for_head()` reads the run's `junit.xml` from its `pytest-report-<run id>` artifact; the finding names its `scenario`, or quotes it in its failure scenario). A finding naming no scenario, a scenario not in the report, or a report that cannot be read is judged on the whole run, as before. All of this only when the PR changes a file read at test runtime (`core/test_runtime.py`); a unit-only green run proves nothing about a test failure. The prompt also lists every BasePage helper the changed page objects call, with its docstring (`base_page_helpers_called()`), and a finding about a helper's behaviour must agree with it. It also lists every page-object method the changed step definitions call, with its signature and docstring, read from the pull request's version of the page file or else `main`'s (`page_object_methods_called()`): a method outside the diff exists and is never reported as missing.
 4. Posts a markdown comment on the PR. Agent 3 never merges; its check goes red only for a finding that names a failure.
 
