@@ -292,3 +292,18 @@ def test_the_open_defect_list_leaves_throw_away_issues_out():
         def issues_for_report(self, issue_type, open_only=True):
             return [{"key": "PRJ-1", "labels": []}, {"key": "PRJ-2", "labels": ["test-data"]}]
     assert [d["key"] for d in open_defects(T())] == ["PRJ-1"]
+
+
+def test_the_sprint_record_is_rewritten_when_the_history_empties(tmp_path, monkeypatch):
+    """13 Nov 2026: the validation dummies left the history, and the sprint's
+    record still counted them - it was written only while a defect remained."""
+    from scripts import build_site as bs
+    sprint = {"id": 2, "name": "S0", "start": "2026-11-01T00:00:00Z", "end": "2026-11-20T00:00:00Z"}
+    dl.sprint_snapshot(tmp_path, sprint, _recs(), {}, 10, NOW)
+    monkeypatch.setattr(dl, "sync", lambda *a, **k: {"read": 0})
+    bs.defect_history(tmp_path, object(), Path("features"), sprint, NOW)
+    assert dl.read_sprints(tmp_path)[0]["opened"] == 0
+    monkeypatch.setattr(dl, "sync", lambda *a, **k: None)             # tracker unreadable
+    dl.sprint_snapshot(tmp_path, sprint, _recs(), {}, 10, NOW)
+    bs.defect_history(tmp_path, object(), Path("features"), sprint, NOW)
+    assert dl.read_sprints(tmp_path)[0]["opened"] == 3                 # left as it was
