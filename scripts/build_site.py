@@ -117,6 +117,8 @@ def collect(store: Path, features_dir: Path, now: _dt.datetime, with_tracker: bo
     runs = [r for r in rs.read_runs(store) if (r.get("started") or "") >= since]
     results = rs.read_results(store, since=since)
     latest = rs.latest_by_test(rs.read_results(store))
+    current = ({r["test"] for r in results if r.get("run_id") == runs[-1]["run_id"]}
+               if runs else None)                  # the suite as it is now
     tracker = _tracker() if with_tracker else None
     defects = open_defects(tracker) if tracker else None
     sprint = None
@@ -135,7 +137,8 @@ def collect(store: Path, features_dir: Path, now: _dt.datetime, with_tracker: bo
         "kpis": rd.kpis(runs, results), "trend": rd.trend(runs),
         "latest": rd.latest_run(runs, results),
         "slowest": rd.slowest(results), "flaky": rd.flaky_ranking(results),
-        "by_file": rd.breakdown(results, "file"), "by_story": rd.breakdown(results, "story"),
+        "by_file": rd.breakdown(results, "file", current),
+        "by_story": rd.breakdown(results, "story", current),
         "defects": rd.defects_summary(defects, now) if defects is not None else None,
         "defect_list": defects, "sprint": sprint,
         "traceability": rows,
@@ -258,7 +261,8 @@ def dashboard_html(data: dict) -> str:
     cards = [
         (_pct(k["latest_pass_rate"]), "pass rate, latest run"),
         (_pct(k["window_pass_rate"]), "pass rate, window"),
-        (k["runs"], "runs in the window"), (k["tests"], "tests"),
+        (k["runs"], "runs in the window"),
+        ((latest or {}).get("tests", k["tests"]), "tests in the latest run"),
         (k["flaky"], "flaky passes"),
         (data["defects"]["total"] if data["defects"] else "-", "open defects"),
     ]
@@ -298,15 +302,21 @@ def dashboard_html(data: dict) -> str:
             + f"<div class='card'><h2>By story</h2>{bd(data['by_story'])}</div>"
             + f"<div class='card'><h2>Open defects</h2>{defects}</div></main>")
     t = data["trend"]
-    series = [{"type": "bar", "name": k, "x": t["started"], "y": t[k], "marker": {"color": c},
-               "customdata": t["run"]} for k, c in COLORS.items()]
+    ids = [str(r) for r in t["run"]]
+    series = [{"type": "bar", "name": k, "x": ids, "y": t[k], "marker": {"color": c},
+               "hovertext": [f"run {i}, {s}" for i, s in zip(ids, t["started"])]}
+              for k, c in COLORS.items()]
     age = (data["defects"] or {}).get("by_age") or []
     script = (f"<script src='{PLOTLY}'></script><script>"
               f"const L={{barmode:'stack',margin:{{t:30,r:10,b:90,l:40}},height:340,bargap:0.3,legend:{{orientation:'h',y:1.12}},"
               f"paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',xaxis:{{type:'category'}}}};"
-              f"if(window.Plotly){{Plotly.newPlot('trend',{json.dumps(series)},L,{{displayModeBar:false}});"
-              f"Plotly.newPlot('duration',[{{type:'scatter',mode:'lines+markers',x:{json.dumps(t['started'])},"
-              f"y:{json.dumps(t['duration_min'])},name:'minutes'}}],Object.assign({{}},L,{{barmode:null}}),{{displayModeBar:false}});"
+              # One bar per run: two runs started in the same minute share a
+              # label, so the axis is the run id and the label the start time.
+              f"const X=Object.assign({{}},L,{{xaxis:{{type:'category',tickvals:{json.dumps([str(r) for r in t['run']])},"
+              f"ticktext:{json.dumps(t['started'])}}}}});"
+              f"if(window.Plotly){{Plotly.newPlot('trend',{json.dumps(series)},X,{{displayModeBar:false}});"
+              f"Plotly.newPlot('duration',[{{type:'scatter',mode:'lines+markers',x:{json.dumps(ids)},"
+              f"y:{json.dumps(t['duration_min'])},name:'minutes'}}],Object.assign({{}},X,{{barmode:null}}),{{displayModeBar:false}});"
               + (f"Plotly.newPlot('defects-age',[{{type:'bar',x:{json.dumps([a for a, _ in age])},"
                  f"y:{json.dumps([n for _, n in age])},marker:{{color:'#c62828'}}}}],"
                  f"Object.assign({{}},L,{{height:220}}),{{displayModeBar:false}});" if age else "")
@@ -391,7 +401,8 @@ def summary_pdf(data: dict, path: Path, sprint_end: bool) -> bool:
     rows = [["Measure", "Value"],
             ["Pass rate, latest run", _pct(k["latest_pass_rate"])],
             ["Pass rate, window", _pct(k["window_pass_rate"])],
-            ["Runs in the window", str(k["runs"])], ["Tests", str(k["tests"])],
+            ["Runs in the window", str(k["runs"])],
+            ["Tests in the latest run", str(latest.get("tests", k["tests"]))],
             ["Flaky passes", str(k["flaky"])],
             ["Open defects", str(data["defects"]["total"]) if data["defects"] else "not read"]]
     if latest:

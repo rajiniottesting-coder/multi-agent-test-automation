@@ -514,3 +514,23 @@ def test_latest_run_lists_what_needs_a_look_failed_first(tmp_path):
     assert [r["verdict"] for r in lr["rows"]] == ["failed", "outage", "flaky", "skipped"]
     assert lr["passed"] == 1 and lr["run"]["run_id"] == 1
     assert rd.latest_run([], []) is None
+
+
+def test_a_test_no_longer_in_the_suite_leaves_the_breakdown(tmp_path):
+    _, results = _store_with_two_runs(tmp_path)
+    current = {r["test"] for r in results if r["run_id"] == 2}
+    names = {r["name"]: r for r in rd.breakdown(results, "file", current)}
+    assert names["module_b.feature"]["tests"] == 1             # test_remove, test_later gone
+    assert rd.breakdown(results, "file")[0]["tests"] >= 1     # without `current`: every test
+
+
+def test_runs_in_the_same_minute_get_a_bar_each(tmp_path):
+    from scripts import build_site as bs
+    store = tmp_path / "store"
+    for i in (1, 2):
+        run = sample_run(i, "2026-11-11T03:05:00Z")
+        rs.append(store, run, rs.case_records(sample_xml(), run))
+    out = tmp_path / "site"
+    assert bs.main(["--store", str(store), "--out", str(out), "--no-tracker"]) == 0
+    page = (out / "history.html").read_text(encoding="utf-8")
+    assert '"x": ["1", "2"]' in page and 'ticktext:["2026-11-11 03:05", "2026-11-11 03:05"]' in page

@@ -42,7 +42,7 @@ def summary_markdown(data: dict, site_url: str | None) -> str:
              "| Measure | Value |", "|---|---|",
              f"| Pass rate, latest run | {_pct(k['latest_pass_rate'])} |",
              f"| Pass rate, window | {_pct(k['window_pass_rate'])} |",
-             f"| Runs | {k['runs']} |", f"| Tests | {k['tests']} |",
+             f"| Runs | {k['runs']} |", f"| Tests in the latest run | {latest.get('tests', k['tests'])} |",
              f"| Flaky passes | {k['flaky']} |",
              f"| Open defects | {data['defects']['total'] if data.get('defects') else 'not read'} |"]
     if latest:

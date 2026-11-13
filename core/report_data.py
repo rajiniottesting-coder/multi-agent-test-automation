@@ -93,11 +93,15 @@ def flaky_ranking(results: list[dict]) -> list[dict]:
             for t, n in flakes.most_common()]
 
 
-def breakdown(results: list[dict], key: str) -> list[dict]:
-    """Latest result per test, grouped by `key` ("file" or "story")."""
+def breakdown(results: list[dict], key: str, current: set | None = None) -> list[dict]:
+    """Latest result per test, grouped by `key` ("file" or "story"). With
+    `current` (the tests of the newest run), a test no longer in the suite - a
+    removed scenario - is left out instead of showing its last result for ever."""
     from core.results_store import latest_by_test
     groups = defaultdict(list)
     for r in latest_by_test(results).values():
+        if current is not None and r["test"] not in current:
+            continue
         groups[r.get(key) or "(not traced)"].append(r)
     rows = []
     for name, recs in groups.items():
