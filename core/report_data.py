@@ -192,6 +192,47 @@ def unmatched_citations(comment_body: str, criteria_refs, test_cases: list[dict]
     return out
 
 
+_STOP = {"the", "and", "with", "for", "from", "that", "this", "its", "are", "was", "into",
+         "via", "when", "then", "not"}
+_REWORD_SHARE = 0.8
+
+
+def _words(text: str) -> set:
+    return {w for w in re.findall(r"[a-z0-9]+", _norm(text)) if len(w) >= 3 and w not in _STOP}
+
+
+def reworded_matches(comment_body: str, criteria_refs, test_cases: list[dict]) -> dict:
+    """{criterion ref: [test case key]} for coverage lines whose cited title
+    no test case has any more because the title was revised after Agent 1
+    wrote the map (13 Nov 2026: a criterion cited a test case's first title,
+    the test case had been renamed since - the matrix showed a gap, and the
+    test case as mapped to no criterion).
+
+    Only a test case of the story that no line cites by its exact title is
+    considered, and only when at least 80% of its title's words are in the
+    cited text and it is the single best match - so a revision is followed,
+    a different test case never is."""
+    exact = coverage_map(comment_body, criteria_refs, test_cases)
+    cited_exactly = {k for keys in exact.values() for k in keys}
+    free = [tc for tc in test_cases if tc["key"] not in cited_exactly]
+    out = {}
+    for line in (comment_body or "").splitlines():
+        m = re.match(r"^\s*[-*]\s*(AC\d+|TITLE)\b(.*?)->(.*)$", line.strip())
+        if not m or exact.get(m.group(1)):
+            continue
+        cited = _words(m.group(3).split(" | ", 1)[0])
+        scored = []
+        for tc in free:
+            title = _words(tc.get("summary", ""))
+            if len(title) >= 3:
+                scored.append((len(title & cited) / len(title), tc["key"]))
+        scored.sort(reverse=True)
+        if scored and scored[0][0] >= _REWORD_SHARE and \
+                (len(scored) == 1 or scored[1][0] < scored[0][0]):
+            out.setdefault(m.group(1), []).append(scored[0][1])
+    return out
+
+
 def traceability_rows(stories: list[dict], latest: dict, defects_by_key: dict) -> list[dict]:
     """One row per (story, criterion, test case, scenario).
 
@@ -233,9 +274,12 @@ def traceability_rows(stories: list[dict], latest: dict, defects_by_key: dict) -
                        else "no test case")
                 rows.append(_row(s, ref, text, None, None, None, defects_by_key, why))
             for k in keys:
+                note = ("matched by wording: the coverage map cites this test case's "
+                        "earlier title" if (ref, k) in (s.get("reworded") or ()) else "")
                 for test in (s.get("scenarios") or {}).get(k) or [None]:
                     rows.append(_row(s, ref, text, tcs.get(k, {"key": k}), test,
-                                     latest.get(test) if test else None, defects_by_key))
+                                     latest.get(test) if test else None, defects_by_key,
+                                     note=note))
         for k, tc in tcs.items():                   # test cases no criterion cites
             if k in covered:
                 continue
@@ -246,7 +290,7 @@ def traceability_rows(stories: list[dict], latest: dict, defects_by_key: dict) -
 
 
 def _row(story, ref, text, tc, test, record, defects_by_key, why: str = "",
-         unmapped: int = 0) -> dict:
+         unmapped: int = 0, note: str = "") -> dict:
     keys = [story["key"]] + ([tc["key"]] if tc else [])
     defects = sorted({d for k in keys for d in defects_by_key.get(k, [])})
     return {"story": story["key"], "story_summary": story.get("summary", ""),
@@ -256,7 +300,7 @@ def _row(story, ref, text, tc, test, record, defects_by_key, why: str = "",
             "scenario": test or "",
             "result": why or (record or {}).get("verdict", "not run" if test else "no scenario"),
             "result_date": ((record or {}).get("started") or "")[:10],
-            "defects": defects, "unmapped_criteria": unmapped}
+            "defects": defects, "unmapped_criteria": unmapped, "note": note}
 
 
 def unlinked_defects(defects: list[dict] | None, rows: list[dict]) -> list[dict]:

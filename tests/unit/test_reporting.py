@@ -586,3 +586,43 @@ def test_a_marked_test_case_the_tracker_no_longer_links_is_listed(tmp_path):
             return []
     rows = bs.traceability(Unlinked(), _features(tmp_path), {}, [])
     assert any(r["test_case"] == "TC-7" and r["test_case_summary"] == "Valid login" for r in rows)
+
+
+# ── a test case title revised after the coverage map was written ────────
+
+REVISED_MAP = ("\\[agent1:coverage\\]\n"
+               "- AC1 a -> \\[Positive\\] Visitor sends the form with every field filled | step 3\n"
+               "- AC2 b -> \\[Negative\\] Sending the form with the email field left empty "
+               "does not send it | step 3\n"
+               "- AC3 c -> (none) | gap\n")
+REVISED_TCS = [{"key": "TC-1", "summary": "[Positive] Visitor sends the form with every field filled"},
+               {"key": "TC-2", "summary": "Sending the form with an empty email field does not send"},
+               {"key": "TC-3", "summary": "Unrelated check of the page heading"}]
+
+
+def test_a_revised_title_is_followed_by_its_wording():
+    """13 Nov 2026: a criterion citing a test case's earlier title read as a
+    gap, and the test case as not mapped to any criterion."""
+    from scripts.build_site import _coverage
+    c = _coverage(REVISED_MAP, ["AC1", "AC2", "AC3"], REVISED_TCS)
+    assert c["coverage"] == {"AC1": ["TC-1"], "AC2": ["TC-2"], "AC3": []}
+    assert c["reworded"] == {("AC2", "TC-2")} and c["unmatched"] == set()
+
+
+def test_wording_never_picks_a_test_case_cited_exactly_or_an_unlike_one():
+    assert rd.reworded_matches(REVISED_MAP, ["AC1", "AC2", "AC3"],
+                               [REVISED_TCS[0], REVISED_TCS[2]]) == {}
+    two_alike = [{"key": "A", "summary": "Sending the form with an empty email field"},
+                 {"key": "B", "summary": "Sending the form with an empty email field twice"}]
+    m = rd.reworded_matches(REVISED_MAP, ["AC2"], two_alike)
+    assert m == {"AC2": ["A"]}                       # the single best, never both
+
+
+def test_a_reworded_row_says_so():
+    from scripts.build_site import _coverage, _test_case_cell
+    story = {"key": "ST-9", "criteria": [("AC2", "b")], "test_cases": REVISED_TCS,
+             "scenarios": {"TC-2": ["t::two"]}, **_coverage(REVISED_MAP, ["AC2"], REVISED_TCS)}
+    rows = rd.traceability_rows([story], {"t::two": {"verdict": "passed", "started": "2026-11-13"}}, {})
+    ac2 = next(r for r in rows if r["criterion"] == "AC2")
+    assert (ac2["test_case"], ac2["result"]) == ("TC-2", "passed")
+    assert "earlier title" in _test_case_cell(ac2)
