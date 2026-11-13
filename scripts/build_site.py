@@ -59,10 +59,15 @@ def open_defects(tracker) -> list[dict] | None:
     person - or None when the tracker cannot say."""
     from core.defects import settings as defect_settings
     from integrations.tracker import capability
+    from core.ops_settings import section
     read = capability(tracker, "issues_for_report") if tracker else None
     if read is None:
         return None
-    return read(defect_settings()["issue_type"], open_only=True)
+    # A throw-away issue (cleanup.delete_label) is no defect of the
+    # application: left out here as in the defect history.
+    throwaway = (section("cleanup").get("delete_label") or "").strip()
+    return [d for d in read(defect_settings()["issue_type"], open_only=True)
+            if not throwaway or throwaway not in (d.get("labels") or [])]
 
 
 def _coverage_comment(comments: list) -> str:
