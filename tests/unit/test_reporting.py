@@ -534,15 +534,38 @@ def test_runs_in_the_same_minute_get_a_bar_each(tmp_path):
     assert '"x": ["1", "2"]' in page and 'ticktext:["2026-11-11 03:05", "2026-11-11 03:05"]' in page
 
 
-def test_a_story_without_a_coverage_map_is_not_mapped_not_uncovered():
-    """13 Nov 2026, first live matrix: stories older than Agent 1's coverage
-    comment read as 17 criteria with no test case."""
+def test_a_story_without_a_coverage_map_lists_its_test_cases_not_gaps():
+    """13 Nov 2026, live matrix: stories older than Agent 1's coverage
+    comment showed a row per criterion with test case 'none' - read as gaps on
+    stories whose every test case passed."""
     rows = rd.traceability_rows([{"key": "ST-5", "criteria": [("AC1", "a"), ("AC2", "b")],
-                                  "has_coverage_map": False, "coverage": {"AC1": [], "AC2": []},
-                                  "test_cases": [TCS[0]], "scenarios": {}}], {}, {})
-    assert [r["result"] for r in rows] == ["not mapped", "not mapped", "no scenario"]
+                                  "has_coverage_map": False, "coverage": {},
+                                  "test_cases": TCS, "scenarios": {"TC-1": ["t::one"]}}],
+                                {"t::one": {"verdict": "passed", "started": "2026-11-13"}}, {})
+    assert [(r["criterion"], r["test_case"], r["result"]) for r in rows] == [
+        ("-", "TC-1", "passed"), ("-", "TC-2", "no scenario")]
+    assert "AC1, AC2: not mapped" in rows[0]["criterion_text"]
     s = rd.traceability_summary(rows)
-    assert s["criteria_uncovered"] == 0 and s["criteria_unmapped"] == 2
+    assert s["criteria_uncovered"] == 0 and s["criteria_unmapped"] == 2 and s["criteria"] == 2
+    none = rd.traceability_rows([{"key": "ST-6", "criteria": [("AC1", "a")],
+                                  "has_coverage_map": False, "test_cases": []}], {}, {})
+    assert [(r["test_case"], r["result"]) for r in none] == [("", "no test case")]
+
+
+def test_none_only_for_a_real_gap():
+    from scripts.build_site import _test_case_cell
+    base = {"test_case": "", "test_case_summary": "", "criterion": "AC2", "result": "no test case"}
+    assert "none" in _test_case_cell(base)
+    assert _test_case_cell({**base, "criterion": "-"}) == "-"          # unmapped story
+    assert "cited title not found" in _test_case_cell({**base, "result": "cited test case not found"})
+
+
+def test_open_defects_no_row_can_show_are_listed_apart():
+    rows = [{"story": "ST-1", "test_case": "TC-1"}, {"story": "ST-1", "test_case": ""}]
+    defects = [{"key": "BUG-1", "links": ["TC-1"]}, {"key": "BUG-2", "links": []},
+               {"key": "BUG-3", "links": ["OTHER-9"]}, {"key": "BUG-4", "links": ["ST-1"]}]
+    assert [d["key"] for d in rd.unlinked_defects(defects, rows)] == ["BUG-2", "BUG-3"]
+    assert rd.unlinked_defects(None, rows) == []
 
 
 def test_a_citation_whose_title_changed_says_so():
