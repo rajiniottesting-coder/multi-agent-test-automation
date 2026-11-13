@@ -31,6 +31,7 @@ before a real project; P2 and P3 before a wider rollout.
 | RP6 | Management PDF (ReportLab) after the nightly run and at sprint end: totals, pass %, trend chart, open defects by severity, risks | None | P2 | A | | Done (#464) |
 | RP8 | Allure severity (from smoke / critical tags) and links to the story and test case (from the `# JIRA:` marker) | Allure's severity and requirement views are empty | P2 | A | | Done (#464) |
 | RP11 | A *Latest run* page (the site's landing page): what failed, flaked or could not be judged in the newest run, with its error, story and test case; the dashboard becomes *History* | The latest run was one line on the dashboard | P2 | A | | Done (#465) |
+| RP12 | Defect trend (opened, closed, open per day), time to close, density per module and per sprint on *History* and the PDF | Open defects by age only | P2 | A | | Done (#478) |
 
 ### Security
 
@@ -48,6 +49,10 @@ before a real project; P2 and P3 before a wider rollout.
 | D4 | A recurring failure's new defect links the closed one | New defect, unlinked | P2 | B | L37 | Open |
 | D5 | AI defects carry priority (story priority or smoke tag), environment and commit | None set | P2 | B | | Open |
 | D6 | A `raise-defect` label on a PR files a real application bug a new test found | A PR's failures go to its story only (by design) | P3 | B | | Open |
+| D7 | Defect history on the results store (`defects.json`, `sprints/`): every defect's last known state, reopenings, deletions kept | The reports read open defects only, live; a closed or deleted defect left no trace (13 Nov 2026: 24 deleted) | P1 | A | | Done (#478) |
+| D8 | A defect's module: tracker component, else `reporting.modules` over its feature file | The project has no components; no defect had a module | P2 | A | | Done (#478) |
+| D9 | A closed defect's category (app, test, environment, duplicate, not-a-bug) from a close label or the resolution; the density counts product defects | Test fixes would count as product defects | P2 | A | | Done (#478) |
+| D10 | Delete only closed issues labelled `test-data` | Any closed issue could be deleted, real defects included | P1 | A | | Done (#478) |
 
 ### Requirements lifecycle
 
@@ -109,6 +114,9 @@ two places; Playwright's CLI costs about a quarter of Playwright MCP's tokens
 Built and proven live on 13 Nov 2026 (removed above; the pull requests keep
 the history): RP1, RP2, RP3, RP4 (#464, #467), RP7, RP9, RP10 (#465), X7
 (#468). The estimate below is the one of 12 Nov.
+
+Added and built on 13 Nov 2026 at the owner's request (group A, no model
+spend): D7, D8, D9, D10, RP12 (#478) - the defect history, trend and density.
 
 At the pipeline's configured price ($5 per million input tokens, $25 per
 million output; scale if the model's real price differs). Calibrated on 3-12
