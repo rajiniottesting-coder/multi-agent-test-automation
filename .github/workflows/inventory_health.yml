@@ -142,17 +142,51 @@ jobs:
           CI: 'true'
         run: python -m scripts.app_probe --report reports/app_probe.json
 
+      - name: Verify once more when the application is up
+        # X9 (12 Nov 2026): a login form slow to render read as a failed
+        # login and the night went red; the re-run was green. The probe above
+        # has just found the application up (and warmed it), so one more
+        # reading tells a slow moment from drift or a credential problem. Not
+        # when the application is down - the report raises that as an alert.
+        id: retry
+        if: always() && steps.verify.outputs.code != '0'
+        continue-on-error: true
+        env:
+          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+          APP_USER_REGISTERED: ${{ secrets.APP_USER_REGISTERED }}
+          CI: 'true'
+        run: |
+          set +e
+          if ! python -c "import json, sys; d = json.load(open('reports/app_probe.json')); sys.exit(0 if d.get('available') is True else 1)" 2>/dev/null; then
+            echo "The application is not known to be up: no second reading."
+            exit 0
+          fi
+          python -m scripts.verify_locators \
+            --headless \
+            --only-problems \
+            ${{ github.event.inputs.page && format('--page {0}', github.event.inputs.page) || '' }} \
+            2>&1 | tee reports/inventory-health-retry.txt
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
       - name: Report
         # always() so a crashed verify step still produces a summary rather
         # than a bare red X with nothing to read. The headline is decided by
         # scripts/inventory_health_report.py: healthy, drift, a failed login
         # on an application that is up, or an application that is not up.
         if: always()
+        # The application not up opens a pipeline health alert instead of a
+        # red run (--alert); the tracker's credentials are for that alone.
         env:
           CODE: ${{ steps.verify.outputs.code }}
+          RETRY_CODE: ${{ steps.retry.outputs.code }}
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
         run: >-
-          python -m scripts.inventory_health_report --code "$CODE"
-          --output reports/inventory-health.txt --app-probe reports/app_probe.json
+          python -m scripts.inventory_health_report --code "$CODE" --retry-code "$RETRY_CODE"
+          --output reports/inventory-health.txt --app-probe reports/app_probe.json --alert
+          --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
       - name: Upload report
         if: always()
@@ -161,6 +195,7 @@ jobs:
           name: inventory-health-${{ github.run_id }}
           path: |
             reports/inventory-health.txt
+            reports/inventory-health-retry.txt
             reports/app_probe.json
           retention-days: 14
           if-no-files-found: ignore
