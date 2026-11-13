@@ -199,7 +199,7 @@ File sizes change with almost every pull request, so they are not listed here; `
   - another open PR changes a planned file → waits (plan call spent); next scan retries
   - Validates plan against path policy (reserved/extendable)
   - Stage 2: LLM generates each file (feature → page objects → step defs)
-  - 33 static checks; the repair loop regenerates only broken files (up to 4 attempts)
+  - 36 static checks; the repair loop regenerates only broken files (up to 4 attempts)
   - Injects JIRA marker comments above each scenario
   - Branch: auto/<STORY-KEY>-<feature-name>
   - Commits files, opens PR, adds 'ai-coded' label
@@ -1447,9 +1447,9 @@ pushes to main conflicted with branch protection (GH013).
 
 ## 14. Validators — the safety net
 
-33 distinct checks: `validate_paths_against_policy` on the plan, 10 hard gates in
+36 distinct checks: `validate_paths_against_policy` on the plan, 10 hard gates in
 `_validate_generated_files()` (run in order, cheapest first, so an
-expensive AST walk only runs if the basic checks pass), 28 validator calls
+expensive AST walk only runs if the basic checks pass), 31 validator calls
 in `_collect_repairable_errors()` — the set the repair loop uses — of which 7
 are also hard gates, and `_absence_claim_errors()`, which needs the approved
 test cases and so runs beside the collector in the repair loop and the final gate. `validate_page_object_methods()` wraps further page-object
@@ -1478,6 +1478,7 @@ checks.
 | 19 | `validate_readiness_probe` | `validators/method_resolution_validator.py` | repair |
 | 20 | `validate_no_selectors_in_step_defs` | `validators/method_resolution_validator.py` | repair |
 | 21 | `validate_persistent_state_assertions` | `validators/method_resolution_validator.py` | repair |
+| 21b | `validate_persistent_state_snapshots` | `validators/method_resolution_validator.py` | repair |
 | 22 | `validate_step_parameter_types` | `validators/method_resolution_validator.py` | repair |
 | 23 | `validate_persistent_pages_can_be_cleared` | `validators/method_resolution_validator.py` | repair |
 | 24 | `validate_readers_return_what_they_name` | `validators/method_resolution_validator.py` | repair |
@@ -1489,6 +1490,9 @@ checks.
 | 30 | `validate_absence_steps_assert_absence` | `validators/absence_claims.py` | repair |
 | 31 | `validate_absence_predicates_prove_their_page` | `validators/absence_claims.py` | repair |
 | 32 | `absence_claims_missing` (via `_absence_claim_errors()`) | `validators/absence_claims.py` | repair + gate |
+| 33 | `validate_scenarios_open_a_page_first` | `validators/opening_step.py` | repair |
+| 34 | `validate_click_steps_click` | `validators/action_steps.py` | repair |
+| 35 | `validate_steps_carry_no_table_or_doc_string` | `validators/step_arguments.py` | repair |
 
 Repairable failures go to the repair loop (`_attempt_step_coverage_repair`),
 routed to the file they name (`_route_to_generated_file()`); only the broken files are regenerated, with the

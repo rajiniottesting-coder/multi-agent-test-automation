@@ -3510,6 +3510,148 @@ def validate_persistent_state_assertions(
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# A snapshot of persistent state, read once (C2, L11)
+#
+# validate_persistent_state_assertions stops an ABSOLUTE claim on state the
+# application keeps for the signed-in user, unless the scenario owns it. What
+# it leaves alone - and asks for - is the relative claim: `assert item in
+# names`. Read ONCE, that claim is still a race: the application saves the
+# change against the user and the page shows it a moment later, so a list
+# read right after the action is the previous one. A run removed a product,
+# read the names at once and found it still there; the failure blamed the
+# removal. The same holds for a count of a scenario's own, owned state.
+#
+# BasePage has the waiting forms - wait_for_row(locator, text, present=...)
+# and wait_for_count(locator, n) - which re-read until the page settles. Step
+# definitions hold no selectors, so the remedy is a page-object method that
+# waits, called by the step.
+# ─────────────────────────────────────────────────────────────────────────
+
+_COUNT_READER = re.compile(r"(^|_)(count|total|number|size)(_|$)", re.I)
+
+
+def _snapshot_reads(func: ast.AST, live: dict) -> dict:
+    """{local name: fixture} for locals assigned from a fixture's reader."""
+    out = {}
+    for node in ast.walk(func):
+        if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Attribute)
+                and isinstance(node.value.func.value, ast.Name)
+                and node.value.func.value.id in live
+                and not node.value.func.attr.startswith(("wait_", "is_", "has_"))):
+            for t in node.targets:
+                if isinstance(t, ast.Name):
+                    out[t.id] = node.value.func.value.id
+    return out
+
+
+def _reader_fixture(node: ast.AST, live: dict, reads: dict):
+    """The fixture a snapshot expression reads: `fx.reader()`, `len(fx.reader())`,
+    or a local assigned from one."""
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
+            and node.func.id == "len" and node.args:
+        return _reader_fixture(node.args[0], live, reads)
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name) and node.func.value.id in live
+            and not node.func.attr.startswith(("wait_", "is_", "has_"))):
+        return node.func.value.id
+    if isinstance(node, ast.Name) and node.id in reads:
+        return reads[node.id]
+    return None
+
+
+def _is_count(node: ast.AST, reads_src: dict) -> bool:
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "len":
+        return True
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+        return bool(_COUNT_READER.search(node.func.attr))
+    return isinstance(node, ast.Name) and bool(_COUNT_READER.search(reads_src.get(node.id, "")))
+
+
+def validate_persistent_state_snapshots(generated_files: list, project_root=None) -> list[str]:
+    """Fail a membership or count read once from a persistent page in a
+    signed-in step definition (C2). An assertion the absolute-state check
+    already reports is not reported twice."""
+    project_root = project_root or Path(".")
+    pages = _persistent_pages(project_root)
+    if not pages:
+        return []
+    fixtures = _fixtures_for_pages(generated_files, project_root, pages)
+    if not fixtures:
+        return []
+    shared_accounts = _shared_account_names(project_root)
+    already = {(m.group(1), int(m.group(2))) for e in
+               validate_persistent_state_assertions(generated_files, project_root)
+               for m in [re.search(r"in '([^']+)' line (\d+)", e)] if m}
+    errors: list[str] = []
+    for f in generated_files or []:
+        path = getattr(f, "file_path", "") or ""
+        if not path.startswith("tests/step_defs/") or not path.endswith(".py"):
+            continue
+        try:
+            tree = ast.parse(getattr(f, "content", "") or "")
+        except SyntaxError:
+            continue
+        if not _authenticates(tree, shared_accounts):
+            continue                  # an anonymous session's state is its own
+        for func in ast.walk(tree):
+            if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            live = {a.arg: fixtures[a.arg] for a in func.args.args if a.arg in fixtures}
+            if not live:
+                continue
+            reads = _snapshot_reads(func, live)
+            reads_src = {}
+            for node in ast.walk(func):
+                if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call) \
+                        and isinstance(node.value.func, ast.Attribute):
+                    for t in node.targets:
+                        if isinstance(t, ast.Name):
+                            reads_src[t.id] = node.value.func.attr
+            waits = sorted(n.lineno for n in ast.walk(func)
+                           if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                           and isinstance(n.func.value, ast.Name) and n.func.value.id in live
+                           and n.func.attr.startswith("wait_"))
+            for node in ast.walk(func):
+                if not isinstance(node, ast.Assert) or not isinstance(node.test, ast.Compare):
+                    continue
+                if (path, node.lineno) in already or any(w < node.lineno for w in waits):
+                    continue          # reported as absolute, or the step waited first
+                test = node.test
+                op = test.ops[0]
+                kind = fixture = None
+                if isinstance(op, (ast.In, ast.NotIn)):
+                    fixture = _reader_fixture(test.comparators[0], live, reads)
+                    kind = "absent" if isinstance(op, ast.NotIn) else "present"
+                elif isinstance(op, ast.Eq):
+                    for side in (test.left, test.comparators[0]):
+                        fx = _reader_fixture(side, live, reads)
+                        if fx and _is_count(side, reads_src):
+                            fixture, kind = fx, "count"
+                if not fixture:
+                    continue
+                page = live[fixture]
+                remedy = (
+                    "Add a page-object method that waits for the count - built on "
+                    "`self.wait_for_count(self.sel('<rows key>'), expected)` - and call it "
+                    "in the step instead of reading the count once."
+                    if kind == "count" else
+                    "Add a page-object method that waits for the row - built on "
+                    "`self.wait_for_row(self.sel('<rows key>'), text, present="
+                    f"{'False' if kind == 'absent' else 'True'})` - and call it in the step "
+                    "instead of reading the list once.")
+                errors.append(
+                    f"Persistent state snapshot error in '{path}' line {node.lineno}: this "
+                    f"reads {fixture} (inventory page '{page}', declared persistent_state) "
+                    f"once and asserts {'a count' if kind == 'count' else 'membership'} on that "
+                    f"snapshot. The application saves this state against the signed-in user "
+                    f"and the page shows the change a moment later, so a list read right "
+                    f"after the action is still the previous one and the failure blames the "
+                    f"action. " + remedy)
+    return errors
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # A page-object method must say what it acts on
 #
 # The reference page object defined `open(base_url)`. Agent 2 copied the

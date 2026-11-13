@@ -1044,6 +1044,86 @@ def format_changed_files_for_prompt(files: list[dict],
     return "\n---\n".join(blocks[i] for i in range(len(files)))
 
 
+# X7: the WHOLE review prompt is capped, not only its changed-files section.
+# The largest review so far read 138,632 tokens (inventory, references and
+# instructions besides the changes); nothing capped it, and a bigger change
+# would fail the call or cost far more than a review should. Over the cap the
+# changed files are reviewed in parts (each the same instructions and
+# references, a share of the files), up to `review.max_parts`; files beyond
+# that are named on the review, never dropped in silence.
+_SEP = len("\n---\n")
+_MIN_FILES_BUDGET = 20_000
+
+
+def review_settings() -> dict:
+    from core.ops_settings import section
+    return section("review")
+
+
+def split_for_review(files: list[dict], budget_chars: int, max_parts: int) -> tuple:
+    """(parts, left_out): the changed files in parts whose diffs fit
+    `budget_chars` each - one part when they all fit - in the PR's order, at
+    most `max_parts`; the files that did not fit are `left_out`. A file whose
+    diff alone exceeds the budget is a part of its own (its block is cut by
+    format_changed_files_for_prompt's fallback and the patch is truncated)."""
+    sizes = [len(_file_block(f, False)) + _SEP for f in files]
+    if sum(sizes) <= budget_chars + _SEP:
+        return [list(files)], []
+    parts, current, used = [], [], 0
+    for f, size in zip(files, sizes):
+        if current and used + size > budget_chars:
+            parts.append(current)
+            current, used = [], 0
+        current.append(f)
+        used += size
+    if current:
+        parts.append(current)
+    kept = parts[:max(1, max_parts)]
+    left_out = [f for part in parts[max(1, max_parts):] for f in part]
+    return kept, left_out
+
+
+def _cut(files: list[dict], budget_chars: int) -> list[dict]:
+    """A part of one file whose diff alone exceeds the budget: its patch cut."""
+    if len(files) != 1:
+        return files
+    f = dict(files[0])
+    room = max(budget_chars - 2_000, 1_000)
+    if len(f.get("patch") or "") > room:
+        f["patch"] = f["patch"][:room] + "\n... (diff cut here to fit the review's size limit)"
+        f["content"] = None
+    return [f]
+
+
+_VERDICT_ORDER = ("approve", "comment", "request_changes")
+
+
+def merge_reports(reports: list, pr_number: int) -> ReviewReport:
+    """One review from the parts' reviews: every issue, the strictest verdict,
+    each check true only when every part says so."""
+    if len(reports) == 1:
+        return reports[0]
+    checks = ("style_compliance", "type_hints_present", "no_hardcoded_waits",
+              "pom_compliant", "coverage_complete")
+    return ReviewReport(
+        pr_number=pr_number,
+        overall_verdict=max((r.overall_verdict for r in reports), key=_VERDICT_ORDER.index),
+        summary=" ".join(f"(Part {i} of {len(reports)}) {r.summary}"
+                         for i, r in enumerate(reports, 1)),
+        issues=[i for r in reports for i in r.issues],
+        **{c: all(getattr(r, c) for r in reports) for c in checks})
+
+
+def left_out_issue(left_out: list[dict], max_parts: int) -> ReviewIssue:
+    names = ", ".join(f.get("filename") or "?" for f in left_out[:20])
+    more = f" and {len(left_out) - 20} more" if len(left_out) > 20 else ""
+    return ReviewIssue(
+        severity="major", file_path=left_out[0].get("filename") or "?", issue_type="best_practice",
+        description=(f"{len(left_out)} changed file(s) were not reviewed: the change is larger "
+                     f"than {max_parts} review parts (`review.max_parts`) - {names}{more}."),
+        suggested_fix="Split the pull request, or have a person review these files.")
+
+
 # ─────────────────────────────────────────────────────────────
 # Markdown rendering for the PR comment
 # ─────────────────────────────────────────────────────────────
@@ -1155,7 +1235,7 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
 
     # 3. REASON: build prompt and call LLM
     prompt_template = load_prompt()
-    user_prompt = (
+    base_prompt = (
         prompt_template
         .replace("{app_name}", ctx.name)
         .replace("{reference_feature_path}", ctx.reference_feature)
@@ -1170,16 +1250,29 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
         .replace("{pr_branch}", pr_metadata["head_branch"])
         .replace("{pr_author}", pr_metadata["author"])
         .replace("{pr_body}", pr_metadata["body"])
-        .replace("{changed_files_section}", format_changed_files_for_prompt(changed_files))
         .replace("{base_page_helpers_section}",
                  base_page_helpers_called(changed_files) or "(The changed page objects call no BasePage helper.)")
         .replace("{page_object_methods_section}",
                  page_object_methods_called(changed_files)
                  or "(The changed step definitions call no page-object method defined outside BasePage.)")
     )
-
-    prompt_chars = len(user_prompt)
-    logger.info(f"Review prompt size: {prompt_chars:,} chars (~{prompt_chars // 4:,} tokens)")
+    # X7: the changed files get what the cap leaves after everything else.
+    rs = review_settings()
+    cap_chars = int(rs["max_prompt_tokens"]) * 4
+    budget = max(cap_chars - len(base_prompt.replace("{changed_files_section}", "")),
+                 _MIN_FILES_BUDGET)
+    max_parts = int(rs["max_parts"])
+    parts, left_out = split_for_review(changed_files, budget, max_parts)
+    prompts = [base_prompt.replace("{changed_files_section}",
+                                   format_changed_files_for_prompt(_cut(part, budget), budget))
+               for part in parts]
+    for i, p in enumerate(prompts, 1):
+        logger.info(f"Review prompt{f' part {i} of {len(prompts)}' if len(prompts) > 1 else ''} "
+                    f"size: {len(p):,} chars (~{len(p) // 4:,} tokens; cap "
+                    f"{int(rs['max_prompt_tokens']):,})")
+    if left_out:
+        logger.warning("%d changed file(s) not reviewed - over %d parts: %s", len(left_out),
+                       max_parts, ", ".join(f.get("filename") or "?" for f in left_out))
 
     # max_output_tokens=8192 (not the default 4096): ReviewReport has 7
     # required scalar fields plus an `issues` list where each issue carries
@@ -1195,11 +1288,14 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
     if _story and not dry_run:
         from core.spend_budget import begin_story
         begin_story(_story.group(1))
-    report: ReviewReport = llm.invoke_structured(
+    report: ReviewReport = merge_reports([llm.invoke_structured(
         system_prompt="You are a Senior SDET performing rigorous code review on automated test code.",
         user_prompt=user_prompt,
         output_schema=ReviewReport,
-    )
+    ) for user_prompt in prompts], pr_metadata["number"])
+    if left_out:
+        report = report.model_copy(update={
+            "issues": [left_out_issue(left_out, max_parts)] + list(report.issues)})
     # Scenarios of other stories this pull request removes (L49): found by
     # code, listed first so no cap or dedupe drops them.
     removed = removed_scenarios_of_others(changed_files, _story.group(1) if _story else None)

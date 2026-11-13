@@ -122,6 +122,13 @@ DEFAULTS: dict = {
         # selection excludes it. Removing it allows the story one more budget.
         "hold_label": "budget-hold",
     },
+    # Agent 3's review (X7): the whole prompt is capped; a larger change is
+    # reviewed in parts (more calls), at most `max_parts`; files beyond them
+    # are named on the review as not reviewed.
+    "review": {
+        "max_prompt_tokens": 100_000,
+        "max_parts": 3,
+    },
     # Reports beyond one run (core/results_store.py, scripts/build_site.py,
     # .github/workflows/reports.yml): every full run on the default branch is
     # recorded on `store_branch` and published as a site.

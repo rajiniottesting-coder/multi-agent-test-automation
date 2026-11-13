@@ -95,6 +95,7 @@ from validators.method_resolution_validator import (
     validate_absence_not_asserted_with_waiting_probe,
     validate_no_selectors_in_step_defs,
     validate_persistent_state_assertions,
+    validate_persistent_state_snapshots,
     validate_page_method_names_are_specific,
 )
 from core.llm_client import QuotaExhaustedError, LLMClient, OutputTruncatedError
@@ -1371,6 +1372,16 @@ _DEGRADED_OUTPUT_CHAR_THRESHOLD = 500
 # Ordered (label, substring-that-identifies-the-class, targeted repair hint).
 # First matching substring wins, so more specific strings come first.
 _ERROR_TYPE_RULES: list[tuple[str, str, str]] = [
+    (
+        "persistent_snapshot",
+        "persistent state snapshot error",
+        ("- PERSISTENT STATE READ ONCE: a signed-in step reads a list or a count from a "
+         "page whose state the application saves for the user, once, and asserts on it - "
+         "right after the action the page still shows the previous state. In the page "
+         "object add a method that WAITS (built on `self.wait_for_row(self.sel(\"<key>\"), "
+         "text, present=True|False)` for a row, `self.wait_for_count(self.sel(\"<key>\"), n)` "
+         "for a count) and call it in the step instead of the reader."),
+    ),
     (
         "absence_waits",
         "absence assertion error",
@@ -2965,6 +2976,8 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     errors.extend(validate_readiness_probe(generated_files, PROJECT_ROOT))
     errors.extend(validate_no_selectors_in_step_defs(generated_files))
     errors.extend(validate_persistent_state_assertions(generated_files, PROJECT_ROOT))
+    # ...and a relative claim on it, read once, is still a race (C2).
+    errors.extend(validate_persistent_state_snapshots(generated_files, PROJECT_ROOT))
     errors.extend(validate_step_parameter_types(generated_files, PROJECT_ROOT))
     errors.extend(validate_persistent_pages_can_be_cleared(
         generated_files, PROJECT_ROOT))
