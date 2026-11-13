@@ -218,7 +218,9 @@ def defect_history(store: Path, tracker, features_dir: Path, sprint: dict | None
     recs = dl.records(store)
     scenarios = dl.scenarios_per_module(features_dir, s.get("modules") or {})
     per = int(s.get("density_per") or 10)
-    if tracker is not None and recs:
+    # Whenever the tracker was read - a sprint with no defect is a record too,
+    # and one written before its throw-away defects left must be rewritten.
+    if synced is not None:
         try:
             dl.sprint_snapshot(store, sprint, recs, scenarios, per, now)
         except Exception as e:                                     # noqa: BLE001
