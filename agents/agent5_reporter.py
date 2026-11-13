@@ -888,7 +888,9 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
         from core import story_trend
         item = story_trend.entry(report.passed, report.failed + report.errors, report.skipped,
                                  scoped_outages, report.workflow_run_url, report.commit_sha)
-        shown = story_trend.attach_chart(jira, story_key, item, reports_dir / "trend")
+        import tempfile
+        shown = story_trend.attach_chart(jira, story_key, item,
+                                         Path(tempfile.gettempdir()) / "agent5-trend")
         if shown:
             body += "\n\n" + shown
     except Exception as e:                                         # noqa: BLE001
