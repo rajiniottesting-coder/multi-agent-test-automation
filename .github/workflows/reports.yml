@@ -160,6 +160,18 @@ jobs:
           JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
         run: python -m scripts.build_site --store store --out site --site-url "$SITE_URL" --sprint-summary "$SPRINT_SUMMARY"
 
+      - name: Keep a copy of the pages on the store
+        # RP9: a folder on a person's machine that pulls the store branch has
+        # the latest pages and PDF without opening GitHub (GUIDE -> Reports in
+        # a folder). Small files only: the Allure report stays on Pages.
+        if: github.event_name == 'workflow_dispatch' || steps.record.outputs.recorded != '0'
+        run: |
+          rm -rf store/latest && mkdir -p store/latest
+          for f in site/*.html site/summary.pdf site/data.json; do
+            [ -f "$f" ] && cp "$f" store/latest/
+          done
+          ls store/latest
+
       - name: Save the results store
         # Before the deploy: a site never shows numbers the store lost.
         if: github.event_name == 'workflow_dispatch' || steps.record.outputs.recorded != '0'
