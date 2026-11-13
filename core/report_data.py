@@ -176,6 +176,22 @@ def coverage_map(comment_body: str, criteria_refs, test_cases: list[dict]) -> di
     return out
 
 
+def unmatched_citations(comment_body: str, criteria_refs, test_cases: list[dict]) -> set:
+    """Criteria whose coverage line cites a test case by a title no test case
+    has now (a title revised after the map was written). Shown as such, not
+    as a criterion nobody covered."""
+    found = coverage_map(comment_body, criteria_refs, test_cases)
+    out = set()
+    for line in (comment_body or "").splitlines():
+        m = re.match(r"^\s*[-*]\s*(AC\d+|TITLE)\b(.*?)->(.*)$", line.strip())
+        if not m:
+            continue
+        cited = _norm(m.group(3).split(" | ", 1)[0])
+        if cited and cited not in ("(none)", "none", "-") and not found.get(m.group(1)):
+            out.add(m.group(1))
+    return out
+
+
 def traceability_rows(stories: list[dict], latest: dict, defects_by_key: dict) -> list[dict]:
     """One row per (story, criterion, test case, scenario).
 
@@ -188,11 +204,15 @@ def traceability_rows(stories: list[dict], latest: dict, defects_by_key: dict) -
         tcs = {tc["key"]: tc for tc in s.get("test_cases") or []}
         covered = set()
         crit = list(s.get("criteria") or []) or [("-", "(no acceptance criteria found)")]
+        mapped = s.get("has_coverage_map", True)
         for ref, text in crit:
             keys = (s.get("coverage") or {}).get(ref) or []
             covered.update(keys)
             if not keys:
-                rows.append(_row(s, ref, text, None, None, None, defects_by_key))
+                why = ("not mapped" if not mapped and ref != "-" else
+                       "cited test case not found" if ref in (s.get("unmatched") or ()) else
+                       "no test case")
+                rows.append(_row(s, ref, text, None, None, None, defects_by_key, why))
             for k in keys:
                 for test in (s.get("scenarios") or {}).get(k) or [None]:
                     rows.append(_row(s, ref, text, tcs.get(k, {"key": k}), test,
@@ -206,15 +226,15 @@ def traceability_rows(stories: list[dict], latest: dict, defects_by_key: dict) -
     return rows
 
 
-def _row(story, ref, text, tc, test, record, defects_by_key) -> dict:
+def _row(story, ref, text, tc, test, record, defects_by_key, why: str = "") -> dict:
     keys = [story["key"]] + ([tc["key"]] if tc else [])
     defects = sorted({d for k in keys for d in defects_by_key.get(k, [])})
     return {"story": story["key"], "story_summary": story.get("summary", ""),
             "story_status": story.get("status", ""), "criterion": ref,
             "criterion_text": text, "test_case": tc["key"] if tc else "",
             "test_case_summary": (tc or {}).get("summary", ""),
-            "scenario": test or "", "result": (record or {}).get("verdict", "not run"
-                                                             if test else "no scenario"),
+            "scenario": test or "",
+            "result": why or (record or {}).get("verdict", "not run" if test else "no scenario"),
             "result_date": ((record or {}).get("started") or "")[:10],
             "defects": defects}
 
@@ -223,10 +243,13 @@ def traceability_summary(rows: list[dict]) -> dict:
     """Criteria with no test case, test cases with no scenario, and results."""
     crit = {(r["story"], r["criterion"]) for r in rows if r["criterion"] != "-"}
     uncovered = {(r["story"], r["criterion"]) for r in rows
-                 if r["criterion"] != "-" and not r["test_case"]}
+                 if r["criterion"] != "-" and not r["test_case"] and r["result"] != "not mapped"}
+    unmapped = {(r["story"], r["criterion"]) for r in rows
+                if r["criterion"] != "-" and r["result"] == "not mapped"}
     tcs = {r["test_case"] for r in rows if r["test_case"]}
     no_scenario = {r["test_case"] for r in rows if r["test_case"] and not r["scenario"]}
     results = Counter(r["result"] for r in rows if r["scenario"])
     return {"stories": len({r["story"] for r in rows}), "criteria": len(crit),
-            "criteria_uncovered": len(uncovered), "test_cases": len(tcs),
+            "criteria_uncovered": len(uncovered), "criteria_unmapped": len(unmapped),
+            "test_cases": len(tcs),
             "test_cases_without_scenario": len(no_scenario), "results": dict(results)}

@@ -244,11 +244,11 @@ def test_traceability_rows_and_summary():
     latest = {f"{LOGIN}::test_valid_login": {"verdict": "failed", "started": "2026-11-12T20:30:00Z"}}
     rows = rd.traceability_rows([story], latest, {"TC-1": ["BUG-9"]})
     assert [(r["criterion"], r["test_case"], r["result"]) for r in rows] == [
-        ("AC1", "TC-1", "failed"), ("AC2", "", "no scenario"), ("-", "TC-2", "no scenario")]
+        ("AC1", "TC-1", "failed"), ("AC2", "", "no test case"), ("-", "TC-2", "no scenario")]
     assert rows[0]["defects"] == ["BUG-9"] and rows[0]["result_date"] == "2026-11-12"
     s = rd.traceability_summary(rows)
-    assert s == {"stories": 1, "criteria": 2, "criteria_uncovered": 1, "test_cases": 2,
-                 "test_cases_without_scenario": 1, "results": {"failed": 1}}
+    assert s == {"stories": 1, "criteria": 2, "criteria_uncovered": 1, "criteria_unmapped": 0,
+                 "test_cases": 2, "test_cases_without_scenario": 1, "results": {"failed": 1}}
 
 
 def test_a_story_without_criteria_still_lists_its_test_cases():
@@ -534,3 +534,34 @@ def test_runs_in_the_same_minute_get_a_bar_each(tmp_path):
     assert bs.main(["--store", str(store), "--out", str(out), "--no-tracker"]) == 0
     page = (out / "history.html").read_text(encoding="utf-8")
     assert '"x": ["1", "2"]' in page and 'ticktext:["2026-11-11 03:05", "2026-11-11 03:05"]' in page
+
+
+def test_a_story_without_a_coverage_map_is_not_mapped_not_uncovered():
+    """13 Nov 2026, first live matrix: stories older than Agent 1's coverage
+    comment read as 17 criteria with no test case."""
+    rows = rd.traceability_rows([{"key": "ST-5", "criteria": [("AC1", "a"), ("AC2", "b")],
+                                  "has_coverage_map": False, "coverage": {"AC1": [], "AC2": []},
+                                  "test_cases": [TCS[0]], "scenarios": {}}], {}, {})
+    assert [r["result"] for r in rows] == ["not mapped", "not mapped", "no scenario"]
+    s = rd.traceability_summary(rows)
+    assert s["criteria_uncovered"] == 0 and s["criteria_unmapped"] == 2
+
+
+def test_a_citation_whose_title_changed_says_so():
+    comment = ("\\[agent1:coverage\\]\n- AC1 a -> \\[Negative\\] An old title | step 3\n"
+               "- AC2 b -> (none) | gap\n")
+    assert rd.unmatched_citations(comment, ["AC1", "AC2"], TCS) == {"AC1"}
+    rows = rd.traceability_rows([{"key": "ST-6", "criteria": [("AC1", "a"), ("AC2", "b")],
+                                  "coverage": {}, "unmatched": {"AC1"}, "test_cases": [],
+                                  "scenarios": {}}], {}, {})
+    assert [r["result"] for r in rows] == ["cited test case not found", "no test case"]
+
+
+def test_a_marked_test_case_the_tracker_no_longer_links_is_listed(tmp_path):
+    from scripts import build_site as bs
+
+    class Unlinked(FakeTracker):
+        def get_linked_test_cases(self, key):
+            return []
+    rows = bs.traceability(Unlinked(), _features(tmp_path), {}, [])
+    assert any(r["test_case"] == "TC-7" and r["test_case_summary"] == "Valid login" for r in rows)
