@@ -1982,10 +1982,10 @@ workflow (`.github/workflows/reports.yml`) runs after every Agent 4 run on
 | Page | What it shows | Built from |
 |---|---|---|
 | Latest run (`index.html`, the landing page) | The newest recorded run: pass rate, counts, duration, the run's link, and every test that failed, flaked or could not be judged - with its first error line, story and test case | the results store |
-| History (`history.html`) | Pass rate of the latest run and of the window, results per run, suite duration per run, slowest tests, flaky tests, results by feature file and by story, open defects by age | the results store, the tracker |
+| History (`history.html`) | Pass rate of the latest run and of the window, results per run, suite duration per run, slowest tests, flaky tests, results by feature file and by story, open defects by age; the defect trend, time to close, density per module and per sprint (RP12) | the results store, its defect history, the tracker |
 | Allure report | The latest recorded run's report, with its full trend, a severity from the scenario's tags and links to its test case and story | Agent 4's artifact |
 | Traceability | Story -> acceptance criterion -> test case -> scenario -> last result -> defect, and what has no test case or no scenario. A story Agent 1 left no coverage map for lists its test cases and names its criteria once as not mapped; 'none' marks only a mapped criterion no test case covers. A map that cites a test case by a title revised since is followed by its wording (at least 80% of the test case title's words, the single best match, and only a test case no line cites exactly) and the row says so. An open defect is shown on the rows of the test case or story it is linked to; one linked to neither is listed under the matrix | markers, the tracker, Agent 1's coverage comment, the store |
-| PDF summary | The headline numbers, the trend chart, open defects by age, risks; on a sprint's last day it is the sprint summary | the same data |
+| PDF summary | The headline numbers, the trend chart, open defects by age, the defect totals and density per module, risks; on a sprint's last day it is the sprint summary | the same data |
 
 **Where the numbers come from.** Not from a sprint or a board: from the test
 runs themselves. The source is the **repository's CI runs** - every run of
@@ -2036,6 +2036,47 @@ application tests as `pytest tests/step_defs/`.
 
 **Defects.** The dashboard counts every open issue of the defect type
 (`defects.issue_type`), whoever raised it - the nightly triage or a person.
+
+**Defect history, trend and density (D7, D8, D9, RP12).** The tracker alone
+cannot give a defect trend: a closed defect leaves the open list, and a
+deleted one is gone for good. So each Reports run keeps the history on the
+store (`core/defect_ledger.py`):
+
+- `defects.json` - every defect's last known state: opened and closed (UTC),
+  status, resolution, priority, **module**, **close category**, where it came
+  from (the pipeline or a person), and its test, test case, story and cause.
+  The first run reads every defect; later runs the ones changed since (and
+  the open ones). A closed defect that opens again counts a reopening; an
+  open one the tracker no longer has is recorded as deleted - and kept. Issues
+  labelled `cleanup.delete_label` (throw-away) are left out. A closed defect
+  leaves the history `reporting.defect_keep_days` (730) after it closed; the
+  results' `keep_days` does not touch it. A tracker that cannot be read
+  leaves the history as it is.
+- `sprints/<id>-<name>.json` - the active sprint's figures (opened, closed,
+  open, mean days to close, density per module), rewritten on each run while
+  the sprint is active; the last one stays as the sprint's record.
+
+**Module (D8):** the defect's tracker component when it has one; else the
+module whose patterns in `reporting.modules` match the feature file of its
+test (or of a linked test case); else that feature file's name; else
+`unassigned`. Use the component names as module names when the project uses
+components, so a module's scenarios and defects meet.
+
+**Close category (D9):** what a closed defect was - the label a person adds
+when closing it (`defects.close_categories`: `defect-app` a bug in the
+application, `defect-test` the test was wrong, `defect-env` the application
+or runner was down or slow, `defect-duplicate`), else the tracker's
+resolution (`defects.resolution_categories`). A defect the triage raises, and
+its 'Passed on main' comment, name these labels.
+
+**On *History* (RP12):** defects opened, closed and open per day (chart);
+totals for the window - opened (by the pipeline and by people), closed (by
+category), open now, mean days to close, reopened, deleted from the
+tracker; the **density per module** - product defects opened in the window
+per `reporting.density_per` (10) scenarios of the module (a defect closed as
+test, environment, duplicate or not-a-bug is left out; one not yet
+categorised is counted); and one row per recorded sprint. The PDF carries
+the totals, the density table and, at a sprint's end, that sprint's line.
 
 **Severity (RP8).** `reporting.severity_by_tag` maps a scenario's tags (its
 feature's tags included) to Allure's severity; the most severe wins, and an
@@ -3229,6 +3270,7 @@ A marker may also carry `owner: <KEY>` (the story that owns the test case) and
 | Was the result reported? | Jira: Agent 5's comment and the `tests-run` label (a re-run posts another comment) |
 | What did a change revise, and how to undo it? | Jira: snapshot comments on each test case + trace comments on owners |
 | Has a closed PR been seen once already? | Jira: `[agent0:reconcile] closed-unmerged` comment on the change story |
+| How many defects were opened and closed, per module and sprint? | The results store branch: `defects.json` and `sprints/` (the tracker for the current state of each open defect) |
 
 ### Marker comments
 

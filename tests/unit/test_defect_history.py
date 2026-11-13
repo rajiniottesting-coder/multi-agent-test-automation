@@ -226,3 +226,41 @@ def test_a_raised_defect_says_which_label_to_add_when_closing():
                                  "first_seen": "d", "last_seen": "d", "times": 1})
     assert "When you close it, add the label that says what it was" in text
     assert "`defect-app`" in text
+
+
+# ── RP12 on the pages ───────────────────────────────────────────────────
+
+def _history(recs, sprints=()):
+    return {"records": recs, "scenarios": {"Basket": 2, "sign_in": 1}, "per": 10,
+            "synced": None, "sprints": list(sprints)}
+
+
+def test_the_figures_cover_the_window_and_each_recorded_sprint():
+    from scripts.build_site import defect_figures
+    assert defect_figures(_history([]), NOW, 30) is None
+    sp = {"name": "S1", "start": "2026-11-10", "end": "2026-11-23", "opened": 3, "closed": 2,
+          "open": 1, "mean_days_to_close": 1.8, "reopened": 1, "written": "x",
+          "modules": [{"module": "sign_in", "density": 10.0}]}
+    f = defect_figures(_history(_recs(), [sp]), NOW, 30)
+    assert f["trend"]["days"][-1] == "2026-11-14" and len(f["trend"]["days"]) == 30
+    assert f["summary"]["opened"] == 3 and f["recorded"] == 3
+    assert f["sprints"][0]["densest"] == {"module": "sign_in", "density": 10.0}
+
+
+def test_history_page_and_pdf_show_the_defect_history(tmp_path):
+    from scripts import build_site as bs
+    f = bs.defect_figures(_history(_recs()), NOW, 30)
+    page = bs.defect_history_html({"window_days": 30, "defect_history": f})
+    assert "Defects over time" in page and "Defect density by module" in page
+    assert "Density (per 10 scenarios)" in page and "<td>Basket</td>" in page
+    assert "Plotly.newPlot('defect-trend'" in bs._defect_trend_js({"defect_history": f})
+    empty = bs.defect_history_html({"window_days": 30, "defect_history": None})
+    assert "No defect history yet" in empty and bs._defect_trend_js({}) == ""
+
+
+def test_the_site_reads_the_history_without_the_tracker(tmp_path):
+    from scripts import build_site as bs
+    dl.write(tmp_path, {"synced": "x", "defects": {r["key"]: r for r in _recs()}})
+    h = bs.defect_history(tmp_path, None, Path("features"), None, NOW)
+    assert h["synced"] is None and len(h["records"]) == 3
+    assert not (tmp_path / dl.SPRINTS_DIR).exists()            # no tracker: no sprint record
