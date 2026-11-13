@@ -2070,7 +2070,10 @@ pytest tests/step_defs/
 python -m scripts.local_report --open
 ```
 
-The run is recorded in a store of its own, `reports/history/` (kept
+A run of the application tests writes `reports/junit.xml` by itself (a path
+given with `--junit-xml` wins; a unit-test session writes none), and only the
+application tests in it are recorded - a whole-suite `pytest` reports the
+unit tests too. The run is recorded in a store of its own, `reports/history/` (kept
 `reporting.keep_days`, like the shared one) - never in the shared history: a
 local run may be a few scenarios on unreviewed code and would bend the trend.
 The pages go to `reports/site/` (Latest run, History of your local runs,
