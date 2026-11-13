@@ -69,12 +69,24 @@ def _coverage_comment(comments: list) -> str:
     return ""
 
 
+def _coverage(comment: str, refs: list, tcs: list) -> dict:
+    """The coverage map, following titles revised since Agent 1 wrote it."""
+    from core.report_data import coverage_map, reworded_matches, unmatched_citations
+    coverage = coverage_map(comment, refs, tcs)
+    reworded = reworded_matches(comment, refs, tcs)
+    for ref, keys in reworded.items():
+        coverage.setdefault(ref, []).extend(k for k in keys if k not in coverage[ref])
+    return {"coverage": coverage,
+            "reworded": {(ref, k) for ref, keys in reworded.items() for k in keys},
+            "unmatched": unmatched_citations(comment, refs, tcs) - set(reworded)}
+
+
 def traceability(tracker, features_dir: Path, latest: dict, defects: list[dict] | None) -> list[dict]:
     """The matrix rows (core.report_data.traceability_rows) for every story
     that owns a test case the suite implements."""
     from agents.agent2_coder import build_marker_index
     from core.acceptance_coverage import extract_criteria
-    from core.report_data import coverage_map, traceability_rows, unmatched_citations
+    from core.report_data import traceability_rows
     index = build_marker_index(features_dir)
     scenarios: dict = {}
     for rec in latest.values():
@@ -111,8 +123,7 @@ def traceability(tracker, features_dir: Path, latest: dict, defects: list[dict] 
         refs = [r for r, _ in criteria]
         stories.append({**story, "criteria": criteria, "test_cases": tcs,
                         "has_coverage_map": bool(comment),
-                        "coverage": coverage_map(comment, refs, tcs),
-                        "unmatched": unmatched_citations(comment, refs, tcs),
+                        **_coverage(comment, refs, tcs),
                         "scenarios": {k: scenarios.get(k) or [] for k in
                                       {tc["key"] for tc in tcs} | owners[key]}})
     return traceability_rows(stories, latest, defects_by_key)
@@ -340,8 +351,9 @@ def _test_case_cell(r: dict) -> str:
     """A real gap (a mapped criterion no test case covers) in red; a test
     case only when there is one - never 'none' where nothing is known."""
     if r["test_case"]:
+        note = f"<br><span class='muted'><i>{_e(r['note'])}</i></span>" if r.get("note") else ""
         return (f"{_link(r['test_case'])}<br><span class='muted'>"
-                f"{_e(r['test_case_summary'])}</span>")
+                f"{_e(r['test_case_summary'])}</span>{note}")
     if r["result"] == "no test case" and r["criterion"] != "-":
         return "<span class='v-failed'>none</span>"
     if r["result"] == "cited test case not found":
