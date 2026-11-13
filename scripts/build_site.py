@@ -4,7 +4,9 @@ traceability matrix, RP6 PDF summary).
     python -m scripts.build_site --store store/ --out site/ [--features features]
 
 Writes into --out:
-  index.html          the dashboard: trend, durations, flaky tests, breakdowns,
+  index.html          the latest run: what failed, flaked or could not be judged,
+                      with the error, story and test case, and the run's link
+  history.html        the dashboard: trend, durations, flaky tests, breakdowns,
                       open defects (Plotly, from a CDN)
   traceability.html   story -> acceptance criterion -> test case -> scenario ->
                       last result -> defect
@@ -115,6 +117,8 @@ def collect(store: Path, features_dir: Path, now: _dt.datetime, with_tracker: bo
     runs = [r for r in rs.read_runs(store) if (r.get("started") or "") >= since]
     results = rs.read_results(store, since=since)
     latest = rs.latest_by_test(rs.read_results(store))
+    current = ({r["test"] for r in results if r.get("run_id") == runs[-1]["run_id"]}
+               if runs else None)                  # the suite as it is now
     tracker = _tracker() if with_tracker else None
     defects = open_defects(tracker) if tracker else None
     sprint = None
@@ -131,8 +135,10 @@ def collect(store: Path, features_dir: Path, now: _dt.datetime, with_tracker: bo
     return {
         "generated": now.strftime("%Y-%m-%d %H:%M"), "window_days": s.get("window_days"),
         "kpis": rd.kpis(runs, results), "trend": rd.trend(runs),
+        "latest": rd.latest_run(runs, results),
         "slowest": rd.slowest(results), "flaky": rd.flaky_ranking(results),
-        "by_file": rd.breakdown(results, "file"), "by_story": rd.breakdown(results, "story"),
+        "by_file": rd.breakdown(results, "file", current),
+        "by_story": rd.breakdown(results, "story", current),
         "defects": rd.defects_summary(defects, now) if defects is not None else None,
         "defect_list": defects, "sprint": sprint,
         "traceability": rows,
@@ -185,14 +191,62 @@ def _page(title: str, body: str, extra_head: str = "") -> str:
             f"<title>{_e(title)}</title><style>{_CSS}</style>{extra_head}</head><body>{body}</body></html>")
 
 
+def _allure_href(data: dict) -> str:
+    """The published Allure report: absolute when the site's address is known,
+    so the copy kept on the store branch (and synced to a folder) links to it."""
+    base = data.get("site_url") or ""
+    return (base.rstrip("/") + "/allure/index.html") if base else "allure/index.html"
+
+
 def _header(data: dict, active: str) -> str:
-    links = [("index.html", "Dashboard"), ("allure/index.html", "Allure report"),
-             ("traceability.html", "Traceability"), ("summary.pdf", "PDF summary")]
-    nav = "".join(f'<a href="{h}"{" aria-current=page" if h == active else ""}>{t}</a>'
+    links = [("index.html", "Latest run"), ("history.html", "History"),
+             (_allure_href(data), "Allure report"), ("traceability.html", "Traceability"),
+             ("summary.pdf", "PDF summary")]
+    nav = "".join(f'<a href="{_e(h)}"{" aria-current=page" if h == active else ""}>{t}</a>'
                   for h, t in links)
     return (f"<header><h1>Test automation reports</h1><p>Generated {_e(data['generated'])} UTC "
-            f"from full runs on the default branch; the last {_e(data['window_days'])} days."
-            f"</p><nav style='margin-top:10px'>{nav}</nav></header>")
+            f"from full runs on the default branch; history covers the last "
+            f"{_e(data['window_days'])} days.</p><nav style='margin-top:10px'>{nav}</nav></header>")
+
+
+_VERDICT_TEXT = {"failed": "failed", "outage": "not judged (application unavailable)",
+                 "flaky": "flaky (passed on the retry)", "skipped": "skipped"}
+
+
+def latest_html(data: dict) -> str:
+    """The newest recorded run: what failed, flaked or could not be judged."""
+    lr = data.get("latest")
+    if not lr:
+        body = "<p class='muted'>No run recorded yet.</p>"
+    else:
+        run = lr["run"]
+        when = (run.get("started") or "")[:16].replace("T", " ")
+        counts = (f"{run.get('passed', 0)} passed, {run.get('flaky', 0)} flaky, "
+                  f"{run.get('failed', 0)} failed, {run.get('outage', 0)} not judged, "
+                  f"{run.get('skipped', 0)} skipped")
+        head = (f"<div class='grid'>"
+                f"<div class='card kpi'><b>{_pct(lr['pass_rate'])}</b><span>pass rate</span></div>"
+                f"<div class='card kpi'><b>{_e(run.get('failed', 0))}</b><span>failed</span></div>"
+                f"<div class='card kpi'><b>{_e(run.get('flaky', 0))}</b><span>flaky</span></div>"
+                f"<div class='card kpi'><b>{_e(run.get('outage', 0))}</b><span>not judged</span></div>"
+                f"<div class='card kpi'><b>{round((run.get('duration_s') or 0) / 60, 1)}</b>"
+                f"<span>minutes</span></div></div>"
+                f"<p>Run <a href='{_e(run.get('url'))}'>{_e(run.get('run_id'))}</a>, {_e(when)} UTC "
+                f"({_e(run.get('event'))}, commit <code>{_e((run.get('commit') or '')[:7])}</code>): "
+                f"{_e(counts)}. <a href='{_e(_allure_href(data))}'>Steps, screenshots and traces in "
+                f"the Allure report</a>.</p>")
+        if lr["rows"]:
+            table = _table(["Result", "Scenario", "Story", "Test case", "Error", "Seconds"], [[
+                f"<span class='v-{_e(r['verdict'])}'>{_e(_VERDICT_TEXT.get(r['verdict'], r['verdict']))}</span>",
+                f"{_e(r.get('scenario'))}<br><span class='muted'>{_e(r.get('file'))}</span>",
+                _link(r.get("story") or "-"), _link(r.get("test_case") or "-"),
+                f"<code>{_e(r.get('failure') or r.get('first_failure') or '')}</code>",
+                _e(r.get("duration_s"))] for r in lr["rows"]])
+            rest = (f"<p class='muted'>The other {_n(lr['passed'], 'test')} passed.</p>")
+        else:
+            table, rest = "", f"<p>All {_n(lr['passed'], 'test')} passed.</p>"
+        body = (head + "<div class='card'><h2>Needs a look</h2>" + (table or "") + rest + "</div>")
+    return _page("Latest run", _header(data, "index.html") + f"<main>{body}</main>")
 
 
 def _table(head, rows) -> str:
@@ -207,12 +261,13 @@ def dashboard_html(data: dict) -> str:
     cards = [
         (_pct(k["latest_pass_rate"]), "pass rate, latest run"),
         (_pct(k["window_pass_rate"]), "pass rate, window"),
-        (k["runs"], "runs in the window"), (k["tests"], "tests"),
+        (k["runs"], "runs in the window"),
+        ((latest or {}).get("tests", k["tests"]), "tests in the latest run"),
         (k["flaky"], "flaky passes"),
         (data["defects"]["total"] if data["defects"] else "-", "open defects"),
     ]
     kpi = "".join(f"<div class='card kpi'><b>{_e(v)}</b><span>{_e(t)}</span></div>" for v, t in cards)
-    last = (f"<p class='muted'>Latest run: <a href='{_e(latest.get('url'))}'>{_e(latest.get('run_id'))}</a> "
+    last = (f"<p class='muted'><a href='index.html'>Latest run</a>: <a href='{_e(latest.get('url'))}'>{_e(latest.get('run_id'))}</a> "
             f"({_e((latest.get('started') or '')[:16].replace('T', ' '))}, {_e(latest.get('event'))}) - "
             f"{latest.get('passed', 0)} passed, {latest.get('flaky', 0)} flaky, {latest.get('failed', 0)} failed, "
             f"{latest.get('outage', 0)} outage, {latest.get('skipped', 0)} skipped.</p>") if latest else \
@@ -238,7 +293,7 @@ def dashboard_html(data: dict) -> str:
             ["Defect", "Summary", "Status", "Created", "Components"],
             [[_link(d["key"]), _e(d["summary"]), _e(d["status"]), _e((d.get("created") or "")[:10]),
               _e(", ".join(d.get("components") or []) or "-")] for d in data["defect_list"]]))
-    body = (_header(data, "index.html") + "<main>" + f"<div class='grid'>{kpi}</div>" + last
+    body = (_header(data, "history.html") + "<main>" + f"<div class='grid'>{kpi}</div>" + last
             + "<div class='card'><h2>Results per run</h2><div id='trend'></div></div>"
             + "<div class='card'><h2>Suite duration per run (minutes)</h2><div id='duration'></div></div>"
             + f"<div class='card'><h2>Slowest tests (median over the window)</h2>{slow}</div>"
@@ -247,20 +302,26 @@ def dashboard_html(data: dict) -> str:
             + f"<div class='card'><h2>By story</h2>{bd(data['by_story'])}</div>"
             + f"<div class='card'><h2>Open defects</h2>{defects}</div></main>")
     t = data["trend"]
-    series = [{"type": "bar", "name": k, "x": t["started"], "y": t[k], "marker": {"color": c},
-               "customdata": t["run"]} for k, c in COLORS.items()]
+    ids = [str(r) for r in t["run"]]
+    series = [{"type": "bar", "name": k, "x": ids, "y": t[k], "marker": {"color": c},
+               "hovertext": [f"run {i}, {s}" for i, s in zip(ids, t["started"])]}
+              for k, c in COLORS.items()]
     age = (data["defects"] or {}).get("by_age") or []
     script = (f"<script src='{PLOTLY}'></script><script>"
               f"const L={{barmode:'stack',margin:{{t:30,r:10,b:90,l:40}},height:340,bargap:0.3,legend:{{orientation:'h',y:1.12}},"
               f"paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',xaxis:{{type:'category'}}}};"
-              f"if(window.Plotly){{Plotly.newPlot('trend',{json.dumps(series)},L,{{displayModeBar:false}});"
-              f"Plotly.newPlot('duration',[{{type:'scatter',mode:'lines+markers',x:{json.dumps(t['started'])},"
-              f"y:{json.dumps(t['duration_min'])},name:'minutes'}}],Object.assign({{}},L,{{barmode:null}}),{{displayModeBar:false}});"
+              # One bar per run: two runs started in the same minute share a
+              # label, so the axis is the run id and the label the start time.
+              f"const X=Object.assign({{}},L,{{xaxis:{{type:'category',tickvals:{json.dumps([str(r) for r in t['run']])},"
+              f"ticktext:{json.dumps(t['started'])}}}}});"
+              f"if(window.Plotly){{Plotly.newPlot('trend',{json.dumps(series)},X,{{displayModeBar:false}});"
+              f"Plotly.newPlot('duration',[{{type:'scatter',mode:'lines+markers',x:{json.dumps(ids)},"
+              f"y:{json.dumps(t['duration_min'])},name:'minutes'}}],Object.assign({{}},X,{{barmode:null}}),{{displayModeBar:false}});"
               + (f"Plotly.newPlot('defects-age',[{{type:'bar',x:{json.dumps([a for a, _ in age])},"
                  f"y:{json.dumps([n for _, n in age])},marker:{{color:'#c62828'}}}}],"
                  f"Object.assign({{}},L,{{height:220}}),{{displayModeBar:false}});" if age else "")
               + "}</script>")
-    return _page("Test dashboard", body + script)
+    return _page("Test history", body + script)
 
 
 def traceability_html(data: dict) -> str:
@@ -340,7 +401,8 @@ def summary_pdf(data: dict, path: Path, sprint_end: bool) -> bool:
     rows = [["Measure", "Value"],
             ["Pass rate, latest run", _pct(k["latest_pass_rate"])],
             ["Pass rate, window", _pct(k["window_pass_rate"])],
-            ["Runs in the window", str(k["runs"])], ["Tests", str(k["tests"])],
+            ["Runs in the window", str(k["runs"])],
+            ["Tests in the latest run", str(latest.get("tests", k["tests"]))],
             ["Flaky passes", str(k["flaky"])],
             ["Open defects", str(data["defects"]["total"]) if data["defects"] else "not read"]]
     if latest:
@@ -408,6 +470,10 @@ def main(argv=None) -> int:
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--features", default=Path("features"), type=Path)
     ap.add_argument("--no-tracker", action="store_true")
+    ap.add_argument("--site-url", default=None, help="where the site is published")
+    ap.add_argument("--sprint-summary", choices=("auto", "force", "off"), default="auto",
+                    help="record the sprint's summary on the tracker (RP7): on the "
+                         "sprint's last day (auto), now (force), or never")
     args = ap.parse_args(argv)
     from core.ops_settings import section
     now = _dt.datetime.now(_dt.timezone.utc)
@@ -416,18 +482,27 @@ def main(argv=None) -> int:
     except Exception as e:                                         # noqa: BLE001
         print(f"::error::Reports not built - the results store could not be read: {e}")
         return 1
+    data["site_url"] = args.site_url
     args.out.mkdir(parents=True, exist_ok=True)
-    (args.out / "index.html").write_text(dashboard_html(data), encoding="utf-8")
+    (args.out / "index.html").write_text(latest_html(data), encoding="utf-8")
+    (args.out / "history.html").write_text(dashboard_html(data), encoding="utf-8")
     (args.out / "traceability.html").write_text(traceability_html(data), encoding="utf-8")
     (args.out / "data.json").write_text(json.dumps(data, default=str, indent=1), encoding="utf-8")
     sprint_end = is_sprint_last_day(data.get("sprint"), now)
     pdf = args.out / "summary.pdf"
     if summary_pdf(data, pdf, sprint_end):
         keep_pdf(args.store, pdf, now, sprint_end, int(section("reporting").get("pdf_keep") or 14))
+    summary_key = None
+    if not args.no_tracker and (args.sprint_summary == "force"
+                                or (args.sprint_summary == "auto" and sprint_end)):
+        from core.sprint_summary import post
+        summary_key = post(_tracker(), data, pdf if pdf.exists() else None, args.site_url,
+                           force=args.sprint_summary == "force")
     k = data["kpis"]
     print(f"Site built: {k['runs']} run(s), {k['tests']} test(s) in the window; "
           f"traceability {'built' if data['traceability'] is not None else 'not built'}; "
-          f"PDF {'made' if pdf.exists() else 'not made'}{' (sprint end)' if sprint_end else ''}.")
+          f"PDF {'made' if pdf.exists() else 'not made'}{' (sprint end)' if sprint_end else ''}"
+          f"{f'; sprint summary {summary_key}' if summary_key else ''}.")
     return 0
 
 

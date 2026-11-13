@@ -1931,7 +1931,8 @@ workflow (`.github/workflows/reports.yml`) runs after every Agent 4 run on
 
 | Page | What it shows | Built from |
 |---|---|---|
-| Dashboard (`index.html`) | Pass rate of the latest run and of the window, results per run, suite duration per run, slowest tests, flaky tests, results by feature file and by story, open defects by age | the results store, the tracker |
+| Latest run (`index.html`, the landing page) | The newest recorded run: pass rate, counts, duration, the run's link, and every test that failed, flaked or could not be judged - with its first error line, story and test case | the results store |
+| History (`history.html`) | Pass rate of the latest run and of the window, results per run, suite duration per run, slowest tests, flaky tests, results by feature file and by story, open defects by age | the results store, the tracker |
 | Allure report | The latest recorded run's report, with its full trend, a severity from the scenario's tags and links to its test case and story | Agent 4's artifact |
 | Traceability | Story -> acceptance criterion -> test case -> scenario -> last result -> defect, and what has no test case or no scenario | markers, the tracker, Agent 1's coverage comment, the store |
 | PDF summary | The headline numbers, the trend chart, open defects by age, risks; on a sprint's last day it is the sprint summary | the same data |
@@ -1959,10 +1960,46 @@ feature's tags included) to Allure's severity; the most severe wins, and an
 untagged scenario gets `reporting.default_severity`. The `# JIRA:` marker gives
 the links: the test case (Allure's test-management link) and its owner story.
 
+**The sprint's summary on the tracker (RP7).** On the active sprint's last day
+the Reports run records one issue, `Test summary: <sprint>` (type
+`reporting.sprint_summary_issue_type`, label `test-sprint-summary`), with the
+numbers, the risks, a link to the site and the PDF attached, and moves it to
+`reporting.sprint_summary_status` at once - a record, not work, so it never sits
+in the board's open columns. Once per sprint; *Run workflow* with
+*sprint_summary* records it now, or adds the current numbers to the existing
+one as a comment.
+
+**A trend on the story's report (RP10).** Each report Agent 5 posts records
+the story's counts (a hidden issue property, `trend.<time>`); from the story's
+second report on, a chart of its last `reporting.story_trend_points` runs -
+passed, failed, not judged - is attached and shown under the report, so a
+reviewer sees the story go from red to green over its review rounds.
+
+**Reports in a folder on your machine (RP9).** Each Reports run also keeps the
+pages, the PDF and `data.json` under `latest/` on the store branch (the Allure
+report stays on Pages: it is several MB a run). Clone the branch once and pull
+it on a schedule - the repository is public, so no credentials are needed, and
+only the agents' identity writes the branch, so a fast-forward pull never
+conflicts:
+
+```bash
+git clone --single-branch --branch metrics-data https://github.com/<owner>/<repo>.git D:\TestReports
+# Windows, every day at 09:00 (Task Scheduler):
+schtasks /Create /SC DAILY /ST 09:00 /TN "Test reports" /TR "git -C D:\TestReports pull --ff-only"
+# macOS / Linux (crontab -e):
+0 9 * * * git -C ~/TestReports pull --ff-only
+```
+
+Open `latest/index.html` (latest run), `latest/history.html` or
+`latest/summary.pdf`; dated PDFs are under `pdf/`. The charts load Plotly from
+its CDN, so they need internet; the tables and the PDF do not.
+
 **Settings** (`config.yaml`, block `reporting`): `enabled`, `store_branch`,
 `window_days` (what the dashboard and the PDF cover, default 30),
 `severity_by_tag`, `default_severity`, `pdf_keep` (dated PDF copies kept on the
-store branch under `pdf/`; a sprint's last-day copy is always kept).
+store branch under `pdf/`; a sprint's last-day copy is always kept),
+`sprint_summary`, `sprint_summary_issue_type`, `sprint_summary_status`,
+`story_trend`, `story_trend_points`, `story_trend_min_points`.
 
 **Set up once:** Settings -> Pages -> Source: *GitHub Actions*. The first run
 creates the store branch. Without the tracker the site is still built, without

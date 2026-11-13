@@ -148,6 +148,12 @@ reporting:
     smoke: critical
   default_severity: normal
   pdf_keep: 14                       # dated PDFs kept (the latest is always published)
+  sprint_summary: true               # RP7: a summary issue per sprint, on its last day
+  sprint_summary_issue_type: Task
+  sprint_summary_status: Done        # it is a record, not work: off the board's open columns
+  story_trend: true                  # RP10: a trend chart on Agent 5's comment
+  story_trend_points: 10
+  story_trend_min_points: 2          # no chart for a story's first run
 
 # Defect triage (F-22): after a run on main (nightly, a push that ran the E2E,
 # a manual run on main) each test still failing has ONE open defect: a repeat

@@ -393,11 +393,17 @@ def test_the_site_is_built_from_the_store(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _features(tmp_path)
     out = tmp_path / "site"
-    assert bs.main(["--store", str(store), "--out", str(out), "--features", "features"]) == 0
-    index = (out / "index.html").read_text(encoding="utf-8")
-    assert "plotly" in index and "Results per run" in index
-    assert 'href="https://tracker.example/browse/BUG-9"' in index
-    assert "allure/index.html" in index
+    assert bs.main(["--store", str(store), "--out", str(out), "--features", "features",
+                    "--site-url", "https://pages.example/repo/", "--sprint-summary", "off"]) == 0
+    history = (out / "history.html").read_text(encoding="utf-8")
+    assert "plotly" in history and "Results per run" in history
+    assert 'href="https://tracker.example/browse/BUG-9"' in history
+    # absolute, so the copy kept on the store branch links to the published report
+    assert 'href="https://pages.example/repo/allure/index.html"' in history
+    latest = (out / "index.html").read_text(encoding="utf-8")       # the landing page
+    assert "Latest run" in latest and "flaky (passed on the retry)" in latest
+    assert "test_bad_login" in latest and "test_valid_login" not in latest
+    assert "The other 2 tests passed." in latest
     trace = (out / "traceability.html").read_text(encoding="utf-8")
     assert "TC-7" in trace and "AC2" in trace
     data = json.loads((out / "data.json").read_text(encoding="utf-8"))
@@ -414,8 +420,8 @@ def test_the_site_is_built_without_a_tracker(tmp_path):
     from scripts import build_site as bs
     out = tmp_path / "site"
     assert bs.main(["--store", str(tmp_path / "empty"), "--out", str(out), "--no-tracker"]) == 0
-    index = (out / "index.html").read_text(encoding="utf-8")
-    assert "No run recorded in the window yet" in index
+    assert "No run recorded in the window yet" in (out / "history.html").read_text(encoding="utf-8")
+    assert "No run recorded yet" in (out / "index.html").read_text(encoding="utf-8")
     assert "could not be read" in (out / "traceability.html").read_text(encoding="utf-8")
 
 
@@ -500,3 +506,31 @@ def test_allure_history_survives_the_cache():
     assert path.index("!reports/allure-report/") < path.index("reports/allure-report/history/")
     assert "Restore Allure history from the results store" in a4
     assert "store/allure-history" in (root / "reports.yml").read_text()
+
+
+def test_latest_run_lists_what_needs_a_look_failed_first(tmp_path):
+    runs, results = _store_with_two_runs(tmp_path)
+    lr = rd.latest_run(runs[:1], [r for r in results if r["run_id"] == 1])
+    assert [r["verdict"] for r in lr["rows"]] == ["failed", "outage", "flaky", "skipped"]
+    assert lr["passed"] == 1 and lr["run"]["run_id"] == 1
+    assert rd.latest_run([], []) is None
+
+
+def test_a_test_no_longer_in_the_suite_leaves_the_breakdown(tmp_path):
+    _, results = _store_with_two_runs(tmp_path)
+    current = {r["test"] for r in results if r["run_id"] == 2}
+    names = {r["name"]: r for r in rd.breakdown(results, "file", current)}
+    assert names["module_b.feature"]["tests"] == 1             # test_remove, test_later gone
+    assert rd.breakdown(results, "file")[0]["tests"] >= 1     # without `current`: every test
+
+
+def test_runs_in_the_same_minute_get_a_bar_each(tmp_path):
+    from scripts import build_site as bs
+    store = tmp_path / "store"
+    for i in (1, 2):
+        run = sample_run(i, "2026-11-11T03:05:00Z")
+        rs.append(store, run, rs.case_records(sample_xml(), run))
+    out = tmp_path / "site"
+    assert bs.main(["--store", str(store), "--out", str(out), "--no-tracker"]) == 0
+    page = (out / "history.html").read_text(encoding="utf-8")
+    assert '"x": ["1", "2"]' in page and 'ticktext:["2026-11-11 03:05", "2026-11-11 03:05"]' in page
