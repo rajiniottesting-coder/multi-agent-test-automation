@@ -35,8 +35,9 @@ before a real project; P2 and P3 before a wider rollout.
 | RP6 | Management PDF (ReportLab) after the nightly run and at sprint end: totals, pass %, trend chart, open defects by severity, risks | None | P2 | A | | Done (#464) |
 | RP7 | Sprint / release summary on Jira | Agent 5 reports per story only | P2 | A | | Done (#465) |
 | RP8 | Allure severity (from smoke / critical tags) and links to the story and test case (from the `# JIRA:` marker) | Allure's severity and requirement views are empty | P2 | A | | Done (#464) |
-| RP9 | Nightly summary to Teams, Slack or email | A person must watch the health issue | P3 | A | | Open |
+| RP9 | Nightly reports in a folder on the owner's machine (chosen 13 Nov instead of Teams, Slack or email): the pages and PDF kept under `latest/` on the store branch, pulled on a schedule | A person must watch the health issue | P3 | A | | Done (#465) |
 | RP10 | A small trend chart (Matplotlib) attached to Agent 5's Jira comment | Text only | P3 | A | | Done (#465) |
+| RP11 | A *Latest run* page (the site's landing page): what failed, flaked or could not be judged in the newest run, with its error, story and test case; the dashboard becomes *History* | The latest run was one line on the dashboard | P2 | A | | Done (#465) |
 
 ### Security
 
@@ -120,10 +121,10 @@ about $1.70 end to end, an Agent 2 code run $1.10, a PR review $0.18.
 
 | Group | Items | Range | Likely |
 |---|---|---|---|
-| A - no model at runtime | RP1-RP4, RP6-RP10, X6-X9, P1, P3, C2 (16) | $15-40 | $24 |
+| A - no model at runtime | RP1-RP4, RP6-RP11, X6-X9, P1, P3, C2 (17) | $15-40 | $24 |
 | B - light agent runs | R1-R5, D1, D2, D4-D6, X1, X4, X5, RP5, PW1, PW2 (16) | $30-85 | $50 |
 | C - code generation | S1, D3, X2, X3, C1, C3 (6) | $64-118 | $88 |
-| **Total** | **38 items** | **$109-243** | **about $162** |
+| **Total** | **39 items** | **$109-243** | **about $162** |
 
 C1 and C3 are the largest; without them about $62-158, likely about $97. The $100 daily budget
 covers the work over 2-3 working days; keep the model key's own credit above
