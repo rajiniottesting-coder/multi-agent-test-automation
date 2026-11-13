@@ -1373,6 +1373,16 @@ _DEGRADED_OUTPUT_CHAR_THRESHOLD = 500
 # First matching substring wins, so more specific strings come first.
 _ERROR_TYPE_RULES: list[tuple[str, str, str]] = [
     (
+        "persistent_snapshot",
+        "persistent state snapshot error",
+        ("- PERSISTENT STATE READ ONCE: a signed-in step reads a list or a count from a "
+         "page whose state the application saves for the user, once, and asserts on it - "
+         "right after the action the page still shows the previous state. In the page "
+         "object add a method that WAITS (built on `self.wait_for_row(self.sel(\"<key>\"), "
+         "text, present=True|False)` for a row, `self.wait_for_count(self.sel(\"<key>\"), n)` "
+         "for a count) and call it in the step instead of the reader."),
+    ),
+    (
         "absence_waits",
         "absence assertion error",
         ("- ABSENCE ASSERTED WITH A WAITING PREDICATE: a step asserts something is NOT "
