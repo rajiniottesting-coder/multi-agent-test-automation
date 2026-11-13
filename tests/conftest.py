@@ -102,7 +102,9 @@ def pytest_configure(config):
     from core.local_outputs import keep_unit_tests_out_of_allure
     if not config.pluginmanager.is_registered(rerun_record):
         config.pluginmanager.register(rerun_record, "rerun_record")
+    from core.local_outputs import default_junit_for_app_runs
     keep_unit_tests_out_of_allure(config, Path(__file__).resolve().parents[1])
+    default_junit_for_app_runs(config, Path(__file__).resolve().parents[1])
     results_dir = config.getoption("--alluredir", default=None)
     if not results_dir:
         return                                    # not an Allure run
