@@ -75,6 +75,10 @@ an adapter written before them stays valid.
                                               issues of one type for the reports
                                               (scripts/build_site.py): open
                                               defects, whoever raised them
+    defects_for_history(issue_type, updated_since=None, open_only=False)
+        -> [dict] | None                      every defect, or those changed
+                                              since, for the defect history
+                                              (core/defect_ledger.py, D7)
     get_active_sprint() -> {"id","name","start","end"}
                                               the sprint the PDF summary covers
     delete_closed_issue(issue_key, required_label=None)

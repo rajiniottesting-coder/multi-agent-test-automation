@@ -153,6 +153,7 @@ def collect(store: Path, features_dir: Path, now: _dt.datetime, with_tracker: bo
             rows = traceability(tracker, features_dir, latest, defects)
         except Exception as e:                                     # noqa: BLE001
             logger.warning("Traceability matrix not built: %s", e)
+    history = defect_history(store, tracker, features_dir, sprint, now)
     return {
         "generated": now.strftime("%Y-%m-%d %H:%M"), "window_days": s.get("window_days"),
         "kpis": rd.kpis(runs, results), "trend": rd.trend(runs),
@@ -166,7 +167,34 @@ def collect(store: Path, features_dir: Path, now: _dt.datetime, with_tracker: bo
         "traceability_summary": rd.traceability_summary(rows) if rows is not None else None,
         "unlinked_defects": (rd.unlinked_defects(defects, rows)
                              if rows is not None and defects is not None else None),
+        "defect_history_sync": history["synced"],
     }
+
+
+def defect_history(store: Path, tracker, features_dir: Path, sprint: dict | None,
+                   now: _dt.datetime) -> dict:
+    """D7: bring the store's defect history up to date (when the tracker can
+    be read) and record the active sprint's figures. The history is read
+    from the store either way, so the pages show it without the tracker."""
+    from core import defect_ledger as dl
+    from core.ops_settings import section
+    s = section("reporting")
+    synced = None
+    if tracker is not None:
+        try:
+            synced = dl.sync(store, tracker, features_dir, now)
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning("Defect history not updated: %s", e)
+    recs = dl.records(store)
+    scenarios = dl.scenarios_per_module(features_dir, s.get("modules") or {})
+    per = int(s.get("density_per") or 10)
+    if tracker is not None and recs:
+        try:
+            dl.sprint_snapshot(store, sprint, recs, scenarios, per, now)
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning("Sprint defect record not written: %s", e)
+    return {"synced": synced, "records": recs, "scenarios": scenarios, "per": per,
+            "sprints": dl.read_sprints(store)}
 
 
 # ── HTML ────────────────────────────────────────────────────────────────

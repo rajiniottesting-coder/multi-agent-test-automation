@@ -192,6 +192,15 @@ def _traced_line(state: dict) -> str:
             f"`{settings().get('unmapped_label')}`")
 
 
+def _close_hint() -> str:
+    """D9: which label says what a closed defect was (core/defect_ledger.py)."""
+    try:
+        from core.defect_ledger import close_hint
+        return close_hint(settings())
+    except Exception:                                              # noqa: BLE001
+        return ""
+
+
 def render(tracker, state: dict) -> str:
     md = [
         "A test fails on `main`. Raised by the defect triage after a run on main "
@@ -218,6 +227,7 @@ def render(tracker, state: dict) -> str:
         "",
         "Evidence (screenshot, video, trace) is in the run's `pytest-report-*` artifact, "
         "under `reports/failure-evidence/`.",
+        *(["", hint] if (hint := _close_hint()) else []),
     ]
     text = "\n".join(md)
     render_md = capability(tracker, "render_markdown")
@@ -497,9 +507,11 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
         try:
             if not dry_run:
                 tracker.add_label(issue["key"], s["passing_label"])
+                hint = _close_hint().replace("`", "")
                 tracker.add_comment(issue["key"],
                                     f"Passed on main: {run_url}. Suggest closing this defect "
-                                    "if it stays green; it is not closed automatically.")
+                                    "if it stays green; it is not closed automatically."
+                                    + (f" {hint}" if hint else ""))
             result["passing"].append(issue["key"])
         except Exception as e:                                     # noqa: BLE001
             logger.warning("Defect %s not flagged as passing: %s", issue.get("key"), e)
