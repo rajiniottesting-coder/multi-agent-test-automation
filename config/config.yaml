@@ -141,6 +141,14 @@ flaky_tests:
 # .github/workflows/reports.yml): every full run on the default branch is
 # recorded on store_branch (written by the agents' identity) and published as
 # a site - dashboard, Allure with history, traceability matrix, PDF summary.
+# Agent 3's review (X7): the whole review prompt (instructions, references,
+# inventory and the changed files) stays under max_prompt_tokens; a larger
+# change is reviewed in parts - one model call each - at most max_parts; files
+# beyond them are named on the review as not reviewed.
+review:
+  max_prompt_tokens: 100000
+  max_parts: 3
+
 reporting:
   enabled: true
   store_branch: metrics-data
