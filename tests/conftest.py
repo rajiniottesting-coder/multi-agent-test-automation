@@ -272,6 +272,16 @@ def page(browser, config, request) -> Page:
 # capture evidence only when a test fails.
 # ─────────────────────────────────────────────────────────────
 # ---------------------------------------------------------------------------
+# A local run starts clean: the previous run's Allure results and failure
+# evidence go (never in CI, never for --last-failed).
+# ---------------------------------------------------------------------------
+def pytest_collection_finish(session):
+    """A local run's outputs replace the previous run's (core/local_outputs.py)."""
+    from core.local_outputs import on_collection_finish
+    on_collection_finish(session)
+
+
+# ---------------------------------------------------------------------------
 # Gherkin steps in the Allure report
 #
 # allure-pytest reports PYTEST, and this suite is written in Gherkin - so a

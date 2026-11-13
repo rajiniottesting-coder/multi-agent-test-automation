@@ -162,6 +162,33 @@ def append(store: Path, run: dict, cases: list[dict]) -> bool:
     return True
 
 
+def prune(store: Path, keep_days: int, now=None) -> int:
+    """Delete runs and results older than `keep_days`; the number of runs
+    deleted. A month file left empty is removed. Nothing when keep_days <= 0."""
+    import datetime as _dt
+    store = Path(store)
+    if keep_days <= 0:
+        return 0
+    now = now or _dt.datetime.now(_dt.timezone.utc)
+    cutoff = (now - _dt.timedelta(days=keep_days)).isoformat()
+    runs = _lines(store / RUNS_FILE)
+    kept = [r for r in runs if (r.get("started") or "") >= cutoff]
+    if len(kept) == len(runs):
+        return 0
+    gone = {r.get("run_id") for r in runs} - {r.get("run_id") for r in kept}
+    (store / RUNS_FILE).write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in kept),
+                                   encoding="utf-8")
+    for path in sorted((store / RESULTS_DIR).glob("*.jsonl")):
+        rows = [r for r in _lines(path) if r.get("run_id") not in gone]
+        if rows:
+            path.write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in rows),
+                            encoding="utf-8")
+        else:
+            path.unlink()
+    logger.info("Results store: %d run(s) older than %d days deleted", len(gone), keep_days)
+    return len(gone)
+
+
 def latest_by_test(results: list[dict]) -> dict:
     """{test id: its most recent record}."""
     out = {}

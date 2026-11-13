@@ -1,0 +1,78 @@
+"""A local run's outputs replace the previous run's, never pile up beside them.
+
+On a person's machine `reports/` is reused run after run. pytest overwrites
+junit.xml and the HTML report, but two folders only ever grew:
+
+  reports/allure-results     one result, container and attachment file per
+                             test per run - and Allure then shows every earlier
+                             run's results as retries of the current one
+  reports/failure-evidence   a screenshot, video and trace per failed test
+
+So when a session that runs the application tests starts, the previous run's
+files there are deleted. The run's history is not lost: the trend Allure
+plots is carried from the last generated report (core/allure_meta.py, which
+writes before this runs and is kept), and scripts/local_report.py keeps the
+results of local runs in a small store of its own (`reporting.keep_days`).
+
+Not in CI, where every job starts on a clean runner, and not for a session
+that re-runs the last failures (`--last-failed`): Agent 4's retry writes
+beside the first run's results on purpose. A unit-test session touches
+nothing. Never raises.
+"""
+from __future__ import annotations
+
+import logging
+import os
+import shutil
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+# What Allure writes per test; environment.properties, categories.json,
+# executor.json and history/ are written once per session and kept.
+_ALLURE_PER_TEST = ("*-result.json", "*-container.json", "*-attachment*")
+
+
+def runs_app_tests(items, app_tests_dir: str = "tests/step_defs") -> bool:
+    marker = app_tests_dir.replace("\\", "/").strip("/") + "/"
+    return any(marker in str(getattr(i, "fspath", getattr(i, "path", ""))).replace("\\", "/")
+               for i in items or [])
+
+
+def clear_previous_run(reports_dir: Path, allure_dir: Path | None) -> int:
+    """Delete the previous run's per-test Allure files and failure evidence;
+    the number of files deleted."""
+    gone = 0
+    if allure_dir and Path(allure_dir).is_dir():
+        for pattern in _ALLURE_PER_TEST:
+            for path in Path(allure_dir).glob(pattern):
+                try:
+                    path.unlink()
+                    gone += 1
+                except OSError:
+                    pass
+    evidence = Path(reports_dir) / "failure-evidence"
+    if evidence.is_dir():
+        gone += sum(1 for p in evidence.rglob("*") if p.is_file())
+        shutil.rmtree(evidence, ignore_errors=True)
+    return gone
+
+
+def on_collection_finish(session) -> None:
+    """pytest_collection_finish: clear the previous local run, when this
+    session is a fresh local run of the application tests."""
+    try:
+        config = session.config
+        if os.getenv("CI", "").strip().lower() in ("1", "true", "yes"):
+            return
+        if config.getoption("lf", default=False) or config.getoption("--last-failed", default=False):
+            return
+        if not runs_app_tests(session.items):
+            return
+        allure_dir = config.getoption("--alluredir", default=None)
+        gone = clear_previous_run(Path("reports"), Path(allure_dir) if allure_dir else None)
+        if gone:
+            logger.info("Previous local run's outputs deleted: %d file(s) "
+                        "(Allure results, failure evidence).", gone)
+    except Exception as e:                                         # noqa: BLE001
+        logger.debug("Previous run's outputs not cleared: %s", e)
