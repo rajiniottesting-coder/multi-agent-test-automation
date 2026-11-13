@@ -27,7 +27,7 @@ still open, and the rows each new change adds.
 
 ## Open checks
 
-37 rows: 10 proven on 13 Nov (✅, removed in the next evidence PR), 23 open or partly proven (⬜), 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌); with the 254 proven before, 264 of 291.
+39 rows: 10 proven on 13 Nov (✅, removed in the next evidence PR), 25 open or partly proven (⬜), 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌); with the 254 proven before, 264 of 293.
 
 Most of these wait for an event that cannot be produced on demand (the model
 taking a particular path, a provider error that quotes a secret); some are not
@@ -72,3 +72,5 @@ possible on the current application. Each names what it is waiting for.
 | E181 | #471 Storage | The next Reports run that records a run | `metrics-data` holds ONE commit afterwards (`git ls-remote` + a depth-1 fetch shows no parent); no `pdf/` folder; results older than `reporting.keep_days` gone; the run's log says 'Store saved: N file(s), size' | ⬜ | |
 | E182 | #471 RP9 folder | `python -m scripts.pull_reports --to <folder>` on the owner's machine, before and after a Reports run | The folder holds the 5 latest/ files only (about 120 KB), replaced by the second call; no .git folder (replaces the git clone of E174) | ⬜ | Partly: 13 Nov from the cloud workspace against the live branch - 5 files, 116 KB (a git clone of the branch: 14 MB the same day) |
 | E183 | #471 Local report | On the owner's machine: `pytest tests/step_defs/` twice, then `python -m scripts.local_report --open` | After the second run `reports/allure-results` holds one run's result files and `reports/failure-evidence` only that run's; `reports/site/index.html` opens on the local run ('test runs on this machine'); nothing is posted to the tracker | ⬜ | Partly: 13 Nov a real pytest + allure session in the cloud workspace - 2 result files after each of 3 runs, 3 after `--last-failed`, 5 after a run with CI=true (kept, as designed) |
+| E184 | #472 Allure app tests only | The next Agent 4 full run on main, then the Reports run after it | Its Allure report lists the application tests only (no `tests.unit` suite); the log reads 'Allure history: N test(s) kept, M ... dropped'; `allure-history/history.json` on `metrics-data` falls from 11 MB to tens of KB; the Pages Allure page is smaller to match | ⬜ | Partly: 13 Nov on this repository's own conftest - a unit-test session wrote 19 Allure result files before the change, 0 after |
+| E185 | #472 One PDF per sprint | Reports by hand with *sprint_summary* again | SCRUM-411 gets a comment with the current numbers and the link to the latest PDF; no second PDF attachment | ⬜ | |

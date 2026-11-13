@@ -319,6 +319,7 @@ multi-agent-test-automation/
 │   ├── build_site.py                # Reports: dashboard, traceability matrix, PDF summary
 │   ├── local_report.py              # The same reports for a test run on your machine
 │   ├── pull_reports.py              # Copy the published reports into a local folder
+│   ├── prune_allure_history.py      # Allure history: only the tests the run reported
 │
 ├── .github/workflows/
 │   ├── agent0_impact.yml            # Scan, reconcile, PR code change, nightly drift

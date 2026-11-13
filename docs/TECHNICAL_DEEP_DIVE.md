@@ -144,6 +144,7 @@ scripts/
   promote_draft.py
   propose_context_addition.py
   propose_inventory_update.py
+  prune_allure_history.py
   pull_reports.py
   record_results.py
   smoke_test.py

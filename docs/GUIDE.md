@@ -2007,6 +2007,16 @@ published, and a sprint's is attached to its summary issue. Agent 4's run
 artifacts last 3 days (and the daily *Artifact cleanup* removes leftovers);
 the site's upload lasts 1 day - Pages keeps only the deployed site.
 
+The Allure report holds the application tests only. A session of the
+framework's unit tests (`pytest tests/unit/`, as Agent 4 runs them) writes no
+Allure results (`core/local_outputs.py`, before the Allure plugin starts): it
+used to add ~4,400 unit tests to every report beside the application tests.
+And Allure's `history.json` - which keeps every test it ever saw - is trimmed
+to the tests the run reported before each report is generated
+(`python -m scripts.prune_allure_history`); it had reached 11 MB. A run of
+the whole suite without paths (`pytest`) still reports both: run the
+application tests as `pytest tests/step_defs/`.
+
 **Defects.** The dashboard counts every open issue of the defect type
 (`defects.issue_type`), whoever raised it - the nightly triage or a person.
 
@@ -2022,7 +2032,7 @@ numbers, the risks, a link to the site and the PDF attached, and moves it to
 `reporting.sprint_summary_status` at once - a record, not work, so it never sits
 in the board's open columns. Once per sprint; *Run workflow* with
 *sprint_summary* records it now, or adds the current numbers to the existing
-one as a comment.
+one as a comment (no second PDF copy: one per sprint; the site has the latest).
 
 **A trend on the story's report (RP10).** Each report Agent 5 posts records
 the story's counts (a hidden issue property, `trend.<time>`); from the story's
