@@ -1967,7 +1967,7 @@ workflow (`.github/workflows/reports.yml`) runs after every Agent 4 run on
 | Latest run (`index.html`, the landing page) | The newest recorded run: pass rate, counts, duration, the run's link, and every test that failed, flaked or could not be judged - with its first error line, story and test case | the results store |
 | History (`history.html`) | Pass rate of the latest run and of the window, results per run, suite duration per run, slowest tests, flaky tests, results by feature file and by story, open defects by age | the results store, the tracker |
 | Allure report | The latest recorded run's report, with its full trend, a severity from the scenario's tags and links to its test case and story | Agent 4's artifact |
-| Traceability | Story -> acceptance criterion -> test case -> scenario -> last result -> defect, and what has no test case or no scenario | markers, the tracker, Agent 1's coverage comment, the store |
+| Traceability | Story -> acceptance criterion -> test case -> scenario -> last result -> defect, and what has no test case or no scenario. A story Agent 1 left no coverage map for lists its test cases and names its criteria once as not mapped; 'none' marks only a mapped criterion no test case covers. An open defect is shown on the rows of the test case or story it is linked to; one linked to neither is listed under the matrix | markers, the tracker, Agent 1's coverage comment, the store |
 | PDF summary | The headline numbers, the trend chart, open defects by age, risks; on a sprint's last day it is the sprint summary | the same data |
 
 **Where the numbers come from.** Not from a sprint or a board: from the test

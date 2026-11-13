@@ -197,21 +197,40 @@ def traceability_rows(stories: list[dict], latest: dict, defects_by_key: dict) -
 
     `stories`: [{"key","summary","status","criteria":[(ref, text)],
     "coverage":{ref:[tc keys]}, "test_cases":[{"key","summary"}],
-    "scenarios":{tc key: [test ids]}}]; `latest`: {test id: store record};
-    `defects_by_key`: {test case or story key: [defect keys]}."""
+    "scenarios":{tc key: [test ids]}, "has_coverage_map", "unmatched"}];
+    `latest`: {test id: store record}; `defects_by_key`: {test case or story
+    key: [defect keys]}.
+
+    A story with no coverage map (Agent 1 wrote none - stories older than
+    it) cannot say which test case covers which criterion: its rows are its
+    test cases, and one cell names its criteria as not mapped. 13 Nov 2026:
+    a row per criterion with test case 'none' read as gaps on stories whose
+    every test case passed."""
     rows = []
     for s in stories:
         tcs = {tc["key"]: tc for tc in s.get("test_cases") or []}
+        crit = list(s.get("criteria") or [])
+        if not s.get("has_coverage_map", True):
+            refs = ", ".join(ref for ref, _ in crit) or "none found"
+            text = (f"Acceptance criteria {refs}: not mapped to test cases (the story "
+                    "has no coverage map)" if crit else "(no acceptance criteria found)")
+            first = True
+            for k, tc in tcs.items():
+                for test in (s.get("scenarios") or {}).get(k) or [None]:
+                    rows.append(_row(s, "-", text, tc, test, latest.get(test) if test else None,
+                                     defects_by_key, unmapped=len(crit) if first else 0))
+                    first = False
+            if first:                                # no test case at all
+                rows.append(_row(s, "-", text, None, None, None, defects_by_key,
+                                 "no test case", unmapped=len(crit)))
+            continue
         covered = set()
-        crit = list(s.get("criteria") or []) or [("-", "(no acceptance criteria found)")]
-        mapped = s.get("has_coverage_map", True)
-        for ref, text in crit:
+        for ref, text in crit or [("-", "(no acceptance criteria found)")]:
             keys = (s.get("coverage") or {}).get(ref) or []
             covered.update(keys)
             if not keys:
-                why = ("not mapped" if not mapped and ref != "-" else
-                       "cited test case not found" if ref in (s.get("unmatched") or ()) else
-                       "no test case")
+                why = ("cited test case not found" if ref in (s.get("unmatched") or ())
+                       else "no test case")
                 rows.append(_row(s, ref, text, None, None, None, defects_by_key, why))
             for k in keys:
                 for test in (s.get("scenarios") or {}).get(k) or [None]:
@@ -226,7 +245,8 @@ def traceability_rows(stories: list[dict], latest: dict, defects_by_key: dict) -
     return rows
 
 
-def _row(story, ref, text, tc, test, record, defects_by_key, why: str = "") -> dict:
+def _row(story, ref, text, tc, test, record, defects_by_key, why: str = "",
+         unmapped: int = 0) -> dict:
     keys = [story["key"]] + ([tc["key"]] if tc else [])
     defects = sorted({d for k in keys for d in defects_by_key.get(k, [])})
     return {"story": story["key"], "story_summary": story.get("summary", ""),
@@ -236,20 +256,27 @@ def _row(story, ref, text, tc, test, record, defects_by_key, why: str = "") -> d
             "scenario": test or "",
             "result": why or (record or {}).get("verdict", "not run" if test else "no scenario"),
             "result_date": ((record or {}).get("started") or "")[:10],
-            "defects": defects}
+            "defects": defects, "unmapped_criteria": unmapped}
+
+
+def unlinked_defects(defects: list[dict] | None, rows: list[dict]) -> list[dict]:
+    """Open defects linked to no story or test case of the matrix - a person
+    may raise one without a link; the matrix cannot place it, so it is
+    listed apart instead of dropped."""
+    keys = {r["story"] for r in rows} | {r["test_case"] for r in rows if r["test_case"]}
+    return [d for d in defects or [] if not keys & set(d.get("links") or [])]
 
 
 def traceability_summary(rows: list[dict]) -> dict:
     """Criteria with no test case, test cases with no scenario, and results."""
     crit = {(r["story"], r["criterion"]) for r in rows if r["criterion"] != "-"}
     uncovered = {(r["story"], r["criterion"]) for r in rows
-                 if r["criterion"] != "-" and not r["test_case"] and r["result"] != "not mapped"}
-    unmapped = {(r["story"], r["criterion"]) for r in rows
-                if r["criterion"] != "-" and r["result"] == "not mapped"}
+                 if r["criterion"] != "-" and not r["test_case"]}
+    unmapped = sum(r.get("unmapped_criteria") or 0 for r in rows)
     tcs = {r["test_case"] for r in rows if r["test_case"]}
     no_scenario = {r["test_case"] for r in rows if r["test_case"] and not r["scenario"]}
     results = Counter(r["result"] for r in rows if r["scenario"])
-    return {"stories": len({r["story"] for r in rows}), "criteria": len(crit),
-            "criteria_uncovered": len(uncovered), "criteria_unmapped": len(unmapped),
+    return {"stories": len({r["story"] for r in rows}), "criteria": len(crit) + unmapped,
+            "criteria_uncovered": len(uncovered), "criteria_unmapped": unmapped,
             "test_cases": len(tcs),
             "test_cases_without_scenario": len(no_scenario), "results": dict(results)}
