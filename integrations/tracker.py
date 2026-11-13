@@ -71,10 +71,21 @@ an adapter written before them stays valid.
     check_access() -> {"ok", "who"}           the credential check
     set_components(issue_key, components)     replace an issue's components:
                                               a defect takes its story's
+    issues_for_report(issue_type, open_only=True, labels=None) -> [dict]
+                                              issues of one type for the reports
+                                              (scripts/build_site.py): open
+                                              defects, whoever raised them
+    get_active_sprint() -> {"id","name","start","end"}
+                                              the sprint the PDF summary covers
+
+A link to an issue in a browser is built without a connection, by
+issue_url(key): add the adapter's base-URL variable and template to
+_ISSUE_URLS.
 """
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Optional, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
@@ -300,6 +311,27 @@ _ADAPTERS: dict[str, Any] = {
 }
 
 _cached: dict[str, Tracker] = {}
+
+# How each tracker shows one issue in a browser, built from its environment
+# alone - no connection, so a test run can link its report to the tracker
+# (core/allure_labels.py) without credentials. name -> (env var, template).
+_ISSUE_URLS: dict[str, tuple[str, str]] = {
+    "jira": ("JIRA_URL", "{base}/browse/{key}"),
+}
+
+
+def issue_url(key: str, tracker_type: Optional[str] = None) -> Optional[str]:
+    """The browser link of issue `key`, or None when it cannot be built (no
+    key, an unknown tracker, or its base URL not set). Never raises."""
+    try:
+        kind = (tracker_type or _configured_type()).strip().lower()
+        env, template = _ISSUE_URLS.get(kind, (None, None))
+        base = (os.getenv(env) or "").rstrip("/") if env else ""
+        if not key or not base:
+            return None
+        return template.format(base=base, key=key)
+    except Exception:                                              # noqa: BLE001
+        return None
 
 
 def get_tracker(tracker_type: Optional[str] = None, *, fresh: bool = False) -> Tracker:
