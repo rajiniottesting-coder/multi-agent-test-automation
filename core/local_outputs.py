@@ -39,6 +39,39 @@ def runs_app_tests(items, app_tests_dir: str = "tests/step_defs") -> bool:
                for i in items or [])
 
 
+def unit_only(args, root: Path, unit_dir: str = "tests/unit", base: Path | None = None) -> bool:
+    """True when every path the session was given (relative to `base`, the
+    directory pytest was started in) is inside the framework's unit tests -
+    such a session writes no Allure results. No paths: False."""
+    paths = [str(a).split("::", 1)[0] for a in args or [] if not str(a).startswith("-")]
+    if not paths:
+        return False
+    unit = (Path(root) / unit_dir).resolve()
+    for p in paths:
+        q = Path(p)
+        q = (q if q.is_absolute() else Path(base or root) / q).resolve()
+        if q != unit and unit not in q.parents:
+            return False
+    return True
+
+
+def keep_unit_tests_out_of_allure(config, root: Path) -> bool:
+    """pytest_configure (before the Allure plugin's): a unit-test session
+    writes no Allure results. 13 Nov 2026: every Agent 4 run wrote ~4,400
+    unit tests into reports/allure-results beside the application tests, so
+    the published Allure report listed them all and its history file reached
+    11 MB; locally they piled up in the same folder. True when switched off."""
+    try:
+        base = getattr(getattr(config, "invocation_params", None), "dir", None)
+        if getattr(config.option, "allure_report_dir", None) and \
+                unit_only(config.args, root, base=base):
+            config.option.allure_report_dir = None
+            return True
+    except Exception as e:                                         # noqa: BLE001
+        logger.debug("Allure left as configured: %s", e)
+    return False
+
+
 def clear_previous_run(reports_dir: Path, allure_dir: Path | None) -> int:
     """Delete the previous run's per-test Allure files and failure evidence;
     the number of files deleted."""

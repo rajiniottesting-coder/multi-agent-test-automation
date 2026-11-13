@@ -38,6 +38,8 @@ def allure_report(results: Path, out: Path) -> bool:
     cli = shutil.which("allure")
     if not cli or not results.is_dir():
         return False
+    from core.allure_meta import prune_history
+    prune_history(results)
     try:
         subprocess.run([cli, "generate", str(results), "-o", str(out), "--clean",
                         "--single-file"], check=True, capture_output=True, timeout=300)

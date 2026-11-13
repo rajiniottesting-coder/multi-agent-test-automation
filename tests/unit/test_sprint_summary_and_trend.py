@@ -96,8 +96,8 @@ def test_an_existing_summary_is_left_alone_unless_forced(tmp_path):
     assert [c[0] for c in t.calls] == ["read"]
     t.calls.clear()
     assert ss.post(t, data(), pdf, None, force=True, settings=SETTINGS) == "SUM-9"
-    assert [c[0] for c in t.calls] == ["read", "attach", "comment"]
-    assert t.calls[-1][2].endswith("!test-summary-sprint-4.pdf!")
+    assert [c[0] for c in t.calls] == ["read", "comment"]      # no second PDF copy
+    assert "Pass rate, latest run" in t.calls[-1][2]
 
 
 def test_no_summary_without_a_sprint_a_capability_or_when_switched_off():
