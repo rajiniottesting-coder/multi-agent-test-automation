@@ -60,6 +60,7 @@ agents/
 
 core/
   acceptance_coverage.py
+  allure_labels.py
   allure_meta.py
   allure_steps.py
   app_context.py
@@ -89,6 +90,8 @@ core/
   onboarding.py
   ops_settings.py
   pipeline_health.py
+  report_data.py
+  results_store.py
   schemas.py
   spend_budget.py
   test_case_rules.py
@@ -120,6 +123,7 @@ scripts/
   agent0_backtest.py
   apply_inventory_proposals.py
   backfill_markers.py
+  build_site.py
   check_inventory_staleness.py
   cleanup_artifacts.py
   close_merged_story.py
@@ -136,6 +140,7 @@ scripts/
   promote_draft.py
   propose_context_addition.py
   propose_inventory_update.py
+  record_results.py
   smoke_test.py
   sweep_stalled_prs.py
   triage_failures.py
@@ -1522,7 +1527,7 @@ Agent prompts (`prompts/agent2_coder_plan.md`, `prompts/agent2_coder_generate.md
 | `prompts/agent*.md` (10 files) | NO |
 | `pages/base_page.py` | NO (universal helpers) |
 | `tests/unit/*.py` | NO |
-| `.github/workflows/*.yml` (10 workflows) | NO |
+| `.github/workflows/*.yml` (12 workflows) | NO |
 
 This isolation is enforced by code, not just convention:
 - Path policy validator rejects plans touching reserved files
