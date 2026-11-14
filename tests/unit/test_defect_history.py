@@ -252,7 +252,7 @@ def test_history_page_and_pdf_show_the_defect_history(tmp_path):
     f = bs.defect_figures(_history(_recs()), NOW, 30)
     page = bs.defect_history_html({"window_days": 30, "defect_history": f})
     assert "Defects over time" in page and "Defect density by module" in page
-    assert "Density (per 10 scenarios)" in page and "<td>Basket</td>" in page
+    assert "Density (per 10 scenarios)" in page and "<td data-label='Module'>Basket</td>" in page
     assert "Plotly.newPlot('defect-trend'" in bs._defect_trend_js({"defect_history": f})
     empty = bs.defect_history_html({"window_days": 30, "defect_history": None})
     assert "No defect history yet" in empty and bs._defect_trend_js({}) == ""
@@ -370,7 +370,7 @@ def test_detection_rate_overall_per_module_and_on_the_pages():
     f = bs.defect_figures(_history(_recs(), [sp]), NOW, 30)
     page = bs.defect_history_html({"window_days": 30, "defect_history": f})
     assert "<b>66.7%</b><span>found by the pipeline</span>" in page
-    assert "Found by a person" in page and "<td>100%</td>" in page
+    assert "Found by a person" in page and ">100%</td>" in page
     assert f["sprints"][0]["by_pipeline"] == 2
     empty = bs.defect_figures({**_history([]), "ever_synced": True}, NOW, 30)
     assert "<b>-</b><span>found by the pipeline</span>" in bs.defect_history_html(
