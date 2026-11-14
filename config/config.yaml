@@ -184,6 +184,27 @@ reporting:
     Test cases page: ["test_cases_page*.feature"]
   density_per: 10                    # density = product defects per this many scenarios
 
+# Group B watchers (core/tracker_watch.py), run with the pipeline health check.
+# Each finding is one comment or label, said once; nothing is changed for you.
+watch:
+  enabled: true
+  story_edits: true                  # R2: story edited after drafting/coding
+  test_case_changes: true            # R3: test case edited/deleted after coding
+  retire_cancelled: true             # R4: cancelled/deleted story retires its test cases
+  pr_sync: true                      # X5: agent PR in conflict with / behind main
+  story_type: "Story"
+  test_case_type: "Test Case"
+  story_statuses: ["To Do", "In Progress", "In Review", "Done"]
+  story_edit_days: 14
+  drafted_label: "ai-processed"
+  coded_label: "ai-coded"
+  draft_label: "ai-ready"
+  update_label: "ai-update"
+  regenerate_label: "ai-regenerate"
+  impact_label: "impact-check"
+  cancelled: ["Won't Do", "Won't Fix", "Cancelled"]
+  pr_prefix: "auto/"
+
 # D10: scripts/delete_issues.py deletes only closed issues with this label -
 # throw-away issues. A real defect is closed, never deleted. "" = off.
 cleanup:

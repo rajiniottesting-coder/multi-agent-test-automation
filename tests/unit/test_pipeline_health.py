@@ -451,8 +451,10 @@ def test_the_workflow_runs_the_script_on_a_schedule():
     wf = yaml.safe_load((ROOT / ".github/workflows/pipeline_health.yml").read_text(encoding="utf-8"))
     on = wf.get("on", wf.get(True))
     assert on["schedule"] and "workflow_dispatch" in on
-    step = wf["jobs"]["check"]["steps"][-1]
-    assert "scripts.pipeline_health_check" in step["run"]
+    steps = wf["jobs"]["check"]["steps"]
+    step = next(s for s in steps if "scripts.pipeline_health_check" in (s.get("run") or ""))
+    # Group B: the watchers run after it, whatever its outcome.
+    assert "scripts.watch_tracker" in steps[-1]["run"] and steps[-1]["if"] == "always()"
     assert {"JIRA_API_TOKEN", "GITHUB_TOKEN", "OPENAI_API_KEY"} <= set(step["env"])
     from scripts.pipeline_health_check import OWN_WORKFLOW
     assert (ROOT / ".github/workflows" / OWN_WORKFLOW).is_file()

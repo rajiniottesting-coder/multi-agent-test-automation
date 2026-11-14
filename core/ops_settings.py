@@ -205,6 +205,28 @@ DEFAULTS: dict = {
         # scenarios.
         "density_per": 10,
     },
+    # Group B watchers (core/tracker_watch.py, run with the pipeline health
+    # check): each finding is one comment or label, said once.
+    "watch": {
+        "enabled": True,
+        "story_edits": True,          # R2
+        "test_case_changes": True,    # R3
+        "retire_cancelled": True,     # R4
+        "pr_sync": True,              # X5
+        "story_type": "Story",
+        "test_case_type": "Test Case",
+        "story_statuses": ["To Do", "In Progress", "In Review", "Done"],
+        "story_edit_days": 14,        # an older edit is history, not news
+        "drafted_label": "ai-processed",
+        "coded_label": "ai-coded",
+        "draft_label": "ai-ready",
+        "update_label": "ai-update",
+        "regenerate_label": "ai-regenerate",
+        "impact_label": "impact-check",
+        # A done story with one of these statuses or resolutions was cancelled.
+        "cancelled": ["Won't Do", "Won't Fix", "Cancelled"],
+        "pr_prefix": "auto/",
+    },
     # D10: scripts/delete_issues.py deletes only closed issues carrying this
     # label - throw-away issues (validation runs, dummy defects). A real
     # defect is closed, never deleted: it is the defect trend's history. The
