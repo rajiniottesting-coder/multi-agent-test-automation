@@ -63,7 +63,6 @@ def test_backlog_items_read_and_have_known_status():
     items = _backlog()
     # Proven items leave the backlog, so its size falls: the guard is that
     # every row that looks like an item (`| X12 |`) is read.
-    import re
     rows = re.findall(r"^\| ([A-Z]{1,3}\d+) \|", BACKLOG, flags=re.M)
     assert rows and len(items) == len(rows), \
         "the backlog no longer reads as expected - update this test"
