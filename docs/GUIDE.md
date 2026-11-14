@@ -1234,8 +1234,8 @@ approved pull request as an ordinary merge, exclude the default branch from it
 (**Target branches → Exclude by pattern → Default branch**); `main` keeps its own
 pull-request ruleset.
 
-**Required check (X6).** `Agent 4 - Runner / Run Tests` can be required before a
-merge into `main`: every pull request gets it (Agent 4 has no paths filter), and
+**Required check (X6).** `Agent 4 - Runner / Run Tests` is required before a
+merge into `main` (set 14 Nov 2026; a red one shows the pull request as blocked): every pull request gets it (Agent 4 has no paths filter), and
 a change story's expected failures no longer turn it red. Its last step (*Decide
 the E2E result*, `scripts/finalise_junit.py --verdict --expected-failures`)
 treats a failure whose story awaits its deployment (`awaiting-deployment`, see
@@ -1243,7 +1243,7 @@ treats a failure whose story awaits its deployment (`awaiting-deployment`, see
 test naming its story. Every other failure, an outage, an interrupted run and
 the framework self-test still fail it. The tracker decides, with the triage's
 rule (`core.defects.awaiting_deployment`); when it cannot be read, every failure
-counts. To require it (a repository admin, once):
+counts. To require it on a new repository (a repository admin, once):
 
 1. Repository → **Settings** → left menu **Rulesets** (older layouts:
    **Rules** → **Rulesets**) → the ruleset that targets `main` (the
