@@ -27,7 +27,7 @@ still open, and the rows each new change adds.
 
 ## Open checks
 
-27 rows: 23 open or partly proven (⬜) - six of them (E222-E227) the live checks of batch A (#512) - 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌). Rows proven earlier were removed in their evidence pull requests (#470, #473 and later).
+23 rows: 19 open or partly proven (⬜) - two of them (E225, E227) the last live checks of batch A (#512; E222-E224 and E226 proven 14 Nov, #514) - 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌). Rows proven earlier were removed in their evidence pull requests (#470, #473 and later).
 
 Most of these wait for an event that cannot be produced on demand (the model
 taking a particular path, a provider error that quotes a secret); some are not
@@ -35,12 +35,8 @@ possible on the current application. Each names what it is waiting for.
 
 | ID | Built in | Check | Expected | Status | Evidence |
 |---|---|---|---|---|---|
-| E222 | #512 X10 | Inventory Health by hand (whole inventory) | The log shows `signed in at /login`, the login page read signed out first, the menu page read; no `LOGIN FAILED`; artifact `inventory-drift-report` kept; *Hand the report to Agent 0* starts Agent 0 `mode=drift` with this run's id | ⬜ | |
-| E223 | #512 X10 | The Agent 0 drift run it started | *Fetch the Inventory Health report* downloads that run's `drift.json`; no browser installed, no crawl; the drift analysis and the inventory update read it as before | ⬜ | |
-| E224 | #512 X10 | Inventory Health by hand with `page` set to one page | Only that page read; no `inventory-drift-report` kept and no hand-over | ⬜ | |
-| E225 | #512 X10 | The next scheduled night (02:30 UTC) | One crawl: no Agent 0 drift schedule fires; the drift run is started by Inventory Health | ⬜ | |
-| E226 | #512 X6 | A pull request whose only failing test belongs to a story labelled `awaiting-deployment` (a throw-away `test-data` story and a test made to fail) | Run Tests is green: `::notice::Expected to fail until <story> is deployed`, `E2E passed: ... failed as expected (awaiting deployment: <story>)`; without the label the same test turns it red | ⬜ | |
-| E227 | #512 X6 | The owner requires `Run Tests` in the `main` ruleset (GUIDE, *Branch protection*) | A pull request with a real failure cannot be merged by a non-bypass actor; a green one can | ⬜ | |
+| E225 | #512 X10 | The next scheduled night (02:30 UTC) | One crawl: no Agent 0 drift schedule fires; the drift run is started by Inventory Health | ⬜ | Partly: the hand-over proven by hand on 14 Nov (Inventory Health 43602961708 started Agent 0 43603080921, which read its report). Waits for the first scheduled night |
+| E227 | #512 X6 | The owner requires `Run Tests` in the `main` ruleset (GUIDE, *Branch protection*) | A pull request with a real failure cannot be merged by a non-bypass actor; a green one can | ⬜ | Waits for the owner to add the required check (a ruleset change is his) |
 | E16 | #215 | SCRUM-187 on the next scan (persistent-state rule) | One `[agent2:blocked]` comment naming the rule, then `[BLOCK]` with no model call on later scans; a new signed-in draft stating a cart quantity is sent back by Agent 1 | ➖ | Coding once step 7 was fixed: V8 |
 | E19f | #224 | An added hidden element or family | Carries `conditional` / `multi_match`; not undone the next night | ⬜ | Partly: Not reachable on this app: window I removed the Test Cases panel family; drift 42853242986 did not propose it again, and every hidden element with a durable handle is a shared section or a numbered id (unstable). Needs an application change that adds a hidden element or family to one page |
 | E29c | F-19, #231 | More than 10 failures | No retry ("not retrying") | ➖ | n/a: superseded by #242: no fixed 10-failure cut-off any more; the cap is MAX_RETRIED_TESTS (100), covered by E40d |
