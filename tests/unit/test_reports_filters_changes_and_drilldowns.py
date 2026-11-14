@@ -310,6 +310,9 @@ def test_the_history_page_has_its_menu_drilldown_trends_and_notes(monkeypatch):
     assert "2 stories</span></summary>ST-1 (2), ST-2</details>" in page
     assert "a pull request with no story - framework changes - is not counted" in page
     assert "Plotly.newPlot('ai-trend'" in page and "Plotly.newPlot('stops-trend'" in page
+    ai = page[page.index("Plotly.newPlot('ai-trend'"):page.index("Plotly.newPlot('stops-trend'")]
+    assert "yaxis2:{overlaying:'y',side:'right'" in ai and "margin:{t:20,r:60" in ai, \
+        "the right-hand axis has room for its labels"
 
 
 # ── RP24: a table on a phone ───────────────────────────────────────────
