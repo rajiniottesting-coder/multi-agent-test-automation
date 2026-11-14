@@ -52,7 +52,6 @@ before a real project; P2 and P3 before a wider rollout.
 |---|---|---|---|---|---|---|
 | X2 | Per-run test data (accounts and fixtures seeded per run or worker), then parallel execution; browser turn-taking becomes optional | Shared accounts, one test at a time | P3 | C | N7, F-27 | Open |
 | X3 | Environment profiles in config (base URL and credentials per environment) and an optional browser matrix in Agent 4 | One base URL, Chromium only | P3 | C | N8, F-28 | Open |
-| X6 | Require Agent 4's Run Tests check before merge, with X4's expected-failure marking so a change story is not blocked before deployment | A red PR can be merged | P3 | A | N6, F-26 | Done (#512) |
 
 ### Operations
 
@@ -102,7 +101,8 @@ proven live the same day with #492, #497, #498 and #500 (removed above).
 Group B, batch B2 (14 Nov 2026, #502): RP5, X1, D6, X4 - all proven live the
 same day with #504, #506 and #508 (removed above).
 X10 added on 14 Nov 2026 at the owner's request (the drift crawl and Inventory
-Health read the same pages twice) and built with X6 as batch A (#512).
+Health read the same pages twice) and built with X6 as batch A (#512). X6 is
+proven live (#514, #515 - removed above): Run Tests is a required check on `main`.
 D7 and D10 are proven live (#481, removed above). On 14 Nov 2026 RP6, RP8,
 RP11, RP12, RP13, D9 and X8 were proven live too (#490, removed above); D8
 waits for its tracker-component check (the project has no components).
