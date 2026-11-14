@@ -318,6 +318,13 @@ def test_every_cell_names_its_column_and_a_phone_shows_cards():
     table = bs._table(["Name", "Spend"], [["A", "$1"]], ["data-x='1'"])
     assert "<tr data-x='1'><td data-label='Name'>A</td><td data-label='Spend'>$1</td></tr>" in table
     assert "@media (max-width:640px)" in bs._CSS and "content:attr(data-label)" in bs._CSS
+    # 14 Nov 2026, the first live build: a scenario name is one long token
+    # (test_adding_the_same_product_twice_shows_...) and pushed the matrix
+    # 268 px past a phone's width. On a phone a cell may break a long word.
+    phone = bs._CSS[bs._CSS.index("@media (max-width:640px)"):]
+    assert "overflow-wrap:anywhere" in phone[:phone.index("}}") + 2]
+    # ...and the story filter, as wide as its longest story title.
+    assert ".filters select,.filters input{max-width:100%}" in bs._CSS
 
 
 # ── RP25: this sprint against the one before ───────────────────────────

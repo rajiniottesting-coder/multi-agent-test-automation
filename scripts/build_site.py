@@ -334,12 +334,13 @@ th{color:var(--muted);font-weight:600}.wrap{overflow-x:auto}
 .filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
 .filters select,.filters input,.filters button{font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)}
 .filters button{cursor:pointer;color:var(--accent)}
+.filters select,.filters input{max-width:100%}
 details.story{border:1px solid var(--line);border-radius:8px;margin-bottom:10px;padding:6px 10px}
 details.story>summary{cursor:pointer;padding:4px 0}details.story>summary .muted{font-size:13px}
 /* RP24: on a phone a wide table reads as one card per row, each cell labelled */
 @media (max-width:640px){.wrap table,.wrap tbody,.wrap tr,.wrap td{display:block;width:100%}
 .wrap thead{display:none}.wrap tr{border:1px solid var(--line);border-radius:8px;margin-bottom:10px;padding:4px}
-.wrap td{border:none;padding:3px 6px}.wrap td[data-label]::before{content:attr(data-label);display:block;font-size:11px;color:var(--muted);font-weight:600}
+.wrap td{border:none;padding:3px 6px;overflow-wrap:anywhere}.wrap td[data-label]::before{content:attr(data-label);display:block;font-size:11px;color:var(--muted);font-weight:600}
 nav a{display:inline-block;margin-bottom:6px}}
 """
 
