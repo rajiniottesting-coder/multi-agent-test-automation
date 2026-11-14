@@ -759,7 +759,7 @@ def test_a_clean_batch_still_passes_the_gate(monkeypatch):
 
     The sample borrows a real inventory page and resolves none of its elements,
     which the selector check refuses when a committed page object implements
-    that page (tested in test_run_c_findings); that rule is set aside here so
+    that page (tested in test_page_object_may_not_borrow_a_page); that rule is set aside here so
     the sample stays the smallest clean file whatever pages are committed.
     """
     import validators.method_resolution_validator as v

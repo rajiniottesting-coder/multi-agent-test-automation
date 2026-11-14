@@ -20,6 +20,8 @@ from validators.orphan_cleanup import (
     find_orphan_page_methods,
     find_orphan_step_defs,
 )
+from pathlib import Path
+from types import SimpleNamespace as NS
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -690,3 +692,62 @@ class TestGenericAcrossDomains:
         assert "# def schedule_tweet_now" in new_pages["pages/social_page.py"]
         assert "AI-ORPHAN" in new_pages["pages/social_page.py"]
         assert "CMS-2" in new_pages["pages/social_page.py"]
+
+
+# ── the orphan clean-up keeps methods still in use ────────────────────────────
+
+ROOT = Path(__file__).resolve().parents[2]
+COMMITTED = '''class APage:
+    def keep(self):
+        return 1
+
+    def gone(self) -> bool:
+        return True
+'''
+
+
+def test_a_method_the_orphan_clean_up_commented_out_is_not_lost(tmp_path):
+    from validators.orphan_cleanup import OrphanPageMethod, comment_out_orphan_page_methods
+    from validators.page_object_contract import validate_extended_page_objects_keep_methods as v
+    (tmp_path / "pages").mkdir()
+    (tmp_path / "pages" / "a_page.py").write_text(COMMITTED)
+    cleaned = comment_out_orphan_page_methods(
+        COMMITTED, [OrphanPageMethod("pages/a_page.py", "APage", "gone", 5, 6)], ["AB-3"])
+    assert "AI-ORPHAN" in cleaned
+    assert v([NS(file_path="pages/a_page.py", content=cleaned)], tmp_path) == []
+    dropped = COMMITTED.split("    def gone")[0]
+    assert v([NS(file_path="pages/a_page.py", content=dropped)], tmp_path), \
+        "a method simply dropped is still refused"
+
+
+def test_a_method_an_open_pull_request_calls_is_not_orphaned():
+    from agents.agent2_coder import methods_called_in_open_prs
+    from validators.orphan_cleanup import cleanup_orphans_after_removal
+    feature_before = ('Feature: f\n  # JIRA: AB-3 (hash: 1234abcd) owner: AB-1\n  Scenario: s\n'
+                      '    Then the thing is gone\n')
+    steps = {"tests/step_defs/test_f.py": (
+        'from pytest_bdd import then\n\n@then("the thing is gone")\n'
+        'def check_gone(a_page):\n    assert a_page.gone()\n')}
+    pages = {"pages/a_page.py": COMMITTED}
+    _s, updated, _d, orphans = cleanup_orphans_after_removal(
+        feature_before, "Feature: f\n", ["AB-3"], steps, pages)
+    assert [o.method_name for o in orphans] == ["gone"]
+    _s, updated, _d, orphans = cleanup_orphans_after_removal(
+        feature_before, "Feature: f\n", ["AB-3"], steps, pages, called_elsewhere={"gone"})
+    assert orphans == [] and updated["pages/a_page.py"] == COMMITTED
+
+    class Host:
+        def list_open_prs(self, strict=False):
+            return [{"number": 7}]
+
+        def get_pr_changed_files(self, n):
+            return [{"filename": "tests/step_defs/test_g.py", "patch": "+    a_page.gone()\n-x.old()"},
+                    {"filename": "docs/x.md", "patch": "+ y.not_code()"}]
+    assert methods_called_in_open_prs(Host()) == {"gone"}
+
+    class Broken:
+        def list_open_prs(self, strict=False):
+            raise RuntimeError("down")
+    assert methods_called_in_open_prs(Broken()) is None
+    src = (ROOT / "agents" / "agent2_coder.py").read_text(encoding="utf-8")
+    assert "if called_in_prs is None:\n                page_object_files = {}" in src

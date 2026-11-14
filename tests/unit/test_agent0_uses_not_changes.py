@@ -20,7 +20,7 @@ import agents.agent0_impact as a0
 from core import impact_analysis as ia
 from core.schemas import CandidateAssessment, ChangeSeeds, ImpactAssessment
 from config.paths import PROMPTS_DIR
-from tests.unit.test_agent0 import TITLE_12, _only_in, _settings, world  # noqa: F401
+from tests.unit.test_agent0_end_to_end import TITLE_12, _only_in, _settings, world  # noqa: F401
 
 
 class JourneyModel:

@@ -1,4 +1,4 @@
-"""P3 end to end: two nights on main, through every step that runs in CI.
+"""The nightly run end to end: two nights on main, through every step that runs in CI.
 
 Night 1: the run (one test broken, one flaky, one stopped by an outage), the
 retry, scripts/finalise_junit.py, the job's verdict, the triage, the health

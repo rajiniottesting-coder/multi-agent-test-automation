@@ -17,6 +17,7 @@ import yaml
 import agents.agent2_coder as a2
 import agents.agent2_review_fix as rf
 from core.schemas import ReviewFixDecision, ReviewFixPlan
+from types import SimpleNamespace as NS
 
 ROOT = Path(__file__).resolve().parents[2]
 HEAD = "auto/S-7-checkout"
@@ -658,3 +659,21 @@ def test_the_client_keeps_a_persons_reply_and_leaves_a_bots_out(monkeypatch):
     gh._repo = NS(get_pull=lambda n: pull)
     got = gh.get_review_comments(5)
     assert [(g["id"], g["reply_to"]) for g in got] == [(1, None), (3, 1)]
+
+
+# ── one bot rule for review comments ──────────────────────────────────────────
+
+def test_a_bots_first_comment_is_left_out_like_its_replies(monkeypatch):
+    from integrations.github_client import GitHubClient
+    monkeypatch.setenv("GITHUB_TOKEN", "t")
+    monkeypatch.setenv("GITHUB_REPO", "o/r")
+    gh = GitHubClient()
+
+    def c(cid, reply_to=None, login="person", kind="User"):
+        return NS(id=cid, in_reply_to_id=reply_to, path="pages/a_page.py", line=3,
+                  original_line=3, body=f"b{cid}", user=NS(login=login, type=kind),
+                  pull_request_review_id=7, author_association="OWNER")
+    pull = NS(get_review_comments=lambda: [c(1), c(2, None, "reviewer[bot]", "Bot"),
+                                           c(3, 1), c(4, 1, "agent[bot]", "Bot")])
+    gh._repo = NS(get_pull=lambda n: pull)
+    assert [g["id"] for g in gh.get_review_comments(5)] == [1, 3]

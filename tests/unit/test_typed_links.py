@@ -15,6 +15,8 @@ import pytest
 from core.schemas import TestCase, TestStep
 from integrations import tracker as tracker_mod
 from integrations.jira_client import JiraClient
+import logging
+from types import SimpleNamespace as NS
 
 TestCase.__test__ = False
 TestStep.__test__ = False
@@ -287,3 +289,26 @@ class TestAllTestCases:
         assert '(labels is EMPTY OR labels != "ai-retired")' in args[0]
         assert 'issuetype = "Test Case"' in args[0]
         assert "issuelinks" in kwargs["fields"]
+
+
+# ── the jira library's false link-type warning ────────────────────────────────
+
+def test_the_false_link_type_warning_is_dropped_and_the_link_made(caplog):
+    from integrations.jira_client import JiraClient
+    lib_log = logging.getLogger("jira.test")
+    made = []
+
+    def create_issue_link(type, inwardIssue, outwardIssue):
+        lib_log.warning("Warning: Specified issue link type is not present in the list of link types")
+        lib_log.warning("something else")
+        made.append((type, inwardIssue, outwardIssue))
+    client = JiraClient.__new__(JiraClient)
+    client._client = NS(log=lib_log, create_issue_link=create_issue_link)
+    client._link_type = lambda kind: {"name": "Relates", "from_field": "outwardIssue"}
+    with caplog.at_level(logging.WARNING):
+        client._create_link("AB-1", "AB-2", "owns")
+    assert made == [("Relates", "AB-2", "AB-1")]
+    messages = [r.getMessage() for r in caplog.records]
+    assert "something else" in messages
+    assert not any("link type is not present" in m for m in messages)
+    assert not lib_log.filters, "the filter is removed after the call"

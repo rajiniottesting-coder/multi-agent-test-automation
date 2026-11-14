@@ -1,4 +1,4 @@
-"""P2 end to end: one Agent 2 scan through the REAL run(), in the sandbox.
+"""Agent 2 scan end to end: one Agent 2 scan through the REAL run(), in the sandbox.
 
 Three approved stories; `max_stories_per_run: 2`. The first is refused by the
 final gate after spending model calls, the second opens its PR, the third is

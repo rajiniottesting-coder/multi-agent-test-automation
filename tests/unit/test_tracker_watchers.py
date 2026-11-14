@@ -1,7 +1,8 @@
-"""Group B watchers (core/tracker_watch.py): R2 a story edited after drafting
-or coding, R3 a test case edited or deleted after coding, R4 a cancelled or
-deleted story retires its test cases, X5 an agent PR out of sync with main.
-Each finding is said once.
+"""The tracker watchers (core/tracker_watch.py): a story edited after its test
+cases were drafted or its tests coded, a test case edited or deleted after
+coding, a cancelled or deleted story whose test cases are retired, and an agent
+pull request out of sync with main. Each finding is said once.
+(Backlog items R2, R3, R4, X5.)
 
 Sandbox: the real JiraClient over the fake Jira; generic names only.
 """

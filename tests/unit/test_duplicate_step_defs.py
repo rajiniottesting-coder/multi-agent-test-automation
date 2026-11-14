@@ -219,3 +219,12 @@ def test_repair_format_also_reports_nothing():
         _gf("tests/step_defs/test_b.py", '@given("dup")\ndef _(): pass'),
     ]
     assert validate_no_duplicate_step_definitions(files, repair_format=True) == []
+
+
+# ── the duplicate step check has no unreachable half ──────────────────────────
+
+def test_the_duplicate_step_check_has_no_unreachable_half():
+    import inspect
+    from validators.gherkin_analyzer import validate_no_duplicate_step_definitions as v
+    src = inspect.getsource(v)
+    assert "UNREACHABLE" not in src and src.count("return errors") == 1

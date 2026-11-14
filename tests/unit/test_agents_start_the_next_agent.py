@@ -322,3 +322,50 @@ def test_the_script_passes_the_record_to_the_decision(tmp_path, monkeypatch):
     monkeypatch.setattr("integrations.repo_host.get_repo_host", lambda: object())
     sa.main(["--agent", "agent_a", "--previous-chain", "1", "--waiting-before", str(record)])
     assert seen["before"] == ["S-9"]
+
+
+# ── a red run still hands off; a start never replaces a waiting run ───────────
+
+@pytest.mark.parametrize("name", ["agent1_analyst.yml", "agent2_coder.yml"])
+def test_a_red_run_still_hands_off(name):
+    import yaml
+    wf = yaml.safe_load((ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8"))
+    (job,) = wf["jobs"].values()
+    step = next(s for s in job["steps"] if "again while stories wait" in s.get("name", ""))
+    assert step["if"].startswith("${{ !cancelled()")
+    src = (ROOT / "core" / "handoff.py").read_text(encoding="utf-8")
+    assert "the run took none of the stories that waited when it began" in src, \
+        "the progress rule is what keeps a red run from looping"
+
+
+def test_a_run_waiting_to_start_is_not_replaced():
+    from tests.unit.test_agents_start_the_next_agent import Host, Tracker, _start
+
+    class Waiting(Host):
+        def __init__(self, statuses):
+            super().__init__()
+            self.statuses = statuses
+
+        def get_workflow_runs(self, workflow, branch, limit=20):
+            return [{"status": s} for s in self.statuses]
+    host = Waiting(["queued", "in_progress"])
+    out = _start(Tracker({"ready": ["S-1"]}), host)
+    assert not out["started"] and host.started == [] and not out.get("error")
+    assert "already waiting to start" in out["why"]
+    host = Waiting(["in_progress", "completed"])                 # the run asking is going
+    assert _start(Tracker({"ready": ["S-1"]}), host)["started"]
+
+    class Broken(Host):
+        def get_workflow_runs(self, *a, **k):
+            raise RuntimeError("down")
+    assert _start(Tracker({"ready": ["S-1"]}), Broken())["started"], "cannot tell: as before"
+
+
+@pytest.mark.parametrize("name", ["agent1_analyst.yml", "agent2_coder.yml"])
+def test_a_one_story_run_starts_the_scan_without_the_progress_rule(name):
+    import yaml
+    wf = yaml.safe_load((ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8"))
+    (job,) = wf["jobs"].values()
+    step = next(s for s in job["steps"] if "again while stories wait" in s.get("name", ""))
+    assert step["env"]["STORY_KEY"] == "${{ github.event.inputs.story_key }}"
+    assert 'if [ -n "$STORY_KEY" ]; then WAITED=""; fi' in step["run"]

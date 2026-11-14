@@ -1,4 +1,5 @@
-"""Group B X4: a change story waits for its deployment. Its failing tests are
+"""The deployment signal (backlog item X4): a change story waits for its
+deployment. Its failing tests are
 expected (no defect on main, a line in Agent 5's report) until the deployed
 signal, which removes the pending label and reminds once to merge the story's
 context-update pull request.

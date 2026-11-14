@@ -1,4 +1,4 @@
-"""Group B RP5: the AI metrics - cost per story and agent across all attempts,
+"""The AI metrics (backlog item RP5) - cost per story and agent across all attempts,
 first-attempt success, stops that needed a person, review findings, Agent 0's
 recall and precision - kept on the results store and shown on History and
 the PDF.

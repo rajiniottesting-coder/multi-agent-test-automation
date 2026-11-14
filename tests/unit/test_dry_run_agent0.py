@@ -5,7 +5,7 @@ import copy
 import agents.agent0_impact as a0
 from tests.sandbox.fake_jira import FakeRepoHost
 from tests.sandbox.seed import repo_files
-from tests.unit.test_agent0 import (  # noqa: F401
+from tests.unit.test_agent0_end_to_end import (  # noqa: F401
     TITLE_12,
     FakeModel,
     _only_in,
