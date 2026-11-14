@@ -182,10 +182,12 @@ def collect(store: Path, features_dir: Path, now: _dt.datetime, with_tracker: bo
 
 def defect_figures(history: dict, now: _dt.datetime, window_days: int) -> dict | None:
     """RP12: the window's defect trend, totals and density per module, and
-    one row per recorded sprint - None while the history is empty."""
+    one row per recorded sprint - None only while the tracker was never read.
+    A history that was read and holds no defect shows zeros: 14 Nov 2026 it
+    read 'No defect history yet' once every defect had left it."""
     from core import defect_ledger as dl
     recs = history["records"]
-    if not recs:
+    if not recs and not history.get("ever_synced"):
         return None
     end = now.astimezone(_dt.timezone.utc).date()
     start = end - _dt.timedelta(days=window_days - 1)
@@ -225,7 +227,8 @@ def defect_history(store: Path, tracker, features_dir: Path, sprint: dict | None
             dl.sprint_snapshot(store, sprint, recs, scenarios, per, now)
         except Exception as e:                                     # noqa: BLE001
             logger.warning("Sprint defect record not written: %s", e)
-    return {"synced": synced, "records": recs, "scenarios": scenarios, "per": per,
+    return {"synced": synced, "ever_synced": bool(dl.read(store).get("synced")),
+            "records": recs, "scenarios": scenarios, "per": per,
             "sprints": dl.read_sprints(store)}
 
 
