@@ -234,3 +234,12 @@ def test_github_asks_again_while_mergeability_is_computed(monkeypatch):
     monkeypatch.setattr("time.sleep", lambda s: None)
     state = client.pr_sync_state(3)
     assert state["conflict"] is True and state["overlap"] == ["f"] and not state.get("unknown")
+
+
+def test_the_edit_time_is_said_in_utc(world):
+    """14 Nov 2026: an edit at 11:38 +0530 was said as '11:38 UTC'."""
+    fake, *_ = world
+    fake.histories["SBX-1"] = [_label("2026-11-12T10:00:00.000+0530", "", "ai-processed"),
+                               _edit("2026-11-13T11:38:00.000+0530")]
+    _run(world)
+    assert "edited on 2026-11-13 06:08 UTC" in fake.comments["SBX-1"][0]
