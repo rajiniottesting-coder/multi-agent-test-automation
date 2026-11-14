@@ -21,8 +21,10 @@ BUG = defects.settings()["issue_type"]
 
 
 def _plain(text: str) -> str:
-    """A comment as a person reads it: monospace marks and escapes dropped
-    (comments go through the tracker's Markdown rendering)."""
+    """A comment as a person reads it. The sandbox runs the REAL JiraClient,
+    whose render_markdown (integrations/jira_markup.py) turns `x` into Jira's
+    {{x}} and escapes - and _ inside it; the fake Jira only stores what it is
+    given. Drop those marks to read the text."""
     return text.replace("{{", "").replace("}}", "").replace("\\", "").replace("`", "")
 
 @pytest.fixture
