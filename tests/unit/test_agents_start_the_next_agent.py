@@ -368,4 +368,4 @@ def test_a_one_story_run_starts_the_scan_without_the_progress_rule(name):
     (job,) = wf["jobs"].values()
     step = next(s for s in job["steps"] if "again while stories wait" in s.get("name", ""))
     assert step["env"]["STORY_KEY"] == "${{ github.event.inputs.story_key }}"
-    assert 'if [ -n "$STORY_KEY" ]; then WAITED=""; fi' in step["run"]
+    assert 'if [ -n "$STORY_KEY" ]; then WAITED=(); fi' in step["run"]

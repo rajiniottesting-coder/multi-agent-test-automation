@@ -153,4 +153,4 @@ def test_the_scan_passes_the_snapshot_to_both_modes():
     run = next(s for s in _jobs()["scan"]["steps"] if s.get("name") == "Run Agent 0")["run"]
     calls = [line for line in run.splitlines() if "python -m agents.agent0_impact" in line]
     assert len(calls) == 2                       # --story and --scan
-    assert all(line.rstrip().endswith("$SNAP") for line in calls)
+    assert all(line.rstrip().endswith('"${SNAP[@]}"') for line in calls)   # an array

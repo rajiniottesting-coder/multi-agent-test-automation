@@ -46,7 +46,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPO: ${{ github.repository }}
         run: |
-          YES="--yes"
-          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then YES=""; fi
+          YES=(--yes)
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then YES=(); fi
           python -m scripts.cleanup_artifacts \
-            --older-than-days "${{ github.event.inputs.older_than_days || '2' }}" $YES
+            --older-than-days "${{ github.event.inputs.older_than_days || '2' }}" "${YES[@]}"

@@ -90,8 +90,8 @@ jobs:
           GITHUB_TOKEN: ${{ steps.identity.outputs.token }}
           GITHUB_REPO: ${{ vars.GH_REPO }}
         run: |
-          DRY_RUN_FLAG=""
+          DRY_RUN_FLAG=()
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
-            DRY_RUN_FLAG="--dry-run"
+            DRY_RUN_FLAG=(--dry-run)
           fi
-          python -m scripts.sweep_stalled_prs $DRY_RUN_FLAG
+          python -m scripts.sweep_stalled_prs "${DRY_RUN_FLAG[@]}"

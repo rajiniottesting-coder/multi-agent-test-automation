@@ -297,7 +297,7 @@ jobs:
             exit 0
           fi
           echo "changed files:"
-          echo "$FILES" | sed 's/^/    /'
+          while IFS= read -r f; do echo "    $f"; done <<< "$FILES"
           if ! VERDICT=$(printf '%s\n' "$FILES" | python3 core/test_runtime.py); then
             echo "the runtime rule failed; running the E2E to be safe"
             VERDICT=true
@@ -655,10 +655,12 @@ jobs:
           "/tmp/allure-${ALLURE_VERSION}/bin/allure" generate \
             reports/allure-results -o reports/allure-single --clean --single-file
 
-          echo "### Allure report" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Download the **pytest-report-${{ github.run_id }}** artifact below and open" >> "$GITHUB_STEP_SUMMARY"
-          echo "\`allure-single/index.html\` - it is self-contained and needs no server." >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Allure report"
+            echo ""
+            echo "Download the **pytest-report-${{ github.run_id }}** artifact below and open"
+            echo "\`allure-single/index.html\` - it is self-contained and needs no server."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload test report
         # Required because the `report` job runs on a separate runner and
