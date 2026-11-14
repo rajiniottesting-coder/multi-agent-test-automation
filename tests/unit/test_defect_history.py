@@ -375,3 +375,12 @@ def test_detection_rate_overall_per_module_and_on_the_pages():
     empty = bs.defect_figures({**_history([]), "ever_synced": True}, NOW, 30)
     assert "<b>-</b><span>found by the pipeline</span>" in bs.defect_history_html(
         {"window_days": 30, "defect_history": empty})
+
+
+def test_the_pdf_link_changes_with_every_build():
+    """14 Nov 2026: the owner's phone opened a cached PDF a day old."""
+    from scripts import build_site as bs
+    assert bs._pdf_href({"generated": "2026-11-14 03:14"}) == "summary.pdf?v=202611140314"
+    assert bs._pdf_href({}) == "summary.pdf"
+    head = bs._header({"generated": "2026-11-14 03:14", "window_days": 30}, "index.html")
+    assert 'href="summary.pdf?v=202611140314"' in head

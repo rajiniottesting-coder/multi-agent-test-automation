@@ -288,10 +288,18 @@ def _allure_href(data: dict) -> str:
     return (base.rstrip("/") + "/allure/index.html") if base else "allure/index.html"
 
 
+def _pdf_href(data: dict) -> str:
+    """The PDF with its build time in the query: a phone's browser opened a
+    cached PDF a day old (14 Nov 2026: 'Generated 2026-11-13 17:12', no
+    defect section) - a new build is a new address, so never a stale copy."""
+    stamp = "".join(ch for ch in str(data.get("generated") or "") if ch.isdigit())
+    return f"summary.pdf?v={stamp}" if stamp else "summary.pdf"
+
+
 def _header(data: dict, active: str) -> str:
     links = [("index.html", "Latest run"), ("history.html", "History"),
              (_allure_href(data), "Allure report"), ("traceability.html", "Traceability"),
-             ("summary.pdf", "PDF summary")]
+             (_pdf_href(data), "PDF summary")]
     nav = "".join(f'<a href="{_e(h)}"{" aria-current=page" if h == active else ""}>{t}</a>'
                   for h, t in links)
     return (f"<header><h1>Test automation reports</h1><p>Generated {_e(data['generated'])} UTC "
