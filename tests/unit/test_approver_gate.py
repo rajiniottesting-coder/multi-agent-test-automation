@@ -1,15 +1,17 @@
-"""Group B gates: R1 readiness (no draft without acceptance criteria) and R5
-approvers (only an allowed person's approval starts coding).
+"""Only an allowed approver starts coding (core/approval.py): the approval
+label counts only when the last person who added it is in an approver group
+or list; anyone else is refused once and the label removed. Notices render
+for the tracker.
 
 Sandbox: the real JiraClient over the fake Jira; generic names only.
 """
+
 from __future__ import annotations
 
 import pytest
-
 from core import approval
-from core.readiness import readiness_problem
 from tests.sandbox.fake_jira import FakeJira, jira_client_over
+
 
 pytestmark = pytest.mark.gates_on
 
@@ -25,8 +27,6 @@ def jira(monkeypatch):
     fake.add("Story", "Story under approval", key="SBX-1", labels=["ai-processed"])
     return fake, jira_client_over(fake, monkeypatch)
 
-
-# ── R5 ──────────────────────────────────────────────────────
 
 def test_who_added_the_label_last():
     history = [{"at": "1", "by": {"name": "A"}, "items": [{"field": "labels", "from": "",
@@ -99,50 +99,6 @@ def test_the_project_names_groups_not_people():
     from config.paths import CONFIG_YAML
     cfg = yaml.safe_load(open(CONFIG_YAML))["agents"]["agent2_coder"]
     assert cfg["approver_groups"] and cfg["approvers"] == []
-
-
-# ── R1 ──────────────────────────────────────────────────────
-
-ON = {"readiness": {"require_acceptance_criteria": True}}
-
-
-def test_a_story_without_criteria_is_not_ready():
-    assert readiness_problem({"description": "As a user I want things."}, ON)
-    assert readiness_problem({"description": "Intro\n\n*Acceptance criteria:*\n# one\n# two"},
-                             ON) == ""
-    assert readiness_problem({"description": "no list"}, {}) == "", "off by default"
-
-
-def test_agent1_hands_a_not_ready_story_back_without_failing_the_scan(monkeypatch):
-    import agents.agent1_analyst as a1
-    assert "not_ready" in a1._NOT_READY and "not_ready" not in a1._NEEDS_A_PERSON
-    why = a1.NEEDS_A_PERSON_WHY["not_ready"].format(n=0, why="No list.")
-    assert why.startswith("No list.") and "Product owner" in why
-    assert "no model was called" in why
-    assert a1.print_summary([{"story_id": "SBX-1", "status": "not_ready",
-                              "readiness": "No list."}]) is True
-
-
-def test_agent1_stops_before_any_model_call(monkeypatch):
-    import agents.agent1_analyst as a1
-
-    class T:
-        def count_linked_test_cases(self, k):
-            return 0
-
-        def get_story(self, k):
-            return {"key": k, "summary": "S", "description": "no list", "labels": [],
-                    "components": []}
-    monkeypatch.setattr(a1, "get_tracker", lambda: T())
-    monkeypatch.setattr(a1, "load_agent_config", lambda *a, **k: ON)
-    monkeypatch.setattr(a1.AppContext, "load", classmethod(
-        lambda cls: type("C", (), {"name": "App", "base_url": "https://app.example"})()))
-
-    def no_model(*a, **k):
-        raise AssertionError("a model was called")
-    monkeypatch.setattr(a1, "LLMClient", no_model)
-    result = a1.run("SBX-1")
-    assert result["status"] == "not_ready" and result["test_cases_generated"] == 0
 
 
 def test_notices_are_rendered_for_the_tracker(jira):

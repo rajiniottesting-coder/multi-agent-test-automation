@@ -1,4 +1,4 @@
-"""Group B D6: a `raise-defect` label on a pull request raises the run's
+"""Raising defects from a pull request (backlog item D6): a `raise-defect` label on a pull request raises the run's
 failures as application defects - as on main, but nothing judged passing from
 a pull request's run.
 

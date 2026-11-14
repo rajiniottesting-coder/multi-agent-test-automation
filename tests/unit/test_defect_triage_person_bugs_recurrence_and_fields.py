@@ -1,6 +1,7 @@
-"""Group B defects: D1 a person's open defect covers a failure (no
-duplicate), D2 a person's closed defect is re-tested by the next run, D4 a
-recurring failure links the closed defect, D5 priority, environment, commit.
+"""The defect triage and people's defects: a person's open defect covers a
+failure (no duplicate), a person's closed defect is re-tested by the next run,
+a recurring failure links the closed defect, and a new defect carries priority,
+environment and commit. (Backlog items D1, D2, D4, D5.)
 
 Sandbox: the real JiraClient over the fake Jira; generic names only.
 """

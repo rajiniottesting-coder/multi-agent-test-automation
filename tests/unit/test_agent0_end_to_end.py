@@ -1,9 +1,9 @@
 """
-Phase D (Agent 0 design): Agent 0 end to end in the sandbox.
+Agent 0 (impact analysis) end to end in the sandbox.
 
-D1 code-change and drift triggers (no model), D3 requirement trigger with
-the short-list rule, D4 in-flight guard and delta re-analysis, D5 the live
-loop (review -> hand-over -> reconcile -> outcome), and the safety switches.
+The code-change and drift triggers (no model), the requirement trigger with
+the short-list rule, the in-flight guard and delta re-analysis, the live loop
+(review -> hand-over -> reconcile -> outcome), and the safety switches.
 The model is a fake that answers from the prompts Agent 0 builds. No
 application name is written here: elements are taken from the graph.
 """
@@ -110,7 +110,7 @@ def _junit(root, key, status):
 # ─────────────────────────────────────────────────────────────────
 # D1 - code change and drift: structural only, no model
 # ─────────────────────────────────────────────────────────────────
-class TestD1:
+class TestCodeChangeAndDriftTriggers:
     def test_a_changed_selector_finds_exactly_its_scenarios(self, world, tmp_path):
         _f, jira, root, g = world
         page, key = _only_in(g, "SBX-12", "SBX-11")
@@ -198,7 +198,7 @@ class TestD1:
 # ─────────────────────────────────────────────────────────────────
 # D3 - requirement trigger, layers 1-3, short-list rule
 # ─────────────────────────────────────────────────────────────────
-class TestD3:
+class TestRequirementTrigger:
     def test_requirement_analysis_ranks_and_checks_evidence(self, world):
         _f, jira, root, g = world
         page, key = _only_in(g, "SBX-12", "SBX-11")
@@ -361,7 +361,7 @@ class TestPublish:
 # ─────────────────────────────────────────────────────────────────
 # D4 - in-flight guard and delta re-analysis
 # ─────────────────────────────────────────────────────────────────
-class TestD4:
+class TestInFlightGuardAndDelta:
     def test_a_test_with_another_open_change_is_blocked(self, world):
         fake, jira, root, g = world
         host = FakeRepoHost({})
@@ -564,7 +564,7 @@ class TestDriftCli:
 # ─────────────────────────────────────────────────────────────────
 # D5 - the live loop, and the switches
 # ─────────────────────────────────────────────────────────────────
-class TestD5:
+class TestLiveReviewLoop:
     def test_disabled_scan_does_nothing(self, world):
         fake, jira, root, _g = world
         before = (dict(fake.comments), list(fake.issues["SBX-5"]["labels"]))

@@ -53,7 +53,7 @@ def _keys(cases):
 # ═════════════════════════════════════════════════════════════════
 # Phase A
 # ═════════════════════════════════════════════════════════════════
-class TestA4TypedLinks:
+class TestTypedLinks:
     def test_owned_and_impacted_are_kept_apart(self, jira):
         assert _keys(jira.get_linked_test_cases("SBX-1")) == ["SBX-11", "SBX-12", "SBX-13"]
         assert _keys(jira.get_linked_test_cases("SBX-3")) == []      # owns nothing yet
@@ -108,7 +108,7 @@ class TestA4TypedLinks:
         assert fake.issues[key]["components"] == ["Login"]
 
 
-class TestA5ParentLookup:
+class TestParentLookupOverTheFakeJira:
     def test_owner_wins_over_an_earlier_impacts_link(self, jira, fake):
         # SBX-12 carries Impacts from SBX-3 AND Relates to SBX-1
         assert jira.get_parent_story_key("SBX-12") == "SBX-1"
@@ -127,7 +127,7 @@ class TestA5ParentLookup:
         assert not any(t == "Impacts" and i == "SBX-2" for t, i, _o in fake.links.values())
 
 
-class TestA2A3AgentTwoUpdate:
+class TestAgent2IncrementalUpdate:
     """Agent 2's ai-update run on SBX-1: marker index finds the file, the
     modified case is spliced with its tags kept, nothing else moves."""
 
@@ -180,7 +180,7 @@ class TestA2A3AgentTwoUpdate:
 # ═════════════════════════════════════════════════════════════════
 # Phase B
 # ═════════════════════════════════════════════════════════════════
-class TestB2ImpactGraph:
+class TestImpactGraph:
     def test_the_sandbox_repository_builds_without_gaps(self, repo):
         from core.impact_graph import build_impact_graph
         g = build_impact_graph(repo)
@@ -208,7 +208,7 @@ class TestB2ImpactGraph:
         assert {"SBX-11", "SBX-12"} <= refs and len(refs) == 8
 
 
-class TestB1Backfill:
+class TestMarkerBackfill:
     def _propose(self, repo, *extra):
         import scripts.backfill_markers as bf
         assert bf.main(["propose", "--out", "reports/p.json", *extra]) == 0

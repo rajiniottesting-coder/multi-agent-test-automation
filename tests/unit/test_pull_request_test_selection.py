@@ -1,4 +1,4 @@
-"""Group B X1: a pull request runs the scenarios its change can affect plus
+"""Which tests a pull request runs (backlog item X1): a pull request runs the scenarios its change can affect plus
 the smoke set; anything read by every test runs the whole suite.
 
 Generic names only.

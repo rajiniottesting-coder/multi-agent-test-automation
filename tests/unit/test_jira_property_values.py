@@ -60,3 +60,12 @@ def test_agent5_reads_its_last_report_from_a_real_property(monkeypatch):
     monkeypatch.setattr("core.usage_ledger.mode", lambda tracker: "properties")
     last = a5._last_report(client, "S-1")
     assert last.get("fp") == "abc"
+
+
+# ── get_property says it returns plain JSON ───────────────────────────────────
+
+def test_get_property_says_it_returns_plain_json():
+    import inspect
+    from integrations.jira_client import JiraClient
+    ann = inspect.signature(JiraClient.get_property).return_annotation
+    assert "dict" in str(ann) and "None" in str(ann)
