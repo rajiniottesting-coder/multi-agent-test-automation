@@ -81,6 +81,24 @@ DEFAULTS: dict = {
                              "defect-env": "environment", "defect-duplicate": "duplicate"},
         "resolution_categories": {"Duplicate": "duplicate", "Won't Do": "not-a-bug",
                                   "Cannot Reproduce": "not-a-bug"},
+        # D1: a failing test a person's open defect already covers (linked to
+        # its test case, else its story) is followed on that defect - linked
+        # and commented once - not raised again as a duplicate.
+        "reuse_person_defects": True,
+        # D2: a person's defect closed since the last run, linked to tests this
+        # run ran, gets one comment saying whether they pass, and this label.
+        "retest_resolved": True,
+        "retested_label": "retested",
+        "retest_max_per_run": 10,
+        # D4: a defect raised for a test whose earlier defect was closed links
+        # that one (link kind `recurrence`, else `defect_story`).
+        "link_recurrences": True,
+        # D5: a raised defect carries a priority - from the scenario's severity
+        # tag (reporting.severity_by_tag) via this map, else its story's - and
+        # the environment and commit it failed on.
+        "priority_by_severity": {"blocker": "Highest", "critical": "High"},
+        "priority_from_story": True,
+        "record_environment": True,
     },
     # The application health probe (core/app_probe.py): asked by Agent 4 after
     # a run with failures, before anything is retried or raised as a defect.
@@ -186,6 +204,28 @@ DEFAULTS: dict = {
         # RP12: the density is a module's product defects per this many
         # scenarios.
         "density_per": 10,
+    },
+    # Group B watchers (core/tracker_watch.py, run with the pipeline health
+    # check): each finding is one comment or label, said once.
+    "watch": {
+        "enabled": True,
+        "story_edits": True,          # R2
+        "test_case_changes": True,    # R3
+        "retire_cancelled": True,     # R4
+        "pr_sync": True,              # X5
+        "story_type": "Story",
+        "test_case_type": "Test Case",
+        "story_statuses": ["To Do", "In Progress", "In Review", "Done"],
+        "story_edit_days": 14,        # an older edit is history, not news
+        "drafted_label": "ai-processed",
+        "coded_label": "ai-coded",
+        "draft_label": "ai-ready",
+        "update_label": "ai-update",
+        "regenerate_label": "ai-regenerate",
+        "impact_label": "impact-check",
+        # A done story with one of these statuses or resolutions was cancelled.
+        "cancelled": ["Won't Do", "Won't Fix", "Cancelled"],
+        "pr_prefix": "auto/",
     },
     # D10: scripts/delete_issues.py deletes only closed issues carrying this
     # label - throw-away issues (validation runs, dummy defects). A real

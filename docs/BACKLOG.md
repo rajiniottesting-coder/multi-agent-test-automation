@@ -39,11 +39,11 @@ before a real project; P2 and P3 before a wider rollout.
 
 | ID | Item | Today (gap) | Priority | Cost | Was | Status |
 |---|---|---|---|---|---|---|
-| D1 | Before raising, look for open Bugs from any reporter linked to the test or story; link and comment instead of raising | Only `ai-defect` Bugs are read, so a tester's Bug for the same failure gets a duplicate | P1 | B | | Open |
-| D2 | When a person's Bug is resolved, re-run its linked tests and comment pass or fail | Nothing re-tests a fixed Bug | P2 | B | | Open |
+| D1 | Before raising, look for open Bugs from any reporter linked to the test or story; link and comment instead of raising | Only `ai-defect` Bugs are read, so a tester's Bug for the same failure gets a duplicate | P1 | B | | Done (#491) |
+| D2 | When a person's Bug is resolved, re-run its linked tests and comment pass or fail | Nothing re-tests a fixed Bug | P2 | B | | Done (#491) |
 | D3 | Bug flow: a production bug gets a regression test | Only Stories start Agents 1 and 2 | P2 | C | L23, F-20 | Open |
-| D4 | A recurring failure's new defect links the closed one | New defect, unlinked | P2 | B | L37 | Open |
-| D5 | AI defects carry priority (story priority or smoke tag), environment and commit | None set | P2 | B | | Open |
+| D4 | A recurring failure's new defect links the closed one | New defect, unlinked | P2 | B | L37 | Done (#491) |
+| D5 | AI defects carry priority (story priority or smoke tag), environment and commit | None set | P2 | B | | Done (#491) |
 | D6 | A `raise-defect` label on a PR files a real application bug a new test found | A PR's failures go to its story only (by design) | P3 | B | | Open |
 | D8 | A defect's module: tracker component, else `reporting.modules` over its feature file | The project has no components; no defect had a module | P2 | A | | Done (#478) |
 
@@ -51,11 +51,11 @@ before a real project; P2 and P3 before a wider rollout.
 
 | ID | Item | Today (gap) | Priority | Cost | Was | Status |
 |---|---|---|---|---|---|---|
-| R1 | Readiness check: a story without acceptance criteria gets one comment to the product owner and no draft | Agent 1 drafts anyway | P1 | B | | Open |
-| R2 | A story edited after drafting or coding is noticed: Agent 1 records a hash of the story text; edited before coding -> suggest a re-draft, after coding -> suggest `impact-check` (a comment, never automatic) | Not noticed | P2 | B | G6, F-14 | Open |
-| R3 | A test case edited or deleted in Jira is noticed: a scheduled comparison of each scenario marker's hash with its test case comments on the owning story suggesting `ai-update` | Only a manual `ai-update` compares them | P2 | B | G7, F-15 | Open |
-| R4 | A deleted or cancelled story retires its test cases and flags its scenarios and defects | They stay orphaned | P1 | B | | Open |
-| R5 | Only an allowed role or group can approve (`human-approved`) | Anyone who can edit labels starts coding | P1 | B | | Open |
+| R1 | Readiness check: a story without acceptance criteria gets one comment to the product owner and no draft | Agent 1 drafts anyway | P1 | B | | Done (#491) |
+| R2 | A story edited after drafting or coding is noticed: Agent 1 records a hash of the story text; edited before coding -> suggest a re-draft, after coding -> suggest `impact-check` (a comment, never automatic) | Not noticed | P2 | B | G6, F-14 | Done (#491) |
+| R3 | A test case edited or deleted in Jira is noticed: a scheduled comparison of each scenario marker's hash with its test case comments on the owning story suggesting `ai-update` | Only a manual `ai-update` compares them | P2 | B | G7, F-15 | Done (#491) |
+| R4 | A deleted or cancelled story retires its test cases and flags its scenarios and defects | They stay orphaned | P1 | B | | Done (#491) |
+| R5 | Only an allowed role or group can approve (`human-approved`) | Anyone who can edit labels starts coding | P1 | B | | Done (#491) |
 
 ### Execution and scale
 
@@ -65,7 +65,7 @@ before a real project; P2 and P3 before a wider rollout.
 | X2 | Per-run test data (accounts and fixtures seeded per run or worker), then parallel execution; browser turn-taking becomes optional | Shared accounts, one test at a time | P3 | C | N7, F-27 | Open |
 | X3 | Environment profiles in config (base URL and credentials per environment) and an optional browser matrix in Agent 4 | One base URL, Chromium only | P3 | C | N8, F-28 | Open |
 | X4 | An optional deployment signal (config or webhook) that marks a change story's failures as expected until deployment and reminds a person to merge its context-update PR | Pre-deployment failures look real | P3 | B | L20, F-17 | Open |
-| X5 | Detect agent PRs that conflict with or fall behind `main`; comment with the cause and suggest `ai-update` or `ai-regenerate`; never force-push | The PR waits silently | P2 | B | N5, F-25 | Open |
+| X5 | Detect agent PRs that conflict with or fall behind `main`; comment with the cause and suggest `ai-update` or `ai-regenerate`; never force-push | The PR waits silently | P2 | B | N5, F-25 | Done (#491) |
 | X6 | Require Agent 4's Run Tests check before merge, with X4's expected-failure marking so a change story is not blocked before deployment | A red PR can be merged | P3 | A | N6, F-26 | Open |
 
 ### Operations
@@ -110,6 +110,7 @@ the history): RP1, RP2, RP3, RP4 (#464, #467), RP7, RP9, RP10 (#465), X7
 Added and built on 13 Nov 2026 at the owner's request (group A, no model
 spend): D7, D8, D9, D10, RP12 (#478) - the defect history, trend and density;
 RP13 (#487, 14 Nov) - who found each defect and the detection rate.
+Group B, batch B1 (14 Nov 2026, #491): R1-R5, D1, D2, D4, D5, X5.
 D7 and D10 are proven live (#481, removed above). On 14 Nov 2026 RP6, RP8,
 RP11, RP12, RP13, D9 and X8 were proven live too (#490, removed above); D8
 waits for its tracker-component check (the project has no components).

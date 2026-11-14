@@ -257,7 +257,8 @@ def test_a_partial_set_is_handed_back_with_what_to_do():
     assert body.startswith(STOPPED) and "take a place another story waits for" in body
     assert "1 test case(s) are linked" in body and "Add `go` again to retry" in body
     src = (ROOT / "agents" / "agent1_analyst.py").read_text(encoding="utf-8")
-    assert 'if result.get("status") in _NEEDS_A_PERSON and not args.dry_run:' in src
+    # R1 (14 Nov 2026): a story not ready is handed back the same way.
+    assert 'if result.get("status") in (_NEEDS_A_PERSON | _NOT_READY) and not args.dry_run:' in src
 
 
 # ── the impact-aware draft has room to reason and answer ────────────────

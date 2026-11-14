@@ -214,6 +214,13 @@ def render(tracker, state: dict) -> str:
         f"**Fix:** {state['remedy']}",
         *([f"**Causes seen before:** {', '.join(state['earlier_causes'])} - the same test, "
            "read differently on another run"] if state.get("earlier_causes") else []),
+        *([f"**Recurs:** its earlier defect {state['recurs']} was closed - the same test "
+           "fails again"] if state.get("recurs") else []),
+        *([f"**Priority:** {state['priority']} (from the scenario's tags, else its story)"]
+          if state.get("priority") else []),
+        *([f"**Environment:** {state['environment']}"
+           + (f"; commit {state['commit']}" if state.get("commit") else "")]
+          if state.get("environment") else []),
         "",
         "**Latest failure:**",
         "",
@@ -356,6 +363,263 @@ def _trace(tracker, key: str, state: dict, before: dict, labels: list, s: dict,
             logger.warning("Defect %s: components not copied: %s", key, e)
 
 
+# ── Group B: a person's defects (D1, D2), recurrences (D4), fields (D5) ──
+
+def _new_defect_extras(tracker, key: str, state: dict, result: dict, s: dict) -> None:
+    """D4 link to the earlier defect; D5 priority and environment fields.
+    Best-effort per write, each refusal recorded."""
+    if state.get("recurs"):
+        result["recurs"].append(f"{key} -> {state['recurs']}")
+        links = getattr(tracker, "link_types", None) or {}
+        kind = "recurrence" if (not isinstance(links, dict) or "recurrence" in links) \
+            else "defect_story"
+        try:
+            tracker.link_issues(key, state["recurs"], kind)
+        except Exception as e:                                     # noqa: BLE001
+            result["errors"].append((f"{key} link to {state['recurs']}", error_text(e)))
+    set_fields = capability(tracker, "set_fields")
+    if set_fields is None:
+        return
+    for name, value in (("priority", state.get("priority")),
+                        ("environment", state.get("environment"))):
+        if not value:
+            continue
+        try:
+            set_fields(key, {name: value})
+        except Exception as e:                                     # noqa: BLE001
+            # A screen without the field: the description still carries it,
+            # so it is reported, not alerted (it would repeat on every defect).
+            logger.warning("Defect %s: %s not set (kept in the description): %s",
+                           key, name, e)
+            result["fields_not_set"].append(f"{key} {name}")
+
+FOLLOW_PROPERTY = "pipeline.triage.followed"
+
+
+def person_defects(tracker, s: dict, open_only: bool = True) -> list[dict]:
+    """Defects a person raised: the defect type without the triage's label
+    (and not throw-away issues). [] when the tracker cannot list them."""
+    read = capability(tracker, "issues_for_report")
+    if read is None:
+        return []
+    from core.ops_settings import section
+    throwaway = (section("cleanup").get("delete_label") or "").strip()
+    try:
+        found = read(s["issue_type"], open_only=open_only)
+    except Exception as e:                                         # noqa: BLE001
+        logger.warning("A person's defects not read: %s", e)
+        return []
+    return [d for d in found or [] if s["label"] not in (d.get("labels") or [])
+            and not (throwaway and throwaway in (d.get("labels") or []))]
+
+
+def covering_defect(defects: list[dict], traced: dict) -> dict | None:
+    """D1: the person's open defect linked to the failing test's test case,
+    else to its story - the lowest key when several."""
+    for key in (traced.get("test_case"), traced.get("owner")):
+        if not key:
+            continue
+        hits = sorted((d for d in defects if key in (d.get("links") or [])),
+                      key=lambda d: _key_number(d.get("key")))
+        if hits:
+            return hits[0]
+    return None
+
+
+def _key_number(key) -> int:
+    tail = str(key or "").rsplit("-", 1)[-1]
+    return int(tail) if tail.isdigit() else 0
+
+
+def _followed(tracker, key: str) -> dict:
+    get = capability(tracker, "get_property")
+    try:
+        value = get(key, FOLLOW_PROPERTY) if get else None
+    except Exception:                                              # noqa: BLE001
+        value = None
+    return value if isinstance(value, dict) else {}
+
+
+def _remember(tracker, key: str, value: dict) -> None:
+    put = capability(tracker, "set_property")
+    if put is not None:
+        put(key, FOLLOW_PROPERTY, value)
+
+
+def follow(tracker, defect: dict, test: str, traced: dict, run_url: str, result: dict,
+           s: dict, dry_run: bool) -> None:
+    """D1: follow a failing test on a person's defect instead of raising one -
+    link it to the test case, and comment once (until the test passes)."""
+    key = defect["key"]
+    result["followed"].append(key)
+    if dry_run:
+        return
+    try:
+        if traced.get("test_case") and s.get("trace_links", True) \
+                and traced["test_case"] not in (defect.get("links") or []):
+            tracker.link_issues(key, traced["test_case"], "defect_of")
+        seen = _followed(tracker, key)
+        if (seen.get(test) or {}).get("state") != "failing":
+            tracker.add_comment(
+                key, f"The pipeline's run on main fails {test.rsplit('.', 1)[-1]} too: "
+                     f"{run_url}. This defect covers it, so no duplicate was raised; the "
+                     f"pipeline says here when the test passes again.")
+            seen[test] = {"state": "failing", "since": run_url}
+            _remember(tracker, key, seen)
+    except Exception as e:                                         # noqa: BLE001
+        logger.warning("Defect %s not followed: %s", key, e)
+        result["errors"].append((f"{key} follow", error_text(e)))
+
+
+def unfollow_passing(tracker, defects: list[dict], passed: set, run_url: str, result: dict,
+                     dry_run: bool) -> None:
+    """D1: a test followed on a person's defect passes again - say so once."""
+    for d in defects:
+        seen = _followed(tracker, d["key"]) if not dry_run else {}
+        changed = False
+        for test, info in seen.items():
+            if (info or {}).get("state") == "failing" and test in passed:
+                try:
+                    tracker.add_comment(d["key"], f"{test.rsplit('.', 1)[-1]} passes on main "
+                                                  f"again: {run_url}. Close this defect if "
+                                                  f"it is fixed.")
+                    seen[test] = {"state": "passing", "since": run_url}
+                    changed = True
+                    result["followed_passing"].append(d["key"])
+                except Exception as e:                             # noqa: BLE001
+                    result["errors"].append((f"{d['key']} passing", error_text(e)))
+        if changed:
+            try:
+                _remember(tracker, d["key"], seen)
+            except Exception as e:                                 # noqa: BLE001
+                result["errors"].append((f"{d['key']} memory", error_text(e)))
+
+
+def retest_resolved(tracker, cases, traces, run_url: str, result: dict, s: dict,
+                    dry_run: bool) -> None:
+    """D2: a person's defect closed since it was last re-tested, linked to a
+    test case or story whose tests this run ran: one comment with their
+    outcome, and `retested_label` so it is said once. `traces` is {test id:
+    trace} or a callable making it (only made when a defect needs it)."""
+    label = s.get("retested_label") or "retested"
+    outcome = {jm.case_id(c): jm.outcome(c) for c in cases}
+    closed = [d for d in person_defects(tracker, s, open_only=False)
+              if not d.get("open") and label not in (d.get("labels") or [])]
+    if closed and callable(traces):
+        traces = traces()
+    for d in closed:
+        links = set(d.get("links") or [])
+        tests = sorted(t for t, tr in traces.items()
+                       if links & {tr.get("test_case"), tr.get("owner")} - {None})
+        if not tests:
+            continue
+        failing = [t for t in tests if outcome.get(t) in ("failed", "error")]
+        names = ", ".join(t.rsplit(".", 1)[-1] for t in (failing or tests)[:5])
+        body = (f"Re-tested after it was closed: {len(tests)} linked test(s) ran on main "
+                f"({run_url}). " + (f"Still failing: {names} - reopen this defect if it "
+                                    f"is not fixed." if failing else f"All pass: {names}."))
+        if len(result["retested"]) >= int(s.get("retest_max_per_run") or 10):
+            break                        # the rest are re-tested by the next run
+        result["retested"].append(d["key"])
+        if dry_run:
+            continue
+        try:
+            tracker.add_comment(d["key"], body)
+            tracker.add_label(d["key"], label)
+        except Exception as e:                                     # noqa: BLE001
+            result["errors"].append((f"{d['key']} re-test", error_text(e)))
+
+
+def earlier_defect(tracker, test: str, s: dict, cache: dict) -> str | None:
+    """D4: the most recent CLOSED defect the triage raised for `test`."""
+    if "closed" not in cache:
+        read = capability(tracker, "defects_for_history")
+        cache["closed"] = []
+        if read is not None:
+            try:
+                for d in read(s["issue_type"]) or []:
+                    state = state_of(d.get("description") or "") or {}
+                    if not d.get("open") and state.get("test"):
+                        cache["closed"].append((state["test"], d["key"]))
+            except Exception as e:                                 # noqa: BLE001
+                logger.warning("Closed defects not read: %s", e)
+    keys = [k for t, k in cache["closed"] if t == test]
+    return max(keys, key=_key_number) if keys else None
+
+
+def scenario_tags(test_id: str, features_dir: Path) -> list[str]:
+    """The tags of the scenario a test id runs (its feature's tags too)."""
+    import re
+    file = Path(features_dir) / _feature_file(test_id)
+    name = test_id.partition("::")[2].split("[", 1)[0]
+    try:
+        lines = file.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    feature_tags, pending = [], []
+    for line in lines:
+        text = line.strip()
+        if text.startswith("@"):
+            pending += [t.lstrip("@") for t in text.split()]
+        elif text.startswith("Feature:"):
+            feature_tags, pending = pending, []
+        elif re.match(r"(Scenario|Scenario Outline|Example):", text):
+            title = text.split(":", 1)[1].strip()
+            slug = "test_" + _python_name(title)
+            if slug == name:
+                return feature_tags + pending
+            pending = []
+        elif text and not text.startswith("#"):
+            pending = [] if not text.startswith("@") else pending
+    return feature_tags
+
+
+def _python_name(title: str) -> str:
+    """The test function name pytest-bdd gives a scenario title."""
+    try:
+        from pytest_bdd.scenario import make_python_name
+        return make_python_name(title)
+    except Exception:                                              # noqa: BLE001
+        import re
+        return re.sub(r"[^\w]", "", title.replace(" ", "_")).lower()
+
+
+def defect_fields(tracker, test: str, traced: dict, features_dir: Path, s: dict) -> dict:
+    """D5: {"priority", "environment", "commit"} for a new defect (None where
+    unknown)."""
+    import os
+    out = {"priority": None, "environment": None, "commit": None}
+    from core.ops_settings import section
+    from core.allure_labels import severity_for
+    rep = section("reporting")
+    tags = scenario_tags(test, features_dir)
+    by_severity = {str(k).lower(): v for k, v in (s.get("priority_by_severity") or {}).items()}
+    if tags and any(str(t).lower().lstrip("@") in {str(k).lower() for k in
+                                                     (rep.get("severity_by_tag") or {})}
+                    for t in tags):
+        out["priority"] = by_severity.get(severity_for(tags, rep))
+    if not out["priority"] and s.get("priority_from_story", True) and traced.get("owner"):
+        state = capability(tracker, "issue_state")
+        try:
+            out["priority"] = (state(traced["owner"]) or {}).get("priority") if state else None
+        except Exception:                                          # noqa: BLE001
+            pass
+    if s.get("record_environment", True):
+        base = os.getenv("BASE_URL") or ""
+        if not base:
+            try:
+                from core.app_context import AppContext
+                base = AppContext.load().base_url
+            except Exception:                                      # noqa: BLE001
+                base = ""
+        browser = os.getenv("BROWSER") or "chromium"
+        runner = os.getenv("RUNNER_OS") or os.getenv("OS") or ""
+        out["environment"] = "; ".join(x for x in (base, f"browser {browser}",
+                                                    f"runner {runner}" if runner else "") if x)
+        out["commit"] = (os.getenv("GITHUB_SHA") or "")[:12] or None
+    return out
+
+
 def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | None = None,
            dry_run: bool = False) -> dict:
     """Raise, update and flag defects for one run on main. Returns what it did:
@@ -380,7 +644,9 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
               "outages": [jm.case_id(c) for c in cases if jm.is_outage(c)],
               "flaky": [jm.case_id(c) for c in cases if jm.is_flaky(c)],
               "not_retried": [jm.case_id(c) for c in not_retried], "unmapped": [],
-              "stale_trace": [], "errors": []}
+              "stale_trace": [], "errors": [],
+              "followed": [], "followed_passing": [], "retested": [], "recurs": [],
+              "fields_not_set": []}
     if not s.get("enabled", True):
         logger.info("defects.enabled is false - no defect is raised.")
         return result
@@ -394,6 +660,10 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
     failing_labels = set()
     failing_tests: dict = {}             # test -> its defect this run (None: none)
     per_test = by_test(existing)
+    # D1: a person's open defects - read once, only when a defect may be raised.
+    persons = person_defects(tracker, s) if (failing and s.get("reuse_person_defects", True)) \
+        else []
+    closed_cache: dict = {}
     for case in failing:
         test = jm.case_id(case)
         d = _diagnosis(case)
@@ -448,10 +718,24 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
                 result["capped"].append(test)
                 continue
             traced = trace_of(test, features_dir, tracker, s)
+            covering = covering_defect(persons, traced) if persons else None
+            if covering is not None:
+                # D1: a person's defect already covers it - follow it there.
+                follow(tracker, covering, test, traced, run_url, result, s, dry_run)
+                failing_tests[test] = covering["key"]
+                continue
             state = {"test": test, **traced, "cause": d.label,
                      "cause_text": d.cause, "remedy": d.remedy,
                      "failure": _failure_excerpt(case), "first_seen": today,
                      "last_seen": today, "last_run": run_url, "times": 1}
+            if s.get("link_recurrences", True):
+                earlier = earlier_defect(tracker, test, s, closed_cache)
+                if earlier:
+                    state["recurs"] = earlier                      # D4
+            fields = defect_fields(tracker, test, traced, features_dir, s)
+            state.update({k: v for k, v in (("environment", fields["environment"]),
+                                            ("commit", fields["commit"]),
+                                            ("priority", fields["priority"])) if v})
             summary = f"[Auto] {test.rsplit('.', 1)[-1][:150]} fails on main: {d.label}"
             if dry_run:
                 result["raised"].append(f"(dry run) {summary}")
@@ -466,6 +750,7 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
             failing_tests[test] = key
             logger.warning("Defect %s raised: %s", key, summary)
             _trace(tracker, key, state, {}, labels, s, result, dry_run)
+            _new_defect_extras(tracker, key, state, result, s)
         except Exception as e:                                     # noqa: BLE001
             logger.warning("Defect for %s not written: %s", test, e)
             result["errors"].append((test, error_text(e)))
@@ -498,6 +783,15 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
 
     # A pass only on the retry is no sign the defect is gone (F-19).
     passed = {jm.case_id(c) for c in cases if jm.outcome(c) == "passed" and not jm.is_flaky(c)}
+    # D1: a test followed on a person's defect that passes again.
+    if s.get("reuse_person_defects", True):
+        unfollow_passing(tracker, person_defects(tracker, s), passed, run_url, result, dry_run)
+    # D2: a person's defect closed since - re-tested by this run.
+    if s.get("retest_resolved", True):
+        retest_resolved(tracker, cases,
+                        lambda: {jm.case_id(c): trace_of(jm.case_id(c), features_dir, tracker, s)
+                                 for c in cases},
+                        run_url, result, s, dry_run)
     for label, issue in existing.items():
         if label in failing_labels:
             continue

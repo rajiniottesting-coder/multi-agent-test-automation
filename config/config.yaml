@@ -105,6 +105,9 @@ tracker:
     # reads "is blocked by"), and "<defect> relates to <its story>".
     defect_of:    { name: "Blocks", query: "blocks", inverse_query: "is blocked by", from_field: "inwardIssue" }
     defect_story: { name: "Relates", query: "relates to", inverse_query: "relates to", from_field: "inwardIssue" }
+    # D4: a defect raised again for a test whose earlier defect was closed
+    # "relates to" that earlier one.
+    recurrence:   { name: "Relates", query: "relates to", inverse_query: "relates to", from_field: "inwardIssue" }
 
   # A test case retired by an approved Impact Review carries this label.
   # Every test case query skips it, so no later update brings it back.
@@ -181,6 +184,27 @@ reporting:
     Test cases page: ["test_cases_page*.feature"]
   density_per: 10                    # density = product defects per this many scenarios
 
+# Group B watchers (core/tracker_watch.py), run with the pipeline health check.
+# Each finding is one comment or label, said once; nothing is changed for you.
+watch:
+  enabled: true
+  story_edits: true                  # R2: story edited after drafting/coding
+  test_case_changes: true            # R3: test case edited/deleted after coding
+  retire_cancelled: true             # R4: cancelled/deleted story retires its test cases
+  pr_sync: true                      # X5: agent PR in conflict with / behind main
+  story_type: "Story"
+  test_case_type: "Test Case"
+  story_statuses: ["To Do", "In Progress", "In Review", "Done"]
+  story_edit_days: 14
+  drafted_label: "ai-processed"
+  coded_label: "ai-coded"
+  draft_label: "ai-ready"
+  update_label: "ai-update"
+  regenerate_label: "ai-regenerate"
+  impact_label: "impact-check"
+  cancelled: ["Won't Do", "Won't Fix", "Cancelled"]
+  pr_prefix: "auto/"
+
 # D10: scripts/delete_issues.py deletes only closed issues with this label -
 # throw-away issues. A real defect is closed, never deleted. "" = off.
 cleanup:
@@ -241,6 +265,21 @@ defects:
     Duplicate: duplicate
     "Won't Do": not-a-bug
     "Cannot Reproduce": not-a-bug
+  # D1: a failing test a person's open defect already covers is followed on
+  # that defect (linked, commented once), never raised again as a duplicate.
+  reuse_person_defects: true
+  # D2: a person's defect closed since the last run is re-tested by the next
+  # run on main: one comment (its linked tests pass or fail) and this label.
+  retest_resolved: true
+  retested_label: "retested"
+  retest_max_per_run: 10             # more closed defects wait for the next run
+  # D4: a recurring failure's new defect links the closed one.
+  link_recurrences: true
+  # D5: priority from the scenario's severity tag, else its story's; plus
+  # the environment and commit the test failed on.
+  priority_by_severity: { blocker: "Highest", critical: "High" }
+  priority_from_story: true
+  record_environment: true
 
 # A story's model-cost ledger (F-31, core/usage_ledger.py).
 #   store  auto      hidden issue properties, and ONE cost comment per attempt
@@ -408,6 +447,10 @@ browser:
 agents:
   # Agent 1 — Test Designer: Jira story → manual test cases
   agent1_analyst:
+    # R1: a story with no "Acceptance criteria" list is not drafted (no model
+    # call); it is handed back with one comment to the product owner.
+    readiness:
+      require_acceptance_criteria: true
     # Room for one draft of test cases (tokens). Out of room, the story is
     # handed back with one [agent1:stopped] comment naming this key.
     # 16384 since 12 Nov 2026: the largest draft (3-12 Nov) used 11,061 of
@@ -469,6 +512,12 @@ agents:
   #   Agent 2 skips the dedup check, creates a new branch with -rev2/
   #   -rev3/... suffix, and removes the label after success (one-shot).
   agent2_coder:
+    # R5: only these may approve - add the approval label - and start coding.
+    # Tracker groups (keeps people's names out of the repository) and/or
+    # people (account id, display name or email). Both empty: anyone.
+    approval_label: "human-approved"
+    approver_groups: ["org-admins"]
+    approvers: []
     selection:
       issue_type: "Story"
       allowed_statuses:

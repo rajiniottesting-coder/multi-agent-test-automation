@@ -92,3 +92,23 @@ jobs:
             DRY_RUN_FLAG="--dry-run"
           fi
           python -m scripts.pipeline_health_check $DRY_RUN_FLAG
+
+      # Group B (R2 R3 R4 X5): a story or test case changed after drafting or
+      # coding, a cancelled story whose scenarios still run, an agent PR out of
+      # sync with main - one comment each, said once (core/tracker_watch.py).
+      - name: Watch stories, test cases and agent PRs
+        if: always()
+        env:
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          GITHUB_TOKEN: ${{ steps.identity.outputs.token }}
+          REPO_HOST_TOKEN_PER_RUN: ${{ steps.identity.outputs.kind == 'app' }}
+          GITHUB_REPO: ${{ vars.GH_REPO || github.repository }}
+        run: |
+          DRY_RUN_FLAG=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
+          python -m scripts.watch_tracker $DRY_RUN_FLAG
