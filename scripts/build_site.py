@@ -441,7 +441,7 @@ def defect_history_html(data: dict) -> str:
              ("-" if sm["mean_days_to_close"] is None else sm["mean_days_to_close"],
               "mean days to close"),
              (sm["reopened"], "reopened"), (sm["deleted"], "deleted from the tracker"),
-             (_pct(sm.get("detection_rate")), "found by the pipeline")]
+             (_share(sm.get("detection_rate")), "found by the pipeline")]
     kpi = "".join(f"<div class='card kpi'><b>{_e(v)}</b><span>{_e(t)}</span></div>"
                   for v, t in cards)
     cats = ", ".join(f"{n} {c}" for c, n in sm["closed_by_category"]) or "none closed"
@@ -450,7 +450,7 @@ def defect_history_html(data: dict) -> str:
                    "Found by a person", "Detection rate", "Product defects", "Closed",
                    "Open now", f"Density (per {h['per']} scenarios)"],
                   [[_e(r["module"]), r["scenarios"], r["opened"], r.get("by_pipeline", 0),
-                    r.get("by_person", 0), _e(_pct(r.get("detection_rate"))), r["product"],
+                    r.get("by_person", 0), _e(_share(r.get("detection_rate"))), r["product"],
                     r["closed"], r["open"], "-" if r["density"] is None else r["density"]]
                    for r in h["modules"]])
     sprints = _table(["Sprint", "From", "To", "Opened", "Found by the pipeline",
@@ -480,7 +480,9 @@ def defect_history_html(data: dict) -> str:
             f"<div class='card'><h2>Defects per sprint</h2>{sprints}</div>")
 
 
-def _pct(value) -> str:
+def _share(value) -> str:
+    """A share already in percent (the detection rate): 66.7 -> '66.7%'.
+    Not _pct, which takes a fraction (a pass rate): 0.99 -> '99%'."""
     return "-" if value is None else f"{value:g}%"
 
 
@@ -637,7 +639,7 @@ def summary_pdf(data: dict, path: Path, sprint_end: bool) -> bool:
                  Table([["Opened", "By pipeline", "By a person", "Detection rate", "Closed",
                          "Open now", "Mean days to close", "Reopened"],
                         [str(sm["opened"]), str(sm["by_pipeline"]), str(sm["by_person"]),
-                         _pct(sm.get("detection_rate")), str(sm["closed"]), str(sm["open"]),
+                         _share(sm.get("detection_rate")), str(sm["closed"]), str(sm["open"]),
                          "-" if sm["mean_days_to_close"] is None else str(sm["mean_days_to_close"]),
                          str(sm["reopened"])]], style=style),
                  Spacer(1, 0.3 * cm)]
