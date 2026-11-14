@@ -144,10 +144,6 @@ class InventoryUpdate:
         return bool(self.added or self.replaced or self.removed or self.retired
                     or self.confirmed)
 
-    @property
-    def pages_confirmed(self) -> list:
-        return [r["page"] for r in self.confirmed if r.get("page_confirmed")]
-
 
 # ─────────────────────────────────────────────────────────────
 # Which keys the code still names

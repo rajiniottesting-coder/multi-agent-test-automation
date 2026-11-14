@@ -222,16 +222,12 @@ class TestReverseLookups:
     def test_by_element(self, graph):
         assert [s.title for s in graph.scenarios_using_element("shop", "modal")] == ["Buy a thing"]
 
-    def test_by_key_on_any_page(self, graph):
-        assert {s.title for s in graph.scenarios_using_key("modal")} == {"Buy a thing", "Detail"}
+    def test_a_page_class_inherits_its_base_methods(self, graph):
+        """The inheritance chain the pull-request selection (core/test_selection.py)
+        follows to the file that defines a method."""
+        assert graph._mro("ShopPage")[:2] == ["ShopPage", "BasePage"]
 
-    def test_by_method_including_subclass_receivers(self, graph):
-        assert [s.title for s in graph.scenarios_calling("ShopPage", "buy")] == ["Buy a thing"]
-        # a change to BasePage.click reaches every scenario that clicks
-        assert {s.title for s in graph.scenarios_calling("BasePage", "click")} == {"Buy a thing"}
-
-    def test_by_page_and_component(self, graph):
-        assert {s.title for s in graph.scenarios_on_page("detail")} == {"Detail"}
+    def test_by_component(self, graph):
         assert {s.title for s in graph.scenarios_in_component("Shop")} == {"Buy a thing", "Detail"}
 
     def test_by_test_case_key(self, graph):

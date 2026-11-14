@@ -278,7 +278,7 @@ def test_a_planned_page_found_live_is_confirmed_and_crawled_like_any_page():
     page = upd.inventory["pages"]["p"]
     assert "planned_page" not in page and "planned" not in page
     assert page["elements"]["pay_button"] == "#pay"
-    assert upd.confirmed[0]["page_confirmed"] is True and upd.pages_confirmed == ["p"]
+    assert upd.confirmed[0]["page_confirmed"] is True
     assert "page confirmed live" in iu.render_body(upd, "inv.json", "d")
 
 

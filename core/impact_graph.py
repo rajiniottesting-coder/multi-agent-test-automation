@@ -137,23 +137,6 @@ class ImpactGraph:
     def scenarios_using_element(self, page: str, key: str) -> list:
         return [s for s in self.scenarios if (page, key) in s.elements]
 
-    def scenarios_using_key(self, key: str) -> list:
-        """Every scenario using `key` on ANY page (an inventory key change
-        whose page is not known yet)."""
-        return [s for s in self.scenarios if any(k == key for _p, k in s.elements)]
-
-    def scenarios_calling(self, cls: str, method: str) -> list:
-        """Scenarios that call `method`, on `cls` or on any class inheriting
-        it - page-level and shared methods alike, so a change to a BasePage
-        method finds every scenario that reaches it."""
-        receivers = {c for c in self._bases if cls in self._mro(c)} | {cls}
-        return [s for s in self.scenarios
-                if any(m == method and c in receivers
-                       for c, m in s.methods | s.shared_methods)]
-
-    def scenarios_on_page(self, page: str) -> list:
-        return [s for s in self.scenarios if page in s.pages]
-
     def scenarios_in_component(self, component: str) -> list:
         return [s for s in self.scenarios if component in s.components]
 
