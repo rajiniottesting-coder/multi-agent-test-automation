@@ -1226,13 +1226,6 @@ class TestMultiMatchEnforcement:
             project_root, inventory=_INV_MM)
         assert len(errors) == 1
 
-    def test_composing_the_family_key_is_still_caught(self, project_root: Path):
-        """f-string narrowing is rule 13's problem and this one's too."""
-        errors = validate_page_object_selectors(
-            [_widgets_page('    def go(self) -> None:\n'
-                           '        self.click(f"{self.sel(\'rows\')} >> nth=0")\n')],
-            project_root, inventory=_INV_MM)
-        assert len(errors) == 1
 
     def test_each_violation_is_reported_once(self, project_root: Path):
         errors = validate_page_object_selectors(
@@ -1328,9 +1321,11 @@ class TestLocatorSyntaxInCode:
             "click_nth on a family is the CORRECT pattern, not a violation"
 
     def test_one_line_yields_one_error(self, project_root):
-        """The composed fragment breaks two rules at once. Reporting both would
-        be one defect described twice, and the locator-syntax remedy already
-        resolves the multi_match complaint."""
+        """Composing a multi_match family's key (an f-string narrowing it) is
+        still caught - and though the composed fragment breaks two rules at
+        once, it is one error: reporting both would be one defect described
+        twice, and the locator-syntax remedy already resolves the multi_match
+        complaint."""
         errors = validate_page_object_selectors(
             [_widgets_page('    def go(self) -> None:\n'
                            '        self.click(f"{self.sel(\'rows\')} >> nth=0")\n')],

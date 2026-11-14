@@ -209,7 +209,9 @@ def test_generated_id_detection():
 # ── naming + kind ─────────────────────────────────────────────
 
 def test_derive_name_from_data_test():
-    assert derive_element_name("button", {"data-test": "signin-button"}) == "signin_button"
+    # the test id wins over name and text, and the kind is appended
+    assert derive_element_name("button", {"data-test": "checkout", "name": "pay"},
+                               text="Go") == "checkout_button"
 
 
 def test_derive_name_camelcase_split():

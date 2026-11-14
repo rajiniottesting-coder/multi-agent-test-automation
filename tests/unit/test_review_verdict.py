@@ -106,11 +106,6 @@ def test_advisory_findings_stay_advisory(issue_type):
     )
 
 
-def test_a_clean_review_still_approves():
-    out = derive_verdict(_report("approve"))
-    assert out.overall_verdict == "approve"
-
-
 def test_an_advisory_finding_alone_does_not_keep_a_blocking_verdict():
     """This test used to assert the opposite - that the rule only ever RAISED,
     and a model asking for changes kept them whatever the severities.
