@@ -281,6 +281,36 @@ def page(browser, config, request) -> Page:
 # capture evidence only when a test fails.
 # ─────────────────────────────────────────────────────────────
 # ---------------------------------------------------------------------------
+# X1: a pull request runs the scenarios its change can affect, plus the smoke
+# set (core/test_selection.py). Agent 4 sets AGENT4_SELECTION to the file it
+# chose them into; without it (a local run, the nightly run, a run by hand)
+# every collected test runs, as before.
+# ---------------------------------------------------------------------------
+def pytest_collection_modifyitems(config, items):
+    chosen = os.getenv("AGENT4_SELECTION")
+    if not chosen:
+        return
+    from core.test_selection import keeps, load
+    selection = load(chosen)
+    if selection is None:
+        return
+    keep, drop = [], []
+    for item in items:
+        scenario = getattr(getattr(item, "obj", None), "__scenario__", None)
+        if scenario is None:
+            keep.append(item)                 # not a scenario: never deselected here
+            continue
+        rel = Path(os.path.relpath(scenario.feature.filename, config.rootpath)).as_posix()
+        tags = {m.name for m in item.iter_markers()}
+        (keep if keeps(selection, rel, scenario.name, tags) else drop).append(item)
+    if drop:
+        config.hook.pytest_deselected(items=drop)
+        items[:] = keep
+    logging.getLogger(__name__).info("Pull-request selection: %d of %d test(s) run (%s)",
+                                     len(keep), len(keep) + len(drop), selection.get("why"))
+
+
+# ---------------------------------------------------------------------------
 # A local run starts clean: the previous run's Allure results and failure
 # evidence go (never in CI, never for --last-failed).
 # ---------------------------------------------------------------------------

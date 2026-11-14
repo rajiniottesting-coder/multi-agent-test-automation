@@ -323,6 +323,35 @@ jobs:
           # pytest-html generates a self-contained HTML report — handy as a PR artifact
           pip install pytest-html
 
+      # ── WHICH TESTS DOES THIS PULL REQUEST RUN? (X1) ──────────────────
+      # The scenarios of the feature files, step modules and page objects it
+      # changes (Agent 0's impact graph) plus every smoke-tagged scenario
+      # (core/test_selection.py, agents.agent4_runner.pr_selection). Anything
+      # else read at test runtime, the full_label label on the pull request,
+      # or any error here runs the whole suite. The nightly run and runs by
+      # hand always run everything. The choice goes into the report artifact
+      # (reports/selection.json), so Agent 3 knows what a green run ran.
+      - name: Choose the tests for this pull request
+        id: select
+        if: github.event_name == 'pull_request' && steps.pr_changes.outputs.e2e != 'false'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir -p reports
+          if ! gh api "repos/$REPO/pulls/$PR_NUMBER/files" --paginate --jq '.[].filename' > "$RUNNER_TEMP/changed.txt"; then
+            : > "$RUNNER_TEMP/changed.txt"
+          fi
+          # Read now, not from the event: adding the label and re-running the
+          # job must see it.
+          LABELS=$(gh api "repos/$REPO/issues/$PR_NUMBER/labels" --jq '[.[].name] | join(",")' || true)
+          python -m scripts.select_tests --files "$RUNNER_TEMP/changed.txt" --labels "$LABELS" --out reports/selection.json | tee "$RUNNER_TEMP/select.log"
+          if grep -qx 'mode=selected' "$RUNNER_TEMP/select.log"; then
+            echo "file=reports/selection.json" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Cache Playwright browsers
         # Playwright's browser binary (Chromium) is ~300 MB and takes ~2-3 min
         # to download. Caching it between runs saves significant CI time.
@@ -441,6 +470,8 @@ jobs:
           # roles - a deliberate trade: an explicit, greppable mapping that
           # matches the GitHub Secrets page one-to-one.
           APP_USER_REGISTERED: ${{ secrets.APP_USER_REGISTERED }}
+          # X1: set only when this pull request runs a selection (empty: all).
+          AGENT4_SELECTION: ${{ steps.select.outputs.file }}
         # Re-run a test ONLY when its failure names a temporary HTTP error from
         # the application under test (5xx, 429): from CI the site answers some
         # requests with 503 in short bursts while it loads fine in a browser
@@ -508,6 +539,7 @@ jobs:
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
           APP_USER_REGISTERED: ${{ secrets.APP_USER_REGISTERED }}
           MAX_RETRIED_TESTS: "100"
+          AGENT4_SELECTION: ${{ steps.select.outputs.file }}
         run: |
           FAILED=$(python -m scripts.finalise_junit --count-failed reports/junit.xml)
           echo "failed tests: $FAILED"

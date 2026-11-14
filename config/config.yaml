@@ -733,5 +733,17 @@ agents:
                                            # is a shared section: listed, never added per page
 
   # agent3_reviewer:  # triggered by GitHub PR events, no Jira selection needed
-  # agent4_runner:    # triggered by GitHub PR events (CI workflow only — no .py file)
+  # Agent 4 runs from GitHub events (agent4_runner.yml); this block holds its
+  # settings only. X1: a pull request runs the scenarios its change can affect
+  # (the feature files, step modules and page objects it changes, through
+  # Agent 0's impact graph) plus every scenario tagged smoke_tag. A change to
+  # anything else read at test runtime, the label full_label (then re-run the
+  # job), the nightly run and a run by hand run the whole suite
+  # (core/test_selection.py).
+  agent4_runner:
+    pr_selection:
+      enabled: true
+      smoke_tag: "smoke"
+      full_label: "full-suite"
+      shared_pages: ["pages/base_page.py", "pages/__init__.py"]
   # agent5_reporter:  # triggered after Agent 4 in same workflow

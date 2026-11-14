@@ -454,6 +454,9 @@ class RunnerEvidence:
     scenario_key()). `scenarios` is None when the report is unavailable."""
     conclusion: str | None
     scenarios: dict | None = None
+    # X1: the run ran only these scenarios (core/test_selection.py) - a green
+    # run then refutes only a prediction whose own scenario ran and passed.
+    selected: bool = False
 
 
 def scenario_key(title: str) -> str:
@@ -516,7 +519,19 @@ def runner_evidence_for_head(host, pr_number: int, head_branch: str,
     except Exception as e:                                       # noqa: BLE001
         logger.warning("Runner report not read (%s); judging the whole run.", e)
         report = None
-    return RunnerEvidence(conclusion, parse_junit_scenarios(report))
+    selected = False
+    if conclusion == "success":
+        # X1: did the green run run every scenario, or a pull request's
+        # selection (core/test_selection.py)? A red run is read scenario by
+        # scenario anyway.
+        try:
+            from core.test_selection import FILE
+            raw = host.get_run_artifact_file(run["id"], RUNNER_ARTIFACT_PREFIX, FILE)
+            selected = bool(raw) and json.loads(raw).get("mode") == "selected"
+        except Exception as e:                                   # noqa: BLE001
+            logger.info("Runner selection not read (%s); the run counts as the whole "
+                        "suite.", e)
+    return RunnerEvidence(conclusion, parse_junit_scenarios(report), selected)
 
 
 _SCENARIO_IN_TEXT = re.compile(r"\bscenario(?:\s+outline)?\s*:?\s*['\"\u2018\u201c]([^'\"\u2019\u201d\n]{3,})"
@@ -568,8 +583,12 @@ def apply_runner_evidence(report: ReviewReport, runner_result) -> ReviewReport:
         return report
     if isinstance(runner_result, RunnerEvidence):
         conclusion, scenarios = runner_result.conclusion, runner_result.scenarios
+        selected = runner_result.selected
     else:
-        conclusion, scenarios = runner_result, None
+        conclusion, scenarios, selected = runner_result, None, False
+    if conclusion == "success" and selected:
+        # X1: a pull request's selection - only a scenario that ran tells.
+        conclusion = "success (selected scenarios only)"
     if conclusion == "success":
         notes = {id(i): _REFUTED_NOTE for i in candidates
                  if not _scenario_flaky(i, scenarios)}
