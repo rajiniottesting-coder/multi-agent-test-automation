@@ -167,4 +167,5 @@ def test_the_site_reads_the_store_without_the_tracker_and_makes_the_pdf(tmp_path
     assert bs.main(["--store", str(store), "--out", str(out), "--no-tracker"]) == 0
     page = (out / "history.html").read_text()
     assert "AI metrics" in page and "$1.70" in page
+    pytest.importorskip("reportlab")      # requirements-reports.txt: the Reports run only
     assert (out / "summary.pdf").exists()
