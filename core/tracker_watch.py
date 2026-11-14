@@ -17,7 +17,8 @@ is said once: what was said is remembered in a hidden issue property
       `ai-update`, or remove / re-point the scenario.
 
   R4  A story cancelled or deleted while its scenarios still run (marker
-      owners; cancelled = a done status or resolution in `watch.cancelled`)
+      owners; cancelled = done, with a status, resolution or label in
+      `watch.cancelled`)
       -> its test cases get the retired label and one comment naming the
       scenario to remove; the open defects traced to it get one comment.
 
@@ -193,12 +194,17 @@ def test_cases_changed(tracker, markers: list, cases: dict, result: dict, s: dic
 
 
 def _cancelled(info: dict | None, s: dict) -> str:
-    """'deleted', 'cancelled' or '' for a story."""
+    """'deleted', 'cancelled' or '' for a story. Cancelled: done, with a
+    status, resolution OR label in `watch.cancelled` - a project whose
+    workflow has no "Won't Do" status (14 Nov 2026: this one's has only
+    To Do / In Progress / In Review / Done) closes it as Done and labels it."""
     if info is None:
         return "deleted"
     names = {str(x).lower() for x in s["cancelled"]}
+    labels = {str(x).lower() for x in info.get("labels") or []}
     if info.get("category") == "done" and (str(info.get("status") or "").lower() in names
-                                           or str(info.get("resolution") or "").lower() in names):
+                                           or str(info.get("resolution") or "").lower() in names
+                                           or labels & names):
         return "cancelled"
     return ""
 

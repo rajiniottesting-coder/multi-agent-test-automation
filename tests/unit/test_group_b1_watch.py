@@ -193,3 +193,10 @@ def test_a_refused_write_fails_the_step_and_a_read_only_warns(world, monkeypatch
     monkeypatch.setattr(jira, "find_stories_to_process", refuse)
     fake.issues["SBX-5"]["description"] = "Steps: add an item"
     assert wt.main(["--features-dir", str(features)]) == 0, "a step that cannot read only warns"
+
+
+def test_a_done_story_labelled_cancelled_retires_too(world):
+    """14 Nov 2026: this project's workflow has no Won't Do status."""
+    fake, *_ = world
+    fake.issues["SBX-2"]["labels"].append("cancelled")
+    assert sorted(_run(world)["retired"]) == ["SBX-5", "SBX-6"]
