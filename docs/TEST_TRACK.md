@@ -27,7 +27,7 @@ still open, and the rows each new change adds.
 
 ## Open checks
 
-35 rows: 31 open or partly proven (⬜) - thirteen of them (E228-E240) the reports pages (#516, #519), one (E225) the last live check of batch A (#512; E222-E224, E226 and E227 proven 14 Nov, #514 and #515) - 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌). Rows proven earlier were removed in their evidence pull requests (#470, #473 and later).
+36 rows: 32 open or partly proven (⬜) - fourteen of them (E228-E241) the reports pages (#516, #519, #521), one (E225) the last live check of batch A (#512; E222-E224, E226 and E227 proven 14 Nov, #514 and #515) - 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌). Rows proven earlier were removed in their evidence pull requests (#470, #473 and later).
 
 Most of these wait for an event that cannot be produced on demand (the model
 taking a particular path, a provider error that quotes a secret); some are not
@@ -48,6 +48,7 @@ possible on the current application. Each names what it is waiting for.
 | E238 | #516 RP24 | Every page on a phone (390 px) | No sideways scroll; each table row a labelled card | ⬜ | |
 | E239 | #516 RP25 | History and the PDF once two sprints are recorded | *Sprint over sprint* / *This sprint against the one before* with each measure for both sprints | ⬜ | |
 | E240 | #519 Phone width | The published Traceability page on a phone, with the real stories | No sideways scroll: long scenario names break, the story filter fits the screen | ⬜ | |
+| E241 | #521 Weekly charts | The published History, the two weekly AI charts, on a desktop and a phone | The right-hand % axis shows in full; the legends sit below the plots, never over the bars; no date label cut off | ⬜ | |
 | E225 | #512 X10 | The next scheduled night (02:30 UTC) | One crawl: no Agent 0 drift schedule fires; the drift run is started by Inventory Health | ⬜ | Partly: the hand-over proven by hand on 14 Nov (Inventory Health 43602961708 started Agent 0 43603080921, which read its report). Waits for the first scheduled night |
 | E16 | #215 | SCRUM-187 on the next scan (persistent-state rule) | One `[agent2:blocked]` comment naming the rule, then `[BLOCK]` with no model call on later scans; a new signed-in draft stating a cart quantity is sent back by Agent 1 | ➖ | Coding once step 7 was fixed: V8 |
 | E19f | #224 | An added hidden element or family | Carries `conditional` / `multi_match`; not undone the next night | ⬜ | Partly: Not reachable on this app: window I removed the Test Cases panel family; drift 42853242986 did not propose it again, and every hidden element with a durable handle is a shared section or a numbered id (unstable). Needs an application change that adds a hidden element or family to one page |

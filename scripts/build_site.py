@@ -761,11 +761,17 @@ def _ai_trend_js(data: dict) -> str:
     stops = [{"type": "bar", "name": k, "x": x, "y": [w["stops"].get(k, 0) for w in weeks]}
              for k in kinds]
     return (f"Plotly.newPlot('ai-trend',{json.dumps(money)},Object.assign({{}},L,"
-            f"{{height:300,barmode:null,xaxis:{{type:'category',fixedrange:true,title:'week of'}},"
+            # A right-hand axis needs room: with the shared 10 px margin its
+            # labels and title were cut off (14 Nov 2026, first live build).
+            # On a phone the legend above the plot wrapped onto the bars: below it.
+            f"{{height:340,barmode:null,margin:{{t:20,r:60,b:120,l:50}},"
+            f"legend:{{orientation:'h',y:-0.5}},"
+            f"xaxis:{{type:'category',fixedrange:true,title:'week of'}},"
             f"yaxis:{{rangemode:'tozero',fixedrange:true,title:'$ per story'}},"
             f"yaxis2:{{overlaying:'y',side:'right',range:[0,100],fixedrange:true,title:'%'}}}}),C);"
             + (f"Plotly.newPlot('stops-trend',{json.dumps(stops)},Object.assign({{}},L,"
-               f"{{height:300,xaxis:{{type:'category',fixedrange:true,title:'week of'}},"
+               f"{{height:380,margin:{{t:20,r:40,b:160,l:50}},legend:{{orientation:'h',y:-0.45}},"
+               f"xaxis:{{type:'category',fixedrange:true,title:'week of'}},"
                f"yaxis:{{rangemode:'tozero',fixedrange:true,tickformat:',d',title:'stops'}}}}),C);"
                if kinds else ""))
 
