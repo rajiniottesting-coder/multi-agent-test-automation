@@ -320,6 +320,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          # What only the unit tests need (the PDF libraries, actionlint): the
+          # gate below runs every unit test, none skipped for a missing tool.
+          pip install -r requirements-unit-tests.txt
           # pytest-html generates a self-contained HTML report — handy as a PR artifact
           pip install pytest-html
 
@@ -380,6 +383,7 @@ jobs:
         # The browser binary itself is restored from cache when the key matches.
         # OS-level apt packages are NOT cached and need to be reinstalled fresh.
         # Skipped on push — saves ~2-3 min on every framework commit.
+        id: browser
         if: (github.event_name != 'push' || steps.changes.outputs.inventory != 'false') && steps.pr_changes.outputs.e2e != 'false'
         run: bash scripts/install_browser.sh chromium
 
@@ -392,11 +396,21 @@ jobs:
         #
         # On push this step IS the job — every step after it is skipped.
         # Deliberately NOT `if: always()`: a failure here must fail the run.
-        # No `env:` block, and none is needed — these tests touch no secret,
-        # which is what makes the push path safe to run without any.
+        # The env holds no secret - these tests touch none, which is what
+        # makes the push path safe to run without any.
+        #
+        # No unexplained skip: a unit test that skips for a missing tool or
+        # package fails the gate (tests/unit/conftest.py). The browser tests
+        # may skip only when this job installed no browser on purpose (a push
+        # or a pull request that changes nothing a browser run reads); a
+        # project-state skip ("no page objects committed yet") is a fresh
+        # project's, never refused.
         #
         # `mkdir -p reports` because reports/ is gitignored and therefore
         # absent from a fresh checkout.
+        env:
+          UNIT_TESTS_NO_SKIPS: "1"
+          UNIT_TESTS_BROWSER: ${{ steps.browser.outcome == 'success' }}
         run: |
           mkdir -p reports
           pytest tests/unit/ \

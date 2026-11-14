@@ -65,3 +65,61 @@ def pytest_pycollect_makeitem(collector, name, obj):
             getattr(obj, "__module__", None) != getattr(collector.obj, "__name__", None):
         return []
     return None
+
+
+# ── no unexplained skip in CI ──────────────────────────────────────────────
+#
+# A test that skips in CI tests nothing, and a skip nobody reads stays for
+# good: 14 Nov 2026, four PDF/chart tests and the workflow lint had never run
+# in Agent 4's gate (their packages were installed by the Reports job only).
+# With UNIT_TESTS_NO_SKIPS set (Agent 4's unit gate), the run fails on a skip
+# unless it is:
+#   - a project-state skip: what a fresh project has not got yet ("no page
+#     objects committed yet", "... in this checkout") - the framework's own
+#     tests of a project's content, deliberately skipped until it has some;
+#   - a browser skip in a job that installed no browser on purpose
+#     (UNIT_TESTS_BROWSER is not "true").
+import os as _os
+import re as _re
+
+_PROJECT_STATE = _re.compile(
+    r"in this checkout|committed yet|no inventory|configured yet|declares no|"
+    r"this application declares|no GUIDE", _re.I)
+_BROWSER = _re.compile(r"no browser", _re.I)
+_SKIPS: list = []
+
+
+def _skip_reason(report) -> str:
+    longrepr = report.longrepr
+    if isinstance(longrepr, tuple) and len(longrepr) == 3:
+        return str(longrepr[2])
+    return str(longrepr)
+
+
+def unexplained_skips(skips, browser_installed: bool) -> list:
+    """The (test, reason) pairs a CI unit run must not accept."""
+    out = []
+    for nodeid, reason in skips:
+        if _PROJECT_STATE.search(reason):
+            continue
+        if _BROWSER.search(reason) and not browser_installed:
+            continue
+        out.append((nodeid, reason))
+    return out
+
+
+def pytest_runtest_logreport(report):
+    if report.skipped:
+        _SKIPS.append((report.nodeid, _skip_reason(report)))
+
+
+def pytest_sessionfinish(session, exitstatus):
+    if not _os.getenv("UNIT_TESTS_NO_SKIPS"):
+        return
+    bad = unexplained_skips(_SKIPS, _os.getenv("UNIT_TESTS_BROWSER", "").lower() == "true")
+    if bad:
+        print(f"\n[FAIL] {len(bad)} unit test(s) skipped in CI - a skipped test tests nothing. "
+              "Install what they need (requirements-unit-tests.txt) or remove them:")
+        for nodeid, reason in bad:
+            print(f"  {nodeid}: {reason}")
+        session.exitstatus = 1
