@@ -28,11 +28,6 @@ before a real project; P2 and P3 before a wider rollout.
 | ID | Item | Today (gap) | Priority | Cost | Was | Status |
 |---|---|---|---|---|---|---|
 | RP5 | AI metrics: cost per story and agent, first-attempt success of generated code, refusals, review findings, Agent 0 precision and recall | Posted per story, never aggregated | P2 | B | N9, F-29 | Open |
-| RP6 | Management PDF (ReportLab) after the nightly run and at sprint end: totals, pass %, trend chart, open defects by severity, risks | None | P2 | A | | Done (#464) |
-| RP8 | Allure severity (from smoke / critical tags) and links to the story and test case (from the `# JIRA:` marker) | Allure's severity and requirement views are empty | P2 | A | | Done (#464) |
-| RP11 | A *Latest run* page (the site's landing page): what failed, flaked or could not be judged in the newest run, with its error, story and test case; the dashboard becomes *History* | The latest run was one line on the dashboard | P2 | A | | Done (#465) |
-| RP12 | Defect trend (opened, closed, open per day), time to close, density per module and per sprint on *History* and the PDF | Open defects by age only | P2 | A | | Done (#478) |
-| RP13 | Who found each defect (the pipeline - label or triage data - or a person) and the automation's detection rate, overall, per module and per sprint, on *History* and the PDF | One line of counts, by label only | P2 | A | | Done (#487) |
 
 ### Security
 
@@ -51,7 +46,6 @@ before a real project; P2 and P3 before a wider rollout.
 | D5 | AI defects carry priority (story priority or smoke tag), environment and commit | None set | P2 | B | | Open |
 | D6 | A `raise-defect` label on a PR files a real application bug a new test found | A PR's failures go to its story only (by design) | P3 | B | | Open |
 | D8 | A defect's module: tracker component, else `reporting.modules` over its feature file | The project has no components; no defect had a module | P2 | A | | Done (#478) |
-| D9 | A closed defect's category (app, test, environment, duplicate, not-a-bug) from a close label or the resolution; the density counts product defects | Test fixes would count as product defects | P2 | A | | Done (#478) |
 
 ### Requirements lifecycle
 
@@ -78,7 +72,6 @@ before a real project; P2 and P3 before a wider rollout.
 
 | ID | Item | Today (gap) | Priority | Cost | Was | Status |
 |---|---|---|---|---|---|---|
-| X8 | Alert when a scheduled run does not start, or trigger the critical schedules from outside GitHub | 11-12 Nov: no scheduled Agent 1 run for 17 hours | P1 | A | | Done (#466) |
 | X9 | Inventory Health probes the application and retries once; an unreachable application raises an app-unavailable alert instead of a red run | 12 Nov 10:03 UTC: red because the login form was slow; the re-run was green | P2 | A | | Done (#466) |
 
 ### Coverage
@@ -117,8 +110,9 @@ the history): RP1, RP2, RP3, RP4 (#464, #467), RP7, RP9, RP10 (#465), X7
 Added and built on 13 Nov 2026 at the owner's request (group A, no model
 spend): D7, D8, D9, D10, RP12 (#478) - the defect history, trend and density;
 RP13 (#487, 14 Nov) - who found each defect and the detection rate.
-D7 and D10 are proven live (#481, removed above); D8, D9 and RP12 wait for
-the live checks their TEST_TRACK rows name.
+D7 and D10 are proven live (#481, removed above). On 14 Nov 2026 RP6, RP8,
+RP11, RP12, RP13, D9 and X8 were proven live too (#490, removed above); D8
+waits for its tracker-component check (the project has no components).
 
 At the pipeline's configured price ($5 per million input tokens, $25 per
 million output; scale if the model's real price differs). Calibrated on 3-12

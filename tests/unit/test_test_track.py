@@ -61,7 +61,11 @@ def test_a_passed_row_names_its_evidence():
 
 def test_backlog_items_read_and_have_known_status():
     items = _backlog()
-    assert len(items) >= 30, "the backlog no longer reads as expected - update this test"
+    # Proven items leave the backlog, so its size falls: the guard is that
+    # every row that looks like an item (`| X12 |`) is read.
+    rows = re.findall(r"^\| ([A-Z]{1,3}\d+) \|", BACKLOG, flags=re.M)
+    assert rows and len(items) == len(rows), \
+        "the backlog no longer reads as expected - update this test"
     bad = {i: s for i, s in items.items() if not re.fullmatch(r"Open|Done \(#\d+\)", s)}
     assert not bad, f"backlog status must be 'Open' or 'Done (#PR)': {bad}"
 
