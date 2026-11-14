@@ -1,0 +1,885 @@
+{
+ "stories": {
+  "SCRUM-111": {
+   "attempts": 5,
+   "by_agent": {
+    "Agent 1 (Analyst)": 0.581925,
+    "Agent 1 (Test Designer)": 0.482875,
+    "Agent 2 (Coder)": 16.809265,
+    "Agent 3 (Reviewer)": 1.444945,
+    "Agent 5 (Reporter)": 0.275575
+   },
+   "coded": true,
+   "coding_runs": 13,
+   "cost_usd": 19.594585,
+   "first_attempt": false,
+   "key": "SCRUM-111",
+   "predictions": [],
+   "priced": true,
+   "refusals": {},
+   "reviews": [],
+   "runs": 43,
+   "updated": "2026-11-10"
+  },
+  "SCRUM-187": {
+   "attempts": 9,
+   "by_agent": {
+    "Agent 1 (Analyst)": 0.656135,
+    "Agent 1 (Test Designer)": 1.06624,
+    "Agent 2 (Coder)": 14.030576,
+    "Agent 3 (Reviewer)": 1.772735,
+    "Agent 5 (Reporter)": 0.157215
+   },
+   "coded": false,
+   "coding_runs": 11,
+   "cost_usd": 17.682901,
+   "first_attempt": null,
+   "key": "SCRUM-187",
+   "predictions": [
+    {
+     "actual": [],
+     "precision": null,
+     "predicted": [],
+     "recall": null
+    },
+    {
+     "actual": [],
+     "precision": null,
+     "predicted": [],
+     "recall": null
+    },
+    {
+     "actual": [],
+     "precision": null,
+     "predicted": [],
+     "recall": null
+    },
+    {
+     "actual": [],
+     "precision": null,
+     "predicted": [],
+     "recall": null
+    },
+    {
+     "actual": [],
+     "precision": null,
+     "predicted": [],
+     "recall": null
+    },
+    {
+     "actual": [],
+     "precision": null,
+     "predicted": [],
+     "recall": null
+    }
+   ],
+   "priced": true,
+   "refusals": {},
+   "reviews": [],
+   "runs": 44,
+   "updated": "2026-11-14"
+  },
+  "SCRUM-201": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 1 (Test Designer)": 0.275505,
+    "Agent 2 (Coder)": 1.258503,
+    "Agent 3 (Reviewer)": 0.141175
+   },
+   "coded": true,
+   "coding_runs": 1,
+   "cost_usd": 1.675183,
+   "first_attempt": true,
+   "key": "SCRUM-201",
+   "predictions": [],
+   "priced": true,
+   "refusals": {
+    "automated only in part": 1
+   },
+   "reviews": [],
+   "runs": 3,
+   "updated": "2026-11-14"
+  },
+  "SCRUM-202": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 1 (Test Designer)": 0.09264,
+    "Agent 2 (Coder)": 1.647888,
+    "Agent 3 (Reviewer)": 0.31728,
+    "Agent 5 (Reporter)": 0.03148
+   },
+   "coded": true,
+   "coding_runs": 4,
+   "cost_usd": 2.089288,
+   "first_attempt": false,
+   "key": "SCRUM-202",
+   "predictions": [],
+   "priced": true,
+   "refusals": {},
+   "reviews": [],
+   "runs": 11,
+   "updated": "2026-11-14"
+  },
+  "SCRUM-204": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 0 (Impact Analyst)": 0.12138
+   },
+   "coded": false,
+   "coding_runs": 0,
+   "cost_usd": 0.12138,
+   "first_attempt": null,
+   "key": "SCRUM-204",
+   "predictions": [],
+   "priced": true,
+   "refusals": {},
+   "reviews": [],
+   "runs": 1,
+   "updated": "2026-11-10"
+  },
+  "SCRUM-283": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 0 (Impact Analyst)": 0.18891,
+    "Agent 1 (Test Designer)": 0.13494,
+    "Agent 2 (Coder)": 2.314703,
+    "Agent 3 (Reviewer)": 0.89604,
+    "Agent 5 (Reporter)": 0.02544
+   },
+   "coded": true,
+   "coding_runs": 4,
+   "cost_usd": 3.560033,
+   "first_attempt": false,
+   "key": "SCRUM-283",
+   "predictions": [
+    {
+     "actual": [],
+     "precision": null,
+     "predicted": [],
+     "recall": null
+    }
+   ],
+   "priced": true,
+   "refusals": {},
+   "reviews": [],
+   "runs": 15,
+   "updated": "2026-11-04"
+  },
+  "SCRUM-284": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 0 (Impact Analyst)": 0.256365,
+    "Agent 1 (Test Designer)": 0.140255,
+    "Agent 2 (Coder)": 3.879099,
+    "Agent 3 (Reviewer)": 0.40818,
+    "Agent 5 (Reporter)": 0.0388
+   },
+   "coded": true,
+   "coding_runs": 5,
+   "cost_usd": 4.722699,
+   "first_attempt": false,
+   "key": "SCRUM-284",
+   "predictions": [
+    {
+     "actual": [
+      "SCRUM-289"
+     ],
+     "precision": null,
+     "predicted": [],
+     "recall": 0.0
+    },
+    {
+     "actual": [],
+     "precision": null,
+     "predicted": [],
+     "recall": null
+    }
+   ],
+   "priced": true,
+   "refusals": {
+    "Agent 2's gate refused the code": 1
+   },
+   "reviews": [],
+   "runs": 14,
+   "updated": "2026-11-12"
+  },
+  "SCRUM-290": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 0 (Impact Analyst)": 0.120125
+   },
+   "coded": false,
+   "coding_runs": 0,
+   "cost_usd": 0.120125,
+   "first_attempt": null,
+   "key": "SCRUM-290",
+   "predictions": [],
+   "priced": true,
+   "refusals": {},
+   "reviews": [],
+   "runs": 1,
+   "updated": "2026-11-10"
+  },
+  "SCRUM-291": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 0 (Impact Analyst)": 0.20923,
+    "Agent 1 (Test Designer)": 0.111675,
+    "Agent 2 (Coder)": 0.739395,
+    "Agent 3 (Reviewer)": 0.11875,
+    "Agent 5 (Reporter)": 0.0
+   },
+   "coded": false,
+   "coding_runs": 1,
+   "cost_usd": 1.17905,
+   "first_attempt": null,
+   "key": "SCRUM-291",
+   "predictions": [
+    {
+     "actual": [],
+     "precision": 0.0,
+     "predicted": [
+      "SCRUM-289"
+     ],
+     "recall": null
+    }
+   ],
+   "priced": true,
+   "refusals": {},
+   "reviews": [],
+   "runs": 6,
+   "updated": "2026-11-14"
+  },
+  "SCRUM-293": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 0 (Impact Analyst)": 0.239265,
+    "Agent 1 (Test Designer)": 0.17184,
+    "Agent 2 (Coder)": 8.881303,
+    "Agent 3 (Reviewer)": 0.950535,
+    "Agent 5 (Reporter)": 0.08319
+   },
+   "coded": true,
+   "coding_runs": 11,
+   "cost_usd": 10.326133,
+   "first_attempt": false,
+   "key": "SCRUM-293",
+   "predictions": [
+    {
+     "actual": [],
+     "precision": null,
+     "predicted": [],
+     "recall": null
+    },
+    {
+     "actual": [],
+     "precision": null,
+     "predicted": [],
+     "recall": null
+    },
+    {
+     "actual": [],
+     "precision": null,
+     "predicted": [],
+     "recall": null
+    },
+    {
+     "actual": [],
+     "precision": null,
+     "predicted": [],
+     "recall": null
+    },
+    {
+     "actual": [],
+     "precision": null,
+     "predicted": [],
+     "recall": null
+    },
+    {
+     "actual": [],
+     "precision": null,
+     "predicted": [],
+     "recall": null
+    }
+   ],
+   "priced": true,
+   "refusals": {
+    "Agent 2's gate refused the code": 1,
+    "an update was stopped": 1,
+    "automated only in part": 5,
+    "held by the spend budget": 1
+   },
+   "reviews": [],
+   "runs": 40,
+   "updated": "2026-11-11"
+  },
+  "SCRUM-294": {
+   "attempts": 2,
+   "by_agent": {
+    "Agent 0 (Impact Analyst)": 0.10203,
+    "Agent 1 (Test Designer)": 0.398715,
+    "Agent 2 (Coder)": 1.194115,
+    "Agent 3 (Reviewer)": 0.158925,
+    "Agent 5 (Reporter)": 0.023485
+   },
+   "coded": false,
+   "coding_runs": 2,
+   "cost_usd": 1.87727,
+   "first_attempt": null,
+   "key": "SCRUM-294",
+   "predictions": [
+    {
+     "actual": [],
+     "precision": null,
+     "predicted": [],
+     "recall": null
+    }
+   ],
+   "priced": true,
+   "refusals": {},
+   "reviews": [],
+   "runs": 7,
+   "updated": "2026-11-14"
+  },
+  "SCRUM-296": {
+   "attempts": 4,
+   "by_agent": {
+    "Agent 0 (Impact Analyst)": 0.168535,
+    "Agent 1 (Test Designer)": 2.08127,
+    "Agent 2 (Coder)": 2.402163,
+    "Agent 3 (Reviewer)": 0.195425,
+    "Agent 5 (Reporter)": 0.01885
+   },
+   "coded": false,
+   "coding_runs": 2,
+   "cost_usd": 4.866242,
+   "first_attempt": null,
+   "key": "SCRUM-296",
+   "predictions": [
+    {
+     "actual": [
+      "SCRUM-212",
+      "SCRUM-213",
+      "SCRUM-214",
+      "SCRUM-215",
+      "SCRUM-220",
+      "SCRUM-221",
+      "SCRUM-222"
+     ],
+     "precision": 1.0,
+     "predicted": [
+      "SCRUM-212",
+      "SCRUM-213",
+      "SCRUM-214",
+      "SCRUM-215",
+      "SCRUM-220",
+      "SCRUM-221",
+      "SCRUM-222"
+     ],
+     "recall": 1.0
+    }
+   ],
+   "priced": true,
+   "refusals": {
+    "Agent 2's gate refused the code": 1
+   },
+   "reviews": [],
+   "runs": 10,
+   "updated": "2026-11-14"
+  },
+  "SCRUM-297": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 0 (Impact Analyst)": 0.07087
+   },
+   "coded": false,
+   "coding_runs": 0,
+   "cost_usd": 0.07087,
+   "first_attempt": null,
+   "key": "SCRUM-297",
+   "predictions": [],
+   "priced": true,
+   "refusals": {
+    "Agent 1 handed the story back": 1
+   },
+   "reviews": [],
+   "runs": 1,
+   "updated": "2026-11-14"
+  },
+  "SCRUM-330": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 0 (Impact Analyst)": 0.03671,
+    "Agent 1 (Test Designer)": 0.108875,
+    "Agent 2 (Coder)": 3.100665,
+    "Agent 3 (Reviewer)": 1.19124,
+    "Agent 5 (Reporter)": 0.109845
+   },
+   "coded": true,
+   "coding_runs": 3,
+   "cost_usd": 4.547335,
+   "first_attempt": false,
+   "key": "SCRUM-330",
+   "predictions": [],
+   "priced": true,
+   "refusals": {
+    "automated only in part": 3
+   },
+   "reviews": [],
+   "runs": 22,
+   "updated": "2026-11-14"
+  },
+  "SCRUM-332": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 1 (Test Designer)": 0.188395,
+    "Agent 2 (Coder)": 3.737026,
+    "Agent 3 (Reviewer)": 0.16713,
+    "Agent 5 (Reporter)": 0.016465
+   },
+   "coded": false,
+   "coding_runs": 2,
+   "cost_usd": 4.109017,
+   "first_attempt": null,
+   "key": "SCRUM-332",
+   "predictions": [],
+   "priced": true,
+   "refusals": {
+    "Agent 2's gate refused the code": 1,
+    "automated only in part": 1
+   },
+   "reviews": [],
+   "runs": 5,
+   "updated": "2026-11-14"
+  },
+  "SCRUM-334": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 1 (Test Designer)": 0.213115,
+    "Agent 2 (Coder)": 1.947337,
+    "Agent 3 (Reviewer)": 0.168725,
+    "Agent 5 (Reporter)": 0.02092
+   },
+   "coded": false,
+   "coding_runs": 1,
+   "cost_usd": 2.350097,
+   "first_attempt": null,
+   "key": "SCRUM-334",
+   "predictions": [],
+   "priced": true,
+   "refusals": {
+    "automated only in part": 1
+   },
+   "reviews": [],
+   "runs": 4,
+   "updated": "2026-11-14"
+  },
+  "SCRUM-354": {
+   "attempts": 2,
+   "by_agent": {
+    "Agent 0 (Impact Analyst)": 0.36537,
+    "Agent 1 (Test Designer)": 0.528235,
+    "Agent 2 (Coder)": 6.959722,
+    "Agent 3 (Reviewer)": 0.373905,
+    "Agent 5 (Reporter)": 0.036705
+   },
+   "coded": false,
+   "coding_runs": 5,
+   "cost_usd": 8.263937,
+   "first_attempt": null,
+   "key": "SCRUM-354",
+   "predictions": [],
+   "priced": true,
+   "refusals": {
+    "Agent 2's gate refused the code": 3,
+    "automated only in part": 1
+   },
+   "reviews": [],
+   "runs": 15,
+   "updated": "2026-11-10"
+  },
+  "SCRUM-355": {
+   "attempts": 3,
+   "by_agent": {
+    "Agent 0 (Impact Analyst)": 0.21104,
+    "Agent 1 (Test Designer)": 1.0375,
+    "Agent 2 (Coder)": 1.897958
+   },
+   "coded": false,
+   "coding_runs": 1,
+   "cost_usd": 3.146498,
+   "first_attempt": null,
+   "key": "SCRUM-355",
+   "predictions": [],
+   "priced": true,
+   "refusals": {
+    "Agent 1 handed the story back": 1,
+    "Agent 2's gate refused the code": 1
+   },
+   "reviews": [],
+   "runs": 6,
+   "updated": "2026-11-14"
+  },
+  "SCRUM-356": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 0 (Impact Analyst)": 0.255625
+   },
+   "coded": false,
+   "coding_runs": 0,
+   "cost_usd": 0.255625,
+   "first_attempt": null,
+   "key": "SCRUM-356",
+   "predictions": [],
+   "priced": true,
+   "refusals": {},
+   "reviews": [],
+   "runs": 2,
+   "updated": "2026-11-10"
+  },
+  "SCRUM-360": {
+   "attempts": 2,
+   "by_agent": {
+    "Agent 0 (Impact Analyst)": 0.441675,
+    "Agent 1 (Test Designer)": 0.14476,
+    "Agent 2 (Coder)": 12.061314,
+    "Agent 3 (Reviewer)": 0.1888,
+    "Agent 5 (Reporter)": 0.016765
+   },
+   "coded": false,
+   "coding_runs": 16,
+   "cost_usd": 12.853314,
+   "first_attempt": null,
+   "key": "SCRUM-360",
+   "predictions": [],
+   "priced": true,
+   "refusals": {
+    "Agent 2's gate refused the code": 1,
+    "held by the spend budget": 1
+   },
+   "reviews": [],
+   "runs": 24,
+   "updated": "2026-11-10"
+  },
+  "SCRUM-367": {
+   "attempts": 2,
+   "by_agent": {
+    "Agent 1 (Test Designer)": 0.678325,
+    "Agent 2 (Coder)": 5.686271,
+    "Agent 3 (Reviewer)": 1.21244,
+    "Agent 5 (Reporter)": 0.08546
+   },
+   "coded": true,
+   "coding_runs": 8,
+   "cost_usd": 7.662496,
+   "first_attempt": false,
+   "key": "SCRUM-367",
+   "predictions": [],
+   "priced": true,
+   "refusals": {
+    "Agent 1 handed the story back": 1,
+    "automated only in part": 2
+   },
+   "reviews": [],
+   "runs": 24,
+   "updated": "2026-11-10"
+  },
+  "SCRUM-371": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 0 (Impact Analyst)": 0.20364,
+    "Agent 1 (Test Designer)": 0.140685,
+    "Agent 2 (Coder)": 0.889511,
+    "Agent 3 (Reviewer)": 0.28934,
+    "Agent 5 (Reporter)": 0.012925
+   },
+   "coded": true,
+   "coding_runs": 1,
+   "cost_usd": 1.536101,
+   "first_attempt": true,
+   "key": "SCRUM-371",
+   "predictions": [
+    {
+     "actual": [],
+     "precision": null,
+     "predicted": [],
+     "recall": null
+    }
+   ],
+   "priced": true,
+   "refusals": {
+    "automated only in part": 1
+   },
+   "reviews": [],
+   "runs": 6,
+   "updated": "2026-11-10"
+  },
+  "SCRUM-374": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 1 (Test Designer)": 0.20887
+   },
+   "coded": false,
+   "coding_runs": 0,
+   "cost_usd": 0.20887,
+   "first_attempt": null,
+   "key": "SCRUM-374",
+   "predictions": [],
+   "priced": true,
+   "refusals": {},
+   "reviews": [],
+   "runs": 1,
+   "updated": "2026-11-10"
+  },
+  "SCRUM-377": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 1 (Test Designer)": 0.13198,
+    "Agent 3 (Reviewer)": 0.842155,
+    "Agent 5 (Reporter)": 0.01271
+   },
+   "coded": false,
+   "coding_runs": 0,
+   "cost_usd": 0.986845,
+   "first_attempt": null,
+   "key": "SCRUM-377",
+   "predictions": [],
+   "priced": true,
+   "refusals": {},
+   "reviews": [],
+   "runs": 9,
+   "updated": "2026-11-10"
+  },
+  "SCRUM-379": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 1 (Test Designer)": 0.16237,
+    "Agent 2 (Coder)": 8.500078,
+    "Agent 3 (Reviewer)": 0.28333,
+    "Agent 5 (Reporter)": 0.01218
+   },
+   "coded": true,
+   "coding_runs": 9,
+   "cost_usd": 8.957958,
+   "first_attempt": false,
+   "key": "SCRUM-379",
+   "predictions": [],
+   "priced": true,
+   "refusals": {
+    "Agent 2's gate refused the code": 5,
+    "automated only in part": 2,
+    "held by the spend budget": 2
+   },
+   "reviews": [],
+   "runs": 14,
+   "updated": "2026-11-11"
+  },
+  "SCRUM-380": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 1 (Test Designer)": 0.12959,
+    "Agent 2 (Coder)": 0.64823
+   },
+   "coded": false,
+   "coding_runs": 1,
+   "cost_usd": 0.77782,
+   "first_attempt": null,
+   "key": "SCRUM-380",
+   "predictions": [],
+   "priced": true,
+   "refusals": {
+    "Agent 2's gate refused the code": 1
+   },
+   "reviews": [],
+   "runs": 2,
+   "updated": "2026-11-14"
+  },
+  "SCRUM-381": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 1 (Test Designer)": 0.12667,
+    "Agent 2 (Coder)": 4.917433,
+    "Agent 3 (Reviewer)": 0.148895,
+    "Agent 5 (Reporter)": 0.01163
+   },
+   "coded": true,
+   "coding_runs": 5,
+   "cost_usd": 5.204628,
+   "first_attempt": false,
+   "key": "SCRUM-381",
+   "predictions": [],
+   "priced": true,
+   "refusals": {
+    "Agent 2's gate refused the code": 4,
+    "automated only in part": 1
+   },
+   "reviews": [],
+   "runs": 10,
+   "updated": "2026-11-11"
+  },
+  "SCRUM-382": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 0 (Impact Analyst)": 0.20891,
+    "Agent 1 (Test Designer)": 0.208965
+   },
+   "coded": false,
+   "coding_runs": 0,
+   "cost_usd": 0.417875,
+   "first_attempt": null,
+   "key": "SCRUM-382",
+   "predictions": [],
+   "priced": true,
+   "refusals": {},
+   "reviews": [],
+   "runs": 3,
+   "updated": "2026-11-11"
+  },
+  "SCRUM-392": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 0 (Impact Analyst)": 0.216065,
+    "Agent 1 (Test Designer)": 0.371805
+   },
+   "coded": false,
+   "coding_runs": 0,
+   "cost_usd": 0.58787,
+   "first_attempt": null,
+   "key": "SCRUM-392",
+   "predictions": [],
+   "priced": true,
+   "refusals": {},
+   "reviews": [],
+   "runs": 3,
+   "updated": "2026-11-11"
+  },
+  "SCRUM-394": {
+   "attempts": 2,
+   "by_agent": {
+    "Agent 0 (Impact Analyst)": 0.47008,
+    "Agent 1 (Test Designer)": 0.346815,
+    "Agent 2 (Coder)": 0.269003
+   },
+   "coded": false,
+   "coding_runs": 1,
+   "cost_usd": 1.085898,
+   "first_attempt": null,
+   "key": "SCRUM-394",
+   "predictions": [],
+   "priced": true,
+   "refusals": {
+    "Agent 2's gate refused the code": 1,
+    "held by the spend budget": 1
+   },
+   "reviews": [],
+   "runs": 4,
+   "updated": "2026-11-14"
+  },
+  "SCRUM-398": {
+   "attempts": 2,
+   "by_agent": {
+    "Agent 1 (Test Designer)": 0.327605,
+    "Agent 2 (Coder)": 4.112847,
+    "Agent 3 (Reviewer)": 0.824245,
+    "Agent 5 (Reporter)": 0.059795
+   },
+   "coded": true,
+   "coding_runs": 4,
+   "cost_usd": 5.324492,
+   "first_attempt": false,
+   "key": "SCRUM-398",
+   "predictions": [],
+   "priced": true,
+   "refusals": {
+    "Agent 1 handed the story back": 1,
+    "Agent 2's gate refused the code": 3,
+    "automated only in part": 1
+   },
+   "reviews": [],
+   "runs": 13,
+   "updated": "2026-11-11"
+  },
+  "SCRUM-403": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 1 (Test Designer)": 0.30431,
+    "Agent 2 (Coder)": 0.134935
+   },
+   "coded": false,
+   "coding_runs": 1,
+   "cost_usd": 0.439245,
+   "first_attempt": null,
+   "key": "SCRUM-403",
+   "predictions": [],
+   "priced": true,
+   "refusals": {
+    "Agent 1 handed the story back": 1,
+    "Agent 2's gate refused the code": 1
+   },
+   "reviews": [],
+   "runs": 3,
+   "updated": "2026-11-14"
+  },
+  "SCRUM-406": {
+   "attempts": 2,
+   "by_agent": {
+    "Agent 0 (Impact Analyst)": 0.37541,
+    "Agent 1 (Test Designer)": 0.11321
+   },
+   "coded": false,
+   "coding_runs": 0,
+   "cost_usd": 0.48862,
+   "first_attempt": null,
+   "key": "SCRUM-406",
+   "predictions": [],
+   "priced": true,
+   "refusals": {},
+   "reviews": [],
+   "runs": 5,
+   "updated": "2026-11-11"
+  },
+  "SCRUM-408": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 0 (Impact Analyst)": 0.038255,
+    "Agent 1 (Test Designer)": 0.110865,
+    "Agent 2 (Coder)": 3.017156,
+    "Agent 3 (Reviewer)": 0.372445,
+    "Agent 5 (Reporter)": 0.03218
+   },
+   "coded": true,
+   "coding_runs": 5,
+   "cost_usd": 3.570901,
+   "first_attempt": false,
+   "key": "SCRUM-408",
+   "predictions": [],
+   "priced": true,
+   "refusals": {
+    "Agent 2's gate refused the code": 2,
+    "automated only in part": 1,
+    "held by the spend budget": 1
+   },
+   "reviews": [],
+   "runs": 13,
+   "updated": "2026-11-12"
+  },
+  "SCRUM-410": {
+   "attempts": 1,
+   "by_agent": {
+    "Agent 5 (Reporter)": 0.05393
+   },
+   "coded": false,
+   "coding_runs": 0,
+   "cost_usd": 0.05393,
+   "first_attempt": null,
+   "key": "SCRUM-410",
+   "predictions": [],
+   "priced": true,
+   "refusals": {},
+   "reviews": [],
+   "runs": 3,
+   "updated": "2026-11-14"
+  }
+ },
+ "synced": "2026-11-14T08:53:25.952299+00:00"
+}

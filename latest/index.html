@@ -1,0 +1,17 @@
+<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Latest run</title><style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1d2330;--muted:#5d6675;--line:#e3e6eb;--accent:#1f4e8c}
+@media (prefers-color-scheme:dark){:root{--bg:#14171c;--card:#1d2128;--ink:#e6e9ee;--muted:#9aa3b0;--line:#2c323b;--accent:#7fb0ff}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif}
+header{padding:20px 24px;border-bottom:1px solid var(--line);background:var(--card)}
+header h1{margin:0;font-size:20px}header p{margin:4px 0 0;color:var(--muted);font-size:13px}
+nav a{margin-right:16px;color:var(--accent);text-decoration:none;font-weight:600}
+main{max-width:1200px;margin:0 auto;padding:16px}
+.grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+.kpi b{display:block;font-size:26px}.kpi span{color:var(--muted);font-size:13px}
+h2{font-size:16px;margin:0 0 12px}table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:600}.wrap{overflow-x:auto}
+.v-passed{color:#2e7d32}.v-flaky{color:#b28704}.v-failed{color:#c62828}.v-outage{color:#6a1b9a}
+.muted{color:var(--muted)}code{font-size:12px}
+</style></head><body><header><h1>Test automation reports</h1><p>Generated 2026-11-14 08:53 UTC from full runs on the default branch; history covers the last 30 days.</p><nav style='margin-top:10px'><a href="index.html" aria-current=page>Latest run</a><a href="history.html">History</a><a href="https://rajiniottesting-coder.github.io/multi-agent-test-automation/allure/index.html">Allure report</a><a href="traceability.html">Traceability</a><a href="summary.pdf?v=202611140853">PDF summary</a></nav></header><main><div class='grid'><div class='card kpi'><b>96%</b><span>pass rate</span></div><div class='card kpi'><b>1</b><span>failed</span></div><div class='card kpi'><b>0</b><span>flaky</span></div><div class='card kpi'><b>0</b><span>not judged</span></div><div class='card kpi'><b>2.8</b><span>minutes</span></div></div><p>Run <a href='https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43575033666'>43575033666</a>, 2026-11-14 08:16 UTC (workflow_dispatch, commit <code>fbe43d3</code>): 27 passed, 0 flaky, 1 failed, 0 not judged, 0 skipped. <a href='https://rajiniottesting-coder.github.io/multi-agent-test-automation/allure/index.html'>Steps, screenshots and traces in the Allure report</a>.</p><div class='card'><h2>Needs a look</h2><div class='wrap'><table><thead><tr><th>Result</th><th>Scenario</th><th>Story</th><th>Test case</th><th>Error</th><th>Seconds</th></tr></thead><tbody><tr><td><span class='v-failed'>failed</span></td><td>test_window_r_check_that_finds_an_application_bug<br><span class='muted'>zz_validation_window_r.feature</span></td><td><a href="https://rajiniottesting.atlassian.net/browse/SCRUM-436">SCRUM-436</a></td><td><a href="https://rajiniottesting.atlassian.net/browse/SCRUM-437">SCRUM-437</a></td><td><code>AssertionError: throw-away failure (validation window R, D6 X4)</code></td><td>3.355</td></tr></tbody></table></div><p class='muted'>The other 27 tests passed.</p></div></main></body></html>
