@@ -213,6 +213,7 @@ DEFAULTS: dict = {
         "test_case_changes": True,    # R3
         "retire_cancelled": True,     # R4
         "pr_sync": True,              # X5
+        "deployments": True,          # X4: a deployed story's reminder
         "story_type": "Story",
         "test_case_type": "Test Case",
         "story_statuses": ["To Do", "In Progress", "In Review", "Done"],
@@ -227,6 +228,15 @@ DEFAULTS: dict = {
         # cancelled (a workflow without a cancel status: Done + the label).
         "cancelled": ["Won't Do", "Won't Fix", "Cancelled"],
         "pr_prefix": "auto/",
+    },
+    # X4: a change story waits for its deployment (core/deployment.py). Off
+    # by default: a project with no deployment step to wait for is unchanged.
+    "deployment": {
+        "enabled": False,
+        "story_type": "Story",
+        "pending_label": "awaiting-deployment",   # its failing tests are expected
+        "deployed_label": "deployed",             # the signal: the change is live
+        "mark_on_handover": True,                 # Agent 0's hand-over adds pending_label
     },
     # D10: scripts/delete_issues.py deletes only closed issues carrying this
     # label - throw-away issues (validation runs, dummy defects). A real

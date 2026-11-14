@@ -1,0 +1,79 @@
+# ─────────────────────────────────────────────────────────────
+# Deployment signal (X4)
+#
+# A change story's tests fail until the application change is deployed; while
+# the story carries deployment.pending_label those failures are expected
+# (core/deployment.py). This workflow is the signal that the change is live:
+#
+#   webhook   POST /repos/<owner>/<repo>/dispatches
+#             {"event_type": "deployed", "client_payload": {"stories": ["PRJ-1"]}}
+#             from the deployment pipeline (a token with contents:write)
+#   by hand   Run workflow -> stories "PRJ-1, PRJ-2"
+#
+# Each story awaiting deployment is labelled deployment.deployed_label; the
+# pending label comes off and one reminder asks to merge its context-update
+# pull request. Adding the deployed label in the tracker by hand does the same
+# at the next pipeline health check.
+# ─────────────────────────────────────────────────────────────
+
+name: Deployment signal
+
+on:
+  repository_dispatch:
+    types: [deployed]
+  workflow_dispatch:
+    inputs:
+      stories:
+        description: "Deployed stories, comma-separated (each must carry the pending label)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deployment-signal
+  cancel-in-progress: false
+
+jobs:
+  signal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Agent identity (the GitHub App's token, else GH_PAT)
+        id: identity
+        uses: ./.github/actions/agent-identity
+        with:
+          client-id: ${{ vars.GH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.GH_PAT }}
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Record the deployment and remind
+        env:
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          GITHUB_TOKEN: ${{ steps.identity.outputs.token }}
+          REPO_HOST_TOKEN_PER_RUN: ${{ steps.identity.outputs.kind == 'app' }}
+          GITHUB_REPO: ${{ vars.GH_REPO || github.repository }}
+          # Through the environment, never pasted into the script: the
+          # payload is the caller's text.
+          STORIES: ${{ github.event.inputs.stories || toJSON(github.event.client_payload.stories) }}
+        run: python -m scripts.deployment_signal --stories "$STORIES"

@@ -1990,9 +1990,37 @@ property remembers what was said). Nothing is regenerated, deleted or pushed.
 | R3 | A test case edited in the tracker after its scenario was coded (the `# JIRA:` marker's hash differs), or deleted | One `[watch:test-case-changed]` comment on its story: add `ai-update` - or `[watch:test-case-deleted]`: remove or re-point the scenario |
 | R4 | A story cancelled (done, with a status, resolution or label in `watch.cancelled` - a workflow without a cancel status closes it as Done and labels it `cancelled`) or deleted while its scenarios still run | Its test cases get the retired label and one comment naming the scenario to remove; its open defects one comment |
 | X5 | An agent pull request (`auto/`) in conflict with main, or behind main on a file it changes | One comment on the pull request: `ai-regenerate` (conflict) or `ai-update` (behind) - never a push |
+| X4 | A story awaiting its deployment now labelled `deployed` | The pending label comes off; one `[deployment]` comment on the story and on its open context-update pull request: merge it now |
 
 Dry run: run *Pipeline health* by hand with `dry_run` - the watchers print
 what they would say.
+
+### Waiting for a deployment (X4)
+
+A change story's tests are written before the application changes, so they
+fail until the change is deployed - the correct red. With `deployment.enabled`
+(`core/deployment.py`) the pipeline knows which failures those are:
+
+1. **Pending.** Agent 0's hand-over labels the change story
+   `awaiting-deployment` (`deployment.pending_label`) with one `[deployment]`
+   comment. Add the label yourself to any other story whose change is not live
+   yet.
+2. **Expected.** While a story carries it, its failing tests - and the tests
+   of the test cases it revises (its `impacts` links) - are expected: Agent 5's
+   report opens with *Awaiting deployment*, and the triage on main raises no
+   defect for them (the run lists them as `expected`).
+3. **Deployed.** When the change is live, send the signal - any one of:
+   - add `deployed` (`deployment.deployed_label`) to the story in the tracker
+     (the next pipeline health check picks it up);
+   - run the *Deployment signal* workflow by hand with the story keys;
+   - from the deployment pipeline, a webhook:
+     `POST /repos/<owner>/<repo>/dispatches` with
+     `{"event_type": "deployed", "client_payload": {"stories": ["PRJ-1"]}}`
+     (a token allowed to write the repository's contents).
+
+   The pending label comes off and one reminder - on the story and on its open
+   context-update pull request - asks to merge that pull request now. From the
+   next run on main the story's failures are real again and raise defects.
 
 ### Flaky tests (F-19)
 

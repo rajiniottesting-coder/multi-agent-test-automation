@@ -192,6 +192,7 @@ watch:
   test_case_changes: true            # R3: test case edited/deleted after coding
   retire_cancelled: true             # R4: cancelled/deleted story retires its test cases
   pr_sync: true                      # X5: agent PR in conflict with / behind main
+  deployments: true                  # X4: a deployed story's context-update reminder
   story_type: "Story"
   test_case_type: "Test Case"
   story_statuses: ["To Do", "In Progress", "In Review", "Done"]
@@ -204,6 +205,19 @@ watch:
   impact_label: "impact-check"
   cancelled: ["Won't Do", "Won't Fix", "Cancelled"]   # status, resolution or label of a done story
   pr_prefix: "auto/"
+
+# X4: a change story waits for its deployment (core/deployment.py). Agent 0's
+# hand-over labels it pending_label; until deployed_label is added (by a
+# person, a tracker automation or the Deployment signal workflow) its failing
+# tests are expected - Agent 5 says so and the triage on main raises no defect.
+# Then the pending label goes and one reminder asks to merge the story's
+# context-update pull request.
+deployment:
+  enabled: true
+  story_type: "Story"
+  pending_label: "awaiting-deployment"
+  deployed_label: "deployed"
+  mark_on_handover: true
 
 # D10: scripts/delete_issues.py deletes only closed issues with this label -
 # throw-away issues. A real defect is closed, never deleted. "" = off.

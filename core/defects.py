@@ -647,7 +647,7 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
               "not_retried": [jm.case_id(c) for c in not_retried], "unmapped": [],
               "stale_trace": [], "errors": [],
               "followed": [], "followed_passing": [], "retested": [], "recurs": [],
-              "fields_not_set": []}
+              "fields_not_set": [], "expected": []}
     if not s.get("enabled", True):
         logger.info("defects.enabled is false - no defect is raised.")
         return result
@@ -665,8 +665,18 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
     persons = person_defects(tracker, s) if (failing and s.get("reuse_person_defects", True)) \
         else []
     closed_cache: dict = {}
+    # X4: a test of a story awaiting its deployment fails as expected.
+    from core.deployment import PendingStories
+    waiting = PendingStories(tracker) if failing else None
     for case in failing:
         test = jm.case_id(case)
+        if waiting:
+            traced_now = trace_of(test, features_dir, tracker, s)
+            story = waiting.story_of(traced_now.get("owner"), traced_now.get("test_case"))
+            if story:
+                result["expected"].append(f"{test} ({story})")
+                failing_tests.setdefault(test, None)
+                continue
         d = _diagnosis(case)
         label = defect_label(test, d.label, s)
         failing_labels.add(label)

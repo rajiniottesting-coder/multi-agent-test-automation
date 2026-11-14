@@ -26,6 +26,10 @@ is said once: what was said is remembered in a hidden issue property
       on a file it changes -> one comment on the pull request: the cause and
       `ai-regenerate` (conflict) or `ai-update` (behind). Never a push.
 
+  X4  A story awaiting its deployment that is now labelled deployed -> the
+      pending label comes off, and one comment on the story and on its open
+      context-update pull request asks to merge it (core/deployment.py).
+
 Generic: labels, statuses and prefixes come from config; nothing here names
 an application, project or person.
 """
@@ -327,7 +331,7 @@ def run(tracker, host, features_dir: Path, now: _dt.datetime | None = None,
     now = now or _dt.datetime.now(_dt.timezone.utc)
     result = {"story_edited": [], "test_case_changed": [], "test_case_deleted": [],
               "retired": [], "defects_flagged": [], "prs_conflict": [], "prs_behind": [],
-              "errors": [], "write_errors": []}
+              "deployed": [], "reminded": [], "errors": [], "write_errors": []}
     if not s.get("enabled", True):
         return result
     steps = []
@@ -348,6 +352,9 @@ def run(tracker, host, features_dir: Path, now: _dt.datetime | None = None,
             steps.append(("R3", r3))
         if s.get("retire_cancelled", True):
             steps.append(("R4", lambda: stories_retired(tracker, _m(), result, s, dry_run)))
+        if s.get("deployments", True):
+            from core import deployment
+            steps.append(("X4", lambda: deployment.deployed(tracker, host, result, dry_run)))
     if host is not None and s.get("pr_sync", True):
         steps.append(("X5", lambda: prs_out_of_sync(host, result, s, dry_run)))
     for name, step in steps:
