@@ -66,3 +66,4 @@ possible on the current application. Each names what it is waiting for.
 | E208 | #491 D4 Recurrence | A test whose `ai-defect` was closed fails again on main | The new defect 'relates to' the closed one and has a **Recurs** line | ⬜ | |
 | E209 | #491 D5 Fields | A new `ai-defect` for a `@smoke` scenario | Priority High (smoke -> critical), the environment and commit in its description, the priority (and environment, where the screen has it) set on the issue | ⬜ | |
 | E210 | #491 X5 PR out of sync | An open `auto/` PR in conflict with main, or behind on a file it changes, then the watchers | One `[watch:pr-out-of-sync]` comment naming `ai-regenerate` / `ai-update`; nothing pushed; said once per head commit | ⬜ | |
+| E211 | #492 R4 cancelled by label | A throw-away story with marked scenarios closed as Done and labelled `cancelled`, then the watchers | Treated as cancelled: its test cases retired with a comment (as E204) | ⬜ | |

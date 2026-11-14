@@ -202,7 +202,7 @@ watch:
   update_label: "ai-update"
   regenerate_label: "ai-regenerate"
   impact_label: "impact-check"
-  cancelled: ["Won't Do", "Won't Fix", "Cancelled"]
+  cancelled: ["Won't Do", "Won't Fix", "Cancelled"]   # status, resolution or label of a done story
   pr_prefix: "auto/"
 
 # D10: scripts/delete_issues.py deletes only closed issues with this label -

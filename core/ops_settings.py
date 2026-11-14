@@ -223,7 +223,8 @@ DEFAULTS: dict = {
         "update_label": "ai-update",
         "regenerate_label": "ai-regenerate",
         "impact_label": "impact-check",
-        # A done story with one of these statuses or resolutions was cancelled.
+        # A done story with one of these statuses, resolutions or labels was
+        # cancelled (a workflow without a cancel status: Done + the label).
         "cancelled": ["Won't Do", "Won't Fix", "Cancelled"],
         "pr_prefix": "auto/",
     },

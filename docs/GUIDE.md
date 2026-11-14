@@ -1988,7 +1988,7 @@ property remembers what was said). Nothing is regenerated, deleted or pushed.
 |---|---|---|
 | R2 | A story's summary or description edited after its test cases were drafted (`ai-processed`), within `story_edit_days` | One `[watch:story-edited]` comment: check the test cases still match (or draft again); after coding (`ai-coded`): add `impact-check` |
 | R3 | A test case edited in the tracker after its scenario was coded (the `# JIRA:` marker's hash differs), or deleted | One `[watch:test-case-changed]` comment on its story: add `ai-update` - or `[watch:test-case-deleted]`: remove or re-point the scenario |
-| R4 | A story cancelled (a done status or resolution in `watch.cancelled`) or deleted while its scenarios still run | Its test cases get the retired label and one comment naming the scenario to remove; its open defects one comment |
+| R4 | A story cancelled (done, with a status, resolution or label in `watch.cancelled` - a workflow without a cancel status closes it as Done and labels it `cancelled`) or deleted while its scenarios still run | Its test cases get the retired label and one comment naming the scenario to remove; its open defects one comment |
 | X5 | An agent pull request (`auto/`) in conflict with main, or behind main on a file it changes | One comment on the pull request: `ai-regenerate` (conflict) or `ai-update` (behind) - never a push |
 
 Dry run: run *Pipeline health* by hand with `dry_run` - the watchers print
