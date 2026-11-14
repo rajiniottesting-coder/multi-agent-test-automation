@@ -516,7 +516,7 @@ agents:
     # Tracker groups (keeps people's names out of the repository) and/or
     # people (account id, display name or email). Both empty: anyone.
     approval_label: "human-approved"
-    approver_groups: ["validation-window-q-no-such-group"]   # WINDOW Q (temporary): restored at its end
+    approver_groups: ["org-admins"]
     approvers: []
     selection:
       issue_type: "Story"
