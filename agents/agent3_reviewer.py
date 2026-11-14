@@ -443,17 +443,6 @@ def _completed_runner_run(host, pr_number: int, head_branch: str, wait_seconds: 
         sleep(poll_seconds)
 
 
-def runner_result_for_head(host, pr_number: int, head_branch: str,
-                           wait_seconds: int = RUNNER_WAIT_SECONDS,
-                           poll_seconds: int = RUNNER_POLL_SECONDS,
-                           sleep=None, clock=None) -> str | None:
-    """'success' / 'failure' / ... for the runner on this PR's head commit, or
-    None when it has not concluded by the deadline or cannot be read."""
-    run = _completed_runner_run(host, pr_number, head_branch, wait_seconds,
-                                poll_seconds, sleep, clock)
-    return run.get("conclusion") if run else None
-
-
 @dataclass(frozen=True)
 class RunnerEvidence:
     """The runner's verdict on this commit, and - when its report could be

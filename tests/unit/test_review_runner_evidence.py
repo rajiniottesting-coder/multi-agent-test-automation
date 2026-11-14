@@ -10,7 +10,7 @@ from agents.agent3_reviewer import (
     _needs_runner_evidence,
     align_labels_with_verdict,
     derive_verdict,
-    runner_result_for_head,
+    _completed_runner_run,
 )
 from agents.agent3_reviewer import apply_runner_evidence as _apply
 from core.schemas import ReviewIssue, ReviewReport
@@ -104,16 +104,17 @@ def test_the_runner_is_read_for_this_commit_only_and_waited_for():
         [{"status": "in_progress", "conclusion": None, "head_sha": "abc"}],
         [{"status": "completed", "conclusion": "success", "head_sha": "abc"}],
     ])
-    assert runner_result_for_head(host, 148, "auto/X-1-y", wait_seconds=100,
-                                  poll_seconds=10, sleep=sleep, clock=clock) == "success"
+    run = _completed_runner_run(host, 148, "auto/X-1-y", wait_seconds=100,
+                                poll_seconds=10, sleep=sleep, clock=clock)
+    assert run["conclusion"] == "success"
 
 
 def test_no_result_by_the_deadline_is_none():
     clock, sleep = _clock()
     host = _Host([[{"status": "in_progress", "conclusion": None, "head_sha": "abc"}]])
-    assert runner_result_for_head(host, 148, "b", wait_seconds=30, poll_seconds=10,
-                                  sleep=sleep, clock=clock) is None
+    assert _completed_runner_run(host, 148, "b", wait_seconds=30, poll_seconds=10,
+                                 sleep=sleep, clock=clock) is None
 
 
 def test_a_closed_pr_has_no_evidence():
-    assert runner_result_for_head(_Host([[]]), 999, "b", wait_seconds=0) is None
+    assert _completed_runner_run(_Host([[]]), 999, "b", wait_seconds=0, poll_seconds=0) is None

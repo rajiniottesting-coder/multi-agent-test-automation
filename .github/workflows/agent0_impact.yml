@@ -157,16 +157,18 @@ jobs:
           GITHUB_TOKEN: ${{ steps.identity.outputs.token }}
           GITHUB_REPO: ${{ vars.GH_REPO }}
         run: |
-          DRY=""
-          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then DRY="--dry-run"; fi
-          SNAP=""
-          if [ -f reports/drift.json ]; then SNAP="--uncovered-snapshot reports/drift.json"; fi
-          FORCE=""
-          if [ "${{ github.event.inputs.force }}" = "true" ]; then FORCE="--force"; fi
+          # Optional flags as arrays: an empty one passes nothing, and a flag
+          # with a value stays one argument each (shellcheck SC2086).
+          DRY=()
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then DRY=(--dry-run); fi
+          SNAP=()
+          if [ -f reports/drift.json ]; then SNAP=(--uncovered-snapshot reports/drift.json); fi
+          FORCE=()
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then FORCE=(--force); fi
           if [ -n "${{ github.event.inputs.story_key }}" ]; then
-            python -m agents.agent0_impact --story "${{ github.event.inputs.story_key }}" $DRY $FORCE $SNAP
+            python -m agents.agent0_impact --story "${{ github.event.inputs.story_key }}" "${DRY[@]}" "${FORCE[@]}" "${SNAP[@]}"
           else
-            python -m agents.agent0_impact --scan $DRY $SNAP
+            python -m agents.agent0_impact --scan "${DRY[@]}" "${SNAP[@]}"
           fi
       - name: Start Agent 1 when a story waits for it
         # GitHub drops most scheduled runs of a quiet repository: a story
@@ -331,10 +333,10 @@ jobs:
           # --compare adds the elements no inventory selector covers. Report
           # only: it never changes drift, and the drift analysis ignores it.
           python -m scripts.check_inventory_staleness --compare --json reports/drift.json || true
-          DRY=""
-          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then DRY="--dry-run"; fi
+          DRY=()
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then DRY=(--dry-run); fi
           if [ -f reports/drift.json ]; then
-            python -m agents.agent0_impact --drift-report reports/drift.json $DRY
+            python -m agents.agent0_impact --drift-report reports/drift.json "${DRY[@]}"
           fi
       - name: Propose the inventory update as a pull request
         # One proposal at a time on inventory-update/<date> (core/inventory_update.py):
@@ -347,10 +349,10 @@ jobs:
           GITHUB_TOKEN: ${{ steps.identity.outputs.token }}
           GITHUB_REPO: ${{ vars.GH_REPO }}
         run: |
-          DRY=""
-          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then DRY="--dry-run"; fi
+          DRY=()
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then DRY=(--dry-run); fi
           if [ -f reports/drift.json ]; then
-            python -m scripts.propose_inventory_update --drift-report reports/drift.json $DRY
+            python -m scripts.propose_inventory_update --drift-report reports/drift.json "${DRY[@]}"
           fi
       - name: Keep the report for the next scan
         # The weekday scan reads the newest of these for the uncovered-element

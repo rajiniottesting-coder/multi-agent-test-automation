@@ -167,25 +167,29 @@ jobs:
           #   - workflow_dispatch with story_key → process that single story
           #   - workflow_dispatch with no story_key → scan mode
           #   - schedule (cron) → always scan mode (no inputs available)
-          DRY_RUN_FLAG=""
+          # Optional flags as arrays: an empty one passes nothing, and a flag
+          # with a value stays one argument each (shellcheck SC2086).
+          DRY_RUN_FLAG=()
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
-            DRY_RUN_FLAG="--dry-run"
+            DRY_RUN_FLAG=(--dry-run)
           fi
 
           # Build optional --sprint flag. Only used in scan mode.
           # Cron runs never have inputs, so this is always blank on schedule trigger.
-          SPRINT_FLAG=""
+          # One argument however many words the sprint's name has ("SCRUM
+          # Sprint 1" was split into three before).
+          SPRINT_FLAG=()
           if [ -n "${{ github.event.inputs.sprint }}" ]; then
-            SPRINT_FLAG="--sprint ${{ github.event.inputs.sprint }}"
+            SPRINT_FLAG=(--sprint "${{ github.event.inputs.sprint }}")
           fi
 
           if [ -n "${{ github.event.inputs.story_key }}" ]; then
             echo "Mode: single story (${{ github.event.inputs.story_key }}) — manual trigger"
-            python -m agents.agent1_analyst --story "${{ github.event.inputs.story_key }}" $DRY_RUN_FLAG
+            python -m agents.agent1_analyst --story "${{ github.event.inputs.story_key }}" "${DRY_RUN_FLAG[@]}"
           else
             echo "Mode: scan (process up to max_stories_per_run from config.yaml)"
             echo "Trigger: ${{ github.event_name }}"
-            python -m agents.agent1_analyst --scan $DRY_RUN_FLAG $SPRINT_FLAG
+            python -m agents.agent1_analyst --scan "${DRY_RUN_FLAG[@]}" "${SPRINT_FLAG[@]}"
           fi
 
       - name: Start Agent 1 again while stories wait
@@ -216,6 +220,6 @@ jobs:
         # before it, it would never start the scan the waiting stories need
         # (its own start may have stood back for this run - core/handoff.py).
         run: |
-          WAITED="--waiting-before reports/handoff_waiting.json"
-          if [ -n "$STORY_KEY" ]; then WAITED=""; fi
-          python -m scripts.start_agent --agent agent1_analyst --previous-chain "$CHAIN" $WAITED
+          WAITED=(--waiting-before reports/handoff_waiting.json)
+          if [ -n "$STORY_KEY" ]; then WAITED=(); fi
+          python -m scripts.start_agent --agent agent1_analyst --previous-chain "$CHAIN" "${WAITED[@]}"

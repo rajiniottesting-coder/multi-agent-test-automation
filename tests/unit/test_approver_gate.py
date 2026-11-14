@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 from core import approval
 from tests.sandbox.fake_jira import FakeJira, jira_client_over
+from pathlib import Path
 
 
 pytestmark = pytest.mark.gates_on
@@ -97,7 +98,7 @@ def test_agent2_gates_every_pass_and_a_run_by_key():
 def test_the_project_names_groups_not_people():
     import yaml
     from config.paths import CONFIG_YAML
-    cfg = yaml.safe_load(open(CONFIG_YAML))["agents"]["agent2_coder"]
+    cfg = yaml.safe_load(Path(CONFIG_YAML).read_text(encoding="utf-8"))["agents"]["agent2_coder"]
     assert cfg["approver_groups"] and cfg["approvers"] == []
 
 

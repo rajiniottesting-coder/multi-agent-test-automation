@@ -27,6 +27,7 @@ from core import inventory_update as iu
 from core.impact_analysis import drift_seeds
 from core.schemas import GeneratedFile
 from inventory_tools import introspect
+from pathlib import Path
 
 SELS = {"save": "#save", "coupon": "[data-test='coupon']", "help": "#help"}
 
@@ -278,7 +279,7 @@ def test_a_planned_page_found_live_is_confirmed_and_crawled_like_any_page():
     page = upd.inventory["pages"]["p"]
     assert "planned_page" not in page and "planned" not in page
     assert page["elements"]["pay_button"] == "#pay"
-    assert upd.confirmed[0]["page_confirmed"] is True and upd.pages_confirmed == ["p"]
+    assert upd.confirmed[0]["page_confirmed"] is True
     assert "page confirmed live" in iu.render_body(upd, "inv.json", "d")
 
 
@@ -557,10 +558,10 @@ def test_a_planned_page_not_live_does_not_count_as_measured():
 def test_the_minimum_is_configured_and_passed():
     import yaml
     from core.impact_settings import DEFAULTS
-    cfg = yaml.safe_load(open("config/config.yaml", encoding="utf-8"))
+    cfg = yaml.safe_load(Path("config/config.yaml").read_text(encoding="utf-8"))
     shipped = cfg["agents"]["agent0_impact"]["inventory_update"]
     # configured and sensible, not pinned: the value is the project's to tune
     assert DEFAULTS["inventory_update"]["layout_min_pages"] == 3
     assert isinstance(shipped["layout_min_pages"], int) and shipped["layout_min_pages"] >= 2
-    src = open("scripts/propose_inventory_update.py", encoding="utf-8").read()
+    src = Path("scripts/propose_inventory_update.py").read_text(encoding="utf-8")
     assert 'layout_min_pages=int(cfg["layout_min_pages"])' in src

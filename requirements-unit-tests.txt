@@ -1,0 +1,17 @@
+# What the framework's unit tests need beyond requirements.txt - installed by
+# Agent 4's unit gate (agent4_runner.yml, "Install Python dependencies").
+# Without them those tests skip, and the gate refuses an unexplained skip
+# (tests/unit/conftest.py): a test that never runs in CI tests nothing.
+# Locally: pip install -r requirements.txt -r requirements-unit-tests.txt
+
+# The PDF summary and its chart (test_reporting, test_ai_metrics,
+# test_sprint_summary_and_trend).
+-r requirements-reports.txt
+
+# actionlint - checks every workflow file (test_workflow_injection) - and
+# shellcheck, which actionlint runs on every workflow's shell scripts. Pinned
+# here, not taken from whatever the runner image ships: the lint must mean the
+# same in CI and on a laptop (14 Nov 2026: the runner's shellcheck found eight
+# issues a run without it never saw).
+actionlint-py==1.7.7.24
+shellcheck-py==0.10.0.1

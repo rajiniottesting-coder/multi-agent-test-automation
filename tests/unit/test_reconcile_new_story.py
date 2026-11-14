@@ -21,6 +21,7 @@ from core import impact_reconcile as rc
 from tests.sandbox.fake_jira import FakeRepoHost, jira_client_over
 from tests.sandbox.seed import seed_jira
 from tests.unit.test_impact_reconcile import pin_closed_scans
+from pathlib import Path
 
 STORY = "SBX-90"
 PIPELINE = ["ai-processed", "human-approved", "ai-coded", "ai-incomplete", "tests-run"]
@@ -205,7 +206,7 @@ def test_the_settings_and_board_column_are_shipped():
     import yaml
     from core.board_status import load_status_workflow
     from core.impact_settings import DEFAULTS
-    cfg = yaml.safe_load(open("config/config.yaml", encoding="utf-8"))
+    cfg = yaml.safe_load(Path("config/config.yaml").read_text(encoding="utf-8"))
     shipped = cfg["agents"]["agent0_impact"]["reconcile"]["story_reset_labels"]
     assert shipped == DEFAULTS["reconcile"]["story_reset_labels"]
     assert "ai-processed" not in shipped and "human-approved" in shipped
