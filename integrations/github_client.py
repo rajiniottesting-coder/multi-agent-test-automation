@@ -525,6 +525,15 @@ class GitHubClient:
     # PR commenting (Day 5 — for Agent 3 to post review)
     # ─────────────────────────────────────────────────────────
 
+    def remove_pr_label(self, pr_number: int, label: str) -> bool:
+        """Take a label off a pull request; False when it was not there."""
+        try:
+            self.get_pull_request(pr_number).remove_from_labels(label)
+            return True
+        except Exception as e:                                   # noqa: BLE001
+            logger.info(f"Label {label!r} not removed from PR #{pr_number}: {e}")
+            return False
+
     def post_pr_comment(self, pr_number: int, body: str) -> str:
         """Post a comment on the PR conversation. Returns the comment URL.
 

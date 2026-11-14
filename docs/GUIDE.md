@@ -1975,7 +1975,22 @@ the `triage` job (`scripts/triage_failures.py`, `core/defects.py`):
   story; the environment (base URL, browser, runner) and the commit are set
   on the defect and written in its description. A field the defect's screen
   does not have is listed in the triage output (`fields_not_set`), not
-  alerted - the description still carries it.
+  alerted - the description still carries it;
+- **a test of a story awaiting its deployment fails as expected (X4):** no
+  defect; the run lists it as `expected` (see *Waiting for a deployment*).
+
+**A new test on a pull request found a real bug (D6).** A pull request's
+failures go to its story's report only - most are the new test's own fault.
+When you read one as a bug in the application, label the pull request
+`raise-defect` (`defects.raise_label`). The *Raise defects from a pull
+request* workflow takes Agent 4's latest finished run on the pull request's
+head commit and raises (or updates) one defect per failure that failed again
+on the retry, exactly as the triage on main does - traced, prioritised, a
+person's covering defect followed - with the summary "fails on pull request
+#n". Nothing is judged passing from a pull request's run. It comments what it
+raised on the pull request and takes the label off; add it again after a new
+run to raise again. Once the test is merged, the runs on main keep each defect
+up to date.
 
 ### What changed under the pipeline (R2, R3, R4, X5)
 

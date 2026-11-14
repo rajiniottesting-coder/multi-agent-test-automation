@@ -89,6 +89,9 @@ DEFAULTS: dict = {
         # run ran, gets one comment saying whether they pass, and this label.
         "retest_resolved": True,
         "retested_label": "retested",
+        # D6: a person's label on a pull request - its new test found an
+        # application bug: the run's failures raise defects (scripts/raise_pr_defects.py).
+        "raise_label": "raise-defect",
         "retest_max_per_run": 10,
         # D4: a defect raised for a test whose earlier defect was closed links
         # that one (link kind `recurrence`, else `defect_story`).

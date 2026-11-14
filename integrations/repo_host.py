@@ -74,6 +74,10 @@ Without it no agent starts another; the schedules still run them.
 OPTIONAL CAPABILITY: `pr_sync_state(pr_number) -> {"base", "conflict",
 "behind_by", "overlap", "conflict_files"}` is how a PR stands against its
 base (core/tracker_watch.py, X5). A host without it is not checked.
+
+OPTIONAL CAPABILITY: `remove_pr_label(pr_number, label) -> bool` takes a label
+off a pull request (scripts/raise_pr_defects.py, D6: the one-shot
+`raise-defect` label). Without it the label stays and a person removes it.
 """
 from __future__ import annotations
 

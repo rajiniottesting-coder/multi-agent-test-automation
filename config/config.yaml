@@ -286,6 +286,9 @@ defects:
   # run on main: one comment (its linked tests pass or fail) and this label.
   retest_resolved: true
   retested_label: "retested"
+  # D6: label a pull request with this when its new test found a real
+  # application bug - the run's failures raise defects like a run on main.
+  raise_label: "raise-defect"
   retest_max_per_run: 10             # more closed defects wait for the next run
   # D4: a recurring failure's new defect links the closed one.
   link_recurrences: true

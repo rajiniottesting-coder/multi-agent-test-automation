@@ -1,0 +1,62 @@
+# ─────────────────────────────────────────────────────────────
+# Raise defects from a pull request (D6)
+#
+# A pull request's failures go to its story's report only: most are the new
+# test's own fault. When a person reads one as a real bug in the application,
+# they label the pull request `raise-defect` (defects.raise_label in
+# config.yaml - keep the two the same). This workflow then raises or updates
+# one defect per failure of Agent 4's latest finished run on the pull
+# request's head commit, as the triage on main would, comments what it raised
+# and takes the label off (scripts/raise_pr_defects.py).
+# ─────────────────────────────────────────────────────────────
+
+name: Raise defects from a pull request
+
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+  pull-requests: write   # the comment, and the label taken off
+  actions: read          # Agent 4's run and its test report
+
+concurrency:
+  # The triage on main has the same group: two would raise one defect twice.
+  group: defect-triage
+  cancel-in-progress: false
+
+jobs:
+  raise:
+    if: github.event.label.name == 'raise-defect'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout the pull request as Agent 4 ran it
+        uses: actions/checkout@v4
+        with:
+          # The pull request merged with main - the commit Agent 4 tested, so
+          # its scenarios and markers trace each failure to its test case.
+          ref: ${{ github.sha }}
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Raise the defects
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ vars.GH_REPO || github.repository }}
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python -m scripts.raise_pr_defects --pr "$PR_NUMBER"
