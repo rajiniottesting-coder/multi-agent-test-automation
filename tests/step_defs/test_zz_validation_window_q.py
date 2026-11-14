@@ -9,7 +9,7 @@ from pytest_bdd import given, scenarios, then
 from config.paths import feature_path
 
 Q_SMOKE_PASSES = False
-Q_COVERED_PASSES = False
+Q_COVERED_PASSES = True
 
 scenarios(str(feature_path("zz_validation_window_q")))
 
