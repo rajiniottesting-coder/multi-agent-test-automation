@@ -200,6 +200,7 @@ def defect_figures(history: dict, now: _dt.datetime, window_days: int) -> dict |
             "per": history["per"], "recorded": len(recs), "sync": history["synced"],
             "sprints": [{k: sp.get(k) for k in ("name", "start", "end", "opened", "closed",
                                                  "open", "mean_days_to_close", "reopened",
+                                                 "by_pipeline", "by_person", "detection_rate",
                                                  "written")}
                         | {"densest": next((m for m in sp.get("modules") or []
                                             if m.get("density")), None)}
@@ -431,19 +432,25 @@ def defect_history_html(data: dict) -> str:
              (sm["open"], "open now"),
              ("-" if sm["mean_days_to_close"] is None else sm["mean_days_to_close"],
               "mean days to close"),
-             (sm["reopened"], "reopened"), (sm["deleted"], "deleted from the tracker")]
+             (sm["reopened"], "reopened"), (sm["deleted"], "deleted from the tracker"),
+             (_pct(sm.get("detection_rate")), "found by the pipeline")]
     kpi = "".join(f"<div class='card kpi'><b>{_e(v)}</b><span>{_e(t)}</span></div>"
                   for v, t in cards)
     cats = ", ".join(f"{n} {c}" for c, n in sm["closed_by_category"]) or "none closed"
     who = f"{sm['by_pipeline']} raised by the pipeline, {sm['by_person']} by a person"
-    mods = _table(["Module", "Scenarios", "Opened", "Product defects", "Closed", "Open now",
-                   f"Density (per {h['per']} scenarios)"],
-                  [[_e(r["module"]), r["scenarios"], r["opened"], r["product"], r["closed"],
-                    r["open"], "-" if r["density"] is None else r["density"]]
+    mods = _table(["Module", "Scenarios", "Opened", "Found by the pipeline",
+                   "Found by a person", "Detection rate", "Product defects", "Closed",
+                   "Open now", f"Density (per {h['per']} scenarios)"],
+                  [[_e(r["module"]), r["scenarios"], r["opened"], r.get("by_pipeline", 0),
+                    r.get("by_person", 0), _e(_pct(r.get("detection_rate"))), r["product"],
+                    r["closed"], r["open"], "-" if r["density"] is None else r["density"]]
                    for r in h["modules"]])
-    sprints = _table(["Sprint", "From", "To", "Opened", "Closed", "Open at the record",
+    sprints = _table(["Sprint", "From", "To", "Opened", "Found by the pipeline",
+                      "Found by a person", "Closed", "Open at the record",
                       "Mean days to close", "Densest module"],
                      [[_e(sp["name"]), _e(sp["start"]), _e(sp["end"]), _e(sp["opened"]),
+                       _e(sp.get("by_pipeline") if sp.get("by_pipeline") is not None else "-"),
+                       _e(sp.get("by_person") if sp.get("by_person") is not None else "-"),
                        _e(sp["closed"]), _e(sp["open"]),
                        _e("-" if sp["mean_days_to_close"] is None else sp["mean_days_to_close"]),
                        _e(f"{sp['densest']['module']} ({sp['densest']['density']})"
@@ -458,8 +465,15 @@ def defect_history_html(data: dict) -> str:
             f"defects opened in the window per {_e(h['per'])} scenarios of the module. A defect "
             f"closed as test, environment, duplicate or not-a-bug is left out; one not yet "
             f"categorised is counted. Module: the defect's tracker component, else its test's "
-            f"feature file (<code>reporting.modules</code>).</p></div>"
+            f"feature file (<code>reporting.modules</code>). Found by the pipeline: the nightly "
+            f"run's triage raised it (its label or its triage data); by a person: anyone else "
+            f"- manual testing, acceptance, production. The detection rate is the pipeline's "
+            f"share: a low one in a module points at tests that are missing.</p></div>"
             f"<div class='card'><h2>Defects per sprint</h2>{sprints}</div>")
+
+
+def _pct(value) -> str:
+    return "-" if value is None else f"{value:g}%"
 
 
 def _defect_trend_js(data: dict) -> str:
@@ -612,8 +626,10 @@ def summary_pdf(data: dict, path: Path, sprint_end: bool) -> bool:
     if h:
         sm = h["summary"]
         flow += [Paragraph(f"Defects, last {data['window_days']} days", st["Heading2"]),
-                 Table([["Opened", "Closed", "Open now", "Mean days to close", "Reopened"],
-                        [str(sm["opened"]), str(sm["closed"]), str(sm["open"]),
+                 Table([["Opened", "By pipeline", "By a person", "Detection rate", "Closed",
+                         "Open now", "Mean days to close", "Reopened"],
+                        [str(sm["opened"]), str(sm["by_pipeline"]), str(sm["by_person"]),
+                         _pct(sm.get("detection_rate")), str(sm["closed"]), str(sm["open"]),
                          "-" if sm["mean_days_to_close"] is None else str(sm["mean_days_to_close"]),
                          str(sm["reopened"])]], style=style),
                  Spacer(1, 0.3 * cm)]
@@ -621,15 +637,18 @@ def summary_pdf(data: dict, path: Path, sprint_end: bool) -> bool:
                     None)
         if this:
             flow += [Paragraph(f"{html.escape(this['name'])} ({this['start']} to {this['end']}): "
-                               f"{this['opened']} defects opened, {this['closed']} closed, "
-                               f"{this['open']} open", st["Normal"]), Spacer(1, 0.3 * cm)]
+                               f"{this['opened']} defects opened ({this.get('by_pipeline') or 0} "
+                               f"by the pipeline, {this.get('by_person') or 0} by a person), "
+                               f"{this['closed']} closed, {this['open']} open", st["Normal"]),
+                     Spacer(1, 0.3 * cm)]
         mods = [r for r in h["modules"] if r["opened"] or r["open"]][:8]
         if mods:
             flow += [Paragraph(f"Density by module (product defects per {h['per']} scenarios)",
                                st["Heading3"]),
-                     Table([["Module", "Scenarios", "Opened", "Product", "Open", "Density"]]
+                     Table([["Module", "Scenarios", "Opened", "By pipeline", "Product", "Open",
+                             "Density"]]
                            + [[r["module"], str(r["scenarios"]), str(r["opened"]),
-                               str(r["product"]), str(r["open"]),
+                               str(r.get("by_pipeline", 0)), str(r["product"]), str(r["open"]),
                                "-" if r["density"] is None else str(r["density"])] for r in mods],
                            style=style)]
     failing = [r for r in data["by_file"] if r["failed"]]

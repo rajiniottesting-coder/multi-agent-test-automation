@@ -32,6 +32,7 @@ before a real project; P2 and P3 before a wider rollout.
 | RP8 | Allure severity (from smoke / critical tags) and links to the story and test case (from the `# JIRA:` marker) | Allure's severity and requirement views are empty | P2 | A | | Done (#464) |
 | RP11 | A *Latest run* page (the site's landing page): what failed, flaked or could not be judged in the newest run, with its error, story and test case; the dashboard becomes *History* | The latest run was one line on the dashboard | P2 | A | | Done (#465) |
 | RP12 | Defect trend (opened, closed, open per day), time to close, density per module and per sprint on *History* and the PDF | Open defects by age only | P2 | A | | Done (#478) |
+| RP13 | Who found each defect (the pipeline - label or triage data - or a person) and the automation's detection rate, overall, per module and per sprint, on *History* and the PDF | One line of counts, by label only | P2 | A | | Done (#487) |
 
 ### Security
 
@@ -114,7 +115,8 @@ the history): RP1, RP2, RP3, RP4 (#464, #467), RP7, RP9, RP10 (#465), X7
 (#468). The estimate below is the one of 12 Nov.
 
 Added and built on 13 Nov 2026 at the owner's request (group A, no model
-spend): D7, D8, D9, D10, RP12 (#478) - the defect history, trend and density.
+spend): D7, D8, D9, D10, RP12 (#478) - the defect history, trend and density;
+RP13 (#487, 14 Nov) - who found each defect and the detection rate.
 D7 and D10 are proven live (#481, removed above); D8, D9 and RP12 wait for
 the live checks their TEST_TRACK rows name.
 

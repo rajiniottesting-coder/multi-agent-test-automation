@@ -337,3 +337,41 @@ def test_charts_never_zoom_on_a_touch_and_counts_start_at_zero():
     assert "dtick:1" in js and js.endswith(",C);")
     f = bs.defect_figures(_history(_recs()), NOW, 30)
     assert "dtick:1" in bs._defect_trend_js({"defect_history": f})   # top 2: whole defects
+
+
+# ── RP13 who found it ───────────────────────────────────────────────────
+
+def test_found_by_the_pipeline_by_label_or_by_its_triage_data(tmp_path, features, settings):
+    """The pipeline writes with a person's tracker account, so the reporter
+    cannot tell; a label alone is lost when someone removes it."""
+    s = {"label": "ai-defect"}
+    assert dl.source_of(["ai-defect"], {}, s) == "pipeline"
+    assert dl.source_of([], {"test": "tests.step_defs.test_x::t"}, s) == "pipeline"
+    assert dl.source_of(["defect-app"], {}, s) == "person"
+    t = Tracker([_issue("PRJ-1", labels=[], state={"test": "tests.step_defs.test_basket_management::t"}),
+                 _issue("PRJ-2", labels=[])])
+    dl.sync(tmp_path, t, features, NOW)
+    assert {r["key"]: r["source"] for r in dl.records(tmp_path)} == {"PRJ-1": "pipeline",
+                                                                     "PRJ-2": "person"}
+
+
+def test_detection_rate_overall_per_module_and_on_the_pages():
+    from scripts import build_site as bs
+    sm = dl.summary(_recs(), "2026-11-01", "2026-11-14")
+    assert (sm["by_pipeline"], sm["by_person"], sm["detection_rate"]) == (2, 1, 66.7)
+    rows = {r["module"]: r for r in dl.by_module(_recs(), "2026-11-01", "2026-11-14",
+                                                  {"Basket": 2, "sign_in": 1}, 10)}
+    assert (rows["Basket"]["by_pipeline"], rows["Basket"]["detection_rate"]) == (2, 100.0)
+    assert (rows["sign_in"]["by_person"], rows["sign_in"]["detection_rate"]) == (1, 0.0)
+    assert dl.detection_rate(0, 0) is None
+    sp = {"name": "S1", "start": "2026-11-10", "end": "2026-11-23", "opened": 3, "closed": 2,
+          "open": 1, "mean_days_to_close": 1.8, "reopened": 1, "written": "x",
+          "by_pipeline": 2, "by_person": 1, "detection_rate": 66.7, "modules": []}
+    f = bs.defect_figures(_history(_recs(), [sp]), NOW, 30)
+    page = bs.defect_history_html({"window_days": 30, "defect_history": f})
+    assert "<b>66.7%</b><span>found by the pipeline</span>" in page
+    assert "Found by a person" in page and "<td>100%</td>" in page
+    assert f["sprints"][0]["by_pipeline"] == 2
+    empty = bs.defect_figures({**_history([]), "ever_synced": True}, NOW, 30)
+    assert "<b>-</b><span>found by the pipeline</span>" in bs.defect_history_html(
+        {"window_days": 30, "defect_history": empty})
