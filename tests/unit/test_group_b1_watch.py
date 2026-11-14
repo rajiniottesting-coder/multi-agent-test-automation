@@ -200,3 +200,29 @@ def test_a_done_story_labelled_cancelled_retires_too(world):
     fake, *_ = world
     fake.issues["SBX-2"]["labels"].append("cancelled")
     assert sorted(_run(world)["retired"]) == ["SBX-5", "SBX-6"]
+
+
+def test_a_pr_whose_mergeability_is_not_known_yet_waits_for_the_next_run(world):
+    """14 Nov 2026: GitHub answered None for a conflicting PR right after
+    main moved, and it was called 'behind'."""
+    host = Host({7: {"base": "main", "unknown": True, "conflict": False, "behind_by": 2,
+                     "overlap": ["a"]}})
+    out = _run(world, host=host)
+    assert out["prs_conflict"] == [] and out["prs_behind"] == [] and not host.comments
+
+
+def test_github_asks_again_while_mergeability_is_computed(monkeypatch):
+    from types import SimpleNamespace
+    from integrations import github_client as gc
+    reads = iter([None, None, False])
+    pr = lambda: SimpleNamespace(mergeable=next(reads), mergeable_state="dirty",
+                                 base=SimpleNamespace(ref="main"),
+                                 head=SimpleNamespace(sha="abc"),
+                                 get_files=lambda: [SimpleNamespace(filename="f")])
+    client = gc.GitHubClient.__new__(gc.GitHubClient)
+    monkeypatch.setattr(gc.GitHubClient, "get_pull_request", lambda self, n: pr())
+    monkeypatch.setattr(gc.GitHubClient, "repo", property(lambda self: SimpleNamespace(
+        compare=lambda a, b: SimpleNamespace(ahead_by=1, files=[SimpleNamespace(filename="f")]))))
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    state = client.pr_sync_state(3)
+    assert state["conflict"] is True and state["overlap"] == ["f"] and not state.get("unknown")

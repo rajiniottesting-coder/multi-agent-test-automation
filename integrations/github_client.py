@@ -462,13 +462,26 @@ class GitHubClient:
         }
 
     def pr_sync_state(self, pr_number: int) -> dict:
-        """How a PR stands against its base (Group B: X5): {"base", "conflict"
-        (bool), "behind_by" (commits on the base since the branch point),
+        """How a PR stands against its base (Group B: X5): {"base", "unknown"
+        (GitHub has not computed it yet), "conflict" (bool), "behind_by"
+        (commits on the base since the branch point),
         "overlap" (files the base changed since then that the PR changes too),
         "conflict_files" (the overlap, when in conflict)}. Read only."""
+        import time
         pr = self.get_pull_request(pr_number)
-        mergeable = pr.mergeable          # None while GitHub still computes it
-        conflict = mergeable is False or (pr.mergeable_state or "") == "dirty"
+        # GitHub computes mergeability in the background: the first read after
+        # main moves is often None (14 Nov 2026: PR #494 read None and was
+        # called 'behind' though it conflicted). Ask again briefly; still
+        # unknown -> "unknown": the caller says nothing until it is known.
+        for wait in (2, 4, 8):
+            if pr.mergeable is not None:
+                break
+            time.sleep(wait)
+            pr = self.get_pull_request(pr_number)
+        if pr.mergeable is None:
+            return {"base": pr.base.ref, "unknown": True, "conflict": False,
+                    "behind_by": 0, "overlap": [], "conflict_files": []}
+        conflict = pr.mergeable is False or (pr.mergeable_state or "") == "dirty"
         cmp = self.repo.compare(pr.head.sha, pr.base.ref)
         base_files = {f.filename for f in cmp.files or []} if cmp.ahead_by else set()
         pr_files = {f.filename for f in pr.get_files()}
