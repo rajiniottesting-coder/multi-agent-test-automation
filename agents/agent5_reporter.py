@@ -262,9 +262,25 @@ def unit_failures(reports_dir: Path) -> tuple[int, int] | None:
     return bad, total
 
 
+def _awaiting_deployment(tracker, story_key: str) -> str:
+    """X4: the 'awaiting deployment' line when the story waits for its
+    deployment, else ''. A tracker that cannot be read gives '' - the
+    failures then read as real, as before."""
+    if tracker is None:
+        return ""
+    from core import deployment
+    try:
+        if deployment.is_pending((tracker.get_story(story_key) or {}).get("labels")):
+            return deployment.expected_note()
+    except Exception as e:                                         # noqa: BLE001
+        logger.warning("Deployment state of %s not read (%s).", story_key, e)
+    return ""
+
+
 def build_final_comment(prose_body: str, report: RunReport,
                         outside: list = (), unscoped_total: int | None = None,
-                        outages: list = (), unit: tuple[int, int] | None = None) -> str:
+                        outages: list = (), unit: tuple[int, int] | None = None,
+                        awaiting: str = "") -> str:
     """Assemble the final Jira comment from LLM prose + deterministic links.
 
     Args:
@@ -282,10 +298,16 @@ def build_final_comment(prose_body: str, report: RunReport,
             (F-7), the story's or not. Listed apart, with a warning above the
             prose: they are neither passes nor failures of the change.
 
+        awaiting: X4 - the line saying this story awaits its deployment, so
+            its failures are expected (core/deployment.py). First, when set.
+
     Returns:
         Final markdown string ready to post to Jira.
     """
     parts: list[str] = []
+    if awaiting:
+        parts.append(awaiting)
+        parts.append("")
     if unit and unit[0]:
         parts.append(f"> ⚠ **Pull request check red:** {unit[0]} of {unit[1]} framework "
                      f"unit tests failed in this run. The results below are this story's "
@@ -795,10 +817,12 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
 
     # 3b. ASSEMBLE: Python builds the final comment from LLM prose + deterministic links.
     # This avoids the LLM rendering "View PR (None)" when fields are unavailable.
+    awaiting = _awaiting_deployment(tracker, story_key) if verdict == "failed" else ""
     final_body = build_final_comment(draft.body_markdown, report, outside,
                                      unscoped_total=(full_report.total
                                                      if scoped_whole else None),
-                                     outages=outages, unit=unit_failures(reports_dir))
+                                     outages=outages, unit=unit_failures(reports_dir),
+                                     awaiting=awaiting)
 
     # 3c. USAGE LEDGER: this agent's own usage, and the story's cost so far.
     # Property ledger (F-31): one line pointing to the story's cost comment,
@@ -939,6 +963,7 @@ def run(story_key: str, reports_dir: Path, dry_run: bool = False, cli_pr: int | 
         "failed": report.failed,
         "comment_url": comment_url,
         "status": "comment_posted",
+        "awaiting_deployment": bool(awaiting),
     }
 
     logger.info(f"=== Agent 5 (Reporter) complete. Comment: {comment_url} ===")

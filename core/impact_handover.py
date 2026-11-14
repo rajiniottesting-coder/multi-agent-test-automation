@@ -39,6 +39,7 @@ class HandoverResult:
     unowned: list = field(default_factory=list)          # test keys with no owner
     comments_posted: list = field(default_factory=list)  # owners commented this run
     dry_run: bool = False
+    awaiting_deployment: bool = False                    # X4: labelled pending
 
 
 class HandoverRefused(Exception):
@@ -117,6 +118,12 @@ def handover(tracker, change_story: str, decisions: dict, review_key: str | None
     for label in (labels["check"], labels["proposed"]):
         tracker.remove_label(change_story, label)
     tracker.add_label(change_story, labels["ready"])
+    # X4: its tests fail until the change is deployed - expected, not defects.
+    from core import deployment
+    d = deployment.settings()
+    if deployment.enabled(d) and d.get("mark_on_handover", True):
+        deployment.mark_pending(tracker, change_story, d)
+        result.awaiting_deployment = True
     logger.info("Hand-over for %s: approved %s, retired %s, rejected %s, owners %s",
                 change_story, result.approved, result.retired, result.rejected,
                 sorted(result.owners))

@@ -27,7 +27,7 @@ before a real project; P2 and P3 before a wider rollout.
 
 | ID | Item | Today (gap) | Priority | Cost | Was | Status |
 |---|---|---|---|---|---|---|
-| RP5 | AI metrics: cost per story and agent, first-attempt success of generated code, refusals, review findings, Agent 0 precision and recall | Posted per story, never aggregated | P2 | B | N9, F-29 | Open |
+| RP5 | AI metrics: cost per story and agent, first-attempt success of generated code, refusals, review findings, Agent 0 precision and recall | Posted per story, never aggregated | P2 | B | N9, F-29 | Done (#502) |
 
 ### Security
 
@@ -40,7 +40,7 @@ before a real project; P2 and P3 before a wider rollout.
 | ID | Item | Today (gap) | Priority | Cost | Was | Status |
 |---|---|---|---|---|---|---|
 | D3 | Bug flow: a production bug gets a regression test | Only Stories start Agents 1 and 2 | P2 | C | L23, F-20 | Open |
-| D6 | A `raise-defect` label on a PR files a real application bug a new test found | A PR's failures go to its story only (by design) | P3 | B | | Open |
+| D6 | A `raise-defect` label on a PR files a real application bug a new test found | A PR's failures go to its story only (by design) | P3 | B | | Done (#502) |
 | D8 | A defect's module: tracker component, else `reporting.modules` over its feature file | The project has no components; no defect had a module | P2 | A | | Done (#478) |
 
 ### Requirements lifecycle
@@ -52,10 +52,10 @@ before a real project; P2 and P3 before a wider rollout.
 
 | ID | Item | Today (gap) | Priority | Cost | Was | Status |
 |---|---|---|---|---|---|---|
-| X1 | A PR runs the tests Agent 0's graph links to the change plus a smoke set; the full suite nightly and before merge | The whole suite on every PR | P2 | B | L21, F-18 | Open |
+| X1 | A PR runs the tests Agent 0's graph links to the change plus a smoke set; the full suite nightly and before merge | The whole suite on every PR | P2 | B | L21, F-18 | Done (#502) |
 | X2 | Per-run test data (accounts and fixtures seeded per run or worker), then parallel execution; browser turn-taking becomes optional | Shared accounts, one test at a time | P3 | C | N7, F-27 | Open |
 | X3 | Environment profiles in config (base URL and credentials per environment) and an optional browser matrix in Agent 4 | One base URL, Chromium only | P3 | C | N8, F-28 | Open |
-| X4 | An optional deployment signal (config or webhook) that marks a change story's failures as expected until deployment and reminds a person to merge its context-update PR | Pre-deployment failures look real | P3 | B | L20, F-17 | Open |
+| X4 | An optional deployment signal (config or webhook) that marks a change story's failures as expected until deployment and reminds a person to merge its context-update PR | Pre-deployment failures look real | P3 | B | L20, F-17 | Done (#502) |
 | X6 | Require Agent 4's Run Tests check before merge, with X4's expected-failure marking so a change story is not blocked before deployment | A red PR can be merged | P3 | A | N6, F-26 | Open |
 
 ### Operations
@@ -102,6 +102,7 @@ spend): D7, D8, D9, D10, RP12 (#478) - the defect history, trend and density;
 RP13 (#487, 14 Nov) - who found each defect and the detection rate.
 Group B, batch B1 (14 Nov 2026, #491): R1-R5, D1, D2, D4, D5, X5 - all
 proven live the same day with #492, #497, #498 and #500 (removed above).
+Group B, batch B2 (14 Nov 2026, #502): RP5, X1, D6, X4.
 D7 and D10 are proven live (#481, removed above). On 14 Nov 2026 RP6, RP8,
 RP11, RP12, RP13, D9 and X8 were proven live too (#490, removed above); D8
 waits for its tracker-component check (the project has no components).

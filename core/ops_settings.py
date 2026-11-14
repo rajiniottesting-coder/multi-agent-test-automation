@@ -89,6 +89,9 @@ DEFAULTS: dict = {
         # run ran, gets one comment saying whether they pass, and this label.
         "retest_resolved": True,
         "retested_label": "retested",
+        # D6: a person's label on a pull request - its new test found an
+        # application bug: the run's failures raise defects (scripts/raise_pr_defects.py).
+        "raise_label": "raise-defect",
         "retest_max_per_run": 10,
         # D4: a defect raised for a test whose earlier defect was closed links
         # that one (link kind `recurrence`, else `defect_story`).
@@ -213,6 +216,7 @@ DEFAULTS: dict = {
         "test_case_changes": True,    # R3
         "retire_cancelled": True,     # R4
         "pr_sync": True,              # X5
+        "deployments": True,          # X4: a deployed story's reminder
         "story_type": "Story",
         "test_case_type": "Test Case",
         "story_statuses": ["To Do", "In Progress", "In Review", "Done"],
@@ -227,6 +231,22 @@ DEFAULTS: dict = {
         # cancelled (a workflow without a cancel status: Done + the label).
         "cancelled": ["Won't Do", "Won't Fix", "Cancelled"],
         "pr_prefix": "auto/",
+    },
+    # RP5: the AI metrics on the History page and the PDF (core/ai_metrics.py):
+    # the stories changed in the reporting window, read by the Reports run.
+    "ai_metrics": {
+        "enabled": True,
+        "story_type": "Story",
+        "coded_label": "ai-coded",
+    },
+    # X4: a change story waits for its deployment (core/deployment.py). Off
+    # by default: a project with no deployment step to wait for is unchanged.
+    "deployment": {
+        "enabled": False,
+        "story_type": "Story",
+        "pending_label": "awaiting-deployment",   # its failing tests are expected
+        "deployed_label": "deployed",             # the signal: the change is live
+        "mark_on_handover": True,                 # Agent 0's hand-over adds pending_label
     },
     # D10: scripts/delete_issues.py deletes only closed issues carrying this
     # label - throw-away issues (validation runs, dummy defects). A real

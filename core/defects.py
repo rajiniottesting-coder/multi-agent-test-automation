@@ -201,12 +201,23 @@ def _close_hint() -> str:
         return ""
 
 
+def _intro(state: dict) -> str:
+    if state.get("found_on"):
+        # D6: a new test on a pull request found it, and a person said so.
+        return (f"A test fails on {state['found_on']}. A person labelled the pull request "
+                f"`{settings().get('raise_label')}`: the new test found a bug in the "
+                "application. One open defect per test: once the test is on main, the runs "
+                "there update this description; when it passes again on main this defect "
+                "gets a label and one comment suggesting it be closed - a person decides.")
+    return ("A test fails on `main`. Raised by the defect triage after a run on main "
+            "(scheduled, or after a change that affects the tests). One open defect per test: "
+            "a repeat updates this description; when the test passes again on main this "
+            "defect gets a label and one comment suggesting it be closed - a person decides.")
+
+
 def render(tracker, state: dict) -> str:
     md = [
-        "A test fails on `main`. Raised by the defect triage after a run on main "
-        "(scheduled, or after a change that affects the tests). One open defect per test: "
-        "a repeat updates this description; when the test passes again on main this "
-        "defect gets a label and one comment suggesting it be closed - a person decides.",
+        _intro(state),
         "",
         f"**Test:** `{state['test']}`",
         "**Test case:** " + _traced_line(state),
@@ -622,7 +633,7 @@ def defect_fields(tracker, test: str, traced: dict, features_dir: Path, s: dict)
 
 
 def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | None = None,
-           dry_run: bool = False) -> dict:
+           dry_run: bool = False, source: dict | None = None) -> dict:
     """Raise, update and flag defects for one run on main. Returns what it did:
     {"raised", "updated", "passing", "failing_again", "capped", "outages", "flaky",
     "not_retried", "unmapped", "stale_trace", "errors"} - `not_retried` lists
@@ -631,7 +642,12 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
     trace names an issue that no longer exists; `errors` is [(what, why)] for every
     write the tracker refused
     (a required field on the defect's create screen, a permission), so the
-    caller can say so instead of a run that looks clean."""
+    caller can say so instead of a run that looks clean.
+
+    source: D6 - {"pr": number} for a pull request's run a person labelled
+    `defects.raise_label`. Its failures raise or update defects as on main
+    ("fails on pull request #n"); nothing is judged passing, followed or
+    re-tested from it - that is main's run to say."""
     s = settings()
     now = now or _dt.datetime.now(_dt.timezone.utc)
     today = now.date().isoformat()
@@ -647,7 +663,7 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
               "not_retried": [jm.case_id(c) for c in not_retried], "unmapped": [],
               "stale_trace": [], "errors": [],
               "followed": [], "followed_passing": [], "retested": [], "recurs": [],
-              "fields_not_set": []}
+              "fields_not_set": [], "expected": []}
     if not s.get("enabled", True):
         logger.info("defects.enabled is false - no defect is raised.")
         return result
@@ -665,8 +681,19 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
     persons = person_defects(tracker, s) if (failing and s.get("reuse_person_defects", True)) \
         else []
     closed_cache: dict = {}
+    where = f"pull request #{source['pr']}" if source else "main"
+    # X4: a test of a story awaiting its deployment fails as expected.
+    from core.deployment import PendingStories
+    waiting = PendingStories(tracker) if failing else None
     for case in failing:
         test = jm.case_id(case)
+        if waiting:
+            traced_now = trace_of(test, features_dir, tracker, s)
+            story = waiting.story_of(traced_now.get("owner"), traced_now.get("test_case"))
+            if story:
+                result["expected"].append(f"{test} ({story})")
+                failing_tests.setdefault(test, None)
+                continue
         d = _diagnosis(case)
         label = defect_label(test, d.label, s)
         failing_labels.add(label)
@@ -708,7 +735,7 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
                 if s["passing_label"] in (issue.get("labels") or []):
                     if not dry_run:
                         tracker.remove_label(issue["key"], s["passing_label"])
-                        tracker.add_comment(issue["key"], f"Failing again on main: {run_url}")
+                        tracker.add_comment(issue["key"], f"Failing again on {where}: {run_url}")
                     result["failing_again"].append(issue["key"])
                 continue
             if len(result["raised"]) >= int(s["max_new_per_run"]):
@@ -737,7 +764,9 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
             state.update({k: v for k, v in (("environment", fields["environment"]),
                                             ("commit", fields["commit"]),
                                             ("priority", fields["priority"])) if v})
-            summary = f"[Auto] {test.rsplit('.', 1)[-1][:150]} fails on main: {d.label}"
+            if source:
+                state["found_on"] = where
+            summary = f"[Auto] {test.rsplit('.', 1)[-1][:150]} fails on {where}: {d.label}"
             if dry_run:
                 result["raised"].append(f"(dry run) {summary}")
                 if not (traced["test_case"] or traced["owner"]):
@@ -756,6 +785,8 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
             logger.warning("Defect for %s not written: %s", test, e)
             result["errors"].append((test, error_text(e)))
 
+    if source:
+        return result                    # D6: main's run judges passing, not a PR's
     # A test failing now for ANOTHER cause than an older defect of it records
     # (two open defects of one test, raised before one open defect per test):
     # that defect is not passing any more.

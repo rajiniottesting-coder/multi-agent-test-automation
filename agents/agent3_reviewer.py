@@ -43,6 +43,13 @@ import re
 import sys
 from dataclasses import dataclass
 
+# Started as `python -m agents.agent3_reviewer`, this file is `__main__`; a
+# module importing it by name (scripts/raise_pr_defects.py reads Agent 4's run
+# the way the review does) must get this module, not a second copy (see
+# tests/unit/test_entry_module_single_copy.py).
+if __name__ == "__main__":
+    sys.modules.setdefault("agents.agent3_reviewer", sys.modules[__name__])
+
 from core.app_context import AppContext
 from integrations.repo_host import get_repo_host
 from core.llm_client import LLMClient
@@ -454,6 +461,9 @@ class RunnerEvidence:
     scenario_key()). `scenarios` is None when the report is unavailable."""
     conclusion: str | None
     scenarios: dict | None = None
+    # X1: the run ran only these scenarios (core/test_selection.py) - a green
+    # run then refutes only a prediction whose own scenario ran and passed.
+    selected: bool = False
 
 
 def scenario_key(title: str) -> str:
@@ -516,7 +526,19 @@ def runner_evidence_for_head(host, pr_number: int, head_branch: str,
     except Exception as e:                                       # noqa: BLE001
         logger.warning("Runner report not read (%s); judging the whole run.", e)
         report = None
-    return RunnerEvidence(conclusion, parse_junit_scenarios(report))
+    selected = False
+    if conclusion == "success":
+        # X1: did the green run run every scenario, or a pull request's
+        # selection (core/test_selection.py)? A red run is read scenario by
+        # scenario anyway.
+        try:
+            from core.test_selection import FILE
+            raw = host.get_run_artifact_file(run["id"], RUNNER_ARTIFACT_PREFIX, FILE)
+            selected = bool(raw) and json.loads(raw).get("mode") == "selected"
+        except Exception as e:                                   # noqa: BLE001
+            logger.info("Runner selection not read (%s); the run counts as the whole "
+                        "suite.", e)
+    return RunnerEvidence(conclusion, parse_junit_scenarios(report), selected)
 
 
 _SCENARIO_IN_TEXT = re.compile(r"\bscenario(?:\s+outline)?\s*:?\s*['\"\u2018\u201c]([^'\"\u2019\u201d\n]{3,})"
@@ -568,8 +590,12 @@ def apply_runner_evidence(report: ReviewReport, runner_result) -> ReviewReport:
         return report
     if isinstance(runner_result, RunnerEvidence):
         conclusion, scenarios = runner_result.conclusion, runner_result.scenarios
+        selected = runner_result.selected
     else:
-        conclusion, scenarios = runner_result, None
+        conclusion, scenarios, selected = runner_result, None, False
+    if conclusion == "success" and selected:
+        # X1: a pull request's selection - only a scenario that ran tells.
+        conclusion = "success (selected scenarios only)"
     if conclusion == "success":
         notes = {id(i): _REFUTED_NOTE for i in candidates
                  if not _scenario_flaky(i, scenarios)}
@@ -1354,6 +1380,14 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
     if _m:
         from core.usage_ledger import post_usage_to_story
         post_usage_to_story(_m.group(1), "Agent 3 (Reviewer)", usage)
+        # RP5: the verdict and findings by severity, for the AI metrics.
+        try:
+            from core.ai_metrics import record_review
+            from integrations.tracker import get_tracker
+            record_review(get_tracker(), _m.group(1), pr_number, report.overall_verdict,
+                          report.issues)
+        except Exception as e:                                       # noqa: BLE001
+            logger.warning("Review not recorded for the AI metrics: %s", e)
     else:
         import logging as _logging
         _logging.getLogger(__name__).info(

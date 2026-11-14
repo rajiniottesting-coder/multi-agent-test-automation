@@ -170,7 +170,9 @@ def test_a_red_and_a_green_run_both_read_their_junit_report():
     # (flaky) must not refute a prediction that it fails.
     green = _Host("success", RED_ELSEWHERE)
     assert runner_evidence_for_head(green, 7, "b", wait_seconds=0).conclusion == "success"
-    assert green.asked == [(42, "pytest-report-", "junit.xml")]
+    # X1: a green run is also asked whether it ran a pull request's selection.
+    assert green.asked == [(42, "pytest-report-", "junit.xml"),
+                           (42, "pytest-report-", "selection.json")]
 
 
 FLAKY_GREEN = (b'<testsuites><testsuite>'

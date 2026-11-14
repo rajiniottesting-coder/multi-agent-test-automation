@@ -166,6 +166,8 @@ def collect(store: Path, features_dir: Path, now: _dt.datetime, with_tracker: bo
         except Exception as e:                                     # noqa: BLE001
             logger.warning("Traceability matrix not built: %s", e)
     history = defect_history(store, tracker, features_dir, sprint, now)
+    ai = ai_metrics(store, tracker, now, int(s.get("window_days") or 30),
+                    int(s.get("keep_days") or 90))
     return {
         "generated": now.strftime("%Y-%m-%d %H:%M"), "window_days": s.get("window_days"),
         "kpis": rd.kpis(runs, results), "trend": rd.trend(runs),
@@ -180,7 +182,31 @@ def collect(store: Path, features_dir: Path, now: _dt.datetime, with_tracker: bo
         "unlinked_defects": (rd.unlinked_defects(defects, rows)
                              if rows is not None and defects is not None else None),
         "defect_history": defect_figures(history, now, int(s.get("window_days") or 30)),
+        "ai_metrics": ai,
     }
+
+
+def ai_metrics(store: Path, tracker, now: _dt.datetime, window_days: int,
+               keep_days: int) -> dict | None:
+    """RP5: bring the store's AI metrics up to date (when the tracker can be
+    read) and add up the window. None before the first read."""
+    from core import ai_metrics as am
+    s = am.settings()
+    if not s.get("enabled", True):
+        return None
+    synced = None
+    if tracker is not None:
+        try:
+            synced = am.sync(store, tracker, now, window_days, max(keep_days, window_days),
+                             s.get("coded_label") or "ai-coded", s.get("story_type") or "Story")
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning("AI metrics not updated: %s", e)
+    data = am.read(store)
+    if not data.get("synced"):
+        return None
+    since = (now - _dt.timedelta(days=window_days)).date().isoformat()
+    return {"summary": am.summary(data["stories"], since), "synced": synced,
+            "as_of": str(data.get("synced"))[:16].replace("T", " ")}
 
 
 def defect_figures(history: dict, now: _dt.datetime, window_days: int) -> dict | None:
@@ -400,7 +426,7 @@ def dashboard_html(data: dict) -> str:
             + f"<div class='card'><h2>By feature file (latest result of each test)</h2>{bd(data['by_file'])}</div>"
             + f"<div class='card'><h2>By story</h2>{bd(data['by_story'])}</div>"
             + f"<div class='card'><h2>Open defects</h2>{defects}</div>"
-            + defect_history_html(data) + "</main>")
+            + defect_history_html(data) + ai_metrics_html(data) + "</main>")
     t = data["trend"]
     ids = [str(r) for r in t["run"]]
     series = [{"type": "bar", "name": k, "x": ids, "y": t[k], "marker": {"color": c},
@@ -480,6 +506,46 @@ def defect_history_html(data: dict) -> str:
             f"- manual testing, acceptance, production. The detection rate is the pipeline's "
             f"share: a low one in a module points at tests that are missing.</p></div>"
             f"<div class='card'><h2>Defects per sprint</h2>{sprints}</div>")
+
+
+def _usd(v) -> str:
+    return "-" if v is None else f"${v:,.2f}"
+
+
+def ai_metrics_html(data: dict) -> str:
+    """RP5: cost, first-attempt success, refusals, review findings, Agent 0."""
+    a = data.get("ai_metrics")
+    if not a:
+        return ("<div class='card'><h2>AI metrics</h2><p class='muted'>No AI metrics yet: "
+                "they start with the first build that reads the tracker.</p></div>")
+    sm = a["summary"]
+    cards = [(_usd(sm["cost_usd"]), "model spend"), (_usd(sm["cost_per_story"]), "per story"),
+             (_share(sm["first_attempt_rate"]), "coded at the first attempt"),
+             (sm["refusal_total"], "stops that needed a person"),
+             (sm["reviews"], "pull requests reviewed"),
+             (_share(sm["recall"]), "Agent 0 recall"), (_share(sm["precision"]),
+                                                        "Agent 0 precision")]
+    kpi = "".join(f"<div class='card kpi'><b>{_e(v)}</b><span>{_e(t)}</span></div>"
+                  for v, t in cards)
+    agents = _table(["Agent", "Spend"], [[_e(n), _usd(c)] for n, c in sm["by_agent"]]) \
+        if sm["by_agent"] else "<p class='muted'>No model spend recorded.</p>"
+    stops = _table(["Stop", "Times"], [[_e(k), n] for k, n in sm["refusals"]]) \
+        if sm["refusals"] else "<p class='muted'>No stop in the window.</p>"
+    f = sm["findings"]
+    review = (f"{sm['reviews']} pull request(s) reviewed, {sm['changes_requested']} sent back; "
+              f"findings: {f.get('blocking', 0)} blocking, {f.get('major', 0)} major, "
+              f"{f.get('minor', 0)} minor, {f.get('info', 0)} info.")
+    costly = ", ".join(f"{_link(k)} {_usd(c)}" for k, c in sm["costliest"]) or "-"
+    return (f"<div class='card'><h2>AI metrics (stories changed in the last "
+            f"{_e(data['window_days'])} days)</h2><div class='grid'>{kpi}</div>"
+            f"<p class='muted'>{sm['stories']} stories, {sm['costed']} with model spend"
+            f"{'' if sm['priced'] else ' (some runs had no price set: their cost is missing)'}; "
+            f"costliest: {costly}. First attempt: of {sm['coded']} coded stories, "
+            f"{sm['first_attempt']} needed one Agent 2 run and no new attempt. "
+            f"{_e(review)} Agent 0: {sm['predictions']} prediction(s) measured against what "
+            f"each pull request changed or failed. Read {_e(a['as_of'])} UTC.</p></div>"
+            f"<div class='card'><h2>Spend by agent</h2>{agents}</div>"
+            f"<div class='card'><h2>Stops that needed a person</h2>{stops}</div>")
 
 
 def _share(value) -> str:
@@ -663,6 +729,21 @@ def summary_pdf(data: dict, path: Path, sprint_end: bool) -> bool:
                                str(r.get("by_pipeline", 0)), str(r["product"]), str(r["open"]),
                                "-" if r["density"] is None else str(r["density"])] for r in mods],
                            style=style)]
+    a = data.get("ai_metrics")
+    if a:
+        sm = a["summary"]
+        flow += [Paragraph(f"AI metrics, last {data['window_days']} days", st["Heading2"]),
+                 Table([["Model spend", "Per story", "First attempt", "Stops", "Reviews",
+                         "Sent back", "Agent 0 recall", "Precision"],
+                        [_usd(sm["cost_usd"]), _usd(sm["cost_per_story"]),
+                         _share(sm["first_attempt_rate"]), str(sm["refusal_total"]),
+                         str(sm["reviews"]), str(sm["changes_requested"]), _share(sm["recall"]),
+                         _share(sm["precision"])]], style=style),
+                 Spacer(1, 0.3 * cm)]
+        if sm["by_agent"]:
+            flow += [Paragraph("Spend by agent: " + html.escape(", ".join(
+                f"{n} {_usd(c)}" for n, c in sm["by_agent"])), st["Normal"]),
+                Spacer(1, 0.3 * cm)]
     failing = [r for r in data["by_file"] if r["failed"]]
     flow += [Paragraph("Risks", st["Heading2"])]
     risks = [f"{r['name']}: {r['failed']} failing of {r['tests']}" for r in failing]

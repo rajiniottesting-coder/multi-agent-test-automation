@@ -432,6 +432,7 @@ Pydantic's `max_length=10` translates to JSON Schema `maxItems`, which some prov
 1. Checks out the pull request **merged with main** (the commit of `refs/pull/<n>/merge` the event was raised for, checked out by SHA - the same commit GitHub takes the workflow from), so the run tests what main will hold after the merge, and a pull request merged while it runs still gets its report; a pull request that conflicts with main gets no run until it is updated (GitHub's rule)
 2. Installs Python deps and Playwright (with browser caching for speed)
 3. Runs `pytest` — the offline unit suite and the BDD tests — with JUnit XML, HTML and Allure output; a failed test keeps its screenshot, video and Playwright trace. A BDD test whose failure names a temporary HTTP error from the application (5xx or 429) is re-run up to twice, 20 s apart (`pytest-rerunfailures`, `--only-rerun`); a failure in a test whose own request the server refused that way, and never answered afterwards, is restated to name it (`tests/conftest.py`), so it is re-run too; nothing else is re-run, and `scripts/collapse_junit_reruns.py` then keeps only each test's final attempt in `junit.xml` and lists every re-run test (a plugin that writes only the final attempt gets a `reruns` property from `core/rerun_record.py`), so Agent 5's counts and Agent 3's per-scenario evidence see one result per test. Page loads are retried earlier still, inside `BasePage.navigate()`. Then every test still failing is **retried once** (`--last-failed`, at most 10; F-19), and `scripts/finalise_junit.py` writes what was learned into `junit.xml` (`core/junit_marks.py`): a pass on the retry is `flaky` (counts as passed, named, recorded on the pipeline health issue) or `outage_recovered`; a failure whose text says the application was unavailable is `outage` (F-7) - reported apart from test failures everywhere. The run step itself never fails the job; the last step, *Decide the E2E result*, does - on anything still failing after the retry (outages included: such a test was not tested), an interrupted run, a collection error, or no tests. On a pull request that changes only `prompts/`, `docs/` or Markdown the browser run and Agent 5 are skipped (see *What runs, per event*); on a push to `main` the browser runs only when a runtime file changed
+3b. **On a pull request, only the tests its change can affect (X1)** - with `agents.agent4_runner.pr_selection.enabled`, *Choose the tests for this pull request* (`core/test_selection.py`) picks the scenarios of the feature files, step modules and page objects it changes (Agent 0's impact graph: a page file's methods, inherited ones included), plus every scenario tagged `smoke_tag` (`@smoke`). A change to anything else read while tests run (the inventory, config, a conftest, the base page, requirements, a framework module, a workflow), the label `full-suite` on the pull request (add it, then re-run the job), a list of changed files that cannot be read, nothing traced, or any error runs **the whole suite** - over-running costs minutes, under-running ships an untested change behind a green tick. The nightly run and every run by hand run everything. The choice is `reports/selection.json` in the run's artifact; Agent 3 reads it, so a green selected run refutes only a prediction whose own scenario ran and passed
 4. On a pull request and on the nightly run, before the browser run: waits while a run of another PR (or the nightly run) that started earlier has not finished (first come, first served, `scripts/e2e_turn.py`). Every PR tests the same live application with the same accounts, and saved state such as a cart would otherwise leak between them. Capped at 15 minutes, then it runs anyway; if the runs cannot be read it does not wait.
 5. After a run with failures: **checks that the application is up** (`scripts/app_probe.py`) - opens the pages in `app_under_test.health_check` and looks for elements always on them, waiting up to `app_health.wait_minutes` for it to come back. Not up: every failure is an outage (not judged, never a defect), with what the browser was shown instead. Up: **every failed test is run again** once (F-19; capped at 100); a pass is a flake, a second failure is a failure - and only that can become a defect
 6. Uploads `reports/` as a workflow artifact (so Agent 5 can read it in the next job)
@@ -449,7 +450,8 @@ Pydantic's `max_length=10` translates to JSON Schema `maxItems`, which some prov
 **What it does:**
 1. Parses `reports/junit.xml` (produced by Agent 4) into a `RunReport`.
 2. Scopes it to the story: keeps only the step-def modules the PR added or changed, so another story's failure is not counted as this one's. If the scope cannot be established it reports everything - over-reporting is cosmetic, hiding a story's own failure is not.
-3. Keeps what scoping dropped. Agent 4 runs the whole suite, so a failure in a test the story does not own still turns the PR check red. Those failures are listed by Python in their own section, under a warning at the top of the comment, and the verdict is `failed` - it is `passed` only when the story's tests and everything else on the branch pass, so the comment always agrees with the PR check.
+3. Keeps what scoping dropped. Agent 4 runs the whole suite (or, with X1, the selection and the smoke set), so a failure in a test the story does not own still turns the PR check red. Those failures are listed by Python in their own section, under a warning at the top of the comment, and the verdict is `failed` - it is `passed` only when the story's tests and everything else on the branch pass, so the comment always agrees with the PR check.
+3a. A story awaiting its deployment (X4) gets *Awaiting deployment* at the top: its failures are expected until the change is live.
 3b. Keeps the application's outages apart (F-7): a test Agent 4 marked `outage` is neither a pass nor a failure - it is listed under *Not judged* with a warning at the top, never counted as failing outside the story, and the verdict is `unavailable` when nothing else failed. A test that passed only on the retry is named under *Passed only on the retry (flaky)* and recorded on the pipeline health issue (F-19).
 4. Enriches with CI context: PR URL, workflow run URL, commit SHA, link to artifact download.
 5. Calls the LLM with a structured schema (`JiraCommentDraft`) to produce ONLY the prose summary of the story's own tests (Python adds the outside failures, outages, flakes and the deterministic links after). When no test of the story could be judged, or the spend budget stops the call (F-24), code writes the same prose instead - the results are always reported.
@@ -1975,7 +1977,22 @@ the `triage` job (`scripts/triage_failures.py`, `core/defects.py`):
   story; the environment (base URL, browser, runner) and the commit are set
   on the defect and written in its description. A field the defect's screen
   does not have is listed in the triage output (`fields_not_set`), not
-  alerted - the description still carries it.
+  alerted - the description still carries it;
+- **a test of a story awaiting its deployment fails as expected (X4):** no
+  defect; the run lists it as `expected` (see *Waiting for a deployment*).
+
+**A new test on a pull request found a real bug (D6).** A pull request's
+failures go to its story's report only - most are the new test's own fault.
+When you read one as a bug in the application, label the pull request
+`raise-defect` (`defects.raise_label`). The *Raise defects from a pull
+request* workflow takes Agent 4's latest finished run on the pull request's
+head commit and raises (or updates) one defect per failure that failed again
+on the retry, exactly as the triage on main does - traced, prioritised, a
+person's covering defect followed - with the summary "fails on pull request
+#n". Nothing is judged passing from a pull request's run. It comments what it
+raised on the pull request and takes the label off; add it again after a new
+run to raise again. Once the test is merged, the runs on main keep each defect
+up to date.
 
 ### What changed under the pipeline (R2, R3, R4, X5)
 
@@ -1990,9 +2007,37 @@ property remembers what was said). Nothing is regenerated, deleted or pushed.
 | R3 | A test case edited in the tracker after its scenario was coded (the `# JIRA:` marker's hash differs), or deleted | One `[watch:test-case-changed]` comment on its story: add `ai-update` - or `[watch:test-case-deleted]`: remove or re-point the scenario |
 | R4 | A story cancelled (done, with a status, resolution or label in `watch.cancelled` - a workflow without a cancel status closes it as Done and labels it `cancelled`) or deleted while its scenarios still run | Its test cases get the retired label and one comment naming the scenario to remove; its open defects one comment |
 | X5 | An agent pull request (`auto/`) in conflict with main, or behind main on a file it changes | One comment on the pull request: `ai-regenerate` (conflict) or `ai-update` (behind) - never a push |
+| X4 | A story awaiting its deployment now labelled `deployed` | The pending label comes off; one `[deployment]` comment on the story and on its open context-update pull request: merge it now |
 
 Dry run: run *Pipeline health* by hand with `dry_run` - the watchers print
 what they would say.
+
+### Waiting for a deployment (X4)
+
+A change story's tests are written before the application changes, so they
+fail until the change is deployed - the correct red. With `deployment.enabled`
+(`core/deployment.py`) the pipeline knows which failures those are:
+
+1. **Pending.** Agent 0's hand-over labels the change story
+   `awaiting-deployment` (`deployment.pending_label`) with one `[deployment]`
+   comment. Add the label yourself to any other story whose change is not live
+   yet.
+2. **Expected.** While a story carries it, its failing tests - and the tests
+   of the test cases it revises (its `impacts` links) - are expected: Agent 5's
+   report opens with *Awaiting deployment*, and the triage on main raises no
+   defect for them (the run lists them as `expected`).
+3. **Deployed.** When the change is live, send the signal - any one of:
+   - add `deployed` (`deployment.deployed_label`) to the story in the tracker
+     (the next pipeline health check picks it up);
+   - run the *Deployment signal* workflow by hand with the story keys;
+   - from the deployment pipeline, a webhook:
+     `POST /repos/<owner>/<repo>/dispatches` with
+     `{"event_type": "deployed", "client_payload": {"stories": ["PRJ-1"]}}`
+     (a token allowed to write the repository's contents).
+
+   The pending label comes off and one reminder - on the story and on its open
+   context-update pull request - asks to merge that pull request now. From the
+   next run on main the story's failures are real again and raise defects.
 
 ### Flaky tests (F-19)
 
@@ -2154,6 +2199,28 @@ per `reporting.density_per` (10) scenarios of the module (a defect closed as
 test, environment, duplicate or not-a-bug is left out; one not yet
 categorised is counted); and one row per recorded sprint. The PDF carries
 the totals, the density table and, at a sprint's end, that sprint's line.
+
+**AI metrics (RP5).** Each Reports run reads the stories changed in the window
+(`core/ai_metrics.py`, settings `ai_metrics`) and keeps one record per story on
+the store (`ai_metrics.json`, kept `keep_days`), so a story archived later
+stays in the figures. *History* and the PDF show, for the window:
+
+- **model spend** in all and **per story**, across every attempt (the usage
+  ledger), and **by agent**; the five costliest stories;
+- **coded at the first attempt** - of the coded stories (`ai-coded`), the
+  share that needed one Agent 2 run (the initial one, not failed; a waiting
+  run is not a run) and no new attempt;
+- **stops that needed a person**, by kind - Agent 1 handing a story back,
+  Agent 2's gate refusing the code, an approval refused, partial automation,
+  an update stopped, a budget hold (each agent's own notice on the story);
+- **review findings** - pull requests reviewed, sent back, and findings by
+  severity (Agent 3 keeps its latest review of each pull request on the
+  story, a hidden `agent3.review.<pr>` property; reviews before this existed
+  are not counted);
+- **Agent 0's recall and precision** over every pull request it predicted
+  for (its outcome: predicted tests against those that changed or failed).
+
+Nothing calls a model; an unreadable tracker leaves the store as it is.
 
 **Severity (RP8).** `reporting.severity_by_tag` maps a scenario's tags (its
 feature's tags included) to Allure's severity; the most severe wins, and an

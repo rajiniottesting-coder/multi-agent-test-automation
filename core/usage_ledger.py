@@ -454,6 +454,37 @@ def story_ledger(story_key: str, tracker) -> dict:
     return out
 
 
+def all_attempts(story_key: str, tracker, comment_bodies: list[str] | None = None) -> dict:
+    """Every usage entry of the story, across all its attempts (RP5's AI
+    metrics count what a story cost in all, not only its current attempt):
+    {"entries", "resets", "holds"}. Comment entries (before the property
+    ledger) and property entries are different runs, so nothing counts twice.
+    Never raises: an unreadable store reads as empty."""
+    from core.spend_budget import _HOLD_RE
+    out = {"entries": [], "resets": 0, "holds": 0}
+    if tracker is None or not story_key:
+        return out
+    try:
+        bodies = (comment_bodies if comment_bodies is not None
+                  else tracker.get_comments(story_key)) or []
+        out["entries"] = [p for p in (parse_usage_comment(b) for b in bodies) if p]
+        out["resets"] = sum(1 for b in bodies if RESET_MARKER in (b or ""))
+        out["holds"] = sum(1 for b in bodies if _HOLD_RE.search(b or ""))
+        if mode(tracker) == "properties":
+            props = _read_properties(tracker, story_key, "llm.")
+            for key in sorted(props, key=_stamp):
+                value = props[key] or {}
+                if key.startswith(PROP_USAGE + "."):
+                    out["entries"].append(_entry(value.get("agent", "unknown"), value))
+                elif key.startswith(PROP_RESET + "."):
+                    out["resets"] += 1
+                elif key.startswith(PROP_HOLD + "."):
+                    out["holds"] += 1
+    except Exception as e:                                         # noqa: BLE001
+        logger.warning("Usage of %s not read: %s", story_key, e)
+    return out
+
+
 def aggregate_story_usage(comment_bodies: list[str], extra_entries: list[dict] | None = None) -> dict:
     """Sum usage across all [LLM-USAGE] comments on a story (comments mode).
 
@@ -582,6 +613,17 @@ def _agent_parts(name: str) -> tuple:
     if failed:
         run_mode = f"{run_mode} (failed)" if run_mode else "failed"
     return base, run_mode
+
+
+def agent_parts(name: str) -> tuple:
+    """Public: (agent, kind of run) of a ledger entry's name - for readers
+    outside this module (core/ai_metrics.py)."""
+    return _agent_parts(name)
+
+
+def read_properties(tracker, issue: str, prefix: str) -> dict:
+    """Public: the issue's hidden properties under `prefix`."""
+    return _read_properties(tracker, issue, prefix)
 
 
 def by_agent(entries: list[dict]) -> list[dict]:
