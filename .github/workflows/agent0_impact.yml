@@ -7,8 +7,10 @@
 #                         impact-applied are settled - its own job, see below
 #   pull_request          a change to pages/ or app_inventory/ is analysed
 #                         structurally and reported on the pull request
-#   schedule (nightly)    the inventory staleness check, then its drift
-#                         analysed (on demand: dispatch with mode = drift)
+#   dispatch (nightly)    the drift analysis of the Inventory Health report:
+#                         that workflow runs the one nightly crawl and starts
+#                         mode = drift with its run id (X10); dispatched by
+#                         hand without one, the drift job crawls itself
 #
 # SWITCHED OFF BY DEFAULT. The `gate` job reads agents.agent0_impact.enabled
 # from config.yaml; while it is false every analysis job is skipped. The
@@ -41,9 +43,14 @@ on:
         type: choice
         options: [scan, drift]
         default: scan
+      drift_report_run:
+        description: "mode = drift: the Inventory Health run whose report to analyse (it sets this itself). Blank = check the inventory now"
+        required: false
+        default: ""
   schedule:
     - cron: "15 5 * * 1-5"         # scan + reconcile, 10:45 IST, weekdays
-    - cron: "45 1 * * *"           # nightly drift, 07:15 IST
+    # No drift schedule (X10): Inventory Health (02:30 UTC) crawls once and
+    # starts the drift job with its report.
     # Story scan only (reconcile stays daily - its two-scan rule counts
     # scans). Every 30 minutes, weekdays 10:00-19:00 IST (04:30-13:30 UTC; GitHub cron
     # is always UTC), at minute :02/:32 - never on :00 or :30. GitHub starts
@@ -98,7 +105,7 @@ jobs:
   scan:
     name: Analyse, hand over, reconcile
     needs: gate
-    if: needs.gate.outputs.enabled == 'true' && ((github.event_name == 'workflow_dispatch' && github.event.inputs.mode != 'drift') || (github.event_name == 'schedule' && github.event.schedule != '45 1 * * *'))
+    if: needs.gate.outputs.enabled == 'true' && ((github.event_name == 'workflow_dispatch' && github.event.inputs.mode != 'drift') || github.event_name == 'schedule')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # Job permissions replace the workflow's, so contents is restated.
@@ -282,10 +289,17 @@ jobs:
   drift:
     name: Impact of nightly inventory drift
     needs: gate
-    # Nightly, or on demand: Run workflow with mode = drift.
-    if: needs.gate.outputs.enabled == 'true' && (github.event.schedule == '45 1 * * *' || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'drift'))
+    # Nightly, started by Inventory Health with its report (X10), or on
+    # demand: Run workflow with mode = drift.
+    if: needs.gate.outputs.enabled == 'true' && github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'drift'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Job permissions replace the workflow's, so those are restated; actions:
+    # read fetches the Inventory Health run's report.
+    permissions:
+      contents: read
+      pull-requests: write
+      actions: read
     steps:
       # The drift job analyses the inventory, not a story. A story key here
       # would be silently ignored, so the run stops and says so instead.
@@ -314,7 +328,18 @@ jobs:
       - run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          bash scripts/install_browser.sh chromium
+      - name: Fetch the Inventory Health report
+        # The nightly crawl's report (X10): no second crawl of the same pages.
+        if: github.event.inputs.drift_report_run != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: inventory-drift-report
+          path: reports
+          run-id: ${{ github.event.inputs.drift_report_run }}
+          github-token: ${{ github.token }}
+      - name: Install the browser (a run by hand checks the inventory itself)
+        if: github.event.inputs.drift_report_run == ''
+        run: bash scripts/install_browser.sh chromium
       - name: Check the inventory, then analyse the drift
         env:
           # Same per-role application credentials as Agent 4's E2E step.
@@ -328,11 +353,16 @@ jobs:
           JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
           GITHUB_TOKEN: ${{ steps.identity.outputs.token }}
           GITHUB_REPO: ${{ vars.GH_REPO }}
+          REPORT_RUN: ${{ github.event.inputs.drift_report_run }}
         run: |
           mkdir -p reports
-          # --compare adds the elements no inventory selector covers. Report
-          # only: it never changes drift, and the drift analysis ignores it.
-          python -m scripts.check_inventory_staleness --compare --json reports/drift.json || true
+          # Started by Inventory Health: its report is already here. By hand:
+          # check now. --compare adds the elements no inventory selector
+          # covers. Report only: it never changes drift, and the drift analysis
+          # ignores it. A failed login writes no report, so nothing follows.
+          if [ -z "$REPORT_RUN" ]; then
+            python -m scripts.check_inventory_staleness --compare --json reports/drift.json || true
+          fi
           DRY=()
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then DRY=(--dry-run); fi
           if [ -f reports/drift.json ]; then
@@ -357,7 +387,8 @@ jobs:
       - name: Keep the report for the next scan
         # The weekday scan reads the newest of these for the uncovered-element
         # hint. Short retention: Agent 0 refuses a report older than 48h anyway.
-        if: always()
+        # A report from Inventory Health is kept there already.
+        if: always() && github.event.inputs.drift_report_run == ''
         uses: actions/upload-artifact@v4
         with:
           name: inventory-drift-report

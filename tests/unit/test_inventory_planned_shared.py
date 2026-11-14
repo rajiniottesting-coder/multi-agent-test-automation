@@ -555,6 +555,15 @@ def test_a_planned_page_not_live_does_not_count_as_measured():
     assert upd.layout and upd.layout[0]["pages"] == ["a", "b", "c"] and upd.added == []
 
 
+def test_an_always_page_read_but_never_compared_does_not_count_as_measured():
+    """X10: the nightly check reads an `always` page's keys (a menu with an
+    address) but never compares it, so it can carry no new element."""
+    drift = _pages_drift({"a": dict(MENU), "b": dict(MENU), "c": dict(MENU)}, extra_pages=["nav"])
+    inv = _pages_inv("a", "b", "c", "nav", nav={"always": True})
+    upd = iu.build_update(drift, inv, set())
+    assert upd.layout and upd.layout[0]["pages"] == ["a", "b", "c"] and upd.added == []
+
+
 def test_the_minimum_is_configured_and_passed():
     import yaml
     from core.impact_settings import DEFAULTS

@@ -980,8 +980,18 @@ jobs:
         # the retry, outages included - a test the application stopped was not
         # tested, so the check must not go green - and on a run that was
         # interrupted, could not collect, or produced no report or no tests.
+        # X6: a failure whose story awaits its deployment (X4) is expected,
+        # not a failure - so the required Run Tests check does not block a
+        # change story's pull request before the change is live. The tracker
+        # decides; unreadable (a fork's pull request has no secrets), every
+        # failure counts. Outages still fail.
         if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory != 'false') && steps.pr_changes.outputs.e2e != 'false' && steps.e2e.outcome != 'skipped'
-        run: python -m scripts.finalise_junit --verdict reports/junit.xml --exit-code "${{ steps.e2e.outputs.exit_code }}"
+        env:
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+        run: python -m scripts.finalise_junit --verdict reports/junit.xml --exit-code "${{ steps.e2e.outputs.exit_code }}" --expected-failures
 
   # ─────────────────────────────────────────────────────────────
   # Job 2: Agent 5 — Post test results back to Jira

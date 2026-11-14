@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WF = ROOT / ".github" / "workflows"
 AGENTS = {"agent0_impact.yml": "scan", "agent1_analyst.yml": "analyze",
           "agent2_coder.yml": "generate"}
-DAILY = {"15 5 * * 1-5", "45 1 * * *"}          # Agent 0's daily scan + reconcile, drift
+DAILY = {"15 5 * * 1-5"}          # Agent 0's daily scan + reconcile
 
 
 def _wf(name):
@@ -71,7 +71,8 @@ def test_the_agents_do_not_fire_together():
 def test_agent0s_30_minute_runs_are_the_story_scan_only():
     jobs = _wf("agent0_impact.yml")["jobs"]
     for cron in _working_hour_crons("agent0_impact.yml"):
-        assert "github.event.schedule != '45 1 * * *'" in jobs["scan"]["if"]
+        assert "github.event_name == 'schedule'" in jobs["scan"]["if"]
+        assert "schedule" not in jobs["drift"]["if"], "the drift job runs on dispatch only"
         assert f"'{cron}'" not in jobs["reconcile"]["if"]
     assert "github.event.schedule == '15 5 * * 1-5'" in jobs["reconcile"]["if"], \
         "reconcile keeps its one daily run: its two-scan rule counts scans"

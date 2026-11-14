@@ -120,7 +120,11 @@ def test_the_workflow_verifies_once_more_only_when_the_application_is_up():
     s = _steps()
     retry = s["retry"]
     assert "steps.verify.outputs.code != '0'" in retry["if"]
-    assert "d.get('available') is True" in retry["run"] and "verify_locators" in retry["run"]
+    assert "d.get('available') is True" in retry["run"]
+    assert "check_inventory_staleness" in retry["run"]
+    assert retry["run"].index("rm -f reports/drift.json") \
+        < retry["run"].index("check_inventory_staleness"), \
+        "the first reading's report is never handed on in place of the second"
     names = list(s)
     assert names.index("probe") < names.index("retry") < names.index("Report")
     report = s["Report"]

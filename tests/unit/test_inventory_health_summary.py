@@ -34,7 +34,9 @@ OUTPUT = "  [login] https://a.example/login\n    PAGE DID NOT RENDER\n  ERROR: l
 # The inline script the workflow ran before this change, kept verbatim as the
 # reference for "nothing else changed" - except the healthy sentence, which
 # E128 corrected (it said "exactly one element" of keys declared removed,
-# conditional, planned or families too).
+# conditional, planned or families too), and the drift advice, which X10
+# extended (the inventory update proposes a STALE fix; INVALID and NOT
+# RENDERED lines).
 _BEFORE = r'''
 import os
 from pathlib import Path
@@ -66,8 +68,10 @@ elif code == "1":
             "1. Each **AMBIG** line lists what it matched; a contains-match "
             "`text=` selector also gets a `fix:` line. To watch it locally:",
             "   `python -m scripts.verify_locators --page <page> --only-problems`",
-            "2. **STALE** (0 matches) — the app changed. Fix that selector "
-            "in the inventory by hand.",
+            "2. **STALE** (0 matches) — the app changed. When Agent 0 is on, "
+            "its drift analysis reads this same report and the inventory "
+            "update proposes the change as a pull request; otherwise fix "
+            "that selector in the inventory by hand.",
             "3. **AMBIG** (>1) — a key meant to be ONE element (a heading, "
             "a message): tighten its selector to that element - use the "
             "`fix:` line when there is one. Never declare it `multi_match` "
@@ -75,7 +79,11 @@ elif code == "1":
             "EVERY match (rows, cards, buttons) belongs in `multi_match`.",
             "4. Keys listed under `conditional` only exist after an "
             "interaction, so a tool that never clicks always reports them "
-            "stale. Do not 'fix' those.", "",
+            "stale. Do not 'fix' those.",
+            "5. **INVALID** — the browser rejects the selector: fix it by "
+            "hand (it is never proposed for removal). **NOT RENDERED** — none "
+            "of a page's expected keys appeared: check the application, the "
+            "login and redirects; nothing on that page is read as drift.", "",
             "Do NOT regenerate the inventory to repair this: a fresh draft "
             "carries no `elements_notes`, `multi_match` or `key_methods`, "
             "and promoting one would delete the curation that prevents "
@@ -190,7 +198,7 @@ def test_the_report_uses_the_script_and_keeps_the_evidence():
     assert "scripts.inventory_health_report" in report["run"]
     assert "--app-probe reports/app_probe.json" in report["run"]
     assert "PYEOF" not in WF.read_text(encoding="utf-8"), "one summary, in one tested place"
-    upload = next(s for s in steps if "upload-artifact" in str(s.get("uses", "")))
+    upload = next(s for s in steps if s.get("name") == "Upload report")
     assert "reports/app_probe.json" in upload["with"]["path"]
 
 

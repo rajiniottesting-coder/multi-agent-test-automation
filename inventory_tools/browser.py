@@ -18,7 +18,7 @@ import os
 from contextlib import contextmanager
 from typing import Iterator, Optional
 
-from inventory_tools.introspect import COVER_ATTR, SHARED_ATTR, TEST_ID_ATTRS, FRAME_DELIM
+from inventory_tools.introspect import COVER_ATTR, SHARED_ATTR, TEST_ID_ATTRS, FRAME_DELIM, INVALID
 
 logger = logging.getLogger(__name__)
 
@@ -649,39 +649,34 @@ def _resolve_one(scope, selector: str):
     return scope.locator(selector)
 
 
-def _count_selector(page, selector: str) -> int:
-    """Count matches for a selector, entering iframe(s) if it is frame-prefixed."""
+def locate(page, selector: str):
+    """A locator for one inventory selector, entering iframe(s) when it is
+    frame-prefixed (`iframe#x >>> [..]`). Raises on an invalid selector."""
     if FRAME_DELIM in selector:
         parts = [p.strip() for p in selector.split(FRAME_DELIM)]
         *frame_parts, elem = parts
         loc = page
         for fp in frame_parts:
             loc = loc.frame_locator(fp)
-        return _resolve_one(loc, elem).count()
-    return _resolve_one(page, selector).count()
+        return _resolve_one(loc, elem)
+    return _resolve_one(page, selector)
 
 
-def resolve_selectors(page, url: str, selectors: list[str],
-                      test_attrs: tuple = TEST_ID_ATTRS
-                      ) -> tuple[dict[str, int], set[str], bool]:
-    """Navigate to `url`; return (counts_per_selector, live_test_ids, reachable).
+def _count_selector(page, selector: str) -> int:
+    """Count matches for a selector, entering iframe(s) if it is frame-prefixed."""
+    return locate(page, selector).count()
 
-    Handles frame-prefixed selectors (`iframe#x >>> [..]`), role=/text= locators,
-    and open shadow DOM. `reachable` is False on navigation error / HTTP >= 400.
-    """
-    try:
-        resp = _goto_spa_tolerant(page, url)
-    except Exception:
-        return {}, set(), False
-    reachable = True
-    if resp is not None and resp.status >= 400:
-        reachable = False
+
+def count_on_page(page, selectors: list[str], test_attrs: tuple = TEST_ID_ATTRS
+                  ) -> tuple[dict[str, int], set[str]]:
+    """Read the page as it is now: (counts_per_selector, live_test_ids).
+    A selector the browser rejects counts INVALID (-1), never 0."""
     counts: dict[str, int] = {}
     for sel in selectors:
         try:
             counts[sel] = _count_selector(page, sel)
         except Exception:
-            counts[sel] = 0
+            counts[sel] = INVALID
     # live test-ids across main + child frames (for drift's "new element" list)
     ids_js = _test_ids_js(test_attrs)
     data_tests: set[str] = set()
@@ -700,4 +695,107 @@ def resolve_selectors(page, url: str, selectors: list[str],
             data_tests.update(frame.evaluate(ids_js))
         except Exception:
             continue
+    return counts, data_tests
+
+
+def resolve_selectors(page, url: str, selectors: list[str],
+                      test_attrs: tuple = TEST_ID_ATTRS
+                      ) -> tuple[dict[str, int], set[str], bool]:
+    """Navigate to `url`; return (counts_per_selector, live_test_ids, reachable).
+
+    Handles frame-prefixed selectors (`iframe#x >>> [..]`), role=/text= locators,
+    and open shadow DOM. `reachable` is False on navigation error / HTTP >= 400.
+    An invalid selector counts INVALID (-1).
+    """
+    try:
+        resp = _goto_spa_tolerant(page, url)
+    except Exception:
+        return {}, set(), False
+    reachable = True
+    if resp is not None and resp.status >= 400:
+        reachable = False
+    counts, data_tests = count_on_page(page, selectors, test_attrs)
     return counts, data_tests, reachable
+
+
+# How many of an unexpected selector's matches are described in a report.
+MAX_DESCRIBED = 5
+
+# One line per match: tag, id, classes, whether it is shown, and its text. A
+# report then says WHICH elements an ambiguous selector caught, so the nightly
+# run is enough to fix it - "AMBIG(2)" alone needed a local reproduction.
+DESCRIBE_JS = r"""
+(els, limit) => els.slice(0, limit).map(el => {
+  const id = el.id ? '#' + el.id : '';
+  const cls = (typeof el.className === 'string' && el.className.trim())
+    ? '.' + el.className.trim().split(/\s+/).slice(0, 4).join('.') : '';
+  const r = el.getBoundingClientRect();
+  const st = window.getComputedStyle(el);
+  const shown = r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none';
+  const text = (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+  return `<${el.tagName.toLowerCase()}${id}${cls}> ${shown ? 'shown' : 'hidden'} "${text}"`;
+})
+"""
+
+
+def describe_locator(locator, limit: int = MAX_DESCRIBED) -> list[str]:
+    """One line per match, at most `limit` - [] when they cannot be read."""
+    try:
+        return [str(d) for d in (locator.evaluate_all(DESCRIBE_JS, limit) or [])]
+    except Exception:                                          # noqa: BLE001
+        return []
+
+
+def exact_text_form(selector: str) -> str | None:
+    """The exact-match form of a contains-match text selector, or None.
+
+    `text=All Items` (unquoted) is a case-INSENSITIVE SUBSTRING match in
+    Playwright: it also matches "All Items Catalog", "all items" in a menu, or
+    a hidden copy - one site change away from matching two. `text="All Items"`
+    (quoted) matches only an element whose whole text is exactly that. Only a
+    whole `text=` selector is converted; a chained or already-quoted one is not.
+    """
+    import re
+    m = re.fullmatch(r"text=(?![\"'])(.+)", (selector or "").strip())
+    if not m or ">>" in m.group(1):
+        return None
+    words = m.group(1).strip()
+    return 'text="' + words.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def exact_fix(page, selector: str) -> str | None:
+    """The exact text form of a contains-match `text=` selector when it matches
+    exactly one element on the page as it is now, else None. Never raises."""
+    exact = exact_text_form(selector)
+    if not exact:
+        return None
+    try:
+        return exact if locate(page, exact).count() == 1 else None
+    except Exception:                                          # noqa: BLE001
+        return None
+
+
+def ambiguity_advice(page, selector: str) -> dict:
+    """For a selector matching several elements on the page as it is now:
+    {"described": [lines], "exact_fix": the exact text form when it matches
+    exactly one, else None}. Never raises."""
+    try:
+        described = describe_locator(locate(page, selector))
+    except Exception:                                          # noqa: BLE001
+        described = []
+    return {"described": described, "exact_fix": exact_fix(page, selector)}
+
+
+def signed_out_pages(inventory: dict, login_path: str | None, only_page: str | None = None) -> dict:
+    """The inventory pages served at the login path: a signed-in browser is sent
+    away from them, so they are checked BEFORE signing in. Checked after it,
+    the login page never rendered and its selectors were never read."""
+    if not login_path:
+        return {}
+
+    def _norm(url) -> str:
+        return (str(url or "").split("?")[0].split("#")[0].rstrip("/")) or "/"
+
+    return {name: entry for name, entry in ((inventory or {}).get("pages") or {}).items()
+            if isinstance(entry, dict) and _norm(entry.get("url")) == _norm(login_path)
+            and only_page in (None, name)}

@@ -6,6 +6,7 @@ never a stale hint. Generic names only; no browser, no tracker.
 """
 import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 import yaml
@@ -128,13 +129,23 @@ def _jobs():
 
 
 def test_the_nightly_check_runs_compare_and_keeps_its_report():
+    """Nightly the report comes from Inventory Health (X10), which keeps it;
+    a drift run by hand crawls itself and keeps its own."""
     steps = _jobs()["drift"]["steps"]
     run = "\n".join(s.get("run", "") for s in steps)
     assert "check_inventory_staleness --compare --json reports/drift.json" in run
     upload = next(s for s in steps if "upload-artifact" in s.get("uses", ""))
     assert upload["with"]["name"] == "inventory-drift-report"
     assert upload["with"]["path"] == "reports/drift.json"
-    assert upload.get("if") == "always()"
+    assert upload.get("if") == "always() && github.event.inputs.drift_report_run == ''"
+    health = yaml.safe_load((Path(__file__).resolve().parents[2] / ".github" / "workflows"
+                             / "inventory_health.yml").read_text(encoding="utf-8"))
+    kept = [s for s in health["jobs"]["verify"]["steps"]
+            if "upload-artifact" in s.get("uses", "")
+            and s["with"]["name"] == "inventory-drift-report"]
+    assert len(kept) == 1 and kept[0]["with"]["path"] == "reports/drift.json"
+    verify = next(s for s in health["jobs"]["verify"]["steps"] if s.get("id") == "verify")
+    assert "check_inventory_staleness --compare" in verify["run"]
 
 
 def test_the_scan_fetches_it_without_ever_failing_on_it():

@@ -3,7 +3,7 @@
     python -m scripts.finalise_junit reports/junit.xml [--retry reports/junit-retry.xml]
                                      [--app-probe reports/app_probe.json]
     python -m scripts.finalise_junit --count-failed reports/junit.xml
-    python -m scripts.finalise_junit --verdict reports/junit.xml --exit-code 1
+    python -m scripts.finalise_junit --verdict reports/junit.xml --exit-code 1 [--expected-failures]
 
 Runs after scripts/collapse_junit_reruns.py.
 
@@ -25,6 +25,15 @@ Runs after scripts/collapse_junit_reruns.py.
              included - the application stopped it, so it was not tested),
              when pytest was interrupted or could not collect (`--exit-code`),
              or when there is no readable report or no test at all.
+  --expected-failures  (with --verdict, X6) a failure whose story awaits its
+             deployment (core/deployment.py, X4) is expected, not a failure:
+             a change story's absence test and revised tests fail until the
+             change is live. When every failure is expected the E2E passes,
+             with a notice naming each test and its story - so a required
+             Run Tests check does not block a change story's pull request.
+             The tracker decides (the same rule as the triage on main,
+             core.defects.awaiting_deployment); off, unreadable or not
+             configured, every failure counts. Outages still fail.
 
 Marking never fails: a missing or unreadable file is left alone, exit code 0.
 """
@@ -149,8 +158,9 @@ def count_failed(path: Path) -> int:
     return sum(1 for c in jm.cases(tree.getroot()) if jm.outcome(c) in ("failed", "error"))
 
 
-def verdict(path: Path, exit_code: str | None) -> tuple:
-    """(job exit code, reason) for the E2E after the retry."""
+def verdict(path: Path, exit_code: str | None, expected: dict | None = None) -> tuple:
+    """(job exit code, reason) for the E2E after the retry. `expected`:
+    {test id: story} - failures that wait for the story's deployment (X6)."""
     code = (exit_code or "").strip()
     if code and code not in ("0", str(_TESTS_FAILED)):
         names = {"2": "interrupted", "3": "an internal error", "4": "a usage error",
@@ -164,15 +174,50 @@ def verdict(path: Path, exit_code: str | None) -> tuple:
         return 1, "the report holds no tests"
     failing = [c for c in cases if jm.outcome(c) in ("failed", "error")]
     outages = [c for c in failing if jm.is_outage(c)]
+    waiting = [c for c in failing if not jm.is_outage(c)
+               and jm.case_id(c) in (expected or {})]
     flaky = [c for c in cases if jm.is_flaky(c)]
-    if failing:
-        real = len(failing) - len(outages)
+    waits = (f"{len(waiting)} failed as expected (awaiting deployment: "
+             f"{', '.join(sorted({expected[jm.case_id(c)] for c in waiting}))})") \
+        if waiting else ""
+    real = len(failing) - len(outages) - len(waiting)
+    if real or outages:
         parts = [f"{real} failed"] if real else []
         if outages:
             parts.append(f"{len(outages)} not judged (application unavailable)")
+        if waits:
+            parts.append(waits)
         return 1, f"{' and '.join(parts)} of {len(cases)} after the retry"
     note = f" ({len(flaky)} passed only on the retry - flaky)" if flaky else ""
+    if waits:
+        return 0, f"{len(cases) - len(waiting)} of {len(cases)} tests passed and {waits}{note}"
     return 0, f"all {len(cases)} tests passed{note}"
+
+
+def expected_failures(path: Path, features_dir: Path | None = None) -> dict:
+    """{test id: pending story} for the report's failures that wait for a
+    deployment (X6). {} - every failure real - when deployment is off, the
+    tracker cannot be used, or anything else goes wrong: never fails."""
+    try:
+        from core import deployment
+        if not deployment.enabled():
+            return {}
+        tree = _load(path, quiet=True)
+        if tree is None:
+            return {}
+        failing = [jm.case_id(c) for c in jm.cases(tree.getroot())
+                   if jm.outcome(c) in ("failed", "error") and not jm.is_outage(c)]
+        if not failing:
+            return {}
+        from config.paths import FEATURES_DIR
+        from core.defects import awaiting_deployment
+        from integrations.tracker import get_tracker
+        return awaiting_deployment(get_tracker(), failing, features_dir or FEATURES_DIR)
+    except Exception as e:                                         # noqa: BLE001
+        from core.redaction import error_text
+        print(f"::warning::Stories awaiting deployment not read ({error_text(e)}) - "
+              f"every failure counts.")
+        return {}
 
 
 def main(argv=None) -> int:
@@ -185,6 +230,11 @@ def main(argv=None) -> int:
     ap.add_argument("--verdict", action="store_true",
                     help="exit 1 when the E2E still fails after the retry")
     ap.add_argument("--exit-code", help="--verdict: the first pytest run's exit code")
+    ap.add_argument("--expected-failures", action="store_true",
+                    help="--verdict: a failure whose story awaits its deployment is "
+                         "expected (X6); read from the tracker")
+    ap.add_argument("--features-dir", default=None,
+                    help="--expected-failures: where the feature files are")
     args = ap.parse_args(argv)
     path = Path(args.path)
 
@@ -192,7 +242,12 @@ def main(argv=None) -> int:
         print(count_failed(path))
         return 0
     if args.verdict:
-        code, reason = verdict(path, args.exit_code)
+        expected = expected_failures(
+            path, Path(args.features_dir) if args.features_dir else None) \
+            if args.expected_failures else {}
+        for test, story in sorted(expected.items()):
+            print(f"::notice::Expected to fail until {story} is deployed: {test}")
+        code, reason = verdict(path, args.exit_code, expected)
         print(("E2E failed: " if code else "E2E passed: ") + reason)
         return code
 

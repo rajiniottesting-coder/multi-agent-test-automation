@@ -120,6 +120,35 @@ def _feature_file(test_id: str) -> str:
     return (module[len("test_"):] if module.startswith("test_") else module) + ".feature"
 
 
+def waits_for(waiting, test_id: str, features_dir: Path, tracker=None,
+              s: dict | None = None) -> str | None:
+    """The story awaiting its deployment that this failing test waits for
+    (X4), or None. `waiting`: a core.deployment.PendingStories (None or empty:
+    nothing waits). One rule for the triage on main and Agent 4's verdict (X6):
+    the test's owner, or the change story revising its test case."""
+    if not waiting:
+        return None
+    traced = trace_of(test_id, features_dir, tracker, s)
+    return waiting.story_of(traced.get("owner"), traced.get("test_case"))
+
+
+def awaiting_deployment(tracker, test_ids, features_dir: Path,
+                        s: dict | None = None) -> dict:
+    """{test id: pending story} for the failing tests that wait for a
+    deployment. {} when deployment is off, nothing waits, or the tracker
+    cannot be read - a failure then counts as real."""
+    from core import deployment
+    if not test_ids or tracker is None or not deployment.enabled():
+        return {}
+    waiting = deployment.PendingStories(tracker)
+    out = {}
+    for test in test_ids:
+        story = waits_for(waiting, test, features_dir, tracker, s)
+        if story:
+            out[test] = story
+    return out
+
+
 def trace_of(test_id: str, features_dir: Path, tracker=None, s: dict | None = None) -> dict:
     """What a failing test is traced to: {"test_case", "owner", "traced_by"}.
 
@@ -687,13 +716,11 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
     waiting = PendingStories(tracker) if failing else None
     for case in failing:
         test = jm.case_id(case)
-        if waiting:
-            traced_now = trace_of(test, features_dir, tracker, s)
-            story = waiting.story_of(traced_now.get("owner"), traced_now.get("test_case"))
-            if story:
-                result["expected"].append(f"{test} ({story})")
-                failing_tests.setdefault(test, None)
-                continue
+        story = waits_for(waiting, test, features_dir, tracker, s)
+        if story:
+            result["expected"].append(f"{test} ({story})")
+            failing_tests.setdefault(test, None)
+            continue
         d = _diagnosis(case)
         label = defect_label(test, d.label, s)
         failing_labels.add(label)
