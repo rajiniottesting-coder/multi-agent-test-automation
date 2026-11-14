@@ -178,3 +178,16 @@ def test_a_budget_hold_counts_once_in_either_store(world):
     jira.add_comment("SBX-3", "[budget:hold] spent: 8.0260 limit: 8.00\nModel spend ...")
     assert ul.record_hold("SBX-3", 8.026, 8.0, jira=jira)
     assert _rec(world, "SBX-3")["refusals"]["held by the spend budget"] == 1
+
+
+def test_a_throw_away_story_is_left_out(world, tmp_path, monkeypatch):
+    """14 Nov 2026: a validation story's spend and review were counted; like
+    the defect history, issues labelled cleanup.delete_label are left out."""
+    fake, jira = world
+    monkeypatch.setattr(jira, "defects_for_history",
+                        lambda t, updated_since=None, open_only=False: _stories(fake))
+    am.sync(tmp_path, jira, NOW, 30, 90)
+    assert "SBX-1" in am.read(tmp_path)["stories"]
+    fake.issues["SBX-1"]["labels"].append("test-data")
+    am.sync(tmp_path, jira, NOW, 30, 90)
+    assert "SBX-1" not in am.read(tmp_path)["stories"], "dropped once labelled"

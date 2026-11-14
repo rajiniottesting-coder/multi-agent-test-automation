@@ -165,7 +165,15 @@ def sync(store: Path, tracker, now: _dt.datetime, days: int, keep_days: int,
     data = read(store)
     recs = data["stories"]
     read_n = 0
+    # Throw-away stories (cleanup.delete_label) are left out, as from the
+    # defect history: label them, let a Reports run drop them, then delete
+    # them (14 Nov 2026: a validation story's spend and review were counted).
+    from core.ops_settings import section
+    throw_away = section("cleanup").get("delete_label") or ""
     for story in stories:
+        if throw_away and throw_away in (story.get("labels") or []):
+            recs.pop(story["key"], None)
+            continue
         try:
             rec = story_record(tracker, story, coded_label)
         except Exception as e:                                     # noqa: BLE001
