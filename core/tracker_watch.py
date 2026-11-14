@@ -68,7 +68,8 @@ def _say_once(tracker, key: str, slot: str, value: str, body: str, result: dict,
         return True
     from integrations.tracker import capability
     try:
-        tracker.add_comment(key, body)
+        from integrations.tracker import add_markdown_comment
+        add_markdown_comment(tracker, key, body)
         put = capability(tracker, "set_property")
         if put is not None:
             memory[slot] = value
@@ -244,8 +245,9 @@ def stories_retired(tracker, markers: list, result: dict, s: dict, dry_run: bool
                 continue
             try:
                 tracker.add_label(m.key, retired)
-                tracker.add_comment(
-                    m.key, f"[watch:retired] Its story {owner} was {why}, so this test case is "
+                from integrations.tracker import add_markdown_comment
+                add_markdown_comment(
+                    tracker, m.key, f"[watch:retired] Its story {owner} was {why}, so this test case is "
                            f"retired. Its scenario in `{m.file}` (\"{m.title}\") still runs: "
                            f"remove it in a pull request.")
             except Exception as e:                                 # noqa: BLE001

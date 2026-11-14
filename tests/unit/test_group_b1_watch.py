@@ -28,6 +28,14 @@ def _edit(at, field="description", by="pat"):
             "items": [{"field": field, "fromString": "old", "toString": "new"}]}
 
 
+
+def _plain(text: str) -> str:
+    """A comment as a person reads it. The sandbox runs the REAL JiraClient,
+    whose render_markdown (integrations/jira_markup.py) turns `x` into Jira's
+    {{x}} and escapes - and _ inside it; the fake Jira only stores what it is
+    given. Drop those marks to read the text."""
+    return text.replace("{{", "").replace("}}", "").replace("\\", "").replace("`", "")
+
 @pytest.fixture
 def world(monkeypatch, tmp_path):
     fake = FakeJira()
@@ -63,9 +71,9 @@ def test_an_edit_after_drafting_suggests_checking_the_test_cases(world):
                                _edit("2026-11-12T05:00:00.000+0000")]
     out = _run(world)
     assert out["story_edited"] == ["SBX-1"]
-    (body,) = fake.comments["SBX-1"]
+    (body,) = map(_plain, fake.comments["SBX-1"])
     assert body.startswith("[watch:story-edited]") and "after its test cases were drafted" in body
-    assert "add `ai-ready`" in body and "Nothing was changed automatically" in body
+    assert "add ai-ready" in body and "Nothing was changed automatically" in body
     assert _run(world)["story_edited"] == [], "said once"
     fake.histories["SBX-1"].append(_edit("2026-11-13T05:00:00.000+0000", field="summary"))
     assert _run(world)["story_edited"] == ["SBX-1"], "a newer edit is news again"
@@ -78,7 +86,7 @@ def test_an_edit_after_coding_suggests_the_impact_check(world):
                                       "ai-processed ai-coded"),
                                _edit("2026-11-13T05:00:00.000+0000")]
     _run(world)
-    assert "after its tests were coded. Add `impact-check`" in fake.comments["SBX-2"][0]
+    assert "after its tests were coded. Add impact-check" in _plain(fake.comments["SBX-2"][0])
 
 
 def test_edits_before_drafting_or_long_ago_are_quiet(world):
@@ -97,8 +105,8 @@ def test_an_edited_test_case_asks_for_an_update_once(world):
     fake.issues["SBX-5"]["description"] = "Steps: add TWO items"
     out = _run(world)
     assert out["test_case_changed"] == ["SBX-2"]
-    body = [c for c in fake.comments["SBX-2"] if c.startswith("[watch:test-case-changed]")]
-    assert len(body) == 1 and "SBX-5" in body[0] and "Add `ai-update`" in body[0]
+    body = [_plain(c) for c in fake.comments["SBX-2"] if c.startswith("[watch:test-case-changed]")]
+    assert len(body) == 1 and "SBX-5" in body[0] and "Add ai-update" in body[0]
     assert _run(world)["test_case_changed"] == []
 
 
@@ -107,7 +115,7 @@ def test_a_deleted_test_case_flags_its_scenario(world):
     del fake.issues["SBX-6"]
     out = _run(world)
     assert out["test_case_deleted"] == ["SBX-2"]
-    assert any("SBX-6 no longer exists" in c and "Remove an item" in c
+    assert any("SBX-6 no longer exists" in _plain(c) and "Remove an item" in c
                for c in fake.comments["SBX-2"])
 
 
@@ -121,7 +129,7 @@ def test_a_cancelled_story_retires_its_test_cases_and_flags_defects(world):
     out = _run(world)
     assert sorted(out["retired"]) == ["SBX-5", "SBX-6"]
     assert "ai-retired" in fake.issues["SBX-5"]["labels"]
-    assert "remove it in a pull request" in fake.comments["SBX-5"][-1]
+    assert "remove it in a pull request" in _plain(fake.comments["SBX-5"][-1])
     assert out["defects_flagged"] == [bug]
     again = _run(world)
     assert again["retired"] == [] and again["defects_flagged"] == []
