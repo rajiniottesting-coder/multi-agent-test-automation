@@ -29,10 +29,28 @@ from core.schemas import ReviewIssue, ReviewReport
 
 ReviewIssue.__test__ = False
 
-SEVERITIES = ["blocking", "major", "minor", "info"]
-TYPES = ["style", "functional_bug", "missing_coverage", "security", "best_practice"]
+def _values(field: str) -> list:
+    """Every value the schema allows for a finding's field, read from the
+    schema itself: a value added there is checked here at once, never left out
+    of a hand-copied list."""
+    from typing import Literal, get_args, get_origin
+    annotation = ReviewIssue.model_fields[field].annotation
+    found, todo = [], [annotation]
+    while todo:
+        a = todo.pop(0)
+        if get_origin(a) is Literal:
+            found += list(get_args(a))
+        elif a is type(None):
+            found.insert(0, None)
+        else:
+            todo += list(get_args(a))
+    return found
+
+
+SEVERITIES = _values("severity")
+TYPES = _values("issue_type")
 FAILURES = [None, "Scenario A, step B: line 3 raises KeyError."]
-OUTCOMES = [None, "fails", "passes_wrongly"]
+OUTCOMES = _values("test_outcome")
 FIXES = ["Rename the method.", "No change required if the app merges rows."]
 RUNNER = ["success", "failure", None]
 MODEL_SUMMARY = "MODEL SUMMARY - names a functional bug."
@@ -50,6 +68,13 @@ def _report(*issues, verdict="request_changes"):
 
 
 CASES = list(itertools.product(SEVERITIES, TYPES, FAILURES, OUTCOMES, FIXES, RUNNER))
+
+
+def test_the_lists_come_from_the_schema():
+    """The values the invariants name are among them; None is a valid outcome."""
+    assert {"blocking", "info"} <= set(SEVERITIES)
+    assert {"security", "functional_bug"} <= set(TYPES)
+    assert OUTCOMES[0] is None and "fails" in OUTCOMES
 
 
 @pytest.mark.parametrize("sev,typ,failure,outcome,fix,runner", CASES)
