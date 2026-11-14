@@ -2200,6 +2200,28 @@ test, environment, duplicate or not-a-bug is left out; one not yet
 categorised is counted); and one row per recorded sprint. The PDF carries
 the totals, the density table and, at a sprint's end, that sprint's line.
 
+**AI metrics (RP5).** Each Reports run reads the stories changed in the window
+(`core/ai_metrics.py`, settings `ai_metrics`) and keeps one record per story on
+the store (`ai_metrics.json`, kept `keep_days`), so a story archived later
+stays in the figures. *History* and the PDF show, for the window:
+
+- **model spend** in all and **per story**, across every attempt (the usage
+  ledger), and **by agent**; the five costliest stories;
+- **coded at the first attempt** - of the coded stories (`ai-coded`), the
+  share that needed one Agent 2 run (the initial one, not failed; a waiting
+  run is not a run) and no new attempt;
+- **stops that needed a person**, by kind - Agent 1 handing a story back,
+  Agent 2's gate refusing the code, an approval refused, partial automation,
+  an update stopped, a budget hold (each agent's own notice on the story);
+- **review findings** - pull requests reviewed, sent back, and findings by
+  severity (Agent 3 keeps its latest review of each pull request on the
+  story, a hidden `agent3.review.<pr>` property; reviews before this existed
+  are not counted);
+- **Agent 0's recall and precision** over every pull request it predicted
+  for (its outcome: predicted tests against those that changed or failed).
+
+Nothing calls a model; an unreadable tracker leaves the store as it is.
+
 **Severity (RP8).** `reporting.severity_by_tag` maps a scenario's tags (its
 feature's tags included) to Allure's severity; the most severe wins, and an
 untagged scenario gets `reporting.default_severity`. The `# JIRA:` marker gives

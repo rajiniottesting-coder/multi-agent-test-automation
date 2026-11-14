@@ -1373,6 +1373,14 @@ def run(pr_number: int, dry_run: bool = False) -> dict:
     if _m:
         from core.usage_ledger import post_usage_to_story
         post_usage_to_story(_m.group(1), "Agent 3 (Reviewer)", usage)
+        # RP5: the verdict and findings by severity, for the AI metrics.
+        try:
+            from core.ai_metrics import record_review
+            from integrations.tracker import get_tracker
+            record_review(get_tracker(), _m.group(1), pr_number, report.overall_verdict,
+                          report.issues)
+        except Exception as e:                                       # noqa: BLE001
+            logger.warning("Review not recorded for the AI metrics: %s", e)
     else:
         import logging as _logging
         _logging.getLogger(__name__).info(

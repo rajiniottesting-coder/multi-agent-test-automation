@@ -232,6 +232,13 @@ DEFAULTS: dict = {
         "cancelled": ["Won't Do", "Won't Fix", "Cancelled"],
         "pr_prefix": "auto/",
     },
+    # RP5: the AI metrics on the History page and the PDF (core/ai_metrics.py):
+    # the stories changed in the reporting window, read by the Reports run.
+    "ai_metrics": {
+        "enabled": True,
+        "story_type": "Story",
+        "coded_label": "ai-coded",
+    },
     # X4: a change story waits for its deployment (core/deployment.py). Off
     # by default: a project with no deployment step to wait for is unchanged.
     "deployment": {
