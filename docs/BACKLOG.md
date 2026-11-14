@@ -27,18 +27,6 @@ before a real project; P2 and P3 before a wider rollout.
 
 | ID | Item | Today (gap) | Priority | Cost | Was | Status |
 |---|---|---|---|---|---|---|
-| RP14 | Traceability filters: story, result, sprint, text search; kept in the address so a view can be shared | One long table: every story's rows, nothing to narrow it | P2 | A | | Done (#516) |
-| RP15 | Traceability grouped by story: one collapsible block per story with a summary line; a shared criterion note said once | The story and the same "not mapped" note repeated on every row | P2 | A | | Done (#516) |
-| RP16 | Traceability CSV download of the rows shown | No export for audit or sign-off | P3 | A | | Done (#516) |
-| RP17 | Latest run: changed since the previous run (newly failing, fixed, still failing, new, gone) | Only the run itself: what changed overnight was not shown | P2 | A | | Done (#516) |
-| RP18 | Latest run: the open defect of each failure and the expected failures of stories awaiting deployment | A failure did not say whether it was known | P2 | A | | Done (#516) |
-| RP19 | History: a section menu kept in view | A long page with no way to jump | P3 | A | | Done (#516) |
-| RP20 | History: the stories behind each stop, and stops per week by kind | Counts only: no story, no trend | P2 | A | | Done (#516) |
-| RP21 | History: each agent's share, runs and cost per run; weekly spend per story and first-attempt rate | Spend per agent only | P2 | A | | Done (#516) |
-| RP22 | History: what the review count counts (story pull requests only) | "0 reviewed" read as broken | P3 | A | | Done (#516) |
-| RP23 | History: each story row links to its part of the traceability matrix | The pages were not joined up | P3 | A | | Done (#516) |
-| RP24 | Every page on a phone: tables as labelled cards | Wide tables scrolled sideways on a phone | P3 | A | | Done (#516) |
-| RP25 | This sprint against the one before (History and PDF): pass rate, runs, defects, detection rate, spend, stops | The PDF named the sprint but did not compare it | P2 | A | | Done (#516) |
 
 ### Security
 
@@ -113,7 +101,8 @@ proven live the same day with #492, #497, #498 and #500 (removed above).
 Group B, batch B2 (14 Nov 2026, #502): RP5, X1, D6, X4 - all proven live the
 same day with #504, #506 and #508 (removed above).
 RP14-RP25 added on 14 Nov 2026 at the owner's request (the reports pages, all of
-them, before the planned backlog) and built in #516.
+them, before the planned backlog), built in #516 with fixes #519 and #521, and
+proven live the same night (#522, removed above).
 X10 added on 14 Nov 2026 at the owner's request (the drift crawl and Inventory
 Health read the same pages twice) and built with X6 as batch A (#512). X6 is
 proven live (#514, #515 - removed above): Run Tests is a required check on `main`.

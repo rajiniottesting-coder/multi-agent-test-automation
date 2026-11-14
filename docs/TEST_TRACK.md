@@ -27,7 +27,7 @@ still open, and the rows each new change adds.
 
 ## Open checks
 
-36 rows: 32 open or partly proven (⬜) - fourteen of them (E228-E241) the reports pages (#516, #519, #521), one (E225) the last live check of batch A (#512; E222-E224, E226 and E227 proven 14 Nov, #514 and #515) - 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌). Rows proven earlier were removed in their evidence pull requests (#470, #473 and later).
+22 rows: 18 open or partly proven (⬜) - one of them (E225) the last live check of batch A (#512; E222-E224, E226 and E227 proven 14 Nov, #514 and #515) - 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌). Rows proven earlier were removed in their evidence pull requests (#470, #473 and later).
 
 Most of these wait for an event that cannot be produced on demand (the model
 taking a particular path, a provider error that quotes a secret); some are not
@@ -35,20 +35,6 @@ possible on the current application. Each names what it is waiting for.
 
 | ID | Built in | Check | Expected | Status | Evidence |
 |---|---|---|---|---|---|
-| E228 | #516 RP14 | The published Traceability page after a Reports run on main | Story, result, sprint and search filters narrow the rows; the address keeps the choice and a link with it opens filtered; Show all brings every row back | ⬜ | |
-| E229 | #516 RP15 | The same page | One block per story with its summary line; a story with no coverage map shows its "not mapped" note once, with no criterion column | ⬜ | |
-| E230 | #516 RP16 | The same page, Download CSV with a story selected | The file holds exactly the rows shown, with a header | ⬜ | |
-| E231 | #516 RP17 | The published Latest run | *Changed since the previous run* names the run compared against and the tests in each group | ⬜ | |
-| E232 | #516 RP18 | The Latest run with a failure that has an open defect, and one of a story awaiting deployment | The Defect column links the defect; the other reads *expected until <story> is deployed* | ⬜ | |
-| E233 | #516 RP19 | The published History | The menu links go to their sections and stay in view | ⬜ | |
-| E234 | #516 RP20 | History, AI metrics | A stop row opens its stories; the weekly stops chart draws from dated stops | ⬜ | |
-| E235 | #516 RP21 | History, AI metrics | Spend by agent shows share, runs and cost per run; the weekly chart shows spend per story and the first-attempt rate | ⬜ | |
-| E236 | #516 RP22 | History, AI metrics | The review line says what it counts | ⬜ | |
-| E237 | #516 RP23 | History, By story | A story's *matrix* link opens the matrix filtered to it | ⬜ | |
-| E238 | #516 RP24 | Every page on a phone (390 px) | No sideways scroll; each table row a labelled card | ⬜ | |
-| E239 | #516 RP25 | History and the PDF once two sprints are recorded | *Sprint over sprint* / *This sprint against the one before* with each measure for both sprints | ⬜ | |
-| E240 | #519 Phone width | The published Traceability page on a phone, with the real stories | No sideways scroll: long scenario names break, the story filter fits the screen | ⬜ | |
-| E241 | #521 Weekly charts | The published History, the two weekly AI charts, on a desktop and a phone | The right-hand % axis shows in full; the legends sit below the plots, never over the bars; no date label cut off | ⬜ | |
 | E225 | #512 X10 | The next scheduled night (02:30 UTC) | One crawl: no Agent 0 drift schedule fires; the drift run is started by Inventory Health | ⬜ | Partly: the hand-over proven by hand on 14 Nov (Inventory Health 43602961708 started Agent 0 43603080921, which read its report). Waits for the first scheduled night |
 | E16 | #215 | SCRUM-187 on the next scan (persistent-state rule) | One `[agent2:blocked]` comment naming the rule, then `[BLOCK]` with no model call on later scans; a new signed-in draft stating a cart quantity is sent back by Agent 1 | ➖ | Coding once step 7 was fixed: V8 |
 | E19f | #224 | An added hidden element or family | Carries `conditional` / `multi_match`; not undone the next night | ⬜ | Partly: Not reachable on this app: window I removed the Test Cases panel family; drift 42853242986 did not propose it again, and every hidden element with a durable handle is a shared section or a numbered id (unstable). Needs an application change that adds a hidden element or family to one page |

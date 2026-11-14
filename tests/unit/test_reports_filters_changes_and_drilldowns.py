@@ -313,6 +313,9 @@ def test_the_history_page_has_its_menu_drilldown_trends_and_notes(monkeypatch):
     ai = page[page.index("Plotly.newPlot('ai-trend'"):page.index("Plotly.newPlot('stops-trend'")]
     assert "yaxis2:{overlaying:'y',side:'right'" in ai and "margin:{t:20,r:60" in ai, \
         "the right-hand axis has room for its labels"
+    stops = page[page.index("Plotly.newPlot('stops-trend'"):]
+    assert "legend:{orientation:'h',y:-0.5}" in ai and "legend:{orientation:'h',y:-0.45}" in stops, \
+        "the legends sit below the plots - above them they wrapped onto the bars on a phone"
 
 
 # ── RP24: a table on a phone ───────────────────────────────────────────
