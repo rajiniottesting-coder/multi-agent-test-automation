@@ -144,14 +144,28 @@ def _context_prs(host, story_key: str) -> list:
     return out
 
 
-def deployed(tracker, host, result: dict, dry_run: bool = False, s: dict | None = None) -> None:
-    """The watcher's step: every pending story the signal says is live."""
+def deployed(tracker, host, result: dict, dry_run: bool = False, s: dict | None = None,
+             keys=None) -> None:
+    """The watcher's step: every pending story the signal says is live.
+
+    keys: the stories the signal has just labelled - read one by one, not
+    searched for. A tracker's search may not see a label added a moment ago
+    (14 Nov 2026: the Deployment signal workflow labelled a story `deployed`
+    and the search right after found nothing, so nobody was reminded)."""
     s = s or settings()
     if not enabled(s):
         return
-    stories = tracker.find_stories_to_process(
-        {"issue_type": s["story_type"],
-         "required_labels": [s["pending_label"], s["deployed_label"]]}, max_results=100) or []
+    if keys is not None:
+        stories = []
+        for key in keys:
+            labels = set((tracker.get_story(key) or {}).get("labels") or [])
+            if {s["pending_label"], s["deployed_label"]} <= labels:
+                stories.append({"key": key})
+    else:
+        stories = tracker.find_stories_to_process(
+            {"issue_type": s["story_type"],
+             "required_labels": [s["pending_label"], s["deployed_label"]]},
+            max_results=100) or []
     for story in stories:
         key = story["key"]
         prs = []

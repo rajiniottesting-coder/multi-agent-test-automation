@@ -174,3 +174,18 @@ def test_agent5_says_the_failures_are_expected(world):
                           duration_seconds=1.0, results=[])
     body = a5.build_final_comment("❌ 1 failed", report, awaiting=note)
     assert body.splitlines()[0] == note
+
+
+def test_the_signal_acts_on_the_stories_it_labelled_without_searching(world, monkeypatch):
+    """14 Nov 2026: the search right after the label did not see it yet, and
+    nobody was reminded."""
+    fake, jira, _ = world
+    fake.issues["SBX-9"]["labels"].append("awaiting-deployment")
+    monkeypatch.setattr(jira, "find_stories_to_process", lambda *a, **k: [])   # index lag
+    labelled = deployment.signal(jira, ["SBX-9"])
+    result = {"deployed": [], "reminded": [], "errors": [], "write_errors": []}
+    deployment.deployed(jira, Host([]), result, keys=labelled)
+    assert result["deployed"] == ["SBX-9"]
+    assert "awaiting-deployment" not in fake.issues["SBX-9"]["labels"]
+    src = (Path(__file__).resolve().parents[2] / "scripts" / "deployment_signal.py").read_text()
+    assert "keys=labelled" in src
