@@ -52,6 +52,8 @@ def main(argv=None) -> int:
         print(f"(dry run) would label {', '.join(keys)} {s['deployed_label']} when awaiting "
               f"deployment, then remind.")
         return 0
+    # First the label, then the step that acts on it: deployed() finds the
+    # stories carrying both labels, so it must see the one just added.
     labelled = deployment.signal(tracker, keys, s)
     print(f"labelled {s['deployed_label']}: {labelled or 'none'}")
     result = {"deployed": [], "reminded": [], "errors": [], "write_errors": []}

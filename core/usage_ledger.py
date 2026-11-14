@@ -615,6 +615,17 @@ def _agent_parts(name: str) -> tuple:
     return base, run_mode
 
 
+def agent_parts(name: str) -> tuple:
+    """Public: (agent, kind of run) of a ledger entry's name - for readers
+    outside this module (core/ai_metrics.py)."""
+    return _agent_parts(name)
+
+
+def read_properties(tracker, issue: str, prefix: str) -> dict:
+    """Public: the issue's hidden properties under `prefix`."""
+    return _read_properties(tracker, issue, prefix)
+
+
 def by_agent(entries: list[dict]) -> list[dict]:
     """One row per agent, in order of first appearance: runs, calls, tokens,
     cost, and its run modes with counts ('initial, review fix ×2')."""

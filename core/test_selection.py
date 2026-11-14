@@ -121,7 +121,7 @@ def select(changed, root: Path, s: dict | None = None, labels=(), graph=None) ->
         # the whole suite, not a run that may collect nothing.
         return full("no scenario traces to the change (" + "; ".join(reasons) + ")")
     return {"mode": "selected", "smoke_tag": s.get("smoke_tag") or None,
-            "why": "; ".join(reasons) or "nothing read at test runtime changed",
+            "why": "; ".join(reasons),
             "scenarios": [list(k) for k in sorted(chosen)]}
 
 

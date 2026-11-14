@@ -101,7 +101,7 @@ def story_record(tracker, story: dict, coded_label: str) -> dict:
     for e in used["entries"]:
         if not e["agent"].startswith(CODER):
             continue
-        base, run_mode = ul._agent_parts(e["agent"])
+        _base, run_mode = ul.agent_parts(e["agent"])
         if run_mode in NOT_A_CODING_RUN:
             continue
         coding.append(run_mode)
@@ -119,7 +119,7 @@ def story_record(tracker, story: dict, coded_label: str) -> dict:
     props = {}
     if ul.mode(tracker) == "properties":
         try:
-            props = ul._read_properties(tracker, key, "agent")
+            props = ul.read_properties(tracker, key, "agent")
         except Exception as e:                                     # noqa: BLE001
             logger.warning("%s: agent properties not read: %s", key, e)
     reviews = [v for k, v in sorted(props.items())
