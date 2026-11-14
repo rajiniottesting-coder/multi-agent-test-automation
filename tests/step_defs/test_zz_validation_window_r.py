@@ -3,7 +3,7 @@
 Group B batch B2 live checks (TEST_TRACK E215-E218): on its pull request the
 selection runs these two scenarios and the smoke set (X1); the failing one is
 raised as a defect by the raise-defect label (D6), then - its story awaiting
-deployment - is expected on main until the deployment signal (X4)."""
+deployment - is expected on main until the deployment signal (X4). Step 2: the full-suite label runs everything (X1)."""
 from pytest_bdd import given, scenarios, then
 
 from config.paths import feature_path
