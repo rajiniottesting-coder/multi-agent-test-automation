@@ -69,3 +69,4 @@ possible on the current application. Each names what it is waiting for.
 | E211 | #492 R4 cancelled by label | A throw-away story with marked scenarios closed as Done and labelled `cancelled`, then the watchers | Treated as cancelled: its test cases retired with a comment (as E204) | ⬜ | |
 | E212 | #497 X5 mergeability unknown | The watchers right after main moves under a conflicting `auto/` PR | The PR is called conflicting (GitHub asked again while computing), never 'behind'; still unknown -> nothing said until the next run | ⬜ | |
 | E213 | #498 Group B notices rendered | The next Group B notice in Jira (an approval refusal, a watcher finding, a followed or re-tested defect) | Labels and names in monospace, no literal backticks | ⬜ | |
+| E214 | #500 R2 edit time in UTC | The next `[watch:story-edited]` notice | The edit time it names is the tracker's time converted to UTC | ⬜ | |

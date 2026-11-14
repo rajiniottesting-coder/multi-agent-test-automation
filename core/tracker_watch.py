@@ -135,7 +135,9 @@ def stories_edited(tracker, result: dict, s: dict, now: _dt.datetime, dry_run: b
         if edit is None or edit["at"] < since:
             continue
         who = edit["by"].get("name") or "someone"
-        when = edit["at"].strftime("%Y-%m-%d %H:%M UTC")
+        # The tracker answers in the account's zone (+0530): the notice says
+        # UTC, so it is converted (14 Nov 2026: 11:38 IST read "11:38 UTC").
+        when = edit["at"].astimezone(_dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         if coded and edit["at"] > coded:
             body = (f"[watch:story-edited] This story was edited on {when} by {who}, after "
                     f"its tests were coded. Add `{s['impact_label']}` so the impact check "
