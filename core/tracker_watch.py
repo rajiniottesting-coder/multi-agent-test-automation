@@ -274,6 +274,8 @@ def prs_out_of_sync(host, result: dict, s: dict, dry_run: bool) -> None:
         except Exception as e:                                     # noqa: BLE001
             logger.warning("PR #%s not checked: %s", pr["number"], e)
             continue
+        if sync.get("unknown"):
+            continue                     # not computed yet: decided by the next run
         if sync.get("conflict"):
             kind, body = "conflict", (
                 f"[watch:pr-out-of-sync] This pull request has merge conflicts with "
