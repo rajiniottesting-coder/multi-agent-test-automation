@@ -90,6 +90,11 @@ an adapter written before them stays valid.
                                               (core/defect_ledger.py, D7)
     get_active_sprint() -> {"id","name","start","end"}
                                               the sprint the PDF summary covers
+    get_comments_dated(issue_key) -> [{"at","body"}] | None
+                                              comments with their time: the
+                                              reports date stops and spend
+    sprints_of([issue_key]) -> {key: [sprint name]} | None
+                                              the traceability sprint filter
     delete_closed_issue(issue_key, required_label=None)
         -> {"key","summary","type","deleted","reason"}
                                               delete one CLOSED issue for good,

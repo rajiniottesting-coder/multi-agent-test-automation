@@ -294,7 +294,8 @@ def _row(story, ref, text, tc, test, record, defects_by_key, why: str = "",
     keys = [story["key"]] + ([tc["key"]] if tc else [])
     defects = sorted({d for k in keys for d in defects_by_key.get(k, [])})
     return {"story": story["key"], "story_summary": story.get("summary", ""),
-            "story_status": story.get("status", ""), "criterion": ref,
+            "story_status": story.get("status", ""),
+            "story_sprints": list(story.get("sprints") or []), "criterion": ref,
             "criterion_text": text, "test_case": tc["key"] if tc else "",
             "test_case_summary": (tc or {}).get("summary", ""),
             "scenario": test or "",
@@ -324,3 +325,98 @@ def traceability_summary(rows: list[dict]) -> dict:
             "criteria_uncovered": len(uncovered), "criteria_unmapped": unmapped,
             "test_cases": len(tcs),
             "test_cases_without_scenario": len(no_scenario), "results": dict(results)}
+
+
+# ── RP17: what changed since the previous run ──────────────────────────
+
+def run_changes(runs: list[dict], results: list[dict]) -> dict | None:
+    """The latest run against the one before it: tests newly failing (passed,
+    flaky or not run before), fixed (failed before, passing now), still
+    failing, new in the suite and gone from it. None with fewer than two runs.
+    A test the application stopped (outage) is neither failing nor fixed."""
+    if len(runs) < 2:
+        return None
+    now_id, before_id = runs[-1]["run_id"], runs[-2]["run_id"]
+    now = {r["test"]: r for r in results if r.get("run_id") == now_id}
+    before = {r["test"]: r for r in results if r.get("run_id") == before_id}
+
+    def failing(rec):
+        return (rec or {}).get("verdict") == "failed"
+
+    def passing(rec):
+        return (rec or {}).get("verdict") in PASSING
+    out = {"previous": runs[-2], "newly_failing": [], "fixed": [], "still_failing": [],
+           "new": sorted(set(now) - set(before)), "gone": sorted(set(before) - set(now))}
+    for test in sorted(now):
+        rec, old = now[test], before.get(test)
+        if failing(rec) and failing(old):
+            out["still_failing"].append(test)
+        elif failing(rec):
+            out["newly_failing"].append(test)
+        elif passing(rec) and failing(old):
+            out["fixed"].append(test)
+    return out
+
+
+# ── RP15: the matrix grouped by story ──────────────────────────────────
+
+def story_groups(rows: list[dict]) -> list[dict]:
+    """One summary per story of the matrix, in its rows' order: criteria and
+    how many have no test case, test cases, scenario results, open defects,
+    and the story's sprints."""
+    groups: dict = {}
+    for r in rows:
+        g = groups.setdefault(r["story"], {
+            "story": r["story"], "summary": r.get("story_summary", ""),
+            "status": r.get("story_status", ""), "sprints": list(r.get("story_sprints") or []),
+            "criteria": set(), "uncovered": set(), "unmapped": 0, "test_cases": set(),
+            "results": Counter(), "defects": set(), "rows": 0})
+        g["rows"] += 1
+        if r["criterion"] != "-":
+            g["criteria"].add(r["criterion"])
+            if not r["test_case"]:
+                g["uncovered"].add(r["criterion"])
+        g["unmapped"] += r.get("unmapped_criteria") or 0
+        if r["test_case"]:
+            g["test_cases"].add(r["test_case"])
+        if r["scenario"]:
+            g["results"][r["result"]] += 1
+        g["defects"].update(r.get("defects") or [])
+    return [{**g, "criteria": len(g["criteria"]) + g["unmapped"],
+             "uncovered": len(g["uncovered"]), "test_cases": len(g["test_cases"]),
+             "results": dict(g["results"]), "defects": sorted(g["defects"])}
+            for g in groups.values()]
+
+
+# ── RP25: this sprint against the one before ───────────────────────────
+
+def _in(day: str | None, start: str, end: str) -> bool:
+    return bool(day) and start <= day[:10] <= end
+
+
+def sprint_over_sprint(sprints: list[dict], results: list[dict],
+                       ai_records: dict | None) -> dict | None:
+    """The two newest recorded sprints side by side: pass rate and runs
+    (results started inside each), defects opened, closed and open, the
+    detection rate (the defect history's sprint records), model spend and
+    stops (the AI metrics' dated events). None with fewer than two sprints."""
+    done = sorted((sp for sp in sprints or [] if sp.get("start") and sp.get("end")),
+                  key=lambda sp: str(sp["start"]))
+    if len(done) < 2:
+        return None
+
+    def figures(sp):
+        a, b = str(sp["start"])[:10], str(sp["end"])[:10]
+        mine = [r for r in results if _in(r.get("started"), a, b)]
+        spend = stops = 0.0
+        for rec in (ai_records or {}).values():
+            spend += sum(v or 0.0 for d, v in (rec.get("spend_days") or {}).items()
+                         if _in(d, a, b))
+            stops += sum(sum(k.values()) for d, k in (rec.get("stop_days") or {}).items()
+                         if _in(d, a, b))
+        return {"name": sp.get("name"), "start": a, "end": b, "pass_rate": pass_rate(mine),
+                "runs": len({r.get("run_id") for r in mine}),
+                "opened": sp.get("opened"), "closed": sp.get("closed"), "open": sp.get("open"),
+                "detection_rate": sp.get("detection_rate"),
+                "spend_usd": round(spend, 2), "stops": int(stops)}
+    return {"previous": figures(done[-2]), "current": figures(done[-1])}

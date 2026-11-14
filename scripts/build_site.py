@@ -115,6 +115,16 @@ def traceability(tracker, features_dir: Path, latest: dict, defects: list[dict] 
         for k in d.get("links") or []:
             defects_by_key.setdefault(k, []).append(d["key"])
     stories = []
+    # RP14: each story's sprints, for the matrix's sprint filter - one read
+    # for every story; a tracker without sprints leaves the filter out.
+    from integrations.tracker import capability
+    read_sprints = capability(tracker, "sprints_of")
+    sprints = None
+    if read_sprints is not None:
+        try:
+            sprints = read_sprints(sorted(owners))
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning("Story sprints not read: %s", e)
     for key in sorted(owners, key=lambda k: (len(k), k)):
         try:
             story = tracker.get_story(key)
@@ -133,7 +143,8 @@ def traceability(tracker, features_dir: Path, latest: dict, defects: list[dict] 
                            for k in sorted(owners[key]) if k not in linked]
         comment = _coverage_comment(comments)
         refs = [r for r, _ in criteria]
-        stories.append({**story, "criteria": criteria, "test_cases": tcs,
+        stories.append({**story, "sprints": (sprints or {}).get(key) or [],
+                        "criteria": criteria, "test_cases": tcs,
                         "has_coverage_map": bool(comment),
                         **_coverage(comment, refs, tcs),
                         "scenarios": {k: scenarios.get(k) or [] for k in
@@ -142,6 +153,7 @@ def traceability(tracker, features_dir: Path, latest: dict, defects: list[dict] 
 
 
 def collect(store: Path, features_dir: Path, now: _dt.datetime, with_tracker: bool = True) -> dict:
+    from core import ai_metrics as am
     from core import report_data as rd
     from core import results_store as rs
     from core.ops_settings import section
@@ -149,7 +161,8 @@ def collect(store: Path, features_dir: Path, now: _dt.datetime, with_tracker: bo
     since = (now - _dt.timedelta(days=int(s.get("window_days") or 30))).isoformat()
     runs = [r for r in rs.read_runs(store) if (r.get("started") or "") >= since]
     results = rs.read_results(store, since=since)
-    latest = rs.latest_by_test(rs.read_results(store))
+    every = rs.read_results(store)
+    latest = rs.latest_by_test(every)
     current = ({r["test"] for r in results if r.get("run_id") == runs[-1]["run_id"]}
                if runs else None)                  # the suite as it is now
     tracker = _tracker() if with_tracker else None
@@ -168,10 +181,14 @@ def collect(store: Path, features_dir: Path, now: _dt.datetime, with_tracker: bo
     history = defect_history(store, tracker, features_dir, sprint, now)
     ai = ai_metrics(store, tracker, now, int(s.get("window_days") or 30),
                     int(s.get("keep_days") or 90))
+    last = rd.latest_run(runs, results)
+    if last:
+        mark_latest_rows(last, history["records"], tracker)
+        last["changes"] = rd.run_changes(runs, results)
     return {
         "generated": now.strftime("%Y-%m-%d %H:%M"), "window_days": s.get("window_days"),
         "kpis": rd.kpis(runs, results), "trend": rd.trend(runs),
-        "latest": rd.latest_run(runs, results),
+        "latest": last,
         "slowest": rd.slowest(results), "flaky": rd.flaky_ranking(results),
         "by_file": rd.breakdown(results, "file", current),
         "by_story": rd.breakdown(results, "story", current),
@@ -179,11 +196,41 @@ def collect(store: Path, features_dir: Path, now: _dt.datetime, with_tracker: bo
         "defect_list": defects, "sprint": sprint,
         "traceability": rows,
         "traceability_summary": rd.traceability_summary(rows) if rows is not None else None,
+        "story_groups": rd.story_groups(rows) if rows is not None else None,
+        "sprint_compare": rd.sprint_over_sprint(history["sprints"], every,
+                                                am.read(store)["stories"]),
         "unlinked_defects": (rd.unlinked_defects(defects, rows)
                              if rows is not None and defects is not None else None),
         "defect_history": defect_figures(history, now, int(s.get("window_days") or 30)),
         "ai_metrics": ai,
     }
+
+
+def mark_latest_rows(latest: dict, defect_records: list[dict], tracker) -> None:
+    """RP18: each row of the latest run gets the open defect raised for its
+    test (`defect`, the defect history) and, when its story waits for a
+    deployment, that story (`awaiting`, core.deployment - the failure is
+    expected). Never raises."""
+    open_by_test = {}
+    for d in defect_records or []:
+        if d.get("open") and not d.get("deleted") and d.get("test"):
+            open_by_test.setdefault(d["test"], d["key"])
+    waiting = None
+    if tracker is not None:
+        try:
+            from core.deployment import PendingStories
+            waiting = PendingStories(tracker)
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning("Stories awaiting deployment not read: %s", e)
+    for r in latest.get("rows") or []:
+        r["defect"] = open_by_test.get(r.get("test"))
+        r["awaiting"] = None
+        if waiting is not None and r.get("verdict") == "failed":
+            try:
+                r["awaiting"] = waiting.story_of(r.get("story"), r.get("test_case"))
+            except Exception as e:                                 # noqa: BLE001
+                logger.warning("Deployment wait of %s not read: %s", r.get("test"), e)
+    latest["expected"] = sum(1 for r in latest.get("rows") or [] if r.get("awaiting"))
 
 
 def ai_metrics(store: Path, tracker, now: _dt.datetime, window_days: int,
@@ -281,6 +328,19 @@ th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertic
 th{color:var(--muted);font-weight:600}.wrap{overflow-x:auto}
 .v-passed{color:#2e7d32}.v-flaky{color:#b28704}.v-failed{color:#c62828}.v-outage{color:#6a1b9a}
 .muted{color:var(--muted)}code{font-size:12px}
+.v-expected{color:#1f4e8c}.v-new{color:#c62828;font-weight:600}.v-fixed{color:#2e7d32;font-weight:600}
+.sections{position:sticky;top:0;z-index:5;background:var(--bg);padding:8px 0;margin-bottom:8px}
+.sections a{display:inline-block;margin:0 6px 6px 0;padding:4px 10px;border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--accent);text-decoration:none;font-size:13px}
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.filters select,.filters input,.filters button{font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)}
+.filters button{cursor:pointer;color:var(--accent)}
+details.story{border:1px solid var(--line);border-radius:8px;margin-bottom:10px;padding:6px 10px}
+details.story>summary{cursor:pointer;padding:4px 0}details.story>summary .muted{font-size:13px}
+/* RP24: on a phone a wide table reads as one card per row, each cell labelled */
+@media (max-width:640px){.wrap table,.wrap tbody,.wrap tr,.wrap td{display:block;width:100%}
+.wrap thead{display:none}.wrap tr{border:1px solid var(--line);border-radius:8px;margin-bottom:10px;padding:4px}
+.wrap td{border:none;padding:3px 6px}.wrap td[data-label]::before{content:attr(data-label);display:block;font-size:11px;color:var(--muted);font-weight:600}
+nav a{display:inline-block;margin-bottom:6px}}
 """
 
 
@@ -349,9 +409,11 @@ def latest_html(data: dict) -> str:
         counts = (f"{run.get('passed', 0)} passed, {run.get('flaky', 0)} flaky, "
                   f"{run.get('failed', 0)} failed, {run.get('outage', 0)} not judged, "
                   f"{run.get('skipped', 0)} skipped")
+        expected = lr.get("expected") or 0
         head = (f"<div class='grid'>"
                 f"<div class='card kpi'><b>{_pct(lr['pass_rate'])}</b><span>pass rate</span></div>"
-                f"<div class='card kpi'><b>{_e(run.get('failed', 0))}</b><span>failed</span></div>"
+                f"<div class='card kpi'><b>{_e(run.get('failed', 0))}</b><span>failed"
+                + (f" ({expected} expected)" if expected else "") + "</span></div>"
                 f"<div class='card kpi'><b>{_e(run.get('flaky', 0))}</b><span>flaky</span></div>"
                 f"<div class='card kpi'><b>{_e(run.get('outage', 0))}</b><span>not judged</span></div>"
                 f"<div class='card kpi'><b>{round((run.get('duration_s') or 0) / 60, 1)}</b>"
@@ -359,24 +421,67 @@ def latest_html(data: dict) -> str:
                 f"<p>Run <a href='{_e(run.get('url'))}'>{_e(run.get('run_id'))}</a>, {_e(when)} UTC "
                 f"({_e(run.get('event'))}, commit <code>{_e((run.get('commit') or '')[:7])}</code>): "
                 f"{_e(counts)}. <a href='{_e(_allure_href(data))}'>Steps, screenshots and traces in "
-                f"the Allure report</a>.</p>")
+                f"the Allure report</a>.</p>"
+                "<p class='muted'><i>Not judged</i>: failed because the application itself was "
+                "unavailable - nothing was tested, and no defect is raised for it.</p>")
+        changes = lr.get("changes") or {}
+        newly = set(changes.get("newly_failing") or [])
         if lr["rows"]:
-            table = _table(["Result", "Scenario", "Story", "Test case", "Error", "Seconds"], [[
-                f"<span class='v-{_e(r['verdict'])}'>{_e(_VERDICT_TEXT.get(r['verdict'], r['verdict']))}</span>",
+            def verdict_cell(r):
+                text = _VERDICT_TEXT.get(r["verdict"], r["verdict"])
+                cell = f"<span class='v-{_e(r['verdict'])}'>{_e(text)}</span>"
+                if r.get("awaiting"):
+                    cell += (f"<br><span class='v-expected'>expected until {_link(r['awaiting'])} "
+                             f"is deployed</span>")
+                elif r.get("test") in newly:
+                    cell += "<br><span class='v-new'>new since the previous run</span>"
+                return cell
+            table = _table(["Result", "Scenario", "Story", "Test case", "Defect", "Error",
+                            "Seconds"], [[
+                verdict_cell(r),
                 f"{_e(r.get('scenario'))}<br><span class='muted'>{_e(r.get('file'))}</span>",
                 _link(r.get("story") or "-"), _link(r.get("test_case") or "-"),
+                _link(r.get("defect") or "-"),
                 f"<code>{_e(r.get('failure') or r.get('first_failure') or '')}</code>",
                 _e(r.get("duration_s"))] for r in lr["rows"]])
             rest = (f"<p class='muted'>The other {_n(lr['passed'], 'test')} passed.</p>")
         else:
             table, rest = "", f"<p>All {_n(lr['passed'], 'test')} passed.</p>"
-        body = (head + "<div class='card'><h2>Needs a look</h2>" + (table or "") + rest + "</div>")
+        body = (head + "<div class='card'><h2>Needs a look</h2>" + (table or "") + rest + "</div>"
+                + changes_html(changes))
     return _page("Latest run", _header(data, "index.html") + f"<main>{body}</main>")
 
 
-def _table(head, rows) -> str:
+def changes_html(changes: dict | None) -> str:
+    """RP17: the latest run against the one before it."""
+    if not changes:
+        return ("<div class='card'><h2>Changed since the previous run</h2><p class='muted'>"
+                "Only one run is recorded in the window: nothing to compare yet.</p></div>")
+    prev = changes["previous"]
+    when = (prev.get("started") or "")[:16].replace("T", " ")
+    parts = [("Newly failing", changes["newly_failing"], "v-new"),
+             ("Fixed", changes["fixed"], "v-fixed"),
+             ("Still failing", changes["still_failing"], "v-failed"),
+             ("New in the suite", changes["new"], ""), ("Gone from the suite", changes["gone"], "")]
+    rows = [[f"<span class='{c}'>{_e(t)}</span>" if c else _e(t), len(tests),
+             "<br>".join(f"<code>{_e(x.split('::')[-1])}</code>" for x in tests) or "-"]
+            for t, tests, c in parts]
+    quiet = not any(tests for _, tests, _ in parts)
+    return (f"<div class='card'><h2>Changed since the previous run</h2>"
+            f"<p class='muted'>Against run <a href='{_e(prev.get('url'))}'>{_e(prev.get('run_id'))}</a>"
+            f" ({_e(when)} UTC).{' No test changed its result.' if quiet else ''}</p>"
+            + ("" if quiet else _table(["Change", "Tests", "Which"], rows)) + "</div>")
+
+
+def _table(head, rows, row_attrs=None) -> str:
+    """A table; every cell names its column (data-label), so on a phone each
+    row reads as a labelled card (RP24). `row_attrs`: one attribute string per
+    row (the matrix's filters)."""
     th = "".join(f"<th>{_e(h)}</th>" for h in head)
-    tr = "".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in rows)
+    attrs = list(row_attrs or [])
+    tr = "".join(f"<tr{(' ' + attrs[i]) if i < len(attrs) and attrs[i] else ''}>"
+                 + "".join(f"<td data-label='{_e(h)}'>{c}</td>" for h, c in zip(head, r))
+                 + "</tr>" for i, r in enumerate(rows))
     return f"<div class='wrap'><table><thead><tr>{th}</tr></thead><tbody>{tr}</tbody></table></div>"
 
 
@@ -404,11 +509,16 @@ def dashboard_html(data: dict) -> str:
                    [[f"<code>{_e(r['test'])}</code>", r["flaky"], r["runs"], _e(r["last"])]
                     for r in data["flaky"]]) if data["flaky"] else "<p class='muted'>No flaky pass in the window.</p>"
 
-    def bd(rows):
+    def is_key(name):
+        return name.count("-") == 1 and name.split("-")[-1].isdigit()
+
+    def bd(rows, matrix=False):
+        # RP23: a story's row opens its part of the traceability matrix too.
         return _table(["Name", "Tests", "Passed", "Failed", "Other", "Pass rate"],
-                      [[_link(r["name"]) if r["name"].count("-") == 1 and r["name"].split("-")[-1].isdigit()
-                        else _e(r["name"]), r["tests"], r["passed"], r["failed"], r["other"],
-                        _pct(r["pass_rate"])] for r in rows])
+                      [[(_link(r["name"]) + (f" <a class='muted' href='traceability.html#story="
+                                             f"{_e(r['name'])}'>matrix</a>" if matrix else ""))
+                        if is_key(r["name"]) else _e(r["name"]), r["tests"], r["passed"],
+                        r["failed"], r["other"], _pct(r["pass_rate"])] for r in rows])
     if data["defects"] is None:
         defects = "<p class='muted'>The tracker could not be read: no defect figures.</p>"
     elif not data["defects"]["total"]:
@@ -418,15 +528,24 @@ def dashboard_html(data: dict) -> str:
             ["Defect", "Summary", "Status", "Created", "Components"],
             [[_link(d["key"]), _e(d["summary"]), _e(d["status"]), _e((d.get("created") or "")[:10]),
               _e(", ".join(d.get("components") or []) or "-")] for d in data["defect_list"]]))
-    body = (_header(data, "history.html") + "<main>" + f"<div class='grid'>{kpi}</div>" + last
-            + "<div class='card'><h2>Results per run</h2><div id='trend'></div></div>"
+    # RP19: a menu of the page's sections, kept in view while scrolling.
+    menu = [("runs", "Runs"), ("tests", "Tests"), ("stories", "By story"),
+            ("defects", "Defects"), ("ai", "AI metrics")]
+    if data.get("sprint_compare"):
+        menu.append(("sprints", "Sprint over sprint"))
+    sections = "<nav class='sections'>" + "".join(
+        f"<a href='#{i}'>{_e(t)}</a>" for i, t in menu) + "</nav>"
+    body = (_header(data, "history.html") + "<main>" + sections
+            + f"<div class='grid'>{kpi}</div>" + last
+            + "<div class='card' id='runs'><h2>Results per run</h2><div id='trend'></div></div>"
             + "<div class='card'><h2>Suite duration per run (minutes)</h2><div id='duration'></div></div>"
-            + f"<div class='card'><h2>Slowest tests (median over the window)</h2>{slow}</div>"
+            + f"<div class='card' id='tests'><h2>Slowest tests (median over the window)</h2>{slow}</div>"
             + f"<div class='card'><h2>Flaky tests</h2>{flaky}</div>"
             + f"<div class='card'><h2>By feature file (latest result of each test)</h2>{bd(data['by_file'])}</div>"
-            + f"<div class='card'><h2>By story</h2>{bd(data['by_story'])}</div>"
-            + f"<div class='card'><h2>Open defects</h2>{defects}</div>"
-            + defect_history_html(data) + ai_metrics_html(data) + "</main>")
+            + f"<div class='card' id='stories'><h2>By story</h2>{bd(data['by_story'], matrix=True)}</div>"
+            + f"<div class='card' id='defects'><h2>Open defects</h2>{defects}</div>"
+            + defect_history_html(data) + ai_metrics_html(data)
+            + sprint_compare_html(data.get("sprint_compare")) + "</main>")
     t = data["trend"]
     ids = [str(r) for r in t["run"]]
     series = [{"type": "bar", "name": k, "x": ids, "y": t[k], "marker": {"color": c},
@@ -451,7 +570,7 @@ def dashboard_html(data: dict) -> str:
               + (f"Plotly.newPlot('defects-age',[{{type:'bar',x:{json.dumps([a for a, _ in age])},"
                  f"y:{json.dumps([n for _, n in age])},marker:{{color:'#c62828'}}}}],"
                  f"Object.assign({{}},L,{{height:220}}),C);" if age else "")
-              + _defect_trend_js(data)
+              + _defect_trend_js(data) + _ai_trend_js(data)
               + "}</script>")
     return _page("Test history", body + script)
 
@@ -527,16 +646,42 @@ def ai_metrics_html(data: dict) -> str:
                                                         "Agent 0 precision")]
     kpi = "".join(f"<div class='card kpi'><b>{_e(v)}</b><span>{_e(t)}</span></div>"
                   for v, t in cards)
-    agents = _table(["Agent", "Spend"], [[_e(n), _usd(c)] for n, c in sm["by_agent"]]) \
-        if sm["by_agent"] else "<p class='muted'>No model spend recorded.</p>"
-    stops = _table(["Stop", "Times"], [[_e(k), n] for k, n in sm["refusals"]]) \
+    # RP21: each agent's share of the spend, its runs and its cost per run.
+    rows = sm.get("agents") or [{"agent": n, "cost_usd": c, "share": None, "runs": None,
+                                 "per_run": None} for n, c in sm["by_agent"]]
+    agents = _table(["Agent", "Spend", "Share", "Runs", "Per run"], [
+        [_e(r["agent"]), _usd(r["cost_usd"]), _share(r["share"]),
+         "-" if r["runs"] is None else r["runs"], _usd(r["per_run"])] for r in rows]) \
+        if rows else "<p class='muted'>No model spend recorded.</p>"
+    # RP20: which stories each stop happened on - open a row to see them.
+    by_stop = sm.get("stories_by_stop") or {}
+
+    def stop_cell(kind, n):
+        stories = by_stop.get(kind) or []
+        if not stories:
+            return _e(kind)
+        listed = ", ".join(f"{_link(k)}{f' ({c})' if c > 1 else ''}" for k, c in stories)
+        return (f"<details><summary>{_e(kind)} <span class='muted'>- "
+                f"{_n(len(stories), 'story').replace('storys', 'stories')}</span></summary>"
+                f"{listed}</details>")
+    stops = (_table(["Stop", "Times"], [[stop_cell(k, n), n] for k, n in sm["refusals"]])
+             + "<p class='muted'>Each time an agent stopped and handed the story to a person: "
+               "the story's stop notices (and budget holds). The rows with the most are where "
+               "the pipeline needs most help.</p>") \
         if sm["refusals"] else "<p class='muted'>No stop in the window.</p>"
+    weekly = sm.get("weekly") or []
+    trend = ("<div id='ai-trend'></div><div id='stops-trend'></div>" if weekly else
+             "<p class='muted'>No dated spend or stop yet: the weekly trend starts with the "
+             "first build that reads the comments' times.</p>")
     f = sm["findings"]
+    # RP22: what the review count counts, so 0 never reads as broken.
     review = (f"{sm['reviews']} pull request(s) reviewed, {sm['changes_requested']} sent back; "
               f"findings: {f.get('blocking', 0)} blocking, {f.get('major', 0)} major, "
-              f"{f.get('minor', 0)} minor, {f.get('info', 0)} info.")
+              f"{f.get('minor', 0)} minor, {f.get('info', 0)} info (Agent 3's latest review of "
+              f"each story's pull requests, recorded on the story; a pull request with no "
+              f"story - framework changes - is not counted).")
     costly = ", ".join(f"{_link(k)} {_usd(c)}" for k, c in sm["costliest"]) or "-"
-    return (f"<div class='card'><h2>AI metrics (stories changed in the last "
+    return (f"<div class='card' id='ai'><h2>AI metrics (stories changed in the last "
             f"{_e(data['window_days'])} days)</h2><div class='grid'>{kpi}</div>"
             f"<p class='muted'>{sm['stories']} stories, {sm['costed']} with model spend"
             f"{'' if sm['priced'] else ' (some runs had no price set: their cost is missing)'}; "
@@ -545,6 +690,8 @@ def ai_metrics_html(data: dict) -> str:
             f"{_e(review)} Agent 0: {sm['predictions']} prediction(s) measured against what "
             f"each pull request changed or failed. Read {_e(a['as_of'])} UTC.</p></div>"
             f"<div class='card'><h2>Spend by agent</h2>{agents}</div>"
+            f"<div class='card'><h2>Week by week: spend per story, first attempt and stops"
+            f"</h2>{trend}</div>"
             f"<div class='card'><h2>Stops that needed a person</h2>{stops}</div>")
 
 
@@ -552,6 +699,74 @@ def _share(value) -> str:
     """A share already in percent (the detection rate): 66.7 -> '66.7%'.
     Not _pct, which takes a fraction (a pass rate): 0.99 -> '99%'."""
     return "-" if value is None else f"{value:g}%"
+
+
+def sprint_compare_html(c: dict | None) -> str:
+    """RP25: this sprint against the one before."""
+    if not c:
+        return ""
+    a, b = c["previous"], c["current"]
+
+    def num(v, fmt=str):
+        return "-" if v is None else fmt(v)
+
+    def delta(x, y, fmt, better_up=True):
+        if x is None or y is None:
+            return "-"
+        d = y - x
+        if abs(d) < 1e-9:
+            return "same"
+        good = (d > 0) == better_up
+        return f"<span class='{'v-fixed' if good else 'v-new'}'>{'+' if d > 0 else '-'}{fmt(abs(d))}</span>"
+
+    def pct(v):
+        return f"{v * 100:.0f} pts"
+    rows = [
+        ["Pass rate", _pct(a["pass_rate"]), _pct(b["pass_rate"]),
+         delta(a["pass_rate"], b["pass_rate"], pct)],
+        ["Runs", num(a["runs"]), num(b["runs"]), delta(a["runs"], b["runs"], str)],
+        ["Defects opened", num(a["opened"]), num(b["opened"]),
+         delta(a["opened"], b["opened"], str, better_up=False)],
+        ["Defects closed", num(a["closed"]), num(b["closed"]), delta(a["closed"], b["closed"], str)],
+        ["Open at the end", num(a["open"]), num(b["open"]),
+         delta(a["open"], b["open"], str, better_up=False)],
+        ["Detection rate", _share(a["detection_rate"]), _share(b["detection_rate"]),
+         delta(a["detection_rate"], b["detection_rate"], lambda v: f"{v:g} pts")],
+        ["Model spend", _usd(a["spend_usd"]), _usd(b["spend_usd"]),
+         delta(a["spend_usd"], b["spend_usd"], lambda v: f"${v:,.2f}", better_up=False)],
+        ["Stops that needed a person", num(a["stops"]), num(b["stops"]),
+         delta(a["stops"], b["stops"], str, better_up=False)]]
+    return ("<div class='card' id='sprints'><h2>Sprint over sprint</h2>"
+            + _table(["Measure", f"{a['name']} ({a['start']} to {a['end']})",
+                      f"{b['name']} ({b['start']} to {b['end']})", "Change"], rows)
+            + "<p class='muted'>Each sprint's runs, the defects recorded for it, and the spend "
+              "and stops dated inside it. Green is better, red worse.</p></div>")
+
+
+def _ai_trend_js(data: dict) -> str:
+    """RP20/RP21: per week, spend per story and the first-attempt rate; the
+    stops stacked by kind."""
+    a = data.get("ai_metrics") or {}
+    weeks = (a.get("summary") or {}).get("weekly") or []
+    if not weeks:
+        return ""
+    x = [w["week"] for w in weeks]
+    money = [{"type": "bar", "name": "spend per story ($)", "x": x,
+              "y": [w["cost_per_story"] for w in weeks], "marker": {"color": "#1f4e8c"}},
+             {"type": "scatter", "mode": "lines+markers", "name": "coded at the first attempt (%)",
+              "x": x, "y": [w["first_attempt_rate"] for w in weeks], "yaxis": "y2",
+              "line": {"color": COLORS["passed"]}}]
+    kinds = sorted({k for w in weeks for k in w["stops"]})
+    stops = [{"type": "bar", "name": k, "x": x, "y": [w["stops"].get(k, 0) for w in weeks]}
+             for k in kinds]
+    return (f"Plotly.newPlot('ai-trend',{json.dumps(money)},Object.assign({{}},L,"
+            f"{{height:300,barmode:null,xaxis:{{type:'category',fixedrange:true,title:'week of'}},"
+            f"yaxis:{{rangemode:'tozero',fixedrange:true,title:'$ per story'}},"
+            f"yaxis2:{{overlaying:'y',side:'right',range:[0,100],fixedrange:true,title:'%'}}}}),C);"
+            + (f"Plotly.newPlot('stops-trend',{json.dumps(stops)},Object.assign({{}},L,"
+               f"{{height:300,xaxis:{{type:'category',fixedrange:true,title:'week of'}},"
+               f"yaxis:{{rangemode:'tozero',fixedrange:true,tickformat:',d',title:'stops'}}}}),C);"
+               if kinds else ""))
 
 
 def _defect_trend_js(data: dict) -> str:
@@ -589,8 +804,80 @@ def _test_case_cell(r: dict) -> str:
     return "-"
 
 
+_TRACE_COLUMNS = ["Criterion", "Test case", "Scenario", "Last result", "Defects"]
+_CSV_FIELDS = ["story", "story_summary", "story_status", "story_sprints", "criterion",
+               "criterion_text", "test_case", "test_case_summary", "scenario", "result",
+               "result_date", "defects"]
+
+# RP14/RP16: the matrix's filters, kept in the address (#story=...&result=...)
+# so a filtered view can be shared, and the CSV of the rows shown. Without
+# JavaScript every row stays shown.
+_TRACE_JS = r"""
+(function(){
+const $=s=>document.querySelector(s),$$=s=>Array.from(document.querySelectorAll(s));
+const F={story:$('#f-story'),result:$('#f-result'),sprint:$('#f-sprint'),q:$('#f-q')};
+function state(){const o={};for(const k in F){if(F[k]&&F[k].value)o[k]=F[k].value.trim();}return o;}
+function apply(write){
+  const s=state(),q=(s.q||'').toLowerCase();let stories=0,rows=0;
+  $$('details.story').forEach(d=>{
+    const sp=JSON.parse(d.dataset.sprints||'[]');
+    const ok=(!s.story||d.dataset.story===s.story)&&(!s.sprint||(s.sprint==='(no sprint)'?sp.length===0:sp.includes(s.sprint)));
+    let n=0;
+    d.querySelectorAll('tr[data-result]').forEach(tr=>{
+      const v=ok&&(!s.result||tr.dataset.result===s.result)&&(!q||tr.dataset.text.includes(q)||d.dataset.text.includes(q));
+      tr.hidden=!v;if(v)n++;});
+    d.hidden=!(ok&&n>0);if(!d.hidden){stories++;rows+=n;if(s.story)d.open=true;}
+  });
+  $('#f-count').textContent=stories+(stories===1?' story, ':' stories, ')+rows+(rows===1?' row shown':' rows shown');
+  if(write){const p=new URLSearchParams(s).toString();history.replaceState(null,'',p?'#'+p:location.pathname);}
+}
+function load(){const p=new URLSearchParams(location.hash.slice(1));
+  for(const k in F){if(F[k])F[k].value=p.get(k)||'';}
+  if(F.story&&F.story.value&&!Array.from(F.story.options).some(o=>o.value===F.story.value))F.story.value='';
+  apply(false);}
+for(const k in F){if(F[k])F[k].addEventListener(k==='q'?'input':'change',()=>apply(true));}
+$('#f-clear').addEventListener('click',()=>{for(const k in F){if(F[k])F[k].value='';}apply(true);});
+$('#f-open').addEventListener('click',()=>$$('details.story').forEach(d=>{if(!d.hidden)d.open=true;}));
+$('#f-close').addEventListener('click',()=>$$('details.story').forEach(d=>d.open=false));
+$('#f-csv').addEventListener('click',()=>{
+  const R=JSON.parse($('#trace-rows').textContent),H=JSON.parse($('#trace-cols').textContent);
+  const q=v=>'"'+String(v==null?'':(Array.isArray(v)?v.join(' '):v)).replace(/"/g,'""')+'"';
+  const idx=$$('tr[data-i]').filter(tr=>!tr.hidden&&!tr.closest('details').hidden).map(tr=>+tr.dataset.i);
+  const csv=[H.map(q).join(',')].concat(idx.map(i=>H.map(h=>q(R[i][h])).join(','))).join('\r\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv'}));
+  a.download='traceability.csv';document.body.appendChild(a);a.click();a.remove();});
+window.addEventListener('hashchange',load);load();
+})();
+"""
+
+
+def _json_script(element_id: str, value) -> str:
+    """JSON data for the page's script, safe inside <script>."""
+    text = json.dumps(value, default=str).replace("</", "<\\/")
+    return f"<script type='application/json' id='{element_id}'>{text}</script>"
+
+
+def _criterion_cell(r: dict, shared: bool) -> str:
+    if shared:                                       # said once, above the table
+        return "-"
+    return ((f"<b>{_e(r['criterion'])}</b> " if r["criterion"] != "-" else "")
+            + (f"<span class='muted'>{_e(r['criterion_text'])}</span>" if r["criterion"] == "-"
+               else _e(r["criterion_text"])))
+
+
+def _story_summary_line(g: dict) -> str:
+    res = ", ".join(f"{n} {k}" for k, n in sorted(g["results"].items())) or "no scenario run"
+    gaps = (f" (<span class='v-failed'>{g['uncovered']} without a test case</span>)"
+            if g["uncovered"] else "")
+    defects = (" &middot; defects " + " ".join(_link(d) for d in g["defects"])) if g["defects"] else ""
+    sprints = (f" &middot; {_e(', '.join(g['sprints']))}") if g["sprints"] else ""
+    return (f"{_n(g['criteria'], 'criterion').replace('criterions', 'criteria')}{gaps} &middot; "
+            f"{_n(g['test_cases'], 'test case')} &middot; {_e(res)}{defects}{sprints}")
+
+
 def traceability_html(data: dict) -> str:
     rows = data["traceability"]
+    script = ""
     if rows is None:
         body = "<p class='muted'>The tracker could not be read: no traceability matrix.</p>"
     else:
@@ -604,16 +891,65 @@ def traceability_html(data: dict) -> str:
                 f"{_n(sm['test_cases'], 'test case')} "
                 f"({sm['test_cases_without_scenario']} without a scenario on the default branch). "
                 f"Scenario results: {res}.</p>")
-        body = head + _table(
-            ["Story", "Criterion", "Test case", "Scenario", "Last result", "Defects"],
-            [[f"{_link(r['story'])}<br><span class='muted'>{_e(r['story_summary'])}</span>",
-              (f"<b>{_e(r['criterion'])}</b> " if r["criterion"] != "-" else "")
-              + (f"<span class='muted'>{_e(r['criterion_text'])}</span>" if r["criterion"] == "-"
-                 else _e(r["criterion_text"])),
-              _test_case_cell(r),
-              f"<code>{_e(r['scenario'].split('::')[-1])}</code>" if r["scenario"] else "-",
-              f"<span class='v-{_e(r['result'])}'>{_e(r['result'])}</span> {_e(r['result_date'])}",
-              " ".join(_link(d) for d in r["defects"]) or "-"] for r in rows])
+        groups = data.get("story_groups") or []
+        results = sorted({r["result"] for r in rows})
+        sprints = sorted({sp for g in groups for sp in g["sprints"]})
+        has_sprintless = any(not g["sprints"] for g in groups)
+
+        def options(values, label):
+            return (f"<option value=''>{_e(label)}</option>"
+                    + "".join(f"<option value='{_e(v)}'>{_e(t)}</option>" for v, t in values))
+        story_opts = options([(g["story"], f"{g['story']} - {g['summary']}"[:90]) for g in groups],
+                             "All stories")
+        result_opts = options([(r, r) for r in results], "All results")
+        sprint_sel = ""
+        if sprints:
+            sprint_sel = ("<select id='f-sprint' aria-label='Sprint'>" + options(
+                [(sp, sp) for sp in sprints] + ([("(no sprint)", "(no sprint)")]
+                                                if has_sprintless else []),
+                "All sprints") + "</select>")
+        filters = ("<div class='filters'>"
+                   f"<select id='f-story' aria-label='Story'>{story_opts}</select>"
+                   f"<select id='f-result' aria-label='Result'>{result_opts}</select>"
+                   f"{sprint_sel}"
+                   "<input id='f-q' type='search' placeholder='Search text, keys, scenarios' "
+                   "aria-label='Search'>"
+                   "<button id='f-clear' type='button'>Show all</button>"
+                   "<button id='f-open' type='button'>Expand</button>"
+                   "<button id='f-close' type='button'>Collapse</button>"
+                   "<button id='f-csv' type='button'>Download CSV</button>"
+                   f"<span id='f-count' class='muted'>{_n(len(groups), 'story').replace('storys', 'stories')}, "
+                   f"{_n(len(rows), 'row')} shown</span></div>")
+        index = {id(r): i for i, r in enumerate(rows)}
+        blocks = []
+        for g in groups:
+            mine = [r for r in rows if r["story"] == g["story"]]
+            texts = {r["criterion_text"] for r in mine}
+            shared = len(mine) > 1 and all(r["criterion"] == "-" for r in mine) and len(texts) == 1
+            note = (f"<p class='muted'>{_e(next(iter(texts)))}</p>" if shared else "")
+            attrs = [f"data-i='{index[id(r)]}' data-result='{_e(r['result'])}' data-text='"
+                     + _e(" ".join(str(x) for x in (r["criterion"], r["criterion_text"],
+                                                    r["test_case"], r["test_case_summary"],
+                                                    r["scenario"], r["result"],
+                                                    " ".join(r["defects"]))).lower()) + "'"
+                     for r in mine]
+            cells = [[
+                _criterion_cell(r, shared), _test_case_cell(r),
+                f"<code>{_e(r['scenario'].split('::')[-1])}</code>" if r["scenario"] else "-",
+                f"<span class='v-{_e(r['result'])}'>{_e(r['result'])}</span> {_e(r['result_date'])}",
+                " ".join(_link(d) for d in r["defects"]) or "-"] for r in mine]
+            # A criterion note said once above the table needs no column.
+            table = (_table(_TRACE_COLUMNS[1:], [c[1:] for c in cells], attrs) if shared
+                     else _table(_TRACE_COLUMNS, cells, attrs))
+            story_text = _e(f"{g['story']} {g['summary']} {g['status']}".lower())
+            blocks.append(
+                f"<details class='story' open data-story='{_e(g['story'])}' "
+                f"data-sprints='{_e(json.dumps(g['sprints']))}' data-text='{story_text}'>"
+                f"<summary><b>{_link(g['story'])}</b> {_e(g['summary'])} "
+                f"<span class='muted'>({_e(g['status'])})</span><br>"
+                f"<span class='muted'>{_story_summary_line(g)}</span></summary>"
+                f"{note}{table}</details>")
+        body = head + filters + "".join(blocks)
         loose = data.get("unlinked_defects") or []
         if loose:
             body += ("<h2 style='margin-top:20px'>Open defects not linked to a story or test "
@@ -623,8 +959,11 @@ def traceability_html(data: dict) -> str:
                          ["Defect", "Summary", "Status", "Created"],
                          [[_link(d["key"]), _e(d.get("summary")), _e(d.get("status")),
                            _e((d.get("created") or "")[:10])] for d in loose]))
+        script = (_json_script("trace-rows", [{k: r.get(k) for k in _CSV_FIELDS} for r in rows])
+                  + _json_script("trace-cols", _CSV_FIELDS) + f"<script>{_TRACE_JS}</script>")
     return _page("Traceability", _header(data, "traceability.html")
-                 + f"<main><div class='card'><h2>Traceability matrix</h2>{body}</div></main>")
+                 + f"<main><div class='card'><h2>Traceability matrix</h2>{body}</div></main>"
+                 + script)
 
 
 # ── PDF ─────────────────────────────────────────────────────────────────
@@ -692,6 +1031,26 @@ def summary_pdf(data: dict, path: Path, sprint_end: bool) -> bool:
                         ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#c8ccd2")),
                         ("FONTSIZE", (0, 0), (-1, -1), 9), ("VALIGN", (0, 0), (-1, -1), "TOP")])
     flow += [Table(rows, colWidths=[6 * cm, 10.5 * cm], style=style), Spacer(1, 0.5 * cm)]
+    c = data.get("sprint_compare")
+    if c:
+        # RP25: what changed since the sprint before - the sprint review's story.
+        a, b = c["previous"], c["current"]
+
+        def n(v, fmt=str):
+            return "-" if v is None else fmt(v)
+        flow += [Paragraph("This sprint against the one before", st["Heading2"]),
+                 Table([["Measure", f"{a['name']}\n{a['start']} to {a['end']}",
+                         f"{b['name']}\n{b['start']} to {b['end']}"],
+                        ["Pass rate", _pct(a["pass_rate"]), _pct(b["pass_rate"])],
+                        ["Runs", n(a["runs"]), n(b["runs"])],
+                        ["Defects opened", n(a["opened"]), n(b["opened"])],
+                        ["Defects closed", n(a["closed"]), n(b["closed"])],
+                        ["Open at the end", n(a["open"]), n(b["open"])],
+                        ["Detection rate", _share(a["detection_rate"]), _share(b["detection_rate"])],
+                        ["Model spend", _usd(a["spend_usd"]), _usd(b["spend_usd"])],
+                        ["Stops that needed a person", n(a["stops"]), n(b["stops"])]],
+                       colWidths=[6 * cm, 5.25 * cm, 5.25 * cm], style=style),
+                 Spacer(1, 0.5 * cm)]
     png = path.with_suffix(".png")
     if _trend_png(data, png):
         flow += [Paragraph("Results per run", st["Heading2"]), Image(str(png), width=17 * cm,

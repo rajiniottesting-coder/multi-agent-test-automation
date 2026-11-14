@@ -454,11 +454,22 @@ def story_ledger(story_key: str, tracker) -> dict:
     return out
 
 
-def all_attempts(story_key: str, tracker, comment_bodies: list[str] | None = None) -> dict:
+def _stamp_time(key: str) -> str | None:
+    """A property key's time as ISO UTC ('20261114T101500...Z' -> '2026-11-14T10:15:00Z')."""
+    t = _stamp(key)
+    if len(t) < 15 or t[8] != "T":
+        return None
+    return f"{t[:4]}-{t[4:6]}-{t[6:8]}T{t[9:11]}:{t[11:13]}:{t[13:15]}Z"
+
+
+def all_attempts(story_key: str, tracker, comment_bodies: list[str] | None = None,
+                 comment_dates: list | None = None) -> dict:
     """Every usage entry of the story, across all its attempts (RP5's AI
     metrics count what a story cost in all, not only its current attempt):
     {"entries", "resets", "holds"}. Comment entries (before the property
     ledger) and property entries are different runs, so nothing counts twice.
+    Each entry carries "at" (ISO time) when known: `comment_dates` (one per
+    body) for comment entries, the key's time for property entries (RP21).
     Never raises: an unreadable store reads as empty."""
     from core.spend_budget import _HOLD_RE
     out = {"entries": [], "resets": 0, "holds": 0}
@@ -467,7 +478,13 @@ def all_attempts(story_key: str, tracker, comment_bodies: list[str] | None = Non
     try:
         bodies = (comment_bodies if comment_bodies is not None
                   else tracker.get_comments(story_key)) or []
-        out["entries"] = [p for p in (parse_usage_comment(b) for b in bodies) if p]
+        dates = (list(comment_dates) if comment_dates is not None
+                 and len(comment_dates) == len(bodies) else [None] * len(bodies))
+        for body, at in zip(bodies, dates):
+            parsed = parse_usage_comment(body)
+            if parsed:
+                parsed["at"] = at
+                out["entries"].append(parsed)
         out["resets"] = sum(1 for b in bodies if RESET_MARKER in (b or ""))
         out["holds"] = sum(1 for b in bodies if _HOLD_RE.search(b or ""))
         if mode(tracker) == "properties":
@@ -475,7 +492,9 @@ def all_attempts(story_key: str, tracker, comment_bodies: list[str] | None = Non
             for key in sorted(props, key=_stamp):
                 value = props[key] or {}
                 if key.startswith(PROP_USAGE + "."):
-                    out["entries"].append(_entry(value.get("agent", "unknown"), value))
+                    entry = _entry(value.get("agent", "unknown"), value)
+                    entry["at"] = _stamp_time(key)
+                    out["entries"].append(entry)
                 elif key.startswith(PROP_RESET + "."):
                     out["resets"] += 1
                 # A hold is counted from its `[budget:hold]` comment only:
