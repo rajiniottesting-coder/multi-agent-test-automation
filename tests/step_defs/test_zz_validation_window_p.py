@@ -10,7 +10,7 @@ from pytest_bdd import given, scenarios, then
 
 from config.paths import feature_path
 
-WINDOW_P_PASSES = False
+WINDOW_P_PASSES = True
 
 scenarios(str(feature_path("zz_validation_window_p")))
 
