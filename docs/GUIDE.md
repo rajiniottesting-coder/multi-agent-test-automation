@@ -2220,7 +2220,9 @@ stays in the figures. *History* and the PDF show, for the window:
 - **Agent 0's recall and precision** over every pull request it predicted
   for (its outcome: predicted tests against those that changed or failed).
 
-Nothing calls a model; an unreadable tracker leaves the store as it is.
+Nothing calls a model; an unreadable tracker leaves the store as it is. A throw-away
+story (labelled `cleanup.delete_label`, `test-data`) is left out, as from the defect
+history: label it, let a Reports run drop it, then delete it.
 
 **Severity (RP8).** `reporting.severity_by_tag` maps a scenario's tags (its
 feature's tags included) to Allure's severity; the most severe wins, and an
