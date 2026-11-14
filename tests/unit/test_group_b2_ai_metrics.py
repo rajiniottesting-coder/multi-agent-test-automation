@@ -169,3 +169,12 @@ def test_the_site_reads_the_store_without_the_tracker_and_makes_the_pdf(tmp_path
     assert "AI metrics" in page and "$1.70" in page
     pytest.importorskip("reportlab")      # requirements-reports.txt: the Reports run only
     assert (out / "summary.pdf").exists()
+
+
+def test_a_budget_hold_counts_once_in_either_store(world):
+    """14 Nov 2026: a hold is a [budget:hold] comment AND, with the property
+    ledger, an llm.hold property - a story's one hold read as two."""
+    fake, jira = world
+    jira.add_comment("SBX-3", "[budget:hold] spent: 8.0260 limit: 8.00\nModel spend ...")
+    assert ul.record_hold("SBX-3", 8.026, 8.0, jira=jira)
+    assert _rec(world, "SBX-3")["refusals"]["held by the spend budget"] == 1

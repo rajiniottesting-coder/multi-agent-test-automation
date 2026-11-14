@@ -478,8 +478,10 @@ def all_attempts(story_key: str, tracker, comment_bodies: list[str] | None = Non
                     out["entries"].append(_entry(value.get("agent", "unknown"), value))
                 elif key.startswith(PROP_RESET + "."):
                     out["resets"] += 1
-                elif key.startswith(PROP_HOLD + "."):
-                    out["holds"] += 1
+                # A hold is counted from its `[budget:hold]` comment only:
+                # core.spend_budget posts it in either mode, and the property
+                # mode keeps the same hold as `llm.hold` too (14 Nov 2026: a
+                # story's one hold counted twice).
     except Exception as e:                                         # noqa: BLE001
         logger.warning("Usage of %s not read: %s", story_key, e)
     return out
