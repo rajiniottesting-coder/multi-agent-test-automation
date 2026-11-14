@@ -1234,10 +1234,27 @@ approved pull request as an ordinary merge, exclude the default branch from it
 (**Target branches → Exclude by pattern → Default branch**); `main` keeps its own
 pull-request ruleset.
 
-No status check is required yet. Requiring `Agent 4 - Runner / Run Tests` would
-turn the gate from a report into a block; do it only once the pipeline is
-reliably green, and remember that a change story's PR is expected to fail its
-E2E until the change is deployed.
+**Required check (X6).** `Agent 4 - Runner / Run Tests` can be required before a
+merge into `main`: every pull request gets it (Agent 4 has no paths filter), and
+a change story's expected failures no longer turn it red. Its last step (*Decide
+the E2E result*, `scripts/finalise_junit.py --verdict --expected-failures`)
+treats a failure whose story awaits its deployment (`awaiting-deployment`, see
+*Waiting for a deployment*) as expected: the check passes with one notice per
+test naming its story. Every other failure, an outage, an interrupted run and
+the framework self-test still fail it. The tracker decides, with the triage's
+rule (`core.defects.awaiting_deployment`); when it cannot be read, every failure
+counts. To require it (a repository admin, once):
+
+1. Repository → **Settings** → left menu **Rulesets** (older layouts:
+   **Rules** → **Rulesets**) → the ruleset that targets `main` (the
+   pull-request one).
+2. Tick **Require status checks to pass** → **Add checks** → type `Run Tests`
+   and pick the one from **Agent 4 - Runner** (GitHub Actions).
+3. Leave *Require branches to be up to date* off (each merge would re-run the
+   E2E), then **Save changes**.
+
+Admins on the bypass list can still merge a red pull request; GitHub records it
+as a bypass.
 
 ## Branch naming
 
@@ -2025,8 +2042,10 @@ fail until the change is deployed - the correct red. With `deployment.enabled`
    yet.
 2. **Expected.** While a story carries it, its failing tests - and the tests
    of the test cases it revises (its `impacts` links) - are expected: Agent 5's
-   report opens with *Awaiting deployment*, and the triage on main raises no
-   defect for them (the run lists them as `expected`).
+   report opens with *Awaiting deployment*, the triage on main raises no
+   defect for them (the run lists them as `expected`), and Agent 4's Run Tests
+   check passes with a notice naming them (X6), so a required check does not
+   block the story's pull request.
 3. **Deployed.** When the change is live, send the signal - any one of:
    - add `deployed` (`deployment.deployed_label`) to the story in the tracker
      (the next pipeline health check picks it up);
