@@ -74,7 +74,7 @@ def _say_once(tracker, key: str, slot: str, value: str, body: str, result: dict,
             put(key, PROPERTY, memory)
     except Exception as e:                                         # noqa: BLE001
         logger.warning("%s: %s not said: %s", key, finding, e)
-        result["errors"].append((f"{key} {finding}", str(e)[:300]))
+        _write_failed(result, f"{key} {finding}", e)
     return True
 
 
@@ -243,7 +243,7 @@ def stories_retired(tracker, markers: list, result: dict, s: dict, dry_run: bool
                            f"retired. Its scenario in `{m.file}` (\"{m.title}\") still runs: "
                            f"remove it in a pull request.")
             except Exception as e:                                 # noqa: BLE001
-                result["errors"].append((f"{m.key} retire", str(e)[:300]))
+                _write_failed(result, f"{m.key} retire", e)
         if open_defects is None:
             open_defects = report(d["issue_type"], open_only=True) if report else []
         keys = {owner} | {m.key for m in ms}
@@ -285,7 +285,7 @@ def prs_out_of_sync(host, result: dict, s: dict, dry_run: bool) -> None:
         else:
             continue
         marker = f"<!-- watch:pr-sync {pr.get('head_sha')} {kind} -->"
-        result[f"prs_{kind}"].append(pr["number"])
+        result[_PR_FINDING[kind]].append(pr["number"])
         if dry_run:
             continue
         try:
@@ -293,7 +293,18 @@ def prs_out_of_sync(host, result: dict, s: dict, dry_run: bool) -> None:
                 continue
             host.post_pr_comment(pr["number"], body + "\n\n" + marker)
         except Exception as e:                                     # noqa: BLE001
-            result["errors"].append((f"PR #{pr['number']}", str(e)[:300]))
+            _write_failed(result, f"PR #{pr['number']}", e)
+
+
+_PR_FINDING = {"conflict": "prs_conflict", "behind": "prs_behind"}
+
+
+def _write_failed(result: dict, what: str, error: Exception) -> None:
+    """A refused write: listed in errors AND write_errors (the script's exit
+    code reads write_errors; a step that could not read is a warning)."""
+    entry = (what, str(error)[:300])
+    result["errors"].append(entry)
+    result["write_errors"].append(entry)
 
 
 # ── one run ─────────────────────────────────────────────────────────────
@@ -304,7 +315,7 @@ def run(tracker, host, features_dir: Path, now: _dt.datetime | None = None,
     now = now or _dt.datetime.now(_dt.timezone.utc)
     result = {"story_edited": [], "test_case_changed": [], "test_case_deleted": [],
               "retired": [], "defects_flagged": [], "prs_conflict": [], "prs_behind": [],
-              "errors": []}
+              "errors": [], "write_errors": []}
     if not s.get("enabled", True):
         return result
     steps = []

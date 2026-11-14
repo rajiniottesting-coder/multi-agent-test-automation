@@ -45,7 +45,7 @@ def main(argv=None) -> int:
         print(f"{name}: {value}")
     if out["errors"]:
         print(f"::warning::{len(out['errors'])} watcher step(s) or write(s) failed - see above.")
-    return 1 if any(" " in what for what, _ in out["errors"]) else 0
+    return 1 if out["write_errors"] else 0          # a refused write; a read is a warning
 
 
 if __name__ == "__main__":

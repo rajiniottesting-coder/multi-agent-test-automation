@@ -174,3 +174,22 @@ def test_dry_run_writes_nothing(world):
     fake.issues["SBX-5"]["description"] = "changed"
     out = _run(world, dry_run=True)
     assert out["test_case_changed"] == ["SBX-2"] and not fake.comments.get("SBX-2")
+
+
+def test_a_refused_write_fails_the_step_and_a_read_only_warns(world, monkeypatch):
+    from scripts import watch_tracker as wt
+    fake, jira, features = world
+    fake.issues["SBX-5"]["description"] = "changed"
+
+    def refuse(*a, **k):
+        raise RuntimeError("no permission")
+    monkeypatch.setattr(jira, "add_comment", refuse)
+    out = _run(world)
+    assert out["write_errors"] and out["write_errors"] == out["errors"]
+    monkeypatch.setattr("integrations.tracker.get_tracker", lambda: jira)
+    monkeypatch.setattr("integrations.repo_host.get_repo_host", lambda: None)
+    assert wt.main(["--features-dir", str(features)]) == 1
+    monkeypatch.setattr(jira, "get_all_test_cases", refuse)
+    monkeypatch.setattr(jira, "find_stories_to_process", refuse)
+    fake.issues["SBX-5"]["description"] = "Steps: add an item"
+    assert wt.main(["--features-dir", str(features)]) == 0, "a step that cannot read only warns"
