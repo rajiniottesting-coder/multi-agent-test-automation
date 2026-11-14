@@ -83,21 +83,57 @@ def _outcomes_from_comments(bodies) -> list:
     return out
 
 
+def _day(at) -> str | None:
+    """An ISO time's UTC day, or None."""
+    if not at:
+        return None
+    try:
+        t = _dt.datetime.fromisoformat(str(at).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=_dt.timezone.utc)
+    return t.astimezone(_dt.timezone.utc).date().isoformat()
+
+
+def _comments(tracker, key: str) -> tuple:
+    """(bodies, their times or None): dated when the tracker can say."""
+    from integrations.tracker import capability
+    dated = capability(tracker, "get_comments_dated")
+    if dated is not None:
+        found = dated(key)
+        if found is not None:
+            return [c.get("body") or "" for c in found], [c.get("at") for c in found]
+    return tracker.get_comments(key) or [], None
+
+
 def story_record(tracker, story: dict, coded_label: str) -> dict:
-    """One story's figures. `story`: {"key", "labels", "updated"}."""
+    """One story's figures. `story`: {"key", "labels", "updated"}.
+
+    RP20/RP21: also when each run's spend and each stop happened (`spend_days`
+    {day: usd}, `stop_days` {day: {kind: n}}, `first_coded` the day of its
+    first coding run) and how many runs each agent made (`runs_by_agent`)."""
     from core import usage_ledger as ul
+    from core.spend_budget import _HOLD_RE
     key = story["key"]
-    bodies = tracker.get_comments(key) or []
-    used = ul.all_attempts(key, tracker, bodies)
+    bodies, dates = _comments(tracker, key)
+    used = ul.all_attempts(key, tracker, bodies, dates)
     by_agent: dict = {}
+    runs_by_agent: dict = {}
     cost, priced = 0.0, True
     for row in ul.by_agent(used["entries"]):
         by_agent[row["agent"]] = round(row["cost_usd"], 6) if row["priced"] else None
+        runs_by_agent[row["agent"]] = row["runs"]
         if row["priced"]:
             cost += row["cost_usd"]
         else:
             priced = False
-    coding = []
+    spend_days: dict = {}
+    for e in used["entries"]:
+        day = _day(e.get("at"))
+        if day and e.get("cost_usd") is not None:
+            spend_days[day] = round(spend_days.get(day, 0.0) + e["cost_usd"], 6)
+    coding, first_coded = [], None
     for e in used["entries"]:
         if not e["agent"].startswith(CODER):
             continue
@@ -105,11 +141,25 @@ def story_record(tracker, story: dict, coded_label: str) -> dict:
         if run_mode in NOT_A_CODING_RUN:
             continue
         coding.append(run_mode)
+        day = _day(e.get("at"))
+        if day and (first_coded is None or day < first_coded):
+            first_coded = day
     coded = coded_label in (story.get("labels") or [])
     first = None
     if coded and coding:
         first = used["resets"] == 0 and len(coding) == 1 and coding[0] in FIRST_RUN_MODES
     refusals = {}
+    stop_days: dict = {}
+    for i, body in enumerate(bodies):
+        kind = next((k for m, k in REFUSALS.items() if (body or "").startswith(m)), None)
+        if kind is None and _HOLD_RE.search(body or ""):
+            kind = "held by the spend budget"
+        if kind is None:
+            continue
+        day = _day(dates[i]) if dates else None
+        if day:
+            stop_days.setdefault(day, {})
+            stop_days[day][kind] = stop_days[day].get(kind, 0) + 1
     for marker, kind in REFUSALS.items():
         n = sum(1 for b in bodies if (b or "").startswith(marker))
         if n:
@@ -129,7 +179,9 @@ def story_record(tracker, story: dict, coded_label: str) -> dict:
     outcomes += _outcomes_from_comments(bodies)
     return {"key": key, "updated": str(story.get("updated") or "")[:10],
             "cost_usd": round(cost, 6), "priced": priced, "by_agent": by_agent,
-            "runs": len(used["entries"]), "coding_runs": len(coding), "attempts":
+            "runs": len(used["entries"]), "runs_by_agent": runs_by_agent,
+            "spend_days": spend_days, "stop_days": stop_days, "first_coded": first_coded,
+            "coding_runs": len(coding), "attempts":
             used["resets"] + 1, "coded": coded, "first_attempt": first,
             "refusals": refusals, "reviews": reviews,
             "predictions": [{"recall": o.get("recall"), "precision": o.get("precision"),
@@ -202,7 +254,8 @@ def _share(n: int, of: int) -> float | None:
 
 def summary(records: dict, since: str) -> dict:
     """The window's figures: the stories updated on or after `since`."""
-    recs = [r for r in records.values() if (r.get("updated") or "") >= since]
+    recs = [{**r, "key": r.get("key") or k} for k, r in records.items()
+            if (r.get("updated") or "") >= since]
     costed = [r for r in recs if r.get("runs")]
     total = round(sum(r["cost_usd"] for r in costed), 2)
     agents: dict = {}
@@ -225,11 +278,28 @@ def summary(records: dict, since: str) -> dict:
     for p in preds:
         hit = len(set(p["predicted"]) & set(p["actual"]))
         tp, predicted, actual = tp + hit, predicted + len(p["predicted"]), actual + len(p["actual"])
+    runs: dict = {}
+    for r in costed:
+        for agent, n in (r.get("runs_by_agent") or {}).items():
+            runs[agent] = runs.get(agent, 0) + int(n or 0)
+    agent_rows = []
+    for a, c in sorted(agents.items(), key=lambda x: -x[1]):
+        n = runs.get(a)
+        agent_rows.append({"agent": a, "cost_usd": round(c, 2),
+                           "share": _share(c, total) if total else None,
+                           "runs": n, "per_run": round(c / n, 2) if n else None})
+    stories_by_stop: dict = {}
+    for r in sorted(recs, key=lambda r: r["key"]):
+        for kind, n in (r.get("refusals") or {}).items():
+            stories_by_stop.setdefault(kind, []).append((r["key"], n))
     return {
         "stories": len(recs), "costed": len(costed), "cost_usd": total,
         "cost_per_story": round(total / len(costed), 2) if costed else None,
         "by_agent": sorted(((a, round(c, 2)) for a, c in agents.items()),
                            key=lambda x: -x[1]),
+        "agents": agent_rows,
+        "stories_by_stop": stories_by_stop,
+        "weekly": weekly(recs, since),
         "priced": all(r.get("priced", True) for r in costed),
         "coded": len(coded), "first_attempt": first,
         "first_attempt_rate": _share(first, len(coded)),
@@ -243,6 +313,50 @@ def summary(records: dict, since: str) -> dict:
         "costliest": [(r["key"], r["cost_usd"]) for r in
                       sorted(costed, key=lambda r: -r["cost_usd"])[:5]],
     }
+
+
+def _week(day: str) -> str:
+    """The Monday of a day's ISO week."""
+    d = _dt.date.fromisoformat(day)
+    return (d - _dt.timedelta(days=d.weekday())).isoformat()
+
+
+def weekly(records, since: str) -> list:
+    """Per week (by its Monday), from `since`: model spend, the stories that
+    spent, spend per story, stops by kind, and the stories first coded that
+    week with how many held at the first attempt (RP21, RP20). Only dated
+    events count - a record read before dates were kept adds nothing."""
+    weeks: dict = {}
+
+    def w(day):
+        return weeks.setdefault(_week(day), {"cost_usd": 0.0, "stories": set(), "stops": {},
+                                             "coded": 0, "first_attempt": 0})
+    for r in records:
+        for day, usd in (r.get("spend_days") or {}).items():
+            if day >= since:
+                row = w(day)
+                row["cost_usd"] += usd or 0.0
+                row["stories"].add(r["key"])
+        for day, kinds in (r.get("stop_days") or {}).items():
+            if day >= since:
+                row = w(day)
+                for kind, n in kinds.items():
+                    row["stops"][kind] = row["stops"].get(kind, 0) + int(n or 0)
+        day = r.get("first_coded")
+        if day and day >= since and r.get("first_attempt") is not None:
+            row = w(day)
+            row["coded"] += 1
+            row["first_attempt"] += 1 if r["first_attempt"] else 0
+    out = []
+    for week in sorted(weeks):
+        row = weeks[week]
+        n = len(row["stories"])
+        out.append({"week": week, "cost_usd": round(row["cost_usd"], 2), "stories": n,
+                    "cost_per_story": round(row["cost_usd"] / n, 2) if n else None,
+                    "stops": row["stops"], "stop_total": sum(row["stops"].values()),
+                    "coded": row["coded"], "first_attempt": row["first_attempt"],
+                    "first_attempt_rate": _share(row["first_attempt"], row["coded"])})
+    return out
 
 
 # ── Agent 3's side ─────────────────────────────────────────────────────

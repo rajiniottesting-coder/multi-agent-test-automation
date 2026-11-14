@@ -759,6 +759,58 @@ class JiraClient:
             logger.warning(f"Could not fetch comments for {issue_key}: {e}")
             return []
 
+    def get_comments_dated(self, issue_key: str) -> list | None:
+        """Every comment as {"at", "body"}, oldest first ("at": ISO time).
+        Optional capability: the reports date the agents' stops and spend
+        (RP20, RP21). None when the comments cannot be read."""
+        try:
+            issue = self.client.issue(issue_key, fields="comment")
+            comments = getattr(issue.fields, "comment", None)
+            if comments is None:
+                return []
+            return [{"at": getattr(c, "created", None), "body": getattr(c, "body", "") or ""}
+                    for c in comments.comments]
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning(f"Could not fetch dated comments for {issue_key}: {e}")
+            return None
+
+    def sprints_of(self, issue_keys) -> dict | None:
+        """{issue key: [sprint names]} for these issues (the board's sprint
+        field, found by its schema, not by a site-specific id). Optional
+        capability: the traceability matrix's sprint filter (RP14). None
+        when the tracker has no sprint field or cannot be read."""
+        keys = [k for k in dict.fromkeys(issue_keys or []) if k]
+        if not keys:
+            return {}
+        try:
+            field = next((f["id"] for f in self.client.fields()
+                          if (f.get("schema") or {}).get("custom")
+                          == "com.pyxis.greenhopper.jira:gh-sprint"), None)
+            if field is None:
+                return None
+            out: dict = {}
+            for i in range(0, len(keys), 50):
+                chunk = keys[i:i + 50]
+                found = self.client.search_issues(
+                    f"key in ({','.join(chunk)})", fields=field, maxResults=len(chunk))
+                for issue in found:
+                    value = getattr(issue.fields, field, None) or []
+                    names = []
+                    for sp in value:
+                        name = getattr(sp, "name", None) or (sp.get("name")
+                                                             if isinstance(sp, dict) else None)
+                        if not name and isinstance(sp, str):
+                            import re
+                            m = re.search(r"name=([^,\]]+)", sp)
+                            name = m.group(1) if m else None
+                        if name:
+                            names.append(name)
+                    out[issue.key] = names
+            return out
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning(f"Sprints of {len(keys)} issue(s) not read: {e}")
+            return None
+
     def render_markdown(self, markdown: str) -> str:
         """Markdown -> the markup this client's comments render (Jira wiki).
 
