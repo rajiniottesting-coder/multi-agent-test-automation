@@ -101,11 +101,12 @@ def refuse(tracker, story_key: str, label: str, why: str, dry_run: bool = False)
         tracker.remove_label(story_key, label)
     except Exception as e:                                         # noqa: BLE001
         logger.warning("%s: approval label not removed: %s", story_key, e)
-    body = (f"{MARKER} Not coded: {why}. The '{label}' label was removed. "
-            f"An allowed approver (agents.agent2_coder.approver_groups / approvers) adds "
-            f"it again to start coding.")
+    body = (f"{MARKER} Not coded: {why}. The `{label}` label was removed. "
+            f"An allowed approver (`agents.agent2_coder.approver_groups` / `approvers`) "
+            f"adds it again to start coding.")
     try:
-        tracker.add_comment(story_key, body)
+        from integrations.tracker import add_markdown_comment
+        add_markdown_comment(tracker, story_key, body)
     except Exception as e:                                         # noqa: BLE001
         logger.warning("%s: approval comment not posted: %s", story_key, e)
 

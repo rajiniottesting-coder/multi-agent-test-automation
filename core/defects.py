@@ -67,7 +67,7 @@ from pathlib import Path
 from core import junit_marks as jm
 from core.json_block import read_json_block
 from core.ops_settings import section
-from integrations.tracker import capability
+from integrations.tracker import add_markdown_comment, capability
 
 from core.redaction import error_text
 
@@ -460,8 +460,8 @@ def follow(tracker, defect: dict, test: str, traced: dict, run_url: str, result:
             tracker.link_issues(key, traced["test_case"], "defect_of")
         seen = _followed(tracker, key)
         if (seen.get(test) or {}).get("state") != "failing":
-            tracker.add_comment(
-                key, f"The pipeline's run on main fails {test.rsplit('.', 1)[-1]} too: "
+            add_markdown_comment(
+                tracker, key, f"The pipeline's run on main fails `{test.rsplit('.', 1)[-1]}` too: "
                      f"{run_url}. This defect covers it, so no duplicate was raised; the "
                      f"pipeline says here when the test passes again.")
             seen[test] = {"state": "failing", "since": run_url}
@@ -480,7 +480,8 @@ def unfollow_passing(tracker, defects: list[dict], passed: set, run_url: str, re
         for test, info in seen.items():
             if (info or {}).get("state") == "failing" and test in passed:
                 try:
-                    tracker.add_comment(d["key"], f"{test.rsplit('.', 1)[-1]} passes on main "
+                    add_markdown_comment(tracker, d["key"],
+                                         f"`{test.rsplit('.', 1)[-1]}` passes on main "
                                                   f"again: {run_url}. Close this defect if "
                                                   f"it is fixed.")
                     seen[test] = {"state": "passing", "since": run_url}
@@ -514,7 +515,7 @@ def retest_resolved(tracker, cases, traces, run_url: str, result: dict, s: dict,
         if not tests:
             continue
         failing = [t for t in tests if outcome.get(t) in ("failed", "error")]
-        names = ", ".join(t.rsplit(".", 1)[-1] for t in (failing or tests)[:5])
+        names = ", ".join(f"`{t.rsplit('.', 1)[-1]}`" for t in (failing or tests)[:5])
         body = (f"Re-tested after it was closed: {len(tests)} linked test(s) ran on main "
                 f"({run_url}). " + (f"Still failing: {names} - reopen this defect if it "
                                     f"is not fixed." if failing else f"All pass: {names}."))
@@ -524,7 +525,7 @@ def retest_resolved(tracker, cases, traces, run_url: str, result: dict, s: dict,
         if dry_run:
             continue
         try:
-            tracker.add_comment(d["key"], body)
+            add_markdown_comment(tracker, d["key"], body)
             tracker.add_label(d["key"], label)
         except Exception as e:                                     # noqa: BLE001
             result["errors"].append((f"{d['key']} re-test", error_text(e)))

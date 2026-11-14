@@ -143,3 +143,13 @@ def test_agent1_stops_before_any_model_call(monkeypatch):
     monkeypatch.setattr(a1, "LLMClient", no_model)
     result = a1.run("SBX-1")
     assert result["status"] == "not_ready" and result["test_cases_generated"] == 0
+
+
+def test_notices_are_rendered_for_the_tracker(jira):
+    """A notice is written in Markdown and posted through
+    add_markdown_comment: Jira shows monospace, not literal backticks."""
+    fake, client = jira
+    fake.issues["SBX-1"]["labels"].append("human-approved")
+    approval.refuse(client, "SBX-1", "human-approved", "nobody approved")
+    (body,) = fake.comments["SBX-1"]
+    assert "`" not in body and "{{human" in body

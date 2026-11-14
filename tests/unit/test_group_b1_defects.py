@@ -19,6 +19,12 @@ from tests.unit.test_defect_triage import RUN, _case, _junit
 BUG = defects.settings()["issue_type"]
 
 
+
+def _plain(text: str) -> str:
+    """A comment as a person reads it: monospace marks and escapes dropped
+    (comments go through the tracker's Markdown rendering)."""
+    return text.replace("{{", "").replace("}}", "").replace("\\", "").replace("`", "")
+
 @pytest.fixture
 def world(monkeypatch, tmp_path):
     ph.reset_cache()
@@ -58,13 +64,13 @@ def test_a_persons_open_defect_covers_the_failure(world, tmp_path):
     out = _run(world, tmp_path, _case("test_add_an_item", "failed"))
     assert out["raised"] == [] and out["followed"] == [mine]
     assert set(_bugs(fake)) == {mine}, "no duplicate raised"
-    (body,) = fake.comments[mine]
+    (body,) = map(_plain, fake.comments[mine])
     assert "fails test_cart::test_add_an_item too" in body and f"{RUN}1" in body
     out = _run(world, tmp_path, _case("test_add_an_item", "failed"), n=2)
     assert len(fake.comments[mine]) == 1, "commented once while it keeps failing"
     out = _run(world, tmp_path, _case("test_add_an_item"), n=3)
     assert out["followed_passing"] == [mine]
-    assert "passes on main again" in fake.comments[mine][-1]
+    assert "passes on main again" in _plain(fake.comments[mine][-1])
 
 
 def test_a_persons_defect_on_the_story_covers_its_tests(world, tmp_path):
@@ -92,7 +98,7 @@ def test_a_persons_closed_defect_is_re_tested_once(world, tmp_path):
     fake.link("Blocks", fixed, "SBX-5")
     out = _run(world, tmp_path, _case("test_add_an_item"), _case("test_remove_an_item"))
     assert out["retested"] == [fixed]
-    (body,) = fake.comments[fixed]
+    (body,) = map(_plain, fake.comments[fixed])
     assert body.startswith("Re-tested after it was closed: 1 linked test(s)")
     assert "All pass: test_cart::test_add_an_item" in body
     assert "retested" in fake.issues[fixed]["labels"]
@@ -105,7 +111,7 @@ def test_a_re_test_that_fails_says_so(world, tmp_path):
     fixed = fake.add(BUG, "Add was broken", labels=[], status="Done")
     fake.link("Relates", fixed, "SBX-1")
     _run(world, tmp_path, _case("test_add_an_item", "failed"))
-    assert "Still failing: test_cart::test_add_an_item" in fake.comments[fixed][0]
+    assert "Still failing: test_cart::test_add_an_item" in _plain(fake.comments[fixed][0])
     assert "reopen this defect" in fake.comments[fixed][0]
 
 
