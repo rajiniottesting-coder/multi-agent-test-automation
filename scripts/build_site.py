@@ -184,8 +184,9 @@ def collect(store: Path, features_dir: Path, now: _dt.datetime, with_tracker: bo
 
 
 def defect_figures(history: dict, now: _dt.datetime, window_days: int) -> dict | None:
-    """RP12: the window's defect trend, totals and density per module, and
-    one row per recorded sprint - None only while the tracker was never read.
+    """RP12 and RP13: the window's defect trend, totals (who found the
+    defects and the detection rate) and density per module, and one row per
+    recorded sprint - None only while the tracker was never read.
     A history that was read and holds no defect shows zeros: 14 Nov 2026 it
     read 'No defect history yet' once every defect had left it."""
     from core import defect_ledger as dl
@@ -430,7 +431,8 @@ def dashboard_html(data: dict) -> str:
 
 
 def defect_history_html(data: dict) -> str:
-    """RP12: the defect trend, totals, density per module and per sprint."""
+    """RP12 and RP13: the defect trend, totals, who found the defects,
+    density per module and per sprint."""
     h = data.get("defect_history")
     if not h:
         return ("<div class='card'><h2>Defects over time</h2><p class='muted'>No defect "
