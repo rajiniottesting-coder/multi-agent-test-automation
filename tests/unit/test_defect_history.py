@@ -307,3 +307,16 @@ def test_the_sprint_record_is_rewritten_when_the_history_empties(tmp_path, monke
     dl.sprint_snapshot(tmp_path, sprint, _recs(), {}, 10, NOW)
     bs.defect_history(tmp_path, object(), Path("features"), sprint, NOW)
     assert dl.read_sprints(tmp_path)[0]["opened"] == 3                 # left as it was
+
+
+def test_a_read_but_empty_history_shows_zeros_not_no_history(tmp_path):
+    """14 Nov 2026: every defect had left the history; History read 'No
+    defect history yet' and hid the chart, the density and the sprints."""
+    from scripts import build_site as bs
+    assert bs.defect_figures(_history([]), NOW, 30) is None              # never read
+    f = bs.defect_figures({**_history([]), "ever_synced": True}, NOW, 30)
+    assert f["summary"]["opened"] == 0 and f["trend"]["open"] == [0] * 30
+    assert {r["module"] for r in f["modules"]} == {"Basket", "sign_in"}
+    assert "Defects over time" in bs.defect_history_html({"window_days": 30, "defect_history": f})
+    dl.write(tmp_path, {"synced": "2026-11-14T01:00:00+00:00", "defects": {}})
+    assert bs.defect_history(tmp_path, None, Path("features"), None, NOW)["ever_synced"] is True
