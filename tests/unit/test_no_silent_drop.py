@@ -24,6 +24,7 @@ from agents.agent2_coder import format_marker
 from core.schemas import CodePlan, FilePlan, GeneratedFile
 from tests.sandbox.fake_jira import FakeRepoHost, jira_client_over
 from tests.sandbox.seed import build_repo, repo_files, seed_jira
+from pathlib import Path
 
 STORY = "SBX-50"
 FEATURE = "features/wish_list.feature"
@@ -388,7 +389,7 @@ def test_ai_update_with_nothing_to_do_clears_a_stale_label(world):
 def test_the_label_is_configured_and_reset_on_a_reverted_change():
     import yaml
     from core.impact_settings import DEFAULTS
-    cfg = yaml.safe_load(open("config/config.yaml", encoding="utf-8"))
+    cfg = yaml.safe_load(Path("config/config.yaml").read_text(encoding="utf-8"))
     assert cfg["agents"]["agent2_coder"]["incomplete_label"] == "ai-incomplete"
     assert "ai-incomplete" in DEFAULTS["reconcile"]["reset_labels"]
 

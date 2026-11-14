@@ -18,6 +18,7 @@ import pytest
 import yaml
 
 import agents.agent2_coder as a2
+from pathlib import Path
 
 S = lambda *keys: [{"key": k} for k in keys]
 
@@ -88,8 +89,8 @@ def test_deferred_stories_are_in_the_summary_and_never_fail_the_job(monkeypatch)
 
 
 def test_the_job_timeout_fits_the_deadline_and_one_slow_story():
-    cfg = yaml.safe_load(open("config/config.yaml", encoding="utf-8"))["agents"]["agent2_coder"]
-    wf = open(".github/workflows/agent2_coder.yml", encoding="utf-8").read()
+    cfg = yaml.safe_load(Path("config/config.yaml").read_text(encoding="utf-8"))["agents"]["agent2_coder"]
+    wf = Path(".github/workflows/agent2_coder.yml").read_text(encoding="utf-8")
     timeout = int(re.search(r"timeout-minutes:\s*(\d+)", wf).group(1))
     slowest_story, setup = 8, 2
     assert cfg["scan_deadline_minutes"] + slowest_story + setup <= timeout < 30, \

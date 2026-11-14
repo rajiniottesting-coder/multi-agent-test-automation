@@ -12,10 +12,11 @@ workflows by the checks below, and Agent 3's job timeout fits it.
 import re
 
 import agents.agent3_reviewer as a3
+from pathlib import Path
 
 
 def _yaml(path):
-    return open(path, encoding="utf-8").read()
+    return Path(path).read_text(encoding="utf-8")
 
 
 def test_the_wait_is_the_turn_cap_plus_one_run():

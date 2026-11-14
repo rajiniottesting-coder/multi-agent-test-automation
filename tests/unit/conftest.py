@@ -53,3 +53,15 @@ def _deployment_signal_off(request, monkeypatch):
     def off():
         return {**real(), "enabled": False}
     monkeypatch.setattr(deployment, "settings", off)
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_pycollect_makeitem(collector, name, obj):
+    """Only a class a test module DEFINES is a test class. A model imported
+    into it whose name starts with Test (TestCase, TestStep, TestResult in
+    core/schemas.py) is not one - pytest warned about each on every run - and
+    a test class imported from another test module would run twice."""
+    if isinstance(obj, type) and name.startswith("Test") and \
+            getattr(obj, "__module__", None) != getattr(collector.obj, "__name__", None):
+        return []
+    return None
