@@ -1403,6 +1403,35 @@ def diff_page(page_name: str, inventory_selectors: dict[str, str],
             "planned_live": planned_live, "planned_waiting": planned_waiting}
 
 
+# The reading of a selector the browser cannot parse. Counted as 0 it read as
+# STALE, and the nightly inventory update proposed REMOVING a key that only
+# needed its selector fixed (X10, 14 Nov 2026).
+INVALID = -1
+
+
+def rendered(inventory_selectors: dict[str, str], live_resolved: dict[str, int],
+             declared_conditional: set | None = None,
+             declared_removed: set | None = None,
+             declared_planned: set | None = None) -> bool:
+    """Has the page RENDERED, or is it still an empty shell?
+
+    A single-page app fires `load` before it paints, so a reading taken then
+    finds nothing and every selector would read as stale (31 Jul 2026: 13 of
+    14 on a page the E2E suite had just used). There is no app-agnostic
+    readiness signal, so the page's own inventory is the signal: at least TWO
+    of the keys expected on the page now resolve (one when it has only one).
+    Two, because a shell element - a toaster, a nav bar - resolves on every
+    page and proves nothing. Keys declared conditional, removed or planned are
+    not expected now, so they are not counted, nor is a selector the browser
+    rejects (INVALID). A page with no such key counts as rendered."""
+    skip = set(declared_conditional or ()) | set(declared_removed or ()) \
+        | set(declared_planned or ())
+    expected = {sel for name, sel in inventory_selectors.items()
+                if name not in skip and live_resolved.get(sel) != INVALID}
+    needed = min(2, len(expected))
+    return sum(1 for sel in expected if live_resolved.get(sel, 0) > 0) >= needed
+
+
 def summarize_drift(per_page: dict[str, dict], missing_pages: list[str]) -> dict:
     """Roll per-page diffs into a report with an overall `has_drift` flag."""
     total_missing = sum(len(p["missing"]) for p in per_page.values())

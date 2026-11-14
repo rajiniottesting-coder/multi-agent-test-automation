@@ -256,8 +256,10 @@ def test_inventory_health_workflow_is_wired():
     assert "schedule" in triggers, "inventory health must run on a schedule"
     assert "workflow_dispatch" in triggers, "it must also be runnable on demand"
     steps = wf["jobs"]["verify"]["steps"]
-    assert any("verify_locators" in str(s.get("run", "")) for s in steps), \
-        "it must actually call verify_locators"
+    # X10: the one nightly crawl is check_inventory_staleness (verify_locators
+    # stays the person's visual tool).
+    assert any("check_inventory_staleness" in str(s.get("run", "")) for s in steps), \
+        "it must actually call the inventory check"
 
 
 def test_inventory_health_does_not_hardcode_the_login_path():

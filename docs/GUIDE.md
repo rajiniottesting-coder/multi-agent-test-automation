@@ -627,7 +627,7 @@ hands a person the decision.
 |---|---|---|---|
 | Story scan | stories labelled `impact-check`; every 30 min, weekdays 10:02–19:02 IST (and 10:45 with reconcile), or dispatch (optionally one `story_key`) | 2 calls (+1 per batch past 300 candidates); up to 2 more for the context update (none for a `new_behaviour` story) | report, or Impact Review. A full scan (`story_key` blank) also hands over decided reviews; a one-story run does not |
 | Code change | any PR touching `pages/**` or `app_inventory/**` | none | methods and selectors changed or removed → the affected tests, posted on the PR |
-| Nightly drift | 07:15 IST, after the inventory staleness check, or dispatch with `mode` = `drift` | none | a selector that stopped matching → the affected tests; live mode opens one maintenance story (a later night that measures pages and finds no drift affecting a test supersedes its open review, so it stops blocking those tests; a review already Done is left to the hand-over); then the inventory-update PR (below) |
+| Nightly drift | started by Inventory Health (08:00 IST) with its report - one crawl a night (X10) - or dispatch with `mode` = `drift` (blank `drift_report_run`: it checks the inventory itself) | none | a selector that stopped matching → the affected tests; live mode opens one maintenance story (a later night that measures pages and finds no drift affecting a test supersedes its open review, so it stops blocking those tests; a review already Done is left to the hand-over); then the inventory-update PR (below) |
 | Reconcile | its own job: weekdays 10:45 IST and every manual run in `scan` mode, whatever the Agent 0 mode (off, shadow, live) | none | settles stories labelled `impact-applied`, and sets back a coded story whose PR closed unmerged |
 
 ### How a story is analysed (`core/impact_analysis.py`)
@@ -727,7 +727,8 @@ rather than read is the one thing this cannot check.
 
 ### Inventory update — the nightly pull request (`core/inventory_update.py`)
 
-After the drift analysis, the drift job turns the crawl's report into **one
+After the drift analysis, the drift job turns the nightly report (Inventory
+Health's crawl, X10) into **one
 pull request at a time**, on a dated branch `inventory-update/<date>`
 (`scripts/propose_inventory_update.py`; settings
 `agents.agent0_impact.inventory_update`). Every rule errs toward leaving the
@@ -1752,10 +1753,10 @@ Selection rules come from `config.yaml`'s `agents.<name>.selection` block.
 | Agent 1, Agent 2 | every 30 min, weekdays: Agent 1 10:07–19:07, Agent 2 10:12–19:12 - **GitHub starts only some of these** (below) | Run workflow; started by the hand-off; `repository_dispatch` (`agent1_analyst` / `agent2_coder`) |
 | Agent 0 story scan | every 30 min, weekdays 10:02–19:02 | — |
 | Agent 0 scan + reconcile | weekdays 10:45 | Run workflow (`mode` = `scan`, the default; optional `story_key` - analyse and reconcile that story only; `force` with `story_key` - analyse it even if unchanged since its last report; `dry_run` - every job prints its writes and makes none) |
-| Agent 0 nightly drift | daily 07:15 | Run workflow with `mode` = `drift` (optional `dry_run`; a `story_key` stops the run with an error, since drift analyses the inventory, not a story) |
+| Agent 0 nightly drift | started by Inventory Health with its report (X10) - no schedule of its own | Run workflow with `mode` = `drift` (optional `dry_run`; blank `drift_report_run` checks the inventory itself; a `story_key` stops the run with an error, since drift analyses the inventory, not a story) |
 | Agent 0 code change | on PRs touching `pages/**`, `app_inventory/**` | — |
 | Agents 3, 4 + 5 | on PR opened / synchronize / reopened | Run workflow |
-| Inventory Health | daily 08:00 (02:30 UTC) | Run workflow |
+| Inventory Health | daily 08:00 (02:30 UTC): the one nightly crawl; hands its report to Agent 0's drift job | Run workflow (optional `page`: one page, not handed on) |
 | Agent 4 nightly run on `main` + defect triage | daily 03:10 (21:40 UTC) | Run workflow on `main` |
 | Pipeline health check | daily 08:50, 12:50, 16:50 | Run workflow (`dry_run` prints the findings only) |
 | Sweeper | weekdays hourly, 10:05–19:05 | `dry_run` input |
@@ -2331,7 +2332,7 @@ app-agnostic CLIs build and maintain it (all need `playwright install chromium`)
   2. promote_draft        merge + strip embeds       -> one clean draft
   3. verify_locators      measure every selector     -> what does not resolve
   4. CURATE BY HAND       notes, methods, families   -> a real inventory
-  5. check_inventory_staleness   nightly drift watch
+  5. check_inventory_staleness   the nightly check (Inventory Health)
 ```
 
 Steps 1–3 are mechanical. **Step 4 is the one that matters** and cannot be
@@ -2452,12 +2453,31 @@ python -m scripts.check_inventory_staleness --fail-on-drift
 
 Diffs the committed inventory against the live DOM: stale selectors, untracked
 test-ids, unreachable pages; `--compare` adds the live elements no selector
-covers. Exits non-zero under `--fail-on-drift` (for a CI gate). The nightly
-**Agent 0 drift job** runs it with `--compare --json`, traces the drift to the
+covers. **It is the one nightly crawl (X10, 14 Nov 2026).** The `Inventory
+Health` workflow runs it with `--compare --fail-on-breakage --json`, keeps the
+report (`inventory-drift-report`) and starts the **Agent 0 drift job** with it
+(`mode` = `drift`, `drift_report_run` = its run), which traces the drift to the
 affected tests and proposes the inventory update as a pull request
 (`scripts/propose_inventory_update.py`, see "Inventory update" under Change
-stories). The nightly `Inventory Health` workflow measures with
-`verify_locators` instead. Both tools honour `multi_match`, `conditional`,
+stories). Before X10 the drift job crawled the same pages again, signed out
+(it signed in at the root, where this application has no login form).
+
+It reads the application as the tests use it:
+
+| | |
+|---|---|
+| signed in | at the login page the inventory records (`--login-url` overrides); pages served at that path are read first, signed out. A failed login prints `LOGIN FAILED`, writes no report and exits 2 |
+| every page | `always` pages with an address (a menu on every page) too - their keys are read there, never compared |
+| rendered | a page whose expected keys (not `conditional`, `removed` or `planned`) do not resolve - at least two - within 15 s is listed under *pages not rendered*: not stale, not drift, never proposed for removal |
+| invalid | a selector the browser rejects reads `INVALID`, never stale - a stale key is proposed for removal, an invalid one needs fixing |
+| ambiguous | each `AMBIG` line lists what it matched, and a `fix:` line when the exact `text="..."` form matches one |
+
+Exit codes: `0` clean; `1` under `--fail-on-breakage` when something would break
+a test (stale, ambiguous, invalid or returned selectors, a page unreachable or
+not rendered - a new element alone does not), or under `--fail-on-drift` when
+anything was found; `2` login failed; `3` unknown `--page`. `verify_locators`
+stays the tool to **see** a page's selectors highlighted. Both tools honour
+`multi_match`, `conditional`,
 `removed` and `planned`, so a declared family, an element shown only after a
 click, one a change story removed and one not deployed yet read as expected
 rather than as a fault - a removed element on the page again reads as drift
@@ -2477,9 +2497,12 @@ Its summary (`scripts/inventory_health_report.py`) then reads:
 | Summary | Means | Do |
 |---|---|---|
 | ✅ Inventory healthy | every selector read as expected: one element, or what its declaration states (removed, conditional, planned, a family). The verifier's summary counts the declared readings apart and names each key declared removed and measured gone | nothing |
-| ❌ Selector drift detected | stale or ambiguous selectors on an application that is up (or the check could not run) | fix the inventory by hand, as the summary says |
+| ❌ Selector drift detected | stale, ambiguous, invalid or returned selectors, or a page unreachable or not rendered, on an application that is up (or the check could not run) | a stale or replaced key: the inventory-update pull request proposes it when Agent 0 is on; the rest by hand, as the summary says |
 | ⚠️ Login failed — inventory NOT checked | the verifier could not sign in; the check found the application up | check `APP_USER_REGISTERED` / `APP_PASSWORD` and the login form's selectors |
 | ⚠️ The application is not up — inventory NOT checked | the check found the application not serving its own pages; the summary says what the browser was shown. The run is **not** red: the pipeline health issue gets the alert `application-unavailable-inventory-health` (X9), which the next check with the application up closes. Red only when the alert cannot be posted | **change nothing** - neither drift nor credentials; the next night checks again |
+
+A report read while the application was not up is not kept or handed on (its
+uncovered elements would be the outage page's), nor is a one-page run's.
 
 When the first reading did not pass and the check found the application up,
 the verifier runs **once more** (X9: on 12 Nov 2026 a login form slow to render
@@ -2960,9 +2983,10 @@ tries fail, the browser is installed alone and started once: the step passes
 with *starts without the freshly installed OS packages* and the run goes on.
 It fails only when the browser cannot start either - re-run the job later.
 
-### Inventory Health failed with "login FAILED (still on the login page)"
+### Inventory Health failed with "LOGIN FAILED at <login page>"
 
-The verifier could not sign in, so it refused to report: every page would have
+The check could not sign in at the login page the inventory records, so it
+wrote no report (and nothing was handed to Agent 0): every page would have
 redirected to the login screen and every selector would have read as stale.
 Usually the application was slow or unavailable (12 Nov 2026: the login form
 did not appear within 15 s; the re-run passed). The workflow now verifies once

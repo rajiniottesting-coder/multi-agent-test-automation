@@ -295,9 +295,12 @@ def build_update(drift: dict, inventory: dict, used: set, *,
     # A NEW element on every page measured tonight is a shared section (a
     # header, a footer) that no key covers yet: added page by page it would be
     # N keys for one element. Measured = compared pages the update may change
-    # (a planned page not live yet is not the page).
+    # (a planned page not live yet is not the page). An `always` page (a menu
+    # on every page) is read, never compared (X10): it finds no new element,
+    # so counting it would hide every shared section.
     measured = sorted(n for n in (drift.get("pages") or {})
                       if isinstance(pages.get(n), dict)
+                      and not pages[n].get("always")
                       and not (pages[n].get("planned_page")
                                and not (drift["pages"][n] or {}).get("planned_live")))
     by_selector: dict = {}

@@ -109,7 +109,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import sys
 import time
 from pathlib import Path
@@ -126,6 +125,10 @@ from inventory_tools.browser import (
     crawl_credentials,
     browser_page, do_login, _resolve_one, resolve_page_url, find_login_path,
     DEFAULT_USERNAME_SELECTOR, DEFAULT_PASSWORD_SELECTOR, DEFAULT_SUBMIT_SELECTOR,
+    # One copy of each, shared with the nightly check (check_inventory_staleness):
+    exact_text_form, signed_out_pages,
+    DESCRIBE_JS as _DESCRIBE_JS, MAX_DESCRIBED as _MAX_DESCRIBED,
+    describe_locator as _describe_matches,
 )
 
 # Injected once per page. Draws a labelled box over the element being checked -
@@ -179,24 +182,6 @@ def _suggest_page(wanted: str, available) -> str:
 # row too, or stopped at the fold - without waiting for it.
 _MAX_HIGHLIGHTS = 25
 
-# How many of an unexpected selector's matches are described in the report.
-_MAX_DESCRIBED = 5
-
-# One line per match: tag, id, classes, whether it is shown, and its text. The
-# report then says WHICH elements an ambiguous selector caught, so the nightly
-# run is enough to fix it - "AMBIG(2)" alone needed a local reproduction.
-_DESCRIBE_JS = r"""
-(els, limit) => els.slice(0, limit).map(el => {
-  const id = el.id ? '#' + el.id : '';
-  const cls = (typeof el.className === 'string' && el.className.trim())
-    ? '.' + el.className.trim().split(/\s+/).slice(0, 4).join('.') : '';
-  const r = el.getBoundingClientRect();
-  const st = window.getComputedStyle(el);
-  const shown = r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none';
-  const text = (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60);
-  return `<${el.tagName.toLowerCase()}${id}${cls}> ${shown ? 'shown' : 'hidden'} "${text}"`;
-})
-"""
 
 
 def _highlight(page, locator, label: str, colour: str) -> bool:
@@ -282,50 +267,11 @@ def _wait_for_render(page, selectors: dict, timeout_ms: int = 15000) -> bool:
         page.wait_for_timeout(250)
 
 
-def exact_text_form(selector: str) -> str | None:
-    """The exact-match form of a contains-match text selector, or None.
-
-    `text=All Items` (unquoted) is a case-INSENSITIVE SUBSTRING match in
-    Playwright: it also matches "All Items Catalog", "all items" in a menu, or
-    a hidden copy - one site change away from matching two. `text="All Items"`
-    (quoted) matches only an element whose whole text is exactly that. Only a
-    whole `text=` selector is converted; a chained or already-quoted one is not.
-    """
-    m = re.fullmatch(r"text=(?![\"'])(.+)", (selector or "").strip())
-    if not m or ">>" in m.group(1):
-        return None
-    words = m.group(1).strip()
-    return 'text="' + words.replace("\\", "\\\\").replace('"', '\\"') + '"'
-
-
 def _count(page, selector: str) -> int:
     try:
         return _resolve_one(page, selector).count()
     except Exception:                                          # noqa: BLE001
         return -1
-
-
-def _describe_matches(locator, limit: int = _MAX_DESCRIBED) -> list[str]:
-    """One line per match, at most `limit` - [] when they cannot be read."""
-    try:
-        return [str(d) for d in (locator.evaluate_all(_DESCRIBE_JS, limit) or [])]
-    except Exception:                                          # noqa: BLE001
-        return []
-
-
-def signed_out_pages(inventory: dict, login_path: str | None, only_page: str | None = None) -> dict:
-    """The inventory pages served at the login path: a signed-in browser is sent
-    away from them, so they are verified BEFORE signing in. Verified after it,
-    the login page never rendered and its selectors were never checked."""
-    if not login_path:
-        return {}
-
-    def _norm(url) -> str:
-        return (str(url or "").split("?")[0].split("#")[0].rstrip("/")) or "/"
-
-    return {name: entry for name, entry in ((inventory or {}).get("pages") or {}).items()
-            if isinstance(entry, dict) and _norm(entry.get("url")) == _norm(login_path)
-            and only_page in (None, name)}
 
 
 # The readings a declaration explains (GONE, COND, PLAN, FAMILY), collected

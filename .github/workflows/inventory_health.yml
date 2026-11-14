@@ -13,13 +13,21 @@ name: Inventory Health
 #   - an autocomplete whose first row is a "Searching...." placeholder
 #   - nav links whose accessible name was polluted by icon ligature text
 #
+# ONE NIGHTLY CRAWL (X10, 14 Nov 2026). This used to run verify_locators while
+# Agent 0's drift job crawled the same pages again, signed out, an hour
+# earlier. Now this workflow runs the one check (check_inventory_staleness:
+# signed in, every page, a render wait, invalid selectors apart), keeps its
+# report as `inventory-drift-report` and hands it to Agent 0's drift analysis
+# and inventory update (dispatch mode = drift). verify_locators stays the tool
+# a person runs to SEE a page's selectors.
+#
 # SCOPE: every page in the configured inventory, always. There is no page list
-# in this file on purpose - verify_locators reads config.yaml, resolves
+# in this file on purpose - the check reads config.yaml, resolves
 # inventory_file, and walks whatever is in it. Adding a page to the inventory
 # extends this check automatically; nothing here needs editing as the app grows.
 #
 # None was catchable by a unit test. All three were found in seconds by
-# verify_locators against the live app - after they had already cost a story
+# a browser check against the live app - after they had already cost a story
 # run each. This runs that check on a schedule so drift surfaces as a morning
 # notification rather than as a mid-story mystery.
 #
@@ -32,8 +40,9 @@ name: Inventory Health
 # WHY IT DOES NOT AUTO-FIX:
 #   A regenerated draft carries none of the curation - no elements_notes, no
 #   multi_match, no key_methods - so a bot that regenerated and committed
-#   would silently delete the knowledge that stops the failures above. Detect
-#   automatically, fix by hand.
+#   would silently delete the knowledge that stops the failures above. The
+#   fix it leads to is a PULL REQUEST of selective edits (Agent 0's inventory
+#   update, when Agent 0 is on), reviewed and merged by a person.
 # ─────────────────────────────────────────────────────────────
 
 on:
@@ -44,7 +53,7 @@ on:
     inputs:
       page:
         # ── CHECKING ONE PAGE INSTEAD OF ALL OF THEM ──────────────────
-        # Leave BLANK for the normal sweep: verify_locators reads
+        # Leave BLANK for the normal sweep: the check reads
         # config.yaml -> inventory_file and walks every page in that JSON,
         # so a page added to the inventory is picked up here with no change
         # to this workflow.
@@ -52,9 +61,12 @@ on:
         # Put a page KEY here to check just that one - the key as it appears
         # under "pages" in the inventory, e.g. `products`. Useful when a
         # nightly run flags one page and you want to re-check it after a fix
-        # without waiting on the full sweep.
+        # without waiting on the full sweep. A one-page run is not handed to
+        # Agent 0: its report covers one page, not the inventory.
         #
         # Locally the same thing is:
+        #   python -m scripts.check_inventory_staleness --page <key>
+        # and to SEE that page's selectors highlighted:
         #   python -m scripts.verify_locators --page <key> --only-problems
         # and for a single selector that is not in the inventory yet:
         #   python -m scripts.verify_locators --selector "<sel>" --url /path
@@ -64,6 +76,8 @@ on:
 
 permissions:
   contents: read
+  # Hands the night's report to Agent 0 (workflow_dispatch of agent0_impact.yml).
+  actions: write
 
 # One at a time. Two concurrent runs would drive two browser sessions against
 # the same demo account and could log each other out.
@@ -108,22 +122,26 @@ jobs:
         # Never fails the step itself: the exit code is captured and read in
         # the next step, so a login failure and real drift can be reported
         # differently. `tee` keeps the human-readable output in the log.
+        # --fail-on-breakage: 1 when something would break a test (a new
+        # element alone does not); 2 when the login failed (no report).
+        # --compare adds the elements no selector covers, for Agent 0.
         continue-on-error: true
         env:
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
           APP_USER_REGISTERED: ${{ secrets.APP_USER_REGISTERED }}
+          PAGE_KEY: ${{ github.event.inputs.page }}
           CI: 'true'
         run: |
           mkdir -p reports
           set +e
-          # No --login-url: verify_locators finds the login page in the
-          # inventory itself. Passing it here would duplicate a fact that is
-          # already curated, and a workflow that repeats inventory data is a
-          # workflow that drifts from it.
-          python -m scripts.verify_locators \
-            --headless \
-            --only-problems \
-            ${{ github.event.inputs.page && format('--page {0}', github.event.inputs.page) || '' }} \
+          # No --login-url: the check finds the login page in the inventory
+          # itself. Passing it here would duplicate a fact that is already
+          # curated, and a workflow that repeats inventory data is a workflow
+          # that drifts from it.
+          PAGE=()
+          if [ -n "$PAGE_KEY" ]; then PAGE=(--page "$PAGE_KEY"); fi
+          python -m scripts.check_inventory_staleness --compare --fail-on-breakage \
+            --json reports/drift.json "${PAGE[@]}" \
             2>&1 | tee reports/inventory-health.txt
           echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
@@ -154,6 +172,7 @@ jobs:
         env:
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
           APP_USER_REGISTERED: ${{ secrets.APP_USER_REGISTERED }}
+          PAGE_KEY: ${{ github.event.inputs.page }}
           CI: 'true'
         run: |
           set +e
@@ -161,12 +180,60 @@ jobs:
             echo "The application is not known to be up: no second reading."
             exit 0
           fi
-          python -m scripts.verify_locators \
-            --headless \
-            --only-problems \
-            ${{ github.event.inputs.page && format('--page {0}', github.event.inputs.page) || '' }} \
+          # The second reading replaces the first: a report left from the
+          # first would otherwise be handed on if this one cannot sign in.
+          rm -f reports/drift.json
+          PAGE=()
+          if [ -n "$PAGE_KEY" ]; then PAGE=(--page "$PAGE_KEY"); fi
+          python -m scripts.check_inventory_staleness --compare --fail-on-breakage \
+            --json reports/drift.json "${PAGE[@]}" \
             2>&1 | tee reports/inventory-health-retry.txt
           echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Keep the report only when the application was up
+        # A reading taken while the application was not up says nothing about
+        # the inventory: its uncovered elements would be the outage page's.
+        if: always()
+        run: |
+          if [ -f reports/drift.json ] && python -c "import json, sys; d = json.load(open('reports/app_probe.json')); sys.exit(0 if d.get('available') is False else 1)" 2>/dev/null; then
+            rm -f reports/drift.json
+            echo "The application was not up: the report is not kept or handed on."
+          fi
+
+      - name: Keep the drift report for Agent 0
+        # Agent 0's weekday scan reads the newest one for its uncovered-element
+        # hint, and the drift analysis below reads this one. Short retention:
+        # Agent 0 refuses a report older than 48h anyway. A one-page run is not
+        # kept - it does not describe the inventory.
+        if: always() && !github.event.inputs.page
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-drift-report
+          path: reports/drift.json
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Hand the report to Agent 0
+        # Agent 0's drift analysis and the inventory update read THIS report -
+        # no second crawl (X10). Only a whole-inventory report, and only when
+        # Agent 0 is on (agents.agent0_impact.enabled). A refused hand-over
+        # fails the run: it is the only notice that the analysis did not start.
+        if: always() && !github.event.inputs.page
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -f reports/drift.json ]; then
+            echo "No report to hand over (login failed, or the application was not up)."
+            exit 0
+          fi
+          enabled=$(python -c "from core.impact_settings import impact_settings; print(str(impact_settings()['enabled']).lower())")
+          if [ "$enabled" != "true" ]; then
+            echo "Agent 0 is off (agents.agent0_impact.enabled): the report is kept, not analysed."
+            exit 0
+          fi
+          gh workflow run agent0_impact.yml --repo "${{ github.repository }}" --ref main \
+            -f mode=drift -f drift_report_run="${{ github.run_id }}"
+          echo "Agent 0's drift analysis started on this run's report."
 
       - name: Report
         # always() so a crashed verify step still produces a summary rather
@@ -197,5 +264,6 @@ jobs:
             reports/inventory-health.txt
             reports/inventory-health-retry.txt
             reports/app_probe.json
+            reports/drift.json
           retention-days: 14
           if-no-files-found: ignore

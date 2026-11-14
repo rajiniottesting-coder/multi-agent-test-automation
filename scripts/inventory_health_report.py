@@ -3,9 +3,10 @@
     python -m scripts.inventory_health_report --code <verifier exit code>
         [--output reports/inventory-health.txt] [--app-probe reports/app_probe.json]
 
-The verifier (scripts/verify_locators.py) exits 0 when every selector resolved
-to exactly one element, 1 on drift (stale or ambiguous), 2 when it could not
-sign in. On anything but 0 the workflow first asks whether the APPLICATION was
+The verifier (scripts/check_inventory_staleness.py --fail-on-breakage since
+X10; verify_locators before) exits 0 when every selector read as the inventory
+expects, 1 when something would break a test (stale, ambiguous or invalid
+selectors, a page unreachable or not rendered), 2 when it could not sign in. On anything but 0 the workflow first asks whether the APPLICATION was
 up (scripts/app_probe.py, core/app_probe.py - a browser and no model, so no
 token is spent). Its report decides the headline:
 
@@ -90,8 +91,10 @@ def headline(code: str, probe: dict | None) -> tuple:
                  "1. Each **AMBIG** line lists what it matched; a contains-match "
                  "`text=` selector also gets a `fix:` line. To watch it locally:",
                  "   `python -m scripts.verify_locators --page <page> --only-problems`",
-                 "2. **STALE** (0 matches) — the app changed. Fix that selector "
-                 "in the inventory by hand.",
+                 "2. **STALE** (0 matches) — the app changed. When Agent 0 is on, "
+                 "its drift analysis reads this same report and the inventory "
+                 "update proposes the change as a pull request; otherwise fix "
+                 "that selector in the inventory by hand.",
                  "3. **AMBIG** (>1) — a key meant to be ONE element (a heading, "
                  "a message): tighten its selector to that element - use the "
                  "`fix:` line when there is one. Never declare it `multi_match` "
@@ -99,7 +102,11 @@ def headline(code: str, probe: dict | None) -> tuple:
                  "EVERY match (rows, cards, buttons) belongs in `multi_match`.",
                  "4. Keys listed under `conditional` only exist after an "
                  "interaction, so a tool that never clicks always reports them "
-                 "stale. Do not 'fix' those.", "",
+                 "stale. Do not 'fix' those.",
+                 "5. **INVALID** — the browser rejects the selector: fix it by "
+                 "hand (it is never proposed for removal). **NOT RENDERED** — none "
+                 "of a page's expected keys appeared: check the application, the "
+                 "login and redirects; nothing on that page is read as drift.", "",
                  "Do NOT regenerate the inventory to repair this: a fresh draft "
                  "carries no `elements_notes`, `multi_match` or `key_methods`, "
                  "and promoting one would delete the curation that prevents "
@@ -127,7 +134,8 @@ def _first_problem(body: str) -> str:
     """The first line of the verifier's output that says what went wrong."""
     lines = [l.strip() for l in body.splitlines() if l.strip()]
     for wanted in (lambda t: t.startswith("ERROR") or "FAILED" in t,
-                   lambda t: t.startswith(("STALE", "AMBIG"))):
+                   lambda t: t.startswith(("STALE", "AMBIG", "INVALID", "BACK"))
+                   or "NOT RENDERED" in t):
         found = next((t for t in lines if wanted(t)), None)
         if found:
             return found[:200]
