@@ -12,7 +12,7 @@ from config.paths import feature_path
 scenarios(str(feature_path("zz_validation_window_t")))
 
 # Flipped to True by the window's second pull request.
-STARTS_FAILING = False
+STARTS_FAILING = True
 
 
 @given("I am on the home page")
