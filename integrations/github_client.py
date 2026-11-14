@@ -461,6 +461,21 @@ class GitHubClient:
             "url": pr.html_url,
         }
 
+    def pr_sync_state(self, pr_number: int) -> dict:
+        """How a PR stands against its base (Group B: X5): {"base", "conflict"
+        (bool), "behind_by" (commits on the base since the branch point),
+        "overlap" (files the base changed since then that the PR changes too),
+        "conflict_files" (the overlap, when in conflict)}. Read only."""
+        pr = self.get_pull_request(pr_number)
+        mergeable = pr.mergeable          # None while GitHub still computes it
+        conflict = mergeable is False or (pr.mergeable_state or "") == "dirty"
+        cmp = self.repo.compare(pr.head.sha, pr.base.ref)
+        base_files = {f.filename for f in cmp.files or []} if cmp.ahead_by else set()
+        pr_files = {f.filename for f in pr.get_files()}
+        overlap = sorted(base_files & pr_files)
+        return {"base": pr.base.ref, "conflict": conflict, "behind_by": cmp.ahead_by,
+                "overlap": overlap, "conflict_files": overlap if conflict else []}
+
     def get_pr_changed_files(self, pr_number: int) -> list[dict]:
         """List files changed in a PR with their patch (diff) text.
 

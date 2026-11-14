@@ -70,6 +70,10 @@ window; without it a workflow added an hour ago reads as "no scheduled run in
 OPTIONAL CAPABILITY: `dispatch_workflow(workflow_file, ref, inputs) -> None`
 starts a workflow run (core/handoff.py: an agent starting the next one).
 Without it no agent starts another; the schedules still run them.
+
+OPTIONAL CAPABILITY: `pr_sync_state(pr_number) -> {"base", "conflict",
+"behind_by", "overlap", "conflict_files"}` is how a PR stands against its
+base (core/tracker_watch.py, X5). A host without it is not checked.
 """
 from __future__ import annotations
 

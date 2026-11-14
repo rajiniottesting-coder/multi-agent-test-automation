@@ -671,6 +671,77 @@ class JiraClient:
                         "links": links, "description": getattr(f, "description", None) or ""})
         return out
 
+    def changelog(self, issue_key: str) -> list[dict] | None:
+        """Every change to an issue, oldest first: [{"at" (ISO), "by":
+        {"account_id", "name", "email"}, "items": [{"field", "from", "to"}]}].
+        Paged, so a long history is read whole. None when the issue cannot be
+        read (deleted, or no permission). Optional capability (Group B: R2,
+        R5)."""
+        out: list = []
+        start = 0
+        try:
+            while True:
+                page = self.client._get_json(f"issue/{issue_key}/changelog",
+                                             params={"startAt": start, "maxResults": 100})
+                values = page.get("values") or []
+                for h in values:
+                    a = h.get("author") or {}
+                    out.append({"at": h.get("created"),
+                                "by": {"account_id": a.get("accountId"),
+                                       "name": a.get("displayName"),
+                                       "email": a.get("emailAddress")},
+                                "items": [{"field": i.get("field"),
+                                           "from": i.get("fromString"),
+                                           "to": i.get("toString")}
+                                          for i in h.get("items") or []]})
+                start += len(values)
+                if page.get("isLast", True) or not values:
+                    return out
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning(f"Changelog of {issue_key} not read: {e}")
+            return None
+
+    def user_groups(self, account_id: str) -> list[str] | None:
+        """The names of the groups a person is in; None when not readable.
+        Optional capability (Group B: R5 approver groups)."""
+        try:
+            found = self.client._get_json("user/groups", params={"accountId": account_id})
+            return [g.get("name") for g in found or [] if g.get("name")]
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning(f"Groups of an account not read: {e}")
+            return None
+
+    def issue_state(self, issue_key: str) -> dict | None:
+        """{"key", "type", "status", "category" (new/indeterminate/done),
+        "resolution", "labels", "priority"} - None when the issue does not
+        exist any more (deleted or moved). Optional capability (Group B: R4,
+        D5)."""
+        try:
+            i = self.client.issue(issue_key, fields="issuetype,status,resolution,labels,priority")
+        except Exception as e:                                     # noqa: BLE001
+            if getattr(e, "status_code", None) in (404, 410):
+                return None
+            raise
+        f = i.fields
+        return {"key": i.key, "type": getattr(f.issuetype, "name", ""),
+                "status": f.status.name,
+                "category": getattr(getattr(f.status, "statusCategory", None), "key", ""),
+                "resolution": getattr(getattr(f, "resolution", None), "name", None),
+                "labels": list(f.labels or []),
+                "priority": getattr(getattr(f, "priority", None), "name", None)}
+
+    def set_fields(self, issue_key: str, fields: dict) -> None:
+        """Set issue fields by their tracker names - {"priority": "High",
+        "environment": "text"}; a field the issue's screen lacks is refused
+        (the caller records it). Optional capability (Group B: D5)."""
+        values = {}
+        for name, value in fields.items():
+            if name == "priority":
+                values["priority"] = {"name": value}
+            else:
+                values[name] = value
+        self.client.issue(issue_key, fields="summary").update(fields=values)
+
     def get_comments(self, issue_key: str) -> list:
         """Return the body text of every comment on an issue (oldest first).
 

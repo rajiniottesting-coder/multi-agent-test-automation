@@ -33,6 +33,7 @@ LINK_TYPES = {
     "Blocks": ("is blocked by", "blocks"),
 }
 STATUSES = ("To Do", "In Progress", "In Review", "Done")
+DONE_STATUSES = ("Done", "Won't Do", "Cancelled")
 
 
 class JIRAError(Exception):
@@ -55,6 +56,8 @@ class FakeJira:
         self._link_n = itertools.count(1000)
         self.calls: list = []             # (method, args) audit trail
         self.properties: dict = {}        # key -> {property key: value}
+        self.histories: dict = {}         # key -> [changelog entry] (Group B: R2, R5)
+        self.groups: dict = {}            # account id -> [group name] (R5)
         self.session = _FakeSession(self)
 
     # ── seeding ─────────────────────────────────────────────
@@ -115,7 +118,10 @@ class FakeJira:
         issue.raw = {"properties": dict(self.properties.get(key, {}))}
         issue.fields = SimpleNamespace(
             summary=d["summary"], description=d["description"] or None,
-            status=SimpleNamespace(name=d["status"]),
+            status=SimpleNamespace(name=d["status"], statusCategory=SimpleNamespace(
+                key="done" if d["status"] in DONE_STATUSES else "new")),
+            priority=SimpleNamespace(name=d.get("priority") or "Medium"),
+            resolution=None,
             issuetype=SimpleNamespace(name=d["issuetype"]),
             labels=list(d["labels"]),
             components=[SimpleNamespace(name=c) for c in d["components"]],
@@ -195,7 +201,15 @@ class FakeJira:
             raise JIRAError(404, f"property {key} not found on {issue}")
         return SimpleNamespace(key=key, value=self.properties[issue][key])
 
-    def _get_json(self, path):
+    def _get_json(self, path, params=None):
+        if m := re.fullmatch(r"issue/([^/]+)/changelog", path):
+            self._issue(m.group(1))
+            start = int((params or {}).get("startAt") or 0)
+            values = self.histories.get(m.group(1), [])[start:start + 100]
+            return {"values": values, "isLast": start + 100 >= len(
+                self.histories.get(m.group(1), []))}
+        if path == "user/groups":
+            return [{"name": g} for g in self.groups.get((params or {}).get("accountId"), [])]
         m = re.fullmatch(r"issue/([^/]+)/properties", path)
         if not m:
             raise ValueError(f"FakeJira does not serve {path!r}")
@@ -272,6 +286,8 @@ class FakeJira:
             return key.startswith(m.group(1) + "-")
         if m := re.fullmatch(r'issuetype\s*=\s*"([^"]+)"', c, re.I):
             return d["issuetype"].lower() == m.group(1).lower()
+        if m := re.fullmatch(r"statusCategory\s*(!=|=)\s*Done", c, re.I):
+            return (d["status"] in DONE_STATUSES) == (m.group(1) == "=")
         if m := re.fullmatch(r"status in \((.+)\)", c, re.I):
             return d["status"] in re.findall(r'"([^"]+)"', m.group(1))
         if re.fullmatch(r"labels is EMPTY", c, re.I):

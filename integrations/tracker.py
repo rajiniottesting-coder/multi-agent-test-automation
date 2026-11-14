@@ -75,6 +75,15 @@ an adapter written before them stays valid.
                                               issues of one type for the reports
                                               (scripts/build_site.py): open
                                               defects, whoever raised them
+    changelog(issue_key) -> [{"at","by","items"}] | None
+                                              every change, oldest first
+                                              (Group B: R2 story edits, R5 who
+                                              approved)
+    user_groups(account_id) -> [name] | None  (R5 approver groups)
+    issue_state(issue_key) -> dict | None     status, category, resolution;
+                                              None when deleted (R4)
+    set_fields(issue_key, {"priority": ..., "environment": ...})
+                                              (D5)
     defects_for_history(issue_type, updated_since=None, open_only=False)
         -> [dict] | None                      every defect, or those changed
                                               since, for the defect history
