@@ -43,6 +43,13 @@ import re
 import sys
 from dataclasses import dataclass
 
+# Started as `python -m agents.agent3_reviewer`, this file is `__main__`; a
+# module importing it by name (scripts/raise_pr_defects.py reads Agent 4's run
+# the way the review does) must get this module, not a second copy (see
+# tests/unit/test_entry_module_single_copy.py).
+if __name__ == "__main__":
+    sys.modules.setdefault("agents.agent3_reviewer", sys.modules[__name__])
+
 from core.app_context import AppContext
 from integrations.repo_host import get_repo_host
 from core.llm_client import LLMClient

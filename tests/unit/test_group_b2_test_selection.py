@@ -33,13 +33,13 @@ class Graph:
 
 GRAPH = Graph(
     [_node("features/cart.feature", "Add an item", ["tests/step_defs/test_cart.py"],
-           [("CartPage", "add")]),
+           [("ShelfPage", "add")]),
      _node("features/cart.feature", "Remove an item", ["tests/step_defs/test_cart.py"],
-           [("CartPage", "remove")]),
+           [("ShelfPage", "remove")]),
      _node("features/login.feature", "Log in", ["tests/step_defs/test_login.py"],
            [("LoginPage", "log_in"), ("LoginPage", "banner")])],
-    {("CartPage", "add"): SimpleNamespace(file="pages/cart_page.py"),
-     ("CartPage", "remove"): SimpleNamespace(file="pages/cart_page.py"),
+    {("ShelfPage", "add"): SimpleNamespace(file="pages/shelf_page.py"),
+     ("ShelfPage", "remove"): SimpleNamespace(file="pages/shelf_page.py"),
      ("LoginPage", "log_in"): SimpleNamespace(file="pages/login_page.py"),
      ("SitePage", "banner"): SimpleNamespace(file="pages/site_page.py")},
     bases={"LoginPage": ["SitePage"]})
@@ -63,7 +63,7 @@ def test_a_step_module_runs_the_scenarios_using_it():
 
 def test_a_page_object_runs_the_scenarios_calling_its_methods_inherited_too():
     assert _sel("pages/site_page.py")["scenarios"] == [["features/login.feature", "Log in"]]
-    assert len(_sel("pages/cart_page.py", "docs/notes.md")["scenarios"]) == 2
+    assert len(_sel("pages/shelf_page.py", "docs/notes.md")["scenarios"]) == 2
 
 
 @pytest.mark.parametrize("path", ["app_inventory/app.json", "config/config.yaml",
