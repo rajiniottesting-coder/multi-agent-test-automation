@@ -1954,6 +1954,45 @@ the `triage` job (`scripts/triage_failures.py`, `core/defects.py`):
   included), a moved owner or test case moves its link, the label goes once
   the test is traced. A trace naming an issue that no longer exists is listed
   in the same alert, not reported as a refused write.
+- **a person's defect comes first (D1):** before raising one, it looks for an
+  open defect *a person* raised (the defect type without `defects.label`, and
+  not a throw-away `test-data` issue) linked to the failing test's test case,
+  else to its story. Found: no duplicate is raised - that defect is linked to
+  the test case and gets one comment ("the run on main fails it too"), and one
+  more when the test passes again (`defects.reuse_person_defects`);
+- **a person's defect is re-tested once it is closed (D2):** after a run on
+  main, every person's defect closed since and linked to a test case or story
+  whose tests ran gets one comment - all pass, or which still fail ("reopen it
+  if it is not fixed") - and the label `defects.retested_label`, so it is said
+  once (at most `retest_max_per_run` a run; no extra run - the nightly suite is
+  the re-test);
+- **a recurrence links the closed defect (D4):** a new defect for a test whose
+  earlier defect was closed "relates to" that one (`tracker.link_types.
+  recurrence`) and says so in a **Recurs** line;
+- **priority, environment and commit (D5):** a new defect's priority comes
+  from its scenario's severity tag (`reporting.severity_by_tag`, mapped by
+  `defects.priority_by_severity` - `@smoke` -> critical -> High), else from its
+  story; the environment (base URL, browser, runner) and the commit are set
+  on the defect and written in its description. A field the defect's screen
+  does not have is listed in the triage output (`fields_not_set`), not
+  alerted - the description still carries it.
+
+### What changed under the pipeline (R2, R3, R4, X5)
+
+After every pipeline health check, `scripts/watch_tracker.py`
+(`core/tracker_watch.py`, settings `watch`) looks for what changed since the
+agents worked, and **says each finding once** (a hidden `pipeline.watch`
+property remembers what was said). Nothing is regenerated, deleted or pushed.
+
+| | Noticed | Said |
+|---|---|---|
+| R2 | A story's summary or description edited after its test cases were drafted (`ai-processed`), within `story_edit_days` | One `[watch:story-edited]` comment: check the test cases still match (or draft again); after coding (`ai-coded`): add `impact-check` |
+| R3 | A test case edited in the tracker after its scenario was coded (the `# JIRA:` marker's hash differs), or deleted | One `[watch:test-case-changed]` comment on its story: add `ai-update` - or `[watch:test-case-deleted]`: remove or re-point the scenario |
+| R4 | A story cancelled (a done status or resolution in `watch.cancelled`) or deleted while its scenarios still run | Its test cases get the retired label and one comment naming the scenario to remove; its open defects one comment |
+| X5 | An agent pull request (`auto/`) in conflict with main, or behind main on a file it changes | One comment on the pull request: `ai-regenerate` (conflict) or `ai-update` (behind) - never a push |
+
+Dry run: run *Pipeline health* by hand with `dry_run` - the watchers print
+what they would say.
 
 ### Flaky tests (F-19)
 

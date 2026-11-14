@@ -81,6 +81,24 @@ DEFAULTS: dict = {
                              "defect-env": "environment", "defect-duplicate": "duplicate"},
         "resolution_categories": {"Duplicate": "duplicate", "Won't Do": "not-a-bug",
                                   "Cannot Reproduce": "not-a-bug"},
+        # D1: a failing test a person's open defect already covers (linked to
+        # its test case, else its story) is followed on that defect - linked
+        # and commented once - not raised again as a duplicate.
+        "reuse_person_defects": True,
+        # D2: a person's defect closed since the last run, linked to tests this
+        # run ran, gets one comment saying whether they pass, and this label.
+        "retest_resolved": True,
+        "retested_label": "retested",
+        "retest_max_per_run": 10,
+        # D4: a defect raised for a test whose earlier defect was closed links
+        # that one (link kind `recurrence`, else `defect_story`).
+        "link_recurrences": True,
+        # D5: a raised defect carries a priority - from the scenario's severity
+        # tag (reporting.severity_by_tag) via this map, else its story's - and
+        # the environment and commit it failed on.
+        "priority_by_severity": {"blocker": "Highest", "critical": "High"},
+        "priority_from_story": True,
+        "record_environment": True,
     },
     # The application health probe (core/app_probe.py): asked by Agent 4 after
     # a run with failures, before anything is retried or raised as a defect.

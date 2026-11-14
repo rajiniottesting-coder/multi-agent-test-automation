@@ -105,6 +105,9 @@ tracker:
     # reads "is blocked by"), and "<defect> relates to <its story>".
     defect_of:    { name: "Blocks", query: "blocks", inverse_query: "is blocked by", from_field: "inwardIssue" }
     defect_story: { name: "Relates", query: "relates to", inverse_query: "relates to", from_field: "inwardIssue" }
+    # D4: a defect raised again for a test whose earlier defect was closed
+    # "relates to" that earlier one.
+    recurrence:   { name: "Relates", query: "relates to", inverse_query: "relates to", from_field: "inwardIssue" }
 
   # A test case retired by an approved Impact Review carries this label.
   # Every test case query skips it, so no later update brings it back.
@@ -241,6 +244,21 @@ defects:
     Duplicate: duplicate
     "Won't Do": not-a-bug
     "Cannot Reproduce": not-a-bug
+  # D1: a failing test a person's open defect already covers is followed on
+  # that defect (linked, commented once), never raised again as a duplicate.
+  reuse_person_defects: true
+  # D2: a person's defect closed since the last run is re-tested by the next
+  # run on main: one comment (its linked tests pass or fail) and this label.
+  retest_resolved: true
+  retested_label: "retested"
+  retest_max_per_run: 10             # more closed defects wait for the next run
+  # D4: a recurring failure's new defect links the closed one.
+  link_recurrences: true
+  # D5: priority from the scenario's severity tag, else its story's; plus
+  # the environment and commit the test failed on.
+  priority_by_severity: { blocker: "Highest", critical: "High" }
+  priority_from_story: true
+  record_environment: true
 
 # A story's model-cost ledger (F-31, core/usage_ledger.py).
 #   store  auto      hidden issue properties, and ONE cost comment per attempt
