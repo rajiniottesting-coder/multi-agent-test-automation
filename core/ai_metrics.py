@@ -148,6 +148,9 @@ def story_record(tracker, story: dict, coded_label: str) -> dict:
     first = None
     if coded and coding:
         first = used["resets"] == 0 and len(coding) == 1 and coding[0] in FIRST_RUN_MODES
+    # Two readings on purpose: `stop_days` (each stop notice and hold comment
+    # on its day, for the weekly chart) and `refusals` (the totals, holds from
+    # the usage ledger) - a story read before dates were kept still has totals.
     refusals = {}
     stop_days: dict = {}
     for i, body in enumerate(bodies):
