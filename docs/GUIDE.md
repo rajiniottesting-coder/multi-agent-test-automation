@@ -510,6 +510,32 @@ A **change story** has a third gate before all of this: the Impact Review,
 where a person decides each test Agent 0 found. See
 [Change stories — Agent 0](#change-stories--agent-0).
 
+### Before the gates: is the story ready? (R1)
+
+With `agents.agent1_analyst.readiness.require_acceptance_criteria` on, Agent 1
+drafts nothing for a story whose description has no **Acceptance criteria**
+list (the same parser the coverage check reads - numbered, bulleted or
+Given/When/Then items under that heading, in Jira or Markdown). No model is
+called; the scan removes `ai-ready` and posts **one comment to the product
+owner** saying what to add. Adding `ai-ready` again after the list is written
+drafts it. The scan stays green (`⏸ not_ready`): the story waits for a person,
+the pipeline did nothing wrong. Off by default, so a project whose stories
+carry their criteria another way keeps working.
+
+### Who may approve (R5)
+
+`agents.agent2_coder.approver_groups` (tracker groups) and
+`agents.agent2_coder.approvers` (people: account id, display name or email)
+say who may add `human-approved`. Before a story is coded - in every scan
+pass and in a run by key, which the tracker's approval automation starts - the
+tracker's history says who added the label last. On the list (or in a listed
+group): coded as before. Anyone else, or no approval in the history: **not
+coded** - the label is removed and one `[agent2:approval]` comment says who
+added it and who may approve; an allowed person adding it again starts it.
+With a list set, a tracker whose history cannot be read is refused, never let
+through. Both empty: anyone, as before. Prefer groups - they keep people's
+names out of the repository.
+
 ### Why a gate at all?
 
 Test cases are where the most expensive bad decisions happen. A bad test case → wasted LLM tokens on Agent 2 → broken PR → engineer time debugging. Cost of catching a bad test case BEFORE Agent 2 runs: 1 minute of human review. Cost AFTER: ~30 minutes of code review + cleanup.

@@ -408,6 +408,10 @@ browser:
 agents:
   # Agent 1 — Test Designer: Jira story → manual test cases
   agent1_analyst:
+    # R1: a story with no "Acceptance criteria" list is not drafted (no model
+    # call); it is handed back with one comment to the product owner.
+    readiness:
+      require_acceptance_criteria: true
     # Room for one draft of test cases (tokens). Out of room, the story is
     # handed back with one [agent1:stopped] comment naming this key.
     # 16384 since 12 Nov 2026: the largest draft (3-12 Nov) used 11,061 of
@@ -469,6 +473,12 @@ agents:
   #   Agent 2 skips the dedup check, creates a new branch with -rev2/
   #   -rev3/... suffix, and removes the label after success (one-shot).
   agent2_coder:
+    # R5: only these may approve - add the approval label - and start coding.
+    # Tracker groups (keeps people's names out of the repository) and/or
+    # people (account id, display name or email). Both empty: anyone.
+    approval_label: "human-approved"
+    approver_groups: ["org-admins"]
+    approvers: []
     selection:
       issue_type: "Story"
       allowed_statuses:

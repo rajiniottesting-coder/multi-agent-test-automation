@@ -6249,6 +6249,16 @@ def main():
     try:
         from core.usage_ledger import story_usage
         if args.story:
+            # R5: only an allowed person's approval starts coding - by hand too
+            # (the tracker's approval automation starts this path).
+            from core.approval import check as approval_check, refuse as approval_refuse
+            _cfg = load_agent_config()
+            _label = _cfg.get("approval_label", "human-approved")
+            ok, why = approval_check(get_tracker(), args.story, _label, _cfg)
+            if not ok:
+                approval_refuse(get_tracker(), args.story, _label, why, args.dry_run)
+                print(f"\n[STOP] {args.story} not coded: {why}.")
+                return
             mode = "update" if args.update else story_mode(args.story)
             label = {"normal": "Agent 2 (Coder, initial)",
                      "regenerate": "Agent 2 (Coder, regenerate)",
@@ -6327,6 +6337,14 @@ def main():
                 "No 'update_selection' config — skipping update pass. "
                 "Add 'agents.agent2_coder.update_selection' to enable incremental updates."
             )
+
+        # R5: a story approved by someone not on agents.agent2_coder.approvers
+        # is not coded (an empty list: anyone, as before).
+        from core.approval import gate as approval_gate
+        _label = agent_config.get("approval_label", "human-approved")
+        normal_stories = approval_gate(jira, normal_stories, _label, agent_config, args.dry_run)
+        regen_stories = approval_gate(jira, regen_stories, _label, agent_config, args.dry_run)
+        update_stories = approval_gate(jira, update_stories, _label, agent_config, args.dry_run)
 
         from core.selection_notice import notify_unselected
         for name, sel in (("Agent 2 (Coder)", normal_selection),

@@ -302,6 +302,17 @@ def run(story_id: str, dry_run: bool = False) -> dict:
     story = jira.get_story(story_id)
     logger.info(f"Story: {story['summary']}")
 
+    # R1 READINESS: a story without an acceptance-criteria list is not
+    # drafted - no model call; the scan hands it back with one comment saying
+    # what the product owner adds (agents.agent1_analyst.readiness).
+    from core.readiness import readiness_problem
+    not_ready = readiness_problem(story, load_agent_config())
+    if not_ready:
+        logger.warning(f"{story_id} is not ready to draft: {not_ready}")
+        return {"story_id": story_id, "story_summary": story["summary"],
+                "status": "not_ready", "test_cases_generated": 0,
+                "test_case_keys": [], "readiness": not_ready}
+
     story_text = f"Title: {story['summary']}\n\nDescription:\n{story['description']}"
 
     # ── Ledger boundary ──────────────────────────────────────────────
@@ -551,10 +562,15 @@ def hand_back(tracker, story_id: str, error, agent_config: dict) -> list:
 
 
 _NEEDS_A_PERSON = {"partial_test_cases"}
+# R1: not a failure of the run - the story waits for its product owner.
+_NOT_READY = {"not_ready"}
 NEEDS_A_PERSON_WHY = {
     "partial_test_cases": ("a previous run stopped part-way: {n} test case(s) are linked but "
                            "the story has no completion label, so the set is incomplete. "
                            "Delete (or retire) the linked test cases first."),
+    "not_ready": ("{why} Product owner: add an 'Acceptance criteria' list to the "
+                  "description (one criterion per line), then add the trigger label again. "
+                  "No test case was drafted and no model was called."),
 }
 
 
@@ -573,6 +589,8 @@ def print_summary(results: list[dict]) -> bool:
         status = str(r.get("status", "unknown"))
         if status.startswith("failed") or status in _NEEDS_A_PERSON:
             marker, clean = "❌", False
+        elif status in _NOT_READY:
+            marker = "⏸"
         else:
             marker = "✅"
         title = r.get("story_summary") or ""
@@ -583,6 +601,8 @@ def print_summary(results: list[dict]) -> bool:
         if status in _NEEDS_A_PERSON:
             print("   Action: a previous run stopped part-way. Delete (or retire) the "
                   "linked test cases, then label the story ai-ready again.")
+        elif status in _NOT_READY:
+            print(f"   Not ready: {r.get('readiness')} Handed back to the product owner.")
         elif status == "already_processed":
             print("   Nothing to do: this story's test cases were already created.")
         print(f"   Test cases generated: {r.get('test_cases_generated', 0)}")
@@ -690,10 +710,11 @@ def main():
                 # A story that needs a person keeps its trigger label otherwise:
                 # every scan takes it first and stops on it again, a place
                 # another story waits for (4 Nov 2026).
-                if result.get("status") in _NEEDS_A_PERSON and not args.dry_run:
+                if result.get("status") in (_NEEDS_A_PERSON | _NOT_READY) and not args.dry_run:
                     hand_back(jira, story["key"], NEEDS_A_PERSON_WHY.get(
                         result["status"], result["status"]).format(
-                        n=result.get("existing_test_cases", "some")), agent_config)
+                        n=result.get("existing_test_cases", "some"),
+                        why=result.get("readiness", "")), agent_config)
             except BudgetExceeded as stop:
                 # F-24: a held story needs a person (red once, then no longer
                 # selected); the daily budget stops the scan until tomorrow.
