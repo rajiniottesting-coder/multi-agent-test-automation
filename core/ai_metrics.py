@@ -295,7 +295,7 @@ def summary(records: dict, since: str) -> dict:
     return {
         "stories": len(recs), "costed": len(costed), "cost_usd": total,
         "cost_per_story": round(total / len(costed), 2) if costed else None,
-        # One source: the (agent, spend) pairs are the agent rows' (PR #516 review).
+        # One source: the (agent, spend) pairs are the agent rows'.
         "by_agent": [(r["agent"], r["cost_usd"]) for r in agent_rows],
         "agents": agent_rows,
         "stories_by_stop": stories_by_stop,

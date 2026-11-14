@@ -153,6 +153,7 @@ def traceability(tracker, features_dir: Path, latest: dict, defects: list[dict] 
 
 
 def collect(store: Path, features_dir: Path, now: _dt.datetime, with_tracker: bool = True) -> dict:
+    from core import ai_metrics as am
     from core import report_data as rd
     from core import results_store as rs
     from core.ops_settings import section
@@ -184,7 +185,6 @@ def collect(store: Path, features_dir: Path, now: _dt.datetime, with_tracker: bo
     if last:
         mark_latest_rows(last, history["records"], tracker)
         last["changes"] = rd.run_changes(runs, results)
-    from core import ai_metrics as am
     return {
         "generated": now.strftime("%Y-%m-%d %H:%M"), "window_days": s.get("window_days"),
         "kpis": rd.kpis(runs, results), "trend": rd.trend(runs),

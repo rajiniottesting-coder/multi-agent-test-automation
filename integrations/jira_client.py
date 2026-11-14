@@ -800,7 +800,6 @@ class JiraClient:
                         name = getattr(sp, "name", None) or (sp.get("name")
                                                              if isinstance(sp, dict) else None)
                         if not name and isinstance(sp, str):
-                            import re
                             m = re.search(r"name=([^,\]]+)", sp)
                             name = m.group(1) if m else None
                         if name:
