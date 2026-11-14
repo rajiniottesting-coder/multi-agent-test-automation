@@ -37,6 +37,9 @@ from pathlib import Path
 
 logger = logging.getLogger("build_site")
 
+# Plotly's config for every chart: no toolbar, no scroll zoom, redrawn to its
+# card's width when the screen turns.
+PLOT_CONFIG = "{displayModeBar:false,scrollZoom:false,responsive:true}"
 PLOTLY = "https://cdn.plot.ly/plotly-2.35.2.min.js"
 SOURCE_CI = "full runs on the default branch"
 COLORS = {"passed": "#2e7d32", "flaky": "#f9a825", "failed": "#c62828",
@@ -395,18 +398,23 @@ def dashboard_html(data: dict) -> str:
               for k, c in COLORS.items()]
     age = (data["defects"] or {}).get("by_age") or []
     script = (f"<script src='{PLOTLY}'></script><script>"
+              # On a phone a finger dragging over a chart zoomed it (14 Nov
+              # 2026: the defect trend showed 5 of its 30 days and y 0.4-1):
+              # no drag or scroll zoom, fixed axes, counts from 0.
+              f"const C={PLOT_CONFIG};"
               f"const L={{barmode:'stack',margin:{{t:30,r:10,b:90,l:40}},height:340,bargap:0.3,legend:{{orientation:'h',y:1.12}},"
-              f"paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',xaxis:{{type:'category'}}}};"
+              f"dragmode:false,yaxis:{{rangemode:'tozero',fixedrange:true}},"
+              f"paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',xaxis:{{type:'category',fixedrange:true}}}};"
               # One bar per run: two runs started in the same minute share a
               # label, so the axis is the run id and the label the start time.
-              f"const X=Object.assign({{}},L,{{xaxis:{{type:'category',tickvals:{json.dumps([str(r) for r in t['run']])},"
+              f"const X=Object.assign({{}},L,{{xaxis:{{type:'category',fixedrange:true,tickvals:{json.dumps([str(r) for r in t['run']])},"
               f"ticktext:{json.dumps(t['started'])}}}}});"
-              f"if(window.Plotly){{Plotly.newPlot('trend',{json.dumps(series)},X,{{displayModeBar:false}});"
+              f"if(window.Plotly){{Plotly.newPlot('trend',{json.dumps(series)},X,C);"
               f"Plotly.newPlot('duration',[{{type:'scatter',mode:'lines+markers',x:{json.dumps(ids)},"
-              f"y:{json.dumps(t['duration_min'])},name:'minutes'}}],Object.assign({{}},X,{{barmode:null}}),{{displayModeBar:false}});"
+              f"y:{json.dumps(t['duration_min'])},name:'minutes'}}],Object.assign({{}},X,{{barmode:null}}),C);"
               + (f"Plotly.newPlot('defects-age',[{{type:'bar',x:{json.dumps([a for a, _ in age])},"
                  f"y:{json.dumps([n for _, n in age])},marker:{{color:'#c62828'}}}}],"
-                 f"Object.assign({{}},L,{{height:220}}),{{displayModeBar:false}});" if age else "")
+                 f"Object.assign({{}},L,{{height:220}}),C);" if age else "")
               + _defect_trend_js(data)
               + "}</script>")
     return _page("Test history", body + script)
@@ -465,8 +473,14 @@ def _defect_trend_js(data: dict) -> str:
                "marker": {"color": COLORS["passed"]}},
               {"type": "scatter", "mode": "lines", "name": "open", "x": t["days"],
                "y": t["open"], "line": {"color": "#1f4e8c", "width": 2}}]
+    top = max([1] + t["opened"] + t["closed"] + t["open"])
+    # Whole days and whole defects: the axes never zoom to a part of the
+    # window, and an all-zero window still shows 0 at the bottom.
     return (f"Plotly.newPlot('defect-trend',{json.dumps(series)},Object.assign({{}},L,"
-            f"{{barmode:'group',height:300,xaxis:{{type:'date'}}}}),{{displayModeBar:false}});")
+            f"{{barmode:'group',height:300,xaxis:{{type:'date',fixedrange:true,"
+            f"range:{json.dumps([t['days'][0], t['days'][-1]])}}},"
+            f"yaxis:{{rangemode:'tozero',fixedrange:true,tickformat:',d',dtick:{-(-top // 5)},"
+            f"range:[0,{top}]}}}}),C);")
 
 
 def _test_case_cell(r: dict) -> str:

@@ -320,3 +320,20 @@ def test_a_read_but_empty_history_shows_zeros_not_no_history(tmp_path):
     assert "Defects over time" in bs.defect_history_html({"window_days": 30, "defect_history": f})
     dl.write(tmp_path, {"synced": "2026-11-14T01:00:00+00:00", "defects": {}})
     assert bs.defect_history(tmp_path, None, Path("features"), None, NOW)["ever_synced"] is True
+
+
+def test_charts_never_zoom_on_a_touch_and_counts_start_at_zero():
+    """14 Nov 2026, the owner's phone: a finger scrolling over the defect
+    trend zoomed it to 5 of its 30 days and y 0.4-1 - Plotly's default drag
+    is a zoom. Every History chart: no drag or scroll zoom, fixed axes."""
+    from scripts import build_site as bs
+    assert "scrollZoom:false" in bs.PLOT_CONFIG and "displayModeBar:false" in bs.PLOT_CONFIG
+    src = Path(bs.__file__).read_text()
+    assert "{{displayModeBar:false}}" not in src                  # every chart uses C
+    assert "dragmode:false" in src and src.count("fixedrange:true") >= 4
+    f = bs.defect_figures({**_history([]), "ever_synced": True}, NOW, 30)
+    js = bs._defect_trend_js({"defect_history": f})
+    assert "range:[\"2026-10-16\", \"2026-11-14\"]" in js and "range:[0,1]" in js
+    assert "dtick:1" in js and js.endswith(",C);")
+    f = bs.defect_figures(_history(_recs()), NOW, 30)
+    assert "dtick:1" in bs._defect_trend_js({"defect_history": f})   # top 2: whole defects
