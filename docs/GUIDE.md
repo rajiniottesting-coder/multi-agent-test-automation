@@ -2071,8 +2071,18 @@ or runner was down or slow, `defect-duplicate`), else the tracker's
 resolution (`defects.resolution_categories`). A defect the triage raises, and
 its 'Passed on main' comment, name these labels.
 
+**Who found it (RP13):** a defect is *found by the pipeline* when it carries
+the triage's label (`defects.label`, `ai-defect`) or the triage data block in
+its description - two signals, because the tracker's reporter cannot tell
+(the pipeline writes with a person's account) and a label alone is lost when
+someone removes it; anything else is *found by a person* (manual testing,
+acceptance, production). The **detection rate** is the pipeline's share of
+the defects opened - overall, per module and per sprint. A low or falling
+rate in a module points at tests that are missing there.
+
 **On *History* (RP12):** defects opened, closed and open per day (chart);
-totals for the window - opened (by the pipeline and by people), closed (by
+totals for the window - opened (by the pipeline and by people, and the
+detection rate), closed (by
 category), open now, mean days to close, reopened, deleted from the
 tracker; the **density per module** - product defects opened in the window
 per `reporting.density_per` (10) scenarios of the module (a defect closed as

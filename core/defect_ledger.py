@@ -11,8 +11,8 @@ WHY
 WHAT
     `defects.json` on the store: every defect's last known state, keyed by
     its tracker key - opened and closed (UTC), status, resolution, priority,
-    module, close category, where it came from (raised by the pipeline or by
-    a person), and the test, test case and story it is traced to. Each build
+    module, close category, who found it (the pipeline - its label or its
+    triage data block - or a person; RP13), and the test, test case and story it is traced to. Each build
     (scripts/build_site.py) reads the defects changed since the last sync
     (all of them the first time) and the open ones:
       - a closed defect that opens again counts one reopening;
@@ -142,6 +142,22 @@ def module_of(components, test_id, keys, files_by_key: dict, patterns: dict) -> 
     return module_of_file(file, patterns) or UNASSIGNED
 
 
+def source_of(labels, state: dict | None, s_defects: dict) -> str:
+    """Who found the defect: "pipeline" when it carries the triage's label
+    OR the triage data block in its description, else "person". Two signals:
+    the tracker's reporter cannot tell (the pipeline writes with a person's
+    account), and a label alone is lost when someone removes it."""
+    if s_defects.get("label") in (labels or []) or (state or {}).get("test"):
+        return "pipeline"
+    return "person"
+
+
+def detection_rate(by_pipeline: int, opened: int) -> float | None:
+    """The share (%) of defects the pipeline found - the automation's
+    detection rate; None with no defect."""
+    return round(100.0 * by_pipeline / opened, 1) if opened else None
+
+
 def category_of(labels, resolution, s_defects: dict) -> str | None:
     """D9: the close category from a label, else from the resolution."""
     by_label = s_defects.get("close_categories") or {}
@@ -189,7 +205,7 @@ def _record(issue: dict, prev: dict | None, today: str, files_by_key: dict,
                                                                s_defects),
         "module": module_of(issue.get("components"), state.get("test"),
                             [test_case] + list(links), files_by_key, patterns),
-        "source": "pipeline" if s_defects.get("label") in labels else "person",
+        "source": source_of(labels, state, s_defects),
         "test": state.get("test"), "test_case": test_case,
         "story": state.get("owner"), "cause": state.get("cause"),
         "reopened": int((prev or {}).get("reopened") or 0),
@@ -341,6 +357,8 @@ def summary(recs: list[dict], start: str, end: str) -> dict:
             "open": sum(1 for r in recs if r.get("open")),
             "by_pipeline": sum(1 for r in opened if r.get("source") == "pipeline"),
             "by_person": sum(1 for r in opened if r.get("source") != "pipeline"),
+            "detection_rate": detection_rate(
+                sum(1 for r in opened if r.get("source") == "pipeline"), len(opened)),
             "mean_days_to_close": round(sum(fix_days) / len(fix_days), 1) if fix_days else None,
             "reopened": sum(int(r.get("reopened") or 0) for r in recs
                             if _in(r.get("opened"), start, end) or r.get("open")),
@@ -349,8 +367,9 @@ def summary(recs: list[dict], start: str, end: str) -> dict:
 
 
 def by_module(recs: list[dict], start: str, end: str, scenarios: dict, per: int) -> list[dict]:
-    """Per module: scenarios, defects opened, product defects among them,
-    closed, open now, and the density (product defects per `per` scenarios)."""
+    """Per module: scenarios, defects opened (found by the pipeline, by a
+    person, the detection rate), product defects among them, closed, open
+    now, and the density (product defects per `per` scenarios)."""
     names = set(scenarios) | {r.get("module") or UNASSIGNED for r in recs
                               if _in(r.get("opened"), start, end) or r.get("open")}
     rows = []
@@ -359,7 +378,10 @@ def by_module(recs: list[dict], start: str, end: str, scenarios: dict, per: int)
         opened = [r for r in mine if _in(r.get("opened"), start, end)]
         product = [r for r in opened if is_product(r)]
         n = scenarios.get(m) or 0
+        found = sum(1 for r in opened if r.get("source") == "pipeline")
         rows.append({"module": m, "scenarios": n, "opened": len(opened),
+                     "by_pipeline": found, "by_person": len(opened) - found,
+                     "detection_rate": detection_rate(found, len(opened)),
                      "product": len(product),
                      "closed": sum(1 for r in mine if _in(r.get("closed"), start, end)),
                      "open": sum(1 for r in mine if r.get("open")),
