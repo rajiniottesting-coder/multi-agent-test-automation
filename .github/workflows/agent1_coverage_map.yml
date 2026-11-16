@@ -1,0 +1,112 @@
+# ─────────────────────────────────────────────────────────────
+# Agent 1 - Map acceptance coverage (C4) - by hand
+#
+# WHAT IT DOES:
+#   For a story whose test cases already exist but which has no coverage map
+#   (they were written before Agent 1 posted maps, or by a person - every
+#   story of a project that adopts the framework with its tests written),
+#   Agent 1 maps each acceptance criterion to the existing test case(s) that
+#   verify it and posts the `[agent1:coverage]` comment the reports read.
+#   Nothing is drafted, changed or created; a criterion no test case verifies
+#   is listed as a gap. A story that has a map is left alone unless `force`.
+#
+# WHEN:
+#   Once for every story when the framework is adopted ("all"), and for a
+#   story whose test cases a person changed ("stories" + "force"). The
+#   traceability matrix names this workflow on every story without a map.
+#
+# COST: one small model call per story mapped (Agent 1's model), recorded on
+#   the story, within its spend budget. A story already mapped costs nothing.
+#
+# Writes to Jira only - no repository write, no agent identity needed.
+# ─────────────────────────────────────────────────────────────
+
+name: Agent 1 - Map acceptance coverage
+
+on:
+  workflow_dispatch:
+    inputs:
+      stories:
+        description: "Stories to map, comma-separated (e.g. PRJ-1,PRJ-2). Blank with 'all' ticked: every story with test cases and no map"
+        required: false
+        default: ""
+      all:
+        description: "Every story whose test cases are in the suite and that has no coverage map"
+        required: false
+        type: boolean
+        default: false
+      force:
+        description: "Map again a story that already has a map (its test cases changed)"
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: "Print the maps; post nothing"
+        required: false
+        type: boolean
+        default: false
+      limit:
+        description: "At most this many stories (blank: coverage_map.max_stories_per_run in config.yaml)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+# One mapping run at a time: two runs could map the same story twice.
+concurrency:
+  group: agent1-coverage-map
+  cancel-in-progress: false
+
+jobs:
+  map:
+    name: Map acceptance coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Map the stories
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
+          # Agent 1's model (see agent1_analyst.yml).
+          LLM_MODEL: ${{ vars.LLM_MODEL_LIGHT || vars.LLM_MODEL || 'claude-opus-4-6' }}
+          LLM_PRICE_INPUT_PER_1M: ${{ vars.LLM_PRICE_INPUT_PER_1M }}
+          LLM_PRICE_OUTPUT_PER_1M: ${{ vars.LLM_PRICE_OUTPUT_PER_1M }}
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          JIRA_BOARD_ID: ${{ vars.JIRA_BOARD_ID }}
+          STORIES: ${{ github.event.inputs.stories }}
+          ALL: ${{ github.event.inputs.all }}
+          FORCE: ${{ github.event.inputs.force }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+          LIMIT: ${{ github.event.inputs.limit }}
+        run: |
+          ARGS=()
+          if [ -n "$STORIES" ]; then ARGS+=(--story "$STORIES"); fi
+          if [ "$ALL" = "true" ]; then ARGS+=(--all); fi
+          if [ "$FORCE" = "true" ]; then ARGS+=(--force); fi
+          if [ "$DRY_RUN" = "true" ]; then ARGS+=(--dry-run); fi
+          if [ -n "$LIMIT" ]; then ARGS+=(--limit "$LIMIT"); fi
+          if [ ${#ARGS[@]} -eq 0 ] || { [ -z "$STORIES" ] && [ "$ALL" != "true" ]; }; then
+            echo "::error::Name the stories, or tick 'all'."
+            exit 1
+          fi
+          python -m agents.agent1_coverage "${ARGS[@]}"

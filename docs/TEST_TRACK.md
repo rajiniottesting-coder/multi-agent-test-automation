@@ -27,7 +27,7 @@ still open, and the rows each new change adds.
 
 ## Open checks
 
-22 rows: 18 open or partly proven (⬜) - one of them (E225) the last live check of batch A (#512; E222-E224, E226 and E227 proven 14 Nov, #514 and #515) - 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌). Rows proven earlier were removed in their evidence pull requests (#470, #473 and later).
+24 rows: 20 open or partly proven (⬜) - two of them (E242, E243) C4's (#523), one (E225) the last live check of batch A (#512; E222-E224, E226 and E227 proven 14 Nov, #514 and #515) - 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌). Rows proven earlier were removed in their evidence pull requests (#470, #473 and later).
 
 Most of these wait for an event that cannot be produced on demand (the model
 taking a particular path, a provider error that quotes a secret); some are not
@@ -35,6 +35,8 @@ possible on the current application. Each names what it is waiting for.
 
 | ID | Built in | Check | Expected | Status | Evidence |
 |---|---|---|---|---|---|
+| E242 | #523 C4 | *Agent 1 - Map acceptance coverage* with `all`, after a dry run | Every story with test cases and no map is mapped (here the four drafted before 25 Oct 2026); a story with a map and a throw-away story are skipped; the next Reports shows each of their criteria on its own row with its test case(s) and "0 on stories Agent 1 left no coverage map for"; a criterion nothing verifies is a gap | ⬜ | |
+| E243 | #523 C4 | The next change story Agent 1 drafts in impact-aware mode | The matrix reads the map in its `[agent1:impact-draft]` comment: each criterion on its own row, a revised test case it cites by key shown with that test case's scenario and result | ⬜ | |
 | E225 | #512 X10 | The next scheduled night (02:30 UTC) | One crawl: no Agent 0 drift schedule fires; the drift run is started by Inventory Health | ⬜ | Partly: the hand-over proven by hand on 14 Nov (Inventory Health 43602961708 started Agent 0 43603080921, which read its report). Waits for the first scheduled night |
 | E16 | #215 | SCRUM-187 on the next scan (persistent-state rule) | One `[agent2:blocked]` comment naming the rule, then `[BLOCK]` with no model call on later scans; a new signed-in draft stating a cart quantity is sent back by Agent 1 | ➖ | Coding once step 7 was fixed: V8 |
 | E19f | #224 | An added hidden element or family | Carries `conditional` / `multi_match`; not undone the next night | ⬜ | Partly: Not reachable on this app: window I removed the Test Cases panel family; drift 42853242986 did not propose it again, and every hidden element with a durable handle is a shared section or a numbered id (unstable). Needs an application change that adds a hidden element or family to one page |
