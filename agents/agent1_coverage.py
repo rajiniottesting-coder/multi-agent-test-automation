@@ -104,9 +104,12 @@ def story_test_cases(tracker, story_key: str, marked=()) -> list:
 # ── the map ────────────────────────────────────────────────────────────
 
 def _cases_block(cases) -> str:
-    return "\n\n".join(f"### {c.key} - {c.title}\n" + "\n".join(
-        f"- {s.action} -> expected: {s.expected_result}".replace(" -> expected: ", " -> ")
-        if s.action else f"- {s.expected_result}" for s in c.steps) for c in cases) or "(none)"
+    def line(s):
+        if s.action and s.expected_result:
+            return f"- {s.action} -> {s.expected_result}"
+        return f"- {s.action or s.expected_result}"
+    return "\n\n".join(f"### {c.key} - {c.title}\n" + "\n".join(line(s) for s in c.steps)
+                       for c in cases) or "(none)"
 
 
 def check_map(criteria, coverage, cases) -> tuple:

@@ -30,6 +30,12 @@ One `coverage` entry for EVERY criterion listed above, in order:
 - `how_verified`: one line. When covered: the step that proves it, in the test
   case's own words. When empty: what is not checked by any test case.
 
+A criterion that something works IN A STATE or WITHOUT a condition (signed
+out, without an account, on a small screen, with an empty cart) is verified by
+a test case whose precondition puts the application in that state and whose
+steps then check the outcome succeeds: the state is part of the test case, so
+cite it. Judge the same criterion the same way on every story.
+
 A criterion marked as something REMOVED, RESTRICTED or LIMITED is verified only
 by a step whose expected result states the absence, the refusal or the
 rejection - cite a test case for it only if it has such a step.

@@ -120,6 +120,11 @@ def test_a_story_is_mapped_to_its_existing_test_cases_and_the_map_posted():
     assert "No gift-wrap option is present on the page" in prompt, "the steps as written"
     assert "- AC2: The gift-wrap option is no longer shown" in prompt and "REMOVED" in prompt
     assert "Do NOT write, change, merge or\ninvent test cases" in prompt
+    # 16 Nov 2026, the first live dry run: "none of this requires signing in"
+    # was a gap on two stories and covered on a third, though each one's test
+    # cases start signed out and check the outcome. One rule for all.
+    assert "works IN A STATE or WITHOUT a condition" in prompt
+    assert "Judge the same criterion the same way on every story" in prompt
 
 
 def test_the_reports_read_the_posted_map_per_criterion():
@@ -219,6 +224,19 @@ def test_a_test_case_is_read_back_step_by_step():
         ("Open the checkout page", "The page is shown"),
         ("Look for the gift-wrap option", "No gift-wrap option is present on the page")]
     assert ac.evidence_steps(w, ac.STRICT), "its absence step counts"
+
+
+def test_preconditions_are_read_as_preconditions():
+    from integrations.jira_client import JiraClient
+    desc = JiraClient._format_test_case_description(TestCase(
+        title="t", description="d", expected_outcome="o",
+        preconditions=["Shopper is not signed in"],
+        steps=[TestStep(step_number=1, action="Open the cart", expected_result="It is empty")]))
+    w = ac.written_case("PRJ-30", "t", desc)
+    assert [(s.action, s.expected_result) for s in w.steps] == [
+        ("Precondition: Shopper is not signed in", ""), ("Open the cart", "It is empty")]
+    assert "- Precondition: Shopper is not signed in\n- Open the cart -> It is empty" in \
+        cov._cases_block([w])
 
 
 def test_a_test_case_a_person_wrote_is_read_line_by_line():
