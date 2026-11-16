@@ -149,7 +149,7 @@ def crawl(tmp_path, monkeypatch):
         def browser(headless=True):
             yield page
 
-        def resolve(pg, url, sels, attrs):
+        def resolve(pg, url, sels, attrs, detail=None):
             path_ = url.replace("https://x.test", "")
             page.url = "https://x.test" + state["landed"].get(path_, path_)
             return ({s: state["counts"].get(s, 1) for s in sels}, set(),

@@ -1852,7 +1852,11 @@ page. **Planned (F-12):**
 `planned_live` (1 match, or ≥1 for a declared family) and `planned_waiting` (0);
 `summarize_drift()` counts both, outside `has_drift`. The crawl reports a
 `planned_page` that is unreachable or redirected in `planned_pages_waiting`, not
-`unreachable_pages`. `build_update()` never treats a key the page declares
+`unreachable_pages`. Each unreachable page carries its reason in
+`unreachable_reasons` (`browser.resolve_selectors(detail=)`: the HTTP status, or
+none when navigation failed); `introspect.split_unreachable()` splits them into
+gone (404, 410) and not read, and `impact_analysis.drift_seeds()` seeds only the
+gone ones - a report with no reasons (older) seeds every one, as before. `build_update()` never treats a key the page declares
 `planned` as stale; a `planned_page` with no planned key live is skipped whole
 (listed; one with no planned key at all is `refused`); then, after the hold
 check, each live planned key is `confirmed` (it leaves `planned`, the list goes

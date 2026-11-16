@@ -2497,6 +2497,7 @@ It reads the application as the tests use it:
 | signed in | at the login page the inventory records (`--login-url` overrides); pages served at that path are read first, signed out. A failed login prints `LOGIN FAILED`, writes no report and exits 2 |
 | every page | `always` pages with an address (a menu on every page) too - their keys are read there, never compared |
 | rendered | a page whose expected keys (not `conditional`, `removed` or `planned`) do not resolve - at least two - within 15 s is listed under *pages not rendered*: not stale, not drift, never proposed for removal |
+| unreachable | a page that does not load is printed with its reason (`[page] not read - HTTP 404`, or `navigation failed: TimeoutError`) and listed as *gone (not found)* - a 404 or 410 - or *not read just now* (a timeout, a refusal, a server error). Only a gone page seeds Agent 0's drift analysis; a page not read just now is reported, and read again the next night |
 | invalid | a selector the browser rejects reads `INVALID`, never stale - a stale key is proposed for removal, an invalid one needs fixing |
 | ambiguous | each `AMBIG` line lists what it matched, and a `fix:` line when the exact `text="..."` form matches one |
 

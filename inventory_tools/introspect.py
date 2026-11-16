@@ -1432,8 +1432,32 @@ def rendered(inventory_selectors: dict[str, str], live_resolved: dict[str, int],
     return sum(1 for sel in expected if live_resolved.get(sel, 0) > 0) >= needed
 
 
-def summarize_drift(per_page: dict[str, dict], missing_pages: list[str]) -> dict:
-    """Roll per-page diffs into a report with an overall `has_drift` flag."""
+# A page that answered with one of these is gone from the application. Any other
+# failure to read it (a timeout, a refusal, a server error) is a bad moment.
+GONE_STATUSES = (404, 410)
+
+
+def split_unreachable(report: dict) -> tuple[list[str], list[str]]:
+    """(gone, not_read): the report's unreachable pages, split by WHY.
+
+    Gone pages answered "not found" - a real change, which seeds Agent 0's
+    impact analysis. Not-read pages failed for any other reason; the same page
+    can be read an hour later, so they are reported and never read as drift.
+    A report written before reasons were recorded keeps the old reading: every
+    unreachable page counts as gone."""
+    pages = list(report.get("unreachable_pages") or [])
+    reasons = report.get("unreachable_reasons")
+    if reasons is None:
+        return pages, []
+    gone = [p for p in pages if (reasons.get(p) or {}).get("status") in GONE_STATUSES]
+    return gone, [p for p in pages if p not in gone]
+
+
+def summarize_drift(per_page: dict[str, dict], missing_pages: list[str],
+                    reasons: dict[str, dict] | None = None) -> dict:
+    """Roll per-page diffs into a report with an overall `has_drift` flag.
+    `reasons` says why each unreachable page was not read (see
+    split_unreachable)."""
     total_missing = sum(len(p["missing"]) for p in per_page.values())
     total_new = sum(len(p["new_data_tests"]) for p in per_page.values())
     total_ambiguous = sum(len(p.get("ambiguous", [])) for p in per_page.values())
@@ -1441,6 +1465,7 @@ def summarize_drift(per_page: dict[str, dict], missing_pages: list[str]) -> dict
     return {
         "pages_checked": len(per_page),
         "unreachable_pages": missing_pages,
+        "unreachable_reasons": {p: dict((reasons or {}).get(p) or {}) for p in missing_pages},
         "stale_selectors": total_missing,
         "new_untracked_data_tests": total_new,
         # Selectors matching >1 element. Counted as drift because Playwright's

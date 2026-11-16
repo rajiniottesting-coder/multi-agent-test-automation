@@ -699,21 +699,32 @@ def count_on_page(page, selectors: list[str], test_attrs: tuple = TEST_ID_ATTRS
 
 
 def resolve_selectors(page, url: str, selectors: list[str],
-                      test_attrs: tuple = TEST_ID_ATTRS
+                      test_attrs: tuple = TEST_ID_ATTRS, detail: dict | None = None
                       ) -> tuple[dict[str, int], set[str], bool]:
     """Navigate to `url`; return (counts_per_selector, live_test_ids, reachable).
 
     Handles frame-prefixed selectors (`iframe#x >>> [..]`), role=/text= locators,
     and open shadow DOM. `reachable` is False on navigation error / HTTP >= 400.
     An invalid selector counts INVALID (-1).
+
+    `detail`, when given, receives WHY a page was not reachable: `status` (the
+    HTTP status, None when navigation itself failed) and a short `reason`. A
+    page that answered "not found" is gone; a timeout, a refusal or a server
+    error says the page could not be read that moment, not that it changed.
     """
     try:
         resp = _goto_spa_tolerant(page, url)
-    except Exception:
+    except Exception as exc:                                   # noqa: BLE001
+        if detail is not None:
+            first = (str(exc).strip().splitlines() or [""])[0][:120]
+            detail.update(status=None, reason=f"navigation failed: {type(exc).__name__}"
+                          + (f" ({first})" if first else ""))
         return {}, set(), False
     reachable = True
     if resp is not None and resp.status >= 400:
         reachable = False
+        if detail is not None:
+            detail.update(status=resp.status, reason=f"HTTP {resp.status}")
     counts, data_tests = count_on_page(page, selectors, test_attrs)
     return counts, data_tests, reachable
 

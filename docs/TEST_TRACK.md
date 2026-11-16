@@ -27,7 +27,7 @@ still open, and the rows each new change adds.
 
 ## Open checks
 
-23 rows: 19 open or partly proven (⬜) - one of them (E243) C4's (#523; E242 and E244 proven 16 Nov, #525), one (E225) the last live check of batch A (#512; E222-E224, E226 and E227 proven 14 Nov, #514 and #515) - 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌). Rows proven earlier were removed in their evidence pull requests (#470, #473 and later).
+23 rows: 19 open or partly proven (⬜) - one of them (E243) C4's (#523; E242 and E244 proven 16 Nov, #525), one (E245) the unreachable-page fix (#526); batch A (#512) is proven in full (E225 on the scheduled nights of 15 and 16 Nov, #526) - 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌). Rows proven earlier were removed in their evidence pull requests (#470, #473 and later).
 
 Most of these wait for an event that cannot be produced on demand (the model
 taking a particular path, a provider error that quotes a secret); some are not
@@ -36,7 +36,7 @@ possible on the current application. Each names what it is waiting for.
 | ID | Built in | Check | Expected | Status | Evidence |
 |---|---|---|---|---|---|
 | E243 | #523 C4 | The next change story Agent 1 drafts in impact-aware mode | The matrix reads the map in its `[agent1:impact-draft]` comment: each criterion on its own row, a revised test case it cites by key shown with that test case's scenario and result | ⬜ | |
-| E225 | #512 X10 | The next scheduled night (02:30 UTC) | One crawl: no Agent 0 drift schedule fires; the drift run is started by Inventory Health | ⬜ | Partly: the hand-over proven by hand on 14 Nov (Inventory Health 43602961708 started Agent 0 43603080921, which read its report). Waits for the first scheduled night |
+| E245 | #526 Unreachable page | The next night a page cannot be read (a timeout, a refusal or a server error) while the application is up | Inventory Health prints the page with its reason ("not read - ...", "not read just now"); Agent 0's drift job seeds no page from it and lists no test case of that page for review; a page that answers "not found" still seeds them | ⬜ | Built after 16 Nov: Inventory Health 43844841408 could not read two pages (the application was up; the suite passed on both pages at 17:43, run 43921380647), and drift run 43845266001 put their 17 test cases up for review |
 | E16 | #215 | SCRUM-187 on the next scan (persistent-state rule) | One `[agent2:blocked]` comment naming the rule, then `[BLOCK]` with no model call on later scans; a new signed-in draft stating a cart quantity is sent back by Agent 1 | ➖ | Coding once step 7 was fixed: V8 |
 | E19f | #224 | An added hidden element or family | Carries `conditional` / `multi_match`; not undone the next night | ⬜ | Partly: Not reachable on this app: window I removed the Test Cases panel family; drift 42853242986 did not propose it again, and every hidden element with a durable handle is a shared section or a numbered id (unstable). Needs an application change that adds a hidden element or family to one page |
 | E29c | F-19, #231 | More than 10 failures | No retry ("not retrying") | ➖ | n/a: superseded by #242: no fixed 10-failure cut-off any more; the cap is MAX_RETRIED_TESTS (100), covered by E40d |
