@@ -120,6 +120,11 @@ def test_a_story_is_mapped_to_its_existing_test_cases_and_the_map_posted():
     assert "No gift-wrap option is present on the page" in prompt, "the steps as written"
     assert "- AC2: The gift-wrap option is no longer shown" in prompt and "REMOVED" in prompt
     assert "Do NOT write, change, merge or\ninvent test cases" in prompt
+    # 16 Nov 2026, the first live dry run: "none of this requires signing in"
+    # was a gap on two stories and covered on a third, though each one's test
+    # cases start signed out and check the outcome. One rule for all.
+    assert "works IN A STATE or WITHOUT a condition" in prompt
+    assert "Judge the same criterion the same way on every story" in prompt
 
 
 def test_the_reports_read_the_posted_map_per_criterion():
