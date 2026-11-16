@@ -9,6 +9,7 @@ after the live validation (271 checks, 254 proven). Accepted behaviour that is
   check rows to [TEST_TRACK.md](./TEST_TRACK.md) (*Built in* names the item ID).
 - Status: *Open* -> *Done (#PR)* when merged; the item stays here until its
   live check passes, then it is removed (the PR keeps the history).
+  *On hold (who, date)*: the owner paused it - not started, not dropped.
 - *Was* gives the older gap or fix ID (L-, N-, G-, F-) that code comments and
   earlier pull requests use.
 - Cost group (model spend to build and prove it): **A** no model at runtime
@@ -65,6 +66,7 @@ before a real project; P2 and P3 before a wider rollout.
 | ID | Item | Today (gap) | Priority | Cost | Was | Status |
 |---|---|---|---|---|---|---|
 | C1 | API, accessibility, visual and performance tests, chosen per project | UI tests only | P3 | C | | Open |
+| C4 | Coverage maps for stories whose test cases already exist (Agent 1 coverage-only mode), and the matrix reads a change story's map | Stories drafted before maps existed, or by a person, showed every criterion as "not mapped"; a change story's map (in its impact draft, citing keys) was not read | P1 | A | | Done (#523) |
 | C2 | Validator for snapshot-count and snapshot-membership assertions in signed-in tests | Not rejected by Agent 2's gate | P3 | A | L11, F-6 | Done (#468) |
 | C3 | A fixed set of stories replayed when the prompts of Agents 1-3 change | No prompt regression set | P3 | C | L12 | Open |
 
@@ -84,7 +86,7 @@ two places; Playwright's CLI costs about a quarter of Playwright MCP's tokens
 
 | ID | Item | Today (gap) | Priority | Cost | Was | Status |
 |---|---|---|---|---|---|---|
-| P1 | Package the framework (a versioned package or submodule) separately from a project's content | Framework and the application's tests share one repository; a fix does not reach another project | P1 when more than one project uses it | A | | Open |
+| P1 | Package the framework (a versioned package or submodule) separately from a project's content | Framework and the application's tests share one repository; a fix does not reach another project | P1 when more than one project uses it | A | | On hold (owner, 15 Nov 2026) |
 | P3 | Adapters for other trackers and repository hosts, when a project needs one | Jira and GitHub only (the adapter pattern is in place) | P3 | A | | Open |
 
 ## Estimated model spend to build and prove it
@@ -100,6 +102,8 @@ Group B, batch B1 (14 Nov 2026, #491): R1-R5, D1, D2, D4, D5, X5 - all
 proven live the same day with #492, #497, #498 and #500 (removed above).
 Group B, batch B2 (14 Nov 2026, #502): RP5, X1, D6, X4 - all proven live the
 same day with #504, #506 and #508 (removed above).
+C4 added on 15 Nov 2026 at the owner's request (old stories showed "not mapped";
+a project adopting the framework would see it on every story) and built in #523.
 RP14-RP25 added on 14 Nov 2026 at the owner's request (the reports pages, all of
 them, before the planned backlog), built in #516 with fixes #519 and #521, and
 proven live the same night (#522, removed above).

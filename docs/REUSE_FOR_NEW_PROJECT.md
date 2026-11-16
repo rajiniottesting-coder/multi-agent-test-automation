@@ -40,7 +40,7 @@ These files contain zero project-specific knowledge. Reuse as-is:
 
 ### Agents (the orchestration brains)
 - `agents/agent0_impact.py` — change story → affected tests, Impact Review (Agent 0)
-- `agents/agent1_analyst.py` — Jira → Test Cases; `agents/agent1_impact.py` — revise approved tests
+- `agents/agent1_analyst.py` — Jira → Test Cases; `agents/agent1_impact.py` — revise approved tests; `agents/agent1_coverage.py` — map existing test cases to their story's acceptance criteria
 - `agents/agent2_coder.py` — Test Cases → Playwright code + PR; `agents/agent2_impact.py` — change-story splice; `agents/agent2_coverage.py` — every approved test case covered or named (`ai-incomplete`); `agents/agent2_review_fix.py` — fixes what a PR's reviewer asks for
 - `agents/agent3_reviewer.py` — PR review
 - `agents/agent5_reporter.py` — results and cost to Jira; scores Agent 0
@@ -416,6 +416,17 @@ the branch rules the way the agents' other branches are. A test run on a
 person's machine gets the same pages with `python -m scripts.local_report`;
 `python -m scripts.pull_reports --to <folder>` keeps a copy of the published
 ones in a folder.
+
+**Stories whose test cases already exist.** A project that adopts the
+framework with test cases already written has no coverage maps, so the
+traceability matrix cannot say which test case verifies which acceptance
+criterion. Once the scenarios carry their `# JIRA:` markers, run the
+*Agent 1 - Map acceptance coverage* workflow with `all` ticked (try
+`dry_run` first): every story whose test cases are in the suite gets its map,
+criteria nothing verifies are listed as gaps, and nothing is drafted or
+changed. It maps `coverage_map.max_stories_per_run` stories a run (10); run it
+again until it reports none left. New stories get their map from Agent 1 when
+it drafts them.
 
 ### The agents' identity on another repository host
 

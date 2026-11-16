@@ -66,8 +66,10 @@ def test_backlog_items_read_and_have_known_status():
     rows = re.findall(r"^\| ([A-Z]{1,3}\d+) \|", BACKLOG, flags=re.M)
     assert rows and len(items) == len(rows), \
         "the backlog no longer reads as expected - update this test"
-    bad = {i: s for i, s in items.items() if not re.fullmatch(r"Open|Done \(#\d+\)", s)}
-    assert not bad, f"backlog status must be 'Open' or 'Done (#PR)': {bad}"
+    # "On hold (<who>, <date>)": the owner paused it - not started, not dropped.
+    bad = {i: s for i, s in items.items()
+           if not re.fullmatch(r"Open|Done \(#\d+\)|On hold \([^)]+\)", s)}
+    assert not bad, f"backlog status must be 'Open', 'Done (#PR)' or 'On hold (...)': {bad}"
 
 
 def test_every_done_item_has_a_check_row():

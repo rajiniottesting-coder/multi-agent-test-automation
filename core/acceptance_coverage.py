@@ -602,3 +602,102 @@ def render_coverage(criteria, coverage, index: CaseIndex) -> list[str]:
         lines.append(f"- {ref} {_short(text, 140)} -> {', '.join(cited) or '(none)'}"
                      + (f" | {_short(how, 140)}" if how else ""))
     return lines
+
+
+# ─────────────────────────────────────────────────────────────
+# Reading a map back, and a test case written earlier (C4)
+# ─────────────────────────────────────────────────────────────
+COVERAGE_MARKER = "[agent1:coverage]"
+IMPACT_DRAFT_MARKER = "[agent1:impact-draft]"
+IMPACT_COVERAGE_HEADING = "*Acceptance criteria and what verifies them*"
+_MARKED = re.compile(r"\s*\\?\[agent1:(coverage|impact-draft)\\?\]")
+
+
+def coverage_comment(comments) -> str:
+    """The story's newest coverage map as a `[agent1:coverage]` body, "" when
+    it has none.
+
+    Two comments carry one: Agent 1's `[agent1:coverage]` (a new story, or a
+    story mapped later) and its impact-aware draft (`[agent1:impact-draft]`, a
+    change story), whose map is the section under IMPACT_COVERAGE_HEADING.
+    Before 15 Nov 2026 only the first was read, so every change story's
+    criteria read as "not mapped" in the traceability matrix."""
+    for body in reversed(list(comments or [])):
+        text = str(body or "")
+        m = _MARKED.match(text)
+        if not m:
+            continue
+        if m.group(1) == "coverage":
+            return text
+        lines, inside = [], False
+        for line in text.splitlines():
+            if line.strip() == IMPACT_COVERAGE_HEADING:
+                inside = True
+                continue
+            if inside:
+                if not line.strip() or (line.startswith("*") and line.rstrip().endswith("*")):
+                    break
+                lines.append(line)
+        if lines:
+            return COVERAGE_MARKER + " (from the impact-aware draft)\n" + "\n".join(lines)
+    return ""
+
+
+class _Step:
+    def __init__(self, action: str, expected_result: str):
+        self.action, self.expected_result = action, expected_result
+
+
+class WrittenCase:
+    """A test case as it stands in the tracker - its key, title, steps and
+    test data read back from the text - so the obligation checks can judge a
+    test case drafted earlier, by Agent 1 or by a person."""
+
+    def __init__(self, key: str, title: str, steps: list, test_data: dict):
+        self.key, self.title, self.steps, self.test_data = key, title, steps, test_data
+
+
+_STEP_LINE = re.compile(r"^\s*#\s+(.+?)\s*$")
+_EXPECTED_LINE = re.compile(r"^\s*_?\s*expected(?:\s+result)?\s*:?\s*_?\s*:?\s*(.+)$", re.I)
+_DATA_LINE = re.compile(r"^\s*[-*]\s+\*?([^:*]+?)\*?:\*?\s*(.+)$")
+
+
+def _plain_markup(text: str) -> str:
+    return re.sub(r"[*_{}]", "", text or "").strip()
+
+
+def written_case(key: str, summary: str, description: str) -> WrittenCase:
+    """Read a tracker test case. Agent 1's layout (numbered `# *action*` lines,
+    each followed by `_Expected:_ ...`, and a `*Test Data:*` list) gives each
+    step its action and expected result. Any other layout - a test case a
+    person wrote - gives one step per line, the line as its expected result:
+    every statement is still read, so an absence it states still counts."""
+    lines = (description or "").splitlines()
+    steps, data, in_data, action = [], {}, False, None
+    for line in lines:
+        bare = _plain_markup(line)
+        if bare.lower().startswith("test data"):
+            in_data = True
+            continue
+        if in_data:
+            m = _DATA_LINE.match(line)
+            if m:
+                data[_plain_markup(m.group(1))] = _plain_markup(m.group(2))
+                continue
+            if bare:
+                in_data = False
+        m = _STEP_LINE.match(line)
+        if m:
+            if action is not None:
+                steps.append(_Step(action, ""))
+            action = _plain_markup(m.group(1))
+            continue
+        m = _EXPECTED_LINE.match(_plain_markup(line))
+        if m and action is not None:
+            steps.append(_Step(action, _plain_markup(m.group(1))))
+            action = None
+    if action is not None:
+        steps.append(_Step(action, ""))
+    if not steps:
+        steps = [_Step("", _plain_markup(line)) for line in lines if _plain_markup(line)]
+    return WrittenCase(key, summary or "", steps, data)

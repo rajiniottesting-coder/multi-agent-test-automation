@@ -59,6 +59,16 @@ class TestCaseList(BaseModel):
         description="One entry per acceptance criterion: the test case(s) that verify it")
 
 
+class CoverageMap(BaseModel):
+    """Agent 1's coverage map for a story whose test cases already exist
+    (agents/agent1_coverage.py, C4): which existing test case(s) verify each
+    acceptance criterion. Nothing is drafted or changed."""
+    coverage: list[CriterionCoverage] = Field(
+        default_factory=list,
+        description="One entry per acceptance criterion listed. covered_by: the KEYS of the "
+                    "existing test cases that verify it - empty when none does")
+
+
 class TestCaseRevision(BaseModel):
     """One approved, impacted test case rewritten for the change story."""
     key: str = Field(..., description="The existing test case key, exactly as given (e.g. 'PROJ-3')")

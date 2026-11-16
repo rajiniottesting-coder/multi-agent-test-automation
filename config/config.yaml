@@ -516,6 +516,16 @@ agents:
     # up if they were unintended. With cap=2, a worst-case mislabel costs
     # ~$0.30 of LLM and ~10 garbage Jira tickets to clean up — recoverable.
     max_stories_per_run: 2
+    # C4: coverage-only mode (agents/agent1_coverage.py, workflow "Agent 1 -
+    # Map acceptance coverage"): a story whose test cases exist but which has
+    # no coverage map - written before Agent 1 posted maps, or by a person -
+    # gets one: its criteria mapped to its existing test cases, nothing
+    # drafted. One small model call per story; a story with a map is left
+    # alone. Run it once for every story when the framework is adopted.
+    coverage_map:
+      max_stories_per_run: 10
+      max_output_tokens: 4096
+      skip_labels: ["ai-skip"]     # the agents must not touch these
 
   # Agent 2 — Coder: approved test cases → Playwright code + PR
   #
