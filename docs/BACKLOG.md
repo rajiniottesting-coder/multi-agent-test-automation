@@ -9,6 +9,7 @@ after the live validation (271 checks, 254 proven). Accepted behaviour that is
   check rows to [TEST_TRACK.md](./TEST_TRACK.md) (*Built in* names the item ID).
 - Status: *Open* -> *Done (#PR)* when merged; the item stays here until its
   live check passes, then it is removed (the PR keeps the history).
+  *On hold (who, date)*: the owner paused it - not started, not dropped.
 - *Was* gives the older gap or fix ID (L-, N-, G-, F-) that code comments and
   earlier pull requests use.
 - Cost group (model spend to build and prove it): **A** no model at runtime
@@ -85,7 +86,7 @@ two places; Playwright's CLI costs about a quarter of Playwright MCP's tokens
 
 | ID | Item | Today (gap) | Priority | Cost | Was | Status |
 |---|---|---|---|---|---|---|
-| P1 | Package the framework (a versioned package or submodule) separately from a project's content | Framework and the application's tests share one repository; a fix does not reach another project | P1 when more than one project uses it | A | | Open |
+| P1 | Package the framework (a versioned package or submodule) separately from a project's content | Framework and the application's tests share one repository; a fix does not reach another project | P1 when more than one project uses it | A | | On hold (owner, 15 Nov 2026) |
 | P3 | Adapters for other trackers and repository hosts, when a project needs one | Jira and GitHub only (the adapter pattern is in place) | P3 | A | | Open |
 
 ## Estimated model spend to build and prove it
