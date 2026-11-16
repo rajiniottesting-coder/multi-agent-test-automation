@@ -59,7 +59,6 @@ before a real project; P2 and P3 before a wider rollout.
 | ID | Item | Today (gap) | Priority | Cost | Was | Status |
 |---|---|---|---|---|---|---|
 | X9 | Inventory Health probes the application and retries once; an unreachable application raises an app-unavailable alert instead of a red run | 12 Nov 10:03 UTC: red because the login form was slow; the re-run was green | P2 | A | | Done (#466) |
-| X10 | One nightly inventory crawl: Inventory Health runs `check_inventory_staleness` (signed in at the inventory's login page, every page with `always` ones, a render wait, invalid selectors apart, ambiguous matches described) and hands its report to Agent 0's drift job, which no longer crawls on a schedule | Two crawls a night of the same pages; the drift crawl signed in at the root, failed ("login form not recognised") and ran signed out; it skipped the menu, had no render wait and read an invalid selector as stale - proposed for removal | P2 | A | | Done (#512) |
 
 ### Coverage
 
@@ -110,6 +109,9 @@ proven live the same night (#522, removed above).
 X10 added on 14 Nov 2026 at the owner's request (the drift crawl and Inventory
 Health read the same pages twice) and built with X6 as batch A (#512). X6 is
 proven live (#514, #515 - removed above): Run Tests is a required check on `main`.
+X10 is proven live on the scheduled nights of 15 and 16 Nov 2026 (#526, removed
+above); the 16 Nov night showed a page not read for a moment seeding Agent 0,
+fixed in the same pull request (only a page that answers "not found" is a change).
 D7 and D10 are proven live (#481, removed above). On 14 Nov 2026 RP6, RP8,
 RP11, RP12, RP13, D9 and X8 were proven live too (#490, removed above); D8
 waits for its tracker-component check (the project has no components).
