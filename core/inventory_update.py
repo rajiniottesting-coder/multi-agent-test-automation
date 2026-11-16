@@ -137,6 +137,7 @@ class InventoryUpdate:
     unlisted_paths: list = field(default_factory=list)  # {group, count, example, linked_from}
     ambiguous: list = field(default_factory=list)     # {page, element, selector, matches}
     unreachable: list = field(default_factory=list)   # [page]
+    unreachable_reasons: dict = field(default_factory=dict)  # {page: {status, reason}}
     new_test_ids: list = field(default_factory=list)  # {page, value}
 
     @property
@@ -289,6 +290,7 @@ def build_update(drift: dict, inventory: dict, used: set, *,
     new_by_page = drift.get("new_elements") or {}
     declared_by_page = drift.get("new_element_declarations") or {}
     upd.unreachable = list(drift.get("unreachable_pages") or [])
+    upd.unreachable_reasons = dict(drift.get("unreachable_reasons") or {})
     upd.planned_pages_waiting = list(drift.get("planned_pages_waiting") or [])
     upd.unlisted_paths = list(drift.get("unlisted_paths") or [])
 
@@ -554,8 +556,11 @@ def render_body(upd: InventoryUpdate, inventory_path: str, digest: str,
     lines += _table("Ambiguous selectors - match several elements", upd.ambiguous,
                     [el, sel, ("Matches", lambda r: r.get("matches", ""))])
     if upd.unreachable:
+        def _why(p):
+            reason = (upd.unreachable_reasons.get(p) or {}).get("reason")
+            return f"`{p}` ({reason})" if reason else f"`{p}`"
         lines += [f"**Unreachable pages** (not checked): "
-                  f"{', '.join(f'`{p}`' for p in upd.unreachable)}", ""]
+                  f"{', '.join(_why(p) for p in upd.unreachable)}", ""]
     if upd.planned_pages_waiting or upd.planned_waiting:
         waiting = sorted({f"`{r['page']}.{r['element']}`" for r in upd.planned_waiting})
         lines += ["**Planned, not live yet** (declared from the design; expected, not drift): "

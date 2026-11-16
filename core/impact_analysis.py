@@ -134,7 +134,13 @@ def code_change_seeds(base_root: Path, head_root: Path) -> Seeds:
 
 
 def drift_seeds(report: dict) -> Seeds:
-    """Seeds from scripts/check_inventory_staleness.py --json output."""
+    """Seeds from scripts/check_inventory_staleness.py --json output.
+
+    An unreachable page seeds only when it answered "not found": a page that
+    timed out or was refused that night is read again the next one, and
+    seeding it put every test of the page up for review (16 Nov 2026: two
+    pages not read for a moment, 17 test cases sent to an Impact Review)."""
+    from inventory_tools.introspect import split_unreachable
     seeds = Seeds()
     for page, diff in (report.get("pages") or {}).items():
         # A `removed` element back on the page fails the absence test that
@@ -145,7 +151,11 @@ def drift_seeds(report: dict) -> Seeds:
             element = item.get("element") if isinstance(item, dict) else item
             if element:
                 seeds.elements.add((page, element))
-    seeds.pages.update(report.get("unreachable_pages") or [])
+    gone, not_read = split_unreachable(report)
+    seeds.pages.update(gone)
+    if not_read:
+        logger.info("Pages not read tonight, not seeded (a timeout, refusal or server "
+                    "error is not a change): %s", ", ".join(sorted(not_read)))
     return seeds
 
 

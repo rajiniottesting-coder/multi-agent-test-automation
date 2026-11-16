@@ -41,7 +41,7 @@ def run(tmp_path, monkeypatch):
     monkeypatch.setattr(chk, "browser_page", fake_browser)
     # The selector is present (count 1) and nothing is missing.
     monkeypatch.setattr(chk, "resolve_selectors",
-                        lambda page, url, sels, attrs: ({s: 1 for s in sels}, set(), True))
+                        lambda page, url, sels, attrs, detail=None: ({s: 1 for s in sels}, set(), True))
     descriptors = [{"tag": "button", "attrs": {"id": "cancel"}, "text": "Cancel",
                     "renderedText": "Cancel", "label": "", "visible": True,
                     "thirdParty": False, "hasIconChild": False, "cssPath": ""}]
@@ -111,7 +111,7 @@ def test_compare_marks_always_page_selectors_on_every_page(run, tmp_path, monkey
 def test_compare_skips_an_unreachable_page_and_reports_it_unreachable(run, tmp_path, monkeypatch):
     """An unreachable page was not seen, so nothing on it can be uncovered."""
     monkeypatch.setattr(chk, "resolve_selectors",
-                        lambda page, url, sels, attrs: ({s: 0 for s in sels}, set(), False))
+                        lambda page, url, sels, attrs, detail=None: ({s: 0 for s in sels}, set(), False))
     called = []
     monkeypatch.setattr(chk, "collect_uncovered", lambda *a, **k: called.append(1) or ("", []))
     out = tmp_path / "r.json"
@@ -153,3 +153,21 @@ def test_compare_records_the_generators_declarations_for_uncovered_elements(
     assert declared["conditional"] == ["undo_button"]
     assert {"undo_button", "item_1_link", "item_2_link"} <= set(declared["unstable"])
     assert "cancel_button" not in declared["unstable"]
+
+
+def test_an_unreachable_page_is_reported_with_why_it_was_not_read(run, tmp_path, monkeypatch,
+                                                                    capsys):
+    """The report says why, so Agent 0 seeds only a page that is gone."""
+    def resolve(page, url, sels, attrs, detail=None):
+        detail.update(status=None, reason="navigation failed: TimeoutError")
+        return {s: 0 for s in sels}, set(), False
+    monkeypatch.setattr(chk, "resolve_selectors", resolve)
+    monkeypatch.setattr(chk, "collect_uncovered", lambda *a, **k: ("", []))
+    out = tmp_path / "r.json"
+    run("--compare", "--json", str(out))
+    report = json.loads(out.read_text(encoding="utf-8"))
+    assert report["unreachable_reasons"] == {
+        "home": {"status": None, "reason": "navigation failed: TimeoutError"}}
+    printed = capsys.readouterr().out
+    assert "[home] not read - navigation failed: TimeoutError" in printed
+    assert "not read just now: ['home']" in printed

@@ -70,7 +70,7 @@ def test_the_staleness_check_passes_the_declaration(monkeypatch, tmp_path, capsy
     monkeypatch.setattr(chk, "browser_page", browser)
     counts = {"#badge": 1, "#save": 1, "#help": 1}
     monkeypatch.setattr(chk, "resolve_selectors",
-                        lambda page, url, sels, attrs: (counts, set(), True))
+                        lambda page, url, sels, attrs, detail=None: (counts, set(), True))
     out = tmp_path / "r.json"
     monkeypatch.setattr(sys, "argv", ["chk", "--no-login", "--json", str(out)])
     chk.main()

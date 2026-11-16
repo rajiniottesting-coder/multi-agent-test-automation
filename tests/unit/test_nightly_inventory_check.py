@@ -45,7 +45,7 @@ def crawl(tmp_path, monkeypatch):
         def fake_browser(headless=True):
             yield page
 
-        def resolve(pg, url, sels, attrs):
+        def resolve(pg, url, sels, attrs, detail=None):
             path_ = url.replace(BASE, "")
             state["visits"].append(path_)
             page.url = url

@@ -177,6 +177,7 @@ def main() -> int:
 
     per_page: dict[str, dict] = {}
     unreachable: list[str] = []
+    unreachable_reasons: dict[str, dict] = {}   # why each one was not read
     new_by_page: dict[str, dict] = {}   # --compare: {page: {element: selector}}
     new_declared: dict[str, dict] = {}  # --compare: {page: {"multi_match", "conditional", "unstable"}}
     # Pages marked `always` (a global menu, a cookie banner, a footer) are
@@ -231,8 +232,9 @@ def main() -> int:
             declared_conditional=set(entry.get("conditional") or []),
             declared_removed=set(entry.get("removed") or []),
             declared_planned=set(entry.get("planned") or []))
+        reach: dict = {}
         counts, live_test_ids, reachable = resolve_selectors(
-            page, url, list(selectors.values()), test_attrs
+            page, url, list(selectors.values()), test_attrs, detail=reach
         )
 
         def _redirected() -> bool:
@@ -262,6 +264,8 @@ def main() -> int:
             return
         if not reachable:
             unreachable.append(name)
+            unreachable_reasons[name] = reach
+            print(f"  [{name}] not read - {reach.get('reason') or 'unreachable'}")
             return
         if not introspect.rendered(selectors, counts, **declared):
             # Read again until it renders (X10): `load` fires before a
@@ -377,7 +381,7 @@ def main() -> int:
                 continue
             _measure(page, name, entry)
 
-    report = introspect.summarize_drift(per_page, unreachable)
+    report = introspect.summarize_drift(per_page, unreachable, unreachable_reasons)
     report["pages_missing_notes"] = introspect.pages_missing_notes(inventory)
     # When the live application was looked at. A reader of this file later
     # (Agent 0's uncovered-element hint) uses it to refuse a stale report.
@@ -412,7 +416,12 @@ def main() -> int:
     print(f"  ambiguous selectors: {report['ambiguous_selectors']}")
     print(f"  removed, but back  : {report['reappeared_selectors']}")
     print(f"  invalid selectors  : {report['invalid_selectors']}")
+    gone, not_read = introspect.split_unreachable(report)
     print(f"  unreachable pages  : {report['unreachable_pages'] or 'none'}")
+    if report["unreachable_pages"]:
+        print(f"    gone (not found) : {gone or 'none'}")
+        print(f"    not read just now: {not_read or 'none'} - a timeout, refusal or "
+              f"server error; not drift")
     print(f"  pages not rendered : {not_rendered or 'none'}")
     print(f"  planned, now live  : {report['planned_live']}")
     print(f"  planned, waiting   : {report['planned_waiting']} element(s); "

@@ -181,7 +181,7 @@ def propose_run(tmp_path, monkeypatch):
 
     monkeypatch.setattr(chk, "browser_page", fake_browser)
     monkeypatch.setattr(chk, "resolve_selectors",
-                        lambda page, url, sels, attrs: ({s: 1 for s in sels}, set(), True))
+                        lambda page, url, sels, attrs, detail=None: ({s: 1 for s in sels}, set(), True))
     descriptors = [{"tag": "button", "attrs": {"id": "cancel"}, "text": "Cancel",
                     "renderedText": "Cancel", "label": "", "visible": True,
                     "thirdParty": False, "hasIconChild": False, "cssPath": ""}]
