@@ -149,6 +149,8 @@ def defects_summary(defects: list[dict], now: _dt.datetime) -> dict:
 # ── traceability (RP4) ──────────────────────────────────────────────────
 
 _TYPE_PREFIX = re.compile(r"^\s*\[[^\]]+\]\s*")
+# How a story's criteria get mapped to the test cases it already has (C4).
+MAP_COVERAGE_HINT = "the 'Agent 1 - Map acceptance coverage' workflow"
 
 
 def _norm(title: str) -> str:
@@ -156,31 +158,45 @@ def _norm(title: str) -> str:
     return re.sub(r"\s+", " ", _TYPE_PREFIX.sub("", plain)).strip().lower()
 
 
-def coverage_map(comment_body: str, criteria_refs, test_cases: list[dict]) -> dict:
+_ISSUE_KEY = re.compile(r"\b[A-Z][A-Z0-9]+-\d+\b")
+
+
+def coverage_map(comment_body: str, criteria_refs, test_cases: list[dict],
+                 other_keys=()) -> dict:
     """{criterion ref: [test case keys]} from Agent 1's `[agent1:coverage]`
-    comment: each line `- AC1 <wording> -> <titles> | <how>` names the test
-    cases by title. A test case is matched when its title appears in the
-    line's cited part (titles may contain commas, so the part is searched,
-    not split)."""
+    comment: each line `- AC1 <wording> -> <cited> | <how>` names the test
+    cases. A test case is matched when its title appears in the line's cited
+    part (titles may contain commas, so the part is searched, not split), or
+    its key does. `other_keys`: test cases of OTHER stories a line may cite by
+    key - a change story's map cites the revised test cases it does not own
+    (C4, 15 Nov 2026: a map citing keys matched nothing)."""
     out = {ref: [] for ref in criteria_refs}
+    own = {tc["key"] for tc in test_cases}
+    other = set(other_keys or ()) - own
     for line in (comment_body or "").splitlines():
         m = re.match(r"^\s*[-*]\s*(AC\d+|TITLE)\b(.*?)->(.*)$", line.strip())
         if not m:
             continue
         ref, cited = m.group(1), m.group(3).split(" | ", 1)[0]
         cited_n = _norm(cited)
+        keys = set(_ISSUE_KEY.findall(cited.replace("\\", "")))
         for tc in test_cases:
             t = _norm(tc.get("summary", ""))
-            if t and t in cited_n and tc["key"] not in out.setdefault(ref, []):
+            if ((t and t in cited_n) or tc["key"] in keys) \
+                    and tc["key"] not in out.setdefault(ref, []):
                 out[ref].append(tc["key"])
+        for key in sorted(keys & other):
+            if key not in out.setdefault(ref, []):
+                out[ref].append(key)
     return out
 
 
-def unmatched_citations(comment_body: str, criteria_refs, test_cases: list[dict]) -> set:
+def unmatched_citations(comment_body: str, criteria_refs, test_cases: list[dict],
+                        other_keys=()) -> set:
     """Criteria whose coverage line cites a test case by a title no test case
     has now (a title revised after the map was written). Shown as such, not
     as a criterion nobody covered."""
-    found = coverage_map(comment_body, criteria_refs, test_cases)
+    found = coverage_map(comment_body, criteria_refs, test_cases, other_keys)
     out = set()
     for line in (comment_body or "").splitlines():
         m = re.match(r"^\s*[-*]\s*(AC\d+|TITLE)\b(.*?)->(.*)$", line.strip())
@@ -244,17 +260,19 @@ def traceability_rows(stories: list[dict], latest: dict, defects_by_key: dict) -
 
     A story with no coverage map (Agent 1 wrote none - stories older than
     it) cannot say which test case covers which criterion: its rows are its
-    test cases, and one cell names its criteria as not mapped. 13 Nov 2026:
-    a row per criterion with test case 'none' read as gaps on stories whose
-    every test case passed."""
+    test cases, and one cell names its criteria as not mapped and how to map
+    them (agents/agent1_coverage.py, C4). 13 Nov 2026: a row per criterion
+    with test case 'none' read as gaps on stories whose every test case
+    passed."""
     rows = []
     for s in stories:
         tcs = {tc["key"]: tc for tc in s.get("test_cases") or []}
         crit = list(s.get("criteria") or [])
         if not s.get("has_coverage_map", True):
             refs = ", ".join(ref for ref, _ in crit) or "none found"
-            text = (f"Acceptance criteria {refs}: not mapped to test cases (the story "
-                    "has no coverage map)" if crit else "(no acceptance criteria found)")
+            text = (f"Acceptance criteria {refs}: not mapped to test cases yet (the story "
+                    f"has no coverage map - run {MAP_COVERAGE_HINT} for it)"
+                    if crit else "(no acceptance criteria found)")
             first = True
             for k, tc in tcs.items():
                 for test in (s.get("scenarios") or {}).get(k) or [None]:

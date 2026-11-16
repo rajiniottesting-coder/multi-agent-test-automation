@@ -74,23 +74,23 @@ def open_defects(tracker) -> list[dict] | None:
 
 
 def _coverage_comment(comments: list) -> str:
-    import re
-    for body in reversed(comments or []):           # the newest map wins
-        if re.match(r"\s*\\?\[agent1:coverage\\?\]", str(body)):
-            return str(body)
-    return ""
+    """The newest coverage map: Agent 1's `[agent1:coverage]` comment, or the
+    map inside its impact-aware draft (core.acceptance_coverage)."""
+    from core.acceptance_coverage import coverage_comment
+    return coverage_comment(comments)
 
 
-def _coverage(comment: str, refs: list, tcs: list) -> dict:
-    """The coverage map, following titles revised since Agent 1 wrote it."""
+def _coverage(comment: str, refs: list, tcs: list, other_keys=()) -> dict:
+    """The coverage map, following titles revised since Agent 1 wrote it.
+    `other_keys`: other stories' test cases a change story's map may cite."""
     from core.report_data import coverage_map, reworded_matches, unmatched_citations
-    coverage = coverage_map(comment, refs, tcs)
+    coverage = coverage_map(comment, refs, tcs, other_keys)
     reworded = reworded_matches(comment, refs, tcs)
     for ref, keys in reworded.items():
         coverage.setdefault(ref, []).extend(k for k in keys if k not in coverage[ref])
     return {"coverage": coverage,
             "reworded": {(ref, k) for ref, keys in reworded.items() for k in keys},
-            "unmatched": unmatched_citations(comment, refs, tcs) - set(reworded)}
+            "unmatched": unmatched_citations(comment, refs, tcs, other_keys) - set(reworded)}
 
 
 def traceability(tracker, features_dir: Path, latest: dict, defects: list[dict] | None) -> list[dict]:
@@ -143,10 +143,16 @@ def traceability(tracker, features_dir: Path, latest: dict, defects: list[dict] 
                            for k in sorted(owners[key]) if k not in linked]
         comment = _coverage_comment(comments)
         refs = [r for r, _ in criteria]
+        mapped = _coverage(comment, refs, tcs, index.by_key)
+        # Another story's test case a change story's map cites by key: shown
+        # with its title and scenarios (C4).
+        own = {tc["key"] for tc in tcs}
+        cited_other = sorted({k for keys in mapped["coverage"].values() for k in keys} - own)
+        tcs = tcs + [{"key": k, "summary": index.by_key[k].title} for k in cited_other
+                     if k in index.by_key]
         stories.append({**story, "sprints": (sprints or {}).get(key) or [],
                         "criteria": criteria, "test_cases": tcs,
-                        "has_coverage_map": bool(comment),
-                        **_coverage(comment, refs, tcs),
+                        "has_coverage_map": bool(comment), **mapped,
                         "scenarios": {k: scenarios.get(k) or [] for k in
                                       {tc["key"] for tc in tcs} | owners[key]}})
     return traceability_rows(stories, latest, defects_by_key)
