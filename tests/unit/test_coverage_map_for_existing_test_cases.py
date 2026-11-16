@@ -226,6 +226,19 @@ def test_a_test_case_is_read_back_step_by_step():
     assert ac.evidence_steps(w, ac.STRICT), "its absence step counts"
 
 
+def test_preconditions_are_read_as_preconditions():
+    from integrations.jira_client import JiraClient
+    desc = JiraClient._format_test_case_description(TestCase(
+        title="t", description="d", expected_outcome="o",
+        preconditions=["Shopper is not signed in"],
+        steps=[TestStep(step_number=1, action="Open the cart", expected_result="It is empty")]))
+    w = ac.written_case("PRJ-30", "t", desc)
+    assert [(s.action, s.expected_result) for s in w.steps] == [
+        ("Precondition: Shopper is not signed in", ""), ("Open the cart", "It is empty")]
+    assert "- Precondition: Shopper is not signed in\n- Open the cart -> It is empty" in \
+        cov._cases_block([w])
+
+
 def test_a_test_case_a_person_wrote_is_read_line_by_line():
     w = ac.written_case("PRJ-20", "Gift wrap", "Go to checkout\nThe gift-wrap option is not shown")
     assert [s.expected_result for s in w.steps] == ["Go to checkout",

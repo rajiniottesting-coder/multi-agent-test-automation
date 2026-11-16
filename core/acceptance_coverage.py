@@ -673,11 +673,24 @@ def written_case(key: str, summary: str, description: str) -> WrittenCase:
     person wrote - gives one step per line, the line as its expected result:
     every statement is still read, so an absence it states still counts."""
     lines = (description or "").splitlines()
-    steps, data, in_data, action = [], {}, False, None
+    steps, data, in_data, action, in_pre = [], {}, False, None, False
     for line in lines:
         bare = _plain_markup(line)
         if bare.lower().startswith("test data"):
             in_data = True
+            continue
+        # Agent 1's layout lists preconditions as numbered lines too: read
+        # them as preconditions, not as steps with no expected result.
+        if bare.lower().startswith("preconditions"):
+            in_pre = True
+            continue
+        if bare.lower().startswith("steps"):
+            in_pre = False
+            continue
+        if in_pre:
+            m = _STEP_LINE.match(line)
+            if m:
+                steps.append(_Step("Precondition: " + _plain_markup(m.group(1)), ""))
             continue
         if in_data:
             m = _DATA_LINE.match(line)
