@@ -349,6 +349,18 @@ def test_agent4_checks_before_any_step_that_has_the_login():
         assert "steps.safety.outcome != 'failure'" in steps[i]["if"], steps[i].get("name")
 
 
+def test_a_refusal_is_explained_in_the_run_summary():
+    """Found live (E258, run 44033374696): the check refused the code, the
+    unit gate and the browser run were skipped, and the summary said only
+    'Framework Unit Tests: no report' - a red job that did not say why."""
+    _job, steps = _job_with_the_check()
+    summary = next(s for s in steps if s.get("name", "").startswith("Write test summary"))
+    assert summary["env"]["E2E_SAFETY"] == "${{ steps.safety.outcome }}"
+    assert summary["if"] == "always()"
+    assert 'os.environ.get("E2E_SAFETY")' in summary["run"]
+    assert "Unsafe test code refused (S1)" in summary["run"]
+
+
 # ── BasePage: the two doors the static check leaves open ──────────────────────
 
 class _Page:
