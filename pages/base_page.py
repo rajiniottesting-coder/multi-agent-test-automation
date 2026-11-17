@@ -268,6 +268,9 @@ class BasePage:
     # config.yaml; an empty list turns the retry off.
     DEFAULT_NAVIGATION_RETRY_DELAYS_MS = (3000, 8000)
     _NAV_RETRY_CACHE: Optional[tuple] = None
+    # Hosts navigate() may open (S1): the application's own, plus
+    # `browser.navigation_hosts`. None = not yet read.
+    _NAV_HOSTS_CACHE: Optional[tuple] = None
 
     # Subclasses set this to the key of the page they implement in
     # app_inventory/<app>.json. Left None only by BasePage itself.
@@ -485,6 +488,69 @@ class BasePage:
             BasePage._NAV_RETRY_CACHE = value
         return BasePage._NAV_RETRY_CACHE
 
+    @classmethod
+    def _navigation_hosts(cls) -> tuple:
+        """The hosts navigate() may open: the application's (BASE_URL, else
+        `app_under_test.base_url`) and any in `browser.navigation_hosts`.
+        Empty when no base URL is known - then nothing is refused, as before.
+        Never raises."""
+        if BasePage._NAV_HOSTS_CACHE is None:
+            from urllib.parse import urlsplit
+            hosts: list = []
+            try:
+                import os
+                import yaml
+                from config.paths import CONFIG_YAML
+                cfg = yaml.safe_load(CONFIG_YAML.read_text(encoding="utf-8")) or {}
+                base = (os.getenv("BASE_URL")
+                        or (cfg.get("app_under_test") or {}).get("base_url")
+                        or cfg.get("base_url") or "")
+                if base and urlsplit(base).hostname:
+                    hosts.append(urlsplit(base).hostname)
+                    extra = (cfg.get("browser") or {}).get("navigation_hosts") or []
+                    if isinstance(extra, list):
+                        hosts += [str(h).strip().lower() for h in extra if str(h).strip()]
+            except Exception as exc:                      # noqa: BLE001
+                logger.debug("navigation hosts unreadable (%s); not restricting.", exc)
+                hosts = []
+            BasePage._NAV_HOSTS_CACHE = tuple(h.lower() for h in hosts)
+        return BasePage._NAV_HOSTS_CACHE
+
+    @staticmethod
+    def _same_site(host: str, allowed: str) -> bool:
+        """`host` is `allowed`, a subdomain of it, or differs only by `www.`."""
+        h = host.lower().removeprefix("www.")
+        a = allowed.lower().removeprefix("www.")
+        return h == a or h.endswith("." + a)
+
+    def _refuse_other_hosts(self, url: str) -> None:
+        """S1: generated code runs before review, with the application's login
+        in its fixtures - a URL to another host could carry a value there. So
+        navigate() opens only the application's own host (and its subdomains),
+        a host in `browser.navigation_hosts`, or the host the browser is
+        already on (reached by clicking the application's own links).
+        Relative and non-HTTP addresses (about:blank) are not URLs to a host."""
+        from urllib.parse import urlsplit
+        target = urlsplit(str(url))
+        if target.scheme not in ("http", "https") or not target.hostname:
+            return
+        allowed = self._navigation_hosts()
+        if not allowed:
+            return
+        if any(self._same_site(target.hostname, a) for a in allowed):
+            return
+        try:
+            here = urlsplit(self.page.url).hostname
+        except Exception:                                  # noqa: BLE001
+            here = None
+        if here and here.lower() == target.hostname.lower():
+            return
+        raise AssertionError(
+            f"Navigation to {target.scheme}://{target.hostname}/... refused: that host is "
+            f"not the application's ({', '.join(allowed)}). Tests open only the "
+            f"application's own pages; a host the tests legitimately visit goes in "
+            f"browser.navigation_hosts in config.yaml.")
+
     @staticmethod
     def _temporary_status(status: int) -> bool:
         """A server error or a rate limit: the next attempt may well succeed.
@@ -530,6 +596,7 @@ class BasePage:
         is not even served in time is retried like a 5xx, and if it never is,
         the error says the page did not load - an outage, not a test failure.
         """
+        self._refuse_other_hosts(url)
         delays = self._navigation_retry_delays_ms()
         attempt = 0
         while True:
@@ -1807,16 +1874,42 @@ class BasePage:
     # File upload
     # ============================================================
 
+    @staticmethod
+    def _uploadable(file_path: Union[str, Path]) -> str:
+        """The path to attach, once it is known to be a project file (S1).
+
+        An upload sends a runner file to the application, and generated code
+        runs before review: so only a file inside the project, and not under a
+        hidden path (`.git` holds the checkout's token, `.env` secrets), is
+        attached. Symbolic links are followed before the check. Raises
+        AssertionError naming the path otherwise."""
+        from config.paths import PROJECT_ROOT
+        root = Path(PROJECT_ROOT).resolve()
+        raw = Path(file_path)
+        resolved = (raw if raw.is_absolute() else root / raw).resolve()
+        try:
+            rel = resolved.relative_to(root)
+        except ValueError:
+            rel = None
+        if rel is None or any(part.startswith(".") for part in rel.parts):
+            raise AssertionError(
+                f"Upload of {str(file_path)!r} refused: tests attach only files kept in "
+                f"the project (test data), never one outside it or under a hidden path "
+                f"such as .git or .env.")
+        return str(resolved)
+
     def upload_file(self, locator: str, file_path: Union[str, Path]) -> None:
-        """Attach a single file to a file input."""
+        """Attach a single file to a file input (a project file - _uploadable)."""
+        path = self._uploadable(file_path)
         self._wait_for_page_scripts()
-        self._locator(locator).set_input_files(str(file_path))
+        self._locator(locator).set_input_files(path)
 
     def upload_files(self, locator: str,
                      file_paths: List[Union[str, Path]]) -> None:
-        """Attach several files to a multi-file input."""
+        """Attach several files to a multi-file input (project files only)."""
+        paths = [self._uploadable(p) for p in file_paths]
         self._wait_for_page_scripts()
-        self._locator(locator).set_input_files([str(p) for p in file_paths])
+        self._locator(locator).set_input_files(paths)
 
     def clear_uploads(self, locator: str) -> None:
         """Detach all files from a file input."""
