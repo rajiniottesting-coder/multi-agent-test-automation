@@ -137,6 +137,24 @@ class GitHubClient:
             logger.warning(f"Could not list PRs for {story_id}: {e}")
         return out
 
+    def list_closed_prs(self, branch_prefix: str, limit: int = 100) -> list[dict]:
+        """Closed PRs on `branch_prefix` among the `limit` most recently updated,
+        newest first: [{"number", "head_ref", "url", "merged", "body"}]. A
+        read failure yields what was read so far."""
+        out: list[dict] = []
+        try:
+            pulls = self.repo.get_pulls(state="closed", sort="updated", direction="desc")
+            for n, pr in enumerate(pulls):
+                if n >= limit:
+                    break
+                if not pr.head.ref.startswith(branch_prefix):
+                    continue
+                out.append({"number": pr.number, "head_ref": pr.head.ref, "url": pr.html_url,
+                            "merged": bool(pr.merged), "body": pr.body or ""})
+        except Exception as e:                      # never block on a lookup
+            logger.warning(f"Could not list closed PRs on {branch_prefix}: {e}")
+        return out
+
     def reopen_pull_request(self, pr_number: int) -> None:
         """Close then reopen a PR to re-fire pull_request events.
 

@@ -226,6 +226,30 @@ def blocked_comment(story_id: str, fp: str, errors) -> str:
     return "\n".join(lines)
 
 
+def _request_exploration(story_id: str, errors) -> None:
+    """PW1: a refusal for a page the inventory lacks asks the run's next step
+    (scripts/explore_missing_pages.py) to find the page live and propose it.
+    Only where the workflow names the requests file (EXPLORE_REQUESTS_FILE) -
+    a local run or a test records nothing. Never raises."""
+    import os
+    path = os.getenv("EXPLORE_REQUESTS_FILE")
+    if not path:
+        return
+    try:
+        from core import page_explore
+        if not page_explore.settings().get("explore_missing_pages"):
+            return
+        from core.app_context import AppContext
+        from core.inventory_planned import load_inventory
+        request = page_explore.requested(errors, load_inventory(AppContext.load()))
+        if request:
+            page_explore.record_request(story_id, request, path)
+            logger.info("%s: the page(s) it needs will be looked for live (%s)", story_id,
+                        ", ".join(request["pages"]) or "named by the plan's reasons")
+    except Exception as e:                                         # noqa: BLE001
+        logger.warning("Exploration of the page %s needs not requested: %s", story_id, e)
+
+
 def post_blocked_once(tracker, story_id: str, fp: str, errors) -> bool:
     """Post the blocked comment unless one for this input AND these reasons is
     already there. 4 Nov 2026: a story run again by key after a framework
@@ -234,7 +258,12 @@ def post_blocked_once(tracker, story_id: str, fp: str, errors) -> bool:
     refusal, on the same inputs, still blamed the old one. The scheduled scan
     skips a blocked story on its inputs alone (blocked_on), so the same
     refusal is never posted twice by it.
-    Best-effort: returns whether it was posted, never raises."""
+    Best-effort: returns whether it was posted, never raises.
+
+    PW1: a refusal for a page the inventory lacks also asks for the page to be
+    explored live (_request_exploration), posted or not - the exploration
+    step itself never opens a second pull request for a story."""
+    _request_exploration(story_id, errors)
     try:
         head = f"{BLOCKED_MARKER} inputs: {fp} reasons: {_reasons_digest(errors)}"
         if any((c or "").startswith(head) for c in tracker.get_comments(story_id)):

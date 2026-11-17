@@ -255,6 +255,33 @@ DEFAULTS: dict = {
     "cleanup": {
         "delete_label": "test-data",
     },
+    # PW1 and PW2: the two steps that read the live application in a browser
+    # (Playwright, signed in as the nightly check signs in). Each opens a pull
+    # request a person reviews; nothing is merged by an agent.
+    "live_browser": {
+        # PW1 (core/page_explore.py): a story refused for a page the inventory
+        # lacks - the page is found by a link on the application's pages and
+        # read live, and one pull request adds it; merging it starts Agent 2
+        # on the story again.
+        "explore_missing_pages": True,
+        "explore_branch_prefix": "inventory-explore/",
+        "explore_max_pages": 15,      # inventory pages whose links are read
+        "explore_max_links": 40,      # candidate links shown to the model
+        "explore_max_elements": 30,   # elements a proposed page gets
+        # Links never opened: opening them changes the session or the account.
+        "explore_never_visit": ["logout", "log_out", "signout", "sign_out", "delete",
+                                "remove", "unsubscribe", "deactivate", "close_account"],
+        # PW2 (core/selector_heal.py): a test failing on main because a
+        # selector matches nothing - the element is found live with its new
+        # selector, one pull request proposes it, and no defect is raised.
+        "heal_selectors": True,
+        "heal_branch_prefix": "inventory-heal/",
+        "heal_max_pages": 5,          # pages read live per triage
+        # The failure readings (core/failure_diagnosis.py labels) a changed
+        # selector can explain: an element that never appeared.
+        "heal_failure_kinds": ["element never appeared - probably the wrong page",
+                               "element never appeared", "readiness probe returned False"],
+    },
 }
 
 
