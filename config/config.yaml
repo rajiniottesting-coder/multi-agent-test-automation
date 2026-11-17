@@ -219,6 +219,33 @@ deployment:
   deployed_label: "deployed"
   mark_on_handover: true
 
+# D3: a production bug gets a regression test (core/bug_flow.py). A Bug with
+# the story trigger label (ai-ready) is drafted, approved and coded like a
+# story: its test cases assert the EXPECTED result, so the test fails until the
+# fix is live (the bug is marked awaiting deployment), and merging the test does
+# not close the bug. The triage's own defects are never taken.
+bug_flow:
+  enabled: true
+  bug_type: "Bug"
+  story_type: "Story"
+  mark_pending: true
+  done_on_merge: false
+
+# C3: the prompt regression set (scripts/prompt_regression.py, workflow
+# "Prompt regression"): when a pull request changes Agent 1-3 prompts (or the
+# code that builds them), these are replayed WITHOUT writing anything and held
+# to what they must keep doing. Costs model spend per replay - keep it short.
+prompt_regression:
+  enabled: true
+  # Stories with an acceptance-criteria list and no change story's impacts.
+  agent1_stories: ["SCRUM-200", "SCRUM-202", "SCRUM-408"]
+  agent1_min_cases: 1
+  agent1_max_cases: 7
+  agent2_stories: ["SCRUM-202"]
+  # Merged pull requests and the verdict a review of them must keep:
+  # approve = must not request changes; request_changes = must.
+  agent3_reviews: {"540": "approve", "435": "approve"}
+
 # D10: scripts/delete_issues.py deletes only closed issues with this label -
 # throw-away issues. A real defect is closed, never deleted. "" = off.
 cleanup:
