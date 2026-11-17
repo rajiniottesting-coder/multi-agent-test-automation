@@ -280,6 +280,22 @@ def test_a_finding_is_listed_with_its_line(tmp_path):
         == [("pages/a_page.py", 2, "imports `socket`")]
 
 
+def test_a_file_that_cannot_be_read_is_a_finding_not_a_traceback(tmp_path, monkeypatch):
+    from scripts.check_code_safety import check
+    (tmp_path / "pages").mkdir()
+    target = tmp_path / "pages" / "a_page.py"
+    target.write_text("x = 1\n", encoding="utf-8")
+    real = Path.read_text
+
+    def unreadable(self, *a, **k):
+        if self == target:
+            raise PermissionError("denied")
+        return real(self, *a, **k)
+    monkeypatch.setattr(Path, "read_text", unreadable)
+    assert check(["pages/a_page.py"], tmp_path) == [
+        ("pages/a_page.py", 0, "could not be read (PermissionError) - not checked")]
+
+
 def test_the_script_exits_1_on_a_finding_and_2_on_no_input(monkeypatch, capsys):
     import scripts.check_code_safety as script
     monkeypatch.setattr(script, "check", lambda paths, root, allow=(): [
