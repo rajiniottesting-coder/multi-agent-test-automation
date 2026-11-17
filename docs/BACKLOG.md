@@ -109,7 +109,7 @@ proven live the same day with #492, #497, #498 and #500 (removed above).
 Group B, batch B2 (14 Nov 2026, #502): RP5, X1, D6, X4 - all proven live the
 same day with #504, #506 and #508 (removed above).
 B3 (PW1, PW2) built on 17 Nov 2026 (#527); the live run found and fixed five gaps (#528-#530, #532, #536) and proved the rest the same day (#537): a missing page explored and proposed (#531), Agent 2 started again on merge, two changed selectors healed in one pull request (#534) with no defect raised. Their last checks (E246, E254, E255) wait for events.
-S1 built on 17 Nov 2026 (#540): Agent 2's gate and repair, the plan's path rule, Agent 4's check before the browser run, and BasePage's navigation and upload guards; its live checks are E258-E260. P1 and P3 on hold (owner).
+S1 built on 17 Nov 2026 (#540): Agent 2's gate and repair, the plan's path rule, Agent 4's check before the browser run, and BasePage's navigation and upload guards; E258 proven live the same day with throw-away #541 (and the run summary's explanation of a refusal, #542, E261); E259 and E260 wait for the next Agent 2 run and night. P1 and P3 on hold (owner).
 C4 added on 15 Nov 2026 at the owner's request (old stories showed "not mapped";
 a project adopting the framework would see it on every story) and built in #523.
 RP14-RP25 added on 14 Nov 2026 at the owner's request (the reports pages, all of
