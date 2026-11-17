@@ -1,0 +1,168 @@
+# C3: the prompt regression set (scripts/prompt_regression.py).
+#
+# A pull request that changes Agent 1-3 prompts, or the code that builds them,
+# replays a fixed set from config.yaml (`prompt_regression`) as DRY RUNS -
+# nothing is written to the tracker or the repository - and holds each replay
+# to what it must keep doing: Agent 1 drafts and maps every criterion, Agent 2
+# passes its gate with no test case left out, Agent 3 keeps its verdict on a
+# known pull request. Only the agents whose files changed replay (model spend).
+# The result is one comment on the pull request (updated on each run) and the
+# job summary; a replay that does not hold turns the check red.
+#
+# By hand: Actions -> Prompt regression -> Run workflow (choose the agents).
+
+name: Prompt regression
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "prompts/agent1_*"
+      - "prompts/agent2_*"
+      - "prompts/agent3_*"
+      - "agents/agent1_analyst.py"
+      - "agents/agent2_coder.py"
+      - "agents/agent3_reviewer.py"
+      - "core/bug_flow.py"
+      - "core/acceptance_coverage.py"
+      - "core/test_case_rules.py"
+  workflow_dispatch:
+    inputs:
+      agents:
+        description: "Agents to replay (comma-separated): agent1,agent2,agent3"
+        required: false
+        default: "agent1,agent3"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: prompt-regression-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  replay:
+    name: Replay the regression set
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Which agents replay
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          INPUT_AGENTS: ${{ github.event.inputs.agents }}
+        run: |
+          mkdir -p reports
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "agents=$INPUT_AGENTS" >> "$GITHUB_OUTPUT"
+            echo "replay (by hand): $INPUT_AGENTS"
+          else
+            gh api "repos/$REPO/pulls/$PR_NUMBER/files" --paginate --jq '.[].filename' > reports/changed_files.txt
+            python -m scripts.prompt_regression --plan --changed-files reports/changed_files.txt
+          fi
+
+      - name: Replay Agent 1 (draft again, dry run)
+        id: agent1
+        if: contains(steps.plan.outputs.agents, 'agent1')
+        continue-on-error: true
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
+          # The model Agent 1 runs on (agent1_analyst.yml).
+          LLM_MODEL: ${{ vars.LLM_MODEL_LIGHT || vars.LLM_MODEL || 'claude-opus-4-6' }}
+          LLM_PRICE_INPUT_PER_1M: ${{ vars.LLM_PRICE_INPUT_PER_1M }}
+          LLM_PRICE_OUTPUT_PER_1M: ${{ vars.LLM_PRICE_OUTPUT_PER_1M }}
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          JIRA_BOARD_ID: ${{ vars.JIRA_BOARD_ID }}
+        run: python -m scripts.prompt_regression --agents agent1 --report reports/prompt_regression_agent1.md
+
+      - name: Replay Agent 2 (code again, dry run)
+        id: agent2
+        if: contains(steps.plan.outputs.agents, 'agent2')
+        continue-on-error: true
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
+          # The model Agent 2 runs on (agent2_coder.yml).
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'claude-opus-4-6' }}
+          LLM_PRICE_INPUT_PER_1M: ${{ vars.LLM_PRICE_INPUT_PER_1M }}
+          LLM_PRICE_OUTPUT_PER_1M: ${{ vars.LLM_PRICE_OUTPUT_PER_1M }}
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          JIRA_BOARD_ID: ${{ vars.JIRA_BOARD_ID }}
+          # Read only: a dry run opens no branch or pull request.
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPO: ${{ vars.GH_REPO }}
+        run: python -m scripts.prompt_regression --agents agent2 --report reports/prompt_regression_agent2.md
+
+      - name: Replay Agent 3 (review again, dry run)
+        id: agent3
+        if: contains(steps.plan.outputs.agents, 'agent3')
+        continue-on-error: true
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
+          # The model Agent 3 runs on (agent3-reviewer.yml).
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'claude-opus-4-6' }}
+          LLM_PRICE_INPUT_PER_1M: ${{ vars.LLM_PRICE_INPUT_PER_1M }}
+          LLM_PRICE_OUTPUT_PER_1M: ${{ vars.LLM_PRICE_OUTPUT_PER_1M }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPO: ${{ vars.GH_REPO }}
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+        run: python -m scripts.prompt_regression --agents agent3 --report reports/prompt_regression_agent3.md
+
+      - name: Report the replays
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          AGENTS: ${{ steps.plan.outputs.agents }}
+          OUTCOMES: ${{ steps.agent1.outcome }} ${{ steps.agent2.outcome }} ${{ steps.agent3.outcome }}
+        run: |
+          if [ -z "$AGENTS" ]; then
+            body="## Prompt regression (C3)"$'\n\n'"No Agent 1-3 prompt changed - nothing replayed."
+          else
+            sections=$(cat reports/prompt_regression_agent*.md 2>/dev/null || true)
+            [ -n "$sections" ] || sections="A replay step ended before writing its report - see its log."
+            body="## Prompt regression (C3)"$'\n\n'"$sections"
+          fi
+          printf '%s\n' "$body" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$PR_NUMBER" ]; then
+            # One comment per pull request, updated on each run.
+            id=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate \
+                   --jq '[.[] | select(.body | startswith("## Prompt regression (C3)")) | .id] | first // empty')
+            if [ -n "$id" ]; then
+              gh api -X PATCH "repos/$REPO/issues/comments/$id" -f body="$body" > /dev/null
+            else
+              gh api -X POST "repos/$REPO/issues/$PR_NUMBER/comments" -f body="$body" > /dev/null
+            fi
+          fi
+          case " $OUTCOMES " in
+            *" failure "*) echo "::error::A replay did not hold - the prompts changed what the agents do."; exit 1 ;;
+          esac
