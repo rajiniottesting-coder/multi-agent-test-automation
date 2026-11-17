@@ -75,7 +75,7 @@ def _unused_branch(host, base: str) -> str:
     return branch
 
 
-def heal(root, *, s: dict, reports: Path, run_url: str, dry_run: bool, host=None,
+def heal(root, *, s: dict, run_url: str, dry_run: bool, host=None,
          tracker=None, llm_factory=None, read=read_page) -> dict:
     """Heal what can be healed. Returns {"healed", "not_healed", "pr", "heals"}."""
     from core.defects import settings as defect_settings
@@ -261,7 +261,7 @@ def main(argv=None) -> int:
         return LLMClient(temperature=0.0, max_output_tokens=600)
 
     try:
-        out = heal(root, s=s, reports=reports, run_url=args.run_url, dry_run=args.dry_run,
+        out = heal(root, s=s, run_url=args.run_url, dry_run=args.dry_run,
                    host=host, tracker=tracker, llm_factory=llm_factory)
     except Exception as e:                                         # noqa: BLE001
         logger.error("healing failed: %s - the triage raises every failure as before", e)

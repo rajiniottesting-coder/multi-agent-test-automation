@@ -24,6 +24,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -142,7 +143,7 @@ def _comment(tracker, story_id: str, text: str, dry_run: bool) -> None:
 
 def explore(req: dict, *, tracker, host, inventory: dict, original: str, ctx, s: dict,
             links: dict, open_prs: list, dry_run: bool, llm_factory,
-            closed_prs: list = ()) -> dict:
+            closed_prs: Sequence[dict] = ()) -> dict:
     """One request. Returns {"story", "status", ...}; never raises for a
     finding - only for a tracker or host failure."""
     story_id, wanted = req["story"], list(req.get("pages") or [])

@@ -249,7 +249,7 @@ def world(tmp_path, monkeypatch):
 
     def go(*cases, host=None, llm=None, dry_run=False):
         host = host if host is not None else _Host()
-        out = hs.heal(_root(*cases), s=s, reports=tmp_path, run_url="https://ci.example/9",
+        out = hs.heal(_root(*cases), s=s, run_url="https://ci.example/9",
                       dry_run=dry_run, host=host, tracker=None,
                       llm_factory=(lambda: llm) if llm else None, read=read)
         return out, host
@@ -275,7 +275,7 @@ def _heal(report, llm=None, host=None):
     s = {"heal_failure_kinds": KINDS, "heal_branch_prefix": "inventory-heal/",
          "heal_max_pages": 5}
     host = host if host is not None else _Host()
-    out = hs.heal(_root(_case("test_save_an_order")), s=s, reports=Path("."), run_url="r",
+    out = hs.heal(_root(_case("test_save_an_order")), s=s, run_url="r",
                   dry_run=False, host=host, tracker=None,
                   llm_factory=(lambda: llm) if llm else None, read=lambda page: report)
     return out, host
