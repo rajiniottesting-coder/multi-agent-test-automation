@@ -10,7 +10,7 @@ testing the project's gates instead. The same holds for X4's deployment
 signal (`deployment.enabled`): on, a hand-over labels the story and the
 triage asks which stories wait - the other tests would be testing that. And
 S1's navigation guard (the project's base URL host): the navigate() tests use
-stand-in hosts.
+stand-in hosts. And D3's bug flow: stand-in trackers know stories only.
 
 So every unit test runs with those gates off, unless it is marked
 `gates_on`; the gates' own tests call them with the settings they need.
@@ -55,6 +55,24 @@ def _deployment_signal_off(request, monkeypatch):
     def off():
         return {**real(), "enabled": False}
     monkeypatch.setattr(deployment, "settings", off)
+
+
+@pytest.fixture(autouse=True)
+def _bug_flow_off(request, monkeypatch):
+    """D3's bug flow widens every story selection to bugs and makes a bug own
+    test cases: the other tests' stand-in trackers know stories only. Off,
+    unless marked `gates_on`; its own tests pass the settings they need."""
+    if request.node.get_closest_marker("gates_on"):
+        return
+    try:
+        from core import bug_flow
+    except Exception:                                              # noqa: BLE001
+        return
+    real = bug_flow.settings
+
+    def off():
+        return {**real(), "enabled": False}
+    monkeypatch.setattr(bug_flow, "settings", off)
 
 
 @pytest.fixture(autouse=True)

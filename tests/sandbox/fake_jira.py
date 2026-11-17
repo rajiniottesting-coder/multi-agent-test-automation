@@ -281,7 +281,10 @@ class FakeJira:
         d = self.issues[key]
         c = c.strip()
         if c.startswith("(") and c.endswith(")"):
-            return any(self._clause(key, p) for p in self._split(c[1:-1], " OR "))
+            return any(all(self._clause(key, q) for q in self._split(p, " AND "))
+                       for p in self._split(c[1:-1], " OR "))
+        if m := re.fullmatch(r'issuetype\s+in\s*\((.+)\)', c, re.I):
+            return d["issuetype"].lower() in {t.lower() for t in re.findall(r'"([^"]+)"', m.group(1))}
         if m := re.fullmatch(r'project\s*=\s*"?(\w+)"?', c, re.I):
             return key.startswith(m.group(1) + "-")
         if m := re.fullmatch(r'issuetype\s*=\s*"([^"]+)"', c, re.I):

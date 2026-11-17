@@ -21,6 +21,12 @@ FULL FLAG REFERENCE
 -------------------
     python -m scripts.close_merged_story --help
 
+A BUG IS NOT CLOSED BY ITS TEST (D3)
+-----------------------------------
+With the bug flow on (core/bug_flow.py), a merged pull request whose issue is
+a bug - its regression test - leaves the bug where it is and comments once:
+the test is in, the fix may not be (`bug_flow.done_on_merge`).
+
 NOT EVERY MERGED PR IS A STORY
 ------------------------------
 The workflow fires for every merged pull request, including framework work on
@@ -100,11 +106,25 @@ def main() -> int:
         print("status_workflow.on_merge is not configured — nothing to do.")
         return 0
 
+    tracker = get_tracker()
+    # D3: merging a bug's regression test does not close the bug - the test
+    # is in, the fix may not be (bug_flow.done_on_merge). One comment instead.
+    from core import bug_flow
+    if bug_flow.enabled():
+        if args.dry_run:
+            print(f"DRY RUN — {story_key}: a bug of the bug flow is not moved; else moved "
+                  f"to {wf['on_merge']!r}.")
+            return 0
+        note = bug_flow.merged_note(tracker, story_key)
+        if note is not None:
+            print(f"{story_key}: a bug - not moved to {wf['on_merge']!r}; commented: {note}")
+            return 0
+
     if args.dry_run:
         print(f"DRY RUN — would move {story_key} to {wf['on_merge']!r}.")
         return 0
 
-    moved = move_card_on_merge(get_tracker(), story_key)
+    moved = move_card_on_merge(tracker, story_key)
     print(f"{story_key}: {'moved to ' + wf['on_merge'] if moved else 'not moved (see log)'}")
     return 0
 

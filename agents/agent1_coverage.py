@@ -154,7 +154,8 @@ def map_story(tracker, llm, story_key: str, cases: list[dict], app: dict) -> dic
     from core.acceptance_coverage import criteria_block, extract_criteria, written_case
     from core.schemas import CoverageMap
     story = tracker.get_story(story_key)
-    criteria = extract_criteria(story.get("summary"), story.get("description"))
+    criteria = extract_criteria(story.get("summary"), story.get("description"),
+                                story.get("issue_type"))
     if not any(c.mapped for c in criteria):
         return {"status": "no_criteria", "criteria": criteria}
     written = [written_case(c["key"], c.get("summary", ""), c.get("description", ""))

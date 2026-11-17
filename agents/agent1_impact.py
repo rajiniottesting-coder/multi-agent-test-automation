@@ -203,7 +203,8 @@ def run_impact_aware(tracker, story_id: str, story: dict, prompt_header: dict,
     prompt = (PROMPTS_DIR / "agent1_impact_aware.md").read_text(encoding="utf-8")
     for name, value in prompt_header.items():
         prompt = prompt.replace("{" + name + "}", value)
-    criteria = extract_criteria(story.get("summary"), story.get("description"))
+    criteria = extract_criteria(story.get("summary"), story.get("description"),
+                                story.get("issue_type"))
     prompt = (prompt
               .replace("{criteria_block}", criteria_block(criteria))
               .replace("{approved_block}", _block(list(approved.values()), reasons))
