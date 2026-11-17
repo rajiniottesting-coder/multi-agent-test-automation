@@ -236,6 +236,40 @@ def test_a_review_fix_is_audited_for_the_steps_it_added_or_changed(monkeypatch):
     assert rf._new_stand_ins(object(), unchanged, contents, None, a2) == []
 
 
+def test_a_fix_that_only_rewrites_a_page_method_audits_the_steps_calling_it(monkeypatch):
+    """17 Nov 2026, live (E158): a /fix changed only a page object's heading
+    reader - pointing it at another element's key - so no step file was in the
+    fix and nothing was audited; it was pushed, and the browser run failed on
+    it. The steps that call a changed method are audited too; a step calling
+    only unchanged methods is not blamed on the fix."""
+    import agents.agent2_coder as a2
+    from agents import agent2_review_fix as rf
+    page_old = ('class ShopPage:\n    def heading(self):\n        return self.get_text(self.sel("title"))\n'
+                '\n    def items(self):\n        return self.get_all_texts(self.sel("item"))\n')
+    page_new = page_old.replace('self.sel("title")', 'self.sel("results_title")')
+    steps = ('from pytest_bdd import then\n\n\n@then("the heading names the section")\n'
+             'def a(shop_page):\n    assert shop_page.heading()\n\n\n'
+             '@then("the list shows items")\ndef b(shop_page):\n    assert shop_page.items()\n')
+    contents = {"pages/shop_page.py": page_old, "tests/step_defs/test_shop.py": steps}
+    batch = [NS(file_path="pages/shop_page.py", content=page_new)]
+    seen = {}
+    err = lambda phrase: (f"Step fidelity error in 'tests/step_defs/test_shop.py': the step "
+                          f"`Then {phrase}` - x. Its code acts on or checks a different element")
+
+    def audit(llm, files, *a, **k):
+        seen["files"] = sorted(f.file_path for f in files)
+        return [err("the heading names the section"), err("the list shows items")]
+    monkeypatch.setattr(step_fidelity, "audit", audit)
+    monkeypatch.setattr("core.inventory_planned.load_inventory", lambda ctx: {})
+    out = rf._new_stand_ins(object(), batch, contents, None, a2)
+    assert seen["files"] == ["pages/shop_page.py", "tests/step_defs/test_shop.py"]
+    assert out == [err("the heading names the section")]
+    # A rewrite of no method reached by a step audits nothing.
+    seen.clear()
+    same = [NS(file_path="pages/shop_page.py", content=page_old + "\n# a comment\n")]
+    assert rf._new_stand_ins(object(), same, contents, None, a2) == [] and not seen
+
+
 def test_the_review_fix_gate_refuses_a_new_stand_in():
     from pathlib import Path
     source = Path("agents/agent2_review_fix.py").read_text(encoding="utf-8")

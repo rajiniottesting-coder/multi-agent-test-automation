@@ -623,7 +623,8 @@ _FIDELITY_STEP = re.compile(r"in '([^']+)': the step `\w+ (.*?)` - ")
 
 def _new_stand_ins(llm, batch, contents: dict, ctx, a2) -> list:
     """Step fidelity errors (validators/step_fidelity.py) for the steps this
-    fix added or whose code it changed - never for a step it left as it was.
+    fix added or whose code it changed - its body, or a page-object method it
+    calls - never for a step it left as it was.
 
     11 Nov 2026 (validation Run L): a review asked to check that a form is
     shown before it is submitted; the fix added the step and checked it with
@@ -643,22 +644,62 @@ def _new_stand_ins(llm, batch, contents: dict, ctx, a2) -> list:
         return out
 
     changed = [f for f in batch if f.content != contents.get(f.file_path)]
-    if not any(f.file_path.startswith("tests/step_defs/") for f in changed):
+    # A step's code is its body AND the page-object methods it calls: a fix
+    # that only rewrites a method changes what every step calling it checks
+    # (17 Nov 2026, live E158: a /fix pointed a page object's heading reader at
+    # another element's key; no step file changed, so nothing was audited and
+    # it was pushed - the browser run failed on it).
+    changed_methods: set = set()
+    for f in changed:
+        if f.file_path.startswith("pages/"):
+            before_m = _class_methods(contents.get(f.file_path, ""))
+            changed_methods |= {n for n, src in _class_methods(f.content).items()
+                                if before_m.get(n) != src}
+    if not changed_methods and not any(f.file_path.startswith("tests/step_defs/")
+                                       for f in changed):
         return []
+    in_batch = {f.file_path for f in batch}
+    behind = [a2.GeneratedFile(file_path=path, content=text, file_type="step_definitions")
+              for path, text in sorted(contents.items())
+              if path.startswith("tests/step_defs/") and path not in in_batch
+              and _calls(text) & changed_methods]
     from core import inventory_planned as _inventory
-    errors = step_fidelity.audit(llm, batch, _inventory.load_inventory(ctx),
+    errors = step_fidelity.audit(llm, list(batch) + behind, _inventory.load_inventory(ctx),
                                  a2.load_prompt("agent2_step_fidelity.md"), a2.PROJECT_ROOT)
     fresh = []
     for err in errors:
         hit = _FIDELITY_STEP.search(err)
         if hit:
             path, phrase = hit.group(1), hit.group(2)
-            new = next((f.content for f in batch if f.file_path == path), "")
+            new = next((f.content for f in batch if f.file_path == path),
+                       contents.get(path, ""))
             before = bodies(path, contents.get(path, "")).get(phrase)
-            if before is not None and before == bodies(path, new).get(phrase):
-                continue                      # the step and its code are as they were
+            after = bodies(path, new).get(phrase)
+            if before is not None and before == after and not (_calls(after or "")
+                                                               & changed_methods):
+                continue          # the step, its code and what it calls are as they were
         fresh.append(err)
     return fresh
+
+
+def _class_methods(text: str) -> dict:
+    """{method name: source} for the methods of the classes in a page object."""
+    try:
+        tree = ast.parse(text or "")
+    except SyntaxError:
+        return {}
+    out = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            for item in node.body:
+                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    out[item.name] = ast.get_source_segment(text, item) or ""
+    return out
+
+
+def _calls(text: str) -> set:
+    """The method names a piece of step code calls (`page.method(`)."""
+    return set(re.findall(r"\.\s*([A-Za-z_]\w*)\s*\(", text or ""))
 
 
 def _fix(host, pr_number, key, head, meta, contents, editable, protected, to_fix, outcomes,
