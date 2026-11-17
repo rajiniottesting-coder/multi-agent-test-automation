@@ -200,7 +200,16 @@ class CodePlan(BaseModel):
     branch_name: str = Field(..., description="Git branch name, format: 'auto/<jira-key>-<feature>'")
     pr_title: str = Field(..., description="Concise PR title")
     pr_body: str = Field(..., description="Markdown PR body explaining what was generated")
-    files_to_create: list[FilePlan] = Field(..., min_length=1, description="Files to create or modify")
+    # EMPTY is a valid plan: when every test case is left out (each with its
+    # "Skipped: ..." reason in notes) the plan prompt says to plan no files at
+    # all, and Agent 2 refuses the story with those reasons. A minimum of one
+    # contradicted it: the model wrote a placeholder file, or - obeying the
+    # prompt - an empty list that failed validation and ended the run with a
+    # parse error instead of the refusal (17 Nov 2026, run 43999866814).
+    files_to_create: list[FilePlan] = Field(
+        default_factory=list,
+        description="Files to create or modify; EMPTY when every test case is left out "
+                    "(each with its 'Skipped: <KEY> -- <reason>' line in notes)")
     notes: str = Field(default="", description="Caveats, assumptions, or items needing human attention")
 
 
