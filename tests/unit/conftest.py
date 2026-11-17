@@ -8,7 +8,9 @@ other unit tests drive (no acceptance-criteria list, no approval history)
 would be refused by them, so tests of drafting, coding and budgets would be
 testing the project's gates instead. The same holds for X4's deployment
 signal (`deployment.enabled`): on, a hand-over labels the story and the
-triage asks which stories wait - the other tests would be testing that.
+triage asks which stories wait - the other tests would be testing that. And
+S1's navigation guard (the project's base URL host): the navigate() tests use
+stand-in hosts.
 
 So every unit test runs with those gates off, unless it is marked
 `gates_on`; the gates' own tests call them with the settings they need.
@@ -53,6 +55,20 @@ def _deployment_signal_off(request, monkeypatch):
     def off():
         return {**real(), "enabled": False}
     monkeypatch.setattr(deployment, "settings", off)
+
+
+@pytest.fixture(autouse=True)
+def _navigation_hosts_open(request, monkeypatch):
+    """S1's navigation guard reads the project's base URL: the browser tests
+    of navigate() use stand-in hosts (`https://app.test/...`), so they would be
+    testing the project's host instead. Off, unless marked `gates_on`."""
+    if request.node.get_closest_marker("gates_on"):
+        return
+    try:
+        from pages.base_page import BasePage
+    except Exception:                                              # noqa: BLE001
+        return
+    monkeypatch.setattr(BasePage, "_NAV_HOSTS_CACHE", ())
 
 
 @pytest.hookimpl(tryfirst=True)
