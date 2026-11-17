@@ -56,6 +56,7 @@ Each row shows product name, price, quantity and total, plus a delete control.
 Row selectors match every row, so narrow to the product the test added rather
 than assuming a row index.
 
+Deleting a product's row removes it from the cart display. When the deleted product was the only one in the cart, the cart then shows a message that the cart is empty and leaves no product row behind.
 
 ## "Register a fresh account" is not available here in one step
 
@@ -103,6 +104,8 @@ it. Assert an ABSOLUTE state ("the cart is empty", "the cart holds exactly one
 row") only from an account this test registered itself; otherwise assert
 relatively — that the product this test added is present, or is gone — which
 is true whatever the cart started with.
+
+The empty-cart message and "no row left" are legitimately assertable in a scenario that never signs in: a fresh anonymous session starts empty, so after adding one named product and then deleting it, the cart honestly holds nothing. This is the one shape where an empty-cart assertion is allowed - it owns its starting state by never signing in.
 
 ## Checkout requires an account
 
