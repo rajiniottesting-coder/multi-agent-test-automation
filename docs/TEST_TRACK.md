@@ -27,7 +27,7 @@ still open, and the rows each new change adds.
 
 ## Open checks
 
-28 rows: 23 open or partly proven (⬜) - one of them (E243) C4's (#523; E242 and E244 proven 16 Nov, #525), one (E245) the unreachable-page fix (#526), five (E246 partly, E254-E257) B3's (#527, #536, #538; E247-E253 proven 17 Nov, #537); batch A (#512) is proven in full (E225 on the scheduled nights of 15 and 16 Nov, #526) - 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌). Rows proven earlier were removed in their evidence pull requests (#470, #473 and later).
+28 rows: 24 open or partly proven (⬜) - one of them (E243) C4's (#523; E242 and E244 proven 16 Nov, #525), one (E245) the unreachable-page fix (#526), five (E246 partly, E254-E257) B3's (#527, #536, #538; E247-E253 proven 17 Nov, #537); batch A (#512) is proven in full (E225 on the scheduled nights of 15 and 16 Nov, #526) - 3 not applicable or proven only in part on this setup (➖), 1 failed and replaced by E152 (❌). Rows proven earlier were removed in their evidence pull requests (#470, #473 and later).
 
 Most of these wait for an event that cannot be produced on demand (the model
 taking a particular path, a provider error that quotes a secret); some are not
