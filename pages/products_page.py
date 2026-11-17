@@ -7,6 +7,12 @@ page object does NOT add to cart from the listing — the listing's add-to-cart
 family matches 68 elements (doubled per card) and is a strict-mode trap; adding
 belongs on the product detail page, which exposes a single unique control.
 
+Category browsing (product-categories feature) is additive: the sidebar's
+category and subcategory controls are NOT in the inventory, so category
+navigation is driven by opening the category URL directly and by expanding /
+clicking the sidebar via ARIA accessible names. See the category methods below
+and the notes.
+
 Selectors: see `products` in the app inventory. No literals live here.
 
 App: https://automationexercise.com
@@ -41,6 +47,33 @@ class ProductsPage(BasePage):
         """
         self.navigate(f"{base_url.rstrip('/')}{self.page_url()}")
         self.confirm_arrival()
+
+    def open_category(self, base_url: str, category_id: str) -> None:
+        """Open a category products page directly by its numeric id.
+
+        Used for the negative scenario, where a nonexistent id must load
+        without being resolved from a sidebar link. The category URL template
+        (/category_products/{id}) is NOT in the inventory as its own page, so
+        the path is built here from the known pattern rather than page_url().
+        confirm_arrival() is NOT called: this page object declares /products,
+        and a category page is a different path — asserting arrival here would
+        be wrong. navigate() already fails fast if the server did not serve it.
+        """
+        self.navigate(f"{base_url.rstrip('/')}/category_products/{category_id}")
+
+    def open_category_from_sidebar(self, category: str, subcategory: str) -> None:
+        """Expand a sidebar category and click one of its subcategories.
+
+        Confirms it is ON the listing first: clicking the sidebar as an opening
+        move from somewhere else would not fail fast — Playwright waits the full
+        timeout and then blames the link. The category heading (e.g. 'Women')
+        and the subcategory (e.g. 'Dress') are addressed by their ARIA link
+        accessible names via click_role, because the sidebar's category /
+        subcategory controls are NOT in the inventory's element map.
+        """
+        self.require_own_page()
+        self.click_role("link", category)
+        self.click_role("link", subcategory)
 
     def open_product_details(self, product_name: str) -> None:
         """Open the details page for the named product via its View Product link.
@@ -80,6 +113,44 @@ class ProductsPage(BasePage):
         navigated to, before any search replaces it.
         """
         return self.is_showing(self.sel("all_products_heading"), timeout_ms=timeout_ms)
+
+    def is_on_category_page(self, timeout_ms: Optional[int] = None) -> bool:
+        """True once the URL is a category_products page. WAITS for the change.
+
+        A category page lives at /category_products/<id>, a different path from
+        this page object's declared /products. Clicking Women > Dress navigates
+        there, so this confirms the browser moved off the all-products listing
+        and onto a category page. WAITS, so call it only where arrival on a
+        category page is expected.
+        """
+        try:
+            self.wait_for_url("**/category_products/**", timeout_ms=timeout_ms)
+            return True
+        except Exception:
+            logger.info("Not on a category_products page; current url=%s", self.get_url())
+            return False
+
+    def category_heading(self) -> str:
+        """The category page's heading text, e.g. 'Women - Dress Products'.
+
+        WAITS for it. The category page reuses the same title heading element as
+        the all-products listing (.product-image-wrapper is the card family; the
+        heading is the features_items title), so this reads all_products_heading's
+        key — which on a category page renders the category name instead of
+        'All Products'. Compare case-insensitively; CSS may upper-case it.
+        """
+        self.wait_visible(self.sel("all_products_heading"))
+        return self.get_text(self.sel("all_products_heading"))
+
+    def category_heading_matches(self, expected: str) -> bool:
+        """True if the category heading CONTAINS `expected`, case-insensitively.
+
+        WAITS for the heading. Containment and case-insensitive because CSS
+        often transforms the displayed case and the heading may carry extra
+        words around the category name.
+        """
+        shown = self.category_heading()
+        return expected.casefold() in shown.casefold()
 
     def is_search_results_shown(self, timeout_ms: Optional[int] = None) -> bool:
         """True once the Searched Products heading is on screen. WAITS for it.
