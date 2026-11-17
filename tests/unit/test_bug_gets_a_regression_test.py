@@ -298,3 +298,47 @@ def test_the_shipped_config_turns_the_bug_flow_on():
     assert cfg["bug_flow"]["enabled"] is True and cfg["bug_flow"]["done_on_merge"] is False
     from core.ops_settings import DEFAULTS
     assert DEFAULTS["bug_flow"]["enabled"] is False                # off unless a project opts in
+
+
+# ── every kind of criterion reference is read back (found live, 17 Nov) ──
+
+def test_a_draft_mapping_the_expected_results_passes_the_real_check(flow_on, monkeypatch):
+    """Run 44041477395: the throw-away bug's draft mapped EXP1 and EXP2 and was refused
+    twice as 'not in the coverage map' - the map reader knew AC, S, C and
+    TITLE only. This runs the real draft check, not a stand-in."""
+    from agents import agent1_analyst
+    from core.acceptance_coverage import extract_criteria
+    monkeypatch.setattr("core.test_case_rules.load_persistent_pages", lambda: {})
+    criteria = extract_criteria("Cart total ignores quantity", REPORT_MD, "Bug")
+    title = "[Negative] Cart total counts the quantity"
+    draft = TestCaseList(story_summary="s", test_cases=[
+        _tc(title, "the cart line shows quantity 3 and the total is three times the price")],
+        coverage=[CriterionCoverage(criterion="EXP1", covered_by=[title]),
+                  CriterionCoverage(criterion="EXP2", covered_by=[title])])
+
+    class LLM:
+        def invoke_structured(self, **kw):
+            return draft
+    assert agent1_analyst._draft_test_cases(LLM(), "P", criteria, set()) is draft
+
+
+@pytest.mark.parametrize("ref", ["AC3", "EXP2", "S1", "C4", "TITLE"])
+def test_every_criterion_reference_is_read_by_the_check_and_the_matrix(ref):
+    from core.acceptance_coverage import _ref
+    from core.report_data import coverage_map
+    assert _ref(ref) == ref and _ref(f"{ref.lower()}: wording") == ref
+    line = f"- {ref} The wording -> [Positive] The test case | step 2 proves it"
+    assert coverage_map(line, [ref], [{"key": "T-1", "summary": "[Positive] The test case"}]) \
+        == {ref: ["T-1"]}
+
+
+def test_every_reference_the_criteria_reader_makes_is_a_known_kind(flow_on):
+    import re
+    from core.acceptance_coverage import CRITERION_REF, criteria_block, extract_criteria
+    refs = [c.ref for c in extract_criteria("t", "Acceptance criteria:\n1. a\n2. b\n")]
+    refs += [c.ref for c in extract_criteria("t", REPORT_MD, "Bug")]
+    refs += [c.ref for c in extract_criteria("The field is removed",
+                                              "The form no longer offers the field.")]
+    assert {"AC1", "EXP1", "TITLE", "S1"} <= set(refs)
+    assert "C1" in criteria_block([])                      # the model derives C1..
+    assert all(re.fullmatch(CRITERION_REF, r) for r in refs + ["C1"])

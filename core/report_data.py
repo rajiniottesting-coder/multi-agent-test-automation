@@ -161,6 +161,16 @@ def _norm(title: str) -> str:
 _ISSUE_KEY = re.compile(r"\b[A-Z][A-Z0-9]+-\d+\b")
 
 
+def _map_line():
+    from core.acceptance_coverage import CRITERION_REF
+    return re.compile(rf"^\s*[-*]\s*({CRITERION_REF})\b(.*?)->(.*)$")
+
+
+# A line of Agent 1's coverage map: `- <ref> <wording> -> <cited> | <how>`,
+# for every kind of criterion reference (acceptance_coverage.CRITERION_REF).
+_MAP_LINE = _map_line()
+
+
 def coverage_map(comment_body: str, criteria_refs, test_cases: list[dict],
                  other_keys=()) -> dict:
     """{criterion ref: [test case keys]} from Agent 1's `[agent1:coverage]`
@@ -174,7 +184,7 @@ def coverage_map(comment_body: str, criteria_refs, test_cases: list[dict],
     own = {tc["key"] for tc in test_cases}
     other = set(other_keys or ()) - own
     for line in (comment_body or "").splitlines():
-        m = re.match(r"^\s*[-*]\s*(AC\d+|TITLE)\b(.*?)->(.*)$", line.strip())
+        m = _MAP_LINE.match(line.strip())
         if not m:
             continue
         ref, cited = m.group(1), m.group(3).split(" | ", 1)[0]
@@ -199,7 +209,7 @@ def unmatched_citations(comment_body: str, criteria_refs, test_cases: list[dict]
     found = coverage_map(comment_body, criteria_refs, test_cases, other_keys)
     out = set()
     for line in (comment_body or "").splitlines():
-        m = re.match(r"^\s*[-*]\s*(AC\d+|TITLE)\b(.*?)->(.*)$", line.strip())
+        m = _MAP_LINE.match(line.strip())
         if not m:
             continue
         cited = _norm(m.group(3).split(" | ", 1)[0])
@@ -233,7 +243,7 @@ def reworded_matches(comment_body: str, criteria_refs, test_cases: list[dict]) -
     free = [tc for tc in test_cases if tc["key"] not in cited_exactly]
     out = {}
     for line in (comment_body or "").splitlines():
-        m = re.match(r"^\s*[-*]\s*(AC\d+|TITLE)\b(.*?)->(.*)$", line.strip())
+        m = _MAP_LINE.match(line.strip())
         if not m or exact.get(m.group(1)):
             continue
         cited = _words(m.group(3).split(" | ", 1)[0])
