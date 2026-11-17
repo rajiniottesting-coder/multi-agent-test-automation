@@ -62,8 +62,8 @@ def test_a_known_page_is_read_whatever_words_deny_the_inventory_has_it(denial):
     """17 Nov 2026, live: a reason ending "... on the products page, neither of
     which is in the app inventory" was read as naming no page, so the element
     gap was never explored (only ", not in the app inventory" was read)."""
-    why = (f"PRJ-7: no scenario of its own - the plan's notes: needs a 'Category' panel "
-           f"heading and a 'Brands' panel heading on the orders page, {denial}")
+    why = (f"PRJ-7: no scenario of its own - the plan's notes: needs a 'Filters' panel "
+           f"heading and a 'Labels' panel heading on the orders page, {denial}")
     assert pe.requested([why], INV) == {"pages": [], "reasons": [],
                                         "known_pages": {"orders": [why]}}
 
