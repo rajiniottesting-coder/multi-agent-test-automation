@@ -251,6 +251,33 @@ def claims_in_open_prs(host, prefix: str, inventory_path: str, inventory: dict) 
     return out
 
 
+def additions_in_open_prs(host, prefix: str, inventory_path: str, inventory: dict) -> dict:
+    """{(page, selector): "page.key (pull request)"} for the keys the open pull
+    requests on `prefix` ADD to a page `inventory` has - so another proposal
+    does not add the same element again. {} when they cannot be read."""
+    out = {}
+    try:
+        for pr in host.list_open_prs(prefix, strict=True):
+            if not (pr.get("head_ref") or "").startswith(prefix):
+                continue
+            url = pr.get("url") or f"#{pr['number']}"
+            try:
+                theirs = json.loads(host.get_file_content(inventory_path, pr["head_ref"]))
+            except Exception as e:                                 # noqa: BLE001
+                logger.warning("inventory on %s not read: %s", pr["head_ref"], e)
+                continue
+            for page, entry in ((theirs or {}).get("pages") or {}).items():
+                ours = (((inventory or {}).get("pages") or {}).get(page))
+                if not isinstance(ours, dict):
+                    continue
+                for key, sel in _selectors(entry or {}).items():
+                    if key not in _selectors(ours):
+                        out.setdefault((page, sel), f"{page}.{key} ({url})")
+    except Exception as e:                                         # noqa: BLE001
+        logger.warning("open pull requests on %s not read: %s", prefix, e)
+    return out
+
+
 def keys_in_open_prs(host, prefix: str, inventory_path: str, inventory: dict) -> dict:
     """{(page, key): pull request url} for the keys the open pull requests on
     `prefix` change. {} when they cannot be read."""

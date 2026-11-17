@@ -34,18 +34,31 @@ UNKNOWN_PAGE = ("Selector inventory error in pages/reports_page.py: class Report
 # ── what a refusal asks for ─────────────────────────────────────────────
 
 def test_a_page_the_generated_code_named_is_requested():
-    assert pe.requested([UNKNOWN_PAGE], INV) == {"pages": ["reports_list"], "reasons": []}
+    assert pe.requested([UNKNOWN_PAGE], INV) == {"pages": ["reports_list"], "reasons": [],
+                                                  "known_pages": {}}
 
 
 def test_a_plan_reason_naming_no_known_page_is_requested():
     why = "PRJ-7: needs the export button on the reports page, not in the app inventory"
-    assert pe.requested([why], INV) == {"pages": [], "reasons": [why]}
+    assert pe.requested([why], INV) == {"pages": [], "reasons": [why], "known_pages": {}}
 
 
-def test_a_missing_element_on_a_known_page_is_not_a_page_to_explore():
-    for why in ("PRJ-7: needs the print button on orders, not in the app inventory",
-                "PRJ-7: needs the total on the order detail page, not in the app inventory"):
-        assert pe.requested([why], INV) is None
+def test_a_missing_element_on_a_known_page_is_asked_of_that_page():
+    for why, page in (("PRJ-7: needs the print button on orders, not in the app inventory",
+                       "orders"),
+                      ("PRJ-7: needs the total on the order detail page, not in the app "
+                       "inventory", "order_detail")):
+        assert pe.requested([why], INV) == {"pages": [], "reasons": [],
+                                            "known_pages": {page: [why]}}
+
+
+def test_a_key_the_validator_found_on_no_page_is_asked_of_its_page():
+    err = ("Selector inventory error in pages/orders_page.py: self.sel('print_button'), but "
+           "'print_button' is not an element on inventory page 'orders', nor on any other page")
+    assert pe.requested([err], INV) == {"pages": [], "reasons": [],
+                                        "known_pages": {"orders": ["print_button"]}}
+    typo = err.replace("print_button", "orders_tabel")              # a misspelling: repaired
+    assert pe.requested([typo], INV) is None
 
 
 def test_other_refusals_request_nothing():
@@ -88,7 +101,7 @@ def test_a_refusal_records_a_request_only_where_the_workflow_asks(tmp_path, monk
     monkeypatch.setenv("EXPLORE_REQUESTS_FILE", str(path))
     blocked.post_blocked_once(_Comments(), "PRJ-1", "f" * 16, [UNKNOWN_PAGE])
     assert pe.read_requests(path) == [{"story": "PRJ-1", "pages": ["reports_list"],
-                                       "reasons": []}]
+                                       "reasons": [], "known_pages": {}}]
 
 
 def test_a_refusal_for_anything_else_records_nothing(tmp_path, monkeypatch):
@@ -514,9 +527,9 @@ def test_closed_proposals_are_read_from_their_bodies():
 def test_the_page_a_reason_names_is_read_from_its_on_phrase():
     far = ("PRJ-7: needs the API list on the API reference page reached from the home page, "
            "not in the app inventory")
-    assert pe.requested([far], INV) == {"pages": [], "reasons": [far]}
+    assert pe.requested([far], INV) == {"pages": [], "reasons": [far], "known_pages": {}}
     near = "PRJ-7: needs the export link on the orders page, not in the app inventory"
-    assert pe.requested([near], INV) is None
+    assert pe.requested([near], INV)["known_pages"] == {"orders": [near]}
     vague = "PRJ-7: the orders export is not in the app inventory"
     assert pe.requested([vague], INV) is None          # no "on <page>": the cautious reading
 
@@ -622,7 +635,8 @@ def test_any_wording_that_denies_the_inventory_has_it_counts():
 
 
 def test_a_paraphrased_refusal_is_requested_and_gets_the_inventory_advice(monkeypatch):
-    assert pe.requested([PARAPHRASE], INV) == {"pages": [], "reasons": [PARAPHRASE]}
+    assert pe.requested([PARAPHRASE], INV) == {"pages": [], "reasons": [PARAPHRASE],
+                                                "known_pages": {}}
     text = blocked.blocked_comment("PRJ-8", "f" * 16, [PARAPHRASE])
     assert "plan_inventory element" in text and "plan_inventory page" in text
 
@@ -640,3 +654,124 @@ def test_a_validators_own_wording_is_left_to_its_own_reading():
     assert not blocked.says_not_in_inventory(UNKNOWN_PAGE)
     assert not blocked.says_not_in_inventory(
         "self.sel('x'), but 'x' is not an element on inventory page 'orders', nor on any other page")
+
+
+# ── the inventory's own shape: components, notes, additions to a known page ─
+
+def test_components_are_named_as_the_other_pages_are():
+    assert pe.components_for(["Reports", "Reports", " "], ["Reports list"], "x") == ["Reports"]
+    assert pe.components_for([], ["  Reports  Centre "], "reports_list") == ["Reports Centre"]
+    assert pe.components_for(None, ["reports"], "reports_list") == ["Reports"]
+    assert pe.components_for([], ["", "123", "Help"], "reports_list") == ["Help"]
+    assert pe.components_for([], [], "reports_list") == ["Reports List"]
+    assert pe.components_for([], ["x" * 41], "help_centre") == ["Help Centre"]
+
+
+def test_a_proposed_page_carries_the_notes_of_its_declarations():
+    stub, _ = pe.with_page(INV, "reports_list", "/reports_list", ["Reports"])
+    upd = iu.build_update(_drift("reports_list", {"row_link": ".row a", "save": "#save"},
+                                 families=["row_link"]), stub, set(), allow_removal=False)
+    page = pe.proposed(INV, upd.inventory, "reports_list")["pages"]["reports_list"]
+    assert page["multi_match"] == ["row_link"] and page["multi_match_note"] == pe.MULTI_MATCH_NOTE
+    assert "conditional" not in page and "conditional_note" not in page
+    assert page["components"] == ["Reports"]
+
+
+def test_elements_added_to_a_known_page_leave_the_rest_of_it_alone():
+    inv = {"pages": {"orders": {"url": "/orders", "components": ["Orders"],
+                                "elements": {"orders_table": "#orders", "old": "#gone"},
+                                "elements_notes": {"orders_table": "the list"},
+                                "conditional": ["orders_table"], "conditional_note": "mine"}}}
+    drift = {"pages": {"orders": {"missing": [{"element": "old", "selector": "#gone"}]}},
+             "new_elements": {"orders": {"old": "#old-new", "print_button": "#print",
+                                         "detail_panel": "#panel"}},
+             "new_element_declarations": {"orders": {"conditional": ["detail_panel"]}}}
+    upd = iu.build_update(drift, inv, {"old", "orders_table"}, allow_removal=False)
+    new = pe.with_added(inv, upd.inventory, "orders", upd.added)
+    page = new["pages"]["orders"]
+    assert page["elements"] == {"orders_table": "#orders", "old": "#gone",       # no replacement
+                                "print_button": "#print", "detail_panel": "#panel"}
+    assert page["conditional"] == ["orders_table", "detail_panel"]
+    assert page["conditional_note"] == "mine" and page["elements_notes"] == {"orders_table":
+                                                                              "the list"}
+    assert page["components"] == ["Orders"] and inv["pages"]["orders"]["elements"]["old"] == "#gone"
+
+
+def test_the_link_text_names_the_component_when_the_story_has_none(setup, monkeypatch):
+    go, _ = setup
+    monkeypatch.setattr(_Tracker, "get_story", lambda self, key: {"key": key, "summary": "s",
+                                                                  "description": "",
+                                                                  "components": []})
+    out, _t, host = go({"story": "PRJ-7", "pages": ["reports_list"], "reasons": []})
+    written = json.loads(next(iter(host.files.values())))
+    assert written["pages"]["reports_list"]["components"] == ["Reports"]   # the link's words
+
+
+def test_a_missing_element_of_a_known_page_is_proposed_on_that_page(monkeypatch):
+    calls = []
+
+    def fake_read(inv, name):
+        calls.append((name, sorted(inv["pages"])))
+        return ({"pages_checked": 1, "pages": {name: {"missing": []}},
+                 "new_elements": {name: {"print_button": "#print", "orders_heading":
+                                         'text="Your orders"', "fragile": "div > a"}},
+                 "new_element_declarations": {name: {"unstable": ["fragile"]}}}, "")
+    monkeypatch.setattr(em, "read_page", fake_read)
+    tracker, host = _Tracker(), _Host()
+    original = json.dumps(INV, indent=2) + "\n"
+    req = {"story": "PRJ-9", "pages": [], "reasons": [],
+           "known_pages": {"orders": ["needs the print button on orders"]}}
+    out = em.explore(req, tracker=tracker, host=host, inventory=INV, original=original,
+                     ctx=SimpleNamespace(base_url=BASE, inventory_file="i.json"),
+                     s=pe.settings(), links={}, open_prs=[], dry_run=False,
+                     llm_factory=lambda: (_ for _ in ()).throw(AssertionError("no model")))
+    assert out["status"] == "proposed" and out["pages"] == ["orders"] and out["added"] == 2
+    assert calls == [("orders", sorted(INV["pages"]))]          # read as it is, no page added
+    (title, body, branch), = host.prs
+    assert branch == "inventory-explore/orders-elements" and pe.parse_body(body) == ("PRJ-9",
+                                                                                  "orders")
+    written = json.loads(host.files[(branch, "i.json")])
+    assert written["pages"]["orders"]["elements"] == {"orders_table": "#orders",
+                                                      "print_button": "#print",
+                                                      "orders_heading": 'text="Your orders"'}
+    assert {k: v for k, v in written["pages"].items() if k != "orders"} == {
+        k: v for k, v in INV["pages"].items() if k != "orders"}
+    assert "needs the print button on orders" in body
+    assert tracker.comments["PRJ-9"][0].startswith(pe.MARKER)
+
+
+def test_an_element_an_open_pull_request_already_adds_is_not_proposed_again(monkeypatch):
+    monkeypatch.setattr(em, "read_page", lambda inv, name: (
+        {"pages_checked": 1, "pages": {name: {"missing": []}},
+         "new_elements": {name: {"print_button": "#print"}}}, ""))
+    monkeypatch.setattr(em, "_claimed", lambda host, path, inv, s: {
+        ("orders", "#print"): "orders.print_button (u/7)"})
+    tracker, host = _Tracker(), _Host()
+    out = em.explore({"story": "PRJ-9", "pages": [], "reasons": [],
+                      "known_pages": {"orders": ["print_button"]}},
+                     tracker=tracker, host=host, inventory=INV, original="{}",
+                     ctx=SimpleNamespace(base_url=BASE, inventory_file="i.json"),
+                     s=pe.settings(), links={}, open_prs=[], dry_run=False,
+                     llm_factory=lambda: None)
+    assert out["status"] == "empty" and not host.prs
+    assert "plan_inventory element" in tracker.comments["PRJ-9"][0]
+
+
+def test_additions_in_open_pull_requests_are_read_per_page_and_selector():
+    theirs = json.loads(json.dumps(INV))
+    theirs["pages"]["orders"]["elements"]["print_button"] = "#print"
+    theirs["pages"]["brand_new"] = {"url": "/n", "elements": {"x": "#x"}}
+    host = SimpleNamespace(
+        list_open_prs=lambda prefix, strict=False: [{"number": 7, "head_ref": "p/1",
+                                                     "url": "u/7"}],
+        get_file_content=lambda path, branch: json.dumps(theirs))
+    assert iu.additions_in_open_prs(host, "p/", "i.json", INV) == {
+        ("orders", "#print"): "orders.print_button (u/7)"}
+
+
+def test_headings_in_the_pages_chrome_or_already_covered_are_left_out():
+    from inventory_tools.browser import _headings_js
+    from inventory_tools.introspect import COVER_ATTR, SHARED_ATTR
+    js = _headings_js()
+    for part in (COVER_ATTR, SHARED_ATTR, "header, footer, nav", "textContent"):
+        assert part in js
