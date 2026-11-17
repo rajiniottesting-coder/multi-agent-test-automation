@@ -1958,6 +1958,47 @@ reaches fixed. `reports/heal.json` -> `triage_failures --reports-dir` ->
 those tests. `build_update(pending=...)` keeps such a key in the nightly
 update.
 
+**D3 - a production bug gets a regression test (`core/bug_flow.py`).**
+`settings()` = `section("bug_flow")` (DEFAULTS off). `widened(issue_type)`
+turns a selection of `story_type` into `[story_type, bug_type]` plus the
+defects label a bug must not carry; `JiraClient._type_clause` writes it as
+`(issuetype = "Story" OR (issuetype = "Bug" AND (labels is EMPTY OR labels !=
+"<defects.label>")))` for `find_stories_to_process`, `find_unselected_stories`
+and `defects_for_history` - so every scan, watcher, hand-over, the deployment
+pending list and the AI metrics see a bug as a story with no caller changed.
+`get_story` returns `issue_type` and `done`; `_owner_from_links` accepts every
+`owner_types()`. `core/acceptance_coverage`: `_parse_list` (the AC parser),
+`heading_pattern`, `parse_section_items(description, heading, stop)`;
+`extract_criteria(title, description, issue_type)` returns EXP1..n from
+`expected_results` for a bug without an AC list (callers: Agent 1, its impact
+and coverage modes, the matrix). Agent 1: `bug_flow.readiness_problem`
+(status `not_ready`, `bug: True`, `NEEDS_A_PERSON_WHY["not_ready_bug"]`),
+`prompt_block` (`prompts/agent1_bug_report.md` with `{steps}`, `{expected}`,
+`{actual}`) before the story text, `mark_pending` after the labels (pending
+label + one `[bug-flow]` comment; not when done, deployed, pending, or
+`deployment` off). `scripts/close_merged_story`: `merged_note` instead of
+`move_card_on_merge` for a bug (one comment, said once). The D1 triage needs
+nothing new: `issues_for_report` lists a bug's `links`, which include the test
+cases it owns, so `covering_defect` finds the bug itself. Unit tests turn the
+flow off unless marked `gates_on` (`tests/unit/conftest.py`).
+
+**C3 - the prompt regression set (`scripts/prompt_regression.py`,
+`.github/workflows/prompt_regression.yml`).** `agents_for(changed, triggers)`
+(path prefixes) -> `--plan` writes `agents=` to `$GITHUB_OUTPUT`. One step per
+agent, each with that agent's model (`LLM_MODEL_LIGHT` for Agent 1), each
+`continue-on-error` and writing `reports/prompt_regression_<agent>.md`:
+`replay_agent1` -> `agent1_analyst.run(key, dry_run=True, replay=True)`
+(`existing_scenario_titles(own_keys=..., owner=...)` leaves the story's own
+scenarios out; the result carries `criteria`, `titles`, `coverage`; a
+`DraftRejected` is a failed replay); `replay_agent2` -> `agent2_coder.run(key,
+dry_run=True, is_regenerate=True)` (status `code_generated_dry_run`, empty
+`not_automated`; a `GateFailure`'s first error is reported); `replay_agent3` ->
+`agent3_reviewer.run(pr, dry_run=True)` (verdict vs `approve` /
+`request_changes`). `replay` isolates each; `reset_usage` between. The report
+step (`always()`) joins the sections under `## Prompt regression (C3)`, PATCHes
+the comment that starts with it (else POSTs one) and exits 1 on any failed
+replay step. `agents.agent1_analyst` aliases itself when `__main__`.
+
 ## 19. Change stories in Agents 1, 2 and 5
 
 - **Agent 1 — `agents/agent1_impact.py`.** `run_impact_aware()` runs instead of the normal draft when the story has approved impacted cases. One `ImpactAwareDraft` call (`prompts/agent1_impact_aware.md`); `validate_draft()` requires every approved key revised exactly once, no new case repeating a revised case or an existing scenario, and every acceptance criterion covered (`coverage_problems()`, §4: revisions cited by key, new cases by title, an unchanged existing scenario by title only for a criterion without an obligation), and flags a revision near an existing scenario (`PURPOSE_KEPT`). A snapshot comment holds each old text and the old/new hashes before `update_test_case`. Labels: `ai-processed`, `impact-applied` on; `ai-ready` off. Re-running is safe.

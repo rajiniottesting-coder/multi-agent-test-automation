@@ -2135,6 +2135,64 @@ fail until the change is deployed - the correct red. With `deployment.enabled`
    context-update pull request - asks to merge that pull request now. From the
    next run on main the story's failures are real again and raise defects.
 
+### A production bug gets a regression test (D3)
+
+A bug a person raised from production - not the triage's own `ai-defect` - can
+be turned into a regression test through the same pipeline as a story
+(`bug_flow` in config.yaml, `core/bug_flow.py`):
+
+1. **Write the bug report** with a *Steps to reproduce* list and an *Expected
+   result* (the *Actual result* helps; an acceptance-criteria list also works).
+   Headings in any letter case, with or without a colon, in markdown or Jira
+   wiki markup (`bug_flow.*_headings`).
+2. **Add `ai-ready`** to the bug, in the active sprint, as for a story. Agent 1's
+   scan takes it; the triage's own defects (`defects.label`) never.
+3. **Agent 1** drafts the regression test case(s): the steps to reproduce,
+   asserting the EXPECTED result - never the actual one, so the test fails while
+   the bug is there (prompt fragment `prompts/agent1_bug_report.md`). Its
+   coverage map lists each expected result as EXP1, EXP2, ... like acceptance
+   criteria. A bug with no expected result is handed back with one comment and
+   no model call. The bug owns its test cases (`owns`), so the matrix, Agent 5,
+   the impact graph and the triage find it as they find a story.
+4. **Awaiting its fix.** An open bug is labelled `awaiting-deployment` with one
+   `[bug-flow]` comment (`bug_flow.mark_pending`, needs `deployment.enabled`):
+   its regression test fails until the fix is live, so the pull request's Run
+   Tests check passes with a notice (X6), Agent 5 says the failure is expected,
+   and the run on main raises no second defect. Add `deployed` (or send the
+   *Deployment signal*) when the fix is live - from then on a failure of the
+   test is followed on the bug itself (D1: it covers its own test case), a
+   pass says so on the bug, and closing the bug re-tests it (D2).
+5. **Approve and code** as for a story (`human-approved`, Agent 2, review).
+6. **Merging the test does not close the bug** (`bug_flow.done_on_merge`
+   false): *Story Done on merge* leaves it where it is and comments once. Close
+   the bug when its fix is verified.
+
+Off (`bug_flow.enabled: false`, the default in code), only stories are taken,
+exactly as before.
+
+### Prompt changes are replayed (C3)
+
+A pull request that changes a prompt of Agents 1-3 - or the code that builds
+it (`prompt_regression.triggers`) - runs the *Prompt regression* workflow
+(`scripts/prompt_regression.py`). It replays a fixed set from config.yaml as
+**dry runs** (nothing is written to the tracker or the repository) and holds
+each replay to what the agent must keep doing:
+
+| Agent | Replays | Must |
+|---|---|---|
+| Agent 1 | `agent1_stories`, drafted again (the story's own scenarios not counted as existing) | draft, pass the draft rules, map every criterion, `agent1_min_cases`-`agent1_max_cases` test cases |
+| Agent 2 | `agent2_stories`, coded again (regenerate) | pass the whole gate with no test case left out |
+| Agent 3 | `agent3_reviews`, pull requests reviewed again | keep the verdict: `approve` = no request for changes; `request_changes` = one |
+
+Only the agents whose files changed replay: each replay costs model spend (by
+the 3-12 Nov calibration in BACKLOG.md, an Agent 2 code run about $1.10 and a
+review about $0.18; an Agent 1 draft less).
+The result is one comment on the pull request, updated on each run, and the
+job summary; a replay that does not hold turns the check red. By hand:
+*Actions -> Prompt regression -> Run workflow*, with the agents to replay.
+Keep the set short and stable: stories with an acceptance-criteria list that
+no change story impacts, and pull requests whose verdict is not in doubt.
+
 ### Flaky tests (F-19)
 
 A test that failed and then passed when Agent 4 retried it once counts as
