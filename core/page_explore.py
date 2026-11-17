@@ -57,8 +57,6 @@ MARKER = "[inventory-explore]"
 _BODY = re.compile(re.escape(MARKER) + r" story: (\S+) page: ([a-z][a-z0-9_]*)")
 REQUESTS_FILE = "reports/explore_requests.json"
 _PAGE_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
-# The plan's reason for a test case it left out (prompts/agent2_coder_plan.md, 3b).
-_NOT_IN_INVENTORY = "not in the app inventory"
 _SKIP_HREF = ("#", "mailto:", "tel:", "javascript:")
 
 
@@ -86,6 +84,9 @@ def _words(name: str) -> list:
 
 # The plan writes "needs <the element> on <page>, not in the app inventory".
 _ON_PAGE = re.compile(r"\bneeds\b.*?\bon (?:the )?(.+?),? not in the app inventory", re.I | re.S)
+# A page name the reason writes the code's way (`api_list`), which the link's
+# path may carry: chosen by name, without a model call.
+_SNAKE = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
 
 
 def _names_known_page(text: str, pages) -> bool:
@@ -112,12 +113,13 @@ def requested(errors, inventory: dict) -> dict | None:
     a page it has). `reasons`: the plan's "not in the app inventory" reasons
     that name no page the inventory has - a missing ELEMENT on a known page is
     the nightly update's to add, not a page to explore."""
+    from core.blocked import says_not_in_inventory
     from validators.method_resolution_validator import pages_missing_from_inventory
     names = list(((inventory or {}).get("pages") or {}))
     errors = [str(e) for e in errors or []]
     wanted = pages_missing_from_inventory(errors, pages=names)
     reasons = [e[:400] for e in errors
-               if _NOT_IN_INVENTORY in e and not _names_known_page(e, names)]
+               if says_not_in_inventory(e) and not _names_known_page(e, names)]
     if not wanted and not reasons:
         return None
     return {"pages": wanted, "reasons": reasons}
@@ -199,6 +201,16 @@ def candidate_links(found: dict, inventory: dict, base_url: str, limit: int = 40
                 row["linked_from"].append(page)
     out = sorted(rows.values(), key=lambda r: (-len(r["linked_from"]), r["path"]))
     return out[:limit], sorted(skipped)
+
+
+def names_in(reasons) -> list:
+    """snake_case names the reasons write (a page as the code would name it)."""
+    out = []
+    for r in reasons or []:
+        for n in _SNAKE.findall(str(r)):
+            if n not in out:
+                out.append(n)
+    return out
 
 
 def by_name(wanted, candidates) -> str | None:

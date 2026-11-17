@@ -167,6 +167,11 @@ def explore(req: dict, *, tracker, host, inventory: dict, original: str, ctx, s:
     how = (f"the generated code named page `{wanted[0] if len(wanted) == 1 else wanted}`, and "
            f"exactly one link on the application leads to `{path}`") if path else ""
     if not path:
+        named = pe.names_in(req.get("reasons"))
+        path = pe.by_name(named, candidates)
+        how = (f"the refusal names `{'`, `'.join(named)}`, and exactly one link on the "
+               f"application leads to `{path}`") if path else ""
+    if not path:
         from core.usage_ledger import post_usage_to_story, story_usage
         from core.llm_client import log_usage_summary, reset_usage
         story = tracker.get_story(story_id) or {}

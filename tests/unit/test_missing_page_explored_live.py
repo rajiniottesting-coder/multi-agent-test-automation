@@ -602,3 +602,41 @@ def test_the_check_reports_headings_only_when_asked(tmp_path, monkeypatch):
                                           str(out), *flags])
         assert chk.main() == 0
         assert json.loads(out.read_text()).get("new_elements", {}).get("reports_list") == want
+
+
+# ── the model words "not in the inventory" its own way (17 Nov 2026) ───
+
+PARAPHRASE = ("PRJ-8: no scenario of its own in this pull request - the plan's notes: needs "
+              "the reports heading and the list of report titles on the reports_list page, "
+              "neither of which exists in the app inventory (no reports_list page object)")
+
+
+def test_any_wording_that_denies_the_inventory_has_it_counts():
+    for text in (PARAPHRASE, "needs the export button, not in the app inventory",
+                 "the export button is missing from the inventory",
+                 "the inventory has no export button", "no such element in the inventory"):
+        assert blocked.says_not_in_inventory(text), text
+    for text in ("the inventory was read", "Step fidelity error: the step clicks nothing",
+                 "inventory key used: export_button"):
+        assert not blocked.says_not_in_inventory(text), text
+
+
+def test_a_paraphrased_refusal_is_requested_and_gets_the_inventory_advice(monkeypatch):
+    assert pe.requested([PARAPHRASE], INV) == {"pages": [], "reasons": [PARAPHRASE]}
+    text = blocked.blocked_comment("PRJ-8", "f" * 16, [PARAPHRASE])
+    assert "plan_inventory element" in text and "plan_inventory page" in text
+
+
+def test_a_page_name_the_refusal_writes_picks_the_link_without_a_model(setup):
+    go, reads = setup
+    out, _t, host = go({"story": "PRJ-8", "pages": [], "reasons": [PARAPHRASE]},
+                       llm=_LLM({"path": "", "why": "never asked"}))
+    assert out["status"] == "proposed" and reads == [("reports_list", "/reports_list")]
+    assert "the refusal names `reports_list`" in host.prs[0][1]
+    assert pe.names_in([PARAPHRASE]) == ["reports_list"]
+
+
+def test_a_validators_own_wording_is_left_to_its_own_reading():
+    assert not blocked.says_not_in_inventory(UNKNOWN_PAGE)
+    assert not blocked.says_not_in_inventory(
+        "self.sel('x'), but 'x' is not an element on inventory page 'orders', nor on any other page")
