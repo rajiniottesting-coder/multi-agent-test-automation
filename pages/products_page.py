@@ -133,14 +133,13 @@ class ProductsPage(BasePage):
     def category_heading(self) -> str:
         """The category page's heading text, e.g. 'Women - Dress Products'.
 
-        WAITS for it. The category page reuses the same title heading element as
-        the all-products listing (.product-image-wrapper is the card family; the
-        heading is the features_items title), so this reads all_products_heading's
-        key — which on a category page renders the category name instead of
-        'All Products'. Compare case-insensitively; CSS may upper-case it.
+        WAITS for it. On a category page this app renders the category name in
+        the SAME heading element it uses for 'Searched Products', so this reads
+        the searched_products_heading key. Compare case-insensitively; CSS may
+        upper-case it.
         """
-        self.wait_visible(self.sel("all_products_heading"))
-        return self.get_text(self.sel("all_products_heading"))
+        self.wait_visible(self.sel("searched_products_heading"))
+        return self.get_text(self.sel("searched_products_heading"))
 
     def category_heading_matches(self, expected: str) -> bool:
         """True if the category heading CONTAINS `expected`, case-insensitively.
