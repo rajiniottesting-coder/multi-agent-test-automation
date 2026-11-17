@@ -406,6 +406,8 @@ def test_every_output_value_resolves_correctly(output_value, should_run):
                      str(output_value != "false"))
             # The pull-request check does not run on a push: empty output.
             .replace("steps.pr_changes.outputs.e2e != 'false'", "True")
+            # Nor does the code-safety check (S1): no outcome.
+            .replace("steps.safety.outcome != 'failure'", "True")
             .replace("always()", "True")
             .replace("||", " or ").replace("&&", " and "))
     assert eval(expr) is should_run, (
@@ -430,6 +432,30 @@ def test_a_pull_request_runs_the_e2e_unless_nothing_runtime_changed(pr_verdict, 
             .replace("github.event_name != 'push'", "True")
             .replace("steps.changes.outputs.inventory != 'false'", "True")
             .replace("steps.pr_changes.outputs.e2e != 'false'", str(pr_verdict != "false"))
+            .replace("steps.safety.outcome != 'failure'", "True")
+            .replace("always()", "True")
+            .replace("||", " or ").replace("&&", " and "))
+    assert eval(expr) is should_run
+
+
+@pytest.mark.parametrize("outcome,should_run", [
+    ("success", True),    # nothing unsafe in the pull request's test code
+    ("failure", False),   # unsafe code found - the ONLY skip (S1)
+    ("skipped", True),    # nothing to check (a push, or no runtime change)
+    ("",        True),    # no outcome
+])
+def test_unsafe_test_code_never_reaches_the_browser_run(outcome, should_run):
+    """S1: the browser run has the application's login, so it waits for the
+    code-safety check on the pull request - and only a finding stops it."""
+    for name in ("Run app tests", "Retry failed tests once"):
+        cond = str(_step(name).get("if"))
+        assert "steps.safety.outcome != 'failure'" in cond, name
+    cond = str(_step("Run app tests").get("if"))
+    expr = (cond
+            .replace("github.event_name != 'push'", "True")
+            .replace("steps.changes.outputs.inventory != 'false'", "True")
+            .replace("steps.pr_changes.outputs.e2e != 'false'", "True")
+            .replace("steps.safety.outcome != 'failure'", str(outcome != "failure"))
             .replace("always()", "True")
             .replace("||", " or ").replace("&&", " and "))
     assert eval(expr) is should_run

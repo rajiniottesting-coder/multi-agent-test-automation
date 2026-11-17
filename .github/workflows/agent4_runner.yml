@@ -326,6 +326,28 @@ jobs:
           # pytest-html generates a self-contained HTML report — handy as a PR artifact
           pip install pytest-html
 
+      # ── S1: NOTHING UNSAFE RUNS WITH THE LOGIN ─────────────────────────
+      # The pull request's test code (pages/, tests/step_defs/ - not the
+      # framework's conftest.py or reserved files) is checked with the rules
+      # Agent 2's gate applies (validators/code_safety.py) BEFORE the browser
+      # run that has the application's credentials. A finding fails the job and
+      # the browser run and the retry do not start. Files not listable: every
+      # test-code file is checked.
+      - name: Refuse unsafe test code before the browser run
+        id: safety
+        if: github.event_name == 'pull_request' && steps.pr_changes.outputs.e2e != 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          if FILES=$(gh api "repos/$REPO/pulls/$PR_NUMBER/files" --paginate --jq '.[] | select(.status != "removed") | .filename'); then
+            printf '%s\n' "$FILES" | python -m scripts.check_code_safety --stdin
+          else
+            echo "could not list the pull request's files - checking every test-code file"
+            python -m scripts.check_code_safety --all
+          fi
+
       # ── WHICH TESTS DOES THIS PULL REQUEST RUN? (X1) ──────────────────
       # The scenarios of the feature files, step modules and page objects it
       # changes (Agent 0's impact graph) plus every smoke-tagged scenario
@@ -471,7 +493,7 @@ jobs:
         # always() so a failed unit gate still yields E2E signal on a PR.
         # Never on push: no browser is installed, and the app secrets this
         # step needs are irrelevant to a framework change.
-        if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory != 'false') && steps.pr_changes.outputs.e2e != 'false'
+        if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory != 'false') && steps.pr_changes.outputs.e2e != 'false' && steps.safety.outcome != 'failure'
         # Application credentials. Feature files log in by ROLE; the
         # `credentials` fixture (tests/step_defs/conftest.py) resolves the role
         # from these variables at runtime. Nothing authenticating is ever
@@ -548,7 +570,7 @@ jobs:
         # outage: the application check above answers that. A failure past the
         # cap is never raised as a defect; one health alert lists it.
         id: retry
-        if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory != 'false') && steps.pr_changes.outputs.e2e != 'false' && steps.e2e.outputs.exit_code == '1' && steps.probe.outputs.available != 'false'
+        if: always() && (github.event_name != 'push' || steps.changes.outputs.inventory != 'false') && steps.pr_changes.outputs.e2e != 'false' && steps.e2e.outputs.exit_code == '1' && steps.probe.outputs.available != 'false' && steps.safety.outcome != 'failure'
         env:
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
           APP_USER_REGISTERED: ${{ secrets.APP_USER_REGISTERED }}
