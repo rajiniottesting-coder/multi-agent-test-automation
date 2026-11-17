@@ -168,15 +168,37 @@ def _plain(text: str) -> str:
     return " ".join(text.split())
 
 
-def _heading_rest(line: str) -> str | None:
-    """The text after an 'Acceptance criteria' heading, or None if not one."""
+def _heading_rest(line: str, heading: re.Pattern = _HEADING) -> str | None:
+    """The text after a heading `heading` matches (by default 'Acceptance
+    criteria'), or None if the line is not one."""
     bare = re.sub(r"^(?:h[1-6]\.\s*)?", "", line.strip())
     bare = re.sub(r"^[#>*_\s]+", "", bare)
     bare = re.sub(r"[*_]+", "", bare)
-    m = _HEADING.match(bare.strip())
+    m = heading.match(bare.strip())
     if not m:
         return None
     return m.group(1).strip(" :-")
+
+
+def heading_pattern(names) -> re.Pattern:
+    """A heading regex for these heading words ("Expected result", "Steps to
+    reproduce"): the words, then an optional colon or dash, then the rest of
+    the line as group 1. Letter case and inner spacing do not matter."""
+    words = [r"\s+".join(map(re.escape, str(n).split())) for n in names or () if str(n).strip()]
+    if not words:
+        return re.compile(r"(?!x)x")
+    return re.compile(r"^(?:" + "|".join(sorted(words, key=len, reverse=True))
+                      + r")\b\s*[:\-–—]?\s*(.*)$", re.IGNORECASE)
+
+
+def parse_section_items(description: str | None, heading: re.Pattern,
+                        stop: re.Pattern | None = None) -> list[str]:
+    """The items listed under the first heading `heading` matches, in order -
+    read exactly as the acceptance criteria are (parse_acceptance_criteria).
+    `stop`: a line that is another known heading ends the list even with no
+    blank line before it (a bug report's "Actual result:" right under its
+    expected one). [] when there is no such heading."""
+    return _parse_list(description, heading, stop)
 
 
 def parse_acceptance_criteria(description: str | None) -> list[str]:
@@ -187,6 +209,11 @@ def parse_acceptance_criteria(description: str | None) -> list[str]:
     it; the list ends at the next heading or at a paragraph after a blank line.
     [] when there is no such heading.
     """
+    return _parse_list(description, _HEADING, None)
+
+
+def _parse_list(description: str | None, heading: re.Pattern,
+                stop: re.Pattern | None) -> list[str]:
     items: list[str] = []
     in_list = False
     blank = False
@@ -194,7 +221,7 @@ def parse_acceptance_criteria(description: str | None) -> list[str]:
     for raw in (description or "").splitlines():
         line = raw.rstrip()
         if not in_list:
-            rest = _heading_rest(line)
+            rest = _heading_rest(line, heading)
             if rest is not None:
                 in_list = True
                 if len(rest) > 3:
@@ -203,6 +230,8 @@ def parse_acceptance_criteria(description: str | None) -> list[str]:
         if not line.strip():
             blank = True
             continue
+        if stop is not None and _heading_rest(line, stop) is not None:
+            break
         item = _ITEM.match(line)
         if item:
             hash_items = False if hash_items is None else hash_items
@@ -237,16 +266,26 @@ def parse_acceptance_criteria(description: str | None) -> list[str]:
     return [i for i in items if i]
 
 
-def extract_criteria(title: str | None, description: str | None) -> list[Criterion]:
+def extract_criteria(title: str | None, description: str | None,
+                     issue_type: str | None = None) -> list[Criterion]:
     """Every requirement Agent 1's draft is held to, for one story.
 
     With an acceptance-criteria list: each item, as AC1..ACn, mapped; plus the
     title when IT announces a removal that no item does. Without one: the title
     and any description sentence that announces a removal, checked against the
     draft as a whole.
+
+    A bug (`issue_type` is bug_flow's bug type, D3) without an acceptance-
+    criteria list is held to its EXPECTED results instead: each item as
+    EXP1..EXPn, mapped - the behaviour its regression test asserts.
     """
     title = _plain(title or "")
     items = parse_acceptance_criteria(description)
+    if not items and issue_type:
+        from core import bug_flow
+        if bug_flow.is_bug_type(issue_type):
+            return [Criterion(f"EXP{n}", text, "expected result", obligation(text), True)
+                    for n, text in enumerate(bug_flow.expected_results(description), 1)]
     found: list[Criterion] = []
     if items:
         for n, text in enumerate(items, 1):

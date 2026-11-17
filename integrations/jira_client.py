@@ -167,6 +167,9 @@ class JiraClient:
             components = [c.name for c in (issue.fields.components or [])]
         except AttributeError:
             components = []
+        # The issue type and whether it is done: a bug (D3, core/bug_flow.py)
+        # is drafted, held and merged differently from a story.
+        category = getattr(getattr(issue.fields.status, "statusCategory", None), "key", "")
         return {
             "key": issue.key,
             "summary": issue.fields.summary,
@@ -174,7 +177,25 @@ class JiraClient:
             "status": issue.fields.status.name,
             "labels": list(issue.fields.labels),
             "components": components,
+            "issue_type": getattr(getattr(issue.fields, "issuetype", None), "name", "") or "",
+            "done": category == "done",
         }
+
+    @staticmethod
+    def _type_clause(issue_type) -> str:
+        """The JQL for a selection's issue type: one type, or several. A
+        selection of the story type also takes bugs when the bug flow is on
+        (D3, core/bug_flow.py) - every scan, watcher and hand-over then sees a
+        bug the way it sees a story - but never the triage's own defects."""
+        from core import bug_flow
+        types, not_label = bug_flow.widened(issue_type)
+        if not isinstance(types, (list, tuple)):
+            return f'issuetype = "{types}"'
+        if not_label and len(types) == 2:
+            story, bug = types
+            return (f'(issuetype = "{story}" OR (issuetype = "{bug}" AND '
+                    f'(labels is EMPTY OR labels != "{not_label}")))')
+        return "issuetype in ({})".format(", ".join(f'"{t}"' for t in types))
 
     def _effective_sprint(self, selection_config: dict, sprint_override: str | None):
         """The sprint a selection is scoped to, or None for every sprint.
@@ -229,7 +250,7 @@ class JiraClient:
 
         # Issue type
         if issue_type := selection_config.get("issue_type"):
-            jql_parts.append(f'issuetype = "{issue_type}"')
+            jql_parts.append(self._type_clause(issue_type))
 
         # Allowed statuses (OR within, AND with rest)
         if statuses := selection_config.get("allowed_statuses"):
@@ -295,7 +316,7 @@ class JiraClient:
             return []
         parts = [f"project = {self.project_key}"]
         if issue_type := selection_config.get("issue_type"):
-            parts.append(f'issuetype = "{issue_type}"')
+            parts.append(self._type_clause(issue_type))
         parts += [f'labels = "{label}"' for label in selection_config.get("required_labels", [])]
         parts += [f'labels != "{label}"' for label in selection_config.get("excluded_labels", [])]
         if not selection_config.get("required_labels"):
@@ -638,7 +659,7 @@ class JiraClient:
         "components", "created", "updated", "resolved", "resolution", "priority",
         "links", "description"}]. None when the tracker cannot be read - the
         history is then left as it is, never emptied. Optional capability."""
-        parts = [f"project = {self.project_key}", f'issuetype = "{issue_type}"']
+        parts = [f"project = {self.project_key}", self._type_clause(issue_type)]
         if updated_since:
             parts.append(f'updated >= "{updated_since}"')
         if open_only:
@@ -965,7 +986,8 @@ class JiraClient:
             return 0
 
     def _owner_from_links(self, issuelinks) -> Optional[str]:
-        """The owning Story among a test case's issue links, or None.
+        """The owning Story (or, with the bug flow on, Bug - D3) among a test
+        case's issue links, or None.
 
         Only the OWNERSHIP link names the owner. A test case can also carry
         `impacts` links from stories that revised it; following one of those
@@ -976,6 +998,8 @@ class JiraClient:
         puts it on `inwardIssue`, which is checked second.
         """
         owns_name = self.link_types["owns"]["name"].lower()
+        from core import bug_flow
+        owners = {t.lower() for t in bug_flow.owner_types()}
         links = [l for l in issuelinks
                  if (getattr(l.type, "name", "") or "").lower() == owns_name]
         for side in ("outwardIssue", "inwardIssue"):
@@ -984,7 +1008,7 @@ class JiraClient:
                 if other is None:
                     continue
                 other_type = getattr(other.fields.issuetype, "name", "") or ""
-                if other_type.lower() == "story":
+                if other_type.lower() in owners:
                     return other.key
         return None
 

@@ -248,6 +248,44 @@ DEFAULTS: dict = {
         "deployed_label": "deployed",             # the signal: the change is live
         "mark_on_handover": True,                 # Agent 0's hand-over adds pending_label
     },
+    # D3: a production bug gets a regression test (core/bug_flow.py). Off by
+    # default: a project that does not turn it on is unchanged.
+    "bug_flow": {
+        "enabled": False,
+        "bug_type": "Bug",
+        "story_type": "Story",
+        # The headings of a bug report (any letter case, colon optional).
+        "expected_headings": ["expected result", "expected results", "expected behaviour",
+                              "expected behavior", "expected outcome", "expected"],
+        "steps_headings": ["steps to reproduce", "steps to reproduce the bug",
+                           "reproduction steps", "how to reproduce", "steps"],
+        "actual_headings": ["actual result", "actual results", "actual behaviour",
+                            "actual behavior", "actual outcome", "actual"],
+        "mark_pending": True,      # X4: its regression test fails until the fix is live
+        "done_on_merge": False,    # merging the test does not close the bug
+    },
+    # C3: the prompt regression set (scripts/prompt_regression.py) - a fixed
+    # set replayed, without writing anything, when Agent 1-3 prompts change.
+    "prompt_regression": {
+        "enabled": False,
+        # Stories Agent 1 drafts again (dry run): each must draft, map every
+        # criterion and stay within the test-case range.
+        "agent1_stories": [],
+        "agent1_min_cases": 1,
+        "agent1_max_cases": 7,
+        # Stories Agent 2 codes again (regenerate, dry run): each must pass the
+        # gate with no test case left out. The costliest replay - keep it short.
+        "agent2_stories": [],
+        # Pull requests Agent 3 reviews again (dry run): {"<number>": verdict}.
+        "agent3_reviews": {},
+        # Which changed files replay which agent (path prefixes).
+        "triggers": {
+            "agent1": ["prompts/agent1_", "agents/agent1_analyst.py", "core/bug_flow.py",
+                       "core/acceptance_coverage.py", "core/test_case_rules.py"],
+            "agent2": ["prompts/agent2_", "agents/agent2_coder.py"],
+            "agent3": ["prompts/agent3_", "agents/agent3_reviewer.py"],
+        },
+    },
     # D10: scripts/delete_issues.py deletes only closed issues carrying this
     # label - throw-away issues (validation runs, dummy defects). A real
     # defect is closed, never deleted: it is the defect trend's history. The

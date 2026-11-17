@@ -40,6 +40,13 @@ import logging
 import sys
 import yaml
 
+# Started with `python -m agents.agent1_analyst`, this file is __main__; the
+# prompt regression replay (scripts/prompt_regression.py) imports it by name
+# and must get this module, not a second copy (see
+# tests/unit/test_entry_module_single_copy.py).
+if __name__ == "__main__":
+    sys.modules.setdefault("agents.agent1_analyst", sys.modules[__name__])
+
 from core.app_context import AppContext
 from integrations.tracker import get_tracker
 from core.board_status import move_card_for_label
@@ -194,9 +201,19 @@ def _draft_test_cases(llm, user_prompt: str, criteria=None, existing=()) -> Test
     return draft
 
 
-def existing_scenario_titles() -> set:
+def _own_test_case_keys(jira, story_id: str) -> set:
+    try:
+        return {tc["key"] for tc in jira.get_linked_test_cases(story_id) or []}
+    except Exception as e:                                         # noqa: BLE001
+        logger.warning(f"{story_id}: own test cases not read ({e}).")
+        return set()
+
+
+def existing_scenario_titles(own_keys=None, owner: str | None = None) -> set:
     """Every scenario title in the feature files, normalised as the impact-
-    aware draft compares them (a leading [Type] tag dropped)."""
+    aware draft compares them (a leading [Type] tag dropped). A replay (C3)
+    leaves out the story's own scenarios - by test case key, or by the
+    marker's owner."""
     from agents.agent2_coder import build_marker_index, plain_test_case_title
     from config.paths import FEATURES_DIR
     from validators.gherkin_analyzer import normalize_scenario_name
@@ -205,7 +222,10 @@ def existing_scenario_titles() -> set:
     except Exception as e:                                         # noqa: BLE001
         logger.warning(f"Could not read the existing scenarios ({e}); drafting without them.")
         return set()
-    titles = [e.title for e in index.by_key.values()] + [t for _f, t in index.unmarked]
+    own = set(own_keys or ())
+    titles = [e.title for e in index.by_key.values()
+              if e.key not in own and not (owner and (e.owner or "").upper() == owner.upper())]
+    titles += [t for _f, t in index.unmarked]
     return {normalize_scenario_name(plain_test_case_title(t)) for t in titles if t}
 
 
@@ -231,8 +251,13 @@ def _coverage_lines(criteria, draft, existing=()) -> list[str]:
             if coverage else [])
 
 
-def run(story_id: str, dry_run: bool = False) -> dict:
-    """Process a single story end-to-end."""
+def run(story_id: str, dry_run: bool = False, replay: bool = False) -> dict:
+    """Process a single story end-to-end.
+
+    replay (C3, scripts/prompt_regression.py; with dry_run): draft an already
+    drafted story again to see what the current prompts make of it - its own
+    test cases' scenarios are not counted as existing ones (they would all
+    be "repeats"), and the result carries what the check reads."""
     logger.info(f"=== Agent 1 (Test Designer) starting for {story_id} (dry_run={dry_run}) ===")
 
     ctx = AppContext.load()
@@ -306,14 +331,21 @@ def run(story_id: str, dry_run: bool = False) -> dict:
     # drafted - no model call; the scan hands it back with one comment saying
     # what the product owner adds (agents.agent1_analyst.readiness).
     from core.readiness import readiness_problem
-    not_ready = readiness_problem(story, load_agent_config())
+    from core import bug_flow
+    # D3: a bug is held to its expected result, not an acceptance-criteria
+    # list (core/bug_flow.py).
+    is_bug = bug_flow.is_bug(story)
+    not_ready = (bug_flow.readiness_problem(story) if is_bug
+                 else readiness_problem(story, load_agent_config()))
     if not_ready:
         logger.warning(f"{story_id} is not ready to draft: {not_ready}")
         return {"story_id": story_id, "story_summary": story["summary"],
                 "status": "not_ready", "test_cases_generated": 0,
-                "test_case_keys": [], "readiness": not_ready}
+                "test_case_keys": [], "readiness": not_ready, "bug": is_bug}
 
     story_text = f"Title: {story['summary']}\n\nDescription:\n{story['description']}"
+    if is_bug:
+        story_text = f"{bug_flow.prompt_block(story)}\n\n{story_text}"
 
     # ── Ledger boundary ──────────────────────────────────────────────
     # If this story already carries usage comments, it was costed by a
@@ -390,7 +422,8 @@ def run(story_id: str, dry_run: bool = False) -> dict:
     # The acceptance criteria are read from the story text here, not left to the
     # model: a criterion it forgot to list would never be checked.
     from core.acceptance_coverage import criteria_block, extract_criteria
-    criteria = extract_criteria(story["summary"], story.get("description"))
+    criteria = extract_criteria(story["summary"], story.get("description"),
+                                story.get("issue_type"))
     user_prompt = (
         prompt_template
         .replace("{app_name}", ctx.name)
@@ -399,7 +432,9 @@ def run(story_id: str, dry_run: bool = False) -> dict:
         .replace("{criteria_block}", criteria_block(criteria))
         .replace("{story_text}", story_text)
     )
-    existing = existing_scenario_titles()
+    existing = existing_scenario_titles(
+        own_keys=_own_test_case_keys(jira, story_id) if replay else None,
+        owner=story_id if replay else None)
     user_prompt = user_prompt.replace(
         "{existing_titles_block}", "\n".join(f"- {t}" for t in sorted(existing)) or "(none)")
 
@@ -459,6 +494,12 @@ def run(story_id: str, dry_run: bool = False) -> dict:
         # Board hygiene: follow the label with a column move so the card
         # reflects real progress. Opt-in via config; never fatal.
         move_card_for_label(jira, story_id, completion_label)
+        # D3: an open bug's regression test fails until its fix is live.
+        if is_bug:
+            try:
+                bug_flow.mark_pending(jira, story)
+            except Exception as e:                                 # noqa: BLE001
+                logger.warning(f"{story_id}: not marked awaiting its fix ({e}).")
 
         # ONE-SHOT TRIGGER CLEANUP: remove the trigger label(s) that brought
         # this story into Agent 1's scope. After successful run, those labels
@@ -498,6 +539,12 @@ def run(story_id: str, dry_run: bool = False) -> dict:
         "status": "tests_drafted" if not dry_run else "tests_drafted_dry_run",
         "llm_usage": usage,
     }
+    if replay:
+        # What the prompt regression check reads (C3): the draft passed its
+        # rules and coverage check (else DraftRejected was raised above).
+        result.update({"criteria": [c.ref for c in criteria],
+                       "titles": [tc.title for tc in test_case_list.test_cases],
+                       "coverage": coverage_lines})
 
     logger.info(f"=== Agent 1 (Test Designer) complete for {story_id}. Created: {created_keys} ===")
     return result
@@ -571,6 +618,10 @@ NEEDS_A_PERSON_WHY = {
     "not_ready": ("{why} Product owner: add an 'Acceptance criteria' list to the "
                   "description (one criterion per line), then add the trigger label again. "
                   "No test case was drafted and no model was called."),
+    # D3: a bug report is held to its expected result instead.
+    "not_ready_bug": ("{why} Add an 'Expected result' section to the bug (what should "
+                      "happen, one item per line - and the steps to reproduce), then add the "
+                      "trigger label again. No test case was drafted and no model was called."),
 }
 
 
@@ -711,8 +762,10 @@ def main():
                 # every scan takes it first and stops on it again, a place
                 # another story waits for (4 Nov 2026).
                 if result.get("status") in (_NEEDS_A_PERSON | _NOT_READY) and not args.dry_run:
+                    why_key = ("not_ready_bug" if result.get("bug") and
+                               result["status"] == "not_ready" else result["status"])
                     hand_back(jira, story["key"], NEEDS_A_PERSON_WHY.get(
-                        result["status"], result["status"]).format(
+                        why_key, result["status"]).format(
                         n=result.get("existing_test_cases", "some"),
                         why=result.get("readiness", "")), agent_config)
             except BudgetExceeded as stop:

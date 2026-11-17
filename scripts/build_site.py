@@ -134,7 +134,8 @@ def traceability(tracker, features_dir: Path, latest: dict, defects: list[dict] 
             logger.warning("Story %s not read for the matrix: %s", key, e)
             continue
         criteria = [(c.ref, c.text) for c in extract_criteria(story.get("summary"),
-                                                              story.get("description"))]
+                                                              story.get("description"),
+                                                              story.get("issue_type"))]
         # A test case the suite implements for this story is listed even when
         # the tracker no longer links it (13 Nov 2026, first live matrix: a
         # story's second test case was on main, marked for it, and missing).
