@@ -84,7 +84,7 @@ def _words(name: str) -> list:
 
 # The plan writes "needs <the element> on <page>, not in the app inventory".
 _ON_PAGE = re.compile(r"\bneeds\b.*?\bon (?:the )?(.+?),? not in the app inventory", re.I | re.S)
-# A page name the reason writes the code's way (`api_list`), which the link's
+# A page name the reason writes the code's way (`order_history`), which the link's
 # path may carry: chosen by name, without a model call.
 _SNAKE = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
 
