@@ -76,10 +76,17 @@ a browser, which keeps a story at about $1.70. A live-browser step pays off in
 two places; Playwright's CLI costs about a quarter of Playwright MCP's tokens
 (about 27k against 114k per test in published benchmarks).
 
+Built (#527) on the framework's own Python Playwright rather than the Playwright
+CLI: the same browser install, sign-in and page reading as the nightly check
+(Inventory Health), so no new tool and no agent loop. The token saving the CLI
+offers comes from sending the model only what it must judge - the links to
+pages the inventory lacks (PW1), the live elements no selector matches (PW2) -
+and a model call is made only when a name match cannot decide.
+
 | ID | Item | Today (gap) | Priority | Cost | Was | Status |
 |---|---|---|---|---|---|---|
-| PW1 | Explore a page missing from the inventory live (Playwright CLI) and propose its inventory entry, instead of refusing the story | A story needing an unknown page is refused until a person adds the page | P2 | B | | Open |
-| PW2 | Heal step before raising a defect: when a failure looks like a changed selector, check the live page (Playwright CLI) and propose the corrected selector in a PR | Raised as a defect, or found by the nightly inventory check | P2 | B | | Open |
+| PW1 | Explore a page missing from the inventory live (Playwright CLI) and propose its inventory entry, instead of refusing the story | A story needing an unknown page is refused until a person adds the page | P2 | B | | Done (#527) |
+| PW2 | Heal step before raising a defect: when a failure looks like a changed selector, check the live page (Playwright CLI) and propose the corrected selector in a PR | Raised as a defect, or found by the nightly inventory check | P2 | B | | Done (#527) |
 
 ### Rollout
 

@@ -1889,6 +1889,47 @@ a report with `pages_checked` 0 or older than `uncovered_max_age_hours`, exits 1
 when it must write and the host is unreachable, and prints the body under
 `--dry-run` or `shadow_mode`. RepoHost operations only; no model.
 
+**PW1 - a missing page explored live (`core/page_explore.py`,
+`scripts/explore_missing_pages.py`, `scripts/resume_explored_story.py`).**
+`blocked.post_blocked_once` calls `_request_exploration`: when the workflow
+sets `EXPLORE_REQUESTS_FILE` and `page_explore.requested(errors, inventory)`
+finds a page the inventory lacks (`pages_missing_from_inventory`, or a plan
+reason "not in the app inventory" naming no known page), it appends
+`{story, pages, reasons}`. The Agent 2 workflow's next steps install a browser
+and run the explorer only when that file exists. Links: every non-templated
+inventory page (and `/`), signed in (`find_login_path`, `do_login`), `a[href]`
+read in the page; `candidate_links` keeps same-origin paths no
+`_path_pattern` matches, drops assets and `explore_never_visit` paths.
+`by_name` (the code's page name equals one path's last segment) else
+`choose_link` (one `LinkChoice` call; an unlisted path is no answer). The page
+is read by running `check_inventory_staleness --inventory <tmp> --page
+<name> --compare` on the inventory plus an empty page, and its elements kept
+by `inventory_update.build_update(..., allow_removal=False,
+max_additions_per_page=explore_max_elements)`; `proposed` adds only that page.
+The PR body's first line `[inventory-explore] story: <key> page: <name>` is
+what `resume_explored_story` reads on merge to dispatch Agent 2
+(`handoff.workflows.agent2_coder`, `story_key`) with the built-in token
+(`actions: write` on "Story Done on merge").
+
+**PW2 - a changed selector healed (`core/selector_heal.py`,
+`scripts/heal_selectors.py`).** `--plan` reads junit only (`healable`: failed,
+retried when `only_after_retry`, not an outage, a `heal_failure_kinds`
+diagnosis) and writes `needed` to `$GITHUB_OUTPUT`, so the triage job installs
+a browser only then. `keys_by_test` maps a test id to its scenario through
+`impact_results._test_name` and takes `ScenarioNode.elements`; `narrow` keeps
+the keys whose selector the failure quotes. Each page is read with
+`check_inventory_staleness --page <page> --compare`; `stale_keys` and
+`candidates` (new elements minus `unstable`) come from that report;
+`by_name`, else `choose` (one `SelectorChoice` call), then `fits` (family
+rules) and `apply` (a selector another key uses is refused). Keys an open PR on
+the heal or the nightly prefix changes (`inventory_update.keys_in_open_prs`,
+reading each branch's inventory) are not healed again and count as fixed.
+`healed_tests` needs every page the test reaches read and every stale key it
+reaches fixed. `reports/heal.json` -> `triage_failures --reports-dir` ->
+`defects.triage(healed=...)`, which skips raising or updating a defect for
+those tests. `build_update(pending=...)` keeps such a key in the nightly
+update.
+
 ## 19. Change stories in Agents 1, 2 and 5
 
 - **Agent 1 — `agents/agent1_impact.py`.** `run_impact_aware()` runs instead of the normal draft when the story has approved impacted cases. One `ImpactAwareDraft` call (`prompts/agent1_impact_aware.md`); `validate_draft()` requires every approved key revised exactly once, no new case repeating a revised case or an existing scenario, and every acceptance criterion covered (`coverage_problems()`, §4: revisions cited by key, new cases by title, an unchanged existing scenario by title only for a criterion without an obligation), and flags a revision near an existing scenario (`PURPOSE_KEPT`). A snapshot comment holds each old text and the old/new hashes before `update_test_case`. Labels: `ai-processed`, `impact-applied` on; `ai-ready` off. Re-running is safe.

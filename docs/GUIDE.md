@@ -741,6 +741,7 @@ inventory alone:
 | A stale key, and the crawl finds the element the generator names the same, with a durable selector | **Replaces** the selector; the key and every page object using it stay valid |
 | A stale key no code names - no string literal under `code_dirs` on `main`, none added by an **open pull request** - not the row family | **Removes** it, with its note and its `multi_match` / `conditional` entries |
 | A stale key code names (on `main` or in an open PR) | **Keeps** it and lists it: a page object needs a new selector, or a change story's absence test needs the key |
+| A stale key an open **selector-heal** pull request changes (PW2) | **Keeps** it and lists it with that pull request - never replaced or removed a second way |
 | A live element no selector covers | **Adds** it - the generator's own name and selector **and its declarations** (a family → `multi_match`, a hidden element → `conditional`), the proposals file's refusal rules, at most `max_additions_per_page` per page |
 | An element the generator flags for review (a css fallback, an index-pinned `>> nth=` member, hidden when crawled) | Listed, **never added** |
 | More than `hold_ratio` of a page's selectors stale | **Leaves the page alone** and lists it: an error page, an outage or a redesign is a person's call |
@@ -1780,7 +1781,7 @@ Selection rules come from `config.yaml`'s `agents.<name>.selection` block.
 | Agent 4 nightly run on `main` + defect triage | daily 03:10 (21:40 UTC) | Run workflow on `main` |
 | Pipeline health check | daily 08:50, 12:50, 16:50 | Run workflow (`dry_run` prints the findings only) |
 | Sweeper | weekdays hourly, 10:05–19:05 | `dry_run` input |
-| Story Done on merge | on PR closed with `merged == true`: Done, then the notes addition | — |
+| Story Done on merge | on PR closed with `merged == true`: Done, then the notes addition; a merged page-exploration PR starts Agent 2 on its story (PW1) | — |
 
 ### Deleting closed issues (by hand)
 
@@ -1956,6 +1957,26 @@ the `triage` job (`scripts/triage_failures.py`, `core/defects.py`):
 - never raises a defect for an outage (one health alert instead) or a flaky
   test (recorded instead), and raises at most `max_new_per_run` new defects in
   one run (more: one health alert - usually a broken build or environment);
+- **heals a changed selector before raising (PW2).** A test that failed twice
+  and reads as an element that never appeared (`live_browser.
+  heal_failure_kinds`) may have failed because the application changed a
+  selector, not because it broke. The triage job's steps *Find failures a
+  changed selector may explain* and *Heal changed selectors*
+  (`scripts/heal_selectors.py`, `core/selector_heal.py`) read the pages its
+  steps reach (the impact graph; only the keys the failure quotes, when it
+  quotes one; at most `heal_max_pages`) with the nightly check, signed in.
+  For each key that matches nothing there, the live element the generator
+  names the same - else **one light model call** choosing among the live
+  elements no selector matches, or none - with a durable selector (a family
+  key only for a family). Every key healed goes into **one pull request** on
+  `heal_branch_prefix` (`[inventory-heal]`); its test's test case gets one
+  comment; and **no defect is raised** for a test whose every stale key is
+  healed (or already changed by an open heal or nightly inventory pull
+  request) - `healed` in the triage's output. A key nothing on the page
+  matches is raised as before: the element may really be gone. Close the pull
+  request if a new selector names another element: that heal is never
+  proposed again, and the next failure is a defect. The nightly inventory update leaves a key an open heal pull request
+  changes alone ("a selector-heal pull request proposes its new selector");
 - **links every defect to what its test verifies**, so the test case and the
   story show it, not only its description:
 
@@ -2951,12 +2972,42 @@ Agent 2 with the story's key.
 **When the comment says the story needs a page the app inventory does not
 have**, no test case is wrong and no repair could fix it: Agent 2 stopped
 before repairing (#254), because only a person adds a page to the inventory.
-Add it - `python -m scripts.plan_inventory page --page <page> --url /<path>
---component "<Component>" --element <key>="<selector>"`, with at least one
-element you can see on the page - commit it, then run Agent 2 with the story's
-key. A page already live is confirmed by the next nightly inventory update,
-which also proposes its other elements. A page name that is a misspelling of
-one the inventory has is still repaired as before.
+A page name that is a misspelling of one the inventory has is still repaired
+as before.
+
+**The page is looked for live first (PW1).** In the same Agent 2 run, the step
+*Explore the pages refused stories need* (`scripts/explore_missing_pages.py`,
+`core/page_explore.py`) - also when the plan left every test case out with
+"not in the app inventory" for a page the inventory has no name for:
+
+1. signs in as the nightly check does and reads the links on the inventory's
+   pages (`live_browser.explore_max_pages`) that lead to a page the inventory
+   lacks. A link whose path looks destructive (`explore_never_visit`: sign-out,
+   delete, ...) is never opened, only listed;
+2. picks the page: the link whose path is the page name the generated code
+   used (no model call), else **one light model call** that reads the story,
+   its test cases and the refusal against the links - and may answer that
+   none fits;
+3. reads that page with the nightly check itself
+   (`check_inventory_staleness --inventory <inventory with the page> --page
+   <page> --compare`) and keeps its elements by the nightly update's rules:
+   no element without a durable selector, the refusal rules, at most
+   `explore_max_elements`;
+4. opens **one pull request** on `live_browser.explore_branch_prefix` adding the
+   page (its `components` from the story) and comments on the story
+   (`[inventory-explore]`). A story or page with such a pull request open is
+   not explored again, nor a story whose proposal you closed without merging.
+
+Check the page in the pull request (names, selectors; add notes, `conditional`
+elements a crawler cannot see) and **merge it: "Story Done on merge" starts
+Agent 2 on the story again** (`scripts/resume_explored_story.py`) - unless
+the story has an open pull request, which you merge or close first. When no
+link fits, the page did not load, or it has no durable element, the comment
+says so and nothing is proposed: add the page by hand - `python -m
+scripts.plan_inventory page --page <page> --url /<path> --component
+"<Component>" --element <key>="<selector>"`, with at least one element you can
+see on the page - commit it, then run Agent 2 with the story's key. A page
+reached only by a form or a script has no link, so it is always added by hand.
 
 ### The story has `ai-incomplete`, or an `[agent2:incomplete]` comment
 
