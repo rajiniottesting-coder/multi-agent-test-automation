@@ -441,3 +441,26 @@ def test_a_heal_a_person_closed_is_never_proposed_again(world):
                                                          "body": body}]
     out, merged = go(_case("test_save_an_order"), host=merged)
     assert [h["new"] for h in out["heals"]] == ["#save"]          # a merged one says nothing
+
+
+def test_the_nightly_update_does_not_add_the_element_a_heal_gives_its_key():
+    drift = {"pages": {"orders": {"missing": [{"element": "save_button",
+                                               "selector": "#save-btn"}]}},
+             "new_elements": {"orders": {"submit_button": "#save", "print_button": "#print"}}}
+    upd = iu.build_update(
+        drift, INV, set(), pending={("orders", "save_button"): "u/5"},
+        claimed={("orders", "#save"): "orders.save_button (u/5)"})
+    assert [r["element"] for r in upd.added] == ["print_button"]
+    assert upd.refused == [{"page": "orders", "element": "submit_button", "selector": "#save",
+                            "refused": "a selector-heal pull request gives this element to "
+                                       "orders.save_button (u/5)"}]
+    assert [r["element"] for r in iu.build_update(drift, INV, set()).added] == \
+        ["print_button", "submit_button"]                       # unchanged without a claim
+
+
+def test_claims_carry_the_selector_each_open_pull_request_gives():
+    theirs = json.loads(json.dumps(INV))
+    theirs["pages"]["orders"]["elements"]["save_button"] = "#save"
+    host = _Host({("p/", "p/x"): json.dumps(theirs)})
+    assert iu.claims_in_open_prs(host, "p/", "inv.json", INV) == {
+        ("orders", "save_button"): {"url": "https://host.example/pr/1", "selector": "#save"}}
