@@ -108,6 +108,7 @@ Group B, batch B1 (14 Nov 2026, #491): R1-R5, D1, D2, D4, D5, X5 - all
 proven live the same day with #492, #497, #498 and #500 (removed above).
 Group B, batch B2 (14 Nov 2026, #502): RP5, X1, D6, X4 - all proven live the
 same day with #504, #506 and #508 (removed above).
+B3 (PW1, PW2) built on 17 Nov 2026 (#527); the live run found and fixed five gaps (#528-#530, #532, #536) and proved the rest the same day (#537): a missing page explored and proposed (#531), Agent 2 started again on merge, two changed selectors healed in one pull request (#534) with no defect raised. Their last checks (E246, E254, E255) wait for events.
 C4 added on 15 Nov 2026 at the owner's request (old stories showed "not mapped";
 a project adopting the framework would see it on every story) and built in #523.
 RP14-RP25 added on 14 Nov 2026 at the owner's request (the reports pages, all of
