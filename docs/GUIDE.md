@@ -741,7 +741,7 @@ inventory alone:
 | A stale key, and the crawl finds the element the generator names the same, with a durable selector | **Replaces** the selector; the key and every page object using it stay valid |
 | A stale key no code names - no string literal under `code_dirs` on `main`, none added by an **open pull request** - not the row family | **Removes** it, with its note and its `multi_match` / `conditional` entries |
 | A stale key code names (on `main` or in an open PR) | **Keeps** it and lists it: a page object needs a new selector, or a change story's absence test needs the key |
-| A stale key an open **selector-heal** pull request changes (PW2) | **Keeps** it and lists it with that pull request - never replaced or removed a second way |
+| A stale key an open **selector-heal** pull request changes (PW2) | **Keeps** it and lists it with that pull request - never replaced or removed a second way; the live element that pull request gives the key is **not added** under a second name (refused, naming the key) |
 | A live element no selector covers | **Adds** it - the generator's own name and selector **and its declarations** (a family → `multi_match`, a hidden element → `conditional`), the proposals file's refusal rules, at most `max_additions_per_page` per page |
 | An element the generator flags for review (a css fallback, an index-pinned `>> nth=` member, hidden when crawled) | Listed, **never added** |
 | More than `hold_ratio` of a page's selectors stale | **Leaves the page alone** and lists it: an error page, an outage or a redesign is a person's call |

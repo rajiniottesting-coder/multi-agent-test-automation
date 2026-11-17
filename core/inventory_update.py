@@ -233,19 +233,29 @@ def changed_keys_on_branch(host, inventory_path: str, branch: str, inventory: di
     return out
 
 
-def keys_in_open_prs(host, prefix: str, inventory_path: str, inventory: dict) -> dict:
-    """{(page, key): pull request url} for the keys the open pull requests on
-    `prefix` change. {} when they cannot be read."""
+def claims_in_open_prs(host, prefix: str, inventory_path: str, inventory: dict) -> dict:
+    """{(page, key): {"url", "selector"}} for the keys the open pull requests on
+    `prefix` change, with the selector each gives the key. {} when they cannot
+    be read."""
     out = {}
     try:
         for pr in host.list_open_prs(prefix, strict=True):
             if not (pr.get("head_ref") or "").startswith(prefix):
                 continue
-            for k in changed_keys_on_branch(host, inventory_path, pr["head_ref"], inventory):
-                out.setdefault(k, pr.get("url") or f"#{pr['number']}")
+            url = pr.get("url") or f"#{pr['number']}"
+            for k, sel in changed_keys_on_branch(host, inventory_path, pr["head_ref"],
+                                                 inventory).items():
+                out.setdefault(k, {"url": url, "selector": sel})
     except Exception as e:                                         # noqa: BLE001
         logger.warning("open pull requests on %s not read: %s", prefix, e)
     return out
+
+
+def keys_in_open_prs(host, prefix: str, inventory_path: str, inventory: dict) -> dict:
+    """{(page, key): pull request url} for the keys the open pull requests on
+    `prefix` change. {} when they cannot be read."""
+    return {k: v["url"] for k, v in
+            claims_in_open_prs(host, prefix, inventory_path, inventory).items()}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -311,7 +321,8 @@ def build_update(drift: dict, inventory: dict, used: set, *,
                  allow_removal: bool = True,
                  no_removal_reason: str = "",
                  layout_min_pages: int = 3,
-                 pending: dict | None = None) -> InventoryUpdate:
+                 pending: dict | None = None,
+                 claimed: dict | None = None) -> InventoryUpdate:
     """The inventory after tonight's drift report, and what changed (pure).
 
     `drift` is check_inventory_staleness's JSON report (with --compare for
@@ -319,7 +330,11 @@ def build_update(drift: dict, inventory: dict, used: set, *,
     open pull requests). `allow_removal=False` keeps every stale key, with
     `no_removal_reason`. `pending`: {(page, key): pull request} whose new
     selector an open selector-heal pull request proposes (PW2) - such a stale
-    key is kept and listed, never replaced or removed a second way. The input
+    key is kept and listed, never replaced or removed a second way. `claimed`:
+    {(page, selector): "page.key (pull request)"} - the live element that
+    pull request gives its key is not added again under a second name
+    (17 Nov 2026: a healed key's element was added as a new key the same
+    night, so merging both would have named one element twice). The input
     inventory is not modified."""
     out = copy.deepcopy(inventory)
     upd = InventoryUpdate(inventory=out)
@@ -471,6 +486,9 @@ def build_update(drift: dict, inventory: dict, used: set, *,
                 reason = ("a change story declared this name removed - an element "
                           "by that name is on the page: check the change was "
                           "deployed, or take the declaration out by hand")
+            if not reason and (name, selector) in (claimed or {}):
+                reason = ("a selector-heal pull request gives this element to "
+                          f"{claimed[(name, selector)]}")
             row = {"page": name, "element": element, "selector": selector}
             if reason:
                 upd.refused.append({**row, "refused": reason})
