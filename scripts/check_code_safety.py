@@ -59,7 +59,14 @@ def check(paths, root: Path, allow=()) -> list:
         f = root / p
         if not f.is_file():
             continue                                   # removed by the pull request
-        for line, what in unsafe_calls(f.read_text(encoding="utf-8", errors="replace"), allow):
+        try:
+            source = f.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            # Not read is not checked: reported as a finding, so the browser
+            # run waits for it (fail closed), with the reason, not a traceback.
+            found.append((p, 0, f"could not be read ({type(exc).__name__}) - not checked"))
+            continue
+        for line, what in unsafe_calls(source, allow):
             found.append((p, line, what))
     return found
 
