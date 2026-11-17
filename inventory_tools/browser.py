@@ -698,6 +698,19 @@ def count_on_page(page, selectors: list[str], test_attrs: tuple = TEST_ID_ATTRS
     return counts, data_tests
 
 
+_HEADINGS_JS = ("els => els.filter(e => e.offsetParent !== null)"
+                ".map(e => (e.textContent || '').replace(/\\s+/g, ' ').trim())")
+
+
+def page_headings(page) -> list[str]:
+    """The visible h1 and h2 texts of the page as it is now (their text
+    content, not the letter case CSS shows), in page order; [] on any error."""
+    try:
+        return [t for t in page.eval_on_selector_all("h1, h2", _HEADINGS_JS) if t]
+    except Exception:                                              # noqa: BLE001
+        return []
+
+
 def resolve_selectors(page, url: str, selectors: list[str],
                       test_attrs: tuple = TEST_ID_ATTRS, detail: dict | None = None
                       ) -> tuple[dict[str, int], set[str], bool]:

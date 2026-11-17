@@ -519,3 +519,86 @@ def test_the_page_a_reason_names_is_read_from_its_on_phrase():
     assert pe.requested([near], INV) is None
     vague = "PRJ-7: the orders export is not in the app inventory"
     assert pe.requested([vague], INV) is None          # no "on <page>": the cautious reading
+
+
+# ── a page read for the first time: its headings and its template content ─
+
+def test_headings_a_test_can_name_the_page_by():
+    from inventory_tools import introspect as i
+    assert i.heading_selector("  Reports  list ") == 'text="Reports list"'
+    assert i.heading_selector('Say "hi"') is None and i.heading_selector("") is None
+    assert i.heading_selector("x" * 81) is None
+    texts = ["Reports list", "Filters", "Reports list", "2024 overview", "Menu"]
+    counts = {'text="Reports list"': 1, 'text="Filters"': 2, 'text="2024 overview"': 1,
+              'text="Menu"': 1}
+    got = i.heading_elements(texts, counts, covered={'text="Menu"'}, taken={"x"})
+    assert got == {"reports_list_heading": 'text="Reports list"',
+                   "h_2024_overview_heading": 'text="2024 overview"'}
+    assert i.heading_elements(["Reports list"], counts, set(), {"reports_list_heading"}) == {}
+
+
+def test_list_items_another_pages_family_covers_are_this_pages_content():
+    inv = {"pages": {
+        "catalogue": {"url": "/catalogue", "elements": {"item_titles": ".list .title a",
+                                                        "contact_email": "#email"},
+                      "multi_match": ["item_titles"]},
+        "menu": {"url": "/", "always": True, "elements": {"menu_links": "nav a"},
+                 "multi_match": ["menu_links"]},
+        "reports_list": {"url": "/reports_list", "elements": {}}}}
+    drift = {"new_elements": {"reports_list": {"export_button": "#export"}},
+             "new_element_declarations": {"reports_list": {"shared": {
+                 "report_1_link": {"selector": "role=link[name='Report 1']",
+                                   "covered_by": "catalogue.item_titles"},
+                 "reach_email_field": {"selector": "#email",
+                                         "covered_by": "catalogue.contact_email"},
+                 "start_link": {"selector": "role=link[name='Home']",
+                               "covered_by": "menu.menu_links"}}}}}
+    out, rows = pe.template_content(drift, "reports_list", inv)
+    assert out["new_elements"]["reports_list"] == {
+        "export_button": "#export", "report_1_link": "role=link[name='Report 1']"}
+    assert set(out["new_element_declarations"]["reports_list"]["shared"]) == {
+        "reach_email_field", "start_link"}                 # a single key, and shared chrome
+    assert rows == [{"element": "report_1_link", "selector": "role=link[name='Report 1']",
+                     "covered_by": "catalogue.item_titles"}]
+    assert "report_1_link" in drift["new_element_declarations"]["reports_list"]["shared"]
+    assert pe.template_content({}, "reports_list", inv)[1] == []
+
+
+def test_the_body_names_the_template_it_shares():
+    stub, _ = pe.with_page(INV, "reports_list", "/reports_list")
+    upd = iu.build_update(_drift("reports_list", {"r1": "role=link[name='R1']"}), stub, set(),
+                          allow_removal=False)
+    body = pe.render_body("PRJ-7", "reports_list", "/reports_list", "x", upd,
+                          inventory_path="i", template=[{"element": "r1", "selector": "s",
+                                                         "covered_by": "catalogue.item_titles"}])
+    assert "**Same template as** `catalogue.item_titles`" in body
+
+
+def test_the_check_reports_headings_only_when_asked(tmp_path, monkeypatch):
+    import scripts.check_inventory_staleness as chk
+    inv = tmp_path / "inv.json"
+    inv.write_text(json.dumps({"pages": {"reports_list": {"url": "/reports_list",
+                                                          "elements": {}}}}))
+    ctx = SimpleNamespace(name="Sample", base_url=BASE, inventory_path=lambda: inv,
+                          inventory_file="inv.json")
+    monkeypatch.setattr(chk.AppContext, "load", staticmethod(lambda: ctx))
+
+    @contextmanager
+    def fake_browser(headless=True):
+        page = MagicMock()
+        page.url = BASE + "/reports_list"
+        yield page
+    monkeypatch.setattr(chk, "browser_page", fake_browser)
+    monkeypatch.setattr(chk, "resolve_selectors",
+                        lambda page, url, sels, attrs, detail=None: ({}, set(), True))
+    monkeypatch.setattr(chk, "collect_uncovered", lambda page, url, sels, attrs, **k: ("R", []))
+    monkeypatch.setattr(chk, "page_headings", lambda page: ["Reports list"])
+    monkeypatch.setattr(chk, "count_on_page",
+                        lambda page, sels, attrs=None: ({s: 1 for s in sels}, set()))
+    out = tmp_path / "r.json"
+    for flags, want in ((["--headings"], {"reports_list_heading": 'text="Reports list"'}),
+                        ([], None)):
+        monkeypatch.setattr(sys, "argv", ["check", "--no-login", "--compare", "--json",
+                                          str(out), *flags])
+        assert chk.main() == 0
+        assert json.loads(out.read_text()).get("new_elements", {}).get("reports_list") == want
