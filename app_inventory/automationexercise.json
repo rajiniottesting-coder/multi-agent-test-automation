@@ -289,7 +289,8 @@
         "contact_page_element": "#contact-page",
         "feedback_automationexercise_com_link": "role=link[name='feedback@automationexercise.com']",
         "form_section_element": "#form-section",
-        "upload_file_input": "input[name='upload_file']"
+        "upload_file_input": "input[name='upload_file']",
+        "submit_button": "[data-qa='submit-button']"
       },
       "planned": [
         "contact_home_button"
