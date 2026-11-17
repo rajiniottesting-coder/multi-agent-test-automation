@@ -333,7 +333,9 @@
     },
     "api_list": {
       "url": "/api_list",
-      "components": [],
+      "components": [
+        "API Testing"
+      ],
       "elements": {
         "api_10_post_verify_link": "a[href='#collapse10']",
         "api_11_post_create_link": "a[href='#collapse11']",
@@ -350,8 +352,7 @@
         "api_8_post_verify_link": "a[href='#collapse8']",
         "api_9_delete_verify_link": "a[href='#collapse9']",
         "apis_list_for_practice_heading": "text=\"APIs List for practice\"",
-        "feedback_us_link": "a[href='#feedback']",
-        "subscription_heading": "text=\"Subscription\""
+        "feedback_us_link": "a[href='#feedback']"
       }
     }
   },
