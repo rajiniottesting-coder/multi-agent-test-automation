@@ -566,6 +566,17 @@ agents:
     approval_label: "human-approved"
     approver_groups: ["org-admins"]
     approvers: []
+    # S1: generated test code reaches the application only through the page
+    # objects and the fixtures - no environment, process, network, file system
+    # or browser escape hatch (validators/code_safety.py). Agent 2's gate and
+    # Agent 4's check before a pull request's browser run both apply it.
+    # `allow`: names of the denied modules/calls this project's generated code
+    # may use after review (e.g. "write_text"). `code_dirs`: where generated
+    # Python may live.
+    code_safety:
+      enabled: true
+      allow: []
+      code_dirs: ["pages/", "tests/step_defs/"]
     selection:
       issue_type: "Story"
       allowed_statuses:
