@@ -95,8 +95,32 @@ _RESERVED_CALL = re.compile(r"calls `\w+\.(\w+)\(\)`, but `(\w+)` does not defin
 # validators.action_steps: a step worded as a click whose definition clicks nothing.
 _ACTION_STEP = "Action step error"
 # The plan's Skipped reason for an element the inventory lacks
-# (prompts/agent2_coder_plan.md, decision step 3b).
+# (prompts/agent2_coder_plan.md, decision step 3b). The prompt asks for "not in
+# the app inventory", but the model words it its own way too ("neither of which
+# exists in the app inventory", 17 Nov 2026): read as one, any wording that
+# denies the inventory has it.
 _NOT_IN_INVENTORY = "not in the app inventory"
+_DENIES_INVENTORY = re.compile(
+    r"\b(?:not|no|neither|nor|none|never|missing|lacks?|absent|without)\b[^.;:]{0,80}?"
+    r"\b(?:app(?:lication)?\s+)?inventory\b"
+    r"|\binventory\b[^.;:]{0,40}?\b(?:lacks?|has no|does not have|doesn't have|is missing)\b",
+    re.I)
+
+
+# The validators' own wording for an unknown page or element: each has its own
+# reading (pages_missing_from_inventory / elements_missing_from_inventory, which
+# also tell a misspelling from a missing one), never this one.
+_VALIDATOR_WORDING = re.compile(r"which is not a page in the app inventory"
+                                r"|is not an element on inventory page")
+
+
+def says_not_in_inventory(text: str) -> bool:
+    """Does a plan's reason say the app inventory lacks what it needs - in the
+    prompt's words or the model's own? A validator's message is not one."""
+    text = str(text or "")
+    if _VALIDATOR_WORDING.search(text):
+        return False
+    return _NOT_IN_INVENTORY in text or bool(_DENIES_INVENTORY.search(text))
 # validators.step_fidelity: a step whose code acts on or checks another element.
 _STEP_FIDELITY = "Step fidelity error"
 _BORROWED_PAGE = re.compile(r"class (\w+) sets INVENTORY_PAGE = '[^']+', the page \w+ "
@@ -160,7 +184,7 @@ def blocked_comment(story_id: str, fp: str, errors) -> str:
     # The plan left test cases out for elements the inventory lacks (its
     # Skipped reason says "..., not in the app inventory"): the remedy is to
     # add them, not to edit the test cases.
-    if any(_NOT_IN_INVENTORY in str(e) for e in errors):
+    if any(says_not_in_inventory(e) for e in errors):
         lines += ["",
                   ("The test cases above were left out because they need element(s) - or a "
                    "page - the app inventory does not have (each reason names them). No "
