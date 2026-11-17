@@ -79,7 +79,7 @@ For more diagrams — component view, Agent 2 sequence, and the labels-as-state-
 - **Idempotency via Jira labels.** `ai-processed` (Agent 1 done), `ai-coded` (Agent 2 done), `tests-run` (Agent 5 done); for a change story `impact-proposed` (Agent 0 done, review open) and `impact-applied` (tests revised). Re-running an agent against an already-processed story is a no-op, and Agent 0 skips a story whose text it has already analysed.
 - **Config-driven, not code-driven.** App-specific knowledge (URL, reference files, page inventory, module notes) lives in `config.yaml`, `app_inventory/` and `prompts/app_context/`. Agent code is app-agnostic.
 - **Tools behind Protocols.** Agents talk to `Tracker` (23 operations) and `RepoHost` (20 operations) in `integrations/`, never to Jira or GitHub directly; the Jira and GitHub adapters are the only implementations today.
-- **Defensive validators.** Between Agent 2's model output and the PR, 36 static checks run: the path policy on the plan, 10 hard gates in `_validate_generated_files()`, 31 validator calls in `_collect_repairable_errors()` (7 of them also hard gates), and the absence-claim check against the approved test cases (`_absence_claim_errors()`, in the repair loop and the final gate). Repairable failures feed a repair loop that regenerates only the broken files; the rest abort before a branch exists.
+- **Defensive validators.** Between Agent 2's model output and the PR, 37 static checks run: the path policy on the plan, 11 hard gates in `_validate_generated_files()`, 32 validator calls in `_collect_repairable_errors()` (8 of them also hard gates), and the absence-claim check against the approved test cases (`_absence_claim_errors()`, in the repair loop and the final gate). Repairable failures feed a repair loop that regenerates only the broken files; the rest abort before a branch exists.
 
 ---
 
@@ -132,7 +132,7 @@ Agent 0 is described in its own chapter, [Change stories — Agent 0](#change-st
 2. Optional dedup check: if any test cases are already covered by existing scenarios, skip them — by marker first, then by title without the `[type]` tag. (`ai-regenerate` label bypasses this.) A test case whose title matches **another** test case's scenario is not covered: it is reported, not silently skipped (step 6). If another open PR already adds one of the scenarios, or (after the plan) changes a file this story would write, the story **waits** for the next scan instead — see *Two stories on one page object*.
 3. **Stage 1 (Plan):** Calls the LLM with a Pydantic schema (`CodePlan`) — gets file paths, types, branch name, PR title. NO code yet.
 4. **Stage 2 (Generate):** For EACH file in the plan, calls the LLM in text mode to generate the file's content.
-5. **Validators:** 36 static checks run before a branch is created — see **The validator gate** below. Repairable failures go through the repair loop; anything still failing aborts the run.
+5. **Validators:** 37 static checks run before a branch is created — see **The validator gate** below. Repairable failures go through the repair loop; anything still failing aborts the run.
 6. **Coverage (`agents/agent2_coverage.py`, F-13).** Every approved test case must end with a scenario carrying its marker, read from the files, not from what the model says. One that has none - left out by the model, or a scenario it could not be paired with - is listed with its reason (the plan's `Skipped: <KEY> -- <reason>` line, or "no reason given") in the PR body and in one `[agent2:incomplete]` comment on the story, and the story gets `ai-incomplete` beside `ai-coded`. Covered cases that need a person (an outdated scenario, one without its marker) are listed too, without the label. A run that would automate **none** of the story's new test cases opens no PR: the gate refuses it (`[agent2:blocked]`).
 7. Creates a branch (`auto/<JIRA-KEY>-<feature-name>`), commits files, opens a PR.
 8. Tags the parent story with `ai-coded` (the card moves to In Review) and posts its cost.
@@ -299,13 +299,16 @@ its trigger label was never consumed.
 
 **The validator gate:**
 
-Thirty-six checks guard the generated batch: `validate_paths_against_policy`
-on the plan, then the 10 hard gates below in `_validate_generated_files()`, run
+Thirty-seven checks guard the generated batch: `validate_paths_against_policy`
+on the plan, then the 11 hard gates below in `_validate_generated_files()`, run
 in order, cheapest first, so an expensive AST walk only runs if the basic checks
-pass. `_collect_repairable_errors()` makes 31 validator calls - the set the
-repair loop uses, 7 of which are also hard gates - and `_absence_claim_errors()`
+pass. `_collect_repairable_errors()` makes 32 validator calls - the set the
+repair loop uses, 8 of which are also hard gates - and `_absence_claim_errors()`
 runs beside it wherever the approved test cases are known (the repair loop and
-the final gate). Path policy + 10 + 31 − 7 + 1 = 36 distinct checks. The newest
+the final gate). Path policy + 11 + 32 − 8 + 1 = 37 distinct checks.
+`validate_code_safety` (S1, `validators/code_safety.py`) keeps generated code
+to driving the application - see *Generated code is held to the page objects (S1)*
+below. The newest
 three (`validators/absence_claims.py`) keep a removal verified all the way to the
 browser: a test case's "is not shown" step stays in its scenario, a Then step
 worded as absence asserts absence, and an absence predicate on a permanent
@@ -433,6 +436,7 @@ Pydantic's `max_length=10` translates to JSON Schema `maxItems`, which some prov
 **What the workflow does:**
 1. Checks out the pull request **merged with main** (the commit of `refs/pull/<n>/merge` the event was raised for, checked out by SHA - the same commit GitHub takes the workflow from), so the run tests what main will hold after the merge, and a pull request merged while it runs still gets its report; a pull request that conflicts with main gets no run until it is updated (GitHub's rule)
 2. Installs Python deps and Playwright (with browser caching for speed)
+2b. On a pull request, **refuses unsafe test code before the browser run** (S1): the changed page objects and step definitions are checked with Agent 2's code-safety rules (`scripts/check_code_safety.py`); a finding fails the job and the browser run, which has the application's login, does not start
 3. Runs `pytest` — the offline unit suite and the BDD tests — with JUnit XML, HTML and Allure output; a failed test keeps its screenshot, video and Playwright trace. A BDD test whose failure names a temporary HTTP error from the application (5xx or 429) is re-run up to twice, 20 s apart (`pytest-rerunfailures`, `--only-rerun`); a failure in a test whose own request the server refused that way, and never answered afterwards, is restated to name it (`tests/conftest.py`), so it is re-run too; nothing else is re-run, and `scripts/collapse_junit_reruns.py` then keeps only each test's final attempt in `junit.xml` and lists every re-run test (a plugin that writes only the final attempt gets a `reruns` property from `core/rerun_record.py`), so Agent 5's counts and Agent 3's per-scenario evidence see one result per test. Page loads are retried earlier still, inside `BasePage.navigate()`. Then every test still failing is **retried once** (`--last-failed`, at most 10; F-19), and `scripts/finalise_junit.py` writes what was learned into `junit.xml` (`core/junit_marks.py`): a pass on the retry is `flaky` (counts as passed, named, recorded on the pipeline health issue) or `outage_recovered`; a failure whose text says the application was unavailable is `outage` (F-7) - reported apart from test failures everywhere. The run step itself never fails the job; the last step, *Decide the E2E result*, does - on anything still failing after the retry (outages included: such a test was not tested), an interrupted run, a collection error, or no tests. On a pull request that changes only `prompts/`, `docs/` or Markdown the browser run and Agent 5 are skipped (see *What runs, per event*); on a push to `main` the browser runs only when a runtime file changed
 3b. **On a pull request, only the tests its change can affect (X1)** - with `agents.agent4_runner.pr_selection.enabled`, *Choose the tests for this pull request* (`core/test_selection.py`) picks the scenarios of the feature files, step modules and page objects it changes (Agent 0's impact graph: a page file's methods, inherited ones included), plus every scenario tagged `smoke_tag` (`@smoke`). A change to anything else read while tests run (the inventory, config, a conftest, the base page, requirements, a framework module, a workflow), the label `full-suite` on the pull request (add it, then re-run the job), a list of changed files that cannot be read, nothing traced, or any error runs **the whole suite** - over-running costs minutes, under-running ships an untested change behind a green tick. The nightly run and every run by hand run everything. The choice is `reports/selection.json` in the run's artifact; Agent 3 reads it, so a green selected run refutes only a prediction whose own scenario ran and passed
 4. On a pull request and on the nightly run, before the browser run: waits while a run of another PR (or the nightly run) that started earlier has not finished (first come, first served, `scripts/e2e_turn.py`). Every PR tests the same live application with the same accounts, and saved state such as a cart would otherwise leak between them. Capped at 15 minutes, then it runs anyway; if the runs cannot be read it does not wait.
@@ -469,6 +473,54 @@ LLMs are bad at conditional rendering (`if PR_URL exists, include link`). Even w
 2. `JIRA_STORY_KEY` env var
 3. Parsed from PR branch name (any `PROJ-123` pattern, regardless of prefix)
 4. Skip cleanly (exit 0) if no key found — non-AI PRs don't get reports
+
+### Generated code is held to the page objects (S1)
+
+A story's text is untrusted input, and the code Agent 2 writes from it runs on
+the pull request **before a person reviews it**, with the application's login
+in the environment (`APP_PASSWORD`, `APP_USER_<ROLE>`) and a token on the
+runner. The import check allowed every standard-library module, so code that
+read the environment or opened a connection passed every gate. Now:
+
+- **Agent 2's gate** (`validators/code_safety.py`, a static `ast` check - nothing
+  is run) refuses, in every generated `.py` file: imports of modules that start
+  processes, open connections, load or run code, or read files by themselves
+  (`subprocess`, `socket`, `requests`, `urllib.request`, `importlib`, `pickle`,
+  `io`, `sys` ...); `os.environ` / `os.getenv` / `os.system` and the other
+  environment, process and file calls (`os.path` stays allowed); `eval`,
+  `exec`, `compile`, `__import__`, `open`, `globals`, `vars`; `getattr` with a
+  computed name or a denied one; the dunders and frames that lead back to
+  builtins (`__subclasses__`, `__globals__`, `f_globals` ...); reading or
+  writing files (`read_text`, `write_text`, a path's `.open()`, `save_as`);
+  and the browser past the page objects - JavaScript (`evaluate`,
+  `add_init_script`), requests (`route`, `.request`), the session (`cookies`,
+  `storage_state`), `goto`, `new_context`. The detours count too: `os.path.os`,
+  `logging.sys`, `from os import *`. The repair loop is told first
+  (`Unsafe code error in '<file>': line N ...`, with its own hint); what is
+  still there is refused (`Code safety validation failed`) and the story is
+  blocked with the lines named.
+- **The plan** may put Python only in `pages/` and `tests/step_defs/`, and
+  never a `conftest.py` or `__init__.py` (they run for every test).
+- **Agent 4** runs the same check on the pull request's changed test code -
+  step *Refuse unsafe test code before the browser run*, before any step that
+  has the login - so code that reached the branch another way (a review fix,
+  a splice, a hand edit) is held to it too. A finding fails the job with each
+  line annotated, and the browser run and its retry do not start. The
+  framework's own files there (each `conftest.py`, `app_under_test.reserved_paths`)
+  are not checked: they read the environment on purpose and change only in
+  reviewed framework pull requests.
+- **BasePage** guards the two doors test code must keep: `navigate()` opens only
+  the application's host (from `BASE_URL` or `app_under_test.base_url`, with
+  its subdomains and `www.`), a host in `browser.navigation_hosts`, or the host
+  the browser is already on - so a URL cannot carry a value elsewhere; and
+  `upload_file()` attaches only a file inside the project, not under a hidden
+  path (`.git` holds the checkout's token).
+
+Settings (`agents.agent2_coder.code_safety`): `enabled` (default true),
+`allow` - names of denied modules or calls a project's generated code may use
+after review (`write_text`, say; a reviewed decision in the config, never the
+model's), `code_dirs` (default `pages/`, `tests/step_defs/`). To check by hand:
+`python -m scripts.check_code_safety --all`, or with paths.
 
 ---
 
@@ -3335,7 +3387,7 @@ sequenceDiagram
     end
     Note over A2,L: change story: splice revised scenarios<br/>into the owners' files, one call each
 
-    Note over A2,V: Final gate (10 hard gates)
+    Note over A2,V: Final gate (11 hard gates)
     A2->>V: validate_filename_consistency
     V-->>A2: errors / corrections
     A2->>V: validate_step_definitions_complete
@@ -3361,7 +3413,7 @@ sequenceDiagram
 | `validate_paths_against_policy` | Aborts if the plan targets a reserved file, or would recreate an extendable one, so the model cannot overwrite your gold-standard reference |
 | **Stage 2 — Per-file** | One text-mode call per file. Each prompt carries the filtered inventory, the reference trio, the AST-extracted BasePage helpers, the page objects already written (this run, the story's branch, or `main`) and, for step definitions, the committed body of every Then step the feature reuses |
 | `extract from markdown fences` | Strips the ```` ```python ```` wrapper the model adds even when told not to |
-| **Hard validators** | The 32 checks above - the 10 hard gates in order, plus `_collect_repairable_errors()` and `_absence_claim_errors()`. Repairable failures go to the repair loop; the rest abort |
+| **Hard validators** | The 37 checks above - the 11 hard gates in order, plus `_collect_repairable_errors()` and `_absence_claim_errors()`. Repairable failures go to the repair loop; the rest abort |
 | `create branch / commit / open PR` | `auto/<KEY>-<feature>`, then `ai-coded` on the parent story |
 
 Why two stages: asking for structure AND large code bodies in one call

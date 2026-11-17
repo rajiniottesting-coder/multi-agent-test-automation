@@ -1452,10 +1452,10 @@ pushes to main conflicted with branch protection (GH013).
 
 ## 14. Validators — the safety net
 
-36 distinct checks: `validate_paths_against_policy` on the plan, 10 hard gates in
+37 distinct checks: `validate_paths_against_policy` on the plan, 11 hard gates in
 `_validate_generated_files()` (run in order, cheapest first, so an
-expensive AST walk only runs if the basic checks pass), 31 validator calls
-in `_collect_repairable_errors()` — the set the repair loop uses — of which 7
+expensive AST walk only runs if the basic checks pass), 32 validator calls
+in `_collect_repairable_errors()` — the set the repair loop uses — of which 8
 are also hard gates, and `_absence_claim_errors()`, which needs the approved
 test cases and so runs beside the collector in the repair loop and the final gate. `validate_page_object_methods()` wraps further page-object
 checks.
@@ -1498,6 +1498,7 @@ checks.
 | 33 | `validate_scenarios_open_a_page_first` | `validators/opening_step.py` | repair |
 | 34 | `validate_click_steps_click` | `validators/action_steps.py` | repair |
 | 35 | `validate_steps_carry_no_table_or_doc_string` | `validators/step_arguments.py` | repair |
+| 36 | `validate_code_safety` | `validators/code_safety.py` | gate + repair |
 
 Repairable failures go to the repair loop (`_attempt_step_coverage_repair`),
 routed to the file they name (`_route_to_generated_file()`); only the broken files are regenerated, with the
@@ -1505,6 +1506,33 @@ validator's words as feedback (`_ERROR_TYPE_RULES` adds targeted guidance per
 error type). What survives four attempts, or a non-repairable failure, stops
 the run before a branch exists. What each check catches is described in
 GUIDE.md → The validator gate.
+
+**S1 - code safety (`validators/code_safety.py`).** `unsafe_calls(source, allow)`
+walks the `ast` (`_Finder`): `DENY_MODULES` by dotted prefix on `Import` /
+`ImportFrom` (`urllib.parse` allowed, `urllib.request` not); `DENY_OS` on a name
+bound to `os` (`import os as o`, `import os.path`), `DENY_OS_ANYWHERE`
+(`environ`, `getenv`, `popen`, `exec*` ...) on any base, `DENY_MODULE_ATTRS` (a
+module reached as an attribute, `os.path.os`); `DENY_BUILTINS` as calls;
+`getattr`/`setattr`/`delattr`/`hasattr` with a non-literal name or a denied
+literal (`_denied_attr_name`); `DENY_DUNDERS`; `DENY_ATTRS` (Playwright's
+JavaScript, request, session and navigation methods, file reads and writes,
+frames, `attrgetter`); `.open` on a path - a name bound from `pathlib`, or a
+name, attribute (`self.x`), `with` target, loop variable or parameter a path
+was assigned or annotated to (`_pathish`, `_bind`). `allow` (config) exempts
+by name. `validate_code_safety` formats `Unsafe code error in '<path>': line N
+<what>` (`_ERROR_TYPE_RULES` label `unsafe_code`); `_validate_generated_files`
+raises `GateFailure` before the import check; `validate_paths_against_policy`
+raises on `code_path_problem` (Python outside `code_dirs`, any `conftest.py` /
+`__init__.py`). `scripts/check_code_safety.py`: `to_check` (Python under
+`code_dirs`, minus `reserved_paths` and `conftest.py`), `check`, exit 1 with
+`::error file=,line=::`. Agent 4's step `id: safety` lists the PR's files
+(`gh api .../pulls/N/files`, not removed) into `--stdin`, else `--all`; the E2E
+and retry steps carry `steps.safety.outcome != 'failure'`. Run-time:
+`BasePage._refuse_other_hosts` (in `navigate`, hosts from `_navigation_hosts`:
+`BASE_URL` or `app_under_test.base_url` plus `browser.navigation_hosts`;
+`_same_site`; the current page's host allowed; no base URL = no restriction)
+and `BasePage._uploadable` (resolved path inside `PROJECT_ROOT`, no part starting
+with `.`). Unit tests set `_NAV_HOSTS_CACHE = ()` unless marked `gates_on`.
 
 ---
 
