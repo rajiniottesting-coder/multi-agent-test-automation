@@ -2990,9 +2990,14 @@ as before.
    none fits;
 3. reads that page with the nightly check itself
    (`check_inventory_staleness --inventory <inventory with the page> --page
-   <page> --compare`) and keeps its elements by the nightly update's rules:
-   no element without a durable selector, the refusal rules, at most
-   `explore_max_elements`;
+   <page> --compare --headings`) and keeps its elements by the nightly
+   update's rules: no element without a durable selector, the refusal rules,
+   at most `explore_max_elements`. Two additions for a page read for the first
+   time: its visible h1/h2 headings whose exact text names one element
+   (`<text>_heading` - the generator never captures a heading), and the items
+   of a list another page's **family** key covers (same template: they are this
+   page's content, listed under *Same template as*); an element a single key
+   or an `always` page covers is still shared chrome, not added;
 4. opens **one pull request** on `live_browser.explore_branch_prefix` adding the
    page (its `components` from the story) and comments on the story
    (`[inventory-explore]`). A story or page with such a pull request open is

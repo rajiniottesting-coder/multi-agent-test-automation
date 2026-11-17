@@ -1573,6 +1573,37 @@ def uncovered_entry(url: str, title: str, descriptors: list[dict],
             "shared": shared}
 
 
+def heading_selector(text: str) -> str | None:
+    """The exact-text selector of a heading, or None when it cannot be one
+    (empty, long, or holding a double quote)."""
+    text = " ".join((text or "").split())
+    if not text or len(text) > 80 or '"' in text:
+        return None
+    return f'text="{text}"'
+
+
+def heading_elements(texts, counts: dict, covered: set, taken: set) -> dict:
+    """{name: selector} for the page's headings a test can name it by: each
+    visible h1/h2 whose exact text matches exactly one element on the page and
+    that no selector covers yet, named `<text>_heading`. The generator never
+    captures a heading (it is not a control), so a page added from a live
+    reading had nothing that proves it loaded - the exploration of a missing
+    page (core/page_explore.py) asks for them; the nightly check does not."""
+    out: dict = {}
+    for text in texts or []:
+        sel = heading_selector(text)
+        if not sel or sel in covered or counts.get(sel) != 1 or sel in out.values():
+            continue
+        base = _slug_to_name(text)[:40].strip("_") or "page"
+        name = base if base.endswith("heading") else f"{base}_heading"
+        if not name[0].isalpha():
+            name = f"h_{name}"
+        if name in taken or name in out:
+            continue
+        out[name] = sel
+    return out
+
+
 def uncovered_elements(url: str, title: str, descriptors: list[dict],
                        base_url: str = "", test_attrs: tuple = TEST_ID_ATTRS) -> dict:
     """{name: selector} for capturable elements no inventory selector covers

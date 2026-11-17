@@ -86,6 +86,7 @@ from inventory_tools.browser import (
     browser_page, do_login, resolve_selectors, collect_uncovered,
     DEFAULT_USERNAME_SELECTOR, DEFAULT_PASSWORD_SELECTOR, DEFAULT_SUBMIT_SELECTOR, resolve_page_url,
     count_on_page, ambiguity_advice, exact_fix, find_login_path, signed_out_pages, INVALID,
+    page_headings,
 )
 
 # How long a page may take to render before it is reported as not rendered.
@@ -152,6 +153,11 @@ def main() -> int:
                          "rendered (a new element alone does not). The nightly "
                          "Inventory Health check.")
     ap.add_argument("--page", help="Check only this page key from the inventory.")
+    ap.add_argument("--headings", action="store_true",
+                    help="With --compare: also report each visible h1/h2 whose exact "
+                         "text names one element, as a `<text>_heading` element (the "
+                         "generator never captures headings). Used when a missing page "
+                         "is explored; the nightly check does not ask for it.")
     ap.add_argument("--inventory",
                     help="Check this inventory file instead of the one config.yaml names "
                          "(a draft, or the committed one with a page added - the live "
@@ -311,6 +317,13 @@ def main() -> int:
                 url, title, descriptors,
                 base_url=base_url, test_attrs=test_attrs)
             new_by_page[name] = found["elements"]
+            if args.headings:
+                texts = page_headings(page)
+                wanted = [sel for sel in map(introspect.heading_selector, texts) if sel]
+                heading_counts, _ids = count_on_page(page, wanted, test_attrs)
+                new_by_page[name].update(introspect.heading_elements(
+                    texts, heading_counts,
+                    set(selectors.values()) | set(always_selectors), set(found["elements"])))
             if (found["multi_match"] or found["conditional"] or found["unstable"]
                     or found["shared"]):
                 new_declared[name] = {k: found[k] for k in

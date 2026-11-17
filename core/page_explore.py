@@ -278,6 +278,42 @@ def with_page(inventory: dict, name: str, path: str, components=()) -> tuple:
     return out, ""
 
 
+def template_content(drift: dict, name: str, inventory: dict) -> tuple:
+    """(drift with the page's template content among its new elements, rows).
+
+    The nightly check lists an element another page's key already covers as
+    shared, never added (a footer on every page). For a page read for the first
+    time that is wrong when the covering key is a FAMILY (`multi_match`) of a
+    page not declared `always`: the new page is built from the same template
+    as that page - the same list markup - and the element is its own content.
+    A page object reaches only its own page's keys, so without them the page
+    was proposed with nothing a test needs (17 Nov 2026: every item of a
+    list page read as shared with another page's list). Such elements are
+    added under the generator's own names and selectors; a single key that
+    covers them (a header, a form field) still marks shared chrome."""
+    import copy as _copy
+    out = _copy.deepcopy(drift or {})
+    pages = (inventory or {}).get("pages") or {}
+    declared = ((out.get("new_element_declarations") or {}).get(name) or {})
+    shared = dict(declared.get("shared") or {})
+    new = (out.setdefault("new_elements", {})).setdefault(name, {})
+    rows = []
+    for element, row in sorted(shared.items()):
+        owner_page, _, owner_key = str((row or {}).get("covered_by") or "").partition(".")
+        owner = pages.get(owner_page) or {}
+        if owner.get("always") or owner_key not in set(owner.get("multi_match") or []):
+            continue
+        if element in new or not row.get("selector"):
+            continue
+        new[element] = row["selector"]
+        shared.pop(element)
+        rows.append({"element": element, "selector": row["selector"],
+                     "covered_by": row["covered_by"]})
+    if rows:
+        declared["shared"] = shared
+    return out, rows
+
+
 def proposed(inventory: dict, updated: dict, name: str) -> dict:
     """The committed inventory with the explored page added - and nothing else
     changed, whatever else the read found."""
@@ -297,7 +333,7 @@ def parse_body(body: str) -> tuple | None:
 
 
 def render_body(story_id: str, name: str, path: str, how: str, upd, *,
-                inventory_path: str, not_visited=()) -> str:
+                inventory_path: str, not_visited=(), template=()) -> str:
     """The pull request's description: what was explored, why that page, and
     what was left out."""
     from core.inventory_update import _table
@@ -323,6 +359,12 @@ def render_body(story_id: str, name: str, path: str, how: str, upd, *,
         "",
     ]
     lines += _table("Elements added", upd.added, [el, sel])
+    if template:
+        owners = sorted({r["covered_by"] for r in template})
+        lines += [f"**Same template as** {', '.join(f'`{o}`' for o in owners)}: "
+                  f"{len(template)} element(s) above are this page's items of the list that "
+                  "key covers on its own page. Declare one family key for them if a test "
+                  "reads the list as a whole (the family's selector, in `multi_match`).", ""]
     lines += _table("Not added - no durable selector", upd.fragile, [el, sel],
                     "Only a fragile handle (a css fallback, one member pinned by `>> nth=`, "
                     "hidden when read). Add a test-id in the application or write the entry "

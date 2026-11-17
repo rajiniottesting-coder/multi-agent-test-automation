@@ -82,7 +82,7 @@ def read_page(stub: dict, name: str) -> tuple:
         inv.write_text(json.dumps(stub, indent=2, ensure_ascii=False), encoding="utf-8")
         run = subprocess.run(
             [sys.executable, "-m", "scripts.check_inventory_staleness", "--inventory", str(inv),
-             "--page", name, "--compare", "--json", str(out)],
+             "--page", name, "--compare", "--headings", "--json", str(out)],
             cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=600)
         print(run.stdout[-4000:])
         if run.returncode == 2:
@@ -198,6 +198,7 @@ def explore(req: dict, *, tracker, host, inventory: dict, original: str, ctx, s:
         _comment(tracker, story_id, pe.not_found_comment(f"`{path}` was chosen but {problem}"),
                  dry_run)
         return {"story": story_id, "status": "not_read", "why": problem}
+    drift, template = pe.template_content(drift, name, stub)
     from core.impact_settings import impact_settings
     cfg = iu.settings(impact_settings().get("inventory_update"))
     upd = iu.build_update(drift, stub, set(),
@@ -211,7 +212,7 @@ def explore(req: dict, *, tracker, host, inventory: dict, original: str, ctx, s:
         return {"story": story_id, "status": "empty"}
     new = pe.proposed(inventory, upd.inventory, name)
     body = pe.render_body(story_id, name, path, how, upd, inventory_path=ctx.inventory_file,
-                          not_visited=not_visited)
+                          not_visited=not_visited, template=template)
     if dry_run:
         print(f"\n--dry-run: page {name} ({path}), {len(upd.added)} element(s). The pull "
               f"request body would be:\n\n{body}\n")
