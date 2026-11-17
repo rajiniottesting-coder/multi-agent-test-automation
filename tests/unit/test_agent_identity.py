@@ -48,7 +48,9 @@ def test_the_agents_jobs_are_all_found():
         ("agent2_coder.yml", "generate"), ("agent2_review_fix.yml", "fix"),
         ("sweeper.yml", "sweep"), ("pipeline_health.yml", "check"),
         ("story_done_on_merge.yml", "mark-done"), ("reports.yml", "publish"),
-        ("deployment_signal.yml", "signal")}
+        ("deployment_signal.yml", "signal"),
+        # PW2: the triage's heal step opens the selector-heal pull request.
+        ("agent4_runner.yml", "triage")}
 
 
 @pytest.mark.parametrize("wf", WORKFLOWS, ids=lambda p: p.name)

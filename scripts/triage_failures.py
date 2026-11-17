@@ -17,6 +17,8 @@ ran the E2E, a manual run on main), on the junit.xml Agent 4 finalised:
   flakes    recorded on the pipeline health issue (core/flaky_tests.py)
   no report one health alert: the run on main produced nothing to read
   refused   one health alert when the tracker refused a defect write
+  healed    no defect for a failure whose changed selector is proposed in a
+            pull request (PW2: <reports-dir>/heal.json, scripts/heal_selectors.py)
 
 Exit code 0 when everything found was recorded - the findings live on the
 tracker, not in this job's colour. 1 when the tracker cannot be used or
@@ -55,7 +57,8 @@ def _probe_finding(junit: Path) -> str:
         probe.get("summary") or probe.get("problem") or "the application not up")[:800]
 
 
-def run(tracker, junit: Path, run_url: str, features_dir: Path, dry_run: bool = False) -> dict:
+def run(tracker, junit: Path, run_url: str, features_dir: Path, dry_run: bool = False,
+        healed: dict | None = None) -> dict:
     from core import defects, flaky_tests, junit_marks as jm, pipeline_health as ph
     alert = (lambda *a, **k: None) if dry_run else ph.raise_alert
     resolve = (lambda *a, **k: None) if dry_run else ph.resolve_alert
@@ -68,7 +71,8 @@ def run(tracker, junit: Path, run_url: str, features_dir: Path, dry_run: bool = 
         return {"report": False}
     resolve(tracker, NO_REPORT, f"A run on main produced a report again: {run_url}")
 
-    result = defects.triage(tracker, root, run_url, features_dir, dry_run=dry_run)
+    result = defects.triage(tracker, root, run_url, features_dir, dry_run=dry_run,
+                            healed=healed)
     if result["outages"]:
         n = len(result["outages"])
         alert(tracker, OUTAGE, f"{n} test(s) could not run on main: the application was "
@@ -150,8 +154,11 @@ def main(argv=None) -> int:
     except Exception as e:                                         # noqa: BLE001
         print(f"[FAIL] the tracker could not be used: {type(e).__name__}: {e}")
         return 1
+    from core.selector_heal import HEAL_FILE, read_report
+    healed = read_report(Path(args.reports_dir) / HEAL_FILE)
     out = run(tracker, Path(args.reports_dir) / "junit.xml", args.run_url,
-              Path(args.features_dir) if args.features_dir else FEATURES_DIR, args.dry_run)
+              Path(args.features_dir) if args.features_dir else FEATURES_DIR, args.dry_run,
+              healed=healed)
     for name, value in out.items():
         print(f"{name}: {value}")
     if out.get("errors"):

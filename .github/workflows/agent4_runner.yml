@@ -1095,7 +1095,9 @@ jobs:
     needs: test
     if: always() && needs.test.result != 'cancelled' && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && needs.test.outputs.push_e2e != 'false'))
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # PW2 reads up to live_browser.heal_max_pages pages live (a browser
+    # install and a sign-in each) before the triage.
+    timeout-minutes: 25
     # One triage at a time: two would both raise the same new defect.
     concurrency:
       group: defect-triage
@@ -1126,6 +1128,55 @@ jobs:
         with:
           name: pytest-report-${{ github.run_id }}
           path: reports/
+
+      # ── PW2: a failure a changed selector explains, healed ───────────
+      # A test failing again after the retry, read as an element that never
+      # appeared: its pages are read live with the nightly check, a key whose
+      # element is still there with another selector is updated in ONE pull
+      # request, and the triage below raises no defect for that test
+      # (reports/heal.json). scripts/heal_selectors.py, core/selector_heal.py.
+      - name: Find failures a changed selector may explain
+        id: heal_plan
+        continue-on-error: true
+        run: python -m scripts.heal_selectors --reports-dir reports --plan
+
+      - name: Agent identity (the GitHub App's token, else GH_PAT)
+        id: identity
+        if: steps.heal_plan.outputs.needed == 'true'
+        uses: ./.github/actions/agent-identity
+        with:
+          client-id: ${{ vars.GH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.GH_PAT }}
+
+      - name: Install Playwright browsers
+        if: steps.heal_plan.outputs.needed == 'true'
+        run: bash scripts/install_browser.sh chromium
+
+      - name: Heal changed selectors
+        # Never fails the job: an unhealed failure is raised by the triage.
+        if: steps.heal_plan.outputs.needed == 'true'
+        continue-on-error: true
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
+          # One light call per key whose live element has another name.
+          LLM_MODEL: ${{ vars.LLM_MODEL_LIGHT || vars.LLM_MODEL || 'claude-opus-4-6' }}
+          LLM_PRICE_INPUT_PER_1M: ${{ vars.LLM_PRICE_INPUT_PER_1M }}
+          LLM_PRICE_OUTPUT_PER_1M: ${{ vars.LLM_PRICE_OUTPUT_PER_1M }}
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          GITHUB_TOKEN: ${{ steps.identity.outputs.token }}
+          GITHUB_REPO: ${{ vars.GH_REPO }}
+          # Signed in as the tests and the nightly check are.
+          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+          APP_USER_REGISTERED: ${{ secrets.APP_USER_REGISTERED }}
+          CI: 'true'
+        run: |
+          python -m scripts.heal_selectors --reports-dir reports \
+            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
       - name: Triage the run
         env:
