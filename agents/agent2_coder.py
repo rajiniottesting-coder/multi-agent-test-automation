@@ -67,6 +67,7 @@ from integrations.tracker import get_tracker
 from core.board_status import move_card_for_label
 from integrations.repo_host import get_repo_host
 from validators.import_validator import validate_imports_resolvable
+from validators.code_safety import validate_code_safety
 from validators.page_object_contract import validate_extended_page_objects_keep_methods
 from validators.opening_step import validate_scenarios_open_a_page_first
 from validators.action_steps import leave_out_stand_ins, validate_click_steps_click
@@ -738,6 +739,18 @@ def validate_paths_against_policy(plan: CodePlan, ctx: AppContext,
             f"The plan would generate files other stories own: {owned_elsewhere}. "
             "They are edited only by splicing the approved scenarios.")
 
+    # S1: generated Python lives only in page objects and step definitions -
+    # never a conftest.py, an __init__.py or a framework module, which run for
+    # every test (validators/code_safety.py).
+    from validators.code_safety import code_path_problem, settings as code_safety_settings
+    _cs = code_safety_settings()
+    if _cs["enabled"]:
+        outside = [why for why in (code_path_problem(fp.file_path, _cs["code_dirs"])
+                                   for fp in plan.files_to_create) if why]
+        if outside:
+            raise ValueError("The plan writes Python where generated code may not live: "
+                             + "; ".join(outside))
+
     reserved_collisions: list[str] = []
     extendable_misclassified: list[str] = []  # marked is_new_file=True for an existing extendable file
 
@@ -1372,6 +1385,16 @@ _DEGRADED_OUTPUT_CHAR_THRESHOLD = 500
 # Ordered (label, substring-that-identifies-the-class, targeted repair hint).
 # First matching substring wins, so more specific strings come first.
 _ERROR_TYPE_RULES: list[tuple[str, str, str]] = [
+    (
+        "unsafe_code",
+        "unsafe code error",
+        ("- UNSAFE CODE (S1): a file reads the environment, starts a process, opens a "
+         "connection, touches files, runs or imports code dynamically, or reaches the "
+         "browser past the page objects (JavaScript, requests, cookies, goto). Remove it: "
+         "a step reaches the application only through page-object methods built on "
+         "BasePage helpers, and credentials only through the fixtures. Do not rename or "
+         "disguise the call - every form of it is refused."),
+    ),
     (
         "persistent_snapshot",
         "persistent state snapshot error",
@@ -2643,6 +2666,21 @@ def _validate_generated_files(
             errors=duplicate_step_errors,
         )
 
+    # S1: generated code runs before a person reviews it, with the
+    # application's login available - nothing in it may reach past the page
+    # objects (validators/code_safety.py).
+    unsafe = validate_code_safety(generated_files)
+    if unsafe:
+        logger.error(f"Code safety check FAILED with {len(unsafe)} error(s) AFTER retry:")
+        for err in unsafe:
+            logger.error(f"  - {err}")
+        raise GateFailure(
+            f"Code safety validation failed for {story_id}: {len(unsafe)} use(s) of the "
+            "environment, a process, the network, the file system or the browser past the "
+            "page objects remain after the repair - generated test code may not run them.",
+            errors=unsafe,
+        )
+
     import_errors = validate_imports_resolvable(generated_files, PROJECT_ROOT)
     if import_errors:
         logger.error(
@@ -3005,6 +3043,7 @@ def _collect_repairable_errors(generated_files: list[GeneratedFile]) -> list[str
     # output.
     errors.extend(validate_step_coverage(generated_files))
     errors.extend(validate_fixtures_exist(generated_files, PROJECT_ROOT))
+    errors.extend(validate_code_safety(generated_files))
     errors.extend(validate_imports_resolvable(generated_files, PROJECT_ROOT))
     errors.extend(validate_method_resolution(generated_files, PROJECT_ROOT))
     # A committed page object keeps every method other stories call: a later

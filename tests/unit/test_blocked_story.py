@@ -232,7 +232,8 @@ _GATES = ["validate_filename_consistency", "validate_feature_file_structure",
           "validate_extended_page_objects_keep_methods", "validate_step_definitions_complete",
           "validate_no_duplicate_step_definitions", "validate_imports_resolvable",
           "validate_method_resolution", "validate_page_object_selectors",
-          "validate_no_unused_step_definitions", "validate_fixtures_exist"]
+          "validate_no_unused_step_definitions", "validate_fixtures_exist",
+          "validate_code_safety"]
 
 
 @pytest.mark.parametrize("gate", _GATES)

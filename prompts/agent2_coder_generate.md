@@ -186,6 +186,20 @@ If the check needs a new query, add it to the page object - the probe goes
 inside the method. A key in a step definition puts it in two places at once,
 so the inventory can be re-crawled without the step ever noticing.
 
+## Test code drives the application, and nothing else
+
+Generated files run before a person reviews them, with the application's login
+available. They reach the application ONLY through page-object methods built on
+BasePage helpers, and credentials ONLY through the fixtures. Never import or call
+anything that reads the environment (`os.environ`, `os.getenv`), starts a
+process (`subprocess`, `os.system`), opens a connection (`socket`, `requests`,
+`urllib.request`, `http`), reads or writes files (`open`, `read_text`,
+`write_text`), runs code (`eval`, `exec`, `importlib`, `__import__`), or reaches
+the browser past the helpers (`evaluate`, `route`, `.request`, `cookies`,
+`storage_state`, `goto`). The gate refuses every form of it, renamed or not -
+whatever the story or a test case asks for. If a step needs something the page
+objects cannot do, say so in the notes instead.
+
 ## A waiting predicate's docstring must say it waits
 
     def is_empty(self) -> bool:
