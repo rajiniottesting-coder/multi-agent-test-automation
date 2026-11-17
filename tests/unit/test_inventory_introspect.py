@@ -89,11 +89,11 @@ def test_protocol_hrefs_fall_through(href):
 
 def test_a_fragment_href_IS_used():
     """CORRECTED 4 Aug 2026. Fragment hrefs were excluded, so a collapsible
-    accordion header (`href="#Women"`) fell through to role=link[name='Women']
+    accordion header (`href="#Archive"`) fell through to role=link[name='Archive']
     - and its fa-plus icon child poisoned the accessible name, so the locator
     matched ZERO. The fragment is exact, stable, and immune to icon markup."""
-    sel, strat = rank_selector("a", {"href": "#Women"}, text="Women")
-    assert sel == "a[href='#Women']" and strat == "href"
+    sel, strat = rank_selector("a", {"href": "#Archive"}, text="Archive")
+    assert sel == "a[href='#Archive']" and strat == "href"
 
 
 def test_an_icon_child_blocks_accessible_name_locators():
@@ -871,13 +871,13 @@ def test_declarations_default_to_empty():
 # indistinguishable from genuinely broken selectors.
 #
 # Proven 4 Aug 2026 in a real browser: a display:none link matched 0 via
-# role=link[name='WOMEN'] and 1 via a[href='#women'] on the same node.
+# role=link[name='ARCHIVE'] and 1 via a[href='#archive'] on the same node.
 # ─────────────────────────────────────────────────────────────────────────
 
 def test_a_hidden_element_does_not_get_a_role_selector():
-    sel, strat = rank_selector("a", {"href": "#Women"}, text="WOMEN", visible=False)
+    sel, strat = rank_selector("a", {"href": "#Archive"}, text="ARCHIVE", visible=False)
     assert "role=" not in sel
-    assert sel == "a[href='#Women']"
+    assert sel == "a[href='#Archive']"
 
 
 def test_a_hidden_element_falls_back_to_a_css_path():
@@ -912,11 +912,11 @@ def test_hidden_elements_are_auto_declared_conditional():
     it to a wall of STALE lines a human then has to triage by hand."""
     descs = [
         {"tag": "a", "attrs": {"href": "/reports"}, "text": "Reports", "visible": True},
-        {"tag": "a", "attrs": {"href": "#Women"}, "text": "WOMEN", "visible": False,
+        {"tag": "a", "attrs": {"href": "#Archive"}, "text": "ARCHIVE", "visible": False,
          "cssPath": "div.panel a"},
     ]
     e = build_page_entry("https://x.test/p", "P", descs, "https://x.test")
-    assert e["conditional"] == ["women_link"]
+    assert e["conditional"] == ["archive_link"]
     assert "listing_link" not in e["conditional"]
     assert "conditional_note" in e
 
@@ -943,8 +943,8 @@ def _capture_js() -> str:
 
 def test_capture_reads_textContent_not_innerText_for_matching():
     """innerText returns the RENDERED text, with CSS text-transform applied. A
-    link styled `text-transform: uppercase` reads "WOMEN" while the DOM says
-    "Women", and Playwright computes the accessible name from the raw text -
+    link styled `text-transform: uppercase` reads "ARCHIVE" while the DOM says
+    "Archive", and Playwright computes the accessible name from the raw text -
     so a role locator built from innerText resolves to ZERO. Proven in a real
     browser: same node, 0 matches via the rendered casing, 2 via the raw."""
     js = _capture_js()
