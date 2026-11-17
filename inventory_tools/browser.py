@@ -698,15 +698,23 @@ def count_on_page(page, selectors: list[str], test_attrs: tuple = TEST_ID_ATTRS
     return counts, data_tests
 
 
-_HEADINGS_JS = ("els => els.filter(e => e.offsetParent !== null)"
-                ".map(e => (e.textContent || '').replace(/\\s+/g, ' ').trim())")
+def _headings_js() -> str:
+    return ("els => els.filter(e => e.offsetParent !== null"
+            f" && !e.hasAttribute('{COVER_ATTR}') && !e.hasAttribute('{SHARED_ATTR}')"
+            " && !e.closest('header, footer, nav, [role=banner], [role=contentinfo], "
+            "[role=navigation]'))"
+            ".map(e => (e.textContent || '').replace(/\\s+/g, ' ').trim())")
 
 
 def page_headings(page) -> list[str]:
     """The visible h1 and h2 texts of the page as it is now (their text
-    content, not the letter case CSS shows), in page order; [] on any error."""
+    content, not the letter case CSS shows), in page order; [] on any error.
+    Left out: a heading an inventory selector already covers (collect_uncovered
+    marks it), and one inside the page's chrome - a header, footer or menu -
+    which is on every page, not this page's identity (17 Nov 2026: a footer's
+    "Subscription" heading was proposed for a new page)."""
     try:
-        return [t for t in page.eval_on_selector_all("h1, h2", _HEADINGS_JS) if t]
+        return [t for t in page.eval_on_selector_all("h1, h2", _headings_js()) if t]
     except Exception:                                              # noqa: BLE001
         return []
 

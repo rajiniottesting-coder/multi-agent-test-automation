@@ -147,8 +147,9 @@ def explore(req: dict, *, tracker, host, inventory: dict, original: str, ctx, s:
     """One request. Returns {"story", "status", ...}; never raises for a
     finding - only for a tracker or host failure."""
     story_id, wanted = req["story"], list(req.get("pages") or [])
+    known = dict(req.get("known_pages") or {})
     for pr in open_prs:
-        if pr["story"] == story_id or pr["page"] in wanted:
+        if pr["story"] == story_id or pr["page"] in wanted + list(known):
             print(f"[{story_id}] an exploration pull request is open already: #{pr['number']}")
             return {"story": story_id, "status": "open", "pr": pr["number"]}
     for pr in closed_prs or ():
@@ -156,6 +157,11 @@ def explore(req: dict, *, tracker, host, inventory: dict, original: str, ctx, s:
             # A person said no to the page proposed for this story: never again.
             print(f"[{story_id}] its proposal #{pr['number']} was closed without merging")
             return {"story": story_id, "status": "closed_before", "pr": pr["number"]}
+    if not wanted and not req.get("reasons"):
+        if known:
+            return explore_elements(req, tracker=tracker, host=host, inventory=inventory,
+                                    original=original, ctx=ctx, s=s, dry_run=dry_run)
+        return {"story": story_id, "status": "nothing_asked"}
     candidates, not_visited = pe.candidate_links(
         links, inventory, ctx.base_url.rstrip("/"), int(s["explore_max_links"]),
         s.get("explore_never_visit") or ())
@@ -193,7 +199,11 @@ def explore(req: dict, *, tracker, host, inventory: dict, original: str, ctx, s:
         how = f"{why} (chosen among {len(candidates)} link(s) by one model call)"
     story = tracker.get_story(story_id) or {}
     name = pe.page_name(wanted, path, inventory)
-    stub, refused = pe.with_page(inventory, name, path, story.get("components") or [])
+    # Named as the inventory's other pages are: the story's Components, else
+    # the words of the link that opened the page (pe.components_for).
+    texts = next((c["texts"] for c in candidates if c["path"] == path), [])
+    components = pe.components_for(story.get("components"), texts, name)
+    stub, refused = pe.with_page(inventory, name, path, components)
     if refused:
         _comment(tracker, story_id, pe.not_found_comment(f"`{path}` cannot be added: {refused}"),
                  dry_run)
@@ -204,8 +214,7 @@ def explore(req: dict, *, tracker, host, inventory: dict, original: str, ctx, s:
                  dry_run)
         return {"story": story_id, "status": "not_read", "why": problem}
     drift, template = pe.template_content(drift, name, stub)
-    from core.impact_settings import impact_settings
-    cfg = iu.settings(impact_settings().get("inventory_update"))
+    cfg = _cfg()
     upd = iu.build_update(drift, stub, set(),
                           max_additions_per_page=int(s["explore_max_elements"]),
                           hold_ratio=float(cfg["hold_ratio"]),
@@ -238,6 +247,78 @@ def explore(req: dict, *, tracker, host, inventory: dict, original: str, ctx, s:
     return {"story": story_id, "status": "proposed", "page": name, "path": path, "pr": url}
 
 
+def _cfg() -> dict:
+    from core.impact_settings import impact_settings
+    return iu.settings(impact_settings().get("inventory_update"))
+
+
+def _claimed(host, inventory_path: str, inventory: dict, s: dict) -> dict:
+    """{(page, selector): "page.key (pull request)"} an open nightly update or
+    heal pull request already gives a key - not proposed a second time."""
+    if host is None:
+        return {}
+    out = iu.additions_in_open_prs(host, _cfg()["branch_prefix"], inventory_path, inventory)
+    for (page, key), v in iu.claims_in_open_prs(host, s["heal_branch_prefix"], inventory_path,
+                                                 inventory).items():
+        out.setdefault((page, v["selector"]), f"{page}.{key} ({v['url']})")
+    return out
+
+
+def explore_elements(req: dict, *, tracker, host, inventory: dict, original: str, ctx,
+                     s: dict, dry_run: bool) -> dict:
+    """Elements a refusal needs on pages the inventory HAS: each page read live
+    with the nightly check, and only what the nightly update would add to it
+    (with its headings and its template's list items) proposed - its other
+    keys and fields untouched. No model call."""
+    story_id, needs = req["story"], dict(req.get("known_pages") or {})
+    cfg = _cfg()
+    used = {k for entry in (inventory.get("pages") or {}).values()
+            for k in ((entry or {}).get("elements") or {})}
+    claimed = _claimed(host, ctx.inventory_file, inventory, s)
+    upds, templates, problems = {}, {}, []
+    new = inventory
+    for page in sorted(needs)[:3]:
+        drift, problem = read_page(inventory, page)
+        if drift is None:
+            problems.append(f"`{page}` {problem}")
+            continue
+        drift, template = pe.template_content(drift, page, inventory)
+        upd = iu.build_update(drift, inventory, used,
+                              max_additions_per_page=int(s["explore_max_elements"]),
+                              hold_ratio=float(cfg["hold_ratio"]),
+                              layout_min_pages=int(cfg["layout_min_pages"]),
+                              allow_removal=False, no_removal_reason="an element read",
+                              claimed=claimed)
+        if upd.added:
+            upds[page], templates[page] = upd, template
+            new = pe.with_added(new, upd.inventory, page, upd.added)
+        else:
+            problems.append(f"`{page}` has no new element with a durable selector")
+    if not upds:
+        _comment(tracker, story_id, pe.elements_not_found_comment("; ".join(problems)), dry_run)
+        return {"story": story_id, "status": "empty", "why": "; ".join(problems)}
+    added = sum(len(u.added) for u in upds.values())
+    body = pe.render_elements_body(story_id, upds, inventory_path=ctx.inventory_file,
+                                   needs=needs, templates=templates)
+    pages = sorted(upds)
+    if dry_run:
+        print(f"\n--dry-run: {added} element(s) for {', '.join(pages)}. The pull request "
+              f"body would be:\n\n{body}\n")
+        return {"story": story_id, "status": "dry_run", "pages": pages, "added": added}
+    branch = _unused_branch(host, f"{s['explore_branch_prefix']}{pages[0].replace('_', '-')}"
+                                  "-elements")
+    title = f"chore(inventory): add elements to {', '.join(pages)}, read live"
+    host.create_branch(branch, "main")
+    try:
+        host.create_or_update_file(ctx.inventory_file, iu.dump_like(original, new), title, branch)
+        url = host.open_pull_request(title, body, branch, "main")
+    except Exception:
+        host.delete_branch(branch)        # never leave a half-written branch
+        raise
+    _comment(tracker, story_id, pe.elements_comment(story_id, pages, url, added), dry_run)
+    return {"story": story_id, "status": "proposed", "pages": pages, "added": added, "pr": url}
+
+
 def main(argv=None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -267,8 +348,12 @@ def main(argv=None) -> int:
     inventory = json.loads(original)
     open_prs = _open_explore_prs(host, s["explore_branch_prefix"]) if host else []
     closed_prs = _closed_explore_prs(host, s["explore_branch_prefix"]) if host else []
-    links, problem = collect_links(inventory, ctx.base_url.rstrip("/"),
-                                   int(s["explore_max_pages"]))
+    links, problem = {}, ""
+    if any(r.get("pages") or r.get("reasons") for r in requests):
+        # Links are read only for a missing PAGE; elements of a known page
+        # are read on that page itself.
+        links, problem = collect_links(inventory, ctx.base_url.rstrip("/"),
+                                       int(s["explore_max_pages"]))
     from core.llm_client import LLMClient
 
     def llm_factory():

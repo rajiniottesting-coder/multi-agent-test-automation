@@ -1909,7 +1909,7 @@ max_additions_per_page=explore_max_elements)`; `proposed` adds only that page.
 The PR body's first line `[inventory-explore] story: <key> page: <name>` is
 what `resume_explored_story` reads on merge to dispatch Agent 2
 (`handoff.workflows.agent2_coder`, `story_key`) with the built-in token
-(`actions: write` on "Story Done on merge").
+(`actions: write` on "Story Done on merge"). `requested` also returns `known_pages` ({page: needs}) from `elements_missing_from_inventory` and `known_page_of` (a reason's "on <page>"); with no page need, `explore_elements` reads each known page with the same check, runs `build_update(used=every key, allow_removal=False, claimed=...)` (claims from `additions_in_open_prs` on the nightly prefix and `claims_in_open_prs` on the heal prefix) and applies only `upd.added` through `with_added`. A new page's `components` come from `components_for` (story Components, else the opening link's words, else the page name); `proposed`/`with_added` add `multi_match_note` / `conditional_note` for a declaration that has none. `page_headings` skips a heading carrying the cover or shared mark or inside header/footer/nav.
 
 **PW2 - a changed selector healed (`core/selector_heal.py`,
 `scripts/heal_selectors.py`).** `--plan` reads junit only (`healable`: failed,

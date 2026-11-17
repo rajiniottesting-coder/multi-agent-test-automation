@@ -2993,15 +2993,33 @@ as before.
    <page> --compare --headings`) and keeps its elements by the nightly
    update's rules: no element without a durable selector, the refusal rules,
    at most `explore_max_elements`. Two additions for a page read for the first
-   time: its visible h1/h2 headings whose exact text names one element
+   time: its visible h1/h2 headings whose exact text names one element and
+   that are not in the page's header, footer or menu, nor covered by a key
    (`<text>_heading` - the generator never captures a heading), and the items
    of a list another page's **family** key covers (same template: they are this
    page's content, listed under *Same template as*); an element a single key
    or an `always` page covers is still shared chrome, not added;
 4. opens **one pull request** on `live_browser.explore_branch_prefix` adding the
-   page (its `components` from the story) and comments on the story
+   page in the inventory's own shape - `url`, `components`, `elements`, and
+   `multi_match` / `conditional` with their notes when it declares any - and
+   comments on the story
    (`[inventory-explore]`). A story or page with such a pull request open is
    not explored again, nor a story whose proposal you closed without merging.
+
+`components` are named as the other pages' are: the story's Components, else
+the words of the link that opened the page (the application's own name for it,
+as "Test Cases" is), else the page name in words - never empty (the onboarding
+check flags a page without one, and Agent 0's layer 2 would read the whole
+suite for it).
+
+**A missing element of a page the inventory has** (the validator's unknown key,
+or a plan reason placing it "on <a known page>") is explored the same way
+without the link step: that page is read live and the elements the nightly
+update would add to it - plus its headings and its template's list items - are
+proposed in one pull request (`.../<page>-elements`). Only additions: the
+page's other keys, notes and fields stay as they are, and an element an open
+nightly-update or heal pull request already gives a key is not proposed again.
+No model call.
 
 Check the page in the pull request (names, selectors; add notes, `conditional`
 elements a crawler cannot see) and **merge it: "Story Done on merge" starts

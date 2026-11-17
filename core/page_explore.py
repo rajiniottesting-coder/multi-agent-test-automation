@@ -36,6 +36,20 @@ WHAT
     is merged by an agent: a person reviews the proposed page, as they review
     the nightly inventory update.
 
+    A missing ELEMENT of a page the inventory has (the validator's unknown
+    key, or a plan reason placing it "on <a known page>") is explored the same
+    way, without the link step: that page is read live and the elements the
+    nightly update would add - plus its headings and its template's list items
+    - are proposed for it, in one pull request; merging it starts Agent 2 again.
+
+    THE INVENTORY'S OWN SHAPE. A proposed page carries what the inventory's
+    other pages carry: `url`, `components` (the story's Jira Components; else
+    the words of the link that opened the page - the name the application's
+    own menu gives it, as the other pages' components are named; else the page
+    name in words), `elements`, and `multi_match` / `conditional` with their
+    `multi_match_note` / `conditional_note` when it declares any. Keys added to
+    a known page keep that page's entry as it is and only add to it.
+
     Not explored: a page no link leads to (reached only by a form or a
     script) - the story comment says so, and the hand route stays.
 
@@ -104,25 +118,51 @@ def _names_known_page(text: str, pages) -> bool:
                for p in pages for w in _words(str(p).lower()))
 
 
+def known_page_of(text: str, pages) -> str | None:
+    """The inventory page a reason places the missing thing on ("... on <page>,
+    not in the app inventory"), the longest name first; None when it names no
+    known page there."""
+    m = _ON_PAGE.search(text or "")
+    if not m:
+        return None
+    phrase = m.group(1).strip().lower()
+    for p in sorted(pages, key=lambda n: -len(str(n))):
+        if any(re.match(rf"{re.escape(w)}(?![a-z0-9_])", phrase) for w in _words(str(p).lower())):
+            return p
+    return None
+
+
 def requested(errors, inventory: dict) -> dict | None:
-    """{"pages": [names], "reasons": [texts]} when a refusal is for a page the
+    """{"pages", "reasons", "known_pages"} when a refusal is for something the
     inventory lacks, else None.
 
     `pages`: the page names generated code used that the inventory does not
     have (the method-resolution validator's own reading - not a misspelling of
     a page it has). `reasons`: the plan's "not in the app inventory" reasons
-    that name no page the inventory has - a missing ELEMENT on a known page is
-    the nightly update's to add, not a page to explore."""
+    that name no page the inventory has. `known_pages`: {page the inventory has:
+    [what is missing on it]} - a key the validator found on no page (not a
+    misspelling), or a plan reason placing the missing thing on that page."""
     from core.blocked import says_not_in_inventory
-    from validators.method_resolution_validator import pages_missing_from_inventory
-    names = list(((inventory or {}).get("pages") or {}))
+    from validators.method_resolution_validator import (elements_missing_from_inventory,
+                                                        pages_missing_from_inventory)
+    pages = (inventory or {}).get("pages") or {}
+    names = list(pages)
     errors = [str(e) for e in errors or []]
     wanted = pages_missing_from_inventory(errors, pages=names)
     reasons = [e[:400] for e in errors
                if says_not_in_inventory(e) and not _names_known_page(e, names)]
-    if not wanted and not reasons:
+    known: dict = {}
+    for item in elements_missing_from_inventory(errors, pages=pages):
+        page, _, key = item.partition(".")
+        if page in pages and key not in known.get(page, []):
+            known.setdefault(page, []).append(key)
+    for e in errors:
+        page = known_page_of(e, names) if says_not_in_inventory(e) else None
+        if page:
+            known.setdefault(page, []).append(e[:300])
+    if not wanted and not reasons and not known:
         return None
-    return {"pages": wanted, "reasons": reasons}
+    return {"pages": wanted, "reasons": reasons, "known_pages": known}
 
 
 def record_request(story_id: str, request: dict, path: str | Path = REQUESTS_FILE) -> None:
@@ -326,15 +366,67 @@ def template_content(drift: dict, name: str, inventory: dict) -> tuple:
     return out, rows
 
 
+# The notes every inventory page with these declarations carries (they are
+# sent to the agents with the page).
+MULTI_MATCH_NOTE = ("Keys whose selector matches SEVERAL elements - one per list item. Read "
+                    "them with get_all_texts / get_count; to act on ONE member use "
+                    "click_in_row(). Never click, fill or assert on the family as a whole.")
+CONDITIONAL_NOTE = ("Hidden when the page was read: shown only after an interaction (an "
+                    "expanded panel, an opened dialog). A tool that only navigates reads them "
+                    "as absent - that is its reach, not a broken selector.")
+
+
+def components_for(story_components, link_texts, name: str) -> list:
+    """The page's `components`, named as the inventory's other pages are: the
+    story's Components; else the words of the link that opened the page (the
+    name the application's own menu gives it); else the page name in words.
+    Never empty - a page without one widens Agent 0's layer 2 to the whole
+    suite and is flagged by the onboarding check."""
+    named = [str(c).strip() for c in story_components or [] if str(c).strip()]
+    if named:
+        return list(dict.fromkeys(named))
+    for text in link_texts or []:
+        words = " ".join(str(text).split())
+        if words and len(words) <= 40 and re.search(r"[A-Za-z]", words):
+            return [words if any(ch.isupper() for ch in words) else words.title()]
+    return [" ".join(w.capitalize() for w in name.split("_"))]
+
+
+def _with_notes(page: dict) -> dict:
+    """Drop an empty declaration; give a declared one its note, as every other
+    page has."""
+    for key, note_key, note in (("multi_match", "multi_match_note", MULTI_MATCH_NOTE),
+                                ("conditional", "conditional_note", CONDITIONAL_NOTE)):
+        if not page.get(key):
+            page.pop(key, None)
+        elif not page.get(note_key):
+            page[note_key] = note
+    return page
+
+
 def proposed(inventory: dict, updated: dict, name: str) -> dict:
     """The committed inventory with the explored page added - and nothing else
     changed, whatever else the read found."""
     out = copy.deepcopy(inventory)
     page = copy.deepcopy(((updated or {}).get("pages") or {}).get(name) or {})
-    for key in ("multi_match", "conditional"):
-        if not page.get(key):
-            page.pop(key, None)
-    out.setdefault("pages", {})[name] = page
+    out.setdefault("pages", {})[name] = _with_notes(page)
+    return out
+
+
+def with_added(inventory: dict, updated: dict, page: str, rows) -> dict:
+    """The committed inventory with only the `rows` the update added to known
+    page `page` (their selectors and declarations): its other keys, notes and
+    fields stay exactly as they are - no replacement, no removal."""
+    out = copy.deepcopy(inventory)
+    target = out["pages"][page]
+    source = ((updated or {}).get("pages") or {}).get(page) or {}
+    for row in rows or []:
+        key = row["element"]
+        target.setdefault("elements", {})[key] = row["selector"]
+        for decl in ("multi_match", "conditional"):
+            if key in (source.get(decl) or []) and key not in (target.get(decl) or []):
+                target[decl] = list(target.get(decl) or []) + [key]
+    _with_notes(target)
     return out
 
 
@@ -396,6 +488,56 @@ def render_body(story_id: str, name: str, path: str, how: str, upd, *,
     return "\n".join(lines)
 
 
+def render_elements_body(story_id: str, upds: dict, *, inventory_path: str, needs: dict,
+                         templates: dict) -> str:
+    """The pull request's description for elements added to pages the
+    inventory has: what each refusal needed, and what each page got."""
+    from core.inventory_update import _table
+    el = ("Element", lambda r: f"`{r['element']}`")
+    sel = ("Selector", lambda r: f"`{r['selector']}`")
+    first = sorted(upds)[0]
+    lines = [
+        f"{MARKER} story: {story_id} page: {first}",
+        "",
+        f"## 🤖 Elements the inventory lacked, read live for {story_id}",
+        "",
+        f"Agent 2 could not code {story_id}: its test cases need element(s) of "
+        f"{', '.join(f'`{p}`' for p in sorted(upds))} that `{inventory_path}` does not have. "
+        "Each page was read live, signed in as the tests are; the elements below are added "
+        "by the nightly inventory update's rules (durable selectors only), with the page's "
+        "headings and its template's list items. Nothing else on the pages changes.",
+        "",
+        "**Before merging:** check that the element each test case needs is here and named "
+        f"well (rename a key in this branch if needed). Merging starts Agent 2 on {story_id} "
+        "again. Close this pull request if none is the element - it is then not proposed "
+        "again for this story - and add it by hand (`python -m scripts.plan_inventory "
+        "element ...`).",
+        "",
+    ]
+    for page in sorted(upds):
+        upd = upds[page]
+        lines += [f"### Page `{page}`", "", "**What the refusal needed:**", ""]
+        lines += [f"- {n}" for n in needs.get(page) or ["(not named)"]] + [""]
+        lines += _table(f"Added to `{page}`", upd.added, [el, sel])
+        if templates.get(page):
+            owners = sorted({r["covered_by"] for r in templates[page]})
+            lines += [f"**Same template as** {', '.join(f'`{o}`' for o in owners)}.", ""]
+        lines += _table(f"Not added to `{page}` - no durable selector", upd.fragile, [el, sel])
+        lines += _table(f"Not added to `{page}` - refused", upd.refused,
+                        [el, sel, ("Reason", lambda r: r["refused"])])
+    lines += ["_Proposed by `scripts.explore_missing_pages` (PW1). Nothing is merged by an "
+              "agent._"]
+    return "\n".join(lines)
+
+
+def elements_comment(story_id: str, pages, pr_url: str, added: int) -> str:
+    return (f"{MARKER} Agent 2 read {', '.join(f'`{p}`' for p in pages)} on the live "
+            f"application for the element(s) this story needs: {added} element(s) are "
+            f"proposed in {pr_url}. Check them and merge: merging starts Agent 2 on "
+            f"{story_id} again. If none is the element, close the pull request and add it by "
+            "hand (`python -m scripts.plan_inventory element ...`).")
+
+
 def story_comment(story_id: str, name: str, path: str, pr_url: str, added: int) -> str:
     return (f"{MARKER} Agent 2 explored the page this story needs on the live application: "
             f"`{path}`, with {added} element(s), is proposed as inventory page `{name}` in "
@@ -409,3 +551,10 @@ def not_found_comment(why: str) -> str:
             "(`python -m scripts.plan_inventory page --page <page> --url /<path> "
             "--component \"<Component>\" --element <key>=\"<selector>\"`), then run Agent 2 "
             "with this story's key.")
+
+
+def elements_not_found_comment(why: str) -> str:
+    return (f"{MARKER} Agent 2 read the page(s) this story needs elements of on the live "
+            f"application and proposes nothing: {why}. Add each element by hand (`python -m "
+            "scripts.plan_inventory element --page <page> --key <key> --selector "
+            "\"<selector>\"`), then run Agent 2 with this story's key.")
