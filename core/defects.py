@@ -662,7 +662,8 @@ def defect_fields(tracker, test: str, traced: dict, features_dir: Path, s: dict)
 
 
 def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | None = None,
-           dry_run: bool = False, source: dict | None = None) -> dict:
+           dry_run: bool = False, source: dict | None = None,
+           healed: dict | None = None) -> dict:
     """Raise, update and flag defects for one run on main. Returns what it did:
     {"raised", "updated", "passing", "failing_again", "capped", "outages", "flaky",
     "not_retried", "unmapped", "stale_trace", "errors"} - `not_retried` lists
@@ -676,7 +677,12 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
     source: D6 - {"pr": number} for a pull request's run a person labelled
     `defects.raise_label`. Its failures raise or update defects as on main
     ("fails on pull request #n"); nothing is judged passing, followed or
-    re-tested from it - that is main's run to say."""
+    re-tested from it - that is main's run to say.
+
+    healed: PW2 - {test: {"keys", "pr"}} whose failure a changed selector
+    explains and whose new selector is proposed in a pull request
+    (scripts/heal_selectors.py, core/selector_heal.py). No defect is raised or
+    updated for them while the fix is in review (`healed` in the result)."""
     s = settings()
     now = now or _dt.datetime.now(_dt.timezone.utc)
     today = now.date().isoformat()
@@ -692,7 +698,7 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
               "not_retried": [jm.case_id(c) for c in not_retried], "unmapped": [],
               "stale_trace": [], "errors": [],
               "followed": [], "followed_passing": [], "retested": [], "recurs": [],
-              "fields_not_set": [], "expected": []}
+              "fields_not_set": [], "expected": [], "healed": []}
     if not s.get("enabled", True):
         logger.info("defects.enabled is false - no defect is raised.")
         return result
@@ -719,6 +725,12 @@ def triage(tracker, root, run_url: str, features_dir: Path, now: _dt.datetime | 
         story = waits_for(waiting, test, features_dir, tracker, s)
         if story:
             result["expected"].append(f"{test} ({story})")
+            failing_tests.setdefault(test, None)
+            continue
+        if test in (healed or {}):
+            # PW2: its selector changed and the fix is in review.
+            pr = (healed[test] or {}).get("pr") if isinstance(healed[test], dict) else ""
+            result["healed"].append(f"{test} ({pr})" if pr else test)
             failing_tests.setdefault(test, None)
             continue
         d = _diagnosis(case)

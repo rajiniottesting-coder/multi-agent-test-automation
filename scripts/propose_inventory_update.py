@@ -37,14 +37,16 @@ from core.impact_settings import impact_settings
 logger = logging.getLogger("propose_inventory_update")
 
 
-def plan(drift: dict, root: Path, cfg: dict, inventory_file: str, in_flight=frozenset()):
+def plan(drift: dict, root: Path, cfg: dict, inventory_file: str, in_flight=frozenset(),
+         pending: dict | None = None):
     """(update, original text) for the inventory at root/inventory_file.
 
     `in_flight`: keys named by open pull requests, or None when they could not
-    be read - then no key is removed."""
+    be read - then no key is removed. `pending`: {(page, key): pull request}
+    an open selector-heal pull request changes (PW2) - left to it."""
     original = (root / inventory_file).read_text(encoding="utf-8")
     used = iu.keys_named_in_code(root, cfg["code_dirs"]) | set(in_flight or ())
-    upd = iu.build_update(drift, json.loads(original), used,
+    upd = iu.build_update(drift, json.loads(original), used, pending=pending,
                           max_additions_per_page=int(cfg["max_additions_per_page"]),
                           hold_ratio=float(cfg["hold_ratio"]),
                           layout_min_pages=int(cfg["layout_min_pages"]),
@@ -103,7 +105,17 @@ def main(argv=None) -> int:
                  if host is not None else None)
 
     ctx = AppContext.load()
-    upd, original = plan(drift, PROJECT_ROOT, cfg, ctx.inventory_file, in_flight)
+    # PW2: a key an open selector-heal pull request changes is left to it.
+    pending = {}
+    if host is not None:
+        try:
+            from core.page_explore import settings as live_settings
+            prefix = live_settings().get("heal_branch_prefix") or ""
+            inventory = json.loads((PROJECT_ROOT / ctx.inventory_file).read_text(encoding="utf-8"))
+            pending = iu.keys_in_open_prs(host, prefix, ctx.inventory_file, inventory) if prefix else {}
+        except Exception as e:                                     # noqa: BLE001
+            logger.warning("open selector-heal pull requests not read: %s", e)
+    upd, original = plan(drift, PROJECT_ROOT, cfg, ctx.inventory_file, in_flight, pending)
     digest = iu.content_hash(iu.dump_like(original, upd.inventory))
     print(f"replaced {len(upd.replaced)}, added {len(upd.added)}, removed {len(upd.removed)}; "
           f"kept {len(upd.kept_missing)}, held pages {len(upd.held_pages)}, "
