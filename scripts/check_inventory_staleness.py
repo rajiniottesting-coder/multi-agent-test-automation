@@ -152,6 +152,10 @@ def main() -> int:
                          "rendered (a new element alone does not). The nightly "
                          "Inventory Health check.")
     ap.add_argument("--page", help="Check only this page key from the inventory.")
+    ap.add_argument("--inventory",
+                    help="Check this inventory file instead of the one config.yaml names "
+                         "(a draft, or the committed one with a page added - the live "
+                         "exploration of a missing page reads its new page this way).")
     ap.add_argument("--json", help="Also write the full drift report to this path.")
     ap.add_argument("--compare", action="store_true",
                     help="Also report live elements NO inventory selector covers "
@@ -170,7 +174,8 @@ def main() -> int:
 
     ctx = AppContext.load()
     base_url = ctx.base_url.rstrip("/")
-    inventory = json.loads(ctx.inventory_path().read_text(encoding="utf-8"))
+    inventory_file = Path(args.inventory) if args.inventory else ctx.inventory_path()
+    inventory = json.loads(inventory_file.read_text(encoding="utf-8"))
     pages = inventory.get("pages") or {}
     test_attrs = (tuple(a.strip() for a in args.test_attrs.split(",") if a.strip())
                   if args.test_attrs else introspect.TEST_ID_ATTRS)

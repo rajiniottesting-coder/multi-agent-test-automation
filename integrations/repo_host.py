@@ -56,6 +56,12 @@ them against GitHub Actions vocabulary (_SETTLED_CONCLUSIONS, _ACTIVE_STATUSES).
 A non-GitHub adapter must map its own statuses onto those strings, or the
 sweeper will treat every pipeline as unsettled and re-trigger it forever.
 
+OPTIONAL CAPABILITY: `list_closed_prs(branch_prefix, limit=100) -> [{"number",
+"head_ref", "url", "merged", "body"}]` - closed pull requests on a prefix, newest
+first; a proposal a person closed without merging is not proposed again
+(core/selector_heal.py, core/page_explore.py). A host without it: such a
+proposal may be made again.
+
 OPTIONAL CAPABILITY: `check_access() -> {"ok", "who", "expires"}` proves the
 credentials work and, where the host says, when they expire (the pipeline
 health check). Without it the repo host's credentials are checked by the first

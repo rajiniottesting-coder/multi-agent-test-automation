@@ -476,3 +476,29 @@ class ReviewFixDecision(BaseModel):
 class ReviewFixPlan(BaseModel):
     """One decision per review comment, in the order the comments were listed."""
     decisions: list[ReviewFixDecision] = Field(..., description="One entry per listed comment")
+
+
+# ─────────────────────────────────────────────────────────────
+# Schemas for the live-browser steps (PW1, PW2)
+# ─────────────────────────────────────────────────────────────
+
+class LinkChoice(BaseModel):
+    """Which listed link opens the page a refused story needs (PW1)."""
+    path: str = Field(
+        default="",
+        description="The path of the ONE listed link that opens the page the story and its "
+                    "test cases need, exactly as listed; empty when no listed link does")
+    why: str = Field(
+        ..., description="One sentence: the words in the story or test cases that the link's "
+                         "text or path matches, or why none fits")
+
+
+class SelectorChoice(BaseModel):
+    """Which live element is the inventory element whose selector stopped matching (PW2)."""
+    element: str = Field(
+        default="",
+        description="The name of the ONE listed live element that is the same element as the "
+                    "inventory key, exactly as listed; empty when none clearly is")
+    why: str = Field(
+        ..., description="One sentence: what the listed element shares with the key (its "
+                         "text, role, name or attributes), or why none matches")

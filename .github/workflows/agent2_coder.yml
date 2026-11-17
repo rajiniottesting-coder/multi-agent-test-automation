@@ -190,6 +190,9 @@ jobs:
           # events. See .github/actions/agent-identity/action.yml.
           GITHUB_TOKEN: ${{ steps.identity.outputs.token }}
           GITHUB_REPO: ${{ vars.GH_REPO }}
+          # PW1: a story refused for a page the inventory lacks is recorded
+          # here, for the exploration steps below (core/page_explore.py).
+          EXPLORE_REQUESTS_FILE: reports/explore_requests.json
         run: |
           # Pick the right CLI flags based on workflow inputs:
           #   - With story_key:     process that one story
@@ -218,6 +221,48 @@ jobs:
             echo "Mode: scan (process all stories matching config.yaml selection)"
             python -m agents.agent2_coder --scan "${DRY_RUN_FLAG[@]}" "${SPRINT_FLAG[@]}"
           fi
+
+      # ── PW1: a page a refused story needs, explored live ──────────────
+      # Only when Agent 2 refused a story for a page the inventory lacks (it
+      # recorded a request). The page is found by a link on the application's
+      # pages, read live with the nightly check, and proposed in one pull
+      # request; merging it starts Agent 2 on the story again ("Story Done on
+      # merge"). scripts/explore_missing_pages.py, core/page_explore.py.
+      - name: Cache Playwright browsers
+        if: ${{ !cancelled() && hashFiles('reports/explore_requests.json') != '' }}
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+
+      - name: Install Playwright browsers
+        if: ${{ !cancelled() && hashFiles('reports/explore_requests.json') != '' }}
+        run: bash scripts/install_browser.sh chromium
+
+      - name: Explore the pages refused stories need
+        if: ${{ !cancelled() && hashFiles('reports/explore_requests.json') != '' }}
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
+          # One light call, only when no link carries the page's name.
+          LLM_MODEL: ${{ vars.LLM_MODEL_LIGHT || vars.LLM_MODEL || 'claude-opus-4-6' }}
+          LLM_PRICE_INPUT_PER_1M: ${{ vars.LLM_PRICE_INPUT_PER_1M }}
+          LLM_PRICE_OUTPUT_PER_1M: ${{ vars.LLM_PRICE_OUTPUT_PER_1M }}
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          GITHUB_TOKEN: ${{ steps.identity.outputs.token }}
+          GITHUB_REPO: ${{ vars.GH_REPO }}
+          # Signed in as the tests and the nightly check are.
+          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+          APP_USER_REGISTERED: ${{ secrets.APP_USER_REGISTERED }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+          CI: 'true'
+        run: |
+          DRY=()
+          if [ "$DRY_RUN" = "true" ]; then DRY=(--dry-run); fi
+          python -m scripts.explore_missing_pages --requests reports/explore_requests.json "${DRY[@]}"
 
       - name: Start Agent 2 again while stories wait
         # More stories waited than max_stories_per_run: the next run starts

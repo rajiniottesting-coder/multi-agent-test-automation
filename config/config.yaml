@@ -224,6 +224,27 @@ deployment:
 cleanup:
   delete_label: "test-data"
 
+# PW1 and PW2: the steps that read the live application in a browser, signed in
+# as the nightly check. Each proposes a pull request; nothing is merged by an agent.
+live_browser:
+  # PW1: a story refused for a page the inventory lacks -> the page is found by a
+  # link on the application's pages, read live and proposed; merging the pull
+  # request starts Agent 2 on the story again.
+  explore_missing_pages: true
+  explore_branch_prefix: "inventory-explore/"
+  explore_max_pages: 15              # inventory pages whose links are read
+  explore_max_links: 40              # candidate links shown to the model
+  explore_max_elements: 30           # elements a proposed page gets
+  explore_never_visit: ["logout", "log_out", "signout", "sign_out", "delete", "remove",
+                        "unsubscribe", "deactivate", "close_account"]
+  # PW2: a test failing on main because a selector matches nothing -> the element
+  # is found live with its new selector, proposed in a pull request, no defect.
+  heal_selectors: true
+  heal_branch_prefix: "inventory-heal/"
+  heal_max_pages: 5                  # pages read live per triage
+  heal_failure_kinds: ["element never appeared - probably the wrong page",
+                       "element never appeared", "readiness probe returned False"]
+
 # Defect triage (F-22): after a run on main (nightly, a push that ran the E2E,
 # a manual run on main) each test still failing has ONE open defect: a repeat
 # updates it - under another diagnosed cause too (the causes seen are listed) -

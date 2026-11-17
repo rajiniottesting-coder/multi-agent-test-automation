@@ -41,6 +41,8 @@ REPO_HOST_READS = frozenset({
     "get_pr_metadata", "get_pr_changed_files", "get_pr_comments", "get_workflow_runs",
     "get_run_artifact_file", "get_review_comments", "get_pr_reviews", "get_pr_comment_records",
 })
+# Optional repo-host capabilities that only read (integrations/repo_host.py).
+REPO_HOST_CAPABILITY_READS = frozenset({"list_closed_prs"})
 REPO_HOST_WRITES = frozenset({
     "create_branch", "delete_branch", "create_or_update_file", "open_pull_request",
     "reopen_pull_request", "close_pull_request", "post_pr_comment",
@@ -82,7 +84,7 @@ def tracker(inner: Any) -> DryRun:
 
 
 def repo_host(inner: Any) -> DryRun:
-    return DryRun(inner, REPO_HOST_READS, "repo_host")
+    return DryRun(inner, REPO_HOST_READS | REPO_HOST_CAPABILITY_READS, "repo_host")
 
 
 def _short(value: Any, limit: int = 80) -> str:

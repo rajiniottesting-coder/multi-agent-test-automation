@@ -23,6 +23,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  actions: write        # PW1: start Agent 2 again on a story whose page was added
 
 concurrency:
   group: story-done-${{ github.event.pull_request.number || github.run_id }}
@@ -92,3 +93,20 @@ jobs:
           GITHUB_REPO: ${{ vars.GH_REPO }}
           BRANCH: ${{ github.event.pull_request.head.ref || inputs.branch }}
         run: python -m scripts.propose_context_addition --branch "$BRANCH"
+
+      # PW1: a merged exploration pull request added the page a refused story
+      # needs - start Agent 2 on that story again (scripts/
+      # resume_explored_story.py). Any other merged pull request: nothing.
+      - name: Start Agent 2 again on a story whose page was added
+        if: github.event_name == 'pull_request'
+        env:
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          # The built-in token: `actions: write` above lets it start a
+          # workflow (workflow_dispatch runs even when this token starts it).
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python -m scripts.resume_explored_story --pr "$PR_NUMBER"
