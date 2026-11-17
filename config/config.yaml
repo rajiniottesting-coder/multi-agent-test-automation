@@ -241,7 +241,10 @@ prompt_regression:
   agent1_stories: ["SCRUM-200", "SCRUM-202", "SCRUM-408"]
   agent1_min_cases: 1
   agent1_max_cases: 7
-  agent2_stories: ["SCRUM-202"]
+  # A story coded after the step-fidelity audit existed, so its code passed
+  # today's whole gate (17 Nov 2026: SCRUM-202's older code did not - its
+  # "remain on the home page" step checks the logo, which every page shows).
+  agent2_stories: ["SCRUM-408"]
   # Merged pull requests and the verdict a review of them must keep:
   # approve = must not request changes; request_changes = must.
   agent3_reviews: {"540": "approve", "435": "approve"}
