@@ -137,7 +137,11 @@
         "view_cart_link_in_modal": "role=link[name='View Cart']",
         "continue_shopping_button": "role=button[name='Continue Shopping']",
         "searched_products_heading": "text=Searched Products",
-        "sale_image_element": "alt=Website for practice"
+        "sale_image_element": "alt=Website for practice",
+        "brands_heading": "text=\"Brands\"",
+        "category_heading": "text=\"Category\"",
+        "kids_link": "a[href='#Kids']",
+        "women_link": "a[href='#Women']"
       },
       "multi_match": [
         "product_cards",
