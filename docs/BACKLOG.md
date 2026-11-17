@@ -39,7 +39,7 @@ before a real project; P2 and P3 before a wider rollout.
 
 | ID | Item | Today (gap) | Priority | Cost | Was | Status |
 |---|---|---|---|---|---|---|
-| D3 | Bug flow: a production bug gets a regression test | Only Stories start Agents 1 and 2 | P2 | C | L23, F-20 | Open |
+| D3 | Bug flow: a production bug gets a regression test | Only Stories start Agents 1 and 2 | P2 | C | L23, F-20 | Done (#543) |
 | D8 | A defect's module: tracker component, else `reporting.modules` over its feature file | The project has no components; no defect had a module | P2 | A | | Done (#478) |
 
 ### Requirements lifecycle
@@ -67,7 +67,7 @@ before a real project; P2 and P3 before a wider rollout.
 | C1 | API, accessibility, visual and performance tests, chosen per project | UI tests only | P3 | C | | Open |
 | C4 | Coverage maps for stories whose test cases already exist (Agent 1 coverage-only mode), and the matrix reads a change story's map | Stories drafted before maps existed, or by a person, showed every criterion as "not mapped"; a change story's map (in its impact draft, citing keys) was not read | P1 | A | | Done (#523) |
 | C2 | Validator for snapshot-count and snapshot-membership assertions in signed-in tests | Not rejected by Agent 2's gate | P3 | A | L11, F-6 | Done (#468) |
-| C3 | A fixed set of stories replayed when the prompts of Agents 1-3 change | No prompt regression set | P3 | C | L12 | Open |
+| C3 | A fixed set of stories replayed when the prompts of Agents 1-3 change | No prompt regression set | P3 | C | L12 | Done (#543) |
 
 ### Live browser (Playwright CLI)
 
@@ -110,6 +110,7 @@ Group B, batch B2 (14 Nov 2026, #502): RP5, X1, D6, X4 - all proven live the
 same day with #504, #506 and #508 (removed above).
 B3 (PW1, PW2) built on 17 Nov 2026 (#527); the live run found and fixed five gaps (#528-#530, #532, #536) and proved the rest the same day (#537): a missing page explored and proposed (#531), Agent 2 started again on merge, two changed selectors healed in one pull request (#534) with no defect raised. Their last checks (E246, E254, E255) wait for events.
 S1 built on 17 Nov 2026 (#540): Agent 2's gate and repair, the plan's path rule, Agent 4's check before the browser run, and BasePage's navigation and upload guards; E258 proven live the same day with throw-away #541 (and the run summary's explanation of a refusal, #542, E261); E259 and E260 wait for the next Agent 2 run and night. P1 and P3 on hold (owner).
+C3 and D3 built together on 17 Nov 2026 (#543): D3's prompt change is the first one C3 replays; their live checks are E262-E268.
 C4 added on 15 Nov 2026 at the owner's request (old stories showed "not mapped";
 a project adopting the framework would see it on every story) and built in #523.
 RP14-RP25 added on 14 Nov 2026 at the owner's request (the reports pages, all of
