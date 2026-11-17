@@ -330,6 +330,29 @@
         "test_case_panel_headings"
       ],
       "multi_match_note": "Lists: one panel, one panel heading and one title link per test case, one step item per step (inside collapsed panels until a title is clicked)."
+    },
+    "api_list": {
+      "url": "/api_list",
+      "components": [],
+      "elements": {
+        "api_10_post_verify_link": "a[href='#collapse10']",
+        "api_11_post_create_link": "a[href='#collapse11']",
+        "api_12_delete_method_link": "a[href='#collapse12']",
+        "api_13_put_method_link": "a[href='#collapse13']",
+        "api_14_get_user_link": "a[href='#collapse14']",
+        "api_1_get_all_link": "a[href='#collapse1']",
+        "api_2_post_all_link": "a[href='#collapse2']",
+        "api_3_get_all_link": "a[href='#collapse3']",
+        "api_4_put_all_link": "a[href='#collapse4']",
+        "api_5_post_search_link": "a[href='#collapse5']",
+        "api_6_post_search_link": "a[href='#collapse6']",
+        "api_7_post_verify_link": "a[href='#collapse7']",
+        "api_8_post_verify_link": "a[href='#collapse8']",
+        "api_9_delete_verify_link": "a[href='#collapse9']",
+        "apis_list_for_practice_heading": "text=\"APIs List for practice\"",
+        "feedback_us_link": "a[href='#feedback']",
+        "subscription_heading": "text=\"Subscription\""
+      }
     }
   },
   "_starting_state": {
