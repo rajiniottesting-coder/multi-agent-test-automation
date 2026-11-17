@@ -481,13 +481,23 @@ def index_cases(revisions=(), new=(), existing=()) -> CaseIndex:
 # ─────────────────────────────────────────────────────────────
 # The check
 # ─────────────────────────────────────────────────────────────
+# Every reference a criterion can carry: AC1.. (an acceptance-criteria list),
+# EXP1.. (a bug's expected results, D3), S1.. (a description sentence), C1..
+# (criteria the model derives when there is no list) and TITLE. The coverage
+# check and the matrix read a map line by these - one list, so a new kind of
+# criterion is never written by one and unread by the other (17 Nov 2026: EXP
+# refs, new with D3, were refused as "not in the coverage map" although the
+# draft mapped them).
+CRITERION_REF = r"(?:AC\d+|EXP\d+|S\d+|C\d+|TITLE)"
+
+
 def _ref(text: str) -> str:
     """The criterion number a map entry names: '1', 'AC1' and 'AC1: ...' are one."""
     t = (text or "").strip()
     m = re.match(r"(?:AC\s*)?(\d+)\b", t, re.IGNORECASE)
     if m:
         return f"AC{m.group(1)}"
-    m = re.match(r"(TITLE|S\d+|C\d+)\b", t, re.IGNORECASE)
+    m = re.match(rf"({CRITERION_REF})\b", t, re.IGNORECASE)
     if m:
         return m.group(1).upper()
     return " ".join(t.lower().split())
