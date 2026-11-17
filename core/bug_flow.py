@@ -128,8 +128,8 @@ def readiness_problem(issue: dict, s: dict | None = None) -> str:
     description = issue.get("description")
     if parse_acceptance_criteria(description) or expected_results(description, s):
         return ""
-    heads = ", ".join(f"'{h.title()}'" for h in (s.get("expected_headings") or [])[:2])
-    return (f"The bug has no expected result (a {heads} section), so its regression test "
+    head = ((s.get("expected_headings") or ["expected result"])[0]).capitalize()
+    return (f"The bug has no expected result (an '{head}' section), so its regression test "
             "would have nothing to assert.")
 
 
