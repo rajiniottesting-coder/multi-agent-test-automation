@@ -85,6 +85,18 @@ class CartPage(BasePage):
         self.wait_for_row(self.sel("cart_rows"), product_name, present=True)
         return True
 
+    def is_product_absent(self, product_name: str) -> bool:
+        """True once no row for `product_name` remains in the cart.
+
+        Waits for the row to disappear and then reports True, so a step asserting
+        a deleted product is gone does not race the removal. Built on the waiting
+        row check with present=False, which returns the moment the row leaves and
+        only waits while it is still shown — never a full timeout on the expected
+        (absent) case.
+        """
+        self.wait_for_row(self.sel("cart_rows"), product_name, present=False)
+        return self.find_row_index_by_text(self.sel("cart_rows"), product_name) == -1
+
     def quantity_for(self, product_name: str) -> int:
         """Return the quantity shown in `product_name`'s row, as an int.
 
@@ -105,3 +117,13 @@ class CartPage(BasePage):
     def product_names(self) -> list[str]:
         """Return the names of every product currently in the cart."""
         return self.get_all_texts(self.sel("cart_product_names"))
+
+    def is_empty_cart_message_shown(self) -> bool:
+        """True once the empty-cart message is on screen. WAITS for it.
+
+        Call this only where emptiness is the expected answer — it waits for the
+        empty-cart element and times out if the cart is NOT empty. It asserts the
+        cart is empty ABSOLUTELY, which is sound only when the scenario owns its
+        starting state (here, a fresh anonymous session whose cart began empty).
+        """
+        return self.is_showing(self.sel("empty_cart_message"))
