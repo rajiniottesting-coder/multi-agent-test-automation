@@ -114,6 +114,18 @@ _VALIDATOR_WORDING = re.compile(r"which is not a page in the app inventory"
                                 r"|is not an element on inventory page")
 
 
+def denial_start(text: str) -> int | None:
+    """Where a reason starts saying the inventory lacks what it needs (the
+    reading says_not_in_inventory makes), None when it does not say so."""
+    text = str(text or "")
+    if _VALIDATOR_WORDING.search(text):
+        return None
+    i = text.find(_NOT_IN_INVENTORY)
+    m = _DENIES_INVENTORY.search(text)
+    starts = [x for x in (i if i >= 0 else None, m.start() if m else None) if x is not None]
+    return min(starts) if starts else None
+
+
 def says_not_in_inventory(text: str) -> bool:
     """Does a plan's reason say the app inventory lacks what it needs - in the
     prompt's words or the model's own? A validator's message is not one."""

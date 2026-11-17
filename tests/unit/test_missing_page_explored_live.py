@@ -52,6 +52,30 @@ def test_a_missing_element_on_a_known_page_is_asked_of_that_page():
                                             "known_pages": {page: [why]}}
 
 
+@pytest.mark.parametrize("denial", [
+    "neither of which is in the app inventory (the page only exposes its list)",
+    "which the app inventory does not have",
+    "and the inventory lacks it",
+    "none of them are in the inventory",
+])
+def test_a_known_page_is_read_whatever_words_deny_the_inventory_has_it(denial):
+    """17 Nov 2026, live: a reason ending "... on the products page, neither of
+    which is in the app inventory" was read as naming no page, so the element
+    gap was never explored (only ", not in the app inventory" was read)."""
+    why = (f"PRJ-7: no scenario of its own - the plan's notes: needs a 'Category' panel "
+           f"heading and a 'Brands' panel heading on the orders page, {denial}")
+    assert pe.requested([why], INV) == {"pages": [], "reasons": [],
+                                        "known_pages": {"orders": [why]}}
+
+
+def test_the_page_is_the_last_on_before_the_denial():
+    why = ("PRJ-7: needs the badge shown on hover on the order detail page, which is not "
+           "in the app inventory")
+    assert pe.known_page_of(why, list(INV["pages"])) == "order_detail"
+    unknown = "PRJ-7: needs a category listing page, neither of which is in the app inventory"
+    assert pe.known_page_of(unknown, list(INV["pages"])) is None
+
+
 def test_a_key_the_validator_found_on_no_page_is_asked_of_its_page():
     err = ("Selector inventory error in pages/orders_page.py: self.sel('print_button'), but "
            "'print_button' is not an element on inventory page 'orders', nor on any other page")

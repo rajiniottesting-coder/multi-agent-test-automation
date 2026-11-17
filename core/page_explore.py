@@ -96,8 +96,27 @@ def _words(name: str) -> list:
     return [name, name.replace("_", " ")]
 
 
-# The plan writes "needs <the element> on <page>, not in the app inventory".
-_ON_PAGE = re.compile(r"\bneeds\b.*?\bon (?:the )?(.+?),? not in the app inventory", re.I | re.S)
+# The plan writes "needs <the element> on <page>, not in the app inventory" -
+# or, in the model's own words, "... on the products page, neither of which is
+# in the app inventory". The page is what follows the LAST "on" before the
+# words that deny the inventory has it (core.blocked.says_not_in_inventory's
+# reading, so the two never disagree): 17 Nov 2026, a reason in the second
+# form was read as naming no page, so the element gap was never explored.
+_ON = re.compile(r"\bon\s+(?:the\s+|its\s+|this\s+|that\s+|an?\s+)?", re.I)
+
+
+def _on_phrase(text: str) -> str | None:
+    """The words after the last "on" before the inventory-denial, lower-cased;
+    None when the reason denies nothing or places it on nothing."""
+    from core.blocked import denial_start
+    t = str(text or "")
+    end = denial_start(t)
+    if end is None:
+        return None
+    ons = list(_ON.finditer(t[:end]))
+    if not ons:
+        return None
+    return t[ons[-1].end():end].strip(" ,;:-").lower() or None
 # A page name the reason writes the code's way (`order_history`), which the link's
 # path may carry: chosen by name, without a model call.
 _SNAKE = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
@@ -108,9 +127,8 @@ def _names_known_page(text: str, pages) -> bool:
     Read from the page it names ("... on <page>, not in the app inventory"):
     a known page at its start is a missing ELEMENT of that page. Without that
     phrase, any known page named anywhere counts - the cautious reading."""
-    m = _ON_PAGE.search(text or "")
-    if m:
-        phrase = m.group(1).strip().lower()
+    phrase = _on_phrase(text)
+    if phrase:
         return any(re.match(rf"{re.escape(w)}(?![a-z0-9_])", phrase)
                    for p in pages for w in _words(str(p).lower()))
     low = (text or "").lower()
@@ -120,12 +138,11 @@ def _names_known_page(text: str, pages) -> bool:
 
 def known_page_of(text: str, pages) -> str | None:
     """The inventory page a reason places the missing thing on ("... on <page>,
-    not in the app inventory"), the longest name first; None when it names no
-    known page there."""
-    m = _ON_PAGE.search(text or "")
-    if not m:
+    not in the app inventory", or any wording that denies the inventory has it),
+    the longest name first; None when it names no known page there."""
+    phrase = _on_phrase(text)
+    if not phrase:
         return None
-    phrase = m.group(1).strip().lower()
     for p in sorted(pages, key=lambda n: -len(str(n))):
         if any(re.match(rf"{re.escape(w)}(?![a-z0-9_])", phrase) for w in _words(str(p).lower())):
             return p
