@@ -33,7 +33,6 @@ before a real project; P2 and P3 before a wider rollout.
 
 | ID | Item | Today (gap) | Priority | Cost | Was | Status |
 |---|---|---|---|---|---|---|
-| S1 | Block `subprocess`, `os.environ`, `socket` and network calls in generated test code (an import and call deny list in the validators) | Story text is untrusted; a PR's tests run before a person reviews them, with the app login available; the import validator allows every standard-library module | P1 | C | | Done (#540) |
 
 ### Defects
 
@@ -107,7 +106,7 @@ proven live the same day with #492, #497, #498 and #500 (removed above).
 Group B, batch B2 (14 Nov 2026, #502): RP5, X1, D6, X4 - all proven live the
 same day with #504, #506 and #508 (removed above).
 B3 (PW1, PW2) built on 17 Nov 2026 (#527); the live run found and fixed five gaps (#528-#530, #532, #536) and proved the rest the same day (#537): a missing page explored and proposed (#531), Agent 2 started again on merge, two changed selectors healed in one pull request (#534) with no defect raised. Their last checks (E246, E254, E255) wait for events.
-S1 built on 17 Nov 2026 (#540): Agent 2's gate and repair, the plan's path rule, Agent 4's check before the browser run, and BasePage's navigation and upload guards; E258 proven live the same day with throw-away #541 (and the run summary's explanation of a refusal, #542, E261); E259 proven by the D3 check's Agent 2 run (#545, 17 Nov); E260's nightly half waits for the night. P1 and P3 on hold (owner).
+S1 built on 17 Nov 2026 (#540): Agent 2's gate and repair, the plan's path rule, Agent 4's check before the browser run, and BasePage's navigation and upload guards; E258 proven live the same day with throw-away #541 (and the run summary's explanation of a refusal, #542, E261); E259 proven by the D3 check's Agent 2 run (#545, 17 Nov); E260's nightly half by the scheduled Agent 4 run of 18 Nov (26/26, no host refused) - S1 proven in full and removed (#554). P1 and P3 on hold (owner).
 C3 and D3 built together on 17 Nov 2026 (#543) and proven live the same day with throw-away bugs (#544 fixed the one gap found: EXP refs unread by the coverage check; evidence #548): D3's prompt change was the first one C3 replayed.
 C4 added on 15 Nov 2026 at the owner's request (old stories showed "not mapped";
 a project adopting the framework would see it on every story) and built in #523.
