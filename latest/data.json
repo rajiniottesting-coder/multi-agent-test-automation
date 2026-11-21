@@ -1,0 +1,2440 @@
+{
+ "generated": "2026-11-21 03:02",
+ "window_days": 30,
+ "kpis": {
+  "runs": 55,
+  "latest_run": {
+   "commit": "2f5a42f726794936f0e6ffcdf6c893b4adea05d4",
+   "conclusion": "success",
+   "duration_s": 59.411,
+   "event": "schedule",
+   "failed": 0,
+   "flaky": 0,
+   "outage": 0,
+   "passed": 26,
+   "run_id": 44857957799,
+   "schema": 1,
+   "skipped": 0,
+   "started": "2026-11-21T02:49:35+00:00",
+   "tests": 26,
+   "url": "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/44857957799"
+  },
+  "latest_pass_rate": 1.0,
+  "window_pass_rate": 0.9838935574229691,
+  "flaky": 0,
+  "outage_runs": 1,
+  "tests": 37
+ },
+ "trend": {
+  "run": [
+   42946092713,
+   42950342049,
+   42950372112,
+   42952020866,
+   42954684354,
+   42955699899,
+   43036940726,
+   43141880261,
+   43175141306,
+   43179833196,
+   43349911297,
+   43413333371,
+   43417583302,
+   43423276060,
+   43433056319,
+   43452900071,
+   43452911592,
+   43462159819,
+   43478542611,
+   43480338555,
+   43542469255,
+   43543135560,
+   43560401821,
+   43561141209,
+   43561616529,
+   43561631012,
+   43562579557,
+   43564862236,
+   43571047730,
+   43573354129,
+   43575033666,
+   43618239144,
+   43621094397,
+   43621932763,
+   43624258531,
+   43662472561,
+   43785896875,
+   43921380647,
+   43928774982,
+   43995384821,
+   44005208445,
+   44006286037,
+   44012804893,
+   44015316569,
+   44021138536,
+   44033342104,
+   44036028671,
+   44041439210,
+   44045761490,
+   44060992406,
+   44065739131,
+   44228225851,
+   44446937266,
+   44661883628,
+   44857957799
+  ],
+  "started": [
+   "2026-11-11 02:26",
+   "2026-11-11 03:05",
+   "2026-11-11 03:05",
+   "2026-11-11 03:19",
+   "2026-11-11 03:44",
+   "2026-11-11 03:53",
+   "2026-11-11 14:16",
+   "2026-11-12 02:30",
+   "2026-11-12 07:25",
+   "2026-11-12 08:03",
+   "2026-11-13 02:07",
+   "2026-11-13 10:59",
+   "2026-11-13 11:30",
+   "2026-11-13 12:12",
+   "2026-11-13 13:22",
+   "2026-11-13 15:28",
+   "2026-11-13 15:28",
+   "2026-11-13 16:22",
+   "2026-11-13 18:01",
+   "2026-11-13 18:12",
+   "2026-11-14 01:45",
+   "2026-11-14 01:52",
+   "2026-11-14 05:12",
+   "2026-11-14 05:21",
+   "2026-11-14 05:27",
+   "2026-11-14 05:27",
+   "2026-11-14 05:39",
+   "2026-11-14 06:08",
+   "2026-11-14 07:25",
+   "2026-11-14 07:55",
+   "2026-11-14 08:16",
+   "2026-11-14 16:55",
+   "2026-11-14 17:26",
+   "2026-11-14 17:35",
+   "2026-11-14 18:01",
+   "2026-11-15 01:18",
+   "2026-11-16 01:22",
+   "2026-11-16 17:43",
+   "2026-11-16 18:26",
+   "2026-11-17 01:24",
+   "2026-11-17 02:44",
+   "2026-11-17 02:53",
+   "2026-11-17 03:48",
+   "2026-11-17 04:10",
+   "2026-11-17 05:01",
+   "2026-11-17 06:43",
+   "2026-11-17 07:05",
+   "2026-11-17 07:47",
+   "2026-11-17 08:19",
+   "2026-11-17 10:01",
+   "2026-11-17 10:32",
+   "2026-11-18 03:07",
+   "2026-11-19 02:48",
+   "2026-11-20 02:35",
+   "2026-11-21 02:49"
+  ],
+  "url": [
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/42946092713",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/42950342049",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/42950372112",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/42952020866",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/42954684354",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/42955699899",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43036940726",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43141880261",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43175141306",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43179833196",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43349911297",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43413333371",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43417583302",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43423276060",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43433056319",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43452900071",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43452911592",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43462159819",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43478542611",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43480338555",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43542469255",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43543135560",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43560401821",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43561141209",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43561616529",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43561631012",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43562579557",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43564862236",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43571047730",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43573354129",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43575033666",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43618239144",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43621094397",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43621932763",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43624258531",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43662472561",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43785896875",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43921380647",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43928774982",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/43995384821",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/44005208445",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/44006286037",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/44012804893",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/44015316569",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/44021138536",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/44033342104",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/44036028671",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/44041439210",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/44045761490",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/44060992406",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/44065739131",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/44228225851",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/44446937266",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/44661883628",
+   "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/44857957799"
+  ],
+  "passed": [
+   25,
+   25,
+   25,
+   25,
+   25,
+   25,
+   26,
+   26,
+   26,
+   26,
+   26,
+   26,
+   26,
+   26,
+   26,
+   26,
+   26,
+   26,
+   26,
+   26,
+   26,
+   27,
+   26,
+   26,
+   29,
+   29,
+   30,
+   26,
+   26,
+   27,
+   27,
+   0,
+   27,
+   26,
+   26,
+   26,
+   26,
+   26,
+   26,
+   26,
+   26,
+   19,
+   26,
+   26,
+   26,
+   26,
+   26,
+   26,
+   26,
+   26,
+   26,
+   26,
+   26,
+   26,
+   26
+  ],
+  "flaky": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "failed": [
+   0,
+   1,
+   1,
+   1,
+   1,
+   1,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   1,
+   0,
+   0,
+   0,
+   2,
+   2,
+   1,
+   0,
+   0,
+   1,
+   1,
+   0,
+   1,
+   2,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   7,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "outage": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   28,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "skipped": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "duration_min": [
+   1.24,
+   0.84,
+   0.85,
+   0.9,
+   0.91,
+   0.85,
+   3.27,
+   0.75,
+   2.02,
+   1.95,
+   0.88,
+   3.01,
+   2.08,
+   0.84,
+   0.88,
+   0.69,
+   0.8,
+   0.99,
+   0.92,
+   0.95,
+   0.87,
+   0.88,
+   0.71,
+   0.59,
+   1.09,
+   0.96,
+   0.96,
+   0.76,
+   0.77,
+   0.85,
+   2.82,
+   12.96,
+   0.83,
+   1.0,
+   0.92,
+   0.93,
+   0.74,
+   1.15,
+   0.81,
+   0.9,
+   1.02,
+   4.68,
+   1.9,
+   2.39,
+   0.97,
+   1.7,
+   1.71,
+   1.93,
+   2.04,
+   0.82,
+   1.05,
+   2.0,
+   1.19,
+   0.73,
+   0.99
+  ]
+ },
+ "latest": {
+  "run": {
+   "commit": "2f5a42f726794936f0e6ffcdf6c893b4adea05d4",
+   "conclusion": "success",
+   "duration_s": 59.411,
+   "event": "schedule",
+   "failed": 0,
+   "flaky": 0,
+   "outage": 0,
+   "passed": 26,
+   "run_id": 44857957799,
+   "schema": 1,
+   "skipped": 0,
+   "started": "2026-11-21T02:49:35+00:00",
+   "tests": 26,
+   "url": "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/44857957799"
+  },
+  "rows": [],
+  "pass_rate": 1.0,
+  "passed": 26,
+  "expected": 0,
+  "changes": {
+   "previous": {
+    "commit": "2f5a42f726794936f0e6ffcdf6c893b4adea05d4",
+    "conclusion": "success",
+    "duration_s": 43.524,
+    "event": "schedule",
+    "failed": 0,
+    "flaky": 0,
+    "outage": 0,
+    "passed": 26,
+    "run_id": 44661883628,
+    "schema": 1,
+    "skipped": 0,
+    "started": "2026-11-20T02:35:27+00:00",
+    "tests": 26,
+    "url": "https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/44661883628"
+   },
+   "newly_failing": [],
+   "fixed": [],
+   "still_failing": [],
+   "new": [],
+   "gone": []
+  }
+ },
+ "slowest": [
+  {
+   "test": "tests.step_defs.test_cart_management::test_removing_one_of_two_products_takes_it_out_of_the_cart_and_keeps_the_other",
+   "median_s": 4.3,
+   "max_s": 17.1,
+   "runs": 54
+  },
+  {
+   "test": "tests.step_defs.test_cart_management::test_adding_a_second_different_product_keeps_both_products_in_the_cart",
+   "median_s": 4.0,
+   "max_s": 45.7,
+   "runs": 54
+  },
+  {
+   "test": "tests.step_defs.test_zz_validation_window_q::test_window_q_smoke_check_that_fails",
+   "median_s": 4.0,
+   "max_s": 4.2,
+   "runs": 3
+  },
+  {
+   "test": "tests.step_defs.test_cart_management::test_add_a_single_product_to_the_cart_from_its_product_details_page",
+   "median_s": 3.5,
+   "max_s": 45.7,
+   "runs": 54
+  },
+  {
+   "test": "tests.step_defs.test_zz_validation_window_t::test_window_t_check_that_waits_for_its_deployment",
+   "median_s": 3.5,
+   "max_s": 3.7,
+   "runs": 2
+  },
+  {
+   "test": "tests.step_defs.test_zz_validation_window_j::test_a_throwaway_failure_the_tracker_is_asked_to_record",
+   "median_s": 3.2,
+   "max_s": 3.3,
+   "runs": 5
+  },
+  {
+   "test": "tests.step_defs.test_zz_validation_window_r::test_window_r_check_that_finds_an_application_bug",
+   "median_s": 3.0,
+   "max_s": 3.4,
+   "runs": 2
+  },
+  {
+   "test": "tests.step_defs.test_cart_management::test_adding_the_same_product_twice_shows_its_quantity_increased_to_2",
+   "median_s": 2.7,
+   "max_s": 8.6,
+   "runs": 54
+  },
+  {
+   "test": "tests.step_defs.test_contact_us_form::test_visitor_submits_the_form_with_all_fields_filled_and_returns_home",
+   "median_s": 2.5,
+   "max_s": 33.4,
+   "runs": 54
+  },
+  {
+   "test": "tests.step_defs.test_zz_validation_window_q::test_window_q_check_a_persons_bug_covers",
+   "median_s": 2.5,
+   "max_s": 2.6,
+   "runs": 3
+  }
+ ],
+ "flaky": [],
+ "by_file": [
+  {
+   "name": "cart_management.feature",
+   "tests": 4,
+   "passed": 4,
+   "failed": 0,
+   "other": 0,
+   "pass_rate": 1.0
+  },
+  {
+   "name": "contact_us_form.feature",
+   "tests": 2,
+   "passed": 2,
+   "failed": 0,
+   "other": 0,
+   "pass_rate": 1.0
+  },
+  {
+   "name": "login.feature",
+   "tests": 5,
+   "passed": 5,
+   "failed": 0,
+   "other": 0,
+   "pass_rate": 1.0
+  },
+  {
+   "name": "newsletter_subscription.feature",
+   "tests": 1,
+   "passed": 1,
+   "failed": 0,
+   "other": 0,
+   "pass_rate": 1.0
+  },
+  {
+   "name": "product_detail_cart.feature",
+   "tests": 4,
+   "passed": 4,
+   "failed": 0,
+   "other": 0,
+   "pass_rate": 1.0
+  },
+  {
+   "name": "product_reviews.feature",
+   "tests": 3,
+   "passed": 3,
+   "failed": 0,
+   "other": 0,
+   "pass_rate": 1.0
+  },
+  {
+   "name": "product_search.feature",
+   "tests": 3,
+   "passed": 3,
+   "failed": 0,
+   "other": 0,
+   "pass_rate": 1.0
+  },
+  {
+   "name": "signup_existing_email.feature",
+   "tests": 1,
+   "passed": 1,
+   "failed": 0,
+   "other": 0,
+   "pass_rate": 1.0
+  },
+  {
+   "name": "test_cases_page.feature",
+   "tests": 2,
+   "passed": 2,
+   "failed": 0,
+   "other": 0,
+   "pass_rate": 1.0
+  },
+  {
+   "name": "test_cases_page_scrum_330.feature",
+   "tests": 1,
+   "passed": 1,
+   "failed": 0,
+   "other": 0,
+   "pass_rate": 1.0
+  }
+ ],
+ "by_story": [
+  {
+   "name": "SCRUM-111",
+   "tests": 4,
+   "passed": 4,
+   "failed": 0,
+   "other": 0,
+   "pass_rate": 1.0
+  },
+  {
+   "name": "SCRUM-200",
+   "tests": 3,
+   "passed": 3,
+   "failed": 0,
+   "other": 0,
+   "pass_rate": 1.0
+  },
+  {
+   "name": "SCRUM-201",
+   "tests": 4,
+   "passed": 4,
+   "failed": 0,
+   "other": 0,
+   "pass_rate": 1.0
+  },
+  {
+   "name": "SCRUM-202",
+   "tests": 1,
+   "passed": 1,
+   "failed": 0,
+   "other": 0,
+   "pass_rate": 1.0
+  },
+  {
+   "name": "SCRUM-282",
+   "tests": 5,
+   "passed": 5,
+   "failed": 0,
+   "other": 0,
+   "pass_rate": 1.0
+  },
+  {
+   "name": "SCRUM-283",
+   "tests": 3,
+   "passed": 3,
+   "failed": 0,
+   "other": 0,
+   "pass_rate": 1.0
+  },
+  {
+   "name": "SCRUM-284",
+   "tests": 2,
+   "passed": 2,
+   "failed": 0,
+   "other": 0,
+   "pass_rate": 1.0
+  },
+  {
+   "name": "SCRUM-293",
+   "tests": 2,
+   "passed": 2,
+   "failed": 0,
+   "other": 0,
+   "pass_rate": 1.0
+  },
+  {
+   "name": "SCRUM-330",
+   "tests": 1,
+   "passed": 1,
+   "failed": 0,
+   "other": 0,
+   "pass_rate": 1.0
+  },
+  {
+   "name": "SCRUM-408",
+   "tests": 1,
+   "passed": 1,
+   "failed": 0,
+   "other": 0,
+   "pass_rate": 1.0
+  }
+ ],
+ "defects": {
+  "total": 0,
+  "by_age": [],
+  "by_component": []
+ },
+ "defect_list": [],
+ "sprint": {
+  "id": 1,
+  "name": "SCRUM Sprint 1",
+  "start": "2026-11-14T04:00:00.000Z",
+  "end": "2026-11-27T18:20:00.000Z"
+ },
+ "traceability": [
+  {
+   "story": "SCRUM-111",
+   "story_summary": "Add products to the cart and remove them",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC1",
+   "criterion_text": "Adding a product from its details page puts it in the cart.",
+   "test_case": "SCRUM-212",
+   "test_case_summary": "[Positive] Add a single product to the cart from its product details page",
+   "scenario": "tests.step_defs.test_cart_management::test_add_a_single_product_to_the_cart_from_its_product_details_page",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-111",
+   "story_summary": "Add products to the cart and remove them",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC2",
+   "criterion_text": "Adding a second, different product keeps both products in the cart.",
+   "test_case": "SCRUM-213",
+   "test_case_summary": "[Positive] Adding a second, different product keeps both products in the cart",
+   "scenario": "tests.step_defs.test_cart_management::test_adding_a_second_different_product_keeps_both_products_in_the_cart",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-111",
+   "story_summary": "Add products to the cart and remove them",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC3",
+   "criterion_text": "Removing one of two products takes it out of the cart and keeps the other.",
+   "test_case": "SCRUM-214",
+   "test_case_summary": "[Positive] Removing one of two products takes it out of the cart and keeps the other",
+   "scenario": "tests.step_defs.test_cart_management::test_removing_one_of_two_products_takes_it_out_of_the_cart_and_keeps_the_other",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-111",
+   "story_summary": "Add products to the cart and remove them",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC4",
+   "criterion_text": "Adding the same product twice shows it in the cart with a quantity of 2.",
+   "test_case": "SCRUM-215",
+   "test_case_summary": "[Edge] Adding the same product twice shows its quantity increased to 2",
+   "scenario": "tests.step_defs.test_cart_management::test_adding_the_same_product_twice_shows_its_quantity_increased_to_2",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-111",
+   "story_summary": "Add products to the cart and remove them",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC5",
+   "criterion_text": "None of this requires the shopper to sign in.",
+   "test_case": "SCRUM-215",
+   "test_case_summary": "[Edge] Adding the same product twice shows its quantity increased to 2",
+   "scenario": "tests.step_defs.test_cart_management::test_adding_the_same_product_twice_shows_its_quantity_increased_to_2",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-111",
+   "story_summary": "Add products to the cart and remove them",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC5",
+   "criterion_text": "None of this requires the shopper to sign in.",
+   "test_case": "SCRUM-214",
+   "test_case_summary": "[Positive] Removing one of two products takes it out of the cart and keeps the other",
+   "scenario": "tests.step_defs.test_cart_management::test_removing_one_of_two_products_takes_it_out_of_the_cart_and_keeps_the_other",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-111",
+   "story_summary": "Add products to the cart and remove them",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC5",
+   "criterion_text": "None of this requires the shopper to sign in.",
+   "test_case": "SCRUM-213",
+   "test_case_summary": "[Positive] Adding a second, different product keeps both products in the cart",
+   "scenario": "tests.step_defs.test_cart_management::test_adding_a_second_different_product_keeps_both_products_in_the_cart",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-111",
+   "story_summary": "Add products to the cart and remove them",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC5",
+   "criterion_text": "None of this requires the shopper to sign in.",
+   "test_case": "SCRUM-212",
+   "test_case_summary": "[Positive] Add a single product to the cart from its product details page",
+   "scenario": "tests.step_defs.test_cart_management::test_add_a_single_product_to_the_cart_from_its_product_details_page",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-200",
+   "story_summary": "Search the product catalogue by name",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC1",
+   "criterion_text": "From the products page, a shopper can search by a product name and see the matching products.",
+   "test_case": "SCRUM-216",
+   "test_case_summary": "[Positive] Search for an existing product by name returns only matching products",
+   "scenario": "tests.step_defs.test_product_search::test_searching_for_an_existing_product_returns_only_matching_products",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-200",
+   "story_summary": "Search the product catalogue by name",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC2",
+   "criterion_text": "Every product shown in the results matches the search term.",
+   "test_case": "SCRUM-216",
+   "test_case_summary": "[Positive] Search for an existing product by name returns only matching products",
+   "scenario": "tests.step_defs.test_product_search::test_searching_for_an_existing_product_returns_only_matching_products",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-200",
+   "story_summary": "Search the product catalogue by name",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC3",
+   "criterion_text": "A search for a name that no product has shows no products.",
+   "test_case": "SCRUM-217",
+   "test_case_summary": "[Negative] Search for a product name that does not exist shows no products",
+   "scenario": "tests.step_defs.test_product_search::test_searching_for_a_nonexistent_product_shows_no_products",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-200",
+   "story_summary": "Search the product catalogue by name",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC4",
+   "criterion_text": "None of this requires the shopper to sign in.",
+   "test_case": "SCRUM-218",
+   "test_case_summary": "[Edge] Submitting an empty search query returns the whole catalogue, not zero results",
+   "scenario": "tests.step_defs.test_product_search::test_submitting_an_empty_search_query_returns_the_whole_catalogue",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-200",
+   "story_summary": "Search the product catalogue by name",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC4",
+   "criterion_text": "None of this requires the shopper to sign in.",
+   "test_case": "SCRUM-217",
+   "test_case_summary": "[Negative] Search for a product name that does not exist shows no products",
+   "scenario": "tests.step_defs.test_product_search::test_searching_for_a_nonexistent_product_shows_no_products",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-200",
+   "story_summary": "Search the product catalogue by name",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC4",
+   "criterion_text": "None of this requires the shopper to sign in.",
+   "test_case": "SCRUM-216",
+   "test_case_summary": "[Positive] Search for an existing product by name returns only matching products",
+   "scenario": "tests.step_defs.test_product_search::test_searching_for_an_existing_product_returns_only_matching_products",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-201",
+   "story_summary": "Add several of one product to the cart from its details page",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC1",
+   "criterion_text": "A shopper can open a product from the catalogue and see its details: its name, its price, and whether it is available, its condition and brand.",
+   "test_case": "SCRUM-219",
+   "test_case_summary": "[Positive] Product details page shows name, price, availability, condition and brand",
+   "scenario": "tests.step_defs.test_product_detail_cart::test_product_details_page_shows_name_price_availability_condition_and_brand",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-201",
+   "story_summary": "Add several of one product to the cart from its details page",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC2",
+   "criterion_text": "A shopper can choose how many of the product to buy before adding it to the cart.",
+   "test_case": "SCRUM-222",
+   "test_case_summary": "[Edge] Add a large boundary quantity of a product and verify the cart reflects it accurately",
+   "scenario": "tests.step_defs.test_product_detail_cart::test_add_a_large_boundary_quantity_of_a_product_and_verify_the_cart_reflects_it_accurately",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-201",
+   "story_summary": "Add several of one product to the cart from its details page",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC2",
+   "criterion_text": "A shopper can choose how many of the product to buy before adding it to the cart.",
+   "test_case": "SCRUM-221",
+   "test_case_summary": "[Positive] Add product to cart and continue shopping, then verify it is in the cart",
+   "scenario": "tests.step_defs.test_product_detail_cart::test_add_product_to_cart_and_continue_shopping_then_verify_it_is_in_the_cart",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-201",
+   "story_summary": "Add several of one product to the cart from its details page",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC2",
+   "criterion_text": "A shopper can choose how many of the product to buy before adding it to the cart.",
+   "test_case": "SCRUM-220",
+   "test_case_summary": "[Positive] Choose a quantity and add product to cart, then view cart to confirm quantity",
+   "scenario": "tests.step_defs.test_product_detail_cart::test_choose_a_quantity_and_add_product_to_cart_then_view_cart_to_confirm_quantity",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-201",
+   "story_summary": "Add several of one product to the cart from its details page",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC3",
+   "criterion_text": "Adding a product to the cart confirms the addition and offers a way to view the cart.",
+   "test_case": "SCRUM-222",
+   "test_case_summary": "[Edge] Add a large boundary quantity of a product and verify the cart reflects it accurately",
+   "scenario": "tests.step_defs.test_product_detail_cart::test_add_a_large_boundary_quantity_of_a_product_and_verify_the_cart_reflects_it_accurately",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-201",
+   "story_summary": "Add several of one product to the cart from its details page",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC3",
+   "criterion_text": "Adding a product to the cart confirms the addition and offers a way to view the cart.",
+   "test_case": "SCRUM-221",
+   "test_case_summary": "[Positive] Add product to cart and continue shopping, then verify it is in the cart",
+   "scenario": "tests.step_defs.test_product_detail_cart::test_add_product_to_cart_and_continue_shopping_then_verify_it_is_in_the_cart",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-201",
+   "story_summary": "Add several of one product to the cart from its details page",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC3",
+   "criterion_text": "Adding a product to the cart confirms the addition and offers a way to view the cart.",
+   "test_case": "SCRUM-220",
+   "test_case_summary": "[Positive] Choose a quantity and add product to cart, then view cart to confirm quantity",
+   "scenario": "tests.step_defs.test_product_detail_cart::test_choose_a_quantity_and_add_product_to_cart_then_view_cart_to_confirm_quantity",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-201",
+   "story_summary": "Add several of one product to the cart from its details page",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC4",
+   "criterion_text": "The cart shows the product with the quantity the shopper chose.",
+   "test_case": "SCRUM-222",
+   "test_case_summary": "[Edge] Add a large boundary quantity of a product and verify the cart reflects it accurately",
+   "scenario": "tests.step_defs.test_product_detail_cart::test_add_a_large_boundary_quantity_of_a_product_and_verify_the_cart_reflects_it_accurately",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-201",
+   "story_summary": "Add several of one product to the cart from its details page",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC4",
+   "criterion_text": "The cart shows the product with the quantity the shopper chose.",
+   "test_case": "SCRUM-221",
+   "test_case_summary": "[Positive] Add product to cart and continue shopping, then verify it is in the cart",
+   "scenario": "tests.step_defs.test_product_detail_cart::test_add_product_to_cart_and_continue_shopping_then_verify_it_is_in_the_cart",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-201",
+   "story_summary": "Add several of one product to the cart from its details page",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC4",
+   "criterion_text": "The cart shows the product with the quantity the shopper chose.",
+   "test_case": "SCRUM-220",
+   "test_case_summary": "[Positive] Choose a quantity and add product to cart, then view cart to confirm quantity",
+   "scenario": "tests.step_defs.test_product_detail_cart::test_choose_a_quantity_and_add_product_to_cart_then_view_cart_to_confirm_quantity",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-201",
+   "story_summary": "Add several of one product to the cart from its details page",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC5",
+   "criterion_text": "None of this requires the shopper to sign in.",
+   "test_case": "SCRUM-222",
+   "test_case_summary": "[Edge] Add a large boundary quantity of a product and verify the cart reflects it accurately",
+   "scenario": "tests.step_defs.test_product_detail_cart::test_add_a_large_boundary_quantity_of_a_product_and_verify_the_cart_reflects_it_accurately",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-201",
+   "story_summary": "Add several of one product to the cart from its details page",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC5",
+   "criterion_text": "None of this requires the shopper to sign in.",
+   "test_case": "SCRUM-221",
+   "test_case_summary": "[Positive] Add product to cart and continue shopping, then verify it is in the cart",
+   "scenario": "tests.step_defs.test_product_detail_cart::test_add_product_to_cart_and_continue_shopping_then_verify_it_is_in_the_cart",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-201",
+   "story_summary": "Add several of one product to the cart from its details page",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC5",
+   "criterion_text": "None of this requires the shopper to sign in.",
+   "test_case": "SCRUM-220",
+   "test_case_summary": "[Positive] Choose a quantity and add product to cart, then view cart to confirm quantity",
+   "scenario": "tests.step_defs.test_product_detail_cart::test_choose_a_quantity_and_add_product_to_cart_then_view_cart_to_confirm_quantity",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-201",
+   "story_summary": "Add several of one product to the cart from its details page",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC5",
+   "criterion_text": "None of this requires the shopper to sign in.",
+   "test_case": "SCRUM-219",
+   "test_case_summary": "[Positive] Product details page shows name, price, availability, condition and brand",
+   "scenario": "tests.step_defs.test_product_detail_cart::test_product_details_page_shows_name_price_availability_condition_and_brand",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-202",
+   "story_summary": "Subscribe to the newsletter from the home page",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC1",
+   "criterion_text": "A visitor can subscribe to the newsletter from the home page with their email address.",
+   "test_case": "SCRUM-223",
+   "test_case_summary": "[Positive] Visitor subscribes to the newsletter with a valid email address",
+   "scenario": "tests.step_defs.test_newsletter_subscription::test_visitor_subscribes_to_the_newsletter_with_a_valid_email_address",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-202",
+   "story_summary": "Subscribe to the newsletter from the home page",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC2",
+   "criterion_text": "The visitor sees that the subscription succeeded, without leaving the page.",
+   "test_case": "SCRUM-223",
+   "test_case_summary": "[Positive] Visitor subscribes to the newsletter with a valid email address",
+   "scenario": "tests.step_defs.test_newsletter_subscription::test_visitor_subscribes_to_the_newsletter_with_a_valid_email_address",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-283",
+   "story_summary": "Write a review for a product",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC1",
+   "criterion_text": "On a product's details page, a shopper who fills in their name, email address and review text and submits the review form sees the message \"Thank you for your review.\"",
+   "test_case": "SCRUM-285",
+   "test_case_summary": "[Positive] Submit a complete review on a product's details page shows thank-you message",
+   "scenario": "tests.step_defs.test_product_reviews::test_submit_a_complete_review_on_a_products_details_page_shows_thankyou_message",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-283",
+   "story_summary": "Write a review for a product",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC2",
+   "criterion_text": "Submitting the review form with the review text left empty does not submit the review: the thank-you message is not shown.",
+   "test_case": "SCRUM-286",
+   "test_case_summary": "[Negative] Review form rejects submission when a required field is left empty",
+   "scenario": "tests.step_defs.test_product_reviews::test_review_form_rejects_submission_when_a_required_field_is_left_empty",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-283",
+   "story_summary": "Write a review for a product",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC3",
+   "criterion_text": "The review form (\"Write Your Review\") is shown on a product's details page without signing in.",
+   "test_case": "SCRUM-287",
+   "test_case_summary": "[Positive] Write Your Review form is shown on a product's details page without signing in",
+   "scenario": "tests.step_defs.test_product_reviews::test_write_your_review_form_is_shown_on_a_products_details_page_without_signing_in",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-284",
+   "story_summary": "Send a message through the Contact Us form",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC1",
+   "criterion_text": "A visitor who fills in name, email, subject and message on the Contact Us page and submits the form sees a success message confirming the details were submitted.",
+   "test_case": "SCRUM-288",
+   "test_case_summary": "[Positive] Visitor submits Contact Us form with all fields filled and returns home via Home button",
+   "scenario": "tests.step_defs.test_contact_us_form::test_visitor_submits_the_form_with_all_fields_filled_and_returns_home",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-284",
+   "story_summary": "Send a message through the Contact Us form",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC2",
+   "criterion_text": "Submitting the Contact Us form with the email left empty does not submit the form: no success message is shown.",
+   "test_case": "SCRUM-289",
+   "test_case_summary": "Submitting the form with an empty email field does not submit",
+   "scenario": "tests.step_defs.test_contact_us_form::test_submitting_the_form_with_an_empty_email_field_does_not_submit",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": "matched by wording: the coverage map cites this test case's earlier title"
+  },
+  {
+   "story": "SCRUM-284",
+   "story_summary": "Send a message through the Contact Us form",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC3",
+   "criterion_text": "After a successful submission, the Home button returns the visitor to the home page.",
+   "test_case": "SCRUM-288",
+   "test_case_summary": "[Positive] Visitor submits Contact Us form with all fields filled and returns home via Home button",
+   "scenario": "tests.step_defs.test_contact_us_form::test_visitor_submits_the_form_with_all_fields_filled_and_returns_home",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-293",
+   "story_summary": "Open the Test Cases page from the top menu",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC1",
+   "criterion_text": "Clicking \"Test Cases\" in the top menu opens the Test Cases page, headed \"Test Cases\".",
+   "test_case": "SCRUM-312",
+   "test_case_summary": "[Positive] Open the Test Cases page from the top menu and verify its layout",
+   "scenario": "tests.step_defs.test_test_cases_page::test_open_the_test_cases_page_from_the_top_menu_and_verify_its_layout",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-293",
+   "story_summary": "Open the Test Cases page from the top menu",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC2",
+   "criterion_text": "The page lists the test cases, each title shown as a link.",
+   "test_case": "SCRUM-312",
+   "test_case_summary": "[Positive] Open the Test Cases page from the top menu and verify its layout",
+   "scenario": "tests.step_defs.test_test_cases_page::test_open_the_test_cases_page_from_the_top_menu_and_verify_its_layout",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-293",
+   "story_summary": "Open the Test Cases page from the top menu",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC3",
+   "criterion_text": "Clicking a test case's title shows its steps underneath it.",
+   "test_case": "SCRUM-313",
+   "test_case_summary": "[Positive] Clicking a test case's title shows its steps underneath",
+   "scenario": "tests.step_defs.test_test_cases_page::test_clicking_a_test_case_title_shows_its_steps_underneath",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-293",
+   "story_summary": "Open the Test Cases page from the top menu",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC4",
+   "criterion_text": "The page shows a \"Feedback for Us\" section with the email address to write to.",
+   "test_case": "SCRUM-312",
+   "test_case_summary": "[Positive] Open the Test Cases page from the top menu and verify its layout",
+   "scenario": "tests.step_defs.test_test_cases_page::test_open_the_test_cases_page_from_the_top_menu_and_verify_its_layout",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-330",
+   "story_summary": "Open the Test Cases page from the home page button",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC1",
+   "criterion_text": "On the home page, clicking the \"Test Cases\" button opens the Test Cases page, headed \"Test Cases\", and the page lists the test cases.",
+   "test_case": "SCRUM-331",
+   "test_case_summary": "[Positive] Open the Test Cases page from the home page button",
+   "scenario": "tests.step_defs.test_test_cases_page_scrum_330::test_open_the_test_cases_page_from_the_home_page_button",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-330",
+   "story_summary": "Open the Test Cases page from the home page button",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC2",
+   "criterion_text": "The Test Cases page shows a \"Feedback for Us\" section with the email address to write to, as before.",
+   "test_case": "SCRUM-331",
+   "test_case_summary": "[Positive] Open the Test Cases page from the home page button",
+   "scenario": "tests.step_defs.test_test_cases_page_scrum_330::test_open_the_test_cases_page_from_the_home_page_button",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-408",
+   "story_summary": "Signup is refused for an email address that is already registered",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC1",
+   "criterion_text": "On the Signup / Login page, entering a name and the email address of an existing account in the \"New User Signup!\" form and clicking \"Signup\" shows \"Email Address already exist!\".",
+   "test_case": "SCRUM-409",
+   "test_case_summary": "[Negative] Signup with an already-registered email is refused and the Login form remains available",
+   "scenario": "tests.step_defs.test_signup_existing_email::test_signup_with_an_alreadyregistered_email_is_refused_and_the_login_form_remains_available",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  },
+  {
+   "story": "SCRUM-408",
+   "story_summary": "Signup is refused for an email address that is already registered",
+   "story_status": "Done",
+   "story_sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criterion": "AC2",
+   "criterion_text": "The visitor stays on the Signup / Login page: the \"Login to your account\" form is still shown, so they can log in instead.",
+   "test_case": "SCRUM-409",
+   "test_case_summary": "[Negative] Signup with an already-registered email is refused and the Login form remains available",
+   "scenario": "tests.step_defs.test_signup_existing_email::test_signup_with_an_alreadyregistered_email_is_refused_and_the_login_form_remains_available",
+   "result": "passed",
+   "result_date": "2026-11-21",
+   "defects": [],
+   "unmapped_criteria": 0,
+   "note": ""
+  }
+ ],
+ "traceability_summary": {
+  "stories": 9,
+  "criteria": 30,
+  "criteria_uncovered": 0,
+  "criteria_unmapped": 0,
+  "test_cases": 21,
+  "test_cases_without_scenario": 0,
+  "results": {
+   "passed": 44
+  }
+ },
+ "story_groups": [
+  {
+   "story": "SCRUM-111",
+   "summary": "Add products to the cart and remove them",
+   "status": "Done",
+   "sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criteria": 5,
+   "uncovered": 0,
+   "unmapped": 0,
+   "test_cases": 4,
+   "results": {
+    "passed": 8
+   },
+   "defects": [],
+   "rows": 8
+  },
+  {
+   "story": "SCRUM-200",
+   "summary": "Search the product catalogue by name",
+   "status": "Done",
+   "sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criteria": 4,
+   "uncovered": 0,
+   "unmapped": 0,
+   "test_cases": 3,
+   "results": {
+    "passed": 6
+   },
+   "defects": [],
+   "rows": 6
+  },
+  {
+   "story": "SCRUM-201",
+   "summary": "Add several of one product to the cart from its details page",
+   "status": "Done",
+   "sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criteria": 5,
+   "uncovered": 0,
+   "unmapped": 0,
+   "test_cases": 4,
+   "results": {
+    "passed": 14
+   },
+   "defects": [],
+   "rows": 14
+  },
+  {
+   "story": "SCRUM-202",
+   "summary": "Subscribe to the newsletter from the home page",
+   "status": "Done",
+   "sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criteria": 2,
+   "uncovered": 0,
+   "unmapped": 0,
+   "test_cases": 1,
+   "results": {
+    "passed": 2
+   },
+   "defects": [],
+   "rows": 2
+  },
+  {
+   "story": "SCRUM-283",
+   "summary": "Write a review for a product",
+   "status": "Done",
+   "sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criteria": 3,
+   "uncovered": 0,
+   "unmapped": 0,
+   "test_cases": 3,
+   "results": {
+    "passed": 3
+   },
+   "defects": [],
+   "rows": 3
+  },
+  {
+   "story": "SCRUM-284",
+   "summary": "Send a message through the Contact Us form",
+   "status": "Done",
+   "sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criteria": 3,
+   "uncovered": 0,
+   "unmapped": 0,
+   "test_cases": 2,
+   "results": {
+    "passed": 3
+   },
+   "defects": [],
+   "rows": 3
+  },
+  {
+   "story": "SCRUM-293",
+   "summary": "Open the Test Cases page from the top menu",
+   "status": "Done",
+   "sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criteria": 4,
+   "uncovered": 0,
+   "unmapped": 0,
+   "test_cases": 2,
+   "results": {
+    "passed": 4
+   },
+   "defects": [],
+   "rows": 4
+  },
+  {
+   "story": "SCRUM-330",
+   "summary": "Open the Test Cases page from the home page button",
+   "status": "Done",
+   "sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criteria": 2,
+   "uncovered": 0,
+   "unmapped": 0,
+   "test_cases": 1,
+   "results": {
+    "passed": 2
+   },
+   "defects": [],
+   "rows": 2
+  },
+  {
+   "story": "SCRUM-408",
+   "summary": "Signup is refused for an email address that is already registered",
+   "status": "Done",
+   "sprints": [
+    "SCRUM Sprint 0"
+   ],
+   "criteria": 2,
+   "uncovered": 0,
+   "unmapped": 0,
+   "test_cases": 1,
+   "results": {
+    "passed": 2
+   },
+   "defects": [],
+   "rows": 2
+  }
+ ],
+ "sprint_compare": {
+  "previous": {
+   "name": "SCRUM Sprint 0",
+   "start": "2026-05-04",
+   "end": "2026-11-13",
+   "pass_rate": 0.9903660886319846,
+   "runs": 20,
+   "opened": 0,
+   "closed": 0,
+   "open": 2,
+   "detection_rate": null,
+   "spend_usd": 141.9,
+   "stops": 58
+  },
+  "current": {
+   "name": "SCRUM Sprint 1",
+   "start": "2026-11-14",
+   "end": "2026-11-27",
+   "pass_rate": 0.9801980198019802,
+   "runs": 35,
+   "opened": 0,
+   "closed": 0,
+   "open": 0,
+   "detection_rate": null,
+   "spend_usd": 0.11,
+   "stops": 0
+  }
+ },
+ "unlinked_defects": [],
+ "defect_history": {
+  "summary": {
+   "opened": 0,
+   "closed": 0,
+   "open": 0,
+   "by_pipeline": 0,
+   "by_person": 0,
+   "detection_rate": null,
+   "mean_days_to_close": null,
+   "reopened": 0,
+   "deleted": 0,
+   "closed_by_category": []
+  },
+  "trend": {
+   "days": [
+    "2026-10-23",
+    "2026-10-24",
+    "2026-10-25",
+    "2026-10-26",
+    "2026-10-27",
+    "2026-10-28",
+    "2026-10-29",
+    "2026-10-30",
+    "2026-10-31",
+    "2026-11-01",
+    "2026-11-02",
+    "2026-11-03",
+    "2026-11-04",
+    "2026-11-05",
+    "2026-11-06",
+    "2026-11-07",
+    "2026-11-08",
+    "2026-11-09",
+    "2026-11-10",
+    "2026-11-11",
+    "2026-11-12",
+    "2026-11-13",
+    "2026-11-14",
+    "2026-11-15",
+    "2026-11-16",
+    "2026-11-17",
+    "2026-11-18",
+    "2026-11-19",
+    "2026-11-20",
+    "2026-11-21"
+   ],
+   "opened": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "closed": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "open": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  "modules": [
+   {
+    "module": "Cart",
+    "scenarios": 8,
+    "opened": 0,
+    "by_pipeline": 0,
+    "by_person": 0,
+    "detection_rate": null,
+    "product": 0,
+    "closed": 0,
+    "open": 0,
+    "density": 0.0
+   },
+   {
+    "module": "Contact us",
+    "scenarios": 2,
+    "opened": 0,
+    "by_pipeline": 0,
+    "by_person": 0,
+    "detection_rate": null,
+    "product": 0,
+    "closed": 0,
+    "open": 0,
+    "density": 0.0
+   },
+   {
+    "module": "Login and signup",
+    "scenarios": 6,
+    "opened": 0,
+    "by_pipeline": 0,
+    "by_person": 0,
+    "detection_rate": null,
+    "product": 0,
+    "closed": 0,
+    "open": 0,
+    "density": 0.0
+   },
+   {
+    "module": "Newsletter",
+    "scenarios": 1,
+    "opened": 0,
+    "by_pipeline": 0,
+    "by_person": 0,
+    "detection_rate": null,
+    "product": 0,
+    "closed": 0,
+    "open": 0,
+    "density": 0.0
+   },
+   {
+    "module": "Products",
+    "scenarios": 6,
+    "opened": 0,
+    "by_pipeline": 0,
+    "by_person": 0,
+    "detection_rate": null,
+    "product": 0,
+    "closed": 0,
+    "open": 0,
+    "density": 0.0
+   },
+   {
+    "module": "Test cases page",
+    "scenarios": 3,
+    "opened": 0,
+    "by_pipeline": 0,
+    "by_person": 0,
+    "detection_rate": null,
+    "product": 0,
+    "closed": 0,
+    "open": 0,
+    "density": 0.0
+   }
+  ],
+  "per": 10,
+  "recorded": 0,
+  "sync": {
+   "read": 0,
+   "new": 0,
+   "updated": 0,
+   "reopened": 0,
+   "deleted": 0,
+   "left_out": 0,
+   "dropped": 0,
+   "forgotten": 0
+  },
+  "sprints": [
+   {
+    "name": "SCRUM Sprint 0",
+    "start": "2026-05-04",
+    "end": "2026-11-13",
+    "opened": 0,
+    "closed": 0,
+    "open": 2,
+    "mean_days_to_close": null,
+    "reopened": 0,
+    "by_pipeline": 0,
+    "by_person": 0,
+    "detection_rate": null,
+    "written": "2026-11-14T03:36:07+00:00",
+    "densest": null
+   },
+   {
+    "name": "SCRUM Sprint 1",
+    "start": "2026-11-14",
+    "end": "2026-11-27",
+    "opened": 0,
+    "closed": 0,
+    "open": 0,
+    "mean_days_to_close": null,
+    "reopened": 0,
+    "by_pipeline": 0,
+    "by_person": 0,
+    "detection_rate": null,
+    "written": "2026-11-21T03:02:04+00:00",
+    "densest": null
+   }
+  ]
+ },
+ "ai_metrics": {
+  "summary": {
+   "stories": 36,
+   "costed": 36,
+   "cost_usd": 142.01,
+   "cost_per_story": 3.94,
+   "by_agent": [
+    [
+     "Agent 2 (Coder)",
+     111.97
+    ],
+    [
+     "Agent 3 (Reviewer)",
+     12.58
+    ],
+    [
+     "Agent 1 (Test Designer)",
+     10.77
+    ],
+    [
+     "Agent 0 (Impact Analyst)",
+     4.3
+    ],
+    [
+     "Agent 1 (Analyst)",
+     1.24
+    ],
+    [
+     "Agent 5 (Reporter)",
+     1.15
+    ]
+   ],
+   "agents": [
+    {
+     "agent": "Agent 2 (Coder)",
+     "cost_usd": 111.97,
+     "share": 78.8,
+     "runs": 132,
+     "per_run": 0.85
+    },
+    {
+     "agent": "Agent 3 (Reviewer)",
+     "cost_usd": 12.58,
+     "share": 8.9,
+     "runs": 83,
+     "per_run": 0.15
+    },
+    {
+     "agent": "Agent 1 (Test Designer)",
+     "cost_usd": 10.77,
+     "share": 7.6,
+     "runs": 50,
+     "per_run": 0.22
+    },
+    {
+     "agent": "Agent 0 (Impact Analyst)",
+     "cost_usd": 4.3,
+     "share": 3.0,
+     "runs": 41,
+     "per_run": 0.1
+    },
+    {
+     "agent": "Agent 1 (Analyst)",
+     "cost_usd": 1.24,
+     "share": 0.9,
+     "runs": 7,
+     "per_run": 0.18
+    },
+    {
+     "agent": "Agent 5 (Reporter)",
+     "cost_usd": 1.15,
+     "share": 0.8,
+     "runs": 82,
+     "per_run": 0.01
+    }
+   ],
+   "stories_by_stop": {
+    "automated only in part": [
+     [
+      "SCRUM-201",
+      1
+     ],
+     [
+      "SCRUM-293",
+      5
+     ],
+     [
+      "SCRUM-330",
+      3
+     ],
+     [
+      "SCRUM-332",
+      1
+     ],
+     [
+      "SCRUM-334",
+      1
+     ],
+     [
+      "SCRUM-354",
+      1
+     ],
+     [
+      "SCRUM-367",
+      2
+     ],
+     [
+      "SCRUM-371",
+      1
+     ],
+     [
+      "SCRUM-379",
+      2
+     ],
+     [
+      "SCRUM-381",
+      1
+     ],
+     [
+      "SCRUM-398",
+      1
+     ],
+     [
+      "SCRUM-408",
+      1
+     ]
+    ],
+    "Agent 2's gate refused the code": [
+     [
+      "SCRUM-284",
+      1
+     ],
+     [
+      "SCRUM-293",
+      1
+     ],
+     [
+      "SCRUM-296",
+      1
+     ],
+     [
+      "SCRUM-332",
+      1
+     ],
+     [
+      "SCRUM-354",
+      3
+     ],
+     [
+      "SCRUM-355",
+      1
+     ],
+     [
+      "SCRUM-360",
+      1
+     ],
+     [
+      "SCRUM-379",
+      5
+     ],
+     [
+      "SCRUM-380",
+      1
+     ],
+     [
+      "SCRUM-381",
+      4
+     ],
+     [
+      "SCRUM-394",
+      1
+     ],
+     [
+      "SCRUM-398",
+      3
+     ],
+     [
+      "SCRUM-403",
+      1
+     ],
+     [
+      "SCRUM-408",
+      2
+     ]
+    ],
+    "an update was stopped": [
+     [
+      "SCRUM-293",
+      1
+     ]
+    ],
+    "held by the spend budget": [
+     [
+      "SCRUM-293",
+      1
+     ],
+     [
+      "SCRUM-360",
+      1
+     ],
+     [
+      "SCRUM-379",
+      2
+     ],
+     [
+      "SCRUM-394",
+      1
+     ],
+     [
+      "SCRUM-408",
+      1
+     ]
+    ],
+    "Agent 1 handed the story back": [
+     [
+      "SCRUM-297",
+      1
+     ],
+     [
+      "SCRUM-355",
+      1
+     ],
+     [
+      "SCRUM-367",
+      1
+     ],
+     [
+      "SCRUM-398",
+      1
+     ],
+     [
+      "SCRUM-403",
+      1
+     ]
+    ]
+   },
+   "weekly": [
+    {
+     "week": "2026-10-26",
+     "cost_usd": 4.76,
+     "stories": 2,
+     "cost_per_story": 2.38,
+     "stops": {},
+     "stop_total": 0,
+     "coded": 0,
+     "first_attempt": 0,
+     "first_attempt_rate": null
+    },
+    {
+     "week": "2026-11-02",
+     "cost_usd": 26.09,
+     "stories": 10,
+     "cost_per_story": 2.61,
+     "stops": {
+      "automated only in part": 4,
+      "Agent 2's gate refused the code": 3,
+      "an update was stopped": 1,
+      "held by the spend budget": 1,
+      "Agent 1 handed the story back": 1
+     },
+     "stop_total": 10,
+     "coded": 3,
+     "first_attempt": 0,
+     "first_attempt_rate": 0.0
+    },
+    {
+     "week": "2026-11-09",
+     "cost_usd": 75.11,
+     "stories": 23,
+     "cost_per_story": 3.27,
+     "stops": {
+      "automated only in part": 16,
+      "Agent 2's gate refused the code": 23,
+      "Agent 1 handed the story back": 4,
+      "held by the spend budget": 5
+     },
+     "stop_total": 48,
+     "coded": 7,
+     "first_attempt": 1,
+     "first_attempt_rate": 14.3
+    },
+    {
+     "week": "2026-11-16",
+     "cost_usd": 0.11,
+     "stories": 4,
+     "cost_per_story": 0.03,
+     "stops": {},
+     "stop_total": 0,
+     "coded": 0,
+     "first_attempt": 0,
+     "first_attempt_rate": null
+    }
+   ],
+   "priced": true,
+   "coded": 14,
+   "first_attempt": 3,
+   "first_attempt_rate": 21.4,
+   "refusals": [
+    [
+     "Agent 2's gate refused the code",
+     26
+    ],
+    [
+     "automated only in part",
+     20
+    ],
+    [
+     "held by the spend budget",
+     6
+    ],
+    [
+     "Agent 1 handed the story back",
+     5
+    ],
+    [
+     "an update was stopped",
+     1
+    ]
+   ],
+   "refusal_total": 58,
+   "reviews": 0,
+   "changes_requested": 0,
+   "findings": {
+    "blocking": 0,
+    "major": 0,
+    "minor": 0,
+    "info": 0
+   },
+   "predictions": 19,
+   "recall": 87.5,
+   "precision": 87.5,
+   "costliest": [
+    [
+     "SCRUM-111",
+     19.629695
+    ],
+    [
+     "SCRUM-187",
+     17.682901
+    ],
+    [
+     "SCRUM-360",
+     12.853314
+    ],
+    [
+     "SCRUM-293",
+     10.326133
+    ],
+    [
+     "SCRUM-379",
+     8.957958
+    ]
+   ]
+  },
+  "synced": {
+   "read": 42,
+   "kept": 36
+  },
+  "as_of": "2026-11-21 03:02"
+ },
+ "site_url": "https://rajiniottesting-coder.github.io/multi-agent-test-automation",
+ "source": "full runs on the default branch"
+}

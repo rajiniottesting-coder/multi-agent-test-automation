@@ -1,0 +1,31 @@
+<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Latest run</title><style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1d2330;--muted:#5d6675;--line:#e3e6eb;--accent:#1f4e8c}
+@media (prefers-color-scheme:dark){:root{--bg:#14171c;--card:#1d2128;--ink:#e6e9ee;--muted:#9aa3b0;--line:#2c323b;--accent:#7fb0ff}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif}
+header{padding:20px 24px;border-bottom:1px solid var(--line);background:var(--card)}
+header h1{margin:0;font-size:20px}header p{margin:4px 0 0;color:var(--muted);font-size:13px}
+nav a{margin-right:16px;color:var(--accent);text-decoration:none;font-weight:600}
+main{max-width:1200px;margin:0 auto;padding:16px}
+.grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+.kpi b{display:block;font-size:26px}.kpi span{color:var(--muted);font-size:13px}
+h2{font-size:16px;margin:0 0 12px}table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:600}.wrap{overflow-x:auto}
+.v-passed{color:#2e7d32}.v-flaky{color:#b28704}.v-failed{color:#c62828}.v-outage{color:#6a1b9a}
+.muted{color:var(--muted)}code{font-size:12px}
+.v-expected{color:#1f4e8c}.v-new{color:#c62828;font-weight:600}.v-fixed{color:#2e7d32;font-weight:600}
+.sections{position:sticky;top:0;z-index:5;background:var(--bg);padding:8px 0;margin-bottom:8px}
+.sections a{display:inline-block;margin:0 6px 6px 0;padding:4px 10px;border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--accent);text-decoration:none;font-size:13px}
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.filters select,.filters input,.filters button{font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)}
+.filters button{cursor:pointer;color:var(--accent)}
+.filters select,.filters input{max-width:100%}
+details.story{border:1px solid var(--line);border-radius:8px;margin-bottom:10px;padding:6px 10px}
+details.story>summary{cursor:pointer;padding:4px 0}details.story>summary .muted{font-size:13px}
+/* RP24: on a phone a wide table reads as one card per row, each cell labelled */
+@media (max-width:640px){.wrap table,.wrap tbody,.wrap tr,.wrap td{display:block;width:100%}
+.wrap thead{display:none}.wrap tr{border:1px solid var(--line);border-radius:8px;margin-bottom:10px;padding:4px}
+.wrap td{border:none;padding:3px 6px;overflow-wrap:anywhere}.wrap td[data-label]::before{content:attr(data-label);display:block;font-size:11px;color:var(--muted);font-weight:600}
+nav a{display:inline-block;margin-bottom:6px}}
+</style></head><body><header><h1>Test automation reports</h1><p>Generated 2026-11-21 03:02 UTC from full runs on the default branch; history covers the last 30 days.</p><nav style='margin-top:10px'><a href="index.html" aria-current=page>Latest run</a><a href="history.html">History</a><a href="https://rajiniottesting-coder.github.io/multi-agent-test-automation/allure/index.html">Allure report</a><a href="traceability.html">Traceability</a><a href="summary.pdf?v=202611210302">PDF summary</a></nav></header><main><div class='grid'><div class='card kpi'><b>100%</b><span>pass rate</span></div><div class='card kpi'><b>0</b><span>failed</span></div><div class='card kpi'><b>0</b><span>flaky</span></div><div class='card kpi'><b>0</b><span>not judged</span></div><div class='card kpi'><b>1.0</b><span>minutes</span></div></div><p>Run <a href='https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/44857957799'>44857957799</a>, 2026-11-21 02:49 UTC (schedule, commit <code>2f5a42f</code>): 26 passed, 0 flaky, 0 failed, 0 not judged, 0 skipped. <a href='https://rajiniottesting-coder.github.io/multi-agent-test-automation/allure/index.html'>Steps, screenshots and traces in the Allure report</a>.</p><p class='muted'><i>Not judged</i>: failed because the application itself was unavailable - nothing was tested, and no defect is raised for it.</p><div class='card'><h2>Needs a look</h2><p>All 26 tests passed.</p></div><div class='card'><h2>Changed since the previous run</h2><p class='muted'>Against run <a href='https://github.com/rajiniottesting-coder/multi-agent-test-automation/actions/runs/44661883628'>44661883628</a> (2026-11-20 02:35 UTC). No test changed its result.</p></div></main></body></html>
